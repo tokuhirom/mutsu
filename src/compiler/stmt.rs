@@ -559,6 +559,107 @@ impl Compiler {
         Some(vec![decl, for_stmt, writeback])
     }
 
+    /// Whether an `Index` expression's index is a syntactic shape that
+    /// unambiguously produces a *slice* (several elements) rather than a
+    /// single element: a `Range` (`1..3`, `1..^3`, ...), a comma list
+    /// (`1, 3`), or bare `Whatever` (`*`). Conservative in the other
+    /// direction: a plain scalar expression is assumed to index a single
+    /// element even though it could dynamically hold a `Range` (Raku itself
+    /// only knows at runtime) — matching this exactly is not needed for
+    /// [`desugar_for_scalar_element_source`]'s purpose.
+    fn for_index_is_slice(index: &Expr) -> bool {
+        match index {
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+                    | crate::token_kind::TokenKind::DotDotDot
+                    | crate::token_kind::TokenKind::DotDotDotCaret
+            ),
+            Expr::ArrayLiteral(_) | Expr::Whatever => true,
+            _ => false,
+        }
+    }
+
+    /// Rewrite `for <ELEM> { ... }`, where `<ELEM>` is a var-rooted `Index`
+    /// lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`) used *directly* as the loop
+    /// source (no `.values`/similar wrapper — that shape is
+    /// [`desugar_for_element_source`]), into:
+    ///
+    ///   my $tmp = <ELEM>;      # copy the element into a scalar temp
+    ///   for $tmp { ... };      # reuse the scalar-topic per-iteration write-back
+    ///   <ELEM> = $tmp;         # write the temp back into the element
+    ///
+    /// Raku topicalizes such an element as a single rw-aliased item (`for
+    /// @a[i] { .=Int }` mutates `@a[i]`) — the same aliasing `given @a[i] {
+    /// ... }` already gets via `TagElementSource`. `for` over a bare scalar
+    /// variable already writes `$_`'s final value back to that variable, so
+    /// routing through a temp variable needs no new VM machinery.
+    fn desugar_for_scalar_element_source(&mut self, stmt: &Stmt) -> Option<Vec<Stmt>> {
+        let Stmt::For { iterable, .. } = stmt else {
+            return None;
+        };
+        let Expr::Index {
+            target: container,
+            index,
+            is_positional,
+        } = iterable
+        else {
+            return None;
+        };
+        if !Self::for_element_container_is_lvalue(container) {
+            return None;
+        }
+        // A slice index (`@a[1..^3]`, `@a[1,3]`, `@a[*]`) yields *several*
+        // elements, not one — rewriting through a scalar temp would collapse
+        // the whole slice into a single topicalized value and only iterate
+        // once (roast `S02-magicals/args.t`: `for @*ARGS[1..^+@*ARGS] { .say }`
+        // must print each argument, not the slice as one item). Bail out for
+        // every syntactic shape that is unambiguously a slice; anything else
+        // (a plain scalar index expression) keeps the single-element rewrite.
+        if Self::for_index_is_slice(index) {
+            return None;
+        }
+
+        let tmp = format!("__for_scalar_elem_src_{}", self.code.constants.len());
+
+        let decl = Stmt::VarDecl {
+            name: tmp.clone(),
+            expr: iterable.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        };
+
+        // The rewritten for-loop iterates the scalar temp; cloning the
+        // original For and swapping only its iterable preserves
+        // params/body/label/mode.
+        let mut for_stmt = stmt.clone();
+        if let Stmt::For {
+            iterable: new_iterable,
+            ..
+        } = &mut for_stmt
+        {
+            *new_iterable = Expr::Var(tmp.clone());
+        }
+
+        let writeback = Stmt::Expr(Expr::IndexAssign {
+            target: container.clone(),
+            index: index.clone(),
+            value: Box::new(Expr::Var(tmp)),
+            is_positional: *is_positional,
+        });
+
+        Some(vec![decl, for_stmt, writeback])
+    }
+
     /// Whether a bare statement expression yields a syntactically fresh rvalue
     /// (a method call / `Foo.new`) whose value may invoke a user-defined `sink`
     /// method in sink context. Bare variables (`$x;`) and function-call returns
@@ -1980,6 +2081,15 @@ impl Compiler {
                 // array, iterate that (reusing the array-source writeback), then
                 // write the temp back into the element after the loop.
                 if let Some(desugared) = self.desugar_for_element_source(stmt) {
+                    for s in &desugared {
+                        self.compile_stmt(s);
+                    }
+                    return;
+                }
+                // Element-source writeback for a bare element source (no
+                // `.values`): `for @a[i] { .=Int }` / `for %h<k> { $_ *= 2 }`.
+                // See `desugar_for_scalar_element_source`.
+                if let Some(desugared) = self.desugar_for_scalar_element_source(stmt) {
                     for s in &desugared {
                         self.compile_stmt(s);
                     }
