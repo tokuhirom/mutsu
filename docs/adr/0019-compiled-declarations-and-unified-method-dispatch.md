@@ -116,7 +116,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, and D4-1 landed 2026-08-08). Phase C is fully checked; the open box is
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, and D4-2 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -943,6 +943,12 @@ walkers wholesale is not possible before then.
   pass) re-keys `parent_args` through the same `qualify_parent` closure it already applies to
   `parents`/`does_parents`/`hidden_parents`, so a lookup by the (now qualified) parent string
   still hits. No consumer reads either field yet (D4-2/D4-3/D7-3).
+  **D4-2 landed 2026-08-08**: `CompiledClassDeclPlan` gained `parent_arg_chunks: Vec<(String,
+  Vec<DeclTraitArg>)>`, lowered from `parent_args` with the existing `compile_decl_trait_arg`
+  helper (literal short-circuit + `Compiled` chunks, the C5 mechanism) and keyed the same way
+  after `qualify_decl_name` re-keys `parent_args` first. Covers only the class-header site per
+  the design doc; the role-body `DoesDecl` site's carriage still joins D7. No consumer reads it
+  outside a new compiler unit test yet (D4-3).
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**

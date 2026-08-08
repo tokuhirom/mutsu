@@ -2746,6 +2746,15 @@ pub(crate) struct CompiledClassDeclPlan {
     /// `persist_class_body_statics` re-walking the raw body on every
     /// registration to decide which lexicals are body statics.
     pub(crate) declared_static_names: Vec<Symbol>,
+    /// Precompiled argument chunks for each bracketed `is Parent[Args]`/
+    /// `does Role[Args]`/`hides Parent[Args]` parent (ADR-0019 D4-2), keyed
+    /// by the same concatenated parent string that `parents`/`does_parents`/
+    /// `hidden_parents` use as a registry lookup key. Only entries whose
+    /// bracket content parsed as a clean expression list (D4-1) appear here;
+    /// no consumer reads this yet outside tests (D4-3 wires it into
+    /// role-candidate resolution).
+    #[allow(dead_code)]
+    pub(crate) parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
 }
 
 #[derive(Debug, Clone)]
@@ -5971,6 +5980,7 @@ impl CompiledCode {
         trait_args: Vec<Option<DeclTraitArg>>,
         attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
+        parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -6026,6 +6036,7 @@ impl CompiledCode {
             method_name_chunks,
             method_decls,
             declared_static_names,
+            parent_arg_chunks,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
