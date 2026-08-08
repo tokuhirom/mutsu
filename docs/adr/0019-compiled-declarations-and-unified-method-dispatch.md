@@ -680,6 +680,22 @@ walkers wholesale is not possible before then.
   `class`-declared `handles *`, not just `augment`), so it is out of D3's walker-drift scope and is
   tracked separately as `todo/tickets/wildcard-handles-loses-to-builtin-cool-methods.md`. Custom
   traits, `is export`, and BUILD/TWEAK validation remain open `augment_class` gaps.
+  **D3-6 landed 2026-08-08**, closing the last three drift points by porting the class walker's
+  logic verbatim: BUILD/TWEAK's `:$!attr` parameters are now validated against a pre-scanned set of
+  the class's own attribute names (existing plus any this same augmentation declares), rejecting an
+  undeclared one with `X::Attribute::Undeclared` — confirmed against `raku`, which rejects this at
+  compile time. `is export` and custom-trait (`trait_mod:<is>`, including `is native`) handling are
+  now wired identically to the class walker. Measuring against `raku` while building this slice
+  surfaced two further bugs that turned out to be **pre-existing in the class walker itself**, not
+  augment-specific drift, so they are out of D3's scope and tracked separately: `is export` on a
+  plain (non-operator) method name does nothing on any walker (only the operator-categorical sub-form
+  path — `method infix:<as> is export` and friends — actually works;
+  `todo/tickets/method-is-export-non-operator-name-does-nothing.md`), and a user `trait_mod:<is>`
+  multi typed `(Method $m, ...)` never dispatches because the code-object value built for the
+  about-to-be-installed method is a plain `Sub`, not a `Method`, so the type-checked parameter never
+  matches (`todo/tickets/method-typed-trait-mod-is-dispatch-never-matches.md`). D3-6 makes
+  `augment_class` reach exact parity with the class walker, including that walker's own
+  pre-existing limits — it does not fix either underlying bug.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

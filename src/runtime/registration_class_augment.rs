@@ -1,4 +1,6 @@
-use super::registration_class::{apply_resolved_handles, make_delegation_method};
+use super::registration_class::{
+    AttrValidationCtx, apply_resolved_handles, make_delegation_method,
+};
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::HandleSpec;
@@ -163,6 +165,23 @@ impl Interpreter {
                 other => vec![other],
             })
             .collect();
+        // ADR-0019 D3-6: BUILD/TWEAK's `:$!attr` validation (below) needs the
+        // full set of attribute names visible on this class — those already
+        // registered plus any this augmentation itself declares — matching
+        // the class walker's pre-scanned `class_own_attrs` (confirmed against
+        // `raku`: `augment class Foo { method BUILD(:$!y) {} }` with no
+        // declared `$.y`/`$!y` anywhere reports X::Attribute::Undeclared).
+        let mut own_attrs: HashSet<String> = self
+            .registry()
+            .classes
+            .get(name)
+            .map(|cd| cd.attributes.iter().map(|a| a.name.clone()).collect())
+            .unwrap_or_default();
+        for stmt in &flattened_body {
+            if let Stmt::HasDecl { .. } = stmt {
+                own_attrs.insert(crate::opcode::CompiledAttrDecl::from_stmt(stmt, None).name);
+            }
+        }
         for stmt in flattened_body {
             match stmt {
                 Stmt::MethodDecl { .. } => {
@@ -174,6 +193,30 @@ impl Interpreter {
                     // evaluated from the raw AST here rather than through a
                     // precompiled `method_name_chunks` cursor.
                     let decl = crate::opcode::CompiledMethodDecl::from_stmt(stmt);
+                    // ADR-0019 D3-6: matching the class walker, an augmented
+                    // BUILD/TWEAK submethod's `:$!attr` parameters must refer
+                    // to declared attributes; reject undeclared ones with
+                    // X::Attribute::Undeclared.
+                    {
+                        let mn = decl.name.resolve();
+                        if mn == "BUILD" || mn == "TWEAK" {
+                            for pd in &decl.param_defs {
+                                if pd.name.starts_with('!') && pd.name != "!" {
+                                    let attr_name = &pd.name[1..];
+                                    if !own_attrs.contains(attr_name) {
+                                        let ctx = AttrValidationCtx {
+                                            attrs: &own_attrs,
+                                            pkg_name: name,
+                                            pkg_kind: "class",
+                                        };
+                                        let err = Self::undeclared_attr_error(&ctx, attr_name, "!");
+                                        self.set_current_package(saved_package);
+                                        return Err(err);
+                                    }
+                                }
+                            }
+                        }
+                    }
                     let resolved_method_name = if let Some(expr) = &decl.name_expr {
                         self.eval_block_value(&[Stmt::Expr(expr.clone())])?
                             .to_string_value()
@@ -373,6 +416,99 @@ impl Interpreter {
                         );
                         self.fn_resolve_gen += 1;
                         self.mark_my_scoped_package_item(qualified_name);
+                    }
+                    // ADR-0019 D3-6: `is export` on an augmented method,
+                    // matching the class walker (confirmed against `raku`:
+                    // `augment class Foo { method greet() is export {...} }`
+                    // then `import Foo` exposes a `greet` sub).
+                    if decl.is_export && !self.suppress_exports {
+                        let tags = if decl.export_tags.is_empty() {
+                            vec!["DEFAULT".to_string()]
+                        } else {
+                            decl.export_tags.clone()
+                        };
+                        if Self::is_operator_categorical_name(&resolved_method_name) {
+                            self.register_exported_operator_method_sub(
+                                name,
+                                &resolved_method_name,
+                                &effective_param_defs,
+                                tags,
+                            );
+                        } else {
+                            self.register_exported_var(
+                                name.to_string(),
+                                format!("&{}", resolved_method_name),
+                                tags,
+                            );
+                        }
+                    }
+                    // ADR-0019 D3-6: an `is native(...)` augmented method
+                    // routes through NativeCall, matching the class walker.
+                    if decl.custom_traits.iter().any(|(t, _)| t == "native") {
+                        self.register_native_call_method(
+                            name,
+                            &resolved_method_name,
+                            &decl.param_defs,
+                            decl.return_type.as_ref(),
+                            &crate::opcode::decl_traits_from_ast(&decl.custom_traits),
+                        )?;
+                    }
+                    // ADR-0019 D3-6: apply user-defined `trait_mod:<is>`
+                    // traits on an augmented method, matching the class
+                    // walker (confirmed against `raku`).
+                    if !decl.custom_traits.is_empty() {
+                        let has_trait_mod = self.has_proto("trait_mod:<is>")
+                            || self.has_multi_candidates("trait_mod:<is>");
+                        if has_trait_mod {
+                            for (trait_name, trait_arg) in &decl.custom_traits {
+                                let mut trait_env = self.env.clone();
+                                trait_env.insert(
+                                    "__mutsu_lookup_class".to_string(),
+                                    Value::str(name.to_string()),
+                                );
+                                trait_env.insert(
+                                    "__mutsu_lookup_method".to_string(),
+                                    Value::str(resolved_method_name.clone()),
+                                );
+                                trait_env.insert(
+                                    "__mutsu_lookup_candidate_idx".to_string(),
+                                    Value::int(0),
+                                );
+                                let sub_val = Value::make_sub(
+                                    Symbol::intern(name),
+                                    Symbol::intern(&resolved_method_name),
+                                    effective_params.clone(),
+                                    effective_param_defs.clone(),
+                                    decl.body.clone(),
+                                    decl.is_rw,
+                                    trait_env,
+                                );
+                                let trait_arg_val = if let Some(arg_expr) = trait_arg {
+                                    Some(self.eval_block_value(&[crate::ast::Stmt::Expr(
+                                        arg_expr.clone(),
+                                    )])?)
+                                } else {
+                                    None
+                                };
+                                let type_obj = self.resolve_type_object(trait_name);
+                                let mut args = vec![sub_val];
+                                if let Some(type_val) = type_obj {
+                                    args.push(type_val);
+                                    if let Some(arg_val) = trait_arg_val {
+                                        args.push(arg_val);
+                                    }
+                                    let _ = self.call_function("trait_mod:<is>", args);
+                                } else {
+                                    let named_val = if let Some(arg_val) = trait_arg_val {
+                                        Value::pair(trait_name.clone(), arg_val)
+                                    } else {
+                                        Value::pair(trait_name.clone(), Value::TRUE)
+                                    };
+                                    args.push(named_val);
+                                    let _ = self.call_function("trait_mod:<is>", args);
+                                }
+                            }
+                        }
                     }
                     // ADR-0019 D3-5 follow-up: `handles` on a method
                     // synthesizes forwarder methods, matching the
