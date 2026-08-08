@@ -5,6 +5,7 @@ use crate::parser::primary::var::parse_var_name_from_str;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+use super::helpers::literal_str;
 /// Split a subscript's content on commas that are at the top nesting level
 /// (outside `[]`/`{}`/`()`/`<>` and string quotes), so `"@a[1,2]"` /
 /// `"%h{$x, $y}"` interpolation builds a slice rather than parsing only the
@@ -110,12 +111,14 @@ pub(crate) fn try_interpolate_var<'a>(
             let content = &after_lt[..end];
             let words: Vec<&str> = content.split_whitespace().collect();
             let index = if words.len() <= 1 {
-                Expr::Literal(Value::str(words.first().copied().unwrap_or("").to_string()))
+                Expr::Literal(literal_str(
+                    words.first().copied().unwrap_or("").to_string(),
+                ))
             } else {
                 Expr::ArrayLiteral(
                     words
                         .into_iter()
-                        .map(|w| Expr::Literal(Value::str(w.to_string())))
+                        .map(|w| Expr::Literal(literal_str(w.to_string())))
                         .collect(),
                 )
             };
@@ -145,7 +148,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 } else if let Ok((_, expr)) = crate::parser::expr::expression(s) {
                     expr
                 } else {
-                    Expr::Literal(Value::str(s.to_string()))
+                    Expr::Literal(literal_str(s.to_string()))
                 }
             };
             let parts = split_top_level_commas(content);
@@ -222,7 +225,7 @@ pub(crate) fn try_interpolate_var<'a>(
         // Special variable $/ (match variable)
         if next == '/' {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             let var_expr = Expr::Var("/".to_string());
             let (expr, var_rest) = parse_postcircumfix_index(&rest[2..], var_expr);
@@ -236,11 +239,11 @@ pub(crate) fn try_interpolate_var<'a>(
             && let Some(end) = after_lt.find('>')
         {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             let key = &after_lt[..end];
             let var_expr = Expr::Var("/".to_string());
-            let index = Expr::Literal(Value::str(key.to_string()));
+            let index = Expr::Literal(literal_str(key.to_string()));
             let expr = Expr::Index {
                 target: Box::new(var_expr),
                 index: Box::new(index),
@@ -254,7 +257,7 @@ pub(crate) fn try_interpolate_var<'a>(
         // Numeric capture variables: $0, $1, $2, ...
         if next.is_ascii_digit() {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             let var_rest = &rest[1..];
             let end = var_rest
@@ -322,7 +325,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 };
                 if let Some(expr) = parsed {
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                     }
                     parts.push(expr);
                     return Some(remainder);
@@ -332,11 +335,11 @@ pub(crate) fn try_interpolate_var<'a>(
         // ${...} is Perl 5 scalar dereference syntax — throw X::Obsolete
         if next == '{' {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             parts.push(Expr::Call {
                 name: Symbol::intern("die"),
-                args: vec![Expr::Literal(Value::str(
+                args: vec![Expr::Literal(literal_str(
                     "X::Obsolete: Unsupported use of ${expr}. In Raku please use: $(expr)."
                         .to_string(),
                 ))],
@@ -357,7 +360,7 @@ pub(crate) fn try_interpolate_var<'a>(
             || next == '^'
         {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             let var_rest = &rest[1..];
             let (var_rest, var_name) = parse_var_name_from_str(var_rest);
@@ -377,7 +380,7 @@ pub(crate) fn try_interpolate_var<'a>(
             if var_name == "?FILE"
                 && let Some(file) = crate::parser::stmt::simple::parser_source_file()
             {
-                parts.push(Expr::Literal(Value::str(file)));
+                parts.push(Expr::Literal(literal_str(file)));
                 return Some(var_rest);
             }
             let (expr, var_rest) = parse_postcircumfix_index(var_rest, Expr::Var(var_name));
@@ -394,7 +397,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 let first = after_dot.as_bytes()[0];
                 if first.is_ascii_alphabetic() || first == b'_' {
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                     }
                     let end = after_dot
                         .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '-')
@@ -436,11 +439,11 @@ pub(crate) fn try_interpolate_var<'a>(
         // @{...} is Perl 5 array dereference syntax — throw X::Obsolete
         if next == '{' {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             parts.push(Expr::Call {
                 name: Symbol::intern("die"),
-                args: vec![Expr::Literal(Value::str(
+                args: vec![Expr::Literal(literal_str(
                     "X::Obsolete: Unsupported use of @{expr}. In Raku please use: @(expr)."
                         .to_string(),
                 ))],
@@ -473,7 +476,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 return None;
             }
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             parts.push(expr);
             return Some(remainder);
@@ -493,7 +496,7 @@ pub(crate) fn try_interpolate_var<'a>(
             // Zen-slice: %hash{} should stringify the whole hash
             if let Some(r) = tail.strip_prefix("{}") {
                 if !current.is_empty() {
-                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                 }
                 parts.push(expr);
                 return Some(r);
@@ -501,7 +504,7 @@ pub(crate) fn try_interpolate_var<'a>(
             // Zen-slice: %hash<> should stringify the whole hash
             if let Some(after_zen) = tail.strip_prefix("<>") {
                 if !current.is_empty() {
-                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                 }
                 parts.push(expr);
                 return Some(after_zen);
@@ -509,7 +512,7 @@ pub(crate) fn try_interpolate_var<'a>(
             // Zen-slice: %hash[] should stringify the whole hash
             if let Some(r) = tail.strip_prefix("[]") {
                 if !current.is_empty() {
-                    parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                    parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                 }
                 parts.push(expr);
                 return Some(r);
@@ -526,7 +529,7 @@ pub(crate) fn try_interpolate_var<'a>(
                 return None;
             }
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             parts.push(expr);
             return Some(remainder);
@@ -582,7 +585,7 @@ pub(crate) fn try_interpolate_var<'a>(
                         args
                     };
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                     }
                     parts.push(Expr::Call {
                         name: Symbol::intern(name),

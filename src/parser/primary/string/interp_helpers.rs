@@ -2,6 +2,7 @@ use crate::ast::Expr;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+use super::helpers::literal_str;
 /// Try to parse a postcircumfix call on an interpolated variable: "$var()" or "$var(args)".
 /// In Raku, `"$callable(args)"` invokes the callable during interpolation. Only triggers
 /// when `(` immediately follows the variable (or its index/postcircumfix). The argument
@@ -273,7 +274,7 @@ pub(crate) fn parse_shell_words_index(content: &str) -> Expr {
         return Expr::Var(var_name.to_string());
     }
     // Otherwise treat as literal string key
-    Expr::Literal(Value::str(trimmed.to_string()))
+    Expr::Literal(literal_str(trimmed.to_string()))
 }
 
 /// Handle double-sigil interpolation patterns like `@$name[]`, `%$name{}`, `$$name[]`, etc.
@@ -336,7 +337,7 @@ where
                 let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
                 if r.len() < remainder.len() {
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                     }
                     parts.push(expr);
                     return Some(r);
@@ -352,7 +353,7 @@ where
                 let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
                 if r.len() < remainder.len() {
                     if !current.is_empty() {
-                        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
                     }
                     parts.push(expr);
                     return Some(r);
@@ -392,7 +393,7 @@ where
         let (expr, r) = parse_postcircumfix_index(remainder, inner_expr.clone());
         if r.len() < remainder.len() {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(current))));
             }
             parts.push(expr);
             return Some(r);
@@ -405,7 +406,7 @@ where
     }
 
     if !current.is_empty() {
-        parts.push(Expr::Literal(Value::str(std::mem::take(current))));
+        parts.push(Expr::Literal(literal_str(std::mem::take(current))));
     }
     parts.push(inner_expr);
     Some(remainder)

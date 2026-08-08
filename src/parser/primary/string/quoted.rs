@@ -5,6 +5,7 @@ use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::token_kind::{lookup_emoji_sequence, lookup_unicode_char_by_name};
 use crate::value::Value;
 
+use super::helpers::literal_str;
 pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
     let (input, _) = parse_char(input, '\'')?;
     let start = input;
@@ -83,7 +84,7 @@ pub(crate) fn smart_single_quoted_string(input: &str) -> PResult<'_, Expr> {
             let content = &start[..start.len() - rest.len()];
             return Ok((
                 &rest[ch.len_utf8()..],
-                Expr::Literal(Value::str(content.to_string())),
+                Expr::Literal(literal_str(content.to_string())),
             ));
         }
         rest = &rest[ch.len_utf8()..];
@@ -111,7 +112,7 @@ pub(crate) fn corner_bracket_string(input: &str) -> PResult<'_, Expr> {
     if depth == 0 {
         let content = &rest[..pos];
         let after = &rest[pos + '｣'.len_utf8()..];
-        Ok((after, Expr::Literal(Value::str(content.to_string()))))
+        Ok((after, Expr::Literal(literal_str(content.to_string()))))
     } else {
         Err(PError::expected("closing ｣"))
     }
@@ -231,7 +232,7 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
         // Block interpolation: { expr }
         if rest.starts_with('{') {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
             }
             // Find matching close brace (tracking nesting). Braces inside a
             // quoted string within the block must NOT count — e.g.
@@ -380,7 +381,7 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
         }
         if rest.starts_with('{') {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
             }
             let mut depth = 0;
             let mut end = 0;
