@@ -19,6 +19,7 @@ pub(crate) fn does_decl(input: &str) -> PResult<'_, Stmt> {
         rest,
         Stmt::DoesDecl {
             name: Symbol::intern(&name),
+            args: None,
         },
     ))
 }
@@ -139,6 +140,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws(rest)?;
     let mut r = rest;
     let mut parents = Vec::new();
+    let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
     while let Some(r2) = keyword("is", r) {
         let (r2, _) = ws1(r2)?;
         let (r2, parent_name) = qualified_ident(r2)?;
@@ -151,7 +153,13 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         {
             let (r2, bracket_suffix) =
                 crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
-            parents.push(format!("{}{}", parent_name, bracket_suffix));
+            let full_name = format!("{}{}", parent_name, bracket_suffix);
+            if let Some(exprs) =
+                crate::parser::stmt::class::parse_bracket_arg_exprs(&bracket_suffix)
+            {
+                parent_args.push((full_name.clone(), exprs));
+            }
+            parents.push(full_name);
             let (r2, _) = ws(r2)?;
             r = r2;
         } else {
@@ -177,6 +185,9 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws(r2)?;
         let (r2, bracket_suffix) = crate::parser::stmt::class::parse_optional_bracket_suffix(r2)?;
         let full_name = format!("{}{}", role_name, bracket_suffix);
+        if let Some(exprs) = crate::parser::stmt::class::parse_bracket_arg_exprs(&bracket_suffix) {
+            parent_args.push((full_name.clone(), exprs));
+        }
         // The role-composition loop in `register_class_decl` walks `parents`
         // and uses `does_parents` only to tell composition from punning, so a
         // `does` role must appear in both — otherwise the grammar composes
@@ -210,6 +221,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             custom_traits: Vec::new(),
             is_unit: false,
             decl_id: crate::ast::next_class_decl_id(),
+            parent_args,
         },
     ))
 }

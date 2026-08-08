@@ -354,6 +354,63 @@ fn parse_class_decl() {
     assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
 }
 
+/// ADR-0019 D4-1: a bracketed `is`/`does`/`hides` parent's content is
+/// additionally captured as parsed `Expr`s alongside the raw concatenated
+/// string, keyed by that same string.
+#[test]
+fn parse_class_decl_captures_parent_bracket_exprs() {
+    let (rest, stmts) = program("class Foo is Bar[Int, \"a,b\"] { }").unwrap();
+    assert_eq!(rest, "");
+    assert_eq!(stmts.len(), 1);
+    let Stmt::ClassDecl {
+        parents,
+        parent_args,
+        ..
+    } = &stmts[0]
+    else {
+        panic!("expected ClassDecl");
+    };
+    assert_eq!(parents, &vec!["Bar[Int, \"a,b\"]".to_string()]);
+    assert_eq!(parent_args.len(), 1);
+    let (key, exprs) = &parent_args[0];
+    assert_eq!(key, "Bar[Int, \"a,b\"]");
+    assert_eq!(exprs.len(), 2);
+}
+
+/// A bracket suffix whose content does not parse as a clean expression list
+/// (here, two expressions with no separating comma) leaves `parent_args`
+/// without an entry for that parent — the raw string in `parents` remains
+/// the sole source of truth in that case, and no other bracket-suffix
+/// caller is affected by the failed parse.
+#[test]
+fn parse_class_decl_bracket_parse_failure_leaves_parent_args_empty() {
+    let (rest, stmts) = program("class Foo is Bar[1 2] { }").unwrap();
+    assert_eq!(rest, "");
+    let Stmt::ClassDecl {
+        parents,
+        parent_args,
+        ..
+    } = &stmts[0]
+    else {
+        panic!("expected ClassDecl");
+    };
+    assert_eq!(parents, &vec!["Bar[1 2]".to_string()]);
+    assert!(parent_args.is_empty());
+}
+
+/// An empty bracket (`does R[]`) parses cleanly as a zero-length arg list.
+#[test]
+fn parse_class_decl_empty_bracket_captures_zero_args() {
+    let (rest, stmts) = program("class Foo does R[] { }").unwrap();
+    assert_eq!(rest, "");
+    let Stmt::ClassDecl { parent_args, .. } = &stmts[0] else {
+        panic!("expected ClassDecl");
+    };
+    assert_eq!(parent_args.len(), 1);
+    assert_eq!(parent_args[0].0, "R[]");
+    assert!(parent_args[0].1.is_empty());
+}
+
 #[test]
 fn parse_class_decl_with_is_rw_trait() {
     let (rest, stmts) = program("class Foo is rw { has $.x }").unwrap();

@@ -93,11 +93,19 @@ impl Compiler {
                 custom_traits,
                 is_unit,
                 decl_id,
+                parent_args,
                 ..
             } => {
                 let new_parents: Vec<String> = parents.iter().map(&qualify_parent).collect();
                 let new_does: Vec<String> = does_parents.iter().map(&qualify_parent).collect();
                 let new_hidden: Vec<String> = hidden_parents.iter().map(&qualify_parent).collect();
+                // Re-key alongside `parents`/`does_parents`/`hidden_parents`
+                // above so `parent_args` lookups by the (now qualified)
+                // parent string still hit (ADR-0019 D4-1).
+                let new_parent_args: Vec<(String, Vec<Expr>)> = parent_args
+                    .iter()
+                    .map(|(k, v)| (qualify_parent(k), v.clone()))
+                    .collect();
                 Stmt::ClassDecl {
                     name: qualified_sym,
                     name_expr: name_expr.clone(),
@@ -113,6 +121,7 @@ impl Compiler {
                     custom_traits: custom_traits.clone(),
                     is_unit: *is_unit,
                     decl_id: *decl_id,
+                    parent_args: new_parent_args,
                 }
             }
             Stmt::RoleDecl {

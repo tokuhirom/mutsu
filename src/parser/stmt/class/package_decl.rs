@@ -187,6 +187,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut class_is_rw = false;
         let mut is_hidden = false;
         let mut hidden_parents = Vec::new();
+        let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
         let mut r = r;
         loop {
             if let Some(r2) = keyword("is", r) {
@@ -213,7 +214,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     // Uppercase / indirect name is a superclass (possibly
                     // parametric, e.g. `is Foo[Int]`).
                     let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
-                    parents.push(format!("{}{}", parent, bracket_suffix));
+                    let full_name = format!("{}{}", parent, bracket_suffix);
+                    if let Some(exprs) = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix)
+                    {
+                        parent_args.push((full_name.clone(), exprs));
+                    }
+                    parents.push(full_name);
                     let (r2, _) = ws(r2)?;
                     r = r2;
                     continue;
@@ -267,6 +273,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     custom_traits: Vec::new(),
                     is_unit: true,
                     decl_id: crate::ast::next_class_decl_id(),
+                    parent_args,
                 },
             ),
         ));
@@ -294,7 +301,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             r = r2;
         }
         // Optional parent/trait clauses in any order (mirrors block-form roles).
-        let mut parent_roles: Vec<String> = Vec::new();
+        let mut parent_roles: Vec<(String, Option<Vec<crate::ast::Expr>>)> = Vec::new();
         let mut is_export = false;
         let mut export_tags: Vec<String> = Vec::new();
         let mut role_is_rw = false;
@@ -306,7 +313,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                 let (r2, _) = ws(r2)?;
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
                 let (r2, _) = ws(r2)?;
-                parent_roles.push(format!("{}{}", role_name, bracket_suffix));
+                let args = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix);
+                parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
                 r = r2;
                 continue;
             }
@@ -334,7 +342,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     let has_parens = r2.starts_with('(');
                     let r2 = skip_balanced_parens(r2);
                     if !has_parens && trait_name.starts_with(|c: char| c.is_ascii_uppercase()) {
-                        parent_roles.push(trait_name);
+                        parent_roles.push((trait_name, None));
                     } else {
                         custom_traits.push((trait_name, None));
                     }
@@ -347,11 +355,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         }
         let (r, _) = opt_char(r, ';');
         let mut body: Vec<Stmt> = Vec::new();
-        for role_name in parent_roles.into_iter().rev() {
+        for (role_name, args) in parent_roles.into_iter().rev() {
             body.insert(
                 0,
                 Stmt::DoesDecl {
                     name: Symbol::intern(&role_name),
+                    args,
                 },
             );
         }
@@ -447,6 +456,7 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     custom_traits: Vec::new(),
                     is_unit: true,
                     decl_id: crate::ast::next_class_decl_id(),
+                    parent_args: Vec::new(),
                 },
             ),
         ));

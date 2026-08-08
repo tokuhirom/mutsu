@@ -14,7 +14,10 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<ClassBodyFlow, RuntimeError> {
-        let Stmt::DoesDecl { name: role_name } = stmt else {
+        let Stmt::DoesDecl {
+            name: role_name, ..
+        } = stmt
+        else {
             unreachable!("class_body_does_decl called on a non-DoesDecl statement");
         };
         let raw_role_name = role_name.resolve();

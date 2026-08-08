@@ -78,6 +78,38 @@ pub(crate) fn parse_optional_bracket_suffix(input: &str) -> PResult<'_, String> 
     Ok((&input[end..], input[..end].to_string()))
 }
 
+/// Attempt to parse the inside of an `is`/`does`/`hides` bracket suffix
+/// (`[Int, "a,b", { $_ * 2 }]`, as returned by [`parse_optional_bracket_suffix`])
+/// as a real, comma-separated expression list (ADR-0019 D4-1). Returns
+/// `None` when there is no bracket suffix at all, or when the content fails
+/// to parse cleanly as a complete expression list (leftover input after the
+/// last expression) — the raw concatenated string built by every caller
+/// remains the sole authoritative source for the parent name/registry key
+/// either way; this capture is purely additive with no consumer yet.
+pub(crate) fn parse_bracket_arg_exprs(bracket_suffix: &str) -> Option<Vec<Expr>> {
+    let inner = bracket_suffix.strip_prefix('[')?.strip_suffix(']')?;
+    let inner = inner.trim();
+    if inner.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut exprs = Vec::new();
+    let mut rest = inner;
+    loop {
+        let (r, e) = expression(rest).ok()?;
+        exprs.push(e);
+        let (r, _) = ws(r).ok()?;
+        if r.is_empty() {
+            return Some(exprs);
+        }
+        let r = r.strip_prefix(',')?;
+        let (r, _) = ws(r).ok()?;
+        if r.is_empty() {
+            return Some(exprs);
+        }
+        rest = r;
+    }
+}
+
 /// Extract the tag names from an `is export(...)` argument list, e.g.
 /// `":ALL, :FOO"` -> `["ALL", "FOO"]`. Each colonpair `:NAME` contributes its
 /// name; bare words are also accepted (`export(FOO)`).
@@ -316,6 +348,7 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         custom_traits: Vec::new(),
         is_unit: false,
         decl_id: crate::ast::next_class_decl_id(),
+        parent_args: Vec::new(),
     };
     // Emit the class registration followed by unregistering the name from the scope
     let unregister = Stmt::Expr(Expr::Call {
@@ -351,6 +384,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
     let mut hidden_parents = Vec::new();
     let mut parents = Vec::new();
     let mut does_parents = Vec::new();
+    let mut parent_args: Vec<(String, Vec<Expr>)> = Vec::new();
     let mut is_repr: Option<String> = None;
     let mut custom_traits: Vec<(String, Option<Expr>)> = Vec::new();
     let mut is_export = false;
@@ -414,7 +448,11 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                 || parent.starts_with("::")
             {
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
-                parents.push(format!("{}{}", parent, bracket_suffix));
+                let full_name = format!("{}{}", parent, bracket_suffix);
+                if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                    parent_args.push((full_name.clone(), exprs));
+                }
+                parents.push(full_name);
                 r = r2;
                 let (r2, _) = ws(r)?;
                 r = r2;
@@ -457,7 +495,11 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                     continue;
                 }
                 let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
-                parents.push(format!("{}{}", parent, bracket_suffix));
+                let full_name = format!("{}{}", parent, bracket_suffix);
+                if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                    parent_args.push((full_name.clone(), exprs));
+                }
+                parents.push(full_name);
                 r = r2;
                 let (r2, _) = ws(r)?;
                 r = r2;
@@ -473,6 +515,9 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             let (r2, _) = ws(r2)?;
             let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
             let full_name = format!("{}{}", role_name, bracket_suffix);
+            if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                parent_args.push((full_name.clone(), exprs));
+            }
             parents.push(full_name.clone());
             does_parents.push(full_name);
             let (r2, _) = ws(r2)?;
@@ -485,6 +530,9 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             let (r2, _) = ws(r2)?;
             let (r2, bracket_suffix) = parse_optional_bracket_suffix(r2)?;
             let hidden_parent = format!("{}{}", parent, bracket_suffix);
+            if let Some(exprs) = parse_bracket_arg_exprs(&bracket_suffix) {
+                parent_args.push((hidden_parent.clone(), exprs));
+            }
             parents.push(hidden_parent.clone());
             hidden_parents.push(hidden_parent);
             let (r2, _) = ws(r2)?;
@@ -562,6 +610,7 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
         custom_traits,
         is_unit: false,
         decl_id: crate::ast::next_class_decl_id(),
+        parent_args,
     };
     let mut stmts = Vec::new();
     for (trait_name, trait_value) in traits {
@@ -605,6 +654,7 @@ pub(crate) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
             r,
             Stmt::DoesDecl {
                 name: Symbol::intern(&name),
+                args: None,
             },
         ));
     }
