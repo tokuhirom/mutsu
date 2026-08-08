@@ -162,6 +162,20 @@ impl Compiler {
                 && i == 1
                 && let Expr::Var(n) = arg
             {
+                // ADR-0021's `ContainerizePair` (just emitted above by
+                // `compile_method_arg_with_escape`, since a bare `$v` is not
+                // a syntactically-named arg) is semantically inert here —
+                // `Pair.new`'s value parameter is bound raw, not classified
+                // by named-ness — but its presence between the variable read
+                // and this `WrapVarRef` breaks the GetGlobal-immediately-
+                // followed-by-WrapVarRef adjacency that named-sub capture
+                // analysis (`helpers_sub_body.rs`) requires to box `$v`'s
+                // outer container. Pop it back off so the compiled sequence
+                // matches what it was before boundary erasure existed.
+                if matches!(self.code.ops.last(), Some(OpCode::ContainerizePair)) {
+                    self.code.ops.pop();
+                    self.code.op_lines.pop();
+                }
                 let src_idx = self.code.add_constant(Value::str(n.clone()));
                 self.code.emit(OpCode::WrapVarRef(src_idx));
             }

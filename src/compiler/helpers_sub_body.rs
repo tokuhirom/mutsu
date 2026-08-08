@@ -545,23 +545,10 @@ impl Compiler {
         // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) is boxed too.
         let mut nf_writes = cf.code.free_var_writes.clone();
         nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
-        for (i, op) in cf.code.ops.iter().enumerate() {
-            let OpCode::GetGlobal(name_idx) = op else {
-                continue;
-            };
-            // Between the variable read and its WrapVarRef tag, the argument
-            // compile may have inserted no-op-on-plain-values normalization
-            // ops (ADR-0021 `ContainerizePair`; slurpy-flatten `Decont`) that
-            // don't touch identity — skip over them to find the WrapVarRef
-            // this GetGlobal feeds, rather than requiring true adjacency.
-            let wrap_pos = cf.code.ops[i + 1..]
-                .iter()
-                .position(|op| !matches!(op, OpCode::Decont | OpCode::ContainerizePair))
-                .map(|offset| i + 1 + offset);
-            let Some(wrap_pos) = wrap_pos else {
-                continue;
-            };
-            let OpCode::WrapVarRef(wrapped_idx) = &cf.code.ops[wrap_pos] else {
+        for pair in cf.code.ops.windows(2) {
+            let (OpCode::GetGlobal(name_idx), OpCode::WrapVarRef(wrapped_idx)) =
+                (&pair[0], &pair[1])
+            else {
                 continue;
             };
             if name_idx != wrapped_idx {
