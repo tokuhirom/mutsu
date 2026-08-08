@@ -620,6 +620,39 @@ impl Env {
         self.cow_mut().insert(key, value)
     }
 
+    /// Assign a *value* to `key`, writing **through** a shared `ContainerRef`
+    /// cell if the name is currently bound to one. [`insert`](Self::insert)
+    /// replaces the binding itself, which is right for `:=` and for a fresh
+    /// `my`, but wrong for the runtime writeback paths (`$o.attr = v`,
+    /// `$s.substr-rw(...) = v`, ...): those assign to the container the name
+    /// already denotes, so replacing a cell with a bare value silently
+    /// un-shares every alias of it.
+    ///
+    /// This is what made a `supply` block's lexical revert between `whenever`
+    /// invocations: the block's `my $request` is promoted to a cell so all the
+    /// callbacks share one binding (`share_supply_block_lexicals`), but
+    /// `$request.method = ...` in the callback body replaced that cell with a
+    /// plain value in the callback's own env. A nested `sub`'s later
+    /// `$request = Request.new` then wrote the cell nobody read any more, so
+    /// the next invocation saw the previous request object and appended the
+    /// second request's headers to it (Cro could not serve pipelined requests).
+    pub fn insert_through(&mut self, key: String, value: Value) {
+        note_env_key(&key);
+        self.insert_through_sym(Symbol::intern(&key), value);
+    }
+
+    /// Symbol-keyed [`insert_through`](Self::insert_through).
+    pub fn insert_through_sym(&mut self, key: Symbol, value: Value) {
+        if let Some(existing) = self.get_sym(key)
+            && let crate::value::ValueView::ContainerRef(cell) = existing.view()
+        {
+            let cell = cell.clone();
+            *cell.lock().unwrap() = value;
+            return;
+        }
+        self.insert_sym(key, value);
+    }
+
     pub fn remove(&mut self, key: &str) -> Option<Value> {
         self.remove_sym(Symbol::intern(key))
     }
