@@ -98,6 +98,7 @@ impl Interpreter {
         attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
+        declared_static_names: &[Symbol],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -182,15 +183,6 @@ impl Interpreter {
                         continue;
                     }
                 }
-                Stmt::TrustsDecl {
-                    name: trusted_class,
-                } => {
-                    self.registry_mut()
-                        .class_trusts
-                        .entry(cx.name.to_string())
-                        .or_default()
-                        .insert(trusted_class.resolve());
-                }
                 // our &baz ::= &bar  — alias a method under a new name
                 Stmt::VarDecl {
                     name: var_name,
@@ -230,7 +222,7 @@ impl Interpreter {
             self.registry_mut().sync_user_method_entries(cx.name);
         }
         self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
-        self.persist_class_body_statics(&cx, body);
+        self.persist_class_body_statics(&cx, declared_static_names);
         self.restore_nested_type_short_names(&cx);
         self.set_current_package(cx.saved_package.clone());
         Ok(cx.class_def)

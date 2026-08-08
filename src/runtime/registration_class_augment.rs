@@ -1030,6 +1030,7 @@ impl Interpreter {
             attr_decls: &[],
             method_name_chunks: &[],
             method_decls: &[],
+            declared_static_names: &[],
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);

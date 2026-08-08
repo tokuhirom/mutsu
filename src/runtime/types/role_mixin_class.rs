@@ -68,6 +68,7 @@ impl Interpreter {
             attr_decls: &[],
             method_name_chunks: &[],
             method_decls: &[],
+            declared_static_names: &[],
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
         self.compose_mixin_role_submethods(&name, &fresh);

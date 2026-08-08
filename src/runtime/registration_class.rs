@@ -219,6 +219,12 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// available (the role-pun/mixin synthesis paths that call this with an
     /// empty body).
     pub(crate) method_decls: &'a [crate::opcode::CompiledMethodDecl],
+    /// Names the class body `my`/`state`-declares at its own top level
+    /// (ADR-0019 D6-1), precomputed by the compiler at plan lowering instead
+    /// of `persist_class_body_statics` re-walking the raw body at
+    /// registration time. Empty for registration paths with no compiled plan
+    /// available (role-pun/mixin synthesis, `augment class`).
+    pub(crate) declared_static_names: &'a [Symbol],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

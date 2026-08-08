@@ -115,8 +115,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 28/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2 and D2c-4 landed 2026-08-08). Phase C is fully checked; the open box is
+**Current progress: 29/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+landed, 2026-08-07; D2b-2, D2c-4, and D6-1 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -963,6 +963,20 @@ walkers wholesale is not possible before then.
   `declared_static_names` plan fact. Slices D6-1 (cheap facts + dead arm), D6-2 (= D2b-2),
   D6-3 (`body_plan`, instrument-gated, expected to subdivide per arm like C6d), D6-4 (field
   drop via the C6e-3c forced-instrument playbook).
+  **D6-1 landed 2026-08-08**: `CompiledClassDeclPlan` gained
+  `declared_static_names: Vec<Symbol>`, computed at plan lowering by a new
+  `class_declared_static_names` free function mirroring
+  `persist_class_body_statics`'s inline `declared_statics` scan (a top-level,
+  unflattened `Stmt::VarDecl` that is neither `our` nor `dynamic`).
+  `persist_class_body_statics` now takes this precomputed slice instead of
+  re-deriving it from the raw body on every registration. The redundant
+  `Stmt::TrustsDecl` walk arm in `run_class_body` is deleted — `publish_class_shell`
+  already inserts the same `class_trusts` entry from D1's `trusts` plan field
+  before the body walk starts, and the compiler already compiles a bare
+  `TrustsDecl` statement to a no-op (`compiler/stmt.rs`), so the statement
+  now safely falls through to the catch-all `class_body_other_stmt` arm with
+  no behavior change. D9-1 (the role-side twin: `is_stub` + our-scope-violation
+  plan facts) is not part of this slice.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**
