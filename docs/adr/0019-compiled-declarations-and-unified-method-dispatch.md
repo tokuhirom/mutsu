@@ -132,7 +132,16 @@ closed as already-bytecode-native (a lateral move, not a gain), its "deferred cl
 folds into D8 rather than needing its own slice, and its "parent expressions" piece is a real
 re-parse-per-registration bug but is gated on parser/AST work and constrained by a shared `&str`
 resolver API also used for genuinely dynamic type-name concretization — scoped as future
-D4-1/D4-2/D4-3. D1 found most class structural data already typed-plan-driven
+D4-1/D4-2/D4-3. A 2026-08-08 design sweep then produced detailed designs for **every remaining
+Phase D box** — the D2 remainder, D4, D5, D6, D7, D8, D9, and D10 — recorded as
+`todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`, `adr0019-d4-parent-expr-chunks.md`,
+`adr0019-d5-plan-driven-how-ops.md`, `adr0019-d6-d9-legacy-body-removal.md` (includes the
+grep-complete `legacy_body` reader inventory and D10), and
+`adr0019-d7-d8-role-plan-encoding.md`, with condensed entries in each box below; the notable
+re-scope is D5, which shrank to ordering invariants plus a verification gate riding on D6 (the
+user-HOW protocol never reads a raw `Stmt`). The recommended cross-box order is D2b-2 →
+D6-1..3 (with D3-8a-d and D4-1/2 in parallel) → D4-3 → D7 → D8 → D9 → the two field drops →
+D5's gate → D10. D1 found most class structural data already typed-plan-driven
 from Phase A3/A4; the two remaining body-scanning reads (stub detection, `Stmt::TrustsDecl`) are
 now precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`; see
 `news/2026-08/d1-class-structural-plan-fields.md`. D2, unlike D1, found attribute data with no
@@ -551,6 +560,18 @@ walkers wholesale is not possible before then.
     are already a single source of truth kept in lockstep by `sync_user_method_entries` — reading
     one over the other here is a lateral move, not a mechanism unification, so it does not meet the
     ADR's own "gain" bar (see CLAUDE.md's "What gain and risk actually mean"). D2d is done.
+  **D2 remainder design pass done 2026-08-08 (no code landed):**
+  `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`. The D2b position-correlation blocker
+  is now precisely characterized (the runtime walk *appends* nested-sub `has` decls while the
+  compiler collector *interleaves* them — genuinely different orders, plus a latent double-push
+  in the collector), so the plan lowering is **name-keyed** (`attr_decls: Vec<(Symbol,
+  CompiledAttrDecl)>`, the `is_default_chunks` precedent) with `from_stmt` kept as the guarded
+  fallback (slice D2b-2, also a D6/D9 prerequisite). For the D2c remainder, every default/where
+  eval site already funnels through `eval_decl_trait_arg`, so flipping to
+  `DeclTraitArg::Compiled` needs no eval-site changes — the work is construction-side plus
+  retiring the two `as_expr` consumers that would panic on `Compiled` in the same slice
+  (D2c-4); the A/B env-setup unification stays optional (D2c-5) behind raku verification of
+  shape B's `has_class_scoped_subs` gate.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker
@@ -837,23 +858,97 @@ walkers wholesale is not possible before then.
   correctness bug, independent of ADR-0019's declaration-plan migration either way; filed as
   `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md` rather than fixed here, since
   a correct fix means porting a ~200-line carryover block, not a one-line parser change.
+  **D4 design pass done 2026-08-08 (no code landed):**
+  `todo/deep/adr0019-d4-parent-expr-chunks.md` details the D4-1/2/3 sub-boxes: D4-1 (parser
+  captures bracket args as parsed `Vec<Expr>` alongside the unchanged concatenated string —
+  parse failure keeps the string path, so nothing currently accepted is rejected; also found
+  three concat sites beyond the original four, including the role-side synthetic `DoesDecl`),
+  D4-2 (class-plan `parent_arg_chunks` via `compile_decl_trait_arg`; the role-body site's
+  carriage deliberately joins D7's `parent_ops` instead of a throwaway field), D4-3
+  (`resolve_role_candidate` gains `pre_args: Option<&[Value]>` — only the
+  `eval_role_arg_values` call swaps, everything downstream already operates on values; the
+  cutover is gated on a raku case table because the string path's heuristics sometimes produce
+  type objects where naive evaluation would not). The `Expr` path also fixes
+  `split_balanced_comma_list`'s quote-blindness (`R["a,b"]` mis-splits today) for free.
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
+  **Design pass done 2026-08-08 (no code landed) — the box shrinks:**
+  `todo/deep/adr0019-d5-plan-driven-how-ops.md`. The survey found the user-HOW protocol
+  (`new_type`/`add_method`/`compose`) runs entirely *after* native registration and reads the
+  finished registry, never a raw `Stmt` — `add_method` re-enumerates registry `MethodDef`s,
+  `add_attribute` is never called by mutsu, trait-interception inputs are all plan-resident
+  (class traits on the plan, method traits/bodies on `CompiledMethodDecl`, attribute traits
+  closed by D2b-2). D5 is therefore not a migration: D5-1 codifies the ordering invariants
+  D6's cutover must keep (shell → registry-authoritative interleaved body writes → HOW
+  instantiate → new_type → add_method → trait dispatch → compose; HOW installs keyed on the
+  resolved storage name), and D5-2 is a verification gate (OO::Monitors battery + metamodel
+  roast) riding on D6's slices rather than a separate code PR.
 - [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
   redeclaration errors, language revisions, nested types, and EVAL behavior. Excludes the
   token/rule arms (see the phase preamble). Start with the C6d-style instrumentation survey —
   C6's one box became nine PRs, and this field has the same shape.
+  **Survey + design pass done 2026-08-08 (no code landed):**
+  `todo/deep/adr0019-d6-d9-legacy-body-removal.md` holds the grep-complete reader inventory
+  (the only destructuring reads are the two register ops; no reader exists outside
+  registration; augment reads `stmt_pool`, unaffected) and the design: a typed ordered
+  `body_plan: Vec<ClassBodyOp>` lowered at compile time, whose `Other` arm carries a
+  per-statement `CompiledDeclExpr` chunk replacing `class_body_other_stmt`'s
+  per-registration `run_block_raw` OTF compile — the driver keeps its exact env-seeding /
+  BEGIN-swallowing / writeback / re-publish structure, only the statement source changes.
+  The token/rule exclusion is carried as an `Other.raw` rump (the C6 `FunctionDef.body`
+  precedent). Notable freebies found: the `TrustsDecl` walk arm is redundant with D1's plan
+  field (deletable now), and `persist_class_body_statics`' body re-scan becomes a
+  `declared_static_names` plan fact. Slices D6-1 (cheap facts + dead arm), D6-2 (= D2b-2),
+  D6-3 (`body_plan`, instrument-gated, expected to subdivide per arm like C6d), D6-4 (field
+  drop via the C6e-3c forced-instrument playbook).
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
+  **Design pass done 2026-08-08 (no code landed):**
+  `todo/deep/adr0019-d7-d8-role-plan-encoding.md`. The role plan gains the class side's
+  missing twins (`is_stub`, our-scope violation — the role plan has no D1-style fields at
+  all), name-keyed `attr_decls`, typed `parent_ops` (replacing the
+  `__mutsu_role_hides__`/`__mutsu_role_hidden__` string-marker encoding and carrying D4's
+  arg chunks for the role-body `does` site), and a `body_plan` op walk. Deliberately narrower
+  than the box text sounds: candidate selection, trial binding, specificity, conflict and
+  required-method detection, and pun materialization read the *registry*, not the AST, and
+  stay runtime — the declaration's own structure becomes plan data; the composition algebra
+  over it does not move. Slices D7-1..4 in the doc.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)
+  **Design pass done 2026-08-08 (no code landed), same doc as D7.** Unit of compilation is
+  **one chunk per deferred statement** (not per body): the five consumer sites' per-statement
+  package routing (type decls → role package, token/rule → composing class package), the
+  lexical-persistence scan (becomes a precomputed `declared_vars`), and the
+  `X::Role::Instantiation` wrapping all operate at statement granularity, so consumers keep
+  their exact env dance and swap only `run_block_raw(stmt)` for `run_decl_expr(chunk)`. The
+  frozen-plan concern (nested declarations' plans lowered once per role rather than per
+  composition) resolves to a verification item, not a blocker — registration is
+  per-execution and composition-dependent names resolve through the env; a failing case keeps
+  a raw fallback. Once-per-composition semantics are *preserved*, not changed (the current
+  role-global `pun:`/`mixin:` memos and the unguarded class path are recorded; any
+  raku-conformance divergence gets its own ticket). Includes the `run_role_submethod` rider
+  (the C6d-3 leftover goes bytecode after D3-8). Slices D8-1..4 in the doc.
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.
+  **Survey + design pass done 2026-08-08 (no code landed), same doc as D6.** The role body's
+  structural difference from the class side: its non-declaration statements *escape
+  registration* into `RoleDef::deferred_body_stmts` and run per composition — so D9 is
+  sequenced after D8 by necessity, exactly as the D4 scoping pass concluded. Slices D9-1
+  (role `is_stub` + our-scope plan facts, = D7-1), D9-2 (= D2b-2 role half), D9-3 (= D7-3),
+  D9-4 (= D8 chunks), D9-5 (field drop, forced-instrument playbook).
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
   metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
   body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.
+  **Design note 2026-08-08 (in the D6/D9 doc):** D10 needs no separate mechanism — after
+  D6-4/D9-5 the walkers *are* the plan-op executors; D10 is a cleanup PR deleting residual
+  raw-`Stmt` match arms and orphaned helpers, with grep-based completion criteria (no
+  `Stmt::`-matching registration code outside token/rule routing and the `stmt_pool`-fed
+  augment walker; no runtime `from_stmt` callers outside augment/EVAL fallbacks). If it grows
+  beyond a cleanup PR, an earlier slice landed incompletely. The doc also fixes the
+  cross-box dependency order: D2b-2 → D6-1..3 (D3-8a-d and D4-1/2 parallel) → D4-3 → D7 →
+  D8 → D9 → field drops → D5 gate → D10.
 
 ### Phase E — one dispatch resolver and native handler table
 
