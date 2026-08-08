@@ -37,6 +37,13 @@ pub(super) struct RoleDeclCx<'a> {
     /// Cursor into `method_name_chunks`/`method_decls`, advanced by one on
     /// every method statement `role_body_method_decl` processes.
     pub(super) method_name_chunk_idx: usize,
+    /// Typed `does`/`hides`/`is hidden` ops for this role's own body
+    /// (ADR-0019 D7-3), read by position via `parent_op_idx`; see
+    /// `role_body_does_decl`.
+    pub(super) parent_ops: &'a [crate::opcode::RoleParentOp],
+    /// Cursor into `parent_ops`, advanced by one on every `DoesDecl`
+    /// statement `role_body_does_decl` processes.
+    pub(super) parent_op_idx: usize,
 }
 
 impl RoleDeclCx<'_> {
@@ -146,7 +153,7 @@ impl Interpreter {
                     self.role_body_has_decl(cx, stmt)?;
                 }
                 Stmt::DoesDecl { .. } => {
-                    self.role_body_does_decl(cx, stmt)?;
+                    self.role_body_does_decl(cx)?;
                 }
                 Stmt::MethodDecl { .. } => {
                     self.role_body_method_decl(cx)?;

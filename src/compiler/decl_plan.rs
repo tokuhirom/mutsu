@@ -264,8 +264,62 @@ impl Compiler {
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_role_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
+        let parent_ops = self.compile_role_parent_ops(body);
         self.code
-            .add_role_decl_plan(stmt, trait_args, attr_decls, method_name_chunks)
+            .add_role_decl_plan(stmt, trait_args, attr_decls, method_name_chunks, parent_ops)
+    }
+
+    /// Precompile each `does`/`hides`/`is hidden` clause of a role's own body
+    /// into a typed [`crate::opcode::RoleParentOp`] (ADR-0019 D7-3), one per
+    /// `DoesDecl` statement in source order after the same `SyntheticBlock`
+    /// flatten `compile_role_attr_decls` uses — `walk_role_body` flattens
+    /// identically, so the runtime cursor and this vec stay aligned. The
+    /// parser folds `does`/`is Parent`/`hides` clauses from the role header
+    /// (and the `is hidden` trait) into synthetic `DoesDecl` statements
+    /// prepended to the body; a `hides Parent` clause contributes two
+    /// statements (the plain parent, then the `__mutsu_role_hides__` marker),
+    /// which this precompute turns into two typed ops rather than collapsing
+    /// them, preserving the walk's exact statement-by-statement shape.
+    fn compile_role_parent_ops(&self, body: &[Stmt]) -> Vec<crate::opcode::RoleParentOp> {
+        body.iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .filter_map(|stmt| match stmt {
+                Stmt::DoesDecl { name, args } => {
+                    let name_str = name.resolve();
+                    if name_str == "__mutsu_role_hidden__" {
+                        return Some(crate::opcode::RoleParentOp {
+                            name: Symbol::intern(""),
+                            hides: false,
+                            hidden: true,
+                            args: None,
+                        });
+                    }
+                    if let Some(hidden_name) = name_str.strip_prefix("__mutsu_role_hides__") {
+                        return Some(crate::opcode::RoleParentOp {
+                            name: Symbol::intern(hidden_name),
+                            hides: true,
+                            hidden: false,
+                            args: None,
+                        });
+                    }
+                    Some(crate::opcode::RoleParentOp {
+                        name: *name,
+                        hides: false,
+                        hidden: false,
+                        args: args.as_ref().map(|exprs| {
+                            exprs
+                                .iter()
+                                .map(|e| self.compile_decl_trait_arg(e))
+                                .collect()
+                        }),
+                    })
+                }
+                _ => None,
+            })
+            .collect()
     }
 
     /// Precompile a full `CompiledAttrDecl` for each attribute a role body
