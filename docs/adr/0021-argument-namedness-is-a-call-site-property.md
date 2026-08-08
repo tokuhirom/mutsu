@@ -365,7 +365,7 @@ Each phase is independently shippable and lands with its own tests; CI's
 
 ## Implementation status
 
-- [ ] P1 method-call boundary parity
+- [x] P1 method-call boundary parity
 - [ ] P2 slip/capture/forwarding rules
 - [ ] P3a QuantHash consumer prep
 - [ ] P3 minting-default inversion

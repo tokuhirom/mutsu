@@ -176,6 +176,18 @@ impl Compiler {
                 }
             })
         });
+        // ADR-0021 (argument named-ness is a call-site property): named-ness
+        // is decided by call-site syntax, not by what flavour of Pair the
+        // argument expression happens to evaluate to. The function-call path
+        // (`compile_call_arg_with_escape`, below) already normalizes every
+        // non-syntactically-named argument at the call boundary; the method
+        // path lacked this, so a Pair-valued variable/array-element/return
+        // value leaked its named flavour straight into method dispatch
+        // (`Pair.new($k,$v)` misbinding as a named arg, etc). Mirror the
+        // function path here so both call kinds erase the flavour identically.
+        if !Self::is_named_arg_expr(arg) {
+            self.code.emit(OpCode::ContainerizePair);
+        }
     }
 
     /// Check if an expression produces an array value that needs decontainerization
@@ -197,7 +209,7 @@ impl Compiler {
     /// Compile a function-call positional argument.
     /// Variable-like args are wrapped with source-name metadata so sigilless
     /// parameters (`\x`) can bind as writable aliases.
-    fn is_named_arg_expr(expr: &Expr) -> bool {
+    pub(super) fn is_named_arg_expr(expr: &Expr) -> bool {
         match expr {
             Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow => true,
             Expr::Literal(lit) if matches!(lit.view(), crate::value::ValueView::Pair(..)) => true,
