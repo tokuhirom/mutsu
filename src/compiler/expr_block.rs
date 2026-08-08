@@ -797,6 +797,13 @@ impl Compiler {
             let arg_sources_idx = self.add_arg_sources_constant(args);
             for arg in args {
                 self.compile_expr(arg);
+                // ADR-0021: `&code(args)` is a sub call, same call-site
+                // named-ness rule as a regular function call. Erase any
+                // named flavour the argument value happens to carry unless
+                // it was written as a named arg at this call site.
+                if !Self::is_named_arg_expr(arg) {
+                    self.code.emit(OpCode::ContainerizePair);
+                }
             }
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::CallOnCodeVar {
@@ -809,6 +816,9 @@ impl Compiler {
             let arg_sources_idx = self.add_arg_sources_constant(args);
             for arg in args {
                 self.compile_expr(arg);
+                if !Self::is_named_arg_expr(arg) {
+                    self.code.emit(OpCode::ContainerizePair);
+                }
             }
             self.code.emit(OpCode::CallOnValue {
                 arity: args.len() as u32,
