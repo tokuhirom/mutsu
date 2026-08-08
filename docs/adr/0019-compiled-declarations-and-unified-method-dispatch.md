@@ -115,8 +115,8 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 29/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, and D6-1 landed 2026-08-08). Phase C is fully checked; the open box is
+**Current progress: 30/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+landed, 2026-08-07; D2b-2, D2c-4, D6-1, and D7-1/D9-1 landed 2026-08-08). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -989,6 +989,15 @@ walkers wholesale is not possible before then.
   required-method detection, and pun materialization read the *registry*, not the AST, and
   stay runtime — the declaration's own structure becomes plan data; the composition algebra
   over it does not move. Slices D7-1..4 in the doc.
+  **D7-1 (= D9-1) landed 2026-08-08**: `CompiledRoleDeclPlan` gained `is_stub: bool` and
+  `our_scope_violation: Option<&'static str>`, computed at plan lowering by new
+  `role_body_is_stub`/`role_body_our_scope_violation` free functions mirroring
+  `Interpreter::role_body_is_stub`/`check_role_body_our_scoped_decls`'s scans verbatim
+  (including the role side's looser `.any()` stub check, unlike the class side's
+  single-statement `is_stub_routine_body` — an existing divergence, not changed here).
+  `register_role_decl` now takes both precomputed facts as parameters instead of re-walking
+  the raw body on every registration; the two now-dead `Interpreter` methods are deleted (no
+  other callers). D7-2..4 remain open.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)
@@ -1013,7 +1022,8 @@ walkers wholesale is not possible before then.
   registration* into `RoleDef::deferred_body_stmts` and run per composition — so D9 is
   sequenced after D8 by necessity, exactly as the D4 scoping pass concluded. Slices D9-1
   (role `is_stub` + our-scope plan facts, = D7-1), D9-2 (= D2b-2 role half), D9-3 (= D7-3),
-  D9-4 (= D8 chunks), D9-5 (field drop, forced-instrument playbook).
+  D9-4 (= D8 chunks), D9-5 (field drop, forced-instrument playbook). **D9-1 landed
+  2026-08-08 — see D7-1 above (same slice).**
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
   metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
   body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.

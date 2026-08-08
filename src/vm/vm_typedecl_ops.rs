@@ -611,6 +611,8 @@ impl Interpreter {
             attr_decls,
             method_name_chunks,
             method_decls,
+            is_stub,
+            our_scope_violation,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -643,6 +645,8 @@ impl Interpreter {
                     attr_decls,
                     method_name_chunks,
                     method_decls,
+                    *is_stub,
+                    *our_scope_violation,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible
