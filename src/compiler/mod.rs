@@ -234,6 +234,53 @@ mod declaration_plan_tests {
         assert_eq!(names, vec!["x", "y"]);
     }
 
+    /// ADR-0019 D4-2: a bracketed `is`/`does` parent whose bracket content
+    /// parsed as a clean expression list (D4-1) is precompiled into a
+    /// declaration-trait-arg chunk per argument, keyed by the same
+    /// concatenated parent string `parents`/`does_parents` use. A literal
+    /// argument stays a `Literal` with no chunk; a non-literal argument
+    /// (here, a variable reference) compiles to a `Compiled` chunk.
+    #[test]
+    fn class_declarations_precompute_parent_arg_chunks() {
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("class A is Bar[Int, $x] does Baz[42] { }")
+                .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+        let mut keys: Vec<_> = plan_a
+            .parent_arg_chunks
+            .iter()
+            .map(|(key, _)| key.as_str())
+            .collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["Bar[Int, $x]", "Baz[42]"]);
+
+        let (_, bar_args) = plan_a
+            .parent_arg_chunks
+            .iter()
+            .find(|(key, _)| key == "Bar[Int, $x]")
+            .expect("Bar[Int, $x] chunk entry");
+        assert_eq!(bar_args.len(), 2);
+        assert!(matches!(
+            bar_args[1],
+            crate::opcode::DeclTraitArg::Compiled(_)
+        ));
+
+        let (_, baz_args) = plan_a
+            .parent_arg_chunks
+            .iter()
+            .find(|(key, _)| key == "Baz[42]")
+            .expect("Baz[42] chunk entry");
+        assert_eq!(baz_args.len(), 1);
+        let literal = baz_args[0].literal().expect("Baz[42] arg is a literal");
+        assert!(matches!(literal.view(), crate::value::ValueView::Int(42)));
+    }
+
     /// ADR-0019 D2a: a class declaration's own attribute names — including
     /// ones nested inside a body `sub`, and excluding class-level `our`/`my`
     /// attributes — are precomputed at plan lowering, so `run_class_body`

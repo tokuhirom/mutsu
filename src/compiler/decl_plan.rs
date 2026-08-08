@@ -109,6 +109,7 @@ impl Compiler {
             name_expr,
             custom_traits,
             body,
+            parent_args,
             ..
         } = stmt
         else {
@@ -118,8 +119,36 @@ impl Compiler {
         let trait_args = self.compile_decl_trait_args(custom_traits);
         let attr_decls = self.compile_class_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
-        self.code
-            .add_class_decl_plan(stmt, name_chunk, trait_args, attr_decls, method_name_chunks)
+        let parent_arg_chunks = self.compile_parent_arg_chunks(parent_args);
+        self.code.add_class_decl_plan(
+            stmt,
+            name_chunk,
+            trait_args,
+            attr_decls,
+            method_name_chunks,
+            parent_arg_chunks,
+        )
+    }
+
+    /// Lower each parent/role bracket argument list to declaration-trait-arg
+    /// chunks (ADR-0019 D4-2), keyed by the same concatenated parent string
+    /// `parents`/`does_parents`/`hidden_parents` already use as a registry
+    /// lookup key. No consumer reads this yet (D4-3).
+    fn compile_parent_arg_chunks(
+        &self,
+        parent_args: &[(String, Vec<Expr>)],
+    ) -> Vec<(String, Vec<crate::opcode::DeclTraitArg>)> {
+        parent_args
+            .iter()
+            .map(|(key, args)| {
+                (
+                    key.clone(),
+                    args.iter()
+                        .map(|e| self.compile_decl_trait_arg(e))
+                        .collect(),
+                )
+            })
+            .collect()
     }
 
     /// Precompile a full `CompiledAttrDecl` for each attribute a class body
