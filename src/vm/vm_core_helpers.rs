@@ -120,6 +120,23 @@ impl Interpreter {
         // (block-scope depth + let/temp restore + DESTROY pass). All current
         // callers pass a single `Stmt::Expr` (registration-time default / enum /
         // role-arg evaluation). Any other shape falls back to the interpreter.
+        // The block is compiled for its VALUE, which makes its last expression a
+        // `SetTopic` — but this helper runs at *declaration* time, inside whatever
+        // frame happens to be constructing, so that topic write escaped to the
+        // caller. `class S { has Bool $.b }; $_ = 'x'; S.new` left `$_` holding
+        // `Bool`, because seeding the unset typed attribute evaluates its type
+        // constraint through here. Cro hit it in a loop body — `for $resp.cookies
+        // { $state = CookieState.new(...); self!get-cookie-lifetime($_, $state) }`
+        // passed a `Bool` where a `Cro::HTTP::Cookie` was expected.
+        let saved_topic = self.env().get("_").cloned();
+        let restore_topic = |zelf: &mut Self| match &saved_topic {
+            Some(v) => {
+                zelf.env_mut().insert("_".to_string(), v.clone());
+            }
+            None => {
+                zelf.env_mut().remove("_");
+            }
+        };
         if body.iter().all(|s| matches!(s, Stmt::Expr(_))) {
             let (code, compiled_fns) = self.compile_block_value(body);
             let let_mark = self.let_saves_len();
@@ -127,10 +144,13 @@ impl Interpreter {
             let result = self.run_nested(&code, &compiled_fns);
             self.pop_block_scope_depth();
             self.restore_let_saves(let_mark);
+            restore_topic(self);
             self.loan_env_for(|i| i.run_pending_instance_destroys())?;
             return result.map(|v| v.unwrap_or(Value::NIL));
         }
-        self.loan_env_for(|i| i.eval_block_value(body))
+        let result = self.loan_env_for(|i| i.eval_block_value(body));
+        restore_topic(self);
+        result
     }
 
     /// Run a declaration-time expression chunk (ADR-0019 C5).
