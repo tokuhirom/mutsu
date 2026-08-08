@@ -1,5 +1,6 @@
 use super::methods_signature_errors::{
-    make_method_not_found_error, make_private_permission_error, make_private_unqualified_error,
+    make_method_not_found_error, make_multi_no_match_error, make_private_permission_error,
+    make_private_unqualified_error,
 };
 use super::*;
 use crate::symbol::Symbol;
@@ -113,7 +114,7 @@ impl Interpreter {
                 // Split at the LAST `::` — the owner class may itself be a nested
                 // name (`$c!Jar::Cookie::secret` is owner `Jar::Cookie`, method
                 // `secret`, NOT owner `Jar`, method `Cookie::secret`).
-                let (pm_name, resolved) =
+                let (pm_name, owner_only, resolved) =
                     if let Some((owner_class, pm_name)) = private_rest.rsplit_once("::") {
                         let caller_allowed = caller_class.as_deref() == Some(owner_class)
                             || self.registry().class_trusts.get(owner_class).is_some_and(
@@ -132,6 +133,7 @@ impl Interpreter {
                         }
                         (
                             pm_name,
+                            Some(owner_class),
                             self.resolve_private_method_with_owner(
                                 &class_name.resolve(),
                                 owner_class,
@@ -142,6 +144,7 @@ impl Interpreter {
                     } else {
                         (
                             private_rest,
+                            None,
                             self.resolve_private_method_any_owner(
                                 &class_name.resolve(),
                                 private_rest,
@@ -149,6 +152,30 @@ impl Interpreter {
                             ),
                         )
                     };
+                // Nothing matched by signature. That is not the same as "no such
+                // private method": the class may declare exactly this method with
+                // parameters these arguments fail to bind, and raku reports the
+                // binding failure (`Type check failed in binding to parameter
+                // '$n'`, `Too many positionals passed`) — as mutsu's own PUBLIC
+                // dispatch already does. Re-resolve by name so the call runs and
+                // the binding machinery produces the real error; several
+                // candidates are a genuine X::Multi::NoMatch. Only when there is
+                // no candidate at all does the not-found error below stand.
+                let resolved = match resolved {
+                    Some(r) => Some(r),
+                    None => {
+                        let mut candidates = self.private_method_candidates_by_name(
+                            &class_name.resolve(),
+                            owner_only,
+                            pm_name,
+                        );
+                        match candidates.len() {
+                            0 => None,
+                            1 => Some(candidates.remove(0)),
+                            _ => return Err(make_multi_no_match_error(pm_name)),
+                        }
+                    }
+                };
                 if let Some((resolved_owner, method_def)) = resolved {
                     let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
                         || self
