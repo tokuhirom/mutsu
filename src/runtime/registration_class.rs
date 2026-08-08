@@ -225,6 +225,18 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// registration time. Empty for registration paths with no compiled plan
     /// available (role-pun/mixin synthesis, `augment class`).
     pub(crate) declared_static_names: &'a [Symbol],
+    /// Precompiled declaration-trait-arg chunks for each `is`/`does`/`hides`
+    /// parent's bracket arguments (ADR-0019 D4-2/D4-3), position-aligned
+    /// with the `parents` argument to `register_class_decl` (looked up by
+    /// the plan's original parent string before any lexical/sibling
+    /// remapping, then carried through the same filter that can drop a
+    /// parent — see the call site). `None` at a position means either the
+    /// parent had no bracket arguments or its bracket content did not parse
+    /// as a clean expression list (D4-1) — `compose_class_parent_roles`
+    /// falls back to re-parsing the concatenated parent string in both
+    /// cases. Empty for registration paths with no compiled plan available
+    /// (role-pun/mixin synthesis, `augment class`).
+    pub(crate) parent_pre_args: &'a [Option<&'a [crate::opcode::DeclTraitArg]>],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

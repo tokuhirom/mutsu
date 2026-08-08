@@ -77,15 +77,31 @@ impl Interpreter {
         cx: &mut RoleCompositionCx<'_>,
         parents: &[String],
         does_parents: &[String],
+        parent_pre_args: &[Option<&[crate::opcode::DeclTraitArg]>],
     ) -> Result<(), RuntimeError> {
         const BUILTIN_TYPES: &[&str] = BUILTIN_PARENT_TYPES;
-        for parent in parents {
+        for (i, parent) in parents.iter().enumerate() {
             let resolved_parent_name = self.resolve_declared_type_name(parent);
             let base_role_name = resolved_parent_name
                 .split_once('[')
                 .map(|(b, _)| b)
                 .unwrap_or(resolved_parent_name.as_str());
-            if let Some(resolved) = self.resolve_role_candidate(&resolved_parent_name)? {
+            // Evaluate this parent's precompiled bracket-argument chunks
+            // (ADR-0019 D4-3), if any, instead of leaving candidate
+            // resolution to re-parse the concatenated parent string.
+            let pre_args = match parent_pre_args.get(i).copied().flatten() {
+                Some(chunks) => {
+                    let mut values = Vec::with_capacity(chunks.len());
+                    for chunk in chunks {
+                        values.push(self.eval_decl_trait_arg(chunk)?);
+                    }
+                    Some(values)
+                }
+                None => None,
+            };
+            if let Some(resolved) =
+                self.resolve_role_candidate_with_args(&resolved_parent_name, pre_args.as_deref())?
+            {
                 // Check if this role was specified via `is` (punning) vs `does` (composition)
                 let is_punned = !does_parents.contains(parent);
                 self.compose_role_into_class(

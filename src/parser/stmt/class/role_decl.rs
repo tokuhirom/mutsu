@@ -310,7 +310,7 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, _) = ws(r)?;
             let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
             let (r, _) = ws(r)?;
-            let args = super::class_decl::parse_bracket_arg_exprs(&bracket_suffix);
+            let args = super::class_decl::parse_bracket_arg_exprs(bracket_suffix);
             parent_roles.push((format!("{}{}", role_name, bracket_suffix), args));
             rest = r;
             continue;

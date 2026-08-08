@@ -411,6 +411,40 @@ fn parse_class_decl_empty_bracket_captures_zero_args() {
     assert!(parent_args[0].1.is_empty());
 }
 
+/// Regression test (ADR-0019 D4-3): `parse_optional_bracket_suffix` used to
+/// return an owned `String` copy of the bracket content. Two sibling `does`
+/// clauses on one class header each allocate their own short-lived
+/// `bracket_suffix` string; when the first is freed at the end of its loop
+/// iteration, the second's allocation can land at the exact same address —
+/// and the pointer-keyed expression parse memo (`(ptr, len)`, no content
+/// check) then returns the FIRST clause's cached `Expr` for the SECOND
+/// clause's genuinely different bracket content. `parse_optional_bracket_suffix`
+/// now returns a slice of the persistent source instead, which the memo can
+/// never alias. Runs the body twice (`MUTSU_PARSE_MEMO` defaults on) so a
+/// regression reproduces deterministically rather than depending on
+/// allocator behavior across a single run.
+#[test]
+fn parse_class_decl_two_does_clauses_capture_distinct_bracket_exprs() {
+    for _ in 0..2 {
+        let (rest, stmts) = program("class Foo does R[Int] does R[Str] { }").unwrap();
+        assert_eq!(rest, "");
+        let Stmt::ClassDecl { parent_args, .. } = &stmts[0] else {
+            panic!("expected ClassDecl");
+        };
+        assert_eq!(parent_args.len(), 2);
+        assert_eq!(parent_args[0].0, "R[Int]");
+        assert_eq!(parent_args[1].0, "R[Str]");
+        assert!(matches!(
+            &parent_args[0].1[..],
+            [Expr::BareWord(name)] if name == "Int"
+        ));
+        assert!(matches!(
+            &parent_args[1].1[..],
+            [Expr::BareWord(name)] if name == "Str"
+        ));
+    }
+}
+
 #[test]
 fn parse_class_decl_with_is_rw_trait() {
     let (rest, stmts) = program("class Foo is rw { has $.x }").unwrap();

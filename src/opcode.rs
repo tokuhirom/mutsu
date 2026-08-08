@@ -2751,9 +2751,8 @@ pub(crate) struct CompiledClassDeclPlan {
     /// by the same concatenated parent string that `parents`/`does_parents`/
     /// `hidden_parents` use as a registry lookup key. Only entries whose
     /// bracket content parsed as a clean expression list (D4-1) appear here;
-    /// no consumer reads this yet outside tests (D4-3 wires it into
-    /// role-candidate resolution).
-    #[allow(dead_code)]
+    /// Evaluated at composition time (ADR-0019 D4-3) instead of
+    /// `resolve_role_candidate` re-parsing the concatenated parent string.
     pub(crate) parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
 }
 

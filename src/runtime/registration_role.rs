@@ -135,6 +135,21 @@ impl Interpreter {
         &mut self,
         parent: &str,
     ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
+        self.resolve_role_candidate_with_args(parent, None)
+    }
+
+    /// [`Self::resolve_role_candidate`], but with the bracket arguments
+    /// already evaluated (ADR-0019 D4-3) instead of re-parsing them out of
+    /// the concatenated `parent` string. `pre_args` is `None` for every
+    /// call site that has no precompiled chunk for this parent — a
+    /// computed/dynamic role application (`resolve_role_candidate`'s
+    /// existing callers), or a bracket whose content did not parse as a
+    /// clean expression list (D4-1) — and behaves exactly as before.
+    pub(crate) fn resolve_role_candidate_with_args(
+        &mut self,
+        parent: &str,
+        pre_args: Option<&[Value]>,
+    ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
         let parent = self.resolve_declared_type_name(parent);
         if let Some(bracket_start) = parent.find('[') {
             let args_str = &parent[bracket_start + 1..parent.len() - 1];
@@ -164,13 +179,17 @@ impl Interpreter {
             return Ok(None);
         };
 
-        let arg_exprs = if let Some(bracket_start) = parent.find('[') {
-            let args_str = &parent[bracket_start + 1..parent.len() - 1];
-            parse_role_type_args(args_str)
+        let arg_values = if let Some(pre_args) = pre_args {
+            pre_args.to_vec()
         } else {
-            Vec::new()
+            let arg_exprs = if let Some(bracket_start) = parent.find('[') {
+                let args_str = &parent[bracket_start + 1..parent.len() - 1];
+                parse_role_type_args(args_str)
+            } else {
+                Vec::new()
+            };
+            self.eval_role_arg_values(&arg_exprs)?
         };
-        let arg_values = self.eval_role_arg_values(&arg_exprs)?;
 
         let mut matches: Vec<(RoleCandidateDef, i32, usize)> = candidates
             .into_iter()

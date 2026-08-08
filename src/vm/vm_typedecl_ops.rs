@@ -142,7 +142,7 @@ impl Interpreter {
             method_name_chunks,
             method_decls,
             declared_static_names,
-            parent_arg_chunks: _,
+            parent_arg_chunks,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -211,16 +211,32 @@ impl Interpreter {
             // name (see `storage_name` above). Resolve each parent through the
             // current lexical env so `is C0` binds to the C0 visible in *this*
             // scope, not a same-named class from an unrelated earlier scope.
-            let mapped_parents: Vec<String> = parents
+            // Look up each parent's precompiled bracket-argument chunks
+            // (ADR-0019 D4-3) by its ORIGINAL, pre-remap plan string — the
+            // same key `parent_arg_chunks` was built from — before any of
+            // the lexical/sibling remapping below can change it. Zipped
+            // alongside the remap chain (rather than looked up again after)
+            // so the same filter that can drop the auto-added `Grammar`
+            // self-parent keeps both lists index-aligned.
+            let (mapped_parents, parent_pre_args): (
+                Vec<String>,
+                Vec<Option<&[crate::opcode::DeclTraitArg]>>,
+            ) = parents
                 .iter()
-                .map(|p| self.lexical_env_remap_name(p))
+                .map(|p| {
+                    let pre_args = parent_arg_chunks
+                        .iter()
+                        .find(|(key, _)| key == p)
+                        .map(|(_, args)| args.as_slice());
+                    (self.lexical_env_remap_name(p), pre_args)
+                })
                 // Qualify a bare parent that names a sibling class in the current
                 // package but collides with a built-in namespace (`class X::Decode
                 // is X` inside `module M`, where `X` is both `M::X` and the built-in
                 // `X::` exception namespace). Must run here, where `current_package`
                 // is the enclosing module — the child class name reaches
                 // `register_class_decl` without its module prefix.
-                .map(|p| self.qualify_sibling_parent_name(&p))
+                .map(|(p, pre_args)| (self.qualify_sibling_parent_name(&p), pre_args))
                 // Drop the auto-added `Grammar` default parent from a genuine
                 // top-level `grammar Grammar` (qualified name exactly `Grammar`,
                 // which would otherwise list itself as its own parent and loop the
@@ -229,8 +245,8 @@ impl Interpreter {
                 // itself and is kept — that is how the parser can unconditionally
                 // add the `Grammar` default parent. An EXPLICIT `class Foo is Foo`
                 // is left intact so it still raises the self-inheritance error.
-                .filter(|p| !(p == "Grammar" && qualified_name == "Grammar"))
-                .collect();
+                .filter(|(p, _)| !(p == "Grammar" && qualified_name == "Grammar"))
+                .unzip();
             let mapped_hidden_parents: Vec<String> = hidden_parents
                 .iter()
                 .map(|p| self.lexical_env_remap_name(p))
@@ -259,6 +275,7 @@ impl Interpreter {
                         method_name_chunks,
                         method_decls,
                         declared_static_names,
+                        parent_pre_args: &parent_pre_args,
                     },
                     body,
                 )
