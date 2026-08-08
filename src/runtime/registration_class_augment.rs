@@ -1,6 +1,7 @@
-use super::registration_class::apply_resolved_handles;
+use super::registration_class::{apply_resolved_handles, make_delegation_method};
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
+use crate::ast::HandleSpec;
 use crate::symbol::Symbol;
 
 impl Interpreter {
@@ -372,6 +373,44 @@ impl Interpreter {
                         );
                         self.fn_resolve_gen += 1;
                         self.mark_my_scoped_package_item(qualified_name);
+                    }
+                    // ADR-0019 D3-5 follow-up: `handles` on a method
+                    // synthesizes forwarder methods, matching the
+                    // class/role walkers (confirmed against `raku`:
+                    // `augment class Foo { method inner() handles 'uc'
+                    // {...} }` makes `Foo.new.uc` dispatch through
+                    // `inner`).
+                    if !decl.handles.is_empty()
+                        && let Some(class_def) = self.registry_mut().classes.get_mut(name)
+                    {
+                        let source_attr_marker = format!("&{}", resolved_method_name);
+                        for spec in &decl.handles {
+                            match spec {
+                                HandleSpec::Name(target) => {
+                                    class_def
+                                        .methods
+                                        .entry(target.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Rename { exposed, target } => {
+                                    class_def
+                                        .methods
+                                        .entry(exposed.clone())
+                                        .or_default()
+                                        .push(make_delegation_method(&source_attr_marker, target));
+                                }
+                                HandleSpec::Wildcard => {
+                                    class_def.wildcard_handles.push(source_attr_marker.clone());
+                                }
+                                HandleSpec::Regex(pattern) => {
+                                    class_def
+                                        .wildcard_handles
+                                        .push(format!("{}:regex:{}", source_attr_marker, pattern));
+                                }
+                                HandleSpec::Type(_) => {}
+                            }
+                        }
                     }
                 }
                 Stmt::HasDecl { .. } => {

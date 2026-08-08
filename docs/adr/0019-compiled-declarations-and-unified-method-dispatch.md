@@ -670,6 +670,16 @@ walkers wholesale is not possible before then.
   export`/`export_tags`, and BUILD/TWEAK `:$!attr` validation remain absent from `augment_class`
   (present at the class walker, `handles` also at the role walker) — each is a separate,
   independently-scoped gap, not reconciled by this slice.
+  **`handles` forwarder synthesis landed as a same-day follow-up (2026-08-08)**: `augment_class`'s
+  `MethodDecl` arm now synthesizes `Name`/`Rename` forwarder methods the same way the class/role
+  walkers do (`augment class Foo { method inner() handles 'uc' {...} }` previously left
+  `Foo.new.uc` dispatching to the built-in `Cool` coercion instead of forwarding to `inner`).
+  `Wildcard`/`Regex` specs are wired through the same `class_def.wildcard_handles` list the other
+  two walkers populate, but a wildcard handle losing to a same-named built-in `Cool`/`Any` method
+  turned out to be a pre-existing bug shared by *all three* walkers (reproduces with a plain
+  `class`-declared `handles *`, not just `augment`), so it is out of D3's walker-drift scope and is
+  tracked separately as `todo/tickets/wildcard-handles-loses-to-builtin-cool-methods.md`. Custom
+  traits, `is export`, and BUILD/TWEAK validation remain open `augment_class` gaps.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
