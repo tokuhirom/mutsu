@@ -2,7 +2,6 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
-use crate::value::Value;
 use crate::value::ValueView;
 
 use super::helpers::literal_str;

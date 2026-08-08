@@ -1,7 +1,6 @@
 use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::PError;
-use crate::value::Value;
 
 use super::helpers::literal_str;
 pub(crate) fn parse_quotewords_items(

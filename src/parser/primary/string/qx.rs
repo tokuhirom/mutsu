@@ -2,7 +2,6 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
-use crate::value::Value;
 
 use super::helpers::literal_str;
 /// Parse qx{...}, qqx{...} forms.

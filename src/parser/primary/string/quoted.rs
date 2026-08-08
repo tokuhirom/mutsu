@@ -3,7 +3,6 @@ use crate::ast::Expr;
 use crate::parser::expr::expression;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::token_kind::{lookup_emoji_sequence, lookup_unicode_char_by_name};
-use crate::value::Value;
 
 use super::helpers::literal_str;
 pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {

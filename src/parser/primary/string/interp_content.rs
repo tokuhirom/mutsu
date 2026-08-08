@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
 use crate::parser::parse_result::PError;
-use crate::value::{Value, ValueView};
+use crate::value::ValueView;
 
 use super::helpers::literal_str;
 /// Assemble interpolation parts into a final expression.

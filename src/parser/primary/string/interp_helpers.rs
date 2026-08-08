@@ -1,6 +1,5 @@
 use crate::ast::Expr;
 use crate::symbol::Symbol;
-use crate::value::Value;
 
 use super::helpers::literal_str;
 /// Try to parse a postcircumfix call on an interpolated variable: "$var()" or "$var(args)".
