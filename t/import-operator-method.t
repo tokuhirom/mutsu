@@ -4,7 +4,7 @@ use Test;
 # operator method that `import ClassName` exposes as a sub form: `~$obj` and
 # `$obj as $x` then dispatch to the class's operator overload.
 
-plan 8;
+plan 9;
 
 {
     class OtherClass {
@@ -34,4 +34,17 @@ plan 8;
     # The overload only applies to the declaring class; builtins still work.
     is ~5, "5", "builtin prefix:<~> still works for other types";
     is +"7", 7, "builtin prefix:<+> still works for other types";
+}
+
+# ADR-0019 D3-6 measurement: a plain (non-operator) method name's `is export`
+# was silently a no-op -- `register_exported_var` recorded the export but
+# never built a callable sub form. Fixed by generalizing the operator-method
+# export machinery above to any method name (it was already name-agnostic).
+{
+    class PlainExport {
+        method greet() is export { "hi" }
+    }
+    import PlainExport;
+    is greet(PlainExport.new), "hi",
+        "is export on a plain-named method registers an importable sub";
 }

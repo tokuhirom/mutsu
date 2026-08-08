@@ -192,37 +192,27 @@ impl Interpreter {
                 entry.push(def);
             }
         }
-        // A method declared `is export` is recorded as an export of
-        // the enclosing class so that `import ClassName` succeeds
-        // (and exposes the method's sub-form name). This is mainly
-        // used by operator methods such as `method infix:<as> is
-        // export`, whose sub-form is importable.
+        // A method declared `is export` is importable as a *sub* whose
+        // invocant becomes the first (typed) positional and whose body
+        // dispatches back to the method — `import ClassName` then makes
+        // both an operator method (`method infix:<as> is export`, so
+        // `$obj as $x` resolves to it) and a plain-named one (`method
+        // greet() is export`, so `greet($obj)` resolves to it) importable.
+        // `register_exported_operator_method_sub`'s forwarding body is
+        // name-agnostic despite the name — it dispatches on whatever
+        // `resolved_method_name` is.
         if decl.is_export && !self.suppress_exports {
             let tags = if decl.export_tags.is_empty() {
                 vec!["DEFAULT".to_string()]
             } else {
                 decl.export_tags.clone()
             };
-            if Self::is_operator_categorical_name(&resolved_method_name) {
-                // An operator method (`method prefix:<~> is export`,
-                // `method infix:<as> is export`, ...) is importable as
-                // a *sub* whose invocant becomes the first (typed)
-                // positional and whose body dispatches back to the
-                // method. `import ClassName` then makes `~$obj` /
-                // `$obj as $x` resolve to it.
-                self.register_exported_operator_method_sub(
-                    cx.name,
-                    &resolved_method_name,
-                    &effective_param_defs,
-                    tags,
-                );
-            } else {
-                self.register_exported_var(
-                    cx.name.to_string(),
-                    format!("&{}", resolved_method_name),
-                    tags,
-                );
-            }
+            self.register_exported_operator_method_sub(
+                cx.name,
+                &resolved_method_name,
+                &effective_param_defs,
+                tags,
+            );
         }
         // An `is native(...)` method routes calls through NativeCall
         // instead of its `{ * }` body, exactly as an `is native` sub
