@@ -1,0 +1,13 @@
+{
+    "perl" : "6.c",
+    "name" : "Digest::HMAC",
+    "version" : "1.0.7",
+    "auth" : "zef:jjmerelo",
+    "authors": ["Andrew Egeler", "JJ Merelo"],
+    "description" : "Generic HMAC implementation",
+    "test-depends" : [ "Digest:ver<1+>" ],
+    "provides" : {
+        "Digest::HMAC" : "lib/Digest/HMAC.rakumod"
+    },
+    "source-url" : "git://github.com/JJ/Raku-Digest-HMAC.git"
+}

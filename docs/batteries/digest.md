@@ -40,7 +40,7 @@ Reverse-dependency counts (distinct dists naming it in `depends`):
 | Candidate | Rdeps | Deps | Native? | License | Verdict |
 | --- | --- | --- | --- | --- | --- |
 | **`Digest` (zef:grondilu)** | **26** | none | pure Raku | Artistic-2.0 | **chosen** |
-| `Digest::HMAC` (zef:jjmerelo) | 22 | `Digest` | pure Raku | *none stated* | see below |
+| `Digest::HMAC` (zef:jjmerelo) | 22 | none (test-only: `Digest`) | pure Raku | MIT | loses *this* slot, but bundled in its own — see below |
 | `Digest::SHA` | 15 | — | — | — | **does not exist** in the index; its 15 dependents are unresolvable |
 | `Digest::SHA1::Native` (zef:bduggan) | 10 | `LibraryMake` | C, built at install | Artistic-2.0 | rejected — needs a compiler |
 | `Digest::SHA256::Native` (zef:bduggan) | 10 | `LibraryMake` | C, built at install | Artistic-2.0 | rejected — needs a compiler |
@@ -68,11 +68,24 @@ Why each loser lost, in the terms of BATTERIES.md §2:
   way to compute digest, consider using a nativecall binding to the OpenSSL
   library instead"), which is an argument about speed, not about which one
   belongs in a zero-configuration bundle.
-- **`Digest::HMAC` (jjmerelo)** is a 23-line wrapper *on top of* this dist, and
-  its own `HMAC` module already provides `hmac`. It states no license anywhere,
-  which under BATTERIES.md §4 is a hard gate for bundling. Nothing is lost:
-  code written against `Digest::HMAC` runs after one `mzef install`, and its
-  dependency — this dist — is then already present.
+- **`Digest::HMAC` (jjmerelo)** is a 23-line wrapper that loses *this* slot: it
+  supplies no hash function of its own — `hmac($key, $msg, &hash)` takes the
+  digest as a callback — so it cannot fill a message-digest slot, and this
+  dist's own `HMAC` module already provides an `hmac`.
+
+  **It is bundled too, since 2026-08-08** — see
+  [digest-hmac.md](digest-hmac.md). It is a hard dependency of `JSON::JWT`, and
+  therefore of Cro's WebToken auth, which could not even *load* without it. The
+  two batteries are complementary, not alternatives: this dist is the hash
+  functions, `Digest::HMAC` is the RFC 2104 construction over any of them (and
+  the name 22 ecosystem dists actually `depends` on).
+
+  **Correction to this survey:** the original entry rejected it for stating "no
+  license anywhere". That was wrong — upstream ships an MIT `LICENSE`
+  (`Copyright (c) 2014 Andrew Egeler`); only its `META6.json` omits a `license`
+  key, which is what the index-based survey saw. BATTERIES.md §4 requires the
+  license to be permissive, preserved and recorded, not declared in the META, so
+  the gate it was said to fail never applied.
 - **`Digest::MD5` (cosimo)** is MD5-only and states no license.
 
 **Proven behaviour on mutsu.** This is the criterion that took the work: the

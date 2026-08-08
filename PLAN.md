@@ -44,7 +44,7 @@ mutsu's unique position. Four components:
 
 ## 1. 🔋 Batteries — bundled libraries and distribution (main effort)
 
-22 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
+23 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
 gate runs their upstream suites against the shipped copies
 ([docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)) and is **all-green, so a drop
 below the whitelisted baseline is a regression to fix, not a baseline to accept**. Adding a battery

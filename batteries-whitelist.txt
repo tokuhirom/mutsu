@@ -42,6 +42,8 @@ DateTime::Parse	01-nginx-accesslog-timestamps.t
 Digest	md5.t
 Digest	rfc4231.t
 Digest	sha.t
+Digest::HMAC	01-basic.t
+Digest::HMAC	02-block-size.t
 Encode	01-basic.t
 Encode	02-latin2.t
 Encode	03-utf8.t
