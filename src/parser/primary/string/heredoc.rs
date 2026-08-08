@@ -2,9 +2,9 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
-use crate::value::Value;
 use crate::value::ValueView;
 
+use super::helpers::literal_str;
 /// Find the newline that ends the *logical* source line starting at `r`.
 ///
 /// A heredoc body begins after the line on which the heredoc was introduced, but a
@@ -148,10 +148,10 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         } else if flags.q_mode {
             // q:heredoc processes \\ → \ (same as single-quoted strings)
             let processed = process_q_escapes(&content, '\0');
-            Expr::Literal(Value::str(processed))
+            Expr::Literal(literal_str(processed))
         } else {
             // `Q:to/.../` is verbatim: no interpolation, no escape processing.
-            Expr::Literal(Value::str(content))
+            Expr::Literal(literal_str(content))
         };
 
         // Apply word splitting if :w
@@ -161,7 +161,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
             {
                 let words: Vec<Expr> = s
                     .split_whitespace()
-                    .map(|w| Expr::Literal(Value::str(w.to_string())))
+                    .map(|w| Expr::Literal(literal_str(w.to_string())))
                     .collect();
                 Expr::ArrayLiteral(words)
             } else {

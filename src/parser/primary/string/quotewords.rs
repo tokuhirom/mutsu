@@ -1,8 +1,8 @@
 use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::PError;
-use crate::value::Value;
 
+use super::helpers::literal_str;
 pub(crate) fn parse_quotewords_items(
     content: &str,
     flags: &crate::parser::primary::quote_adverbs::QuoteFlags,
@@ -143,7 +143,7 @@ pub(crate) fn parse_quotewords_unicode_quoted_atom(input: &str) -> Option<(&str,
 
 pub(crate) fn parse_quotewords_single_quote_atom(input: &str) -> Option<(&str, Expr)> {
     let (rest, content) = parse_quotewords_quote_span(input, &['‘', '’'])?;
-    Some((rest, Expr::Literal(Value::str(content.to_string()))))
+    Some((rest, Expr::Literal(literal_str(content.to_string()))))
 }
 
 pub(crate) fn parse_quotewords_quote_span<'a>(

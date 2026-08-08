@@ -362,3 +362,21 @@ pub(crate) fn process_q_escapes(content: &str, delim: char) -> String {
     }
     result
 }
+
+/// Build a string-literal `Value` from source text, NFC-normalized.
+///
+/// Raku's `Str` is NFG, so a literal written in the source is normalized when
+/// the program is compiled: a file containing U+2126 OHM SIGN yields a string
+/// that `eq`s `"\x[03A9]"` and encodes to two UTF-8 bytes. mutsu already
+/// normalized the buffer around an *escape* (`\x[2126]`, `\x[0041,0300]`) and,
+/// since `news/2026-08/decoded-strings-are-nfc.md`, `.decode` output — but raw
+/// non-ASCII text in the source went through untouched.
+///
+/// Cro's own test suite writes `'ΩΩ'` with U+2126 and compares it against a
+/// percent-decoded query key, so `*.query-value('ΩΩ')` never matched.
+///
+/// The `is_nfc_quick` gate inside makes this free for ASCII, which every hot
+/// literal is.
+pub(crate) fn literal_str(s: impl Into<String>) -> Value {
+    Value::str(crate::builtins::nfc(s.into()))
+}

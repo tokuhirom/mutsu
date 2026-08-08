@@ -2,8 +2,8 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
-use crate::value::Value;
 
+use super::helpers::literal_str;
 /// Parse qx{...}, qqx{...} forms.
 /// qx executes with single-quote (backslash) interpolation.
 /// qqx executes with full interpolation.
@@ -44,7 +44,7 @@ pub(crate) fn qx_string(input: &str) -> PResult<'_, Expr> {
     } else {
         // qx uses q-style backslash (only \\ → \)
         let s = content.replace("\\\\", "\\");
-        Expr::Literal(Value::str(s))
+        Expr::Literal(literal_str(s))
     };
 
     Ok((

@@ -4,6 +4,7 @@ use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
+use super::helpers::literal_str;
 /// Parse Q quoting with arbitrary delimiters: Q!...!, Q{...}, Q/.../, etc.
 /// Q means no interpolation and no escape processing — content is taken verbatim.
 pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
@@ -142,7 +143,7 @@ pub(crate) fn apply_post_processing<'a>(
                     .collect()
             } else {
                 s.split_whitespace()
-                    .map(|w| Expr::Literal(Value::str(w.to_string())))
+                    .map(|w| Expr::Literal(literal_str(w.to_string())))
                     .collect()
             };
             return Ok((after, make_word_result_expr(words)));
@@ -295,7 +296,7 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
         && !flags.full_backslash()
     {
         let processed = process_q_escapes(content, delim_char);
-        let expr = Expr::Literal(Value::str(processed));
+        let expr = Expr::Literal(literal_str(processed));
         return apply_post_processing(rest, expr, &flags);
     }
 
@@ -372,7 +373,7 @@ pub(crate) fn make_q_content_expr(
                 s.push(c);
             }
         }
-        Expr::Literal(Value::str(s))
+        Expr::Literal(literal_str(s))
     }
 }
 

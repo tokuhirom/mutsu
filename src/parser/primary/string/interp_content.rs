@@ -2,16 +2,17 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
 use crate::parser::parse_result::PError;
-use crate::value::{Value, ValueView};
+use crate::value::ValueView;
 
+use super::helpers::literal_str;
 /// Assemble interpolation parts into a final expression.
 pub(crate) fn finalize_interpolation(parts: Vec<Expr>, current: String) -> Expr {
     if parts.is_empty() {
-        Expr::Literal(Value::str(current))
+        Expr::Literal(literal_str(current))
     } else {
         let mut parts = parts;
         if !current.is_empty() {
-            parts.push(Expr::Literal(Value::str(current)));
+            parts.push(Expr::Literal(literal_str(current)));
         }
         if parts.len() == 1
             && matches!(&parts[0], Expr::Literal(v) if matches!(v.view(), ValueView::Str(_)))
@@ -60,7 +61,7 @@ pub(crate) fn interpolate_string_content_with_modes(
             && let Some(expr) = parse_braced_closure_body(inner.trim())
         {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
             }
             parts.push(expr);
             rest = after;
@@ -151,7 +152,7 @@ pub(crate) fn try_embedded_qw(rest: &str) -> Option<(&str, Expr)> {
         let base = if interpolate {
             interpolate_string_content(inner)
         } else {
-            Expr::Literal(Value::str(inner.to_string()))
+            Expr::Literal(literal_str(inner.to_string()))
         };
         let words = Expr::MethodCall {
             target: Box::new(base),
@@ -173,7 +174,7 @@ pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
     while !rest.is_empty() {
         if let Some((after, words)) = try_embedded_qw(rest) {
             if !current.is_empty() {
-                parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
             }
             parts.push(words);
             rest = after;
@@ -199,7 +200,7 @@ pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
             };
             if let Ok((after, interpolated)) = parsed {
                 if !current.is_empty() {
-                    parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));
+                    parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
                 }
                 parts.push(interpolated);
                 rest = after;
