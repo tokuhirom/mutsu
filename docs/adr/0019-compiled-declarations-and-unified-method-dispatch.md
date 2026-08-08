@@ -123,8 +123,13 @@ D2c are the only pieces still open. D3 (class methods/submethods as compiled can
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
 precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
-per-registration `Compiler::new()` — still fully open and scoped as a future D3-8. D1 found most
-class structural data already typed-plan-driven
+per-registration `Compiler::new()` — still fully open and scoped as a future D3-8. D4 (class
+declaration-time expressions) was also scoped 2026-08-08, no code landed: its "aliases" piece is
+closed as already-bytecode-native (a lateral move, not a gain), its "deferred class bodies" piece
+folds into D8 rather than needing its own slice, and its "parent expressions" piece is a real
+re-parse-per-registration bug but is gated on parser/AST work and constrained by a shared `&str`
+resolver API also used for genuinely dynamic type-name concretization — scoped as future
+D4-1/D4-2/D4-3. D1 found most class structural data already typed-plan-driven
 from Phase A3/A4; the two remaining body-scanning reads (stub detection, `Stmt::TrustsDecl`) are
 now precomputed at plan lowering as `CompiledClassDeclPlan::is_stub`/`trusts`; see
 `news/2026-08/d1-class-structural-plan-fields.md`. D2, unlike D1, found attribute data with no
@@ -745,6 +750,72 @@ walkers wholesale is not possible before then.
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
   remain.)
+  **Scoping pass done 2026-08-08 (no code landed).** The box's four remaining named pieces turn
+  out to be three very different problems, none shaped like a D3-1-style cheap first slice:
+  - **Aliases (export/version/auth/api adverbs) are already effectively bytecode-native and need
+    no plan-field migration.** `:ver<1.0>`/`:auth(...)`/`:api(...)` parse into a real `Expr`
+    (`parse_declarator_traits`, `class_decl.rs:23-58`) but never enter
+    `CompiledClassDeclPlan` — the parser instead synthesizes a sibling
+    `Stmt::Expr(Expr::Call{name: "__MUTSU_SET_META__", ...})` statement
+    (`meta_setter_stmt`, `class_decl.rs:113-122`) wrapped with the `ClassDecl` in a `Stmt::Block`.
+    That is a plain call the main-pass compiler already compiles like any other statement — no
+    re-parse, no `legacy_body` walk, no runtime AST tree-walk. Folding it into a formal plan field
+    would only change representation, not behavior or performance: per the D2d precedent ("a
+    lateral move... does not meet the ADR's own gain bar"), this does not clear the bar for its
+    own slice and is closed as-is. (Lexical/package aliases were already noted done under D1.)
+  - **Parent expressions are a real gap, but not the one the ADR text implies, and the fix is
+    constrained by a shared runtime API.** `is Parent[Args]`/`does Role[Args]`/`hides
+    Parent[Args]` bracket content is captured as *raw balanced-bracket source text* and
+    concatenated onto the parent name string (`parse_optional_bracket_suffix`, `class_decl.rs:
+    60-79`, call sites at 416/459/474/487) — there is no `Expr` upstream for `compile_decl_expr`
+    to compile at all, unlike every other C5/D3-1 case. At registration,
+    `Interpreter::resolve_role_candidate` (`registration_role.rs:134`) splits the bracket text back
+    out and `eval_role_arg_values` (`registration_role.rs:18-74`) literally
+    `parse_dispatch::parse_source(substring)` + `eval_block_value` — a full lexer/parser
+    invocation *per argument, per registration* (every loop iteration, every re-run of a
+    `for`/`while`-declared class, every EVAL). However, `resolve_role_candidate` is a `&str`-keyed
+    API also used for genuinely dynamic type-name concretization with no source `Expr` at all
+    (`methods_qualified.rs:291`, building `Foo[Int]`-shaped names at runtime from pieces) — that
+    call site cannot be migrated away from string re-parsing regardless, so the string-based path
+    must stay as a general mechanism. Only the 3 call sites that originate from an actual parsed
+    declaration (class header `registration_class_compose.rs:88`, role-body `does`
+    `registration_role_body.rs:212,268`, `augment class` role puns
+    `registration_class_augment.rs:985`) could skip the round-trip by threading a precomputed
+    `Vec<Expr>` alongside the existing string, and `eval_role_arg_values`'s several text-based
+    heuristics (`should_treat_role_arg_as_type_expr`, the `::T`-prefix rejection, the bare
+    block-literal paren-wrap) would need re-deriving from `Expr` shape instead of trimmed text —
+    real behavioral-parity risk across a heavily-exercised area (every parametric role
+    instantiation in `t/`, roast `S14-roles`, and the bundled-battery suite). Scope as its own
+    D4-1 (parser: capture bracket args as `Vec<Expr>` alongside the existing string, additive, no
+    behavior change) / D4-2 (compiler: `CompiledDeclExpr` chunks per argument) / D4-3 (registration
+    cutover for the 3 eligible call sites) sub-boxes for a future session; not started.
+  - **Deferred class bodies is not class-specific at all — it's `RoleDef::deferred_body_stmts`
+    (`decl_types.rs:64-67`), produced during role registration
+    (`walk_role_body`/`registration_role_decl.rs:240-251`) and consumed once per composition via
+    interpreter tree-walk (`run_composed_role_deferred_body`,
+    `registration_class_compose_body.rs:64-277`, called during *class* registration —
+    `registration_class_compose.rs:328` — which is presumably why the checklist text files it
+    under D4 rather than D8). This is the same data and the same execution entry points D8
+    ("Compile role declaration-time bodies and traits... run parameterized-role and composed
+    ancestor bodies as bytecode child chunks with correct once-per-composition behavior") already
+    names. D4's "deferred class bodies" and D8 are the same piece of work described from two
+    angles (D4 = consumption site during class composition, D8 = production site during role
+    declaration) and should not be separately planned — D4 needs no distinct deferred-body slice;
+    treat D8 as the box that closes this piece for both.
+  A same-day, unrelated finding surfaced while reading the parent-expression call sites: `also
+  does Role[Args];` *inside a class body* silently drops the bracket arguments entirely (the
+  parser's `also_trait_stmt` `does` arm, `class_decl.rs:598-608`, never calls
+  `parse_optional_bracket_suffix` the way every sibling `is`/`does`/`hides` arm does), and even if
+  it captured them, `class_body_does_decl` (`registration_class_body_does.rs`) looks the role up by
+  bare name in `registry().roles` directly rather than through `resolve_role_candidate`, and is
+  missing the entire role-attribute-carryover machinery (`role_class_level_attrs`,
+  `role_attribute_default_exprs`, `role_attribute_is_types`, `role_attribute_types`,
+  `role_attribute_smileys`, type-parameter substitution into methods) that
+  `compose_role_into_class` performs for the header form — confirmed against `raku`
+  (`role R[::T]{...}; class Foo { also does R[Int]; }` returns the wrong type). This is a plain
+  correctness bug, independent of ADR-0019's declaration-plan migration either way; filed as
+  `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md` rather than fixed here, since
+  a correct fix means porting a ~200-line carryover block, not a one-line parser change.
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
 - [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
