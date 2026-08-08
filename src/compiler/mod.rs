@@ -207,6 +207,33 @@ mod declaration_plan_tests {
         assert!(plan_stub.trusts.is_empty());
     }
 
+    /// ADR-0019 D6-1: names a class body `my`/`state`-declares at its own
+    /// top level are precomputed at plan lowering, so
+    /// `persist_class_body_statics` never re-walks the raw body to derive
+    /// them. `our`/`dynamic` declarations and non-`VarDecl` statements are
+    /// excluded.
+    #[test]
+    fn class_declarations_precompute_declared_static_names() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "class A { my $x = 1; state $y = 2; our $z = 3; has $.w }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+        let mut names: Vec<_> = plan_a
+            .declared_static_names
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["x", "y"]);
+    }
+
     /// ADR-0019 D2a: a class declaration's own attribute names — including
     /// ones nested inside a body `sub`, and excluding class-level `our`/`my`
     /// attributes — are precomputed at plan lowering, so `run_class_body`

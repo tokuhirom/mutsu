@@ -141,6 +141,7 @@ impl Interpreter {
             attr_decls,
             method_name_chunks,
             method_decls,
+            declared_static_names,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -256,6 +257,7 @@ impl Interpreter {
                         attr_decls,
                         method_name_chunks,
                         method_decls,
+                        declared_static_names,
                     },
                     body,
                 )

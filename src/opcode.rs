@@ -2521,6 +2521,25 @@ fn class_own_attribute_names(body: &[Stmt]) -> Vec<Symbol> {
     names
 }
 
+/// Names a class body `my`/`state`-declares at its own top level (ADR-0019
+/// D6-1), mirroring `persist_class_body_statics`'s `declared_statics` scan:
+/// a top-level (unflattened) `Stmt::VarDecl` that is neither `our` nor
+/// `dynamic`. Precomputed once at plan lowering instead of re-walked on
+/// every registration.
+fn class_declared_static_names(body: &[Stmt]) -> Vec<Symbol> {
+    body.iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::VarDecl {
+                name,
+                is_our: false,
+                is_dynamic: false,
+                ..
+            } => Some(Symbol::intern(name)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// Pre-scan facts for a role body (ADR-0019 D2a), mirroring the combined
 /// loop in `Interpreter::walk_role_body`: attribute names the role declares,
 /// module names it `use`s/`need`s/`import`s, and types it declares in its
@@ -2650,6 +2669,11 @@ pub(crate) struct CompiledClassDeclPlan {
     /// reads a clone by position instead of calling `CompiledMethodDecl::from_stmt`
     /// on the raw statement every time the class declaration executes.
     pub(crate) method_decls: Vec<CompiledMethodDecl>,
+    /// Names the class body `my`/`state`-declares at its own top level
+    /// (ADR-0019 D6-1), precomputed at plan lowering instead of
+    /// `persist_class_body_statics` re-walking the raw body on every
+    /// registration to decide which lexicals are body statics.
+    pub(crate) declared_static_names: Vec<Symbol>,
 }
 
 #[derive(Debug, Clone)]
@@ -5895,6 +5919,7 @@ impl CompiledCode {
             })
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
+        let declared_static_names = class_declared_static_names(body);
         let method_decls = compile_method_decls(body);
         let plan_idx = self.class_decl_plans.len() as u32;
         self.class_decl_plans.push(CompiledClassDeclPlan {
@@ -5917,6 +5942,7 @@ impl CompiledCode {
             attr_decls,
             method_name_chunks,
             method_decls,
+            declared_static_names,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));
