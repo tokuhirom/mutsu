@@ -159,6 +159,48 @@ impl Interpreter {
         None
     }
 
+    /// Private-method candidates for `class_name`, found by NAME only —
+    /// `arg_values` are not consulted.
+    ///
+    /// The signature-matching resolvers above answer `None` both when the class
+    /// has no such private method AND when it has exactly one whose parameters
+    /// the arguments fail to bind, and the callers then report "No such private
+    /// method". raku reports the binding failure instead
+    /// (`Type check failed in binding to parameter '$n'`, `Too many positionals
+    /// passed`), which is what the *public* dispatch path already does.
+    ///
+    /// So a caller that is about to give up asks this: nothing here means the
+    /// method really is absent; exactly one means "run it and let the binding
+    /// error speak"; more than one is a genuine `X::Multi::NoMatch`.
+    ///
+    /// `owner_class` restricts the walk to one MRO entry, mirroring
+    /// [`Self::resolve_private_method_with_owner`] for the `$obj!Owner::m` form.
+    pub(crate) fn private_method_candidates_by_name(
+        &mut self,
+        class_name: &str,
+        owner_class: Option<&str>,
+        method_name: &str,
+    ) -> Vec<(String, MethodDef)> {
+        let mro = self.class_mro(class_name);
+        let mut out = Vec::new();
+        for cn in mro.iter().map(|s| s.as_str()) {
+            if let Some(owner) = owner_class
+                && cn != owner
+            {
+                continue;
+            }
+            let overloads = self.registry().get_method_overloads(cn, method_name);
+            if let Some(overloads) = overloads {
+                for def in overloads {
+                    if def.is_private && !Self::is_stub_method_body(&def.body) {
+                        out.push((cn.to_string(), def));
+                    }
+                }
+            }
+        }
+        out
+    }
+
     pub(crate) fn resolve_private_method_for_vm(
         &mut self,
         class_name: &str,
