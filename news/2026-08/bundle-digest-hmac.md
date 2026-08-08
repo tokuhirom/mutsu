@@ -31,6 +31,24 @@ After bundling:
   That is `todo/deep/pair-namedness-is-a-value-property-not-a-call-site-property.md`,
   not a gap in this battery.
 
+## A correction to the Digest survey
+
+`docs/batteries/digest.md` (the message-digest selection record, 2026-08-04)
+rejected `Digest::HMAC` partly because "it states no license anywhere, which
+under BATTERIES.md §4 is a hard gate for bundling". **That was wrong.** Upstream
+ships an MIT `LICENSE` (`Copyright (c) 2014 Andrew Egeler`); only its
+`META6.json` omits a `license` key, which is what an index-based survey sees.
+BATTERIES.md §4 asks that the license be permissive, preserved in the vendored
+tree and recorded — not that it be declared in the META — so the gate it was
+said to fail never applied. The survey has been corrected, and its table row now
+reads MIT.
+
+The rest of that entry stands and is worth keeping straight: `Digest::HMAC` does
+**not** compete with `Digest` for the message-digest slot, because it supplies
+no hash function at all — `hmac($key, $msg, &hash)` takes the digest as a
+callback. The two are complementary: `Digest` is the hash functions, and
+`Digest::HMAC` is the RFC 2104 construction over any of them.
+
 ## Which upstream — the trap
 
 Two repositories carry this module's name and they are **not** interchangeable:
