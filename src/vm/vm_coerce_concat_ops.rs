@@ -87,11 +87,39 @@ impl Interpreter {
             return Ok(());
         }
         let items = match val.view() {
-            ValueView::Array(items, ..) => (*items).to_vec(),
+            // ADR-0021 I4: `|@l` / `|$list` produce POSITIONAL arguments even
+            // when an element happens to be a Pair (e.g. a literal `x => 1`
+            // sitting in an array, which mints the named flavour today absent
+            // an argument-position boundary to erase it). Containerize each
+            // element here, at the one place that knows these came from a
+            // positional container, rather than trying to recover that
+            // context later in `append_slip_item`.
+            ValueView::Array(items, ..) => items
+                .iter()
+                .cloned()
+                .map(Self::containerize_pair_item)
+                .collect(),
+            // A nested Slip's items were already finalized by the
+            // `exec_make_slip_op` call that built it (positional-source
+            // elements containerized, a bare-Pair/Hash source promoted to
+            // named) — re-processing here would re-flip an already-correct
+            // named item back to positional. Pass through unchanged.
             ValueView::Slip(items) => (*items).to_vec(),
-            ValueView::Seq(items) => (*items).to_vec(),
+            ValueView::Seq(items) => items
+                .iter()
+                .cloned()
+                .map(Self::containerize_pair_item)
+                .collect(),
             ValueView::Capture { positional, named } => {
-                let mut items = positional.clone();
+                // I5: a Capture's lanes are already classified by the call
+                // site that built it; replay them verbatim by lane rather
+                // than reclassifying by value flavour (positional stays
+                // positional, named stays named).
+                let mut items: Vec<Value> = positional
+                    .iter()
+                    .cloned()
+                    .map(Self::containerize_pair_item)
+                    .collect();
                 for (k, v) in named.iter() {
                     items.push(Value::pair(k.clone(), v.clone()));
                 }
@@ -99,16 +127,22 @@ impl Interpreter {
             }
             // typed_pair decodes an object hash's `.WHICH` store keys back to
             // the original key objects (plain hashes get `Pair(str_key, v)`).
+            // I4: `|%h` is always named, so promote every entry here rather
+            // than leaving it to `append_slip_item` to guess.
             ValueView::Hash(map) => map
                 .iter()
-                .map(|(k, v)| map.typed_pair(k, v.clone()))
+                .map(|(k, v)| Self::namify_pair_item(map.typed_pair(k, v.clone())))
                 .collect(),
             ValueView::LazyList(ll) => {
-                if ll.scan_spec.is_some() {
+                let items = if ll.scan_spec.is_some() {
                     ll.force_scan_to(200_000)
                 } else {
                     ll.cache.lock().unwrap().clone().unwrap_or_default()
-                }
+                };
+                items
+                    .into_iter()
+                    .map(Self::containerize_pair_item)
+                    .collect()
             }
             ValueView::LazyIoLines { .. } => match self.force_if_lazy_io_lines(val) {
                 Ok(forced) => crate::runtime::utils::value_to_list(&forced),
@@ -135,7 +169,12 @@ impl Interpreter {
             {
                 crate::value::value_buf::buf_elems_or_empty(&attributes)
             }
-            _ => vec![val],
+            // Slipping a bare value (`|$pair`, `|Pair.new(...)`) always
+            // produces a NAMED argument regardless of the Pair's own stored
+            // flavour (I4) — this is the one case where the value itself,
+            // not a container it lives in, decides named-ness by being
+            // slipped directly.
+            _ => vec![Self::namify_pair_item(val)],
         };
         self.stack.push(Value::slip(items));
         Ok(())
