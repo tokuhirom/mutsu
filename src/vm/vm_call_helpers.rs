@@ -2,10 +2,42 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Convert a named-flavour Pair into the positional flavour; a no-op for
+    /// everything else (ADR-0021 I1/I4). The same normalization
+    /// `OpCode::ContainerizePair` performs at a compiled call boundary,
+    /// needed here too because a Slip's elements bypass the compiler
+    /// entirely — `exec_make_slip_op` applies this to every element sourced
+    /// from a genuinely positional container (Array/Seq/LazyList/Capture's
+    /// positional lane).
+    pub(super) fn containerize_pair_item(item: Value) -> Value {
+        match item.view() {
+            ValueView::Pair(k, v) => Value::value_pair(Value::str(k.clone()), v.clone()),
+            _ => item,
+        }
+    }
+
+    /// Convert a positional-flavour Pair (`Str` key only — a named argument
+    /// always has a string name) into the named flavour; a no-op for
+    /// everything else. The reverse of `containerize_pair_item`, applied at
+    /// the two places ADR-0021 I4 mints a named argument from a slip: a bare
+    /// `|$pair` and each `|%h` entry.
+    pub(super) fn namify_pair_item(item: Value) -> Value {
+        match item.view() {
+            ValueView::ValuePair(key, val) => match key.view() {
+                ValueView::Str(name) => Value::pair(name.to_string(), val.clone()),
+                _ => item,
+            },
+            _ => item,
+        }
+    }
+
     pub(super) fn append_slip_item(args: &mut Vec<Value>, item: &Value) {
         match item.view() {
             ValueView::Capture { positional, named } => {
-                args.extend(positional.iter().cloned());
+                // I5: containerize on append rather than trusting the stored
+                // flavour — the positional lane must stay positional even if
+                // an element was minted with the named flavour upstream.
+                args.extend(positional.iter().cloned().map(Self::containerize_pair_item));
                 for (k, v) in named.iter() {
                     args.push(Value::pair(k.clone(), v.clone()));
                 }
@@ -15,17 +47,6 @@ impl Interpreter {
             // a bare Hash into pairs before wrapping in a Slip. A Hash that is already
             // inside a Slip (e.g. from a Capture's positional list) should stay as-is.
             ValueView::Hash(_) => args.push(item.clone()),
-            // A `(:key(val))` positional-pair slipped via `|(...)` flattens back
-            // to a *named* argument in Raku (e.g. `.subst(|(:g), ...)` passes `:g`
-            // as the named `:g` adverb). Mirror `append_slip_value`'s ValuePair
-            // arm so the slipped pair is recognized as a named argument.
-            ValueView::ValuePair(key, val) => {
-                if let ValueView::Str(name) = key.view() {
-                    args.push(Value::pair(name.to_string(), val.clone()));
-                } else {
-                    args.push(item.clone());
-                }
-            }
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)
@@ -33,6 +54,10 @@ impl Interpreter {
             | ValueView::GenericRange { .. } => {
                 args.extend(crate::runtime::utils::value_to_list(item));
             }
+            // Every other item's flavour was already finalized by
+            // `exec_make_slip_op` when this Slip was built (positional
+            // sources containerized, a bare Pair/Hash source promoted to
+            // named) — trust it rather than reclassifying by value shape.
             _ => args.push(item.clone()),
         }
     }
