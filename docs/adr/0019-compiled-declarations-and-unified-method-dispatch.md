@@ -1087,7 +1087,8 @@ walkers wholesale is not possible before then.
   sequenced after D8 by necessity, exactly as the D4 scoping pass concluded. Slices D9-1
   (role `is_stub` + our-scope plan facts, = D7-1), D9-2 (= D2b-2 role half), D9-3 (= D7-3),
   D9-4 (= D8 chunks), D9-5 (field drop, forced-instrument playbook). **D9-1 landed
-  2026-08-08 — see D7-1 above (same slice).**
+  2026-08-08 — see D7-1 above (same slice). D9-3 landed 2026-08-08 — see D7-3 above (same
+  slice): `parent_ops` covers the role side's typed `DoesDecl` encoding D9-3 asked for.**
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
   metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
   body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.
