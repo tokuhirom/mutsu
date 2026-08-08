@@ -206,10 +206,37 @@ fn decode_utf16_bytes(bytes: &[u8], big_endian: bool) -> Result<String, RuntimeE
         .map_err(|()| RuntimeError::new("Malformed UTF-16 string: unpaired surrogate (line 1)"))
 }
 
+/// NFC-normalize a decoded string. Raku's `Str` is NFG, so any string built from
+/// bytes is normalized at creation: `Buf.new(0xE2,0x84,0xA6).decode('utf-8')`
+/// composes U+2126 OHM SIGN to U+03A9 GREEK CAPITAL LETTER OMEGA, and the result
+/// `eq`s a literal `"Ω"`. mutsu normalizes string *literals* at parse time
+/// (`parser/primary/string/escapes.rs`) but did not normalize decode output, so
+/// the two compared unequal even though `.ords` — which normalizes on read —
+/// reported the same code points. Cro's percent-decoding of a query key hit
+/// exactly this: `%E2%84%A6%E2%84%A6` decoded to a key no lookup could find.
+fn nfc(s: String) -> String {
+    use unicode_normalization::{IsNormalized, UnicodeNormalization, is_nfc_quick};
+    // `is_nfc_quick` answers `Yes` without allocating for the overwhelmingly
+    // common already-normalized case (all-ASCII text answers immediately).
+    match is_nfc_quick(s.chars()) {
+        IsNormalized::Yes => s,
+        _ => s.nfc().collect(),
+    }
+}
+
 fn decode_bytes_with_builtin_encoding(
     bytes: &[u8],
     encoding_name: &str,
 ) -> Result<String, RuntimeError> {
+    // utf8-c8 deliberately keeps invalid bytes as synthetic code points, so it
+    // must not be normalized — that is the whole point of the encoding.
+    if encoding_name == "utf8-c8" {
+        return Ok(crate::runtime::utf8_c8::decode_utf8_c8(bytes));
+    }
+    decode_bytes_unnormalized(bytes, encoding_name).map(nfc)
+}
+
+fn decode_bytes_unnormalized(bytes: &[u8], encoding_name: &str) -> Result<String, RuntimeError> {
     match encoding_name {
         "utf8-c8" => Ok(crate::runtime::utf8_c8::decode_utf8_c8(bytes)),
         "ascii" => {
