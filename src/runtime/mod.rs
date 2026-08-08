@@ -2226,7 +2226,14 @@ pub struct Interpreter {
     pub(crate) user_declared_classes: std::collections::HashSet<String>,
     pub(crate) block_declared_vars: Vec<NameSet>,
     pub(crate) loop_local_vars: Vec<NameSet>,
-    pub(crate) loop_local_saved_env: Vec<HashMap<String, Value>>,
+    /// Per loop-body scope: what each body-local `my` name must be restored to
+    /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
+    /// binding's value); `None` means the name did not exist before the loop, so
+    /// the entry must be REMOVED — otherwise a body-local `my` outlives its block
+    /// as an env key, which is how `HTTP::HPACK`'s Huffman-table `my int $i`
+    /// stayed visible process-wide and was later merged over an unrelated frame's
+    /// loop variable.
+    pub(crate) loop_local_saved_env: Vec<HashMap<String, Option<Value>>>,
     pub(crate) loop_cond_active: bool,
     pub(crate) outer_scope_locals: Vec<Vec<Value>>,
     /// Stack of captured ENTER-phaser values for blocks whose textually-last

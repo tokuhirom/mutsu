@@ -306,7 +306,7 @@ pub(crate) struct VmCallFrame {
     /// register its own `my` declarations in the *caller's* active loop scope and
     /// have them clobbered at the caller's loop exit.
     pub saved_loop_local_vars: Vec<crate::runtime::NameSet>,
-    pub saved_loop_local_saved_env: Vec<HashMap<String, Value>>,
+    pub saved_loop_local_saved_env: Vec<HashMap<String, Option<Value>>>,
     /// The caller's block-scope `my`-declaration tracking stack. A `BlockScope`
     /// pushes a frame here and, on exit, reverts every name it records to the
     /// pre-block value (block-local `my` must not leak out). A compiled-function
