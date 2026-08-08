@@ -559,6 +559,30 @@ impl Compiler {
         Some(vec![decl, for_stmt, writeback])
     }
 
+    /// Whether an `Index` expression's index is a syntactic shape that
+    /// unambiguously produces a *slice* (several elements) rather than a
+    /// single element: a `Range` (`1..3`, `1..^3`, ...), a comma list
+    /// (`1, 3`), or bare `Whatever` (`*`). Conservative in the other
+    /// direction: a plain scalar expression is assumed to index a single
+    /// element even though it could dynamically hold a `Range` (Raku itself
+    /// only knows at runtime) — matching this exactly is not needed for
+    /// [`desugar_for_scalar_element_source`]'s purpose.
+    fn for_index_is_slice(index: &Expr) -> bool {
+        match index {
+            Expr::Binary { op, .. } => matches!(
+                op,
+                crate::token_kind::TokenKind::DotDot
+                    | crate::token_kind::TokenKind::DotDotCaret
+                    | crate::token_kind::TokenKind::CaretDotDot
+                    | crate::token_kind::TokenKind::CaretDotDotCaret
+                    | crate::token_kind::TokenKind::DotDotDot
+                    | crate::token_kind::TokenKind::DotDotDotCaret
+            ),
+            Expr::ArrayLiteral(_) | Expr::Whatever => true,
+            _ => false,
+        }
+    }
+
     /// Rewrite `for <ELEM> { ... }`, where `<ELEM>` is a var-rooted `Index`
     /// lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`) used *directly* as the loop
     /// source (no `.values`/similar wrapper — that shape is
@@ -586,6 +610,16 @@ impl Compiler {
             return None;
         };
         if !Self::for_element_container_is_lvalue(container) {
+            return None;
+        }
+        // A slice index (`@a[1..^3]`, `@a[1,3]`, `@a[*]`) yields *several*
+        // elements, not one — rewriting through a scalar temp would collapse
+        // the whole slice into a single topicalized value and only iterate
+        // once (roast `S02-magicals/args.t`: `for @*ARGS[1..^+@*ARGS] { .say }`
+        // must print each argument, not the slice as one item). Bail out for
+        // every syntactic shape that is unambiguously a slice; anything else
+        // (a plain scalar index expression) keeps the single-element rewrite.
+        if Self::for_index_is_slice(index) {
             return None;
         }
 

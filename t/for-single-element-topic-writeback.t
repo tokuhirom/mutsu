@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 10;
 
 # `for @a[i] { ... }` / `for %h<k> { ... }` topicalize a single lvalue element
 # the same way `given @a[i] { ... }` does: `$_` aliases the element, so both
@@ -52,4 +52,22 @@ plan 8;
     my @seen;
     for @a[0] { @seen.push($_) }
     is-deeply @seen, [[1, 2],], 'a nested array element is one topic, not flattened';
+}
+
+# A slice index (`@a[range]` / `@a[list]`) yields several elements — it must
+# NOT be routed through the single-element rewrite (regression: this collapsed
+# the whole slice into one topicalized value, breaking roast
+# S02-magicals/args.t's `for @*ARGS[1..^+@*ARGS] { .say }`).
+{
+    my @a = 1, 'two', 'three';
+    my @seen;
+    for @a[1 ..^ +@a] { @seen.push($_) }
+    is-deeply @seen, ['two', 'three'], 'a range-slice index still iterates every element';
+}
+
+{
+    my @a = 1, 'two', 'three';
+    my @seen;
+    for @a[1, 2] { @seen.push($_) }
+    is-deeply @seen, ['two', 'three'], 'a list-slice index still iterates every element';
 }
