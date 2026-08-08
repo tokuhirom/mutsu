@@ -53,6 +53,17 @@ fn value_to_byte(v: &Value) -> Option<u8> {
 fn decode_bytes(bytes: &[u8], translate_nl: bool, encoding: &str) -> String {
     let s = if encoding == "utf8-c8" {
         crate::runtime::utf8_c8::decode_utf8_c8(bytes)
+    } else if !encoding.is_empty()
+        && let Some(Ok(decoded)) =
+            crate::builtins::decode_bytes_with_encoding_label(bytes, encoding)
+    {
+        // The decoder's own encoding wins. Falling through to UTF-8 turned every
+        // latin-1 high byte into U+FFFD, which is how Cro's HTTP header decoder
+        // (`Encoding::Registry.find('iso-8859-1').decoder()`) mangled header
+        // values. A decode *error* (e.g. a partial UTF-8 sequence at the end of
+        // the buffer) still falls back to the lossy read below, since a
+        // streaming decoder must never hard-fail on an incomplete tail.
+        decoded
     } else {
         String::from_utf8_lossy(bytes).into_owned()
     };
@@ -69,6 +80,14 @@ fn decode_available(bytes: &[u8], encoding: &str) -> (String, Vec<u8>) {
     if encoding == "utf8-c8" {
         // utf8-c8 can always decode all bytes (invalid ones become synthetics)
         let s = crate::runtime::utf8_c8::decode_utf8_c8(bytes);
+        return (s, Vec::new());
+    }
+    // A single-byte encoding never has an incomplete trailing sequence, so the
+    // whole buffer is available; only UTF-8 needs the "back off to the last
+    // complete sequence" walk below.
+    if crate::builtins::is_single_byte_encoding_label(encoding)
+        && let Some(Ok(s)) = crate::builtins::decode_bytes_with_encoding_label(bytes, encoding)
+    {
         return (s, Vec::new());
     }
     let mut end = bytes.len();
