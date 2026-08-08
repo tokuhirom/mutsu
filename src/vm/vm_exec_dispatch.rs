@@ -1590,6 +1590,28 @@ impl Interpreter {
                         })
                         .collect();
                     for target_var in reverse_targets {
+                        // The alias table is process-global (it even reaches the
+                        // cross-thread shared store), but an alias only means
+                        // anything in the frame that made the binding. Propagate
+                        // only to a name THIS frame owns as a slot.
+                        //
+                        // Without that, `given EXPR -> $y { … }` — which binds its
+                        // parameter as `y := _` — left a permanent "`y` aliases the
+                        // topic" entry, so *any* later `$_ = …` in *any* frame or
+                        // thread overwrote `$y`. `given Cro::HTTP::Client.new ->
+                        // $client { await $client.get(…) }` lost `$client` to an
+                        // `Expecting` enum value the moment Cro's response parser —
+                        // a supply body running `$_ = $expecting; when StatusLine {
+                        // … }` — advanced its state, and the next `$client.get`
+                        // died with "No such method 'get' for invocant of type
+                        // 'Int'". raku keeps them separate too: in `given $v -> $y
+                        // { $_ = 5 }`, `$y` is still 1.
+                        //
+                        // Same-frame aliasing (`my $c := $_; $_ = 5` — `$c` is 5)
+                        // is unaffected: `c` is a local of the assigning frame.
+                        if self.find_local_slot(code, &target_var).is_none() {
+                            continue;
+                        }
                         self.set_env_with_main_alias(&target_var, val.clone());
                         self.update_local_if_exists(code, &target_var, &val);
                     }

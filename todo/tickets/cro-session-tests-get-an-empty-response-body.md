@@ -1,54 +1,39 @@
-# Cro's session tests get an empty response body
+# Cro's session tests fail on a private method of a monitor
 
-`t/http-session-inmemory.rakutest` and `t/http-session-persistent.rakutest` run
-but every assertion fails the same way:
+`t/http-session-inmemory.rakutest` now passes its first two tests and stops at:
 
 ```
-not ok 1 - Request with no session cookie gets fresh state (1)
-# expected: 'Visit 1'
-#      got: ''
+No such private method 'get-cookie-lifetime' for invocant of type 'Cro::HTTP::Client::CookieJar'
+  in block <unit> at .../Cro/HTTP/Client/CookieJar.rakumod line 42
 ```
 
-The request reaches the server and a response comes back — the status is fine —
-but `await $response.body-text` is the empty string.
+`Cro::HTTP::Client::CookieJar` is declared with OO::Monitors' `monitor`
+declarator, and `get-cookie-lifetime` is one of its private methods
+(`method !get-cookie-lifetime(...)`). Private-method dispatch on a monitor
+invocant does not find it.
 
-## What is already ruled out
-
-A plain client/server round trip through the same stack works:
-
-```raku
-# tmp/croround.raku
-my $app = route { get -> 'hits' { content 'text/plain', 'Visit 1' } }
-Cro::HTTP::Server.new(:host('localhost'), :port(TEST_PORT), application => $app).start;
-my $client = Cro::HTTP::Client.new;
-say await (await $client.get("$url/hits")).body-text;   # "Visit 1", three times
-```
-
-So this is not the client, the server, or body-text in general. What the session
-tests add:
-
-* a `before => Cro::HTTP::Session::InMemory[SessionData].new(…)` middleware —
-  a **parameterized role** instantiated as a before-middleware;
-* a route whose signature takes the session object by type
-  (`get -> SessionData $session, 'hits' { … }`), i.e. the auth/session
-  parameter-binding path;
-* `content 'text/plain', 'Visit ' ~ ++$session.count` — an rw accessor
-  increment on the session object inside the route body.
-
-Any of those failing would plausibly produce a 200 with no body: Cro's router
-turns an unmatched or dying route into an empty response.
-
-## Suggested next step
-
-Bisect from `tmp/croround.raku` by adding one of the three features at a time.
-The vendored `Cro::HTTP::Router` carries `%*ENV<CRODBG>`-gated `[DBG]` notes —
-run with `CRODBG=1` first, since a route that fails to bind is exactly what those
-notes report.
+Likely related to how `MetamodelX::MonitorHOW.add_method` installs the lock
+wrapper: it skips `BUILDALL`/`POPULATE`/`clone` but wraps everything else, and
+mutsu's private-method lookup (`runtime/methods_qualified.rs`,
+`runtime/methods_instance_ops.rs`) may consult a table the wrap/HOW path does not
+populate for `!`-prefixed names.
 
 ## History
 
-Both files used to die on the first test with `Type check failed in assignment to
-$timeout-policy` and, before that, hang. Fixed by
-`news/2026-08/rw-param-does-not-hijack-a-same-named-attribute.md` and
-`news/2026-08/monitor-method-no-longer-leaks-topic-and-self.md`; the empty body
-is what is left.
+The earlier symptom on this file was an empty response body for every request.
+That had two causes, both fixed:
+
+* `news/2026-08/prefix-incdec-on-an-rw-accessor.md` — the route body writes
+  `'Visit ' ~ ++$session.count`, and prefix `++` on an rw accessor was
+  unimplemented;
+* `news/2026-08/topic-alias-does-not-cross-frames.md` — `given
+  Cro::HTTP::Client.new -> $client { … }` lost `$client` mid-request.
+
+## How to reproduce
+
+```
+bash tmp/cro-t.sh t/http-session-inmemory.rakutest
+```
+
+(helper scripts and the vendored Cro checkout live under `tmp/`, which is
+gitignored.)
