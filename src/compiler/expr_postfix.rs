@@ -2,6 +2,63 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Compile prefix `++`/`--` on an rw-accessor lvalue (`++$obj.count`).
+    ///
+    /// The postfix forms already route a method-call target through the
+    /// `__mutsu_assign_method_lvalue` writeback; the prefix forms had no
+    /// `MethodCall` arm at all and fell through to `__mutsu_incdec_nomatch`,
+    /// so `++$obj.count` died with "Cannot resolve caller prefix:<++>(...); the
+    /// parameter requires mutable arguments" while `$obj.count++` and
+    /// `$obj.count += 1` both worked. Cro's session middleware writes
+    /// `content 'text/plain', 'Visit ' ~ ++$session.count`, so every session
+    /// route answered with an empty body.
+    ///
+    /// Returns `false` when `expr` is not a method call on a named variable, so
+    /// the caller keeps its existing fallback.
+    pub(super) fn compile_prefix_incdec_method_lvalue(&mut self, expr: &Expr, inc: bool) -> bool {
+        let Expr::MethodCall {
+            target, name, args, ..
+        } = expr
+        else {
+            return false;
+        };
+        let Some(target_var) = (match target.as_ref() {
+            Expr::Var(n) => Some(n.clone()),
+            Expr::ArrayVar(n) => Some(format!("@{}", n)),
+            Expr::HashVar(n) => Some(format!("%{}", n)),
+            _ => None,
+        }) else {
+            return false;
+        };
+        let tmp_value_name = format!("__mutsu_tmp_method_preinc_{}", self.code.constants.len());
+        let tmp_value_idx = self.code.add_constant(Value::str(tmp_value_name.clone()));
+        // Read the accessor, increment the temp in place (prefix leaves the NEW
+        // value on the stack), then write the temp back through the accessor and
+        // yield the new value.
+        self.compile_expr(expr);
+        self.code.emit(OpCode::SetGlobal(tmp_value_idx));
+        if inc {
+            self.code.emit(OpCode::PreIncrement(tmp_value_idx, None));
+        } else {
+            self.code.emit(OpCode::PreDecrement(tmp_value_idx, None));
+        }
+        self.code.emit(OpCode::Pop);
+        let assign_expr = Expr::Call {
+            name: Symbol::intern("__mutsu_assign_method_lvalue"),
+            args: vec![
+                Expr::Var(target_var.clone()),
+                Expr::Literal(Value::str(name.resolve())),
+                Expr::ArrayLiteral(args.clone()),
+                Expr::Var(tmp_value_name.clone()),
+                Expr::Literal(Value::str(target_var)),
+            ],
+        };
+        self.compile_expr(&assign_expr);
+        self.code.emit(OpCode::Pop);
+        self.compile_expr(&Expr::Var(tmp_value_name));
+        true
+    }
+
     /// Compile postfix ++ on variable/index/method target.
     pub(super) fn compile_expr_postfix_inc(&mut self, expr: &Expr) {
         if let Some(var) = Self::temp_call_var(expr) {
