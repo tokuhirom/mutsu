@@ -559,6 +559,73 @@ impl Compiler {
         Some(vec![decl, for_stmt, writeback])
     }
 
+    /// Rewrite `for <ELEM> { ... }`, where `<ELEM>` is a var-rooted `Index`
+    /// lvalue (`%h<k>` / `@a[i]` / `%h<a><b>`) used *directly* as the loop
+    /// source (no `.values`/similar wrapper — that shape is
+    /// [`desugar_for_element_source`]), into:
+    ///
+    ///   my $tmp = <ELEM>;      # copy the element into a scalar temp
+    ///   for $tmp { ... };      # reuse the scalar-topic per-iteration write-back
+    ///   <ELEM> = $tmp;         # write the temp back into the element
+    ///
+    /// Raku topicalizes such an element as a single rw-aliased item (`for
+    /// @a[i] { .=Int }` mutates `@a[i]`) — the same aliasing `given @a[i] {
+    /// ... }` already gets via `TagElementSource`. `for` over a bare scalar
+    /// variable already writes `$_`'s final value back to that variable, so
+    /// routing through a temp variable needs no new VM machinery.
+    fn desugar_for_scalar_element_source(&mut self, stmt: &Stmt) -> Option<Vec<Stmt>> {
+        let Stmt::For { iterable, .. } = stmt else {
+            return None;
+        };
+        let Expr::Index {
+            target: container,
+            index,
+            is_positional,
+        } = iterable
+        else {
+            return None;
+        };
+        if !Self::for_element_container_is_lvalue(container) {
+            return None;
+        }
+
+        let tmp = format!("__for_scalar_elem_src_{}", self.code.constants.len());
+
+        let decl = Stmt::VarDecl {
+            name: tmp.clone(),
+            expr: iterable.clone(),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        };
+
+        // The rewritten for-loop iterates the scalar temp; cloning the
+        // original For and swapping only its iterable preserves
+        // params/body/label/mode.
+        let mut for_stmt = stmt.clone();
+        if let Stmt::For {
+            iterable: new_iterable,
+            ..
+        } = &mut for_stmt
+        {
+            *new_iterable = Expr::Var(tmp.clone());
+        }
+
+        let writeback = Stmt::Expr(Expr::IndexAssign {
+            target: container.clone(),
+            index: index.clone(),
+            value: Box::new(Expr::Var(tmp)),
+            is_positional: *is_positional,
+        });
+
+        Some(vec![decl, for_stmt, writeback])
+    }
+
     /// Whether a bare statement expression yields a syntactically fresh rvalue
     /// (a method call / `Foo.new`) whose value may invoke a user-defined `sink`
     /// method in sink context. Bare variables (`$x;`) and function-call returns
@@ -1980,6 +2047,15 @@ impl Compiler {
                 // array, iterate that (reusing the array-source writeback), then
                 // write the temp back into the element after the loop.
                 if let Some(desugared) = self.desugar_for_element_source(stmt) {
+                    for s in &desugared {
+                        self.compile_stmt(s);
+                    }
+                    return;
+                }
+                // Element-source writeback for a bare element source (no
+                // `.values`): `for @a[i] { .=Int }` / `for %h<k> { $_ *= 2 }`.
+                // See `desugar_for_scalar_element_source`.
+                if let Some(desugared) = self.desugar_for_scalar_element_source(stmt) {
                     for s in &desugared {
                         self.compile_stmt(s);
                     }
