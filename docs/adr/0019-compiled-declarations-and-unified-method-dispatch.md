@@ -116,10 +116,10 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress: 28/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07). Phase C is fully checked; the open box is D2 (attributes and generated
-accessors), subdivided D2a-D2d — D2a, D2c-1/2/3, and D2d are done; D2b (typed attribute
-descriptors) and the "compile `default`/`where_constraint` as actual bytecode chunks" remainder of
-D2c are the only pieces still open. D3 (class methods/submethods as compiled candidates) is open;
+landed, 2026-08-07; D2b-2 landed 2026-08-08). Phase C is fully checked; the open box is D2
+(attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3, and D2d are
+done; the "compile `default`/`where_constraint` as actual bytecode chunks" remainder of D2c
+(D2c-4/D2c-5) is the only piece still open. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
 precompute), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
@@ -572,6 +572,27 @@ walkers wholesale is not possible before then.
   retiring the two `as_expr` consumers that would panic on `Compiled` in the same slice
   (D2c-4); the A/B env-setup unification stays optional (D2c-5) behind raku verification of
   shape B's `has_class_scoped_subs` gate.
+  **D2b-2 landed 2026-08-08**: `CompiledClassDeclPlan`/`CompiledRoleDeclPlan` both gained
+  `attr_decls: Vec<(Symbol, CompiledAttrDecl)>`, replacing the class-only `is_default_chunks`
+  field. The class-side collector (`compile_class_attr_decls`/`collect_nested_class_attr_decls`
+  in `compiler/decl_plan.rs`) mirrors `class_own_attribute_names`'s proven-correct traversal
+  (SyntheticBlock-flattened top level, `has` nested inside a body `sub` surfaced via a
+  non-recursing-into-itself second pass) instead of the old `collect_attr_is_default_chunks`
+  shape, which fixes the double-push the design pass found: the old code both pushed a
+  nested-sub `has ... is default` from the `SubDecl` arm's direct loop AND re-matched it on
+  the immediately following recursive call into the same statements. `class_body_has_decl`/
+  `role_body_has_decl` now look their current `Stmt::HasDecl` up in `cx.attr_decls` by name
+  first, falling back to `CompiledAttrDecl::from_stmt` only on a miss (a class-level
+  `our`/`my` attribute, which the collector excludes exactly like `own_attribute_names`
+  already does, or a registration path with no compiled plan — `augment class`, role-pun/mixin
+  synthesis). The role side gains attribute-descriptor plan lowering for the first time (roles
+  never had `is_default_chunks`); its `is default(...)` argument deliberately stays
+  `DeclTraitArg::Ast` (no new compile step — `role_body_has_decl` already only stashed the raw
+  expression for later composition-time evaluation), so this slice is a pure construction-side
+  move on both plans, not a behavior change. Verified via the full `t/` suite (27,942 tests) and
+  every whitelisted `S12-attributes`/`S14-roles` roast file (36 files), plus a manual raku-vs-mutsu
+  comparison covering a nested-sub `is default`, a role instance-attribute default, and a role
+  `my`-scoped class-level attribute — all four values matched exactly.
 - [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker

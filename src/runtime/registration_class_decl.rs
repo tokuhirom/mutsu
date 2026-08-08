@@ -126,7 +126,7 @@ impl Interpreter {
             is_stub: is_stub_body,
             trusts,
             own_attribute_names,
-            attr_is_default_chunks,
+            attr_decls,
             method_name_chunks,
             method_decls,
         } = modifiers;
@@ -226,7 +226,7 @@ impl Interpreter {
             class_is_rw,
             &class_lang_rev,
             own_attribute_names,
-            attr_is_default_chunks,
+            attr_decls,
             method_name_chunks,
             method_decls,
         )?;

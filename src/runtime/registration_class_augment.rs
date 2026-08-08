@@ -1023,7 +1023,7 @@ impl Interpreter {
             is_stub: false,
             trusts: &[],
             own_attribute_names: &[],
-            attr_is_default_chunks: &[],
+            attr_decls: &[],
             method_name_chunks: &[],
             method_decls: &[],
         };

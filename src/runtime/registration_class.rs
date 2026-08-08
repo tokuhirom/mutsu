@@ -200,12 +200,12 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// of `run_class_body` re-scanning the body for `Stmt::HasDecl` at
     /// registration time.
     pub(crate) own_attribute_names: &'a [Symbol],
-    /// Precompiled `is default(...)` trait-argument chunks for this class
-    /// body's own attributes (ADR-0019 D2c), keyed by attribute name, threaded
-    /// down to `class_body_has_decl` via `ClassBodyCx`. Empty for
-    /// registration paths with no compiled plan available (role bodies,
-    /// `augment class`) — those keep evaluating the raw AST expression.
-    pub(crate) attr_is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
+    /// Precompiled typed descriptor for each of the class's own attributes
+    /// (ADR-0019 D2b remainder), keyed by attribute name, threaded down to
+    /// `class_body_has_decl` via `ClassBodyCx`. Empty for registration paths
+    /// with no compiled plan available (role bodies, `augment class`) —
+    /// those keep building a descriptor from the raw AST statement.
+    pub(crate) attr_decls: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// in `class_body_method_decl` via `ClassBodyCx`. Empty for registration

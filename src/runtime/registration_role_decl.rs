@@ -22,6 +22,10 @@ pub(super) struct RoleDeclCx<'a> {
     pub(super) body_used_modules: HashSet<String>,
     /// Types declared inside the role body itself (pre-scan pass).
     pub(super) body_declared_types: HashSet<String>,
+    /// Precompiled typed descriptor for each attribute this role declares
+    /// (ADR-0019 D2b remainder), keyed by attribute name; see
+    /// `role_body_has_decl`.
+    pub(super) attr_decls: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// via `method_name_chunk_idx`; see `role_body_method_decl`.

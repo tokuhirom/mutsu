@@ -273,6 +273,7 @@ impl Interpreter {
         own_attribute_names: &[Symbol],
         body_used_modules: &[String],
         body_declared_types: &[String],
+        attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
     ) -> Result<(), RuntimeError> {
@@ -325,6 +326,7 @@ impl Interpreter {
             role_own_attrs: own_attribute_names.iter().map(|s| s.resolve()).collect(),
             body_used_modules: body_used_modules.iter().cloned().collect(),
             body_declared_types: body_declared_types.iter().cloned().collect(),
+            attr_decls,
             method_name_chunks,
             method_decls,
             method_name_chunk_idx: 0,
