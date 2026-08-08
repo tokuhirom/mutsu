@@ -316,6 +316,28 @@ impl Interpreter {
             && let Some(persisted) = self.get_closure_env_override(wid)
         {
             for (k, v) in persisted.iter() {
+                // `$_`, `$/` and `$!` are per-routine: each call gets its own,
+                // and the caller's is restored from its saved env — the same
+                // rule `pop_caller_env_with_writeback` applies to dynamics. The
+                // wrapper's persisted copy is the *callee's* topic, so writing
+                // it back reset the caller's `$_` to `Any` on every wrapped
+                // call. OO::Monitors wraps every monitor method, so any
+                // `$monitor.method(...)` destroyed the caller's topic —
+                // Cro::HTTP::Client's `$!connection-cache.add-pipeline($pipeline)`
+                // did exactly that in the middle of a `whenever` body, and the
+                // `.request = $request-object` two lines later died with
+                // "cannot assign through .request on non-instance".
+                // `self` is per-frame for the same reason and even more sharply:
+                // OO::Monitors installs its wrapper from
+                // `MetamodelX::MonitorHOW.add_method`, whose own `self` is the
+                // HOW, so writing it back left the CALLER's `self` bound to a
+                // `MetamodelX::MonitorHOW` — every later `$!attr` read in that
+                // frame then threw "P6opaque: no such attribute".
+                if k.with_str(|s| {
+                    matches!(Self::normalize_var_meta_name(s), "_" | "/" | "!") || s == "self"
+                }) {
+                    continue;
+                }
                 if self.env().contains_key_sym(*k) {
                     self.env_mut().insert_sym(*k, v.clone());
                 }
