@@ -301,10 +301,9 @@ pub(crate) struct CompiledAttrDecl {
     pub(crate) is_our: bool,
     pub(crate) is_my: bool,
     /// The `is default(...)` trait argument (ADR-0019 D2c). `Ast` unless a
-    /// caller with compiler access at plan-lowering time (currently
-    /// `class_body_has_decl`, via `CompiledClassDeclPlan::is_default_chunks`)
-    /// supplied a precompiled `Literal`/`Compiled` replacement — see
-    /// [`Self::from_stmt`].
+    /// caller with compiler access at plan-lowering time (currently the
+    /// class-plan half of `CompiledClassDeclPlan::attr_decls`) supplied a
+    /// precompiled `Literal`/`Compiled` replacement — see [`Self::from_stmt`].
     pub(crate) is_default: Option<DeclTraitArg>,
     pub(crate) is_type: Option<String>,
     pub(crate) deprecated_message: Option<String>,
@@ -2530,12 +2529,17 @@ pub(crate) struct CompiledClassDeclPlan {
     /// `run_class_body` re-scanning the (flattened, nested-sub-surfaced)
     /// body on every registration.
     pub(crate) own_attribute_names: Vec<Symbol>,
-    /// Precompiled `is default(...)` trait argument for each own attribute
-    /// that declares one (ADR-0019 D2c), keyed by attribute name rather than
-    /// position — `class_body_has_decl` looks a chunk up by the `Stmt::HasDecl`
-    /// it is currently visiting instead of relying on the registration-time
-    /// walk visiting attributes in the same order this was built in.
-    pub(crate) is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
+    /// Precompiled typed descriptor for each of the class's own attributes
+    /// (ADR-0019 D2b remainder), keyed by attribute name — `class_body_has_decl`
+    /// looks a descriptor up by the `Stmt::HasDecl` it is currently visiting
+    /// instead of calling `CompiledAttrDecl::from_stmt` on the raw statement
+    /// at registration time (falling back to `from_stmt` only on a lookup
+    /// miss, e.g. a class-level `our`/`my` attribute, which this vec excludes
+    /// the same way `own_attribute_names` does). The `is default(...)` trait
+    /// argument inside each descriptor is precompiled to a
+    /// `Literal`/`Compiled` chunk (ADR-0019 D2c); `default`/`where_constraint`
+    /// remain raw `Expr`s (`DeclTraitArg::Ast`) until D2c-4.
+    pub(crate) attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), one entry per
     /// method in the order `run_class_body`'s `SyntheticBlock`-flattened walk
@@ -2573,6 +2577,15 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// Types the body declares itself (`my enum`, `my class`, ...)
     /// (ADR-0019 D2a), precomputed alongside `own_attribute_names`.
     pub(crate) body_declared_types: Vec<String>,
+    /// Precompiled typed descriptor for each attribute the role declares in
+    /// its own body (ADR-0019 D2b remainder), keyed by attribute name — see
+    /// `CompiledClassDeclPlan::attr_decls`. Unlike the class side, a role's
+    /// `is default(...)` is NOT precompiled to a chunk here (it stays
+    /// `DeclTraitArg::Ast`, matching `role_body_has_decl`'s existing
+    /// behavior of always calling `CompiledAttrDecl::from_stmt(stmt, None)`);
+    /// this vec is a pure construction-side move that stops registration
+    /// re-destructuring the raw `Stmt::HasDecl`, not a new compile step.
+    pub(crate) attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1). See
     /// `CompiledClassDeclPlan::method_name_chunks`.
@@ -5752,7 +5765,7 @@ impl CompiledCode {
         stmt: &Stmt,
         name_chunk: Option<CompiledDeclExpr>,
         trait_args: Vec<Option<DeclTraitArg>>,
-        is_default_chunks: Vec<(Symbol, DeclTraitArg)>,
+        attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
     ) -> u32 {
         let Stmt::ClassDecl {
@@ -5804,7 +5817,7 @@ impl CompiledCode {
             is_stub,
             trusts,
             own_attribute_names,
-            is_default_chunks,
+            attr_decls,
             method_name_chunks,
             method_decls,
         });
@@ -5817,6 +5830,7 @@ impl CompiledCode {
         &mut self,
         stmt: &Stmt,
         trait_args: Vec<Option<DeclTraitArg>>,
+        attr_decls: Vec<(Symbol, CompiledAttrDecl)>,
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
     ) -> u32 {
         let Stmt::RoleDecl {
@@ -5849,6 +5863,7 @@ impl CompiledCode {
             own_attribute_names,
             body_used_modules,
             body_declared_types,
+            attr_decls,
             method_name_chunks,
             method_decls,
         });

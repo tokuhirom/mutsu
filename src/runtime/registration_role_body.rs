@@ -16,7 +16,18 @@ impl Interpreter {
         cx: &mut RoleDeclCx<'_>,
         stmt: &Stmt,
     ) -> Result<(), RuntimeError> {
-        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, None);
+        // Look up this attribute's precompiled descriptor (ADR-0019 D2b
+        // remainder) by name before falling back — see the identical
+        // rationale in `class_body_has_decl`.
+        let decl = match stmt {
+            Stmt::HasDecl { name, .. } => cx
+                .attr_decls
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, decl)| decl.clone()),
+            _ => None,
+        }
+        .unwrap_or_else(|| crate::opcode::CompiledAttrDecl::from_stmt(stmt, None));
         let attr_name_str = decl.name.clone();
         // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
         // per-instance attribute: it becomes a class-level attribute on the

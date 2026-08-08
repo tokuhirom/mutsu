@@ -116,20 +116,24 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
     ) -> Result<ClassBodyFlow, RuntimeError> {
-        // Look up this attribute's precompiled `is default(...)` chunk (ADR-0019
-        // D2c) by name before building `decl` — `Stmt::HasDecl::name` is cheap to
-        // read directly, and a name-keyed lookup does not depend on this walk
-        // visiting attributes in the same order `compile_attr_is_default_chunks`
-        // built the plan's chunk list in.
-        let is_default_chunk = match stmt {
+        // Look up this attribute's precompiled descriptor (ADR-0019 D2b
+        // remainder) by name before falling back — `Stmt::HasDecl::name` is
+        // cheap to read directly, and a name-keyed lookup does not depend on
+        // this walk visiting attributes in the same order
+        // `compile_class_attr_decls` built the plan's vec in. A miss (a
+        // class-level `our`/`my` attribute, which the compiler-side vec
+        // excludes, or a registration path with no compiled plan at all)
+        // falls back to building one from the raw statement, same as before
+        // this migration.
+        let decl = match stmt {
             Stmt::HasDecl { name, .. } => cx
-                .is_default_chunks
+                .attr_decls
                 .iter()
                 .find(|(n, _)| n == name)
-                .map(|(_, chunk)| chunk),
+                .map(|(_, decl)| decl.clone()),
             _ => None,
-        };
-        let decl = crate::opcode::CompiledAttrDecl::from_stmt(stmt, is_default_chunk);
+        }
+        .unwrap_or_else(|| crate::opcode::CompiledAttrDecl::from_stmt(stmt, None));
         let attr_name_str = decl.name.clone();
 
         // An initializer that can never satisfy the constraint is a

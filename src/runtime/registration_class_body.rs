@@ -23,10 +23,10 @@ pub(super) struct ClassBodyCx<'a> {
     /// role-composed attributes: the full set of attributes valid for
     /// `$!attr` access.
     pub(super) class_own_attrs: HashSet<String>,
-    /// Precompiled `is default(...)` chunks for this class body's own
-    /// attributes (ADR-0019 D2c), keyed by attribute name; see
+    /// Precompiled typed descriptor for each of this class body's own
+    /// attributes (ADR-0019 D2b remainder), keyed by attribute name; see
     /// `class_body_has_decl`.
-    pub(super) is_default_chunks: &'a [(Symbol, crate::opcode::DeclTraitArg)],
+    pub(super) attr_decls: &'a [(Symbol, crate::opcode::CompiledAttrDecl)],
     /// Precompiled runtime-resolved-name chunk for each top-level `method`/
     /// `submethod` declaration in the body (ADR-0019 D3-1), read by position
     /// via `method_name_chunk_idx`; see `class_body_method_decl`.
@@ -95,7 +95,7 @@ impl Interpreter {
         class_is_rw: bool,
         class_lang_rev: &str,
         own_attribute_names: &[Symbol],
-        is_default_chunks: &[(Symbol, crate::opcode::DeclTraitArg)],
+        attr_decls: &[(Symbol, crate::opcode::CompiledAttrDecl)],
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
     ) -> Result<ClassDef, RuntimeError> {
@@ -139,7 +139,7 @@ impl Interpreter {
             saved_env,
             class_def,
             class_own_attrs,
-            is_default_chunks,
+            attr_decls,
             method_name_chunks,
             method_decls,
             method_name_chunk_idx: 0,

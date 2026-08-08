@@ -116,73 +116,91 @@ impl Compiler {
         };
         let name_chunk = name_expr.as_ref().map(|e| self.compile_decl_expr(e));
         let trait_args = self.compile_decl_trait_args(custom_traits);
-        let is_default_chunks = self.compile_attr_is_default_chunks(body);
+        let attr_decls = self.compile_class_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
-        self.code.add_class_decl_plan(
-            stmt,
-            name_chunk,
-            trait_args,
-            is_default_chunks,
-            method_name_chunks,
-        )
+        self.code
+            .add_class_decl_plan(stmt, name_chunk, trait_args, attr_decls, method_name_chunks)
     }
 
-    /// Precompile the `is default(...)` trait argument of each of a class
-    /// body's own attributes into a child chunk (ADR-0019 D2c), keyed by
+    /// Precompile a full `CompiledAttrDecl` for each attribute a class body
+    /// declares directly in its own body (ADR-0019 D2b remainder), keyed by
     /// attribute name so `class_body_has_decl` can look one up without
     /// depending on its registration-time walk visiting attributes in
-    /// exactly this order. Mirrors `class_body_has_decl`'s eligibility
-    /// (`our`/`my` class-level attributes never reach the `is_default` arm —
-    /// see `run_class_body`'s early `SkipTail` return) and
-    /// `collect_nested_class_has_decls`'s traversal (SyntheticBlock-flattened
-    /// top level plus `has` nested directly inside a body `sub`, recursively).
-    fn compile_attr_is_default_chunks(
+    /// exactly this order. Mirrors `class_own_attribute_names`'s eligibility
+    /// (`our`/`my` class-level attributes are excluded — see
+    /// `run_class_body`'s early `SkipTail` return before the per-instance
+    /// attribute is registered) and traversal (SyntheticBlock-flattened top
+    /// level plus `has` nested directly inside a body `sub`, recursively) —
+    /// same helper shape as `class_own_attribute_names`/
+    /// `collect_nested_has_decl_names`, which the earlier
+    /// `collect_attr_is_default_chunks` did NOT share, double-pushing a
+    /// nested-sub `has ... is default` (once from the `SubDecl` arm's direct
+    /// loop, once from its own recursive call re-matching the same
+    /// statement). This mirrors the registration-side non-recursive-repeat
+    /// exactly to avoid that trap, harmless as it was under
+    /// first-match-wins name-keyed lookup.
+    fn compile_class_attr_decls(
         &self,
         body: &[Stmt],
-    ) -> Vec<(Symbol, crate::opcode::DeclTraitArg)> {
-        let mut out = Vec::new();
-        self.collect_attr_is_default_chunks(body, &mut out);
-        out
-    }
-
-    fn collect_attr_is_default_chunks(
-        &self,
-        body: &[Stmt],
-        out: &mut Vec<(Symbol, crate::opcode::DeclTraitArg)>,
-    ) {
-        for stmt in body {
-            match stmt {
-                Stmt::SyntheticBlock(inner) => self.collect_attr_is_default_chunks(inner, out),
+    ) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
+        let mut out: Vec<(Symbol, crate::opcode::CompiledAttrDecl)> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .filter_map(|stmt| match stmt {
                 Stmt::HasDecl {
                     name,
                     is_our,
                     is_my,
-                    is_default: Some(expr),
                     ..
-                } if !*is_our && !*is_my => {
-                    out.push((*name, self.compile_decl_trait_arg(expr)));
-                }
+                } if !*is_our && !*is_my => Some((*name, self.compile_class_attr_decl(stmt))),
+                _ => None,
+            })
+            .collect();
+        self.collect_nested_class_attr_decls(body, &mut out);
+        out
+    }
+
+    fn collect_nested_class_attr_decls(
+        &self,
+        stmts: &[Stmt],
+        out: &mut Vec<(Symbol, crate::opcode::CompiledAttrDecl)>,
+    ) {
+        for s in stmts {
+            match s {
                 Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-                Stmt::SubDecl { body: inner, .. } => {
-                    for s in inner {
+                Stmt::SubDecl { body, .. } => {
+                    for inner in body {
                         if let Stmt::HasDecl {
                             name,
                             is_our,
                             is_my,
-                            is_default: Some(expr),
                             ..
-                        } = s
+                        } = inner
                             && !*is_our
                             && !*is_my
                         {
-                            out.push((*name, self.compile_decl_trait_arg(expr)));
+                            out.push((*name, self.compile_class_attr_decl(inner)));
                         }
                     }
-                    self.collect_attr_is_default_chunks(inner, out);
+                    self.collect_nested_class_attr_decls(body, out);
                 }
                 _ => {}
             }
         }
+    }
+
+    /// Build one attribute's typed descriptor, precompiling its `is
+    /// default(...)` trait argument (ADR-0019 D2c) inline the same way
+    /// `class_body_has_decl` used to look one up separately.
+    fn compile_class_attr_decl(&self, stmt: &Stmt) -> crate::opcode::CompiledAttrDecl {
+        let Stmt::HasDecl { is_default, .. } = stmt else {
+            unreachable!("compile_class_attr_decl called on a non-HasDecl statement");
+        };
+        let chunk = is_default.as_ref().map(|e| self.compile_decl_trait_arg(e));
+        crate::opcode::CompiledAttrDecl::from_stmt(stmt, chunk.as_ref())
     }
 
     /// [`Self::add_sub_decl_plan`] for a role declaration. A role's name is
@@ -197,8 +215,36 @@ impl Compiler {
             panic!("add_role_decl_plan expects RoleDecl");
         };
         let trait_args = self.compile_decl_trait_args(custom_traits);
+        let attr_decls = Self::compile_role_attr_decls(body);
         let method_name_chunks = self.compile_method_name_chunks(body);
         self.code
-            .add_role_decl_plan(stmt, trait_args, method_name_chunks)
+            .add_role_decl_plan(stmt, trait_args, attr_decls, method_name_chunks)
+    }
+
+    /// Precompile a full `CompiledAttrDecl` for each attribute a role body
+    /// declares (ADR-0019 D2b remainder), keyed by attribute name — see
+    /// `compile_class_attr_decls`. Mirrors `role_body_prescan`'s single-level
+    /// `SyntheticBlock` flatten with no nested-sub surfacing (roles have none
+    /// — `walk_role_body`'s own comment confirms it) and includes class-level
+    /// (`our`/`my`) attributes, unlike the class side: `role_body_has_decl`
+    /// handles both kinds through the same arm. No `is default(...)` chunk is
+    /// precompiled here (stays `DeclTraitArg::Ast`, calling
+    /// `CompiledAttrDecl::from_stmt(stmt, None)` exactly as
+    /// `role_body_has_decl` already did) — a pure construction-side move,
+    /// not a new compile step.
+    fn compile_role_attr_decls(body: &[Stmt]) -> Vec<(Symbol, crate::opcode::CompiledAttrDecl)> {
+        body.iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .filter_map(|stmt| match stmt {
+                Stmt::HasDecl { name, .. } => Some((
+                    *name,
+                    crate::opcode::CompiledAttrDecl::from_stmt(stmt, None),
+                )),
+                _ => None,
+            })
+            .collect()
     }
 }
