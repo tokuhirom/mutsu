@@ -234,10 +234,14 @@ impl Interpreter {
                             &decl.param_defs,
                             false,
                         );
-                    // Auto-detect @_ usage in methods without explicit signatures
-                    crate::method_signature_shared::apply_auto_positional_slurpy(
+                    // Auto-detect @_ usage in methods without explicit
+                    // signatures. ADR-0019 D3-9: `decl.uses_bare_positional_args`
+                    // is precomputed inside `CompiledMethodDecl::from_stmt`
+                    // (the `decl` built just above), so this reads a bool
+                    // instead of a second scan of `decl.body`.
+                    crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
                         decl.param_defs.is_empty(),
-                        &decl.body,
+                        decl.uses_bare_positional_args,
                         &mut effective_param_defs,
                     );
                     let effective_params: Vec<String> = effective_param_defs

@@ -115,6 +115,23 @@ pub(crate) fn apply_auto_positional_slurpy(
         return;
     }
     let (use_positional, _) = auto_signature_uses(body);
+    apply_auto_positional_slurpy_from_flag(true, use_positional, effective_param_defs);
+}
+
+/// Same insertion as [`apply_auto_positional_slurpy`], but taking the body
+/// scan's result directly instead of re-deriving it from `body` — for
+/// callers holding a [`crate::opcode::CompiledMethodDecl`], whose
+/// `uses_bare_positional_args` field (ADR-0019 D3-9) is precomputed once at
+/// plan-lowering/declaration-build time rather than re-scanned on every
+/// registration.
+pub(crate) fn apply_auto_positional_slurpy_from_flag(
+    original_param_defs_is_empty: bool,
+    use_positional: bool,
+    effective_param_defs: &mut Vec<ParamDef>,
+) {
+    if !original_param_defs_is_empty {
+        return;
+    }
     if !use_positional || effective_param_defs.iter().any(|pd| pd.name == "@_") {
         return;
     }
