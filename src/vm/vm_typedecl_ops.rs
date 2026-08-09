@@ -144,6 +144,7 @@ impl Interpreter {
             method_decls,
             declared_static_names,
             parent_arg_chunks,
+            body_plan: _,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
