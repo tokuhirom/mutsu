@@ -325,6 +325,45 @@ pub(crate) fn record_method_body_runtime_compile() {
     }
 }
 
+// ADR-0019 Phase E box E1a: shadow-mode comparison of the new TypeId-based receiver
+// classifier (`crate::runtime::receiver_class`) against the four dispatch sites'
+// EXISTING string-based owner decisions. `OWNER_SHADOW_CHECKS`/`_MISMATCHES` are the
+// totals across all four sites; `owner_shadow_mismatch_by_site` breaks mismatches down
+// by `"<site> [old=... new=... definedness=... exec=...]"` so a bucket can be matched
+// against the E1a PR's accepted-mismatch ledger. E1a's exit criterion is NOT a raw
+// zero mismatch count -- it is that every bucket here is either zero or explained in
+// that ledger (see `todo/deep/adr0019-e1-typeid-receiver-owner.md`). Nothing reads
+// these counters to make a dispatch decision: shadow-only, zero behavior change.
+static OWNER_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static OWNER_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn owner_shadow_mismatch_by_site() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_SITE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_SITE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one E1a shadow comparison at `site`. `detail` is only evaluated on a
+/// mismatch (it formats the old/new owner and the classifier's definedness/exec, which
+/// is otherwise wasted work on the — expected to be overwhelmingly common — match
+/// path).
+#[inline]
+pub(crate) fn record_owner_shadow_check(
+    site: &str,
+    matched: bool,
+    detail: impl FnOnce() -> String,
+) {
+    if !enabled() {
+        return;
+    }
+    OWNER_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        OWNER_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = owner_shadow_mismatch_by_site().lock() {
+            *map.entry(format!("{site} [{}]", detail())).or_insert(0) += 1;
+        }
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -597,6 +636,27 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let owner_shadow_checks = OWNER_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let owner_shadow_mismatches = OWNER_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-e1a: owner_shadow_checks={owner_shadow_checks} owner_shadow_mismatches={owner_shadow_mismatches}"
+    );
+    if let Ok(map) = owner_shadow_mismatch_by_site().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e1a owner-shadow mismatches by site (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
     let method_body_runtime_compiles = METHOD_BODY_RUNTIME_COMPILES.load(Ordering::Relaxed);
     eprintln!(
         "[mutsu vm-stats] adr0019-d3-8: method_body_runtime_compiles={method_body_runtime_compiles} (registration-time compiles the main-pass compiler should make unnecessary)"

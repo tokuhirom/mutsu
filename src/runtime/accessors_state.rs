@@ -672,7 +672,7 @@ impl Interpreter {
         name: &str,
         args: &[Value],
     ) -> Option<Arc<FunctionDef>> {
-        let Some(arg_keys) = Self::multi_arg_type_keys(args) else {
+        let Some(arg_keys) = self.multi_arg_type_keys(args) else {
             return self.resolve_function_with_types(name, args);
         };
         let pkg_sym = Symbol::intern(&self.current_package());
