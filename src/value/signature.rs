@@ -295,6 +295,16 @@ fn parameter_class_for(p: &SigParam) -> Symbol {
     param_trait_mixin_type(&p.traits).unwrap_or_else(|| Symbol::intern("Parameter"))
 }
 
+/// The base nominal type of a builtin subset, or `None` for any other type
+/// name. `UInt` (`subset UInt of Int where * >= 0`) is the only builtin subset
+/// with a distinct base.
+fn builtin_subset_base(name: &str) -> Option<&'static str> {
+    match name {
+        "UInt" => Some("Int"),
+        _ => None,
+    }
+}
+
 fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     let mut attrs = HashMap::new();
     // .name returns the sigiled name (e.g., "$x", "@pos", "%named")
@@ -322,7 +332,14 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
         // own type is the parameterized container role.
         Some(t) if p.sigil == '@' => Value::Package(Symbol::intern(&format!("Positional[{t}]"))),
         Some(t) if p.sigil == '%' => Value::Package(Symbol::intern(&format!("Associative[{t}]"))),
-        Some(t) => Value::Package(Symbol::intern(t)),
+        // A subset type is nominalized: `.type` reports the base nominal type
+        // and the subset itself becomes a `.constraints` entry (rakudo:
+        // `sub f(UInt :$p) {}` has `.type` Int and `.constraints` all(UInt)).
+        // Only the builtin subset is resolved here — this is a static context
+        // with no access to the runtime's user-subset registry.
+        // TODO: nominalize user-declared subsets too (needs registry access;
+        // see todo/tickets/parameter-type-not-nominalized-for-user-subsets.md).
+        Some(t) => Value::Package(Symbol::intern(builtin_subset_base(t).unwrap_or(t))),
         // Untyped params: the sigil implies the container role.
         None => Value::Package(Symbol::intern(match p.sigil {
             '@' => "Positional",
@@ -416,17 +433,22 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     }
 
     // .constraints is always an `all()` junction of the parameter's value
-    // constraints (a literal value, or the code of a `where` clause). An
-    // unconstrained parameter yields the empty `all()`, which both smartmatches
-    // truely against anything and autothreads a call zero times — code such as
-    // Cro's route compiler relies on the latter to detect "no constraints".
-    let constraint_items: Vec<Value> = if let Some(ref lit) = p.literal_value {
-        vec![lit.clone()]
+    // constraints (a subset the type was nominalized away from, a literal
+    // value, or the code of a `where` clause). An unconstrained parameter
+    // yields the empty `all()`, which both smartmatches truely against
+    // anything and autothreads a call zero times — code such as Cro's route
+    // compiler relies on the latter to detect "no constraints".
+    let mut constraint_items: Vec<Value> = Vec::new();
+    if let Some(ref t) = p.type_constraint
+        && builtin_subset_base(t).is_some()
+    {
+        constraint_items.push(Value::Package(Symbol::intern(t)));
+    }
+    if let Some(ref lit) = p.literal_value {
+        constraint_items.push(lit.clone());
     } else if let Some(ref where_expr) = p.where_constraint {
-        vec![where_expr_to_value(where_expr)]
-    } else {
-        Vec::new()
-    };
+        constraint_items.push(where_expr_to_value(where_expr));
+    }
     attrs.insert(
         "constraints".to_string(),
         Value::junction(crate::value::JunctionKind::All, constraint_items),

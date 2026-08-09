@@ -857,10 +857,29 @@ pub(super) fn dispatch(
                     _ => false,
                 };
                 if is_neg {
-                    return Some(Some(Err(RuntimeError::new(format!(
+                    // Rakudo returns a soft X::OutOfRange Failure here, not a
+                    // thrown exception — callers may test/reject it (e.g. a
+                    // signature bind) without ever exploding.
+                    let msg = format!(
                         "Coercion to UInt out of range. Is: {}, should be in 0..^Inf",
                         int_val.to_string_value()
-                    )))));
+                    );
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("message".to_string(), Value::str(msg));
+                    attrs.insert(
+                        "what".to_string(),
+                        Value::str("Coercion to UInt".to_string()),
+                    );
+                    attrs.insert("got".to_string(), int_val);
+                    attrs.insert("range".to_string(), Value::str("0..^Inf".to_string()));
+                    let ex = Value::make_instance(Symbol::intern("X::OutOfRange"), attrs);
+                    let mut failure_attrs = std::collections::HashMap::new();
+                    failure_attrs.insert("exception".to_string(), ex);
+                    failure_attrs.insert("handled".to_string(), Value::FALSE);
+                    return Some(Some(Ok(Value::make_instance(
+                        Symbol::intern("Failure"),
+                        failure_attrs,
+                    ))));
                 }
                 Some(Some(Ok(int_val)))
             } else {

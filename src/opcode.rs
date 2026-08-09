@@ -951,6 +951,12 @@ pub(crate) enum OpCode {
     /// are (or may be) container-wrapped and must not auto-sink (Raku does not
     /// sink container-wrapped values).
     SinkPop(bool),
+    /// Pop the value of an assignment used as a statement (`%h{$k} = ...;`,
+    /// `@a[$i] = ...;`). Rakudo treats assignment statements as wanted, not
+    /// sunk: an assigned unhandled Failure is stored, never thrown — except
+    /// under `use fatal`, where it still explodes. Unlike `SinkPop` this arm
+    /// must not force lazy values or run user `sink` methods either.
+    SinkPopAssign,
     /// Statement-prefix `quietly`: push a warning-suppression frame so any
     /// warning raised while evaluating the following expression is silenced
     /// (the warn still resumes in place with its resume value, matching Raku's

@@ -1,6 +1,6 @@
 use Test;
 
-plan 36;
+plan 39;
 
 sub j(*@i) {
     @i.map({ $_ ?? '1' !! '0' }).join(' ');
@@ -70,6 +70,19 @@ sub j(*@i) {
 
     sub f(:y($a)) { };
     is ~&f.signature.params[0].named_names, 'y', 'single alias reports the external name only';
+}
+
+# Subset types are nominalized: .type reports the base nominal type and the
+# subset lands in .constraints (Cro's route compiler relies on both).
+{
+    sub g(UInt :$page) { };
+    my $p = &g.signature.params[0];
+    ok $p.type =:= Int, 'UInt parameter .type is the nominal base Int';
+    is $p.constraints.raku, 'all(UInt)', '... and .constraints carries the subset';
+
+    sub h(Int :$n) { };
+    is &h.signature.params[0].constraints.raku, 'all()',
+        'a plain nominal type leaves .constraints empty';
 }
 
 # Capture param introspection
