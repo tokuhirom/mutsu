@@ -189,6 +189,29 @@ impl Interpreter {
                     || key.starts_with("__mutsu_")
                     || key.starts_with("&")
                     || key.starts_with("?")
+                    // Every SCALAR dynamic variable (`*x` / `$*x`), not just
+                    // `$*CWD`: dynamics are thread-local in Raku, so a `start`
+                    // block must not seed the parent frame's binding into the
+                    // lineage-shared store, or it leaks process-wide after the
+                    // frame returns (the child env is a clone of the parent's,
+                    // so a spawned worker still reads the current dynamic fine
+                    // without this name-lane sharing; and a block that closes
+                    // over the dynamic gets it via the normal captured-scalar
+                    // cell below regardless).
+                    //
+                    // `@*x`/`%*x` aggregate dynamics are deliberately NOT
+                    // excluded here: unlike scalars, aggregates have no
+                    // cell-based closure capture in this codebase — their
+                    // cross-thread mutation visibility (e.g. `.then`
+                    // callbacks chained onto the SAME promise, roast
+                    // S17-promise/then.t's `@*FOO`) depends entirely on this
+                    // name lane's `__mutsu_atomic_*` CAS mechanism, same as
+                    // any other captured aggregate (see the comment on that
+                    // exclusion below). Excluding them here would silently
+                    // break that live-chain propagation, not just the leak.
+                    || (key.with_str(crate::env::is_dynamic_var_name)
+                        && !key.starts_with("@")
+                        && !key.starts_with("%"))
                 {
                     continue;
                 }
