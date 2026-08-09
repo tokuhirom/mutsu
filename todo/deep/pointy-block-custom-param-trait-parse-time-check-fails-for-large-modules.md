@@ -129,6 +129,30 @@ the suite should not be surprised by a different count than a prior session reco
 should not treat a lower count as a regression from their own changes without first
 confirming the *same* binary/build reproduces it more than once.
 
+## Status update (2026-08-09): the ParseMemo soundness hole is fixed; symptom attribution still open
+
+The pointer-identity keying described above is fixed: memo keys are now
+`(generation, ptr, len)` with a fresh thread-local generation per
+`parse_program` / `parse_program_partial` call (restored on exit), so a nested
+scan's entries can never be returned to the enclosing parse via allocator
+address reuse (`news/2026-08/parse-memo-generation-key.md`). The
+`STMT_ANON_STATES_TLS` table, which shared the same raw-pointer keying, was
+fixed the same way.
+
+Whether that collision was *this ticket's* root cause remains unproven: every
+build available this session (debug and release) was on the "lucky" side, so
+there was no failing binary to test `MUTSU_PARSE_MEMO=0` against. After the
+fix, four release rebuilds with deliberately varied binary layout (dead-code
+padding in `main`) all held at the historical maximum 64/83 for
+`http-router.rakutest`, and the minimal repro passes.
+
+**Decision protocol going forward:** if the 64/83 ⇔ 0/83 flip (or the "unknown
+trait 'is' -> 'query'" error) ever recurs on a post-fix binary, the memo theory
+is **refuted** — re-run with `MUTSU_PARSE_MEMO=0` to double-check, then pursue
+the "full CLI parse path divergence" investigation below (the side where ~15
+synthetic repro attempts failed). Until then, treat the memo collision as the
+most plausible explanation and this ticket as watch-only.
+
 ## Suggested next steps
 
 1. Instrument `main.rs`'s actual parse call (not a substitute unit test) with a
