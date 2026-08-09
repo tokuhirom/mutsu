@@ -417,10 +417,12 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     let twigil = extract_twigil(&p.name);
     attrs.insert("twigil".to_string(), Value::str(twigil.to_string()));
 
-    // .default: wrap default expression in a closure (Code object)
-    if let Some(ref default_expr) = p.default_expr {
+    // .default: wrap default expression in a closure (Code object). A
+    // parameter with no default answers the undefined `Code` type object
+    // (rakudo), not a missing method — `with $param.default` must still work.
+    let default_val = if let Some(ref default_expr) = p.default_expr {
         let body = vec![Stmt::Expr(*default_expr.clone())];
-        let default_sub = Value::make_sub(
+        Value::make_sub(
             Symbol::intern(""),
             Symbol::intern("<default>"),
             Vec::new(),
@@ -428,9 +430,19 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
             body,
             false,
             crate::env::Env::new(),
-        );
-        attrs.insert("default".to_string(), default_sub);
-    }
+        )
+    } else {
+        Value::Package(Symbol::intern("Code"))
+    };
+    attrs.insert("default".to_string(), default_val);
+
+    // .usage-name: the variable name minus sigil and twigil (rakudo: the name
+    // Cro's route-URL generator uses to build a placeholder).
+    let usage_name = {
+        let twigil = extract_twigil(&p.name);
+        p.name[twigil.len()..].to_string()
+    };
+    attrs.insert("usage-name".to_string(), Value::str(usage_name));
 
     // .constraints is always an `all()` junction of the parameter's value
     // constraints (a subset the type was nominalized away from, a literal
@@ -449,6 +461,10 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     } else if let Some(ref where_expr) = p.where_constraint {
         constraint_items.push(where_expr_to_value(where_expr));
     }
+    attrs.insert(
+        "constraint_list".to_string(),
+        Value::array(constraint_items.clone()),
+    );
     attrs.insert(
         "constraints".to_string(),
         Value::junction(crate::value::JunctionKind::All, constraint_items),
