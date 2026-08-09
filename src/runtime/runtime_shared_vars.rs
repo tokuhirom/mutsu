@@ -1,6 +1,18 @@
 use super::*;
 use crate::value::ValueView;
 
+/// The bare scalar names [`Interpreter::mask_thread_redeclared_params`] newly
+/// added to `thread_redeclared_vars` / `thread_param_shadow_vars` for one
+/// call, so [`Interpreter::unmask_thread_redeclared_params`] can remove
+/// exactly those entries — from each set independently — on return, without
+/// disturbing a still-active ancestor frame's own mask. See the doc comment
+/// on `mask_thread_redeclared_params` for why the two sets are tracked apart.
+#[derive(Default)]
+pub(crate) struct ThreadParamMask {
+    redeclared: Vec<String>,
+    shadowed: Vec<String>,
+}
+
 impl Interpreter {
     /// Track C: assign a single hash element (`%h{$k} = $v`) through the shared
     /// cell so concurrent `start { %h{...} = ... }` blocks all land instead of
@@ -199,6 +211,76 @@ impl Interpreter {
         self.shared_vars_active
             && key.starts_with(['@', '%'])
             && self.thread_redeclared_vars.contains(key)
+    }
+
+    /// Mask each scalar parameter name in `names` as a fresh per-invocation
+    /// binding while the cross-thread shared store is active — the call-site
+    /// analogue of the `my` declaration mask `exec_set_var_dynamic_op` applies
+    /// (see its comment). A plain `thread_redeclared_vars` mask alone is not
+    /// enough for a *parameter*: unlike a `my` in the current block, the
+    /// parameter's shadow is scoped to exactly this call, but
+    /// `clone_for_thread_excluding` cannot tell the difference and would
+    /// force-`declare` the parameter's (shadowed) value into the shared store
+    /// on any nested spawn during the call body, clobbering an unrelated
+    /// caller's live entry for the same bare name (e.g. `Cro::HTTP::Client`'s
+    /// `request`/`!get-pipeline` methods each have their own `$url` parameter;
+    /// a `Promise.in(...)` spawned inside `!get-pipeline`'s body force-published
+    /// its `Cro::Uri $url` over the awaiting `start { ... }` block's own
+    /// `my $url`). Recording the name in
+    /// [`thread_param_shadow_vars`](Self::thread_param_shadow_vars) routes such
+    /// a nested spawn through `clone_for_thread_excluding`'s `seed_if_absent`
+    /// branch instead — a no-op when the name is already visible, which is
+    /// exactly the outer binding's case.
+    ///
+    /// `thread_redeclared_vars` and `thread_param_shadow_vars` are tracked
+    /// **independently**: a name can already be in `thread_redeclared_vars`
+    /// for an unrelated, possibly-stale reason (an ancestor frame's `my`
+    /// declaration whose mask nothing has cleared yet — the mask is not scoped
+    /// per declaration site). If this call deferred to that pre-existing mask
+    /// and skipped adding its own `thread_param_shadow_vars` entry, the stale
+    /// mask's "genuine `my`, safe to force-declare" semantics would apply to
+    /// THIS call's parameter too, re-opening the same clobbering hole. So this
+    /// call always ensures ITS OWN membership in `thread_param_shadow_vars`
+    /// while it runs, regardless of whether `thread_redeclared_vars` already
+    /// held the name, and tracks separately (per name) whether IT was the one
+    /// that added each entry — so
+    /// [`unmask_thread_redeclared_params`](Self::unmask_thread_redeclared_params)
+    /// removes exactly what this call added, from each set independently,
+    /// without disturbing a still-active ancestor's own mask.
+    pub(crate) fn mask_thread_redeclared_params<'a>(
+        &mut self,
+        names: impl Iterator<Item = &'a str>,
+    ) -> ThreadParamMask {
+        let mut mask = ThreadParamMask::default();
+        if !self.shared_vars_active {
+            return mask;
+        }
+        for name in names {
+            if name.is_empty() || name == "_" || name == "self" || name.starts_with(['@', '%', '&'])
+            {
+                continue;
+            }
+            let bare = name.trim_start_matches('$').to_string();
+            if self.thread_redeclared_vars.insert(bare.clone()) {
+                mask.redeclared.push(bare.clone());
+            }
+            if self.thread_param_shadow_vars.insert(bare.clone()) {
+                mask.shadowed.push(bare);
+            }
+        }
+        mask
+    }
+
+    /// Undo exactly the masking [`mask_thread_redeclared_params`] applied for
+    /// this call, restoring bare-name shared-store visibility for the
+    /// parameter's name once the call returns.
+    pub(crate) fn unmask_thread_redeclared_params(&mut self, mask: &ThreadParamMask) {
+        for name in &mask.redeclared {
+            self.thread_redeclared_vars.remove(name);
+        }
+        for name in &mask.shadowed {
+            self.thread_param_shadow_vars.remove(name);
+        }
     }
 
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the

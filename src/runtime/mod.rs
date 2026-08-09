@@ -1481,6 +1481,28 @@ pub struct Interpreter {
     /// in-flight window closes that hole; the store is republished normally once
     /// the initializer's value lands. Empty for single-threaded programs.
     pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
+    /// Bare scalar names currently masked in [`Self::thread_redeclared_vars`]
+    /// because of a **parameter binding** (`mask_thread_redeclared_params`),
+    /// not a `my` declaration. `clone_for_thread_excluding` must treat the two
+    /// differently: a `my` re-declaration's mask means "this spawn should see
+    /// MY new value as authoritative for the rest of the block", so it force-
+    /// `declare`s the value into the shared lineage. A parameter's shadow is
+    /// scoped to exactly this call and must never overwrite an unrelated
+    /// caller's live entry for the same bare name — it should always take the
+    /// `seed_if_absent` (no-op-if-already-visible) branch instead, even for a
+    /// nested spawn *inside this call's own body*.
+    ///
+    /// `thread_decl_in_flight` looked like the same "always seed_if_absent"
+    /// signal, but it is unsuitable here: `exec_set_local_op` clears an entry
+    /// from it as soon as ANY `SetLocal` targets a same-named slot — which the
+    /// call body's own bytecode does routinely (e.g. a coercion or a
+    /// re-assignment of the parameter), silently un-suppressing the force-
+    /// `declare` behavior partway through the call before any nested spawn.
+    /// A dedicated set, touched only by
+    /// [`mask_thread_redeclared_params`](Self::mask_thread_redeclared_params) /
+    /// [`unmask_thread_redeclared_params`](Self::unmask_thread_redeclared_params),
+    /// has no such interference. Empty for single-threaded programs.
+    pub(crate) thread_param_shadow_vars: std::collections::HashSet<String>,
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words
