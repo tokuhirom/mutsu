@@ -1425,14 +1425,7 @@ impl Compiler {
                 for (i, arg) in args.iter().enumerate() {
                     // `start` keeps marking EVERY argument escaping, exactly as
                     // before; other calls mark only a closure literal.
-                    let value_expr = match arg {
-                        Expr::Binary {
-                            op: TokenKind::FatArrow,
-                            right,
-                            ..
-                        } => right.as_ref(),
-                        other => other,
-                    };
+                    let value_expr = Self::unwrap_named_arg_value(arg);
                     let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
                     let thread_escaping = is_start;
                     if let Expr::Binary {
