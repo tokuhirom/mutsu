@@ -446,8 +446,12 @@ impl Interpreter {
                         // race a cycle scan (the wait itself is STW-aware).
                         crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
                             let (result, _, _) = shared_clone.wait();
-                            let _ = tx.send(SupplyEvent::Emit(result));
-                            let _ = tx.send(SupplyEvent::Done);
+                            if shared_clone.status() == "Broken" {
+                                let _ = tx.send(SupplyEvent::Quit(result));
+                            } else {
+                                let _ = tx.send(SupplyEvent::Emit(result));
+                                let _ = tx.send(SupplyEvent::Done);
+                            }
                         });
                         react_subs.push(ReactSubscription {
                             receiver: Some(rx),
