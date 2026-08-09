@@ -308,13 +308,14 @@ mod declaration_plan_tests {
         assert_eq!(names, vec!["w", "x", "y"]);
     }
 
-    /// ADR-0019 D6-3a: `body_plan` mirrors `run_class_body`'s own flattened
-    /// dispatch order one-op-per-statement (including the interstitial
-    /// `Stmt::SetLine` markers the parser inserts, which classify as
-    /// `Other` the same way `run_class_body`'s `_` arm treats them today),
-    /// with a nested-sub `has` appended at the end (matching
-    /// `own_attribute_names`'s own append order), and classifies each
-    /// statement kind into the right op.
+    /// ADR-0019 D6-3a/D6-3b: `body_plan` mirrors `run_class_body`'s own
+    /// flattened dispatch order one-op-per-statement (including the
+    /// interstitial `Stmt::SetLine` markers the parser inserts, which
+    /// classify as `Other` the same way `run_class_body`'s `_` arm treats
+    /// them today), with a nested-sub `has` appended at the end (matching
+    /// `own_attribute_names`'s own append order), classifies each statement
+    /// kind into the right op, and (D6-3b) compiles a standalone chunk for
+    /// every `Other`/`ClassSub` statement.
     #[test]
     fn class_declarations_precompute_body_plan() {
         let (stmts, _) = crate::parse_dispatch::parse_source(
@@ -377,11 +378,18 @@ mod declaration_plan_tests {
         collect_nested_has(body, &mut flattened);
         assert_eq!(plan_a.body_plan.len(), flattened.len());
 
-        // Filtering out `Other` ops (which absorb both `SetLine` markers and
-        // the `my`-lexical statement, matching `declared_static_names`'s own
-        // separate handling of body statics) leaves exactly the typed arms,
-        // in source order, with the nested-sub `has` appended at the tail.
+        // Every `Other` op (the `SetLine` markers and the `my`-lexical
+        // statement, matching `declared_static_names`'s own separate
+        // handling of body statics) got its own compiled chunk (D6-3b).
         use crate::opcode::ClassBodyOp;
+        for op in &plan_a.body_plan {
+            if let ClassBodyOp::Other { chunk, .. } = op {
+                assert!(chunk.is_some(), "Other op missing a compiled chunk: {op:?}");
+            }
+        }
+
+        // Filtering out `Other` ops leaves exactly the typed arms, in
+        // source order, with the nested-sub `has` appended at the tail.
         let typed: Vec<&ClassBodyOp> = plan_a
             .body_plan
             .iter()
@@ -397,9 +405,10 @@ mod declaration_plan_tests {
             typed[2],
             ClassBodyOp::Does { name } if name.as_str() == "Baz"
         ));
+        // `ClassSub` shares `Other`'s chunk mechanism (D6-3b).
         assert!(matches!(
             typed[3],
-            ClassBodyOp::ClassSub { name, chunk: None, .. } if name.as_str() == "helper"
+            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "helper"
         ));
         assert!(matches!(
             typed[4],
@@ -413,12 +422,47 @@ mod declaration_plan_tests {
         // whose nested `has $.w` is the last op, appended at the tail.
         assert!(matches!(
             typed[6],
-            ClassBodyOp::ClassSub { name, chunk: None, .. } if name.as_str() == "f"
+            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "f"
         ));
         assert!(matches!(
             typed[7],
             ClassBodyOp::Attr { name } if name.as_str() == "w"
         ));
+    }
+
+    /// ADR-0019 D6-3b: `token`/`rule` declarations are excluded from the
+    /// `Other`-chunk compile — the phase preamble's ADR-0009 carve-out —
+    /// and keep `chunk: None`, staying on the registration-time
+    /// `run_block_raw` path until their own dedicated slice.
+    #[test]
+    fn class_declarations_body_plan_excludes_token_rule_chunks() {
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("class A { token t { a }; rule r { a } }")
+                .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+
+        use crate::opcode::ClassBodyOp;
+        let token_rule_ops: Vec<&ClassBodyOp> = plan_a
+            .body_plan
+            .iter()
+            .filter(|op| {
+                matches!(
+                    op,
+                    ClassBodyOp::Other { raw, .. }
+                        if matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. })
+                )
+            })
+            .collect();
+        assert_eq!(token_rule_ops.len(), 2, "ops: {token_rule_ops:?}");
+        for op in token_rule_ops {
+            assert!(matches!(op, ClassBodyOp::Other { chunk: None, .. }));
+        }
     }
 
     /// ADR-0019 D2a: a role declaration's own attribute names, `use`d module

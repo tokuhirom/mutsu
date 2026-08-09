@@ -20,11 +20,14 @@ impl Compiler {
         self.compile_decl_expr_inner(expr, false)
     }
 
-    fn compile_decl_expr_inner(
-        &self,
-        expr: &Expr,
-        mint_named_pair: bool,
-    ) -> crate::opcode::CompiledDeclExpr {
+    /// The shared setup [`Self::compile_decl_expr_inner`] and
+    /// [`Self::compile_decl_stmt_chunk`] both need: a standalone child
+    /// `Compiler` with no local slots, so every variable the chunk names
+    /// resolves through the environment the declaration registers in. The
+    /// package and distribution come from the declaration's own lexical
+    /// position rather than from whatever routine frame happens to be live
+    /// when registration runs.
+    fn new_decl_chunk_compiler(&self) -> Compiler {
         let mut chunk_compiler = Compiler::new();
         chunk_compiler.is_routine = self.is_routine;
         chunk_compiler.lexically_in_routine = self.lexically_in_routine;
@@ -36,6 +39,15 @@ impl Compiler {
         chunk_compiler.set_current_package(self.current_package.clone());
         chunk_compiler.current_distribution = self.current_distribution.clone();
         chunk_compiler.last_source_line = self.last_source_line;
+        chunk_compiler
+    }
+
+    fn compile_decl_expr_inner(
+        &self,
+        expr: &Expr,
+        mint_named_pair: bool,
+    ) -> crate::opcode::CompiledDeclExpr {
+        let mut chunk_compiler = self.new_decl_chunk_compiler();
         // ADR-0021 I2/I3: a bareword-keyed fat-arrow (or colonpair, same AST
         // shape) written directly as a declaration-time trait/role argument
         // (`is foo(:bar(1))`, `role B does A[:a(1)]`) mints the named
@@ -47,6 +59,23 @@ impl Compiler {
             chunk_compiler.mint_named_pair = true;
         }
         let body = [Stmt::Expr(expr.clone())];
+        let (code, fns) = chunk_compiler.compile(&body);
+        crate::opcode::CompiledDeclExpr {
+            code: std::sync::Arc::new(code),
+            fns: std::sync::Arc::new(fns),
+        }
+    }
+
+    /// Compile an arbitrary class-body statement into its own standalone
+    /// bytecode chunk (ADR-0019 D6-3b) — the statement-shaped
+    /// generalization of [`Self::compile_decl_expr`]: same standalone-unit
+    /// compile, but for a whole `&Stmt` rather than one wrapped `Expr`,
+    /// since `ClassBodyOp::Other`'s statement kinds (`use`/`need`, nested
+    /// `class`/`role`, BEGIN/CHECK, EVAL, `my`/`our` lexicals, ...) are not
+    /// expressions.
+    pub(crate) fn compile_decl_stmt_chunk(&self, stmt: &Stmt) -> crate::opcode::CompiledDeclExpr {
+        let chunk_compiler = self.new_decl_chunk_compiler();
+        let body = [stmt.clone()];
         let (code, fns) = chunk_compiler.compile(&body);
         crate::opcode::CompiledDeclExpr {
             code: std::sync::Arc::new(code),
@@ -173,6 +202,7 @@ impl Compiler {
         // true`); `is_hidden` gates the implicit `*%_` the same way too.
         let method_compiled_keys =
             self.compile_method_body_keys(body, package_name.as_deref(), *is_hidden, true);
+        let body_plan = self.compile_class_body_plan(body);
         self.code.add_class_decl_plan(
             stmt,
             name_chunk,
@@ -181,7 +211,37 @@ impl Compiler {
             method_name_chunks,
             parent_arg_chunks,
             method_compiled_keys,
+            body_plan,
         )
+    }
+
+    /// Lower a class body into its ordered, typed op mirror (ADR-0019
+    /// D6-3a), then compile the `Other`/`ClassSub` arms' raw statement into
+    /// its own standalone chunk (ADR-0019 D6-3b) —
+    /// `crate::opcode::class_body_plan` classifies statements purely from
+    /// the AST; only this compiler-side pass can turn a raw statement into
+    /// a `CompiledDeclExpr`, since that needs a child `Compiler`
+    /// (package/distribution context), not just pattern matching.
+    /// `ClassSub` shares `Other`'s chunk mechanism (a top-level `SubDecl`
+    /// runs through the same `class_body_other_stmt` path at registration,
+    /// `ClassSub` only adds the `class_subs` tail-probe fact on top).
+    /// `token`/`rule` statements are excluded per the phase preamble's
+    /// ADR-0009 carve-out — they keep `chunk: None` and stay on the
+    /// registration-time `run_block_raw` path (D6-3e verifies this
+    /// explicitly once the driver cuts over).
+    fn compile_class_body_plan(&self, body: &[Stmt]) -> Vec<crate::opcode::ClassBodyOp> {
+        let mut ops = crate::opcode::class_body_plan(body);
+        for op in &mut ops {
+            let (chunk, raw) = match op {
+                crate::opcode::ClassBodyOp::Other { chunk, raw }
+                | crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. } => (chunk, raw),
+                _ => continue,
+            };
+            if !matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. }) {
+                *chunk = Some(self.compile_decl_stmt_chunk(raw));
+            }
+        }
+        ops
     }
 
     /// Compile each top-level `method`/`submethod` declaration's body to
