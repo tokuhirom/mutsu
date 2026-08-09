@@ -1342,8 +1342,17 @@ pub(in crate::value) enum ValueRepr {
         name: Symbol,
         is_regex: bool,
     },
+    /// The named-argument-flavour Pair (ADR-0021): a transient marker that
+    /// only a call-site (a bareword-keyed fat-arrow/colonpair written
+    /// directly in an argument list) may mint. No value-producing operation
+    /// — a literal outside an argument list, a constructor, `.pairs`,
+    /// iteration, coercion — may return one; see `ValuePair` below for that.
     Pair(String, Box<Value>),
-    /// Pair with a non-string key (preserves the original key type for `.key`)
+    /// The positional (data) flavour of Pair — the default for everything
+    /// that isn't call-site argument syntax, including a plain string key
+    /// (not just a non-string typed key, despite the name predating
+    /// ADR-0021's minting-default flip; preserves the original key type/
+    /// value for `.key`/`.value`).
     ValuePair(Box<Value>, Box<Value>),
     Enum {
         enum_type: Symbol,
