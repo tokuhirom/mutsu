@@ -134,6 +134,56 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         slurpy = true;
         onearg = true;
         rest = &rest[1..];
+    } else if rest.starts_with('+')
+        && rest.len() > 1
+        && (rest.as_bytes()[1].is_ascii_alphabetic() || rest.as_bytes()[1] == b'_')
+    {
+        // Sigilless single-argument-rule slurpy: `-> +a { ... }`.
+        let (r, name) = ident(&rest[1..])?;
+        let mut traits = Vec::new();
+        let (mut r, _) = ws(r)?;
+        while let Some(after_is) = keyword("is", r) {
+            let (after_is, _) = ws1(after_is)?;
+            let (after_is, trait_name) = ident(after_is)?;
+            let (after_is, _) = sub::validate_param_trait_pub(&trait_name, &traits, after_is)?;
+            traits.push(trait_name);
+            let (after_is, _) = ws(after_is)?;
+            r = after_is;
+        }
+        let mut default = None;
+        if let Some(after_eq) = r.strip_prefix('=')
+            && !after_eq.starts_with('>')
+        {
+            let (after_eq, _) = ws(after_eq)?;
+            let (after_default, default_expr) = expression(after_eq)?;
+            default = Some(default_expr);
+            r = after_default;
+        }
+        return Ok((
+            r,
+            ParamDef {
+                name,
+                default,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: true,
+                double_slurpy: false,
+                onearg: true,
+                sigilless: true,
+                type_constraint,
+                literal_value: None,
+                sub_signature: None,
+                outer_sub_signature: None,
+                code_signature: None,
+                where_constraint: None,
+                traits,
+                optional_marker: false,
+                is_invocant: false,
+                shape_constraints: None,
+                block_param: true,
+            },
+        ));
     }
 
     // Capture-all pointy parameter: -> |, -> |$c, -> |c
