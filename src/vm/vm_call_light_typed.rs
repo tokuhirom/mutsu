@@ -448,6 +448,11 @@ impl Interpreter {
         // required-param early returns above). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
 
+        // Lexical pragmas (`use fatal`, `use strict`, `use MONKEY-TYPING`,
+        // `use newline`) are scoped to the compilation unit where they appear.
+        // Save and restore around the body so callee's `use fatal` never leaks.
+        let saved_pragmas = self.save_pragma_state();
+
         // A routine body is its own topicalizer for a bare `when`/`default`: a
         // matching `when` sets the global `when_matched` flag, which must not
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
@@ -510,6 +515,8 @@ impl Interpreter {
         if cf.code.is_routine {
             self.set_when_matched(saved_when_matched);
         }
+        // Restore the caller's pragma state (fatal/strict/newline/monkey-typing).
+        self.restore_pragma_state(saved_pragmas);
 
         // Natural fall-through completion (no explicit return / fail / error
         // break arm): restore any `temp` bindings the body introduced so a

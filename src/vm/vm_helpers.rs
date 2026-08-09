@@ -23,6 +23,36 @@ impl Interpreter {
         }
     }
 
+    /// Snapshot the lexical pragma state (`use fatal`, `use strict`,
+    /// `use newline`, `use MONKEY-TYPING`) before entering a function body.
+    /// Must be paired with `restore_pragma_state` on every exit path to prevent
+    /// the callee's pragmas from leaking into the caller's scope.
+    ///
+    /// In real Raku, pragmas are compile-time and lexically scoped per
+    /// compilation unit.  mutsu approximates this at runtime: save on entry,
+    /// restore on exit, so `use fatal` inside a sub never outlives that sub.
+    #[inline]
+    pub(super) fn save_pragma_state(&self) -> (bool, bool, crate::runtime::NewlineMode, bool) {
+        (
+            self.fatal_mode,
+            self.strict_mode,
+            self.newline_mode,
+            self.monkey_typing,
+        )
+    }
+
+    /// Restore pragma state saved by `save_pragma_state`.
+    #[inline]
+    pub(super) fn restore_pragma_state(
+        &mut self,
+        state: (bool, bool, crate::runtime::NewlineMode, bool),
+    ) {
+        self.fatal_mode = state.0;
+        self.strict_mode = state.1;
+        self.newline_mode = state.2;
+        self.monkey_typing = state.3;
+    }
+
     /// Enforce a `ContainerRef` cell's registered `of`-type constraint before a
     /// write-through (`$ref = v` on a `:=`-bound typed slot — a typed rw
     /// attribute accessor bind, or a `my T $` anonymous typed scalar). Mirrors

@@ -1934,7 +1934,7 @@ pub struct Interpreter {
     /// When true, module precompilation cache is enabled.
     precomp_enabled: bool,
     /// When true, `augment class` is allowed (set by `use MONKEY-TYPING` or `use MONKEY`).
-    monkey_typing: bool,
+    pub(crate) monkey_typing: bool,
     /// Defaults selected by the import list of the latest
     /// `use JSON::Fast <...>` / `use JSON::Tiny` (see `runtime/json.rs`).
     pub(crate) json_import_defaults: crate::runtime::json::JsonImportDefaults,

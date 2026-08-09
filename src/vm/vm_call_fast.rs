@@ -133,6 +133,10 @@ impl Interpreter {
         // (`P::show()` from GLOBAL) would run the body under GLOBAL and silently
         // lose package-var reads/writes.
         let saved_package = self.enter_routine_package(cf);
+        // Lexical pragmas (`use fatal`, `use strict`, `use MONKEY-TYPING`,
+        // `use newline`) are scoped to the compilation unit where they appear.
+        // Save and restore around the body so callee's `use fatal` never leaks.
+        let saved_pragmas = self.save_pragma_state();
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
@@ -338,6 +342,8 @@ impl Interpreter {
         }
 
         self.leave_routine_package(saved_package);
+        // Restore the caller's pragma state (fatal/strict/newline/monkey-typing).
+        self.restore_pragma_state(saved_pragmas);
 
         let final_result = match result {
             Ok(()) if fail_bypass => Ok(ret_val),
