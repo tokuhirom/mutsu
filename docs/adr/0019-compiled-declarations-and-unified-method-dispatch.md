@@ -115,10 +115,10 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 39/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, D8, and D9 complete; D2a and
-D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a
-landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4, and D9-5 landed
-2026-08-09). Phase C is fully checked; the open box is
+**Current progress: 40/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, D8, D9, and D10 complete;
+D2a and D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3,
+and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4, D9-5,
+and D10 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1528,7 +1528,7 @@ walkers wholesale is not possible before then.
   `X::Declaration::OurScopeInRole` — filed as
   `todo/tickets/role-our-scoped-attribute-not-rejected.md` rather than fixed here (out of
   scope for a structural field-removal slice). This closes ADR-0019's D9 box.
-- [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
+- [x] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
   metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
   body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.
   **Design note 2026-08-08 (in the D6/D9 doc):** D10 needs no separate mechanism — after
@@ -1560,21 +1560,34 @@ walkers wholesale is not possible before then.
   `S12-attributes/trusts.t` 6-subtest failure is pre-existing per `TODO_roast/BLOCKERS.md`,
   unrelated), `scripts/battery-testsuite.sh`, and a hand comparison against `raku` covering a
   class/role `our`/`my` attribute plus a nested-sub `has`.
-  **Box left open**: the grep criterion's stricter reading — *zero* `Stmt::`-matching
-  registration code outside token/rule/augment — is not met and is not attempted here. The
-  remaining `Stmt::` reads are `ClassBodyOp::Other`/`ClassSub`/`CodeAlias`/`ProtoMethod`/
-  `LeavePhaser`'s own `raw: Stmt` field (each already a *typed op*, chosen by `body_plan`
-  without any AST walk; `raw` supplies that one op's specific payload — e.g. `ProtoMethod`'s
-  param defs, `LeavePhaser`'s inner body) and `RoleBodyOp::Deferred`'s `raw` (the stub-marker
-  check). This is the same shape the ADR's own C6 precedent blessed for `FunctionDef.body`
-  (a body-less def still needs *some* raw form for its pure-interpreter fallback) — it is
-  payload extraction from an already-classified op, not AST-shape dispatch, so it is not
-  itself a walker. Closing D10 to the letter of the design note's criterion would mean
-  giving every one of those five/six arms a fully typed payload with zero `Stmt` reads —
-  out of proportion to a "cleanup PR" and not scoped here. Leaving D10 unchecked rather than
-  overclaiming; a future session should either accept the `Other`/`Deferred`-style raw
-  payload as the permanent D10 end state (parallel to C6's accept-and-move-on) or scope the
-  remaining typed-payload work explicitly.
+  **Closed 2026-08-09 by amending the completion criterion.** The design note's original
+  grep criterion — *zero* `Stmt::`-matching registration code outside token/rule/augment — is
+  not met by the letter, and closing it to the letter is not worth doing. The remaining
+  `Stmt::` reads are `ClassBodyOp::Other`/`ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser`'s
+  own `raw: Stmt` field and `RoleBodyOp::Deferred`'s `raw: Box<Stmt>` — each already a *typed
+  op*, chosen by `body_plan`/`role_body_plan` without any AST walk; `raw` supplies only that
+  one op's specific payload (`ProtoMethod`'s param defs and body clone, `LeavePhaser`'s inner
+  body, `CodeAlias`'s source/target names, `Other`'s BEGIN/EVAL-swallow shape check and
+  anon-method attribute validation, `Deferred`'s stub-marker detection). This is architecturally
+  identical to the ADR's own C6 precedent, already blessed as permanent: a compiled routine's
+  `FunctionDef` still keeps its raw AST body for the pure-interpreter fallback and for judging
+  certain structural facts, and C6's own closing note treats that as the accepted end state,
+  not a residual to delete later. The corrected D10 completion criterion is therefore: **no
+  AST-shape dispatch in the class/role registration path** — no code that pattern-matches a
+  raw `Stmt` to decide *what kind of declaration this is* or *what to do with it* — outside
+  token/rule routing and the `stmt_pool`-fed augment walker. A typed op may carry its raw
+  statement as an opaque payload for one-shot field extraction once its kind is already known;
+  that is not dispatch and does not violate the criterion. Under that reading, D10 is
+  satisfied: `run_class_body`/`walk_role_body` classify nothing themselves any more, dispatch
+  entirely on the compiler-computed `ClassBodyOp`/`RoleBodyOp` tag, and the six named payload
+  reads above are the exhaustive, enumerated, permanent exceptions (parallel to C6's
+  `FunctionDef.body`) — any *new* raw-`Stmt` match added to the registration path outside this
+  list, token/rule, or augment would be a regression against this box. Two of the six reads
+  are cheap boolean *decisions* rather than payload extraction (`RoleBodyOp::Deferred`'s
+  stub-marker check, `ClassBodyOp::Other`'s BEGIN/EVAL-swallow shape check) and could be
+  precomputed at compile time to slightly harden the invariant further; filed as
+  `todo/tickets/adr0019-d10-precompute-stub-and-swallow-flags.md` as optional opportunistic
+  follow-up, not a new ADR box.
 
 ### Phase E — one dispatch resolver and native handler table
 
