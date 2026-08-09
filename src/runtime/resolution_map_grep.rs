@@ -456,6 +456,7 @@ impl Interpreter {
                             );
                         }
                     }
+                    let saved_when_matched = vm.when_matched();
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
@@ -484,6 +485,22 @@ impl Interpreter {
                         }
                         Err(e) if e.is_next() => {}
                         Err(e) if e.is_last() => break,
+                        Err(e) if e.is_succeed() => {
+                            // A matched `when`/`default` inside the block escapes
+                            // as a succeed signal instead of returning normally
+                            // through `run_reuse` — absorb it here the same way
+                            // a closure call boundary does
+                            // (`vm_closure_dispatch.rs`), and reset the
+                            // when-matched flag so an enclosing `given` does not
+                            // see a stale match from this item.
+                            vm.set_when_matched(saved_when_matched);
+                            let val = e.return_value.unwrap_or(Value::NIL);
+                            let val = vm.reify_finite_pipe_value(val)?;
+                            match val.view() {
+                                ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
+                                _ => result.push(val),
+                            }
+                        }
                         Err(mut e) => {
                             // A `return` inside the map block targets the routine
                             // that lexically encloses the block. Stamp the signal
@@ -702,6 +719,7 @@ impl Interpreter {
                         vm.env_mut().insert(p.clone(), call_item.clone());
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
+                    let saved_when_matched = vm.when_matched();
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let pred = vm
@@ -722,6 +740,17 @@ impl Interpreter {
                         Err(e) if e.is_last() => {
                             found = Some((idx, item.clone()));
                             return Ok(());
+                        }
+                        // A matched `when`/`default` escapes as a succeed
+                        // signal instead of returning normally — its value is
+                        // the predicate result, same as the `Ok` arm.
+                        Err(e) if e.is_succeed() => {
+                            vm.set_when_matched(saved_when_matched);
+                            let pred = e.return_value.unwrap_or(Value::NIL);
+                            if pred.truthy() {
+                                found = Some((idx, item.clone()));
+                            }
+                            break 'body_redo;
                         }
                         Err(e) => return Err(e),
                     }
