@@ -544,7 +544,11 @@ impl Interpreter {
             message.push_str(&arg.to_string_value());
         }
         let ex = Self::make_stub_exception(message);
-        Err(self.runtime_error_from_die_value(&ex, "Stub code executed", false))
+        // Raku's `...` uses `fail` semantics: the stub returns a Failure to
+        // its direct caller rather than throwing immediately.  At the top
+        // level (or when sunk outside a sub boundary) the Failure propagates
+        // as an exception, matching rakudo's behaviour.
+        Err(self.runtime_error_from_die_value(&ex, "Stub code executed", true))
     }
 
     /// Compile-target for constructs the parser recognizes as an undeclared
