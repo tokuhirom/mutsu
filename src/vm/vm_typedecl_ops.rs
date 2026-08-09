@@ -132,7 +132,6 @@ impl Interpreter {
             hidden_parents,
             does_parents,
             repr,
-            legacy_body: body,
             language_version,
             custom_traits,
             decl_id,
@@ -281,7 +280,6 @@ impl Interpreter {
                         compiled_fns,
                         body_plan,
                     },
-                    body,
                 )
             )?;
             // Check for assignment to native read-only params before

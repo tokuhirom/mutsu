@@ -399,7 +399,7 @@ mod declaration_plan_tests {
         assert_eq!(typed.len(), 9, "typed ops: {typed:?}");
         assert!(matches!(
             typed[0],
-            ClassBodyOp::Attr { name } if name.as_str() == "x"
+            ClassBodyOp::Attr { name, .. } if name.as_str() == "x"
         ));
         assert!(matches!(typed[1], ClassBodyOp::Method));
         assert!(matches!(
@@ -435,7 +435,7 @@ mod declaration_plan_tests {
         ));
         assert!(matches!(
             typed[8],
-            ClassBodyOp::Attr { name } if name.as_str() == "w"
+            ClassBodyOp::Attr { name, .. } if name.as_str() == "w"
         ));
     }
 

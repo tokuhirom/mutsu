@@ -73,7 +73,7 @@ impl Interpreter {
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
         };
-        self.register_class_decl(&name, &parents, modifiers, &[])?;
+        self.register_class_decl(&name, &parents, modifiers)?;
         self.compose_mixin_role_submethods(&name, &fresh);
         // A mixin type is synthesized, not written by the user: it must inherit
         // the base's accessor authority rather than claim its own. Marked

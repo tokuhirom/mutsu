@@ -69,53 +69,23 @@ pub(super) struct ClassBodyLeavePhaser {
     pub(super) chunk: Option<crate::opcode::CompiledDeclExpr>,
 }
 
-/// Extract a body-walk op's compiled chunk, if any — `None` for a statement
-/// kind D6-3b/c never compiles a chunk for (`token`/`rule`, per the phase
-/// preamble's ADR-0009 carve-out) or when `op` itself is `None` (a
-/// length-mismatch fallback, see `run_class_body`).
-fn class_body_op_chunk(
-    op: Option<&crate::opcode::ClassBodyOp>,
-) -> Option<&crate::opcode::CompiledDeclExpr> {
-    match op? {
-        crate::opcode::ClassBodyOp::Other { chunk, .. }
-        | crate::opcode::ClassBodyOp::ClassSub { chunk, .. }
-        | crate::opcode::ClassBodyOp::CodeAlias { chunk, .. } => chunk.as_ref(),
-        _ => None,
-    }
-}
-
 impl Interpreter {
-    /// Recursively surface `has`-attribute declarations nested inside a sub/block
-    /// within a class body (`class C { sub f { has $.x } }`). Descends into
-    /// `sub`/block bodies but NOT into a nested `class`/`role` (which owns its own
-    /// attribute scope). Collects only `HasDecl` statements.
-    fn collect_nested_class_has_decls<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
-        for s in stmts {
-            match s {
-                // Own attribute scope / already collected at the top level.
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
-                Stmt::SubDecl { body, .. } => {
-                    for inner in body {
-                        if matches!(inner, Stmt::HasDecl { .. }) {
-                            out.push(inner);
-                        }
-                    }
-                    Self::collect_nested_class_has_decls(body, out);
-                }
-                _ => {}
-            }
-        }
-    }
-
     /// Execute the class body: make the class package current, walk every
-    /// (flattened) body statement through the per-statement arms, then fire
-    /// LEAVE phasers, persist class-body statics, and restore the enclosing
+    /// op in `body_plan` through the per-statement arms, then fire LEAVE
+    /// phasers, persist class-body statics, and restore the enclosing
     /// package/lexical scope. Returns the final `ClassDef`.
+    ///
+    /// `body_plan` (ADR-0019 D6-3a-d) is the sole driver of this walk as of
+    /// D6-4 — there is no separate raw `Vec<Stmt>` to zip it against any
+    /// more. It is already `SyntheticBlock`-flattened and carries nested-sub
+    /// `has` declarations as trailing `Attr` ops (`crate::opcode::class_body_plan`),
+    /// so it needs no further preprocessing here. A registration path with
+    /// no compiled plan (role-pun/mixin synthesis, `augment class`) passes
+    /// an empty `body_plan`, and the loop below simply does nothing.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn run_class_body(
         &mut self,
         name: &str,
-        body: &[Stmt],
         class_def: ClassDef,
         is_hidden: bool,
         class_is_rw: bool,
@@ -133,38 +103,6 @@ impl Interpreter {
         self.set_current_package(name.to_string());
         self.env
             .insert("?CLASS".to_string(), Value::package(Symbol::intern(name)));
-        // Flatten SyntheticBlock (from `has ($a, $b)` list form) so inner
-        // HasDecl statements are processed at the top level.
-        let mut flattened_body: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
-        // An attribute can also be declared inside a nested sub/block within the
-        // class body (`class C { sub f { has $.x } }`) — Rakudo still registers it
-        // on the class. Surface those `has` declarations so the main loop below
-        // registers the attribute (the nested sub itself is still processed
-        // normally; its body's `has` is a compile-time declaration).
-        Self::collect_nested_class_has_decls(body, &mut flattened_body);
-        // `body_plan` (ADR-0019 D6-3a-d) is a position-aligned typed mirror of
-        // this same flattened statement sequence, computed by the compiler at
-        // plan lowering (`crate::opcode::class_body_plan` mirrors this
-        // function's own flatten+nested-has-append exactly — pinned by the
-        // `class_declarations_precompute_body_plan` compiler unit test). A
-        // registration path with no compiled plan (role-pun/mixin synthesis,
-        // `augment class`) always pairs an empty `body_plan` with an empty
-        // `body`, so lengths agree there too; guard against any other
-        // mismatch by falling back to `None` (the pre-D6-3d on-the-fly
-        // compile path) rather than risking a misaligned zip silently
-        // dropping trailing statements.
-        let body_plan_ops: Vec<Option<&crate::opcode::ClassBodyOp>> =
-            if body_plan.len() == flattened_body.len() {
-                body_plan.iter().map(Some).collect()
-            } else {
-                vec![None; flattened_body.len()]
-            };
         // The set of attributes valid for $!attr access: names declared
         // directly in this class body (precomputed by the compiler at plan
         // lowering, ADR-0019 D2a — `own_attribute_names` already covers the
@@ -202,66 +140,54 @@ impl Interpreter {
         // i.e. once all body statements have been processed. Collect them here
         // and run them (LIFO) after the loop instead of executing them inline.
         let mut class_leave_phasers: Vec<ClassBodyLeavePhaser> = Vec::new();
-        for (stmt, op) in flattened_body.into_iter().zip(body_plan_ops) {
-            match stmt {
-                Stmt::Phaser {
-                    kind: PhaserKind::Leave,
-                    body,
-                } => {
-                    let chunk = match op {
-                        Some(crate::opcode::ClassBodyOp::LeavePhaser { chunk, .. }) => {
-                            chunk.clone()
-                        }
-                        _ => None,
+        for op in body_plan {
+            match op {
+                crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } => {
+                    let Stmt::Phaser { body, .. } = raw else {
+                        unreachable!("LeavePhaser op's raw statement must be Stmt::Phaser");
                     };
                     class_leave_phasers.push(ClassBodyLeavePhaser {
                         body: body.clone(),
-                        chunk,
+                        chunk: chunk.clone(),
                     });
+                    continue;
                 }
-                Stmt::HasDecl { .. } => {
+                crate::opcode::ClassBodyOp::Attr { raw, .. } => {
                     if matches!(
-                        self.class_body_has_decl(&mut cx, stmt)?,
+                        self.class_body_has_decl(&mut cx, raw)?,
                         ClassBodyFlow::SkipTail
                     ) {
                         continue;
                     }
                 }
-                Stmt::MethodDecl { .. } => {
+                crate::opcode::ClassBodyOp::Method => {
                     self.class_body_method_decl(&mut cx)?;
                 }
-                Stmt::DoesDecl { .. } => {
+                crate::opcode::ClassBodyOp::Does { name: role_name } => {
                     if matches!(
-                        self.class_body_does_decl(&mut cx, stmt)?,
+                        self.class_body_does_decl(&mut cx, *role_name)?,
                         ClassBodyFlow::SkipTail
                     ) {
                         continue;
                     }
                 }
                 // our &baz ::= &bar  — alias a method under a new name
-                Stmt::VarDecl {
-                    name: var_name,
-                    expr: Expr::CodeVar(_),
-                    ..
-                } if var_name.starts_with('&') => {
-                    let chunk = class_body_op_chunk(op);
-                    self.class_body_code_alias(&mut cx, stmt, chunk)?;
+                crate::opcode::ClassBodyOp::CodeAlias { chunk, raw } => {
+                    self.class_body_code_alias(&mut cx, raw, chunk.as_ref())?;
                 }
-                Stmt::ProtoDecl {
-                    is_method: true, ..
-                } => {
-                    self.class_body_proto_method_decl(&mut cx, stmt)?;
+                crate::opcode::ClassBodyOp::ProtoMethod { raw, .. } => {
+                    self.class_body_proto_method_decl(&mut cx, raw)?;
                 }
-                _ => {
-                    let chunk = class_body_op_chunk(op);
-                    self.class_body_other_stmt(&mut cx, stmt, chunk)?;
+                crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
+                | crate::opcode::ClassBodyOp::Other { chunk, raw } => {
+                    self.class_body_other_stmt(&mut cx, raw, chunk.as_ref())?;
                 }
             }
             // Check if any new functions were registered under the class package
             // during body processing (e.g., class-scoped subs).
             // Only count functions that are actual subs (not methods, which are
             // registered via MethodDecl and stored in the class methods table).
-            if let Stmt::SubDecl { name: sub_name, .. } = stmt {
+            if let crate::opcode::ClassBodyOp::ClassSub { name: sub_name, .. } = op {
                 let fq = format!("{}::{}", cx.name, sub_name);
                 if self.registry().functions.contains_key(&Symbol::intern(&fq))
                     && !saved_functions_keys.contains(&fq)
