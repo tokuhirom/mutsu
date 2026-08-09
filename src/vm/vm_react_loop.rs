@@ -164,11 +164,14 @@ impl Interpreter {
         let finished =
             self.build_react_subscriptions(&subscriptions, &mut react_subs, &mut stream_base)?;
         // Any `whenever <Promise>` nested inside a `supply { }` body was
-        // rewritten into a stand-in supplier above; arm the promises now that
-        // their taps are registered (`react_subs` built), so the resolution
-        // handler can push the result/quit reason without racing registration.
-        self.arm_pending_promise_whenevers();
+        // rewritten into a stand-in supplier above. Arming happens inside the
+        // drive loop, AFTER the stand-ins' sinks are registered on the loop's
+        // waker — arming here let an already-resolved promise's arm closure
+        // emit+done into the sink-less stand-in, whose `done` handler reset the
+        // buffered value away before the sink replay could see it. Only the
+        // already-finished path (no drive loop will run) arms here.
         if finished {
+            self.arm_pending_promise_whenevers();
             if let Some(base) = stream_base {
                 self.supply_stream_consumers.truncate(base);
             }

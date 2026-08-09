@@ -243,6 +243,14 @@ impl Interpreter {
         // Publish this loop's waker so sources wired up mid-loop (a nested
         // `whenever` tapping an async on-demand supply) can wake it too.
         let prev_waker = self.current_react_waker.replace(waker.clone());
+        // Arm any `whenever <Promise>` stand-in suppliers only now, AFTER their
+        // sinks are registered. An already-resolved promise fires its arm
+        // closure synchronously; before this ordering the closure's emit+done
+        // landed on the stand-in before any sink existed, and the `done`
+        // handler's `supplier_reset` wiped the buffered value, so the later
+        // sink replay found nothing and the react hung forever
+        // (t/react-whenever-kept-promise-nested-supply.t).
+        self.arm_pending_promise_whenevers();
         let result =
             self.drive_react_subscriptions_loop(&mut react_subs, policy, &waker, &mut sink_regs);
         self.current_react_waker = prev_waker;
@@ -299,9 +307,6 @@ impl Interpreter {
         let first_new = react_subs.len();
         let mut stream_base = None;
         let finished = self.build_react_subscriptions(&pending, react_subs, &mut stream_base)?;
-        // Arm any `whenever <Promise>` markers this batch's nested `supply { }`
-        // bodies registered (see the matching call in `run_react_event_loop`).
-        self.arm_pending_promise_whenevers();
         let new_supplier_regs: Vec<(u64, usize)> = react_subs[first_new..]
             .iter()
             .enumerate()
@@ -324,6 +329,14 @@ impl Interpreter {
                 rx.register_waker(waker);
             }
         }
+        // Arm any `whenever <Promise>` markers this batch's nested `supply { }`
+        // bodies registered — only now, AFTER the new subscriptions' sinks are
+        // wired to this loop's waker. An already-resolved promise fires its arm
+        // closure synchronously, and arming before the sink registration let
+        // the closure's emit+done hit the sink-less stand-in supplier, whose
+        // `done` handler resets the buffered value away (see the matching call
+        // in `drive_react_subscriptions_inner`).
+        self.arm_pending_promise_whenevers();
         Ok(finished)
     }
 
