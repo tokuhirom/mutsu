@@ -78,6 +78,7 @@ impl Interpreter {
                 owned_captures: Vec::new(),
                 authoritative_captures: Vec::new(),
                 upvalues: Vec::new(),
+                captured_fatal_mode: false,
             };
             // Store the routine name so call_sub_value can dispatch
             sub_data.env.insert(

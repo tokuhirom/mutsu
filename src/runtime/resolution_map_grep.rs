@@ -463,6 +463,15 @@ impl Interpreter {
                             // it here — the result array's static readers (`.flat`,
                             // `for`) can't run the VM to force a nested pipe.
                             let val = vm.reify_finite_pipe_value(val)?;
+                            // Under `use fatal`, a Failure produced by the map
+                            // callback must throw immediately rather than be
+                            // collected silently — e.g. `"a".map: *.Int` inside a
+                            // `use fatal` scope should surface X::Str::Numeric.
+                            if vm.fatal_mode
+                                && let Some(err) = vm.failure_to_runtime_error_if_unhandled(&val)
+                            {
+                                return Err(err);
+                            }
                             match val.view() {
                                 ValueView::Slip(elems) => result.extend(elems.iter().cloned()),
                                 _ => result.push(val),

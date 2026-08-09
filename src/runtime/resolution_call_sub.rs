@@ -566,6 +566,7 @@ impl Interpreter {
                 owned_captures: data.owned_captures.clone(),
                 authoritative_captures: data.authoritative_captures.clone(),
                 upvalues: data.upvalues.clone(),
+                captured_fatal_mode: data.captured_fatal_mode,
             });
             new_env.insert(
                 "&?BLOCK".to_string(),

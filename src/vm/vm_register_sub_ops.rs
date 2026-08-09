@@ -134,6 +134,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
             Ok(())
@@ -188,6 +189,7 @@ impl Interpreter {
                 deprecated_message: None,
                 source_line: cc_source_line,
                 source_file: self.current_source_file(),
+                captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
             Ok(())
