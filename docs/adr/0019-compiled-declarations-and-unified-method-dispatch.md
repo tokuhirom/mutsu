@@ -168,6 +168,21 @@ ADR-0009-scoped C6d-2, which does not gate C6 (token defs never come from
 `CompiledSubDeclPlan`) — it stays open only for the later `FunctionDef.body` field deletion
 (F7).**
 
+A 2026-08-10 design sweep produced detailed designs for **every Phase E box**, from a
+four-way code survey (owner-resolution sites, dispatch entry points, cache/registry state,
+multi/wrap/deferral machinery), recorded as
+`todo/deep/adr0019-e1-typeid-receiver-owner.md`,
+`todo/deep/adr0019-e2-e4-resolver-core.md`,
+`todo/deep/adr0019-e5-e7-entry-routing.md`, and
+`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`, with condensed entries in each box
+below. Notable outcomes: `TypeId` is a newtype over `Symbol` (dense ids rejected — the
+registry COW-forks per thread), E2 handler rows are recognition metadata whose completeness is
+counter-measured to zero *before* any read depends on them (the reverted attempt's fix), the
+E4 resolver caches an ordered candidate sequence that E9 turns into deferral cursors, and the
+survey corrected the entry-point inventory (see the Phase E preamble). The recommended
+cross-box order is E1a → E1b (→ E1c) → E2a → E4a → E2b → E4b → E3 → E5 → E6 → E7 → E8 →
+E9 → E10 → E11, with E10a movable earlier (anytime after E3).
+
 The count tallies top-level boxes only; sub-boxes (C6a–C6e, C6d-1..5, E1a/E1b) are that box's
 PRs, and a subdivided box is checked when its last sub-box merges. A box that turns out to need
 subdivision follows C6's precedent: measure first, then split in place.
@@ -1693,6 +1708,17 @@ the `ArrayPush` fast-path opcode that currently bypasses method dispatch entirel
 that inventory; each also rewrites a function larger than any slice merged so far
 (`exec_call_method_op` ~1.3k lines, `exec_call_method_mut_op` ~1.7k, the interpreter's
 `call_method_with_values` ~3.8k), so expect them to subdivide from a measurement, as C6 did.
+**Inventory corrections (2026-08-10 survey):** `call_method_with_values` lives in
+`runtime/methods_call_dispatch.rs`, not `runtime/methods.rs`; `call_method_mut_with_values`
+(`runtime/methods_mut_dispatch.rs`, ~2.6k lines) is a second slow path of comparable size and
+belongs to E6's inventory; `exec_call_method_dynamic_mut_op` reaches the interpreter with no
+native or compiled probe at all; and `exec_hyper_method_call_dynamic_op` lacks the
+user-override gate its static twin has — the last two are pre-existing behavior divergences to
+raku-verify and close during E6, not just refactor targets. The detailed designs for this
+phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
+`todo/deep/adr0019-e2-e4-resolver-core.md` (E2/E3/E4),
+`todo/deep/adr0019-e5-e7-entry-routing.md` (E5/E6/E7), and
+`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11).
 
 - [ ] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
   type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
@@ -1700,32 +1726,107 @@ that inventory; each also rewrites a function larger than any slice merged so fa
   lives at ~20 sites in 7 files today — including 14 per-MOP-entry fallbacks in
   `methods_classhow_dispatch.rs` and the alias logic baked into `value_type_name` itself — so
   this lands in two steps:
+  **Design 2026-08-10** (`todo/deep/adr0019-e1-typeid-receiver-owner.md`): `TypeId` is a
+  newtype over `Symbol` (dense ids rejected: the registry COW-forks per thread, and
+  `MethodEntryKey.owner` is already a Symbol); one static `BuiltinTypeInfo` catalog —
+  adjudicated against raku, not against the union of the current tables — replaces the four
+  divergent builtin MRO tables (`builtin_type_parents`, `Registry::builtin_mro_table`,
+  `builtin_type_mro_chain`, `builtin_type_distance`'s inline table); one classifier
+  `receiver_dispatch_class`/`dispatch_mro` produces the ordered chain plus definedness plus a
+  `ReceiverExec` hint (e.g. `ArrayStorageDelegate` for `is Array` subclasses). E1a's shadow
+  target is "reproduce the site's current decision" with an accepted-mismatch ledger for the
+  deliberate differences, which flip in E1b.
   - [ ] **E1a — shadow mode.** Compute the TypeId-based owner beside the string-based one and
     compare under a `MUTSU_VM_STATS`-gated counter; land with zero behavior change and drive the
     mismatch count to zero on `make test` plus targeted roast.
   - [ ] **E1b — switch.** Make the TypeId owner authoritative and delete the per-site string
     scans; the MOP fallback sites may follow as their own PR if the diff warrants it.
+  - [ ] **E1c — MOP fallback consolidation.** Collapse the 13+8 per-MOP-entry owner-fallback
+    arms into one classifier-backed `mop_receiver_owner` helper.
 - [ ] **E2 — Give every native entry an exact handler ID.** Generate static type×method handler rows
   for pure arity handlers and stateful/special handlers; pin type-object, subclass, Map/Seq,
   Failure, and Rat-style cases that broke the reverted attempt.
+  **Design 2026-08-10** (`todo/deep/adr0019-e2-e4-resolver-core.md`): rows are *recognition
+  metadata* (owner, name, arity mask, TYPE_OBJECT_OK/MUTATES/SPECIAL flags), not function
+  pointers — invocation stays in the arity cascades until F3. Coverage is measured to zero via
+  a `native_call_unmodeled` counter plus a cfg(test) inverse probe before any read depends on
+  rows (the ~700 cascade arms vs ~350 catalog slots gap is the reverted attempt's failure
+  mode). The admission-gate checks split per a classification table: method-identity facts
+  become row flags; receiver-state facts become resolver guards, deduplicating
+  `try_native_method_raw` and its twin `should_bypass_native_fastpath`.
+  - [ ] **E2a — row schema + instruments + pinned regression tests.** Zero behavior change.
+  - [ ] **E2b — drive `native_call_unmodeled` to zero** through the gate-classification table.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
+  **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
+  CallShape packs arity bucket + has-named (named calls get sequence caching for the first
+  time); joins `refresh_method_caches_for_generation`'s wholesale clear set; the two probe
+  sites that today bypass the generation refresh gain it. `fast_method_cache` survives as the
+  monomorphic IC in front until F5 — retiring it inside Phase E would be an unmeasured perf
+  cliff. Bench-CI parity evidence is part of this box's exit (G3's dispatch clause).
 - [ ] **E4 — Resolve native and user candidates in one MRO walk.** Preserve user shadowing,
   visibility, invocant definedness, arity/signature ordering, and native fallback in one result.
+  **Design 2026-08-10** (same doc): `resolve_sequence(chain, name, shape, definedness)` returns
+  a `ResolvedSequence` — the shape-independent ordered candidate universe (user candidates in
+  stored order per level, accessor arbitration, native rows at catalog levels, proto slot);
+  ranking/signature selection stays per-call via the existing ladder extracted to consume a
+  candidate slice. The six copy-pasted submethod no-inherit rules collapse into the one build
+  site. Sibling walkers migrate with their consumers (E7/E8/E9), not here.
+  - [ ] **E4a — sequence builder + shadow parity (user candidates only)**, counter-verified
+    against `resolve_method_with_owner_impl` outcomes.
+  - [ ] **E4b — authoritative switch at the cached-resolve boundaries**, native rows included,
+    `should_bypass_native_fastpath` deleted. Local `make roast` before PR.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
+  **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
+  "resolver decides, existing arms execute" — each entry's dispatch-probe section becomes a
+  match on the resolver decision while receiver normalization, method-identity intercepts, and
+  writeback tails stay put. A measurement slice (per-entry per-outcome
+  `MUTSU_VM_STATS` counters + an interceptor-taxonomy table per entry) precedes and orders the
+  cutovers, C6d-style. JIT shims are asserted tail-identical, not rewritten. The interpreter
+  slow paths shrink by attrition (one probe section at a time), never by a one-PR rewrite.
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
+  **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow
+  path), the dynamic-mut and hyper-dynamic gate gaps (raku-verified, closed by routing through
+  the same decision), and `ArrayPush` — which keeps its container fast path behind a
+  generation-refreshed `array_dispatch_pristine` bit (no user/wrap rows under `Array`/`List`),
+  closing today's augmented-Array divergence with an O(1) check.
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
+  **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
+  carrier sites, qualified, private-as-sequence-query, `.^lookup`/`.^can`/`.^methods` reading
+  the call-path sequence, WALK, re-entrant carriers). The `.^can` dummy-`Value::NIL` probe is
+  replaced by an E2 row lookup — a correctness fix as well as a routing change.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
+  **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):
+  candidates carry `level`/`stored_idx` so winner selection (existing ladder, per call) and
+  deferral order (sequence order + per-call signature filter) both derive from one sequence;
+  submethod visibility and `drop_flattened_role_duplicates` apply at build time.
+  `Registry::proto_methods` folds into `MethodEntry`. Unifying the method-vs-sub ranking
+  ladders is explicitly out of scope.
 - [ ] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
   the resolved sequence instead of re-entering name-based resolution.
+  **Design 2026-08-10** (same doc): one `DispatchCursor {seq, next, invocant, args}` replaces
+  the recomputed `MethodDispatchFrame.remaining` + fingerprint winner-removal; wrap chains
+  become cursor-prefix entries (deleting the `sub_id == 0` sentinel, `wrap_skip_once`, and the
+  by-name re-entries); the four synthesized native next-candidate fallbacks become ordinary
+  sequence tail entries; proto `{*}` re-ranks the cursor's sequence instead of re-entering by
+  name. **A mandatory raku verification campaign (E9-pre, 13 chain-order scenarios) lands as
+  `t/` pins before any cursor cutover** — this is the highest-semantic-risk box of the phase.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
+  **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every
+  wrap/unwrap/restore path — including the two that currently invalidate nothing — bumps
+  `method_generation`; the global `has_any_wrap_chains()` prefilter (which disables the fast
+  cache program-wide once any wrap exists) is deleted after E3; the `.unwrap` method-wrap leak
+  is fixed en route.
 - [ ] **E11 — Retire arity-specific lookup entry points.** Keep native arity functions only as
   handler implementations selected by `MethodEntry`.
+  **Design 2026-08-10** (same doc): grep-based completion criterion — no caller of
+  `native_method_{0,1,2}arg` outside the resolver's native-invocation helper, `builtins/`
+  internal recursion, and `#[cfg(test)]`; added to the G2 architectural guard test.
 
 ### Phase F — derive introspection and remove compatibility state
 
