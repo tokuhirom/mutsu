@@ -2487,10 +2487,12 @@ fn is_stub_routine_body(body: &[Stmt]) -> bool {
 
 /// Recursively surface `has`-attribute names nested inside a `sub` within a
 /// class body (`class C { sub f { has $.x } }`), mirroring
-/// `Interpreter::collect_nested_class_has_decls` (ADR-0019 D2a). Descends
-/// into `sub` bodies but not into a nested `class`/`role`, which owns its
-/// own attribute scope. `our`/`my` (class-level) attributes are excluded, as
-/// they are not part of per-instance `$!attr` validation.
+/// `collect_nested_has_decl_stmts` below, which `class_body_plan` uses to
+/// give each such nested declaration its own trailing `Attr` op (ADR-0019
+/// D6-4). Descends into `sub` bodies but not into a nested `class`/`role`,
+/// which owns its own attribute scope. `our`/`my` (class-level) attributes
+/// are excluded here, as they are not part of per-instance `$!attr`
+/// validation.
 fn collect_nested_has_decl_names(stmts: &[Stmt], out: &mut Vec<Symbol>) {
     for s in stmts {
         match s {
@@ -2720,19 +2722,16 @@ pub(crate) struct CompiledClassDeclPlan {
     pub(crate) hidden_parents: Vec<String>,
     pub(crate) does_parents: Vec<String>,
     pub(crate) repr: Option<String>,
-    /// Compatibility payload for the class/role registry walker. Declaration-time expressions
-    /// move to compiled child chunks in the next ADR-0019 stage.
-    pub(crate) legacy_body: Vec<Stmt>,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
     pub(crate) decl_id: u64,
     /// Whether the declared body is a yada stub (ADR-0019 D1). Precomputed at
-    /// plan lowering so registration never re-walks `legacy_body` to judge
+    /// plan lowering so registration never re-walks the raw body to judge
     /// this — mirrors `CompiledRoutineMetadata::is_stub` for subs.
     pub(crate) is_stub: bool,
     /// `trusts SomeClass` declarations at the top level of the body,
-    /// precomputed at plan lowering (ADR-0019 D1) instead of scanning
-    /// `legacy_body` for `Stmt::TrustsDecl` at registration time.
+    /// precomputed at plan lowering (ADR-0019 D1) instead of scanning the
+    /// raw body for `Stmt::TrustsDecl` at registration time.
     pub(crate) trusts: Vec<Symbol>,
     /// Attribute names this class declares directly in its own body
     /// (ADR-0019 D2a), precomputed at plan lowering instead of
@@ -2796,8 +2795,11 @@ pub(crate) struct CompiledClassDeclPlan {
 #[allow(dead_code)]
 pub(crate) enum ClassBodyOp {
     /// A top-level (or nested-sub) `has` declaration. Its typed descriptor
-    /// lives in `attr_decls`, keyed by this same name.
-    Attr { name: Symbol },
+    /// normally lives in `attr_decls`, keyed by this same name; `raw` is
+    /// used only as a fallback when it is not there (a class-level
+    /// `our`/`my` attribute, which `attr_decls`'s compiler-side collector
+    /// deliberately excludes — see `class_body_has_decl`).
+    Attr { name: Symbol, raw: Stmt },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -2837,12 +2839,11 @@ pub(crate) enum ClassBodyOp {
     },
 }
 
-/// Lower a class body into its ordered, typed op mirror (ADR-0019 D6-3a),
-/// matching `run_class_body`'s own dispatch loop exactly: `SyntheticBlock`-
-/// flatten the top level, classify each statement the same way the runtime
-/// match does, then append nested-sub `has` declarations (in
-/// `Interpreter::collect_nested_class_has_decls` order) as more `Attr` ops —
-/// `run_class_body` appends them to the same iteration, not a separate pass.
+/// Lower a class body into its ordered, typed op mirror (ADR-0019 D6-3a):
+/// `SyntheticBlock`-flatten the top level, classify each statement, then
+/// append nested-sub `has` declarations as more `Attr` ops. Since D6-4,
+/// this is the sole source `run_class_body` walks — there is no separate
+/// runtime-side flatten/append pass to mirror any more.
 pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = body
         .iter()
@@ -2858,9 +2859,11 @@ pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
         .collect()
 }
 
-/// `Interpreter::collect_nested_class_has_decls`'s compile-time mirror: `has`
-/// declarations inside a body `sub`, in the same order, as statement
-/// references rather than just names (unlike [`collect_nested_has_decl_names`]).
+/// `has` declarations inside a body `sub`, as statement references rather
+/// than just names (unlike [`collect_nested_has_decl_names`]) — unfiltered,
+/// so a class-level `our`/`my` nested `has` gets its own `Attr` op too (its
+/// `raw` field is `class_body_has_decl`'s only source for it, since
+/// `attr_decls` excludes it).
 fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
     for s in stmts {
         match s {
@@ -2887,7 +2890,10 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
             chunk: None,
             raw: stmt.clone(),
         },
-        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr { name: *name },
+        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr {
+            name: *name,
+            raw: stmt.clone(),
+        },
         Stmt::MethodDecl { .. } => ClassBodyOp::Method,
         Stmt::DoesDecl { name, .. } => ClassBodyOp::Does { name: *name },
         Stmt::VarDecl {
@@ -6390,7 +6396,6 @@ impl CompiledCode {
             hidden_parents: hidden_parents.clone(),
             does_parents: does_parents.clone(),
             repr: repr.clone(),
-            legacy_body: body.clone(),
             language_version: language_version.clone(),
             custom_traits: plan_traits,
             decl_id: *decl_id,

@@ -12,14 +12,8 @@ impl Interpreter {
     pub(super) fn class_body_does_decl(
         &mut self,
         cx: &mut ClassBodyCx<'_>,
-        stmt: &Stmt,
+        role_name: Symbol,
     ) -> Result<ClassBodyFlow, RuntimeError> {
-        let Stmt::DoesDecl {
-            name: role_name, ..
-        } = stmt
-        else {
-            unreachable!("class_body_does_decl called on a non-DoesDecl statement");
-        };
         let raw_role_name = role_name.resolve();
         // An imported role referenced by its short alias (`does
         // PackageRepo` where the role is registered as

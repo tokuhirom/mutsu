@@ -110,7 +110,6 @@ impl Interpreter {
         name: &str,
         parents: &[String],
         modifiers: ClassDeclModifiers<'_>,
-        body: &[Stmt],
     ) -> Result<Vec<String>, RuntimeError> {
         self.clear_private_zeroarg_method_cache();
         // Mark this as a user-declared class so its collected attribute list is
@@ -224,7 +223,6 @@ impl Interpreter {
         }
         let class_def = self.run_class_body(
             name,
-            body,
             class_def,
             is_hidden,
             class_is_rw,

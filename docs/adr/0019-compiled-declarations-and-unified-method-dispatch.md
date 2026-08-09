@@ -115,9 +115,10 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 36/53 slices merged (C6, C7, C8, D1, D2d, D7, and D8 complete; D2a and D2c-1/2/3
-also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, and D8-4 landed 2026-08-09). Phase C is fully checked; the open box is
+**Current progress: 38/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, and D8 complete; D2a and
+D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a
+landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, and D6-4 landed
+2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1116,7 +1117,7 @@ walkers wholesale is not possible before then.
   instantiate → new_type → add_method → trait dispatch → compose; HOW installs keyed on the
   resolved storage name), and D5-2 is a verification gate (OO::Monitors battery + metamodel
   roast) riding on D6's slices rather than a separate code PR.
-- [ ] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
+- [x] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
   redeclaration errors, language revisions, nested types, and EVAL behavior. Excludes the
   token/rule arms (see the phase preamble). Start with the C6d-style instrumentation survey —
   C6's one box became nine PRs, and this field has the same shape.
@@ -1287,6 +1288,42 @@ walkers wholesale is not possible before then.
   raw-statement fallback paths) — dropping `CompiledClassDeclPlan::legacy_body`
   itself (D6-4) needs those three handlers threaded onto `ClassBodyOp`'s
   already-typed fields instead, which did not fit this slice.
+  **D6-4 landed 2026-08-09**: `run_class_body` now iterates `body_plan:
+  &[ClassBodyOp]` directly — the separate raw flattened `body: &[Stmt]`
+  parameter, its `SyntheticBlock`-flatten, and its
+  `collect_nested_class_has_decls` nested-`has` scan are all gone;
+  `body_plan` already carries every op in the same order (it is built by
+  the identical flatten-then-classify-then-nested-append transform,
+  `crate::opcode::class_body_plan`), so no runtime preprocessing is needed
+  any more. Two handlers changed shape to stop needing a raw `Stmt`:
+  `class_body_does_decl` now takes the `Does` op's own `name: Symbol`
+  instead of re-matching `Stmt::DoesDecl` for the same field, and
+  `ClassBodyOp::Attr` gained a `raw: Stmt` field (populated unconditionally
+  by `classify_class_body_stmt`, cheap the same way `ClassSub`/`CodeAlias`/
+  `ProtoMethod`/`LeavePhaser` already carry their own `raw`) so
+  `class_body_has_decl`'s existing our/my-attribute fallback — attribute
+  names in `attr_decls` deliberately exclude `is_our`/`is_my` attributes,
+  which therefore miss the primary name-keyed lookup and need the raw
+  `HasDecl` statement to build an ad hoc `CompiledAttrDecl` — still has a
+  raw statement to read without a separate lookaside list. `Method` and
+  `Does` needed no such change: `class_body_method_decl` already took no
+  statement, and `class_body_does_decl`'s only use of `stmt` was the same
+  `name` its op already carries. `CompiledClassDeclPlan::legacy_body` and
+  its one construction site are deleted, along with `register_class_decl`'s
+  now-unused `body: &[Stmt]` parameter and its three call sites' trailing
+  `body`/`&[]` argument (the VM opcode handler, role-pun/mixin synthesis,
+  and `augment class` — the latter two already passed `body_plan: &[]`
+  alongside it, so an empty plan alone now correctly drives zero
+  iterations). Verified via the full `t/` suite (28,062 tests) and unit
+  tests (701, including the fixed-up `class_declarations_precompute_body_plan`
+  callers), the `S12-class`/`S12-construction`/`S14-roles`/`S05-grammar`
+  roast files (957 tests, same pre-existing `open_closed.t` failure), and
+  `scripts/battery-testsuite.sh` (158/164, byte-identical) — plus a hand
+  comparison against `raku` exercising every `ClassBodyOp` variant in one
+  class (an attribute with an `our`/`my` sibling to force the fallback
+  path, `also does`, a class-scoped `sub`, a code alias, a `proto method`,
+  and a `will leave` phaser), byte-identical output. This closes ADR-0019's
+  D6 box.
 - [x] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**
