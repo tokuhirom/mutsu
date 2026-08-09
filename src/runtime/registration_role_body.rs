@@ -15,25 +15,20 @@ impl Interpreter {
     pub(super) fn role_body_has_decl(
         &mut self,
         cx: &mut RoleDeclCx<'_>,
-        stmt: &Stmt,
+        name: crate::symbol::Symbol,
     ) -> Result<(), RuntimeError> {
         // Look up this attribute's precompiled descriptor (ADR-0019 D2b
-        // remainder) by name before falling back — see the identical
-        // rationale in `class_body_has_decl`.
-        let decl = match stmt {
-            Stmt::HasDecl { name, .. } => cx
-                .attr_decls
-                .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, decl)| decl.clone()),
-            _ => None,
-        }
-        .unwrap_or_else(|| {
-            crate::opcode::CompiledAttrDecl::from_stmt(
-                stmt,
-                crate::opcode::AttrDeclChunks::default(),
-            )
-        });
+        // remainder/D10) by name — see the identical rationale in
+        // `class_body_has_decl`. `compile_role_attr_decls` has always
+        // covered a class-level `our`/`my` role attribute too (unlike the
+        // class side before D10), so this lookup has never needed a
+        // raw-statement fallback.
+        let decl = cx
+            .attr_decls
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, decl)| decl.clone())
+            .expect("role_body_has_decl: no attr_decls entry for this Attr op's name");
         let attr_name_str = decl.name.clone();
         // A class-level (`my $.x` / `our $.x`) role attribute is NOT a
         // per-instance attribute: it becomes a class-level attribute on the

@@ -398,23 +398,25 @@ impl Compiler {
             .collect()
     }
 
-    /// Precompile a full `CompiledAttrDecl` for each attribute a class body
-    /// declares directly in its own body (ADR-0019 D2b remainder), keyed by
-    /// attribute name so `class_body_has_decl` can look one up without
-    /// depending on its registration-time walk visiting attributes in
-    /// exactly this order. Mirrors `class_own_attribute_names`'s eligibility
-    /// (`our`/`my` class-level attributes are excluded — see
-    /// `run_class_body`'s early `SkipTail` return before the per-instance
-    /// attribute is registered) and traversal (SyntheticBlock-flattened top
-    /// level plus `has` nested directly inside a body `sub`, recursively) —
-    /// same helper shape as `class_own_attribute_names`/
-    /// `collect_nested_has_decl_names`, which the earlier
-    /// `collect_attr_is_default_chunks` did NOT share, double-pushing a
-    /// nested-sub `has ... is default` (once from the `SubDecl` arm's direct
-    /// loop, once from its own recursive call re-matching the same
-    /// statement). This mirrors the registration-side non-recursive-repeat
-    /// exactly to avoid that trap, harmless as it was under
-    /// first-match-wins name-keyed lookup.
+    /// Precompile a full `CompiledAttrDecl` for each `has` declaration a
+    /// class body declares directly in its own body (ADR-0019 D2b
+    /// remainder/D10), keyed by attribute name so `class_body_has_decl` can
+    /// look one up without depending on its registration-time walk visiting
+    /// attributes in exactly this order. Includes a class-level `our`/`my`
+    /// attribute too (unlike `class_own_attribute_names`, which is
+    /// per-instance-attribute-only and correctly keeps excluding them) —
+    /// `class_body_has_decl` branches on `decl.is_our`/`decl.is_my` itself
+    /// once it has the descriptor, so there is no reason for this table not
+    /// to carry every `has` statement's descriptor. Traversal
+    /// (SyntheticBlock-flattened top level plus `has` nested directly
+    /// inside a body `sub`, recursively) is the same shape as
+    /// `class_own_attribute_names`/`collect_nested_has_decl_names`, which
+    /// the earlier `collect_attr_is_default_chunks` did NOT share,
+    /// double-pushing a nested-sub `has ... is default` (once from the
+    /// `SubDecl` arm's direct loop, once from its own recursive call
+    /// re-matching the same statement). This mirrors the registration-side
+    /// non-recursive-repeat exactly to avoid that trap, harmless as it was
+    /// under first-match-wins name-keyed lookup.
     fn compile_class_attr_decls(
         &self,
         body: &[Stmt],
@@ -426,12 +428,7 @@ impl Compiler {
                 other => vec![other],
             })
             .filter_map(|stmt| match stmt {
-                Stmt::HasDecl {
-                    name,
-                    is_our,
-                    is_my,
-                    ..
-                } if !*is_our && !*is_my => Some((*name, self.compile_class_attr_decl(stmt))),
+                Stmt::HasDecl { name, .. } => Some((*name, self.compile_class_attr_decl(stmt))),
                 _ => None,
             })
             .collect();
@@ -449,15 +446,7 @@ impl Compiler {
                 Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
                 Stmt::SubDecl { body, .. } => {
                     for inner in body {
-                        if let Stmt::HasDecl {
-                            name,
-                            is_our,
-                            is_my,
-                            ..
-                        } = inner
-                            && !*is_our
-                            && !*is_my
-                        {
+                        if let Stmt::HasDecl { name, .. } = inner {
                             out.push((*name, self.compile_class_attr_decl(inner)));
                         }
                     }
