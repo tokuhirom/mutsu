@@ -336,6 +336,7 @@ mod ops_set;
 mod output_sink;
 pub(crate) mod phasers;
 mod react_died;
+mod receiver_class;
 pub(crate) mod regex;
 pub(crate) mod regex_parse;
 mod regex_parse_charclass;

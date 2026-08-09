@@ -29,7 +29,10 @@ impl Interpreter {
     /// Returns `None` (do not cache) when any arg is value-/identity-dependent or
     /// autothreads (`Junction`), or is a container/named-pair arg, so dispatch can
     /// not be keyed on the positional types alone.
-    pub(crate) fn multi_arg_type_keys(args: &[Value]) -> Option<Vec<crate::symbol::Symbol>> {
+    pub(crate) fn multi_arg_type_keys(
+        &mut self,
+        args: &[Value],
+    ) -> Option<Vec<crate::symbol::Symbol>> {
         let mut keys = Vec::with_capacity(args.len());
         for a in args {
             let key = match a.view() {
@@ -49,7 +52,13 @@ impl Interpreter {
                 // S06-multi/by-trait.t). Its value type alone is therefore not a
                 // sound cache key.
                 | ValueView::VarRef { .. } => return None,
-                _ => crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(a)),
+                _ => {
+                    let name = crate::runtime::utils::value_type_name(a);
+                    // ADR-0019 E1a shadow probe (zero behavior change): see
+                    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
+                    self.shadow_check_owner("multi_arg_type_keys", a, name);
+                    crate::symbol::Symbol::intern(name)
+                }
             };
             keys.push(key);
         }
@@ -175,7 +184,7 @@ impl Interpreter {
             return hit;
         }
         // 3. Sound multi-method resolution cache (type+arity deterministic).
-        if let Some(arg_keys) = Self::multi_arg_type_keys(args)
+        if let Some(arg_keys) = self.multi_arg_type_keys(args)
             && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
         {
             let mkey = (class_sym, method_sym, arg_keys);

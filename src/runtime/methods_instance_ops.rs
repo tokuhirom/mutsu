@@ -1673,6 +1673,13 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Package(_)
         ) {
             let class_name = crate::runtime::utils::value_type_name(&target);
+            // ADR-0019 E1a shadow probe (zero behavior change): see
+            // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
+            self.shadow_check_owner(
+                "dispatch_instance_and_fallback.value_type_dispatch",
+                &target,
+                class_name,
+            );
             let dispatch_class = if self.has_user_method(class_name, method) {
                 Some(class_name)
             } else if matches!(target.view(), ValueView::Array(_, kind) if !kind.is_itemized())

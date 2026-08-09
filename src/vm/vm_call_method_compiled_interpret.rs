@@ -484,6 +484,13 @@ impl Interpreter {
             _ => None,
         };
         if let Some(class_sym) = class_sym_opt {
+            // ADR-0019 E1a shadow probe (zero behavior change): see
+            // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
+            self.shadow_check_owner(
+                "try_compiled_method_or_interpret_inner.class_sym",
+                &target,
+                class_sym.as_str(),
+            );
             self.refresh_method_caches_for_generation();
             let cn = class_sym.as_str();
             let cache_key = (class_sym, method_sym);
@@ -556,7 +563,7 @@ impl Interpreter {
                         && !def.is_multi
                     {
                         hit.clone()
-                    } else if let Some(arg_keys) = Self::multi_arg_type_keys(&args)
+                    } else if let Some(arg_keys) = self.multi_arg_type_keys(&args)
                         && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
                     {
                         // Sound multi-method resolution cache (§B): a type+arity-

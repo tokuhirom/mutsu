@@ -20,6 +20,7 @@ mod runtime;
 pub mod symbol;
 mod token_kind;
 mod trace;
+pub(crate) mod type_id;
 mod value;
 mod vm;
 
