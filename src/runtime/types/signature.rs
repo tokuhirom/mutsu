@@ -128,13 +128,31 @@ pub(crate) fn unwrap_varref_value(value: Value) -> Value {
 /// the lazy-array campaign — see `docs/lazy-arrays.md` Slice L4.)
 const MAX_SLURPY_RANGE_EXPAND: i64 = 100_000;
 
-/// Recursively flatten a list of values for `*@` (flattening slurpy) parameter binding.
-/// Non-itemized Array/List elements are flattened recursively; itemized containers
-/// (`$(...)`, `$[...]`) are preserved as single elements.
+/// Flatten a list of RAW caller arguments for `*@` (flattening slurpy)
+/// parameter binding / a slurpy-taking builtin (`sprintf`, `catdir`, ...).
+/// Every caller of this function passes un-pre-processed values (an
+/// argument list, or a single argument wrapped in a one-element slice) --
+/// preserve that contract when adding a new call site.
+///
+/// A **real Array** (the `[...]` constructor or an `@`-var) contributes its
+/// OWN elements to `out`, one level, and no further: every element of a
+/// real Array lives in an implicit Scalar container in Raku, so a nested
+/// Array element is never itself decomposed (`f [[1,2],[3,4]]` is 2
+/// elements, not 4; `f [1,[2,3]]` is `1, $[2,3]`, not `1, 2, 3`;
+/// `sprintf("%d %d %d", @a)` where `@a = 1,2,3` still sees 3 elements).
+/// A **List** (uncontainerized -- `(1,(2,3))`, Seq, Slip, Range) flattens
+/// fully, recursively. An itemized container (`$(...)`, `$[...]`) is
+/// preserved as a single element.
 pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
     for val in values {
         match val.view() {
-            ValueView::Array(arr, kind) if !kind.is_itemized() => {
+            ValueView::Array(_, kind) if kind.is_itemized() => {
+                out.push(val.clone());
+            }
+            ValueView::Array(arr, kind) if kind.is_real_array() => {
+                out.extend(arr.iter().cloned());
+            }
+            ValueView::Array(arr, _kind) => {
                 flatten_into_slurpy(&arr, out);
             }
             ValueView::Seq(items) | ValueView::Slip(items) => {
