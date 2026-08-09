@@ -481,6 +481,10 @@ impl Interpreter {
                     let name = name.resolve();
                     name == "UInt" || name == "Int"
                 }
+                ValueView::Enum {
+                    value: crate::value::EnumValue::Int(i),
+                    ..
+                } => *i >= 0,
                 _ => false,
             };
         }
