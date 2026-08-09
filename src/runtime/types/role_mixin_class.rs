@@ -237,13 +237,13 @@ impl Interpreter {
         {
             return Ok(());
         }
-        let stmts = self
+        let ops = self
             .registry()
             .roles
             .get(role_name)
-            .map(|r| r.deferred_body_stmts.clone())
+            .map(|r| r.deferred_body.clone())
             .unwrap_or_default();
-        self.run_role_body_for_composition(role_name, role_name, &stmts)?;
+        self.run_role_body_for_composition(role_name, role_name, &ops)?;
         self.run_composed_role_ancestor_bodies(role_name, role_name)
     }
 

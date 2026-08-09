@@ -3006,7 +3006,6 @@ fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
 /// time (ADR-0019 D8-1), mirroring `run_composed_role_deferred_body`'s
 /// `is_type_decl`/`is_regex_decl` classification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)]
 pub(crate) enum DeferredBodyOpKind {
     /// A nested `class`/`role` declaration — registers under the role's
     /// OWN package at composition time.
@@ -3021,24 +3020,27 @@ pub(crate) enum DeferredBodyOpKind {
     Plain,
 }
 
-/// One deferred role-body statement, precompiled (ADR-0019 D8-1) — the
-/// per-statement unit a future slice moves onto `RoleDef::deferred_body`,
-/// eventually replacing `deferred_body_stmts` (D8-4). Purely additive for
-/// now: no consumer reads a `chunk` yet, registration still runs
-/// `deferred_body_stmts` unchanged. Reuses [`RoleBodyOp::Deferred`]'s raw
-/// statements as input — see [`deferred_body_ops`].
+/// One deferred role-body statement, precompiled (ADR-0019 D8-1). Every
+/// composition entry point runs these ops (ADR-0019 D8-2) instead of
+/// re-lowering `RoleDef::deferred_body_stmts` per statement on every
+/// composition. Reuses [`RoleBodyOp::Deferred`]'s raw statements as input —
+/// see [`deferred_body_ops`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) struct DeferredBodyOp {
     pub(crate) kind: DeferredBodyOpKind,
-    /// `None` for `TokenRule` (excluded from the compiled-chunk cutover —
-    /// see [`DeferredBodyOpKind::TokenRule`]); compiled against the role's
-    /// own package for `TypeDecl`/`Plain`. That package guess is a
-    /// reasonable default (a nested type declares under the role's own
-    /// package; most `Plain` statements are lexical `my`/`state`
-    /// declarations needing no package qualification at all) but not
-    /// verified against every case — see the D7/D8 design doc's "frozen
-    /// plan" verification item, deferred to the consumer-cutover slice.
+    /// `Some` only for `TypeDecl`: a nested `class`/`role` in a role body
+    /// always registers under the role's OWN package regardless of the
+    /// composition call site, so precompiling against that fixed package is
+    /// verified-correct (ADR-0019 D8-2's V1 check: a parametric role's
+    /// nested class referencing a type parameter, composed at two different
+    /// type arguments). `None` for `TokenRule` (composing-class package,
+    /// unknown until composition) and for `Plain` (the AMBIENT package at
+    /// the composition call site, also unknown until composition —
+    /// freezing it to the role's own package broke `my package G { class A
+    /// is Array[T] {} }`'s `G::A` qualification the V1 check caught; see
+    /// `compile_role_deferred_body`'s doc comment) — both fall back to
+    /// `raw`/`run_block_raw`, which recompiles under the interpreter's
+    /// actual ambient package at that specific composition.
     pub(crate) chunk: Option<CompiledDeclExpr>,
     /// The name this statement declares as a plain (non-`our`,
     /// non-`dynamic`) lexical `VarDecl`, replacing
@@ -3131,11 +3133,9 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// Precompiled per-statement chunk for each deferred (non-attribute,
     /// non-method, non-`does`) statement in the role body (ADR-0019 D8-1),
     /// derived from `body_plan`'s `Deferred` ops. `register_role_decl`
-    /// copies this onto `RoleDef::deferred_body`; `deferred_body_stmts`
-    /// remains the authoritative execution path until D8-2's consumer
-    /// cutover — this field is written but not yet read back. See
-    /// [`DeferredBodyOp`].
-    #[allow(dead_code)]
+    /// copies this onto `RoleDef::deferred_body`, the authoritative
+    /// execution path every composition entry point runs (ADR-0019 D8-2).
+    /// See [`DeferredBodyOp`].
     pub(crate) deferred_body_ops: Vec<DeferredBodyOp>,
 }
 

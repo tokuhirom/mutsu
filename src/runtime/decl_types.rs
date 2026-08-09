@@ -61,15 +61,21 @@ pub(crate) struct RoleDef {
     /// attribute reaches via two paths from a shared ancestor) from a real
     /// attribute conflict.
     pub(crate) own_attribute_names: HashSet<String>,
-    /// Body statements deferred until composition time (for parameterized roles).
-    /// These are non-method/non-attribute statements that may reference type parameters
-    /// and must be re-executed for each class composition with concrete type bindings.
+    /// Raw body statements deferred until composition time (for parameterized
+    /// roles), superseded by `deferred_body` (ADR-0019 D8-2's consumer
+    /// cutover): every execution site now runs the precompiled ops below.
+    /// Still populated at registration (`walk_role_body`) but no longer read
+    /// anywhere — kept only so D8-4 (dropping the raw vec entirely, leaving
+    /// only token/rule raws per the D6/D9 rump rule) stays a small, isolated
+    /// slice instead of being folded into this one.
+    #[allow(dead_code)]
     pub(crate) deferred_body_stmts: Vec<Stmt>,
     /// Precompiled per-statement mirror of `deferred_body_stmts` (ADR-0019
     /// D8-1), copied from `CompiledRoleDeclPlan::deferred_body_ops` at
-    /// registration. Purely additive: `deferred_body_stmts` remains the
-    /// authoritative execution path until D8-2's consumer cutover.
-    #[allow(dead_code)]
+    /// registration. The authoritative execution path as of D8-2: every
+    /// consumer site runs each op's precompiled `chunk` (falling back to its
+    /// `raw` statement for the `TokenRule` carve-out) instead of `run_block_raw`
+    /// over `deferred_body_stmts`.
     pub(crate) deferred_body: Vec<crate::opcode::DeferredBodyOp>,
     /// Unknown lowercase trait names deferred for custom `trait_mod:<is>` dispatch.
     pub(crate) deferred_custom_traits: Vec<String>,

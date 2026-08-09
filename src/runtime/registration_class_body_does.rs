@@ -121,7 +121,7 @@ impl Interpreter {
         }
         // `also does R` is a composition like any other, so R's
         // body runs — and so do the bodies of the roles R composes.
-        self.run_role_body_for_composition(&role_name_str, cx.name, &role.deferred_body_stmts)?;
+        self.run_role_body_for_composition(&role_name_str, cx.name, &role.deferred_body)?;
         self.run_composed_role_ancestor_bodies(&role_name_str, cx.name)?;
         Ok(ClassBodyFlow::RunTail)
     }
