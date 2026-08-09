@@ -2943,6 +2943,65 @@ pub(crate) struct RoleParentOp {
     pub(crate) args: Option<Vec<DeclTraitArg>>,
 }
 
+/// One role-body statement, typed (ADR-0019 D7-4) — the role-side twin of
+/// [`ClassBodyOp`]. Purely additive: no consumer reads this yet
+/// (`walk_role_body` still walks raw `Stmt`s). Deliberately narrower than
+/// `ClassBodyOp`: a role body has no nested-sub `has` collection and no
+/// `ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser` arms (those class-only
+/// statement kinds fall through to `Deferred` in a role body, exactly as
+/// `walk_role_body`'s own catch-all treats them), and carries no compiled
+/// chunk yet — deferred-statement chunk compilation is D8's job
+/// (`RoleDef::deferred_body`'s own `DeferredBodyOp`, a separate type).
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum RoleBodyOp {
+    /// A top-level `has` declaration. Its typed descriptor lives in
+    /// `attr_decls`, keyed by this same name.
+    Attr { name: Symbol },
+    /// A `method`/`submethod` declaration. Advances the existing
+    /// `method_name_chunks`/`method_decls` position cursor.
+    Method,
+    /// A `does`/`hides`/`is hidden` clause. Its typed descriptor lives in
+    /// `parent_ops`, read by position via `parent_op_idx`.
+    Parent,
+    /// Everything else: the `__mutsu_stub_die`/`__mutsu_stub_warn` stub
+    /// marker call (`is_stub` already covers this as a plan fact — see
+    /// `role_body_is_stub`), `SetLine` source-line markers, and every
+    /// statement `walk_role_body` pushes onto `RoleDef::deferred_body_stmts`
+    /// to run at composition time. Boxed: unlike `ClassBodyOp` (whose other
+    /// variants also carry a same-size `Stmt`, keeping the largest/
+    /// second-largest gap small), `Attr`/`Method`/`Parent` here are all
+    /// marker-sized, so an unboxed `Stmt` would trip
+    /// `clippy::large_enum_variant`.
+    Deferred { raw: Box<Stmt> },
+}
+
+/// Lower a role body into its ordered, typed op mirror (ADR-0019 D7-4),
+/// matching `walk_role_body`'s own dispatch loop exactly: a single-level
+/// `SyntheticBlock`-flatten (roles have no nested-sub `has` collection —
+/// `walk_role_body`'s own comment confirms it), classifying each statement
+/// the same way the runtime match does.
+pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
+    body.iter()
+        .flat_map(|s| match s {
+            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .map(classify_role_body_stmt)
+        .collect()
+}
+
+fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
+    match stmt {
+        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr { name: *name },
+        Stmt::MethodDecl { .. } => RoleBodyOp::Method,
+        Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
+        _ => RoleBodyOp::Deferred {
+            raw: Box::new(stmt.clone()),
+        },
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
@@ -2997,6 +3056,12 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// (ADR-0019 D7-3), one per `DoesDecl` statement in source order; see
     /// [`RoleParentOp`].
     pub(crate) parent_ops: Vec<RoleParentOp>,
+    /// Ordered, typed mirror of the (single-level flattened) role body
+    /// (ADR-0019 D7-4), one op per statement `walk_role_body`'s dispatch
+    /// loop visits. Purely additive — no non-test consumer reads this field
+    /// yet. See [`RoleBodyOp`].
+    #[allow(dead_code)]
+    pub(crate) body_plan: Vec<RoleBodyOp>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -6301,6 +6366,7 @@ impl CompiledCode {
         }
         let is_stub = role_body_is_stub(body);
         let our_scope_violation = role_body_our_scope_violation(body);
+        let body_plan = role_body_plan(body);
         let plan_idx = self.role_decl_plans.len() as u32;
         self.role_decl_plans.push(CompiledRoleDeclPlan {
             name: *name,
@@ -6321,6 +6387,7 @@ impl CompiledCode {
             is_stub,
             our_scope_violation,
             parent_ops,
+            body_plan,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

@@ -637,6 +637,7 @@ impl Interpreter {
             is_stub,
             our_scope_violation,
             parent_ops,
+            body_plan: _,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
