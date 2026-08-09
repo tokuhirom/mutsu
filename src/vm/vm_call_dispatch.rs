@@ -353,8 +353,15 @@ impl Interpreter {
     /// (implemented in runtime/test_functions.rs), internal `__mutsu_*` functions,
     /// and pseudo-package qualified names that need special resolution.
     pub(super) fn is_interpreter_handled_function(&self, name: &str) -> bool {
-        // Test functions are implemented as Rust methods, not via AST
-        if self.test_mode_active() && crate::runtime::Interpreter::is_test_function_name(name) {
+        // Test functions are implemented as Rust methods, not via AST.
+        // Under MUTSU_REAL_TEST=1 the real Test.rakumod / Test::Util functions are
+        // proper user-defined Raku subs and must be resolved through the normal
+        // compiled-function path first; the native handlers are only the fallback
+        // when no user declaration exists (try_native_test_function checks this).
+        if self.test_mode_active()
+            && !crate::runtime::Interpreter::real_test_module_enabled()
+            && crate::runtime::Interpreter::is_test_function_name(name)
+        {
             return true;
         }
         // Internal functions are dispatched by the interpreter's call_function match

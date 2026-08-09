@@ -3,6 +3,25 @@ use crate::symbol::Symbol;
 use std::sync::Arc;
 
 impl Interpreter {
+    /// Extract the NOMINAL type from a type constraint string.
+    ///
+    /// Raku coercion types like `Bool(Mu)` mean "accept Mu (the nominal type) and
+    /// coerce it to Bool". For autothreading purposes, only the nominal type matters:
+    /// a `Bool(Mu)` parameter accepts Mu (which includes Junction), so no threading.
+    ///
+    /// Examples:
+    ///   `"Bool(Mu)"` → `"Mu"` (nominal = Mu, accepts Junction)
+    ///   `"Str(Any)"` → `"Any"` (nominal = Any, does thread)
+    ///   `"Bool"`     → `"Bool"` (no coercion)
+    fn nominal_type(type_constraint: &str) -> &str {
+        // `CoerceTo(NominalType)` — extract the inner type
+        if let Some(inner_start) = type_constraint.find('(')
+            && type_constraint.ends_with(')')
+        {
+            return &type_constraint[inner_start + 1..type_constraint.len() - 1];
+        }
+        type_constraint
+    }
     /// Check if any function call arguments are Junctions that need auto-threading.
     /// Returns Some(result) if auto-threading was performed, None if no auto-threading needed.
     pub(super) fn maybe_autothread_func_call(
@@ -127,10 +146,11 @@ impl Interpreter {
                         .find(|pd| pd.named && !pd.slurpy && !pd.double_slurpy && pd.name == *key)
                     {
                         if let Some(tc) = &pd.type_constraint {
-                            if matches!(tc.as_str(), "Mu" | "Junction") {
+                            let nominal = Self::nominal_type(tc.as_str());
+                            if matches!(nominal, "Mu" | "Junction") {
                                 return false;
                             }
-                            let resolved_base = self.resolve_subset_base_type(tc);
+                            let resolved_base = self.resolve_subset_base_type(nominal);
                             return !matches!(resolved_base.as_str(), "Mu" | "Junction");
                         }
                         return true; // No type constraint = default Any
@@ -158,16 +178,19 @@ impl Interpreter {
                     if pd.slurpy || pd.onearg || pd.double_slurpy {
                         return false;
                     }
-                    // Don't auto-thread if param accepts Mu or Junction
+                    // Don't auto-thread if param accepts Mu or Junction.
+                    // For coercion types like `Bool(Mu)`, the nominal type is the
+                    // inner type (Mu here) — autothreading is based on the nominal.
                     if let Some(tc) = &pd.type_constraint {
-                        if matches!(tc.as_str(), "Mu" | "Junction") {
+                        let nominal = Self::nominal_type(tc.as_str());
+                        if matches!(nominal, "Mu" | "Junction") {
                             return false;
                         }
                         // Don't auto-thread if the type constraint is a subset
                         // whose ultimate base type is Mu or Junction — the
                         // junction should be passed as-is to the subset's
                         // where-clause check.
-                        let resolved_base = self.resolve_subset_base_type(tc);
+                        let resolved_base = self.resolve_subset_base_type(nominal);
                         if matches!(resolved_base.as_str(), "Mu" | "Junction") {
                             return false;
                         }
@@ -521,7 +544,49 @@ impl Interpreter {
     ) -> Option<Vec<crate::ast::ParamDef>> {
         // Replace junction args with non-junction placeholder values for type resolution
         let resolved_args: Vec<Value> = args.iter().map(Self::unwrap_junction_deep).collect();
-        loan_env!(self, resolve_function_with_types(name, &resolved_args))
-            .map(|def| def.param_defs.clone())
+        if let Some(def) =
+            loan_env!(self, resolve_function_with_types(name, &resolved_args)).map(|d| d.clone())
+        {
+            return Some(def.param_defs.clone());
+        }
+        // Native operators (infix:<eq>, prefix:<!>, etc.) are not in the function
+        // registry but never accept Mu or Junction — synthesize Any-typed param defs
+        // so Junction args autothread through them (e.g. `&CALLER::LEXICAL::("infix:<eq>")`
+        // called from Test.rakumod's `cmp-ok` with a Junction expected value).
+        if (name.starts_with("infix:<")
+            || name.starts_with("prefix:<")
+            || name.starts_with("postfix:<"))
+            && name.ends_with('>')
+        {
+            let n = if name.starts_with("prefix:<") || name.starts_with("postfix:<") {
+                1usize
+            } else {
+                2usize
+            };
+            let pd = crate::ast::ParamDef {
+                name: String::new(),
+                default: None,
+                multi_invocant: false,
+                required: false,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                onearg: false,
+                sigilless: false,
+                type_constraint: None, // None = Any → autothread
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+                block_param: false,
+            };
+            return Some(vec![pd; n]);
+        }
+        None
     }
 }

@@ -1,6 +1,16 @@
 use super::*;
 
 impl Interpreter {
+    /// Extract nominal type from a coercion-type string (e.g. `"Bool(Mu)"` → `"Mu"`).
+    fn nominal_type_for_closure(tc: &str) -> &str {
+        if let Some(inner_start) = tc.find('(')
+            && tc.ends_with(')')
+        {
+            return &tc[inner_start + 1..tc.len() - 1];
+        }
+        tc
+    }
+
     /// Find the first positional argument that is a Junction and whose corresponding
     /// parameter type constraint does not accept Junction (i.e., needs auto-threading).
     /// Returns the index of that argument, or None if no auto-threading is needed.
@@ -39,13 +49,16 @@ impl Interpreter {
             if let ValueView::Junction { .. } = arg.view() {
                 // Check if the corresponding param accepts Junction
                 if let Some(pd) = positional_params.get(positional_idx) {
-                    let constraint = pd.type_constraint.as_deref().unwrap_or(
+                    let constraint_raw = pd.type_constraint.as_deref().unwrap_or(
                         if is_pointy_block || pd.name.starts_with('@') || pd.name.starts_with('%') {
                             "Mu" // pointy blocks and array/hash sigils: implicit Mu
                         } else {
                             "Any" // scalar params ($x stored as "x"): implicit Any
                         },
                     );
+                    // For coercion types like `Bool(Mu)`, the nominal type is the
+                    // inner type (Mu) — autothreading is based on the nominal type.
+                    let constraint = Self::nominal_type_for_closure(constraint_raw);
                     // Mu and Junction accept junctions directly
                     if constraint == "Mu" || constraint == "Junction" {
                         // No auto-threading needed
@@ -301,6 +314,20 @@ impl Interpreter {
                 // A method's own invocant is bound from its args further below,
                 // after this merge, so it still wins over the captured value.
                 self.env_mut().insert_sym(*k, v.clone());
+            } else if !cc.is_routine && k.with_str(|s| s == "_") {
+                // `$_` (the topic) is LEXICAL in a block: a block lexically captures
+                // `$_` from its creation scope and must see that value when called
+                // from another routine. The don't-overwrite default hides it because
+                // the caller (a `sub`) resets `$_` to Any (line below), which ends
+                // up in the parent env that `entry_or_insert_sym` finds and stops at.
+                //
+                //     given 42 { my &b = { say $_ }; call-block(&b) }
+                //
+                // Without this, `$_` inside the block is Any (the callee routine's
+                // fresh topic) instead of 42. Routines reset `$_` explicitly (at the
+                // `is_routine && !param` guard in call_compiled_function_named_inner),
+                // so this overwrite is safe for non-routine blocks only.
+                self.env_mut().insert_sym(*k, v.clone());
             } else {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
             }
@@ -518,10 +545,19 @@ impl Interpreter {
                     .insert_sym(crate::symbol::Symbol::intern("_"), first.clone());
             }
         } else if data.params.is_empty() && args.is_empty() && data.name.is_empty() {
-            let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
-            if let Some(topic) = caller_topic {
-                self.env_mut()
-                    .insert_sym(crate::symbol::Symbol::intern("_"), topic);
+            // A block lexically captures $_ from its creation scope (the env-merge
+            // loop above installs it via insert_sym for non-routine blocks). Only
+            // inherit the caller's saved topic when the block did NOT capture $_ at
+            // all (e.g., created before any $_ was established in the env chain).
+            // Without this guard the caller's $_ (often Any from a routine reset)
+            // would silently overwrite a correctly-captured topic such as an
+            // IO::Path from a `for @tests { subtest { is-path $_, ... } }` loop.
+            if !data.env.contains_key("_") {
+                let caller_topic = self.call_frames.last().unwrap().saved_env.get("_").cloned();
+                if let Some(topic) = caller_topic {
+                    self.env_mut()
+                        .insert_sym(crate::symbol::Symbol::intern("_"), topic);
+                }
             }
         }
 

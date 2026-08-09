@@ -882,10 +882,13 @@ impl Interpreter {
     }
 
     pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
-        if !self.has_function(name) && !self.has_multi_function(name) {
+        let has_fn = self.has_function(name);
+        let has_multi = self.has_multi_function(name);
+        if !has_fn && !has_multi {
             return false;
         }
-        let Some(def) = self.resolve_function_with_types(name, args) else {
+        let def = self.resolve_function_with_types(name, args);
+        let Some(def) = def else {
             return false;
         };
         self.args_match_param_types(args, &def.param_defs)
