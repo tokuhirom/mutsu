@@ -46,4 +46,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0018](0018-slot-addressed-lexical-capture-and-env-sync.md) | Slot-addressed lexical capture and env synchronization | Accepted |
 | [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Proposed |
 | [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately) |
-| [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Proposed |
+| [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Accepted (P1-P3a and P3 shipped; P4/P5 remain) |

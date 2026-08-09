@@ -1,6 +1,6 @@
 # ADR-0021: Argument named-ness is a call-site property — Pair flavour unification
 
-- **Status**: Proposed
+- **Status**: Accepted (P1-P3a and P3 shipped; P4 cleanup and P5 measured perf follow-up remain — see Implementation status below)
 - **Date**: 2026-08-08
 - **Related**:
   [todo/deep/pair-namedness-is-a-value-property-not-a-call-site-property.md](../../todo/deep/pair-namedness-is-a-value-property-not-a-call-site-property.md),

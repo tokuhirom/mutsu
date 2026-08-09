@@ -101,12 +101,11 @@ impl HashData {
         Value::Str(Arc::new(str_key.to_string()))
     }
 
-    /// Build a `Pair` for a hash entry, using the original typed key for object
-    /// hashes. Plain string keys yield `Value::Pair`; non-string typed keys
-    /// (object hashes) yield `Value::ValuePair`. Behaviour-neutral for plain
-    /// hashes (returns `Value::Pair(str_key, value)` as before).
     /// Build a `Pair` for a hash entry `(str_key, value)`, honoring object-hash
-    /// typed keys. The value is decontainerized: a hash element is stored as a
+    /// typed keys. ADR-0021: hash iteration is a data source, not a call site,
+    /// so the result is always the positional flavour (`Value::ValuePair`) —
+    /// for a plain string key too, not just object-hash typed keys. The value
+    /// is decontainerized: a hash element is stored as a
     /// `ContainerRef` cell, but the pair must carry the inner value (matching a
     /// `%h<k>` read and `.values`) — otherwise iterating a hash as pairs leaks
     /// the cell and `+`/`.elems` on the pair value misbehave (the cell counts as
