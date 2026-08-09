@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 10;
 
 # use fatal inside a sub body must not leak to the caller after the sub returns.
 # All fail() calls are inside subs (never mainline) because fail in mainline always throws.
@@ -93,3 +93,14 @@ sub caller_repeat() {
 }
 my $r8 = caller_repeat();
 ok !$r8.defined, "Repeated sub_with_fatal calls do not accumulate fatal state";
+
+# Test 9: bare closure { use fatal; ... } called at mainline does not leak to caller
+my $closure_at_mainline = { use fatal; 1 };
+$closure_at_mainline();
+my $f9 = "bar"[5];
+ok !$f9.defined, "closure with use fatal called at mainline does not leak";
+
+# Test 10: do {} block with use fatal at mainline does not leak
+my $x10 = do { use fatal; 1 };
+my $f10 = "bar"[5];
+ok !$f10.defined, "do block with use fatal at mainline does not leak";
