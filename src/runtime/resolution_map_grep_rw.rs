@@ -265,6 +265,7 @@ impl Interpreter {
                             list_items[i] = mutated;
                         }
                     };
+                    let saved_when_matched = vm.when_matched();
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
@@ -286,6 +287,20 @@ impl Interpreter {
                         Err(e) if e.is_last() => {
                             writeback(list_items, vm);
                             break;
+                        }
+                        // A matched `when`/`default` escapes as a succeed
+                        // signal instead of returning normally — absorb it the
+                        // same way the `Ok` arm does.
+                        Err(e) if e.is_succeed() => {
+                            vm.set_when_matched(saved_when_matched);
+                            let val = e.return_value.unwrap_or(Value::NIL);
+                            writeback(list_items, vm);
+                            let val = vm.reify_finite_pipe_value(val)?;
+                            if let ValueView::Slip(elems) = val.view() {
+                                result.extend(elems.iter().cloned());
+                            } else {
+                                result.push(val);
+                            }
                         }
                         Err(e) => {
                             return Err(e);
@@ -515,6 +530,7 @@ impl Interpreter {
                         vm.set_topic_source_var(
                             (arity == 1 && !keeps_outer_topic).then_some(topic_source_key.clone()),
                         );
+                        let saved_when_matched = vm.when_matched();
                         match vm.run_reuse(&code, &compiled_fns) {
                             Ok(()) => {
                                 let pred = vm
@@ -546,6 +562,32 @@ impl Interpreter {
                             Err(e) if e.is_next() => break 'body_redo,
                             Err(e) if e.is_last() => {
                                 stop = true;
+                                break 'body_redo;
+                            }
+                            // A matched `when`/`default` escapes as a succeed
+                            // signal instead of returning normally — its value
+                            // is the predicate result, same as the `Ok` arm.
+                            Err(e) if e.is_succeed() => {
+                                vm.set_when_matched(saved_when_matched);
+                                let pred = e.return_value.unwrap_or(Value::NIL);
+                                let updated_item = if arity == 1 {
+                                    vm.env()
+                                        .get(&topic_source_key)
+                                        .cloned()
+                                        .unwrap_or_else(|| chunk[0].clone())
+                                } else {
+                                    chunk[0].clone()
+                                };
+                                if arity == 1 {
+                                    list_items[i] = updated_item.clone();
+                                }
+                                if pred.truthy() {
+                                    if arity == 1 {
+                                        result.push(updated_item);
+                                    } else {
+                                        result.push(Value::array(chunk));
+                                    }
+                                }
                                 break 'body_redo;
                             }
                             Err(e) => {
