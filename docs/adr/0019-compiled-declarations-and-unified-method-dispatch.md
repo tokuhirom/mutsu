@@ -115,9 +115,9 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 34/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
-landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b, D3-8c, and D3-8d landed 2026-08-09). Phase C is fully checked; the open box is
+**Current progress: 35/53 slices merged (C6, C7, C8, D1, D2d, and D7 complete; D2a and D2c-1/2/3
+also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
+2026-08-08; D3-8b, D3-8c, D3-8d, and D7-4 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1269,7 +1269,7 @@ walkers wholesale is not possible before then.
   excluded — byte-identical PASS/FAIL output to the unforced baseline). D6-3e
   (token/rule carve-out check) is expected to fold into a later default-flip
   slice rather than needing its own PR, per the design doc's own note.
-- [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
+- [x] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**
   `todo/deep/adr0019-d7-d8-role-plan-encoding.md`. The role plan gains the class side's
@@ -1309,7 +1309,27 @@ walkers wholesale is not possible before then.
   today's double-evaluation of a side-effecting bracket argument into a single evaluation, a
   real behavior change out of this slice's scope. Verified via the full `t/` suite (27,992
   tests) and every whitelisted `S14-roles`/`S12-coercion` roast file, plus `t/mro-role-hides.t`
-  (hides/hidden-specific coverage), all green. D7-4 (`body_plan` op walk) remains open.
+  (hides/hidden-specific coverage), all green.
+  **D7-4 landed 2026-08-09**: `CompiledRoleDeclPlan` gained `body_plan: Vec<RoleBodyOp>`, a
+  new typed enum (`Attr`/`Method`/`Parent`/`Deferred`) computed at plan lowering by a new
+  `role_body_plan` free function mirroring `walk_role_body`'s own dispatch loop: a single-level
+  `SyntheticBlock` flatten (unlike the class side, a role body has no nested-sub `has`
+  collection — `walk_role_body`'s own comment confirms roles have none), classified the same way
+  the runtime match does. Deliberately narrower than `ClassBodyOp`: a role body has no
+  `ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser` arms (those class-only statement kinds, plus
+  the `__mutsu_stub_die`/`__mutsu_stub_warn` stub marker and `SetLine` markers, all fall through
+  to `Deferred`), and `Deferred` carries no compiled chunk — deferred-statement chunk compilation
+  is D8's job (`RoleDef::deferred_body`'s own `DeferredBodyOp`, a separate type per the D7/D8
+  design doc). `Deferred`'s `raw: Stmt` field is boxed (`Box<Stmt>`): unlike `ClassBodyOp`, whose
+  every non-tiny variant also carries a same-size `Stmt` (keeping the largest/second-largest size
+  gap small), `RoleBodyOp`'s `Attr`/`Method`/`Parent` are all marker-sized, so an unboxed `Stmt`
+  tripped `clippy::large_enum_variant`. Purely additive — no non-test consumer reads the field yet
+  (`#[allow(dead_code)]` on the field/enum, the D6-3a precedent), pinned by a new compiler unit
+  test (`role_declarations_precompute_body_plan`) asserting `body_plan.len()` against an
+  independently re-derived flattened-statement count and the typed op sequence (including the
+  role-header `does` clause's synthetic `DoesDecl`, prepended to the body ahead of a body-level
+  `does`, both classifying as `Parent`). Verified via the full `t/` suite (28,037 tests). This
+  closes D7 — all of D7-1..4 have now landed.
 - [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)

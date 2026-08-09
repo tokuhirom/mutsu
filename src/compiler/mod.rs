@@ -662,6 +662,72 @@ mod declaration_plan_tests {
             .expect("role R declaration plan");
         assert_eq!(plan_r.our_scope_violation, None);
     }
+
+    /// ADR-0019 D7-4: a role's `body_plan` is an ordered, typed mirror of
+    /// its (single-level flattened) body, one op per statement
+    /// `walk_role_body`'s dispatch loop visits — the role-side twin of
+    /// D6-3a's class `body_plan`.
+    #[test]
+    fn role_declarations_precompute_body_plan() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            r#"
+            role R does Some {
+                has $.x;
+                method m { 42 }
+                does Baz;
+                say "hi";
+            }
+            "#,
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+
+        // Independently re-derive the flattened statement count (same
+        // single-level transform `role_body_plan` applies), so the length
+        // check does not hardcode a count sensitive to the parser's own
+        // `SetLine` insertion behavior.
+        let Stmt::RoleDecl { body, .. } = stmts
+            .iter()
+            .find(|s| matches!(s, Stmt::RoleDecl { name, .. } if name.as_str() == "R"))
+            .expect("role R declaration statement")
+        else {
+            unreachable!()
+        };
+        let flattened: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        assert_eq!(plan_r.body_plan.len(), flattened.len());
+
+        // Filtering out `Deferred` ops (the `SetLine` markers and the `say`
+        // statement) leaves exactly the typed arms, in source order. The
+        // role-header `does Some` clause is a synthetic `DoesDecl`
+        // prepended to the body, so it appears before the body-level
+        // `does Baz` clause even though both classify as `Parent`.
+        use crate::opcode::RoleBodyOp;
+        let typed: Vec<&RoleBodyOp> = plan_r
+            .body_plan
+            .iter()
+            .filter(|op| !matches!(op, RoleBodyOp::Deferred { .. }))
+            .collect();
+        assert_eq!(typed.len(), 4, "typed ops: {typed:?}");
+        assert!(matches!(typed[0], RoleBodyOp::Parent));
+        assert!(matches!(
+            typed[1],
+            RoleBodyOp::Attr { name } if name.as_str() == "x"
+        ));
+        assert!(matches!(typed[2], RoleBodyOp::Method));
+        assert!(matches!(typed[3], RoleBodyOp::Parent));
+    }
 }
 mod const_fold;
 mod decl_plan;
