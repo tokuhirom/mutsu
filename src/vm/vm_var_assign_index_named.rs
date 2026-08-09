@@ -852,12 +852,33 @@ impl Interpreter {
         // rebind is needed — a `with_buf_elems_mut` write is visible to every alias.
         // `:=`-binding to a Buf index is not handled here (falls through to the
         // generic path below, unchanged from before this fix).
+        // An `is rw` scalar parameter holding a Buf/Blob is bound through a
+        // `ContainerRef` cell, not the raw Instance — the parent frame's
+        // `Buf.new(...)` value stays where it is, and the cell just lets the
+        // callee write through it. Deref one level before classifying the
+        // target so this lane still recognizes it as a Buf; the Buf's
+        // element storage node is itself Gc-shared (see `with_buf_elems_mut`
+        // / `put_bytes` in `value_buf.rs`), so mutating through the deref'd
+        // Instance's (cheaply cloned) attributes is visible to every alias —
+        // no cell rebind is needed. Without this, the classification below
+        // missed the Buf and fell into the array-autoviv lane, replacing the
+        // caller's Buf with a fresh Array (`sub f($d is rw) { $d[0] = 3 }`).
+        let rw_buf_instance = match self.env().get(&var_name).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => {
+                let inner = cell.lock().unwrap();
+                matches!(inner.view(), ValueView::Instance { .. }).then(|| inner.clone())
+            }
+            _ => None,
+        };
         if !bind_mode
             && let Some(ValueView::Instance {
                 attributes,
                 class_name,
                 ..
-            }) = self.env().get(&var_name).map(Value::view)
+            }) = rw_buf_instance
+                .as_ref()
+                .map(Value::view)
+                .or_else(|| self.env().get(&var_name).map(Value::view))
         {
             let cn = class_name.resolve();
             // Storage-backed instances only. An **unmanaged** `CArray` — a
