@@ -152,23 +152,18 @@ impl Compiler {
         // where only the source-order site compiles the body. Skip the
         // (otherwise-redundant) compile there.
         let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
-        // `self.current_package` containing `::&` means this class is
-        // declared inside a sub/method/closure body currently compiling
-        // under a synthetic STATE-SCOPE pseudo-package (`qualify_variable_name`
-        // /`qualify_package_name` already special-case this exact marker) —
-        // e.g. `subtest "..." => { my class C { ... } }`. That pseudo-package
-        // is compile-time-only bookkeeping for `state` variable key
-        // uniqueness; it does NOT track the runtime's actual
-        // `current_package()` the way ordinary package-scope bracketing
-        // does, so `qualified_class_decl_name`'s "compile-time mirrors
-        // registration-time" assumption (its own doc comment) does not hold
-        // here. Bail out — same as the computed-name case — rather than bake
-        // a wrong package name into `$?PACKAGE`/`?CLASS`-substituted
-        // constants the D3-8a compile produces (caught via
-        // roast/S12-introspection/walk.t's `$?PACKAGE.^name` inside a
-        // `subtest` block).
-        let in_state_scope = self.current_package.contains("::&");
-        let package_name = if name_expr.is_none() && !is_hoisted_shell && !in_state_scope {
+        // ADR-0019 D3-8d: a class declared inside a sub/method/closure body
+        // (e.g. `subtest "..." => { my class C { ... } }`) compiles under a
+        // synthetic STATE-SCOPE pseudo-package (`current_package` containing
+        // `::&`, pure compile-time bookkeeping for `state`-variable key
+        // uniqueness — see `qualify_variable_name`/`qualify_package_name`),
+        // which does NOT track the runtime's `current_package()`. This used
+        // to bail out entirely here; `qualified_class_decl_name` now resolves
+        // the correct runtime package in that case too (via
+        // `enclosing_package`, propagated unchanged through arbitrarily deep
+        // closure nesting — see its doc comment), so no special-casing is
+        // needed at this call site.
+        let package_name = if name_expr.is_none() && !is_hoisted_shell {
             Some(self.qualified_class_decl_name(&name.resolve()))
         } else {
             None
@@ -396,16 +391,13 @@ impl Compiler {
         // whole original body, unlike the class shell) compile for a
         // `__hoisted` forward-reference shell, mirroring `add_class_decl_plan`.
         let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
-        // See `add_class_decl_plan`'s identical `in_state_scope` comment: a
+        // ADR-0019 D3-8d: see `add_class_decl_plan`'s identical comment — a
         // role declared inside a sub/closure body (e.g. `subtest "..." => {
         // my role R { ... } }`) compiles under a synthetic STATE-SCOPE
-        // pseudo-package that does not track the runtime's real
-        // `current_package()`, so the compile-time package-name prediction
-        // is unreliable here too. Not observably reachable yet (D3-8b only
-        // installs from the class side), but fixed now so D3-8c does not
-        // reintroduce the same bug.
-        let in_state_scope = self.current_package.contains("::&");
-        let method_compiled_keys = if is_hoisted_shell || in_state_scope {
+        // pseudo-package, but `qualified_role_decl_name` now resolves the
+        // correct runtime package in that case via `enclosing_package`, so no
+        // special-casing is needed at this call site either.
+        let method_compiled_keys = if is_hoisted_shell {
             self.compile_method_body_keys(body, None, false, false)
         } else {
             let package_name = self.qualified_role_decl_name(&name.resolve());
