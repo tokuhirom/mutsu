@@ -723,7 +723,7 @@ mod declaration_plan_tests {
         assert!(matches!(typed[0], RoleBodyOp::Parent));
         assert!(matches!(
             typed[1],
-            RoleBodyOp::Attr { name } if name.as_str() == "x"
+            RoleBodyOp::Attr { name, .. } if name.as_str() == "x"
         ));
         assert!(matches!(typed[2], RoleBodyOp::Method));
         assert!(matches!(typed[3], RoleBodyOp::Parent));

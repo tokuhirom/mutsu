@@ -622,7 +622,6 @@ impl Interpreter {
             type_param_defs,
             is_export,
             export_tags,
-            legacy_body: body,
             is_rw,
             language_version,
             custom_traits,
@@ -635,7 +634,7 @@ impl Interpreter {
             is_stub,
             our_scope_violation,
             parent_ops,
-            body_plan: _,
+            body_plan,
             deferred_body_ops,
         }) = code.role_decl_plans.get(idx as usize)
         {
@@ -660,7 +659,7 @@ impl Interpreter {
                     &qualified_name,
                     type_params,
                     type_param_defs,
-                    body,
+                    body_plan,
                     *is_rw,
                     language_version,
                     own_attribute_names,

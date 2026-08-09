@@ -311,7 +311,7 @@ impl Interpreter {
         name: &str,
         type_params: &[String],
         type_param_defs: &[ParamDef],
-        body: &[Stmt],
+        body_plan: &[crate::opcode::RoleBodyOp],
         role_is_rw: bool,
         language_version: &str,
         own_attribute_names: &[Symbol],
@@ -392,7 +392,7 @@ impl Interpreter {
             parent_op_idx: 0,
             compiled_fns,
         };
-        self.walk_role_body(body, &mut cx)?;
+        self.walk_role_body(body_plan, &mut cx)?;
         self.finish_role_registration(
             name,
             type_params,
