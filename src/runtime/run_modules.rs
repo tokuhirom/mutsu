@@ -54,27 +54,39 @@ impl Interpreter {
         }
         if let Some(path) = &self.program_path {
             let top_module = module.split("::").next().unwrap_or(module);
+            // The roast test suite's Test-Helpers package lives under
+            // `roast/packages/Test-Helpers/lib/` (NOT `Test/lib/`).  Build
+            // both the bare top_module name AND the `{top_module}-Helpers`
+            // variant so that `use Test::Util` resolves to
+            // `roast/packages/Test-Helpers/lib/Test/Util.rakumod`.
+            let top_module_variants: Vec<String> = {
+                let mut v = vec![top_module.to_string()];
+                v.push(format!("{}-Helpers", top_module));
+                v
+            };
             for ancestor in Path::new(path).ancestors() {
                 if ancestor.as_os_str().is_empty() {
                     continue;
                 }
-                for ext in &extensions {
-                    let filename = format!("{}{}", base_name, ext);
-                    candidates.push(
-                        ancestor
-                            .join("packages")
-                            .join(top_module)
-                            .join("lib")
-                            .join(&filename),
-                    );
-                    candidates.push(
-                        ancestor
-                            .join("roast")
-                            .join("packages")
-                            .join(top_module)
-                            .join("lib")
-                            .join(&filename),
-                    );
+                for top in &top_module_variants {
+                    for ext in &extensions {
+                        let filename = format!("{}{}", base_name, ext);
+                        candidates.push(
+                            ancestor
+                                .join("packages")
+                                .join(top)
+                                .join("lib")
+                                .join(&filename),
+                        );
+                        candidates.push(
+                            ancestor
+                                .join("roast")
+                                .join("packages")
+                                .join(top)
+                                .join("lib")
+                                .join(&filename),
+                        );
+                    }
                 }
             }
         }

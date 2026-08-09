@@ -141,7 +141,15 @@ impl Interpreter {
         // todo/tickets/retire-native-test-util-overrides.md, which now tracks
         // the seven roast files the widened guard exposes.
         let user_declared = self.user_test_decl_beats_native(name, &args);
-        if !user_declared && let Some(result) = self.call_test_function(name, &args)? {
+        // Under MUTSU_REAL_TEST=1 the real Test.rakumod owns the TAP state.
+        // The native handlers bypass that (they write to stdout directly and
+        // don't increment the real module's counters), so skip them — the real
+        // Raku sub (loaded from Test.rakumod / Test::Util source) must handle
+        // it.
+        if !user_declared
+            && !Self::real_test_module_enabled()
+            && let Some(result) = self.call_test_function(name, &args)?
+        {
             return Ok(result);
         }
         match name {

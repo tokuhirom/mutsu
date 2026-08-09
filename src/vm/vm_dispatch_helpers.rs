@@ -621,6 +621,52 @@ impl Interpreter {
         {
             let pkg = package.resolve();
             let name_str = name.resolve();
+            // Junction autothreading for operator routines called as values (e.g.
+            // `&CALLER::LEXICAL::("infix:<eq>")` used by Test.rakumod's `cmp-ok`).
+            // Operators never accept Mu/Junction, so any positional Junction arg must
+            // be threaded. The compiled-call path does this via `maybe_autothread_func_call`
+            // (which has access to the executing CompiledCode); the Routine-value path
+            // bypasses that and goes straight to the native implementation, losing the
+            // threading. Do the threading here before dispatch.
+            if (name_str.starts_with("infix:<")
+                || name_str.starts_with("prefix:<")
+                || name_str.starts_with("postfix:<"))
+                && name_str.ends_with('>')
+                && !matches!(
+                    name_str.as_str(),
+                    "infix:<,>"
+                        | "infix:<=>"
+                        | "infix:<=>>"
+                        | "infix:<and>"
+                        | "infix:<or>"
+                        | "infix:<not>"
+                )
+            {
+                // Find the leftmost positional Junction arg
+                if let Some((junction_idx, junction_val)) =
+                    args.iter().enumerate().find_map(|(i, v)| {
+                        if matches!(v.view(), ValueView::Junction { .. }) {
+                            Some((i, v.clone()))
+                        } else {
+                            None
+                        }
+                    })
+                    && let ValueView::Junction { kind, values } = junction_val.view()
+                {
+                    let values = values.clone();
+                    let mut results = Vec::with_capacity(values.len());
+                    for eigenvalue in values.iter() {
+                        let mut threaded_args = args.clone();
+                        threaded_args[junction_idx] = eigenvalue.clone();
+                        results.push(self.vm_call_on_value(
+                            target.clone(),
+                            threaded_args,
+                            compiled_fns,
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+            }
             // A token/rule method value called with a cursor (`$meth($c)`,
             // e.g. from a custom grammar HOW's `find_method` wrapper) runs
             // the token at the cursor position and returns a Match.

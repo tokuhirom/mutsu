@@ -40,6 +40,15 @@ impl Interpreter {
         if !crate::runtime::Interpreter::is_test_function_name(name) || !self.test_module_loaded() {
             return None;
         }
+        // Under MUTSU_REAL_TEST=1 the real Test.rakumod owns the TAP state.
+        // The native handlers bypass that (they write to stdout directly and
+        // don't increment the real module's counters), so skip them — the real
+        // Raku sub (loaded from Test.rakumod / Test::Util source) must handle
+        // it.  If no user declaration exists, the interpreter throws "No such
+        // function" which is the correct behaviour for a missing import.
+        if crate::runtime::Interpreter::real_test_module_enabled() {
+            return None;
+        }
         // Some Test names collide with core builtins (notably `run`, which is the
         // `Proc` spawner far more often than `Test::Util::run`). The interpreter
         // resolves the builtin first (its `call_function` match runs before the
