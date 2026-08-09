@@ -1269,6 +1269,24 @@ walkers wholesale is not possible before then.
   excluded — byte-identical PASS/FAIL output to the unforced baseline). D6-3e
   (token/rule carve-out check) is expected to fold into a later default-flip
   slice rather than needing its own PR, per the design doc's own note.
+  **D6-3e landed 2026-08-09**: flipped the default — `run_class_body_chunk_or_raw`
+  now runs a statement's precompiled `body_plan` chunk unconditionally
+  whenever one is present, instead of only under the `MUTSU_DROP_LEGACY_CLASS_BODY=1`
+  instrument. The token/rule carve-out needed no extra code: those ops keep
+  `chunk: None` permanently (D6-3b/c), so they fall through to the unchanged
+  `run_block_raw(stmts)` branch exactly as before. `class_body_plan_forced()`
+  and its `OnceLock` are deleted along with the instrument env var. Since the
+  instrument had already been forced through the same verification sweep in
+  D6-3d, this slice is a pure default flip with no new behavior — re-verified
+  via the full `t/` suite (28,062 tests), the `S12-class`/`S12-construction`/
+  `S14-roles`/`S05-grammar` roast files (957 tests, same pre-existing
+  `open_closed.t` failure), and `scripts/battery-testsuite.sh` (158/164,
+  byte-identical to the D6-3d baseline). `run_class_body`'s own dispatch loop
+  still drives off the raw flattened `body: &[Stmt]` (needed to classify each
+  statement's kind and, for `Attr`/`Method`/`Does`, to feed their handlers'
+  raw-statement fallback paths) — dropping `CompiledClassDeclPlan::legacy_body`
+  itself (D6-4) needs those three handlers threaded onto `ClassBodyOp`'s
+  already-typed fields instead, which did not fit this slice.
 - [x] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**

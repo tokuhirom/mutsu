@@ -84,19 +84,6 @@ fn class_body_op_chunk(
     }
 }
 
-/// `MUTSU_DROP_LEGACY_CLASS_BODY=1` forces the class-body walk's small
-/// statement arms (`class_body_other_stmt`, `class_body_code_alias`,
-/// `run_class_body_leave_phasers`) to run their precompiled `body_plan`
-/// chunk (ADR-0019 D6-3d) instead of on-the-fly compiling the raw statement
-/// via `run_block_raw` on every registration — an instrument for validation
-/// sweeps (the `MUTSU_DROP_LEGACY_BODY`/C6e-3a precedent), not yet the
-/// default. Cached in a `OnceLock` like `compiler/const_fold.rs`'s
-/// `folding_allowed`.
-pub(super) fn class_body_plan_forced() -> bool {
-    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *FORCED.get_or_init(|| std::env::var("MUTSU_DROP_LEGACY_CLASS_BODY").as_deref() == Ok("1"))
-}
-
 impl Interpreter {
     /// Recursively surface `has`-attribute declarations nested inside a sub/block
     /// within a class body (`class C { sub f { has $.x } }`). Descends into
@@ -299,18 +286,18 @@ impl Interpreter {
     }
 
     /// Run a class-body statement's side effects, using its precompiled
-    /// `body_plan` chunk (ADR-0019 D6-3d) instead of on-the-fly compiling
-    /// `stmts` via `run_block_raw` when `MUTSU_DROP_LEGACY_CLASS_BODY=1`
-    /// forces the instrument and a chunk is available. Default (unforced)
-    /// behavior is unchanged: always `run_block_raw(stmts)`.
+    /// `body_plan` chunk (ADR-0019 D6-3d) when available instead of
+    /// on-the-fly compiling `stmts` via `run_block_raw` on every
+    /// registration. Falls back to `run_block_raw(stmts)` for a statement
+    /// kind D6-3b/c never compiles a chunk for (`token`/`rule`, the
+    /// ADR-0009 carve-out) or a registration path with no compiled plan at
+    /// all (role-pun/mixin synthesis, `augment class`).
     pub(super) fn run_class_body_chunk_or_raw(
         &mut self,
         chunk: Option<&crate::opcode::CompiledDeclExpr>,
         stmts: &[Stmt],
     ) -> Result<(), RuntimeError> {
-        if let Some(chunk) = chunk
-            && class_body_plan_forced()
-        {
+        if let Some(chunk) = chunk {
             return self.run_compiled_block_raw(&chunk.code, &chunk.fns);
         }
         self.run_block_raw(stmts)
