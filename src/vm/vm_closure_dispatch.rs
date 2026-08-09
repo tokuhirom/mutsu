@@ -112,7 +112,11 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns)
+        let saved_pragmas = self.save_pragma_state();
+        let result =
+            self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
+        self.restore_pragma_state(saved_pragmas);
+        result
     }
 
     /// Like [`Self::call_compiled_closure`] but with an optional explicit topic
