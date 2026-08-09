@@ -770,9 +770,9 @@ mod declaration_plan_tests {
         // stub markers) that `body_plan`'s `Deferred` catch-all still
         // matches — `walk_role_body`'s own runtime dispatch never defers
         // either, so keeping them out of `deferred_body_ops` is what makes
-        // `.is_empty()` agree with `deferred_body_stmts.is_empty()` for a
-        // method-only role body (see `compile_role_deferred_body`'s doc
-        // comment). Count only the "real" deferred statements here.
+        // it empty for a method-only role body, matching runtime dispatch
+        // (see `compile_role_deferred_body`'s doc comment). Count only the
+        // "real" deferred statements here.
         let deferred_count = plan_r
             .body_plan
             .iter()

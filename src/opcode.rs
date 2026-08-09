@@ -2967,8 +2967,8 @@ pub(crate) enum RoleBodyOp {
     /// Everything else: the `__mutsu_stub_die`/`__mutsu_stub_warn` stub
     /// marker call (`is_stub` already covers this as a plan fact — see
     /// `role_body_is_stub`), `SetLine` source-line markers, and every
-    /// statement `walk_role_body` pushes onto `RoleDef::deferred_body_stmts`
-    /// to run at composition time. Boxed: unlike `ClassBodyOp` (whose other
+    /// statement `walk_role_body` defers to run at composition time (see
+    /// `RoleDef::deferred_body`/`DeferredBodyOp`). Boxed: unlike `ClassBodyOp` (whose other
     /// variants also carry a same-size `Stmt`, keeping the largest/
     /// second-largest gap small), `Attr`/`Method`/`Parent` here are all
     /// marker-sized, so an unboxed `Stmt` would trip
@@ -3022,7 +3022,7 @@ pub(crate) enum DeferredBodyOpKind {
 
 /// One deferred role-body statement, precompiled (ADR-0019 D8-1). Every
 /// composition entry point runs these ops (ADR-0019 D8-2) instead of
-/// re-lowering `RoleDef::deferred_body_stmts` per statement on every
+/// re-parsing/re-lowering the raw statement per statement on every
 /// composition. Reuses [`RoleBodyOp::Deferred`]'s raw statements as input —
 /// see [`deferred_body_ops`].
 #[derive(Debug, Clone)]

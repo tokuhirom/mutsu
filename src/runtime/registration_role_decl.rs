@@ -14,7 +14,6 @@ pub(super) struct RoleDeclCx<'a> {
     pub(super) name: &'a str,
     pub(super) type_params: &'a [String],
     pub(super) role_is_rw: bool,
-    pub(super) is_parametric: bool,
     pub(super) role_def: RoleDef,
     /// Attribute names declared in this role body (pre-scan pass).
     pub(super) role_own_attrs: HashSet<String>,
@@ -170,16 +169,13 @@ impl Interpreter {
                     // Skip source line annotations
                 }
                 _ => {
-                    if cx.is_parametric {
-                        // Defer non-method/non-attribute statements until composition
-                        // time so they can be re-evaluated with concrete type bindings.
-                        cx.role_def.deferred_body_stmts.push(stmt.clone());
-                    } else {
-                        // Defer execution until after the role is registered so that
-                        // role methods can be called from within the role block body
-                        // (e.g. `role R { method foo {}; R.foo }`).
-                        cx.role_def.deferred_body_stmts.push(stmt.clone());
-                    }
+                    // Every other statement (non-method/non-attribute/non-`does`) is
+                    // deferred to composition time, so role methods can be called
+                    // from within the role block body (e.g. `role R { method foo {};
+                    // R.foo }`) and, for a parameterized role, so it can be
+                    // re-evaluated with concrete type bindings. The compiler's
+                    // `deferred_body_ops` (ADR-0019 D8-1/D8-2) already covers running
+                    // it at every composition site — nothing to record here.
                 }
             }
         }

@@ -373,7 +373,6 @@ impl Interpreter {
             role_id: super::next_role_id(),
             attribute_conflicts: Vec::new(),
             own_attribute_names: HashSet::new(),
-            deferred_body_stmts: Vec::new(),
             deferred_body: deferred_body_ops.to_vec(),
             deferred_custom_traits: Vec::new(),
         };
@@ -381,7 +380,6 @@ impl Interpreter {
             name,
             type_params,
             role_is_rw,
-            is_parametric: !type_params.is_empty(),
             role_def,
             role_own_attrs: own_attribute_names.iter().map(|s| s.resolve()).collect(),
             body_used_modules: body_used_modules.iter().cloned().collect(),
