@@ -299,6 +299,9 @@ impl Interpreter {
         let first_new = react_subs.len();
         let mut stream_base = None;
         let finished = self.build_react_subscriptions(&pending, react_subs, &mut stream_base)?;
+        // Arm any `whenever <Promise>` markers this batch's nested `supply { }`
+        // bodies registered (see the matching call in `run_react_event_loop`).
+        self.arm_pending_promise_whenevers();
         let new_supplier_regs: Vec<(u64, usize)> = react_subs[first_new..]
             .iter()
             .enumerate()

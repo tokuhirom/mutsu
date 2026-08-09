@@ -116,6 +116,12 @@ impl Interpreter {
             self,
             run_on_demand_body(on_demand_cb, Some(emitter_supplier_id))
         );
+        // Same rewrite as the top-level on-demand handling in
+        // `vm_react_loop.rs`'s `build_react_subscriptions`: a nested `whenever
+        // <Promise>` marker is not a `Supply`, so it must become a
+        // supplier-backed stand-in before the marker walk below (which
+        // recognizes only `Supply`-sourced registrations) can see it.
+        let emitted = self.normalize_promise_whenever_markers(emitted);
         let streamed_done = self
             .supply_stream_consumers
             .get(stream_idx)

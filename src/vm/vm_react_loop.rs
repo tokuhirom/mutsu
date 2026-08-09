@@ -161,7 +161,14 @@ impl Interpreter {
         // been run once, and its `emit` reaches the outer whenever's callback
         // only while that supply's StreamConsumer is still on the stack.
         let mut stream_base: Option<usize> = None;
-        if self.build_react_subscriptions(&subscriptions, &mut react_subs, &mut stream_base)? {
+        let finished =
+            self.build_react_subscriptions(&subscriptions, &mut react_subs, &mut stream_base)?;
+        // Any `whenever <Promise>` nested inside a `supply { }` body was
+        // rewritten into a stand-in supplier above; arm the promises now that
+        // their taps are registered (`react_subs` built), so the resolution
+        // handler can push the result/quit reason without racing registration.
+        self.arm_pending_promise_whenevers();
+        if finished {
             if let Some(base) = stream_base {
                 self.supply_stream_consumers.truncate(base);
             }
@@ -296,6 +303,19 @@ impl Interpreter {
                                 self,
                                 run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id),)
                             );
+                            // A `whenever <Promise>` registered by the body is not
+                            // itself a `Supply`, so the marker walk below (which
+                            // only recognizes a `Supply`-sourced registration via
+                            // `value_to_react_subscription` /
+                            // `register_nested_on_demand_source`) would silently
+                            // drop it — a broken/kept promise nested inside a
+                            // `supply { }` body then never reached this react loop
+                            // at all (Cro::TCP::Connector.establish's `supply {
+                            // whenever self.connect(...) { ... } }`). Rewrite it
+                            // into a supplier-backed stand-in `Supply` first, same
+                            // as the `.tap()` path already does, so the ordinary
+                            // `supplier_id` handling below drives it.
+                            let emitted = self.normalize_promise_whenever_markers(emitted);
                             // Peek `done` (don't pop yet): the streaming consumer
                             // must stay registered while we replay any finite inner
                             // `whenever` sources below, so that `emit`s from those
