@@ -137,6 +137,43 @@ impl Interpreter {
                     ..ReactSubscription::new(callback)
                 });
             }
+            return None;
+        }
+        // A `whenever <Promise>` registered from *inside* a nested on-demand
+        // supply body (e.g. `Cro::Connector.establish`'s `supply { whenever
+        // self.connect(...) -> $t { whenever $t.transformer(...) {...} } }`)
+        // lands here rather than in the top-level `build_react_subscriptions`
+        // Promise arm. Without this, a broken promise with no QUIT handler was
+        // silently dropped instead of dying the react (this function returned
+        // `None`, and none of `register_nested_on_demand_source`'s other
+        // fallbacks recognize a bare Promise source either).
+        if let ValueView::Promise(shared) = source.view() {
+            let (tx, rx) = crate::runtime::native_methods::supply_channel::supply_event_channel();
+            let shared_clone = shared.clone();
+            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                let (result, _, _) = shared_clone.wait();
+                if shared_clone.status() == "Broken" {
+                    let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Quit(result));
+                } else {
+                    let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
+                    let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
+                }
+            });
+            let last_cbs = items
+                .get(2)
+                .and_then(Self::react_value_array_items)
+                .unwrap_or_default();
+            let quit_cbs = items
+                .get(3)
+                .and_then(Self::react_value_array_items)
+                .unwrap_or_default();
+            return Some(ReactSubscription {
+                receiver: Some(rx),
+                promise: Some(shared.clone()),
+                last_callbacks: last_cbs,
+                quit_callbacks: quit_cbs,
+                ..ReactSubscription::new(callback)
+            });
         }
         None
     }
