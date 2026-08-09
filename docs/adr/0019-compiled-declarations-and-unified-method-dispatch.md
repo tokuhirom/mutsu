@@ -1209,6 +1209,66 @@ walkers wholesale is not possible before then.
   `S05-grammar` (proto/protoregex) roast files (only the same pre-existing
   `open_closed.t` failure). D6-3d (driver cutover, instrument-gated) is
   next.
+  **D6-3d landed 2026-08-09**: `run_class_body` now consumes `body_plan` in
+  parallel with the flattened `legacy_body` statement list (zipped, same
+  order/length by construction — `class_body_plan` mirrors the runtime
+  walk's own flatten+nested-has-append exactly), and its three small-arm
+  helpers (`class_body_other_stmt`/`ClassSub`, `class_body_code_alias`,
+  `run_class_body_leave_phasers`) run a statement's precompiled chunk via a
+  new `Interpreter::run_compiled_block_raw` (the `run_block_raw` post-compile
+  half — `run_nested` plus the `free_var_writes` writeback drain — factored
+  out so both the on-the-fly and precompiled paths share it) instead of the
+  registration-time `run_block_raw` OTF compile, gated behind
+  `MUTSU_DROP_LEGACY_CLASS_BODY=1` (the `MUTSU_DROP_LEGACY_BODY`/C6e-3a
+  precedent) — unset by default, so this slice ships with zero behavior
+  change; the instrument exists to validate the chunk path before a future
+  slice flips the default. `ProtoMethod`'s chunk stays unused:
+  `class_body_proto_method_decl` never executed the raw statement (it only
+  clones `proto_body`/`param_defs` off the AST into a `FunctionDef`), so
+  there is nothing for its chunk to replace yet.
+
+  Wiring the instrument surfaced two real, previously-invisible bugs in the
+  "purely additive" D6-3a-c chunks (invisible because nothing consumed them
+  until now):
+  1. **`LeavePhaser`'s chunk compiled to a silent no-op.** D6-3c compiled
+     the chunk from the *wrapping* `Stmt::Phaser{kind: Leave, ..}`
+     statement, but `compiler/stmt.rs`'s `Stmt::Phaser { .. } => {}`
+     catch-all arm compiles an un-lowered `PhaserKind::Leave` to nothing
+     (LEAVE is normally driven by the enclosing `BlockScope` registering a
+     callback, not direct statement compilation) — while
+     `run_class_body_leave_phasers` actually runs the phaser's *inner*
+     `body`. Fixed by generalizing the single-statement chunk compile into
+     `Compiler::compile_decl_stmts_chunk_in_package(stmts: &[Stmt], ..)` and
+     calling it with the phaser's own inner body for the `LeavePhaser` op.
+     Pinned by `class_declarations_leave_phaser_chunk_compiles_inner_body`.
+  2. **Every D6-3b/c chunk qualified bare variable/sub names against the
+     wrong package.** `Compiler::qualify_variable_name`/`qualify_package_name`
+     bake package qualification in at COMPILE time from `self.current_package`
+     — but `compile_class_body_plan`'s child compiler inherited the *outer*
+     (enclosing) compiler's ambient package, not the class's own name, unlike
+     `compile_method_body`'s explicit
+     `method_compiler.set_current_package(package_name.to_string())`. A
+     top-level `no strict; class Foo { $foo = 42; }` therefore wrote a bare
+     unqualified global instead of `Foo::foo` under the forced instrument,
+     diverging from `run_block_raw`'s registration-time compile (which
+     qualifies against the interpreter's `current_package()`, already `Foo`
+     by the time the body walk runs) — caught by the pre-existing
+     `t/strict-use-and-eval.t`. Fixed by threading `package_name: Option<&str>`
+     (the same value `compile_method_body_keys` already receives — `None` for
+     a computed class name/hoisted shell, in which case every op keeps
+     `chunk: None` and falls back to `run_block_raw`, mirroring the
+     method-body precedent) into `compile_class_body_plan` and having
+     `compile_decl_stmts_chunk_in_package` override `current_package` on the
+     child compiler. Pinned by
+     `class_declarations_other_chunk_qualifies_against_declaring_class`.
+
+  Verified with `MUTSU_DROP_LEGACY_CLASS_BODY=1` forced: the full `t/` suite
+  (28,023 tests), the `S12-class`/`S12-construction`/`S14-roles`/`S05-grammar`
+  roast files (1,042 tests, same pre-existing `open_closed.t` failure as
+  unforced), and `scripts/battery-testsuite.sh` (158/164 files pass, 2
+  excluded — byte-identical PASS/FAIL output to the unforced baseline). D6-3e
+  (token/rule carve-out check) is expected to fold into a later default-flip
+  slice rather than needing its own PR, per the design doc's own note.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**

@@ -144,7 +144,7 @@ impl Interpreter {
             method_decls,
             declared_static_names,
             parent_arg_chunks,
-            body_plan: _,
+            body_plan,
         }) = code.class_decl_plans.get(idx as usize)
         {
             let resolved_name = if let Some(chunk) = name_chunk {
@@ -279,6 +279,7 @@ impl Interpreter {
                         declared_static_names,
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
+                        body_plan,
                     },
                     body,
                 )

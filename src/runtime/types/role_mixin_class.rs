@@ -71,6 +71,7 @@ impl Interpreter {
             declared_static_names: &[],
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
+            body_plan: &[],
         };
         self.register_class_decl(&name, &parents, modifiers, &[])?;
         self.compose_mixin_role_submethods(&name, &fresh);

@@ -61,6 +61,42 @@ pub(super) enum ClassBodyFlow {
     SkipTail,
 }
 
+/// A collected class-body-scoped LEAVE phaser (`will leave { ... }`),
+/// carrying both its raw inner body (the pre-D6-3d execution source) and its
+/// precompiled chunk (ADR-0019 D6-3c/d) — see `run_class_body_leave_phasers`.
+pub(super) struct ClassBodyLeavePhaser {
+    pub(super) body: Vec<Stmt>,
+    pub(super) chunk: Option<crate::opcode::CompiledDeclExpr>,
+}
+
+/// Extract a body-walk op's compiled chunk, if any — `None` for a statement
+/// kind D6-3b/c never compiles a chunk for (`token`/`rule`, per the phase
+/// preamble's ADR-0009 carve-out) or when `op` itself is `None` (a
+/// length-mismatch fallback, see `run_class_body`).
+fn class_body_op_chunk(
+    op: Option<&crate::opcode::ClassBodyOp>,
+) -> Option<&crate::opcode::CompiledDeclExpr> {
+    match op? {
+        crate::opcode::ClassBodyOp::Other { chunk, .. }
+        | crate::opcode::ClassBodyOp::ClassSub { chunk, .. }
+        | crate::opcode::ClassBodyOp::CodeAlias { chunk, .. } => chunk.as_ref(),
+        _ => None,
+    }
+}
+
+/// `MUTSU_DROP_LEGACY_CLASS_BODY=1` forces the class-body walk's small
+/// statement arms (`class_body_other_stmt`, `class_body_code_alias`,
+/// `run_class_body_leave_phasers`) to run their precompiled `body_plan`
+/// chunk (ADR-0019 D6-3d) instead of on-the-fly compiling the raw statement
+/// via `run_block_raw` on every registration — an instrument for validation
+/// sweeps (the `MUTSU_DROP_LEGACY_BODY`/C6e-3a precedent), not yet the
+/// default. Cached in a `OnceLock` like `compiler/const_fold.rs`'s
+/// `folding_allowed`.
+pub(super) fn class_body_plan_forced() -> bool {
+    static FORCED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FORCED.get_or_init(|| std::env::var("MUTSU_DROP_LEGACY_CLASS_BODY").as_deref() == Ok("1"))
+}
+
 impl Interpreter {
     /// Recursively surface `has`-attribute declarations nested inside a sub/block
     /// within a class body (`class C { sub f { has $.x } }`). Descends into
@@ -103,6 +139,7 @@ impl Interpreter {
         method_decls: &[crate::opcode::CompiledMethodDecl],
         declared_static_names: &[Symbol],
         compiled_fns: &crate::opcode::CompiledFns,
+        body_plan: &[crate::opcode::ClassBodyOp],
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -124,6 +161,23 @@ impl Interpreter {
         // registers the attribute (the nested sub itself is still processed
         // normally; its body's `has` is a compile-time declaration).
         Self::collect_nested_class_has_decls(body, &mut flattened_body);
+        // `body_plan` (ADR-0019 D6-3a-d) is a position-aligned typed mirror of
+        // this same flattened statement sequence, computed by the compiler at
+        // plan lowering (`crate::opcode::class_body_plan` mirrors this
+        // function's own flatten+nested-has-append exactly — pinned by the
+        // `class_declarations_precompute_body_plan` compiler unit test). A
+        // registration path with no compiled plan (role-pun/mixin synthesis,
+        // `augment class`) always pairs an empty `body_plan` with an empty
+        // `body`, so lengths agree there too; guard against any other
+        // mismatch by falling back to `None` (the pre-D6-3d on-the-fly
+        // compile path) rather than risking a misaligned zip silently
+        // dropping trailing statements.
+        let body_plan_ops: Vec<Option<&crate::opcode::ClassBodyOp>> =
+            if body_plan.len() == flattened_body.len() {
+                body_plan.iter().map(Some).collect()
+            } else {
+                vec![None; flattened_body.len()]
+            };
         // The set of attributes valid for $!attr access: names declared
         // directly in this class body (precomputed by the compiler at plan
         // lowering, ADR-0019 D2a — `own_attribute_names` already covers the
@@ -160,14 +214,23 @@ impl Interpreter {
         // `my $x will leave { ... }`) must fire when the class body is left,
         // i.e. once all body statements have been processed. Collect them here
         // and run them (LIFO) after the loop instead of executing them inline.
-        let mut class_leave_phasers: Vec<Vec<Stmt>> = Vec::new();
-        for stmt in flattened_body {
+        let mut class_leave_phasers: Vec<ClassBodyLeavePhaser> = Vec::new();
+        for (stmt, op) in flattened_body.into_iter().zip(body_plan_ops) {
             match stmt {
                 Stmt::Phaser {
                     kind: PhaserKind::Leave,
                     body,
                 } => {
-                    class_leave_phasers.push(body.clone());
+                    let chunk = match op {
+                        Some(crate::opcode::ClassBodyOp::LeavePhaser { chunk, .. }) => {
+                            chunk.clone()
+                        }
+                        _ => None,
+                    };
+                    class_leave_phasers.push(ClassBodyLeavePhaser {
+                        body: body.clone(),
+                        chunk,
+                    });
                 }
                 Stmt::HasDecl { .. } => {
                     if matches!(
@@ -194,7 +257,8 @@ impl Interpreter {
                     expr: Expr::CodeVar(_),
                     ..
                 } if var_name.starts_with('&') => {
-                    self.class_body_code_alias(&mut cx, stmt)?;
+                    let chunk = class_body_op_chunk(op);
+                    self.class_body_code_alias(&mut cx, stmt, chunk)?;
                 }
                 Stmt::ProtoDecl {
                     is_method: true, ..
@@ -202,7 +266,8 @@ impl Interpreter {
                     self.class_body_proto_method_decl(&mut cx, stmt)?;
                 }
                 _ => {
-                    self.class_body_other_stmt(&mut cx, stmt)?;
+                    let chunk = class_body_op_chunk(op);
+                    self.class_body_other_stmt(&mut cx, stmt, chunk)?;
                 }
             }
             // Check if any new functions were registered under the class package
@@ -233,11 +298,30 @@ impl Interpreter {
         Ok(cx.class_def)
     }
 
+    /// Run a class-body statement's side effects, using its precompiled
+    /// `body_plan` chunk (ADR-0019 D6-3d) instead of on-the-fly compiling
+    /// `stmts` via `run_block_raw` when `MUTSU_DROP_LEGACY_CLASS_BODY=1`
+    /// forces the instrument and a chunk is available. Default (unforced)
+    /// behavior is unchanged: always `run_block_raw(stmts)`.
+    pub(super) fn run_class_body_chunk_or_raw(
+        &mut self,
+        chunk: Option<&crate::opcode::CompiledDeclExpr>,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
+        if let Some(chunk) = chunk
+            && class_body_plan_forced()
+        {
+            return self.run_compiled_block_raw(&chunk.code, &chunk.fns);
+        }
+        self.run_block_raw(stmts)
+    }
+
     /// `our &baz ::= &bar` in a class body — alias a method under a new name.
     fn class_body_code_alias(
         &mut self,
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
+        chunk: Option<&crate::opcode::CompiledDeclExpr>,
     ) -> Result<(), RuntimeError> {
         let Stmt::VarDecl {
             name: var_name,
@@ -256,7 +340,7 @@ impl Interpreter {
             .classes
             .insert(cx.name.to_string(), cx.class_def.clone());
         self.registry_mut().sync_user_method_entries(cx.name);
-        self.run_block_raw(std::slice::from_ref(stmt))?;
+        self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt))?;
         for outer_name in cx.saved_env.keys() {
             let class_scoped_name = format!("{}::{}", cx.name, outer_name);
             if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
@@ -327,6 +411,7 @@ impl Interpreter {
         &mut self,
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
+        chunk: Option<&crate::opcode::CompiledDeclExpr>,
     ) -> Result<(), RuntimeError> {
         // An anonymous method (`method { $!x }`) parses as an
         // `AnonSubParams` expression statement (with an implicit
@@ -382,7 +467,7 @@ impl Interpreter {
         } else {
             None
         };
-        let result = self.run_block_raw(std::slice::from_ref(stmt));
+        let result = self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt));
         if let Some(saved) = saved_defining {
             self.defining_class = saved;
         }

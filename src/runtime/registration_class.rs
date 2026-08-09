@@ -249,6 +249,15 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// harmless, since their `method_decls` is empty too, so the lookup is
     /// never reached.
     pub(crate) compiled_fns: &'a crate::opcode::CompiledFns,
+    /// Precomputed, position-aligned, typed mirror of the body statement
+    /// walk (ADR-0019 D6-3a-c), threaded down to `run_class_body` so its
+    /// small statement arms can run a precompiled chunk instead of
+    /// on-the-fly compiling the raw statement (gated behind
+    /// `MUTSU_DROP_LEGACY_CLASS_BODY`, D6-3d). Empty for registration paths
+    /// with no compiled plan available (role-pun/mixin synthesis, `augment
+    /// class`) — those keep the on-the-fly `run_block_raw` path
+    /// unconditionally, same as an empty body.
+    pub(crate) body_plan: &'a [crate::opcode::ClassBodyOp],
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

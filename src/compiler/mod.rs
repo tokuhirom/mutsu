@@ -474,6 +474,109 @@ mod declaration_plan_tests {
         }
     }
 
+    /// ADR-0019 D6-3d: `ClassBodyOp::LeavePhaser`'s chunk must compile the
+    /// phaser's own *inner* body, not the wrapping `Stmt::Phaser` statement
+    /// — `compiler/stmt.rs`'s `Stmt::Phaser { .. } => {}` catch-all arm
+    /// compiles a bare (un-lowered) `PhaserKind::Leave` statement to a
+    /// no-op, since LEAVE is normally driven by the enclosing `BlockScope`
+    /// registering a callback rather than by direct statement compilation.
+    /// Compiling the wrapper directly (the pre-fix behavior) would silently
+    /// produce a dead chunk with no observable side effect.
+    #[test]
+    fn class_declarations_leave_phaser_chunk_compiles_inner_body() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "class A { my $will-be-static will leave { $tracker = 99 } = 1; }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+
+        use crate::opcode::ClassBodyOp;
+        let phaser_chunk = plan_a
+            .body_plan
+            .iter()
+            .find_map(|op| match op {
+                ClassBodyOp::LeavePhaser { chunk: Some(c), .. } => Some(c),
+                _ => None,
+            })
+            .expect("a compiled LeavePhaser chunk");
+        // The wrapper-statement compile (the pre-fix behavior) emits no
+        // opcodes for `$tracker = 99` at all; compiling the inner body
+        // directly must emit real assignment bytecode.
+        assert!(
+            !phaser_chunk.code.ops.is_empty(),
+            "LeavePhaser chunk must not be empty (compiled the no-op wrapper instead of the inner body)"
+        );
+        assert!(
+            phaser_chunk
+                .code
+                .constants
+                .iter()
+                .any(|v| v.to_string_value() == "99"),
+            "LeavePhaser chunk should embed the inner body's `99` literal, ops: {:?}",
+            phaser_chunk.code.ops
+        );
+    }
+
+    /// ADR-0019 D6-3d: an `Other` op's chunk must qualify a bare package
+    /// variable against the *declaring class's own name*, not the outer
+    /// (enclosing) compiler's ambient package — `t/strict-use-and-eval.t`'s
+    /// `no strict; class Foo { $foo = 42; }` regressed under the
+    /// `MUTSU_DROP_LEGACY_CLASS_BODY=1` instrument until this was fixed:
+    /// `Compiler::qualify_variable_name` bakes package qualification in at
+    /// COMPILE time, and a body-plan chunk compiled with the wrong ambient
+    /// `current_package` silently wrote a bare (unqualified) global instead
+    /// of `Foo::foo`, diverging from `run_block_raw`'s registration-time
+    /// compile (which qualifies against the interpreter's
+    /// `current_package()`, already switched to `Foo` by then).
+    #[test]
+    fn class_declarations_other_chunk_qualifies_against_declaring_class() {
+        let (stmts, _) =
+            crate::parse_dispatch::parse_source("class Foo { $foo = 42; }").expect("parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_foo = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "Foo")
+            .expect("class Foo declaration plan");
+
+        // A `SetLine` marker statement (interstitial, parser-inserted) is
+        // also classified as `Other` and compiles to an empty chunk, so
+        // check every `Other` chunk rather than assuming the first is the
+        // `$foo = 42;` assignment.
+        use crate::opcode::ClassBodyOp;
+        let other_chunks: Vec<_> = plan_foo
+            .body_plan
+            .iter()
+            .filter_map(|op| match op {
+                ClassBodyOp::Other { chunk: Some(c), .. } => Some(c),
+                _ => None,
+            })
+            .collect();
+        assert!(
+            !other_chunks.is_empty(),
+            "expected at least one Other chunk"
+        );
+        assert!(
+            other_chunks.iter().any(|c| c
+                .code
+                .constants
+                .iter()
+                .any(|v| v.to_string_value() == "Foo::foo")),
+            "an Other chunk should qualify `$foo` as `Foo::foo`, chunks' constants: {:?}",
+            other_chunks
+                .iter()
+                .map(|c| &c.code.constants)
+                .collect::<Vec<_>>()
+        );
+    }
+
     /// ADR-0019 D2a: a role declaration's own attribute names, `use`d module
     /// names, and body-declared type names are precomputed at plan lowering,
     /// so `walk_role_body`'s pre-scan pass never re-derives them.
