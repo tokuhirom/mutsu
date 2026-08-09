@@ -69,7 +69,7 @@ impl Interpreter {
         role_param_values: &HashMap<String, Value>,
         role_arg_values: &[Value],
     ) -> Result<(), RuntimeError> {
-        if role.deferred_body_stmts.is_empty() {
+        if role.deferred_body.is_empty() {
             return Ok(());
         }
         // Bind type parameters as type captures
@@ -113,8 +113,8 @@ impl Interpreter {
         // block, that would retopicalize the caller.
         let saved_topic = self.env.get("_").cloned();
         let body_env_before: HashSet<crate::symbol::Symbol> = self.env.keys().copied().collect();
-        for stmt in &role.deferred_body_stmts {
-            let is_type_decl = matches!(stmt, Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. });
+        for op in &role.deferred_body {
+            let is_type_decl = op.kind == crate::opcode::DeferredBodyOpKind::TypeDecl;
             // A `token`/`rule`/`regex` in a role body is composed into
             // the consuming grammar, exactly like a method: it must
             // register under the COMPOSING class's package, not the
@@ -122,13 +122,16 @@ impl Interpreter {
             // the outer package makes every grammar share one global
             // `<item>`, so two roles declaring the same token name
             // silently alias (`grammar GA does A` seeing B's `item`).
-            let is_regex_decl = matches!(stmt, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. });
+            let is_regex_decl = op.kind == crate::opcode::DeferredBodyOpKind::TokenRule;
             if is_type_decl {
                 self.set_current_package(base_role_name.to_string());
             } else if is_regex_decl {
                 self.set_current_package(cx.name.to_string());
             }
-            let r = self.run_block_raw(std::slice::from_ref(stmt));
+            let r = match &op.chunk {
+                Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                None => self.run_block_raw(std::slice::from_ref(&op.raw)),
+            };
             if is_type_decl || is_regex_decl {
                 self.set_current_package(saved_body_pkg.clone());
             }
@@ -174,17 +177,10 @@ impl Interpreter {
         // same-named lexical already leaked into the outer env.
         {
             let declared: HashSet<&str> = role
-                .deferred_body_stmts
+                .deferred_body
                 .iter()
-                .filter_map(|stmt| match stmt {
-                    Stmt::VarDecl {
-                        name,
-                        is_our: false,
-                        is_dynamic: false,
-                        ..
-                    } => Some(name.as_str()),
-                    _ => None,
-                })
+                .flat_map(|op| op.declared_vars.iter())
+                .map(|s| s.as_str())
                 .collect();
             let new_lexicals: Vec<(String, Value)> = self
                 .env

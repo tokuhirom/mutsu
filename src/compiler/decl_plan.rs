@@ -533,14 +533,28 @@ impl Compiler {
         };
         let method_compiled_keys =
             self.compile_method_body_keys(body, package_name.as_deref(), false, false);
-        // ADR-0019 D8-1: a hoisted shell's deferred-body compile would be
-        // fully redundant too (same reasoning as `method_compiled_keys`
-        // above), so it stays empty; only the source-order declaration's
-        // plan compiles chunks.
-        let deferred_body_ops = match &package_name {
-            Some(package_name) => self.compile_role_deferred_body(body, package_name),
-            None => Vec::new(),
-        };
+        // ADR-0019 D8-2: unlike `method_compiled_keys` above (whose
+        // `package_name`-gated skip is harmless — a hoisted shell's
+        // registration falls back to the registration-time compile path,
+        // which still resolves methods correctly), `deferred_body_ops` is
+        // the ONLY source `run_role_body_for_composition`/
+        // `run_composed_role_deferred_body` read since D8-2's consumer
+        // cutover. A role's `__hoisted` shell is not a throwaway stub the
+        // way a class's is — it "keeps the whole original body" (D3-8a's
+        // comment above) and is the SAME plan the real, source-position
+        // declaration re-registers from (confirmed via `rust-gdb`:
+        // `exec_register_role_op` reads the identical `idx` both times for
+        // a top-level role). Gating this on `is_hoisted_shell` therefore
+        // left it permanently empty for any top-level role with a deferred
+        // body statement, silently skipping composition side effects
+        // (`t/indirect-declarator-names.t`'s `role RIndirect { my constant
+        // rname = 'rsecond'; ... method ::(rname) {...} ... }` caught this:
+        // the indirect method name never resolved because the constant
+        // that names it never ran). Always compute it.
+        let deferred_body_ops = self.compile_role_deferred_body(
+            body,
+            &package_name.unwrap_or_else(|| self.qualified_role_decl_name(&name.resolve())),
+        );
         self.code.add_role_decl_plan(
             stmt,
             trait_args,
@@ -556,10 +570,30 @@ impl Compiler {
     /// [`crate::opcode::DeferredBodyOp`] (ADR-0019 D8-1) — reuses D7-4's
     /// `RoleBodyOp::Deferred` raw statements as its input, one op per
     /// `Deferred` entry `crate::opcode::role_body_plan` produces, in the
-    /// same order. `package_name` is the role's own qualified name; see
-    /// `DeferredBodyOp::chunk`'s doc comment for why this is a reasonable
-    /// default rather than a verified-correct package for every deferred
-    /// statement kind.
+    /// same order. `package_name` is the role's own qualified name.
+    ///
+    /// Only a `TypeDecl` op gets a compiled chunk: a nested `class`/`role`
+    /// declared directly in the role body always registers under the
+    /// role's OWN package regardless of where composition happens (every
+    /// consumer's `run_composed_role_deferred_body`/
+    /// `run_role_body_for_composition` explicitly overrides
+    /// `current_package` to the role's name for exactly this op kind), so
+    /// `package_name` is a verified-correct, composition-independent
+    /// target. `Plain` deliberately stays `chunk: None` (ADR-0019 D8-2's V1
+    /// verification): a `Plain` statement is supposed to run under
+    /// whatever package was AMBIENT at the composition call site (a class
+    /// declared inside `package Foo { ... does R[Int] ... }` composes with
+    /// `Foo` ambient, one composed from the mainline composes with
+    /// `GLOBAL` ambient) — that ambient package is a per-composition fact,
+    /// not knowable at role-declaration compile time, so freezing it to
+    /// the role's own name is simply wrong whenever the statement's own
+    /// qualification is package-sensitive. `t/generics-nominalizable-class.t`
+    /// caught this: `my package G { class A is Array[T] {} }` (a `Plain`
+    /// op) compiled against the role's package resolved `G`/`A` under the
+    /// wrong package and broke `G::A` lookups from the composed class's
+    /// methods. `TokenRule` already falls back to `raw` for the symmetric
+    /// reason (composing-class package, also unknown at role-declaration
+    /// time).
     fn compile_role_deferred_body(
         &self,
         body: &[Stmt],
@@ -571,15 +605,43 @@ impl Compiler {
                 crate::opcode::RoleBodyOp::Deferred { raw } => Some(raw),
                 _ => None,
             })
+            // `RoleBodyOp::Deferred`'s catch-all (D7-4) also matches
+            // `SetLine` source-line markers and the `__mutsu_stub_die`/
+            // `__mutsu_stub_warn` stub markers, but `walk_role_body`'s own
+            // runtime dispatch never pushes either onto
+            // `RoleDef::deferred_body_stmts` (`Stmt::SetLine(_) => {}` is a
+            // silent skip; a stub marker sets `is_stub_role` instead of
+            // deferring). Filtering them out here keeps `deferred_body_ops`
+            // empty exactly when `deferred_body_stmts` would have been —
+            // without it, a method-only role body (no real deferred
+            // statement) still produced non-empty `deferred_body_ops` from
+            // its `SetLine` markers alone, and D8-2's consumer cutover
+            // would then run `run_composed_role_deferred_body`/
+            // `run_role_body_for_composition` where baseline's
+            // `.is_empty()` early-return skipped it entirely — spuriously
+            // calling `bind_type_capture` on every role param (including
+            // `&`/`$`-sigil VALUE params it was never meant for) and
+            // clobbering a `&f`-typed parameter's env binding with a type
+            // object instead of the callable
+            // (`t/role-double-parametric-args-distinct.t`'s
+            // `role R5[&f] { method v() { f(3) } }` caught this).
+            .filter(|raw| {
+                !matches!(raw.as_ref(), Stmt::SetLine(_))
+                    && !matches!(
+                        raw.as_ref(),
+                        Stmt::Expr(Expr::Call { name, .. })
+                            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+                    )
+            })
             .map(|raw| {
                 let kind = crate::opcode::classify_deferred_body_op_kind(&raw);
-                let chunk = if kind == crate::opcode::DeferredBodyOpKind::TokenRule {
-                    None
-                } else {
+                let chunk = if kind == crate::opcode::DeferredBodyOpKind::TypeDecl {
                     Some(self.compile_decl_stmts_chunk_in_package(
                         std::slice::from_ref(raw.as_ref()),
                         package_name,
                     ))
+                } else {
+                    None
                 };
                 let declared_vars = crate::opcode::deferred_body_op_declared_vars(&raw);
                 crate::opcode::DeferredBodyOp {

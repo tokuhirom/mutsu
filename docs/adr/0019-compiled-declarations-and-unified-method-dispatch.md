@@ -117,7 +117,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress: 35/53 slices merged (C6, C7, C8, D1, D2d, and D7 complete; D2a and D2c-1/2/3
 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b, D3-8c, D3-8d, and D7-4 landed 2026-08-09). Phase C is fully checked; the open box is
+2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, and D8-2 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1365,6 +1365,39 @@ walkers wholesale is not possible before then.
   own `Deferred` count and the `TypeDecl`/`TokenRule`/`declared_vars` classification for a
   `my $y = 1`/`token t { a }` pair. Verified via the full `t/` suite (28,037 tests). D8-2
   (consumer cutover behind the design doc's V1/V2 raku case tables) is next.
+  **D8-2 landed 2026-08-09**: every consumer of a role's deferred body —
+  `run_role_body_for_composition` (pun, `does`, runtime mixin) and
+  `run_composed_role_deferred_body` (parametric composition) — now runs each op's
+  precompiled `chunk` (`run_compiled_block_raw`, matching `run_block_raw`'s exact
+  writeback/topic semantics — not `run_decl_expr`, which restores the topic per
+  statement instead of once for the whole body) instead of re-compiling the raw
+  statement on every composition; `deferred_body_stmts` is now write-only, kept only
+  until D8-4 drops it. V1 (a nested class referencing a role type parameter, composed
+  at two different type arguments) is covered by the existing
+  `t/generics-nominalizable-class.t`; V2 (once-per-composition side-effect timing
+  across five composition shapes) was checked against the pre-D8-2 baseline, not raku
+  directly — mutsu's existing divergences from raku there are pre-existing and out of
+  scope. Three real bugs surfaced during verification, all fixed: (1) only a
+  `TypeDecl` op (a nested `class`/`role`, package-independent because every consumer
+  explicitly overrides `current_package` for it) gets a compiled chunk — a `Plain`
+  statement's true package is ambient at the composition call site, not knowable at
+  role-declaration compile time, caught by `t/generics-nominalizable-class.t`'s `my
+  package G { class A is Array[T] {} }`; (2) a role's `__hoisted` forward-reference
+  shell is NOT a throwaway stub the way a class's is (`rust-gdb` confirmed it and the
+  "real" declaration share the same compiled plan, full body included), so gating
+  `deferred_body_ops` on `is_hoisted_shell` left it permanently empty for every
+  top-level role with a deferred statement — caught by
+  `t/indirect-declarator-names.t`'s role-body `my constant` naming an indirect method;
+  (3) `RoleBodyOp::Deferred`'s catch-all (D7-4) also matches `SetLine`/stub markers
+  that `walk_role_body`'s runtime dispatch never defers, so a method-only role body
+  produced a non-empty `deferred_body_ops` from markers alone, spuriously entering
+  composition and corrupting a `&f`-typed role parameter via a stray
+  `bind_type_capture` call — caught by `t/role-double-parametric-args-distinct.t`.
+  Verified via the full `t/` suite (28,037 tests), every whitelisted
+  `S06-signature`/`S12-*`/`S14-*` roast file (release binary), and the bundled-library
+  gate (`scripts/battery-testsuite.sh`, 158/164, `OO::Monitors` green).
+  `news/2026-08/d8-2-role-deferred-body-consumer-cutover.md`. D8-3 (the
+  `run_role_submethod` rider) and D8-4 (dropping `deferred_body_stmts`) remain.
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.

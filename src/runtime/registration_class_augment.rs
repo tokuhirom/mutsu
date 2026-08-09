@@ -1168,11 +1168,7 @@ impl Interpreter {
             .composed_role_bodies
             .insert(format!("pun:{role_name}"))
         {
-            self.run_role_body_for_composition(
-                role_name,
-                role_name,
-                &role_def.deferred_body_stmts,
-            )?;
+            self.run_role_body_for_composition(role_name, role_name, &role_def.deferred_body)?;
             self.run_composed_role_ancestor_bodies(role_name, role_name)?;
         }
         Ok(())
@@ -1186,13 +1182,13 @@ impl Interpreter {
         regex_owner: &str,
     ) -> Result<(), RuntimeError> {
         for ancestor in self.role_ancestor_names(role_name) {
-            let stmts = self
+            let ops = self
                 .registry()
                 .roles
                 .get(&ancestor)
-                .map(|r| r.deferred_body_stmts.clone())
+                .map(|r| r.deferred_body.clone())
                 .unwrap_or_default();
-            self.run_role_body_for_composition(&ancestor, regex_owner, &stmts)?;
+            self.run_role_body_for_composition(&ancestor, regex_owner, &ops)?;
         }
         Ok(())
     }
@@ -1231,18 +1227,26 @@ impl Interpreter {
     }
 
     /// Run a role's deferred (non-declaration) body statements as part of a
-    /// composition. A type declaration in the body is qualified by the role
-    /// (`type_owner`) so `$?CLASS.^name` reports `R::Inner`; a `token`/`rule` is
-    /// qualified by the type being composed into (`regex_owner`) because it is
-    /// composed like a method. Everything else keeps the surrounding package so
-    /// a bare `&sub` reference from a role method still resolves.
+    /// composition, from their precompiled ops (ADR-0019 D8-2). A type
+    /// declaration in the body is qualified by the role (`type_owner`) so
+    /// `$?CLASS.^name` reports `R::Inner`; a `token`/`rule` is qualified by
+    /// the type being composed into (`regex_owner`) because it is composed
+    /// like a method. Everything else keeps the surrounding package so a
+    /// bare `&sub` reference from a role method still resolves. Runs each
+    /// op's precompiled `chunk` via `run_compiled_block_raw` (matching
+    /// `run_block_raw`'s exact writeback/topic semantics, unlike
+    /// `run_decl_expr` which would restore the topic per statement instead
+    /// of once for the whole body); a `TokenRule` op has no chunk (the
+    /// composing package is not known until composition — the same
+    /// ADR-0009 carve-out D6/D9 apply elsewhere) and falls back to
+    /// `run_block_raw` on its `raw` statement.
     pub(crate) fn run_role_body_for_composition(
         &mut self,
         type_owner: &str,
         regex_owner: &str,
-        stmts: &[Stmt],
+        ops: &[crate::opcode::DeferredBodyOp],
     ) -> Result<(), RuntimeError> {
-        if stmts.is_empty() {
+        if ops.is_empty() {
             return Ok(());
         }
         let saved_pkg = self.current_package().to_string();
@@ -1257,16 +1261,19 @@ impl Interpreter {
                 this.env.remove("_");
             }
         };
-        for stmt in stmts {
-            let body_pkg = match stmt {
-                Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => Some(type_owner),
-                Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => Some(regex_owner),
-                _ => None,
+        for op in ops {
+            let body_pkg = match op.kind {
+                crate::opcode::DeferredBodyOpKind::TypeDecl => Some(type_owner),
+                crate::opcode::DeferredBodyOpKind::TokenRule => Some(regex_owner),
+                crate::opcode::DeferredBodyOpKind::Plain => None,
             };
             if let Some(pkg) = body_pkg {
                 self.set_current_package(pkg.to_string());
             }
-            let r = self.run_block_raw(std::slice::from_ref(stmt));
+            let r = match &op.chunk {
+                Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                None => self.run_block_raw(std::slice::from_ref(&op.raw)),
+            };
             if body_pkg.is_some() {
                 self.set_current_package(saved_pkg.clone());
             }

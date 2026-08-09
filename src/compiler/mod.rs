@@ -729,13 +729,18 @@ mod declaration_plan_tests {
         assert!(matches!(typed[3], RoleBodyOp::Parent));
     }
 
-    /// ADR-0019 D8-1: each deferred (non-attribute, non-method, non-`does`)
-    /// role-body statement gets its own precompiled `DeferredBodyOp`, one
-    /// per `RoleBodyOp::Deferred` entry in `body_plan` — a `token`/`rule`
-    /// statement is classified `TokenRule` and kept `chunk: None` (the
-    /// composing class's package isn't known until composition), a
-    /// non-`our`/non-`dynamic` `VarDecl` records its own name in
-    /// `declared_vars`, and every other statement compiles a chunk.
+    /// ADR-0019 D8-1/D8-2: each deferred (non-attribute, non-method,
+    /// non-`does`) role-body statement gets its own precompiled
+    /// `DeferredBodyOp`, one per `RoleBodyOp::Deferred` entry in
+    /// `body_plan`. Only `TypeDecl` (a nested `class`/`role`, which always
+    /// registers under the role's own package regardless of composition
+    /// site) gets a compiled `chunk`; `TokenRule` (composing-class package
+    /// unknown until composition) and `Plain` (the ambient package at the
+    /// composition call site, also unknown until composition — see
+    /// `compile_role_deferred_body`'s doc comment for the
+    /// `my package G { class A is Array[T] {} }` case that ruled this out)
+    /// both keep `chunk: None` and fall back to `raw`. A non-`our`/
+    /// non-`dynamic` `VarDecl` records its own name in `declared_vars`.
     #[test]
     fn role_declarations_precompute_deferred_body() {
         let (stmts, _) = crate::parse_dispatch::parse_source(
@@ -745,6 +750,7 @@ mod declaration_plan_tests {
                 method m { 42 }
                 my $y = 1;
                 token t { a }
+                my class Inner { }
                 say "hi";
             }
             "#,
@@ -759,10 +765,24 @@ mod declaration_plan_tests {
             .expect("role R declaration plan");
 
         use crate::opcode::RoleBodyOp;
+        // ADR-0019 D8-2: `deferred_body_ops` additionally filters out
+        // `SetLine` markers (and the `__mutsu_stub_die`/`__mutsu_stub_warn`
+        // stub markers) that `body_plan`'s `Deferred` catch-all still
+        // matches — `walk_role_body`'s own runtime dispatch never defers
+        // either, so keeping them out of `deferred_body_ops` is what makes
+        // `.is_empty()` agree with `deferred_body_stmts.is_empty()` for a
+        // method-only role body (see `compile_role_deferred_body`'s doc
+        // comment). Count only the "real" deferred statements here.
         let deferred_count = plan_r
             .body_plan
             .iter()
-            .filter(|op| matches!(op, RoleBodyOp::Deferred { .. }))
+            .filter(|op| {
+                matches!(
+                    op,
+                    RoleBodyOp::Deferred { raw }
+                        if !matches!(raw.as_ref(), Stmt::SetLine(_))
+                )
+            })
             .count();
         assert_eq!(plan_r.deferred_body_ops.len(), deferred_count);
 
@@ -773,7 +793,7 @@ mod declaration_plan_tests {
             .find(|op| matches!(&op.raw, Stmt::VarDecl { name, .. } if name == "y"))
             .expect("the `my $y = 1` deferred op");
         assert_eq!(var_op.kind, DeferredBodyOpKind::Plain);
-        assert!(var_op.chunk.is_some());
+        assert!(var_op.chunk.is_none());
         assert_eq!(
             var_op
                 .declared_vars
@@ -792,11 +812,20 @@ mod declaration_plan_tests {
         assert!(token_op.chunk.is_none());
         assert!(token_op.declared_vars.is_empty());
 
+        let class_op = plan_r
+            .deferred_body_ops
+            .iter()
+            .find(|op| matches!(&op.raw, Stmt::ClassDecl { .. }))
+            .expect("the `my class Inner { }` deferred op");
+        assert_eq!(class_op.kind, DeferredBodyOpKind::TypeDecl);
+        assert!(class_op.chunk.is_some());
+        assert!(class_op.declared_vars.is_empty());
+
         // Every other deferred op (the `SetLine` markers and the `say`
-        // statement) is `Plain` and compiled a chunk.
+        // statement) is `Plain` and keeps `chunk: None`.
         for op in &plan_r.deferred_body_ops {
-            if op.kind != DeferredBodyOpKind::TokenRule {
-                assert!(op.chunk.is_some(), "missing chunk for {op:?}");
+            if op.kind == DeferredBodyOpKind::Plain {
+                assert!(op.chunk.is_none(), "unexpected chunk for {op:?}");
             }
         }
     }
