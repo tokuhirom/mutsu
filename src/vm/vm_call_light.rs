@@ -12,6 +12,13 @@ impl Interpreter {
         // so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script (same logic as call_compiled_function_named).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
+        if is_module_call {
+            self.module_call_depth += 1;
+        }
         let param_slots = cf.param_local_slots.as_ref().unwrap();
         let positional_count = param_slots.len();
         let actual_count = args.len();
@@ -26,6 +33,9 @@ impl Interpreter {
                 "Too few positionals passed; expected {} arguments but got {}",
                 positional_count, actual_count
             );
+            if is_module_call {
+                self.module_call_depth -= 1;
+            }
             return Err(RuntimeError::typed(
                 "X::TypeCheck::Argument",
                 Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
@@ -159,6 +169,9 @@ impl Interpreter {
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
                     self.block_declared_vars = saved_block_declared_vars;
+                    if is_module_call {
+                        self.module_call_depth -= 1;
+                    }
                     {
                         let param_name = &cf.param_defs[param_idx].name;
                         let got = runtime::value_type_name(&val);
@@ -426,6 +439,9 @@ impl Interpreter {
             });
         }
 
+        if is_module_call {
+            self.module_call_depth -= 1;
+        }
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {

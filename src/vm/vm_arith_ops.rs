@@ -41,9 +41,16 @@ impl Interpreter {
     /// Whether a user-declared `sub infix:<op>` is in scope for `canon`
     /// (e.g. `"infix:<+>"`). The set is empty in the overwhelming common
     /// case, keeping tight numeric loops free of any registry lookup.
+    ///
+    /// Returns false when inside a module function (`module_call_depth > 0`):
+    /// user infix ops from the test file are lexically scoped to their
+    /// compilation unit and must not override operators inside imported
+    /// modules (e.g. Test.rakumod's `$num_of_tests_run + 1`).
     #[inline]
     fn user_infix_override(&self, canon: &str) -> bool {
-        !self.user_declared_infix_ops.is_empty() && self.user_declared_infix_ops.contains(canon)
+        self.module_call_depth == 0
+            && !self.user_declared_infix_ops.is_empty()
+            && self.user_declared_infix_ops.contains(canon)
     }
 
     /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).

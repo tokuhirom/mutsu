@@ -1008,6 +1008,13 @@ pub struct Interpreter {
     /// no-override hot path (e.g. tight `Int + Int` loops) free of registry
     /// lookups.
     pub(crate) user_declared_infix_ops: HashSet<String>,
+    /// Counts how many stack frames deep we are inside a module/external
+    /// compiled function (one whose `CompiledFunction::source_file` is
+    /// `Some`). User-declared `sub infix:<op>` from the test script must NOT
+    /// override operators used inside compiled module code (e.g. Test.rakumod's
+    /// counter arithmetic), mirroring Raku's lexical-per-compilation-unit
+    /// operator scoping. `user_infix_override` gates on this being zero.
+    pub(crate) module_call_depth: u32,
     lib_paths: Vec<String>,
     /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
     /// alongside the binary). Searched *after* every `lib_paths` entry so the
@@ -1021,7 +1028,7 @@ pub struct Interpreter {
     /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
-    program_path: Option<String>,
+    pub(crate) program_path: Option<String>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM
@@ -2439,6 +2446,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
+    std::collections::HashSet<String>, // user_declared_infix_ops snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the

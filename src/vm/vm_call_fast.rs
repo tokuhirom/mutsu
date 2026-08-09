@@ -20,6 +20,13 @@ impl Interpreter {
         // so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script (same logic as call_compiled_function_named).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
+        if is_module_call {
+            self.module_call_depth += 1;
+        }
         // A routine declared directly in this body is lexical; snapshot the
         // registry so it is removed on return unless it escaped (see
         // `call_compiled_function_named` / `return_value_escapes_routine`).
@@ -350,6 +357,9 @@ impl Interpreter {
                 Ok(v) if Self::return_value_escapes_routine(v) => {}
                 _ => self.restore_routine_registry(snapshot),
             }
+        }
+        if is_module_call {
+            self.module_call_depth -= 1;
         }
         final_result
     }

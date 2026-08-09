@@ -199,6 +199,7 @@ impl Interpreter {
             registry.proto_subs.clone(),
             registry.proto_tokens.clone(),
             registry.our_scoped_functions.keys().copied().collect(),
+            self.user_declared_infix_ops.clone(),
         )
     }
 
@@ -211,8 +212,21 @@ impl Interpreter {
     }
 
     fn restore_routine_registry_impl(&mut self, snapshot: RoutineRegistrySnapshot, is_eval: bool) {
-        let (mut functions, proto_functions, token_defs, proto_subs, proto_tokens, our_scoped_keys) =
-            snapshot;
+        let (
+            mut functions,
+            proto_functions,
+            token_defs,
+            proto_subs,
+            proto_tokens,
+            our_scoped_keys,
+            user_infix_ops,
+        ) = snapshot;
+        // Restore the user-declared infix operator set.  In Raku, operators are
+        // lexically scoped per compilation unit; not restoring this caused a
+        // block-local `sub infix:<+>` to keep intercepting imported-module
+        // arithmetic (e.g. Test.rakumod's `$num_of_tests_run + 1`) after the
+        // block exited, resetting the test counter to Nil.
+        self.user_declared_infix_ops = user_infix_ops;
         self.reinstate_module_functions(&mut functions);
         // Collect our-scoped functions that were newly added during this block
         // (not present in the snapshot) that need to persist after scope restoration.

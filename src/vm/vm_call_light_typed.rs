@@ -38,6 +38,7 @@ impl Interpreter {
         // chunk without one takes the full named dispatch instead.
         let Some(plan) = cf.named_call_plan.as_deref() else {
             let pkg = self.current_package().to_string();
+            // call_compiled_function_named handles module_call_depth itself.
             return self.call_compiled_function_named(
                 cf,
                 args.to_vec(),
@@ -46,6 +47,13 @@ impl Interpreter {
                 func_name,
             );
         };
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script (same logic as call_compiled_function_named).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
+        if is_module_call {
+            self.module_call_depth += 1;
+        }
         // Save caller locals and create callee locals
         let saved_locals = std::mem::take(&mut self.locals);
         // Isolate the caller's loop-body-local declaration scope (mirrors
@@ -349,6 +357,9 @@ impl Interpreter {
             self.loop_local_vars = saved_loop_local_vars;
             self.loop_local_saved_env = saved_loop_local_saved_env;
             self.block_declared_vars = saved_block_declared_vars;
+            if is_module_call {
+                self.module_call_depth -= 1;
+            }
             return Err(e);
         }
 
@@ -599,6 +610,9 @@ impl Interpreter {
             }
         }
 
+        if is_module_call {
+            self.module_call_depth -= 1;
+        }
         match result {
             Ok(()) if fail_bypass => Ok(ret_val),
             Ok(()) => {

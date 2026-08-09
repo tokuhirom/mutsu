@@ -9,26 +9,40 @@ impl Interpreter {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script.  User-defined `multi sub` in the test file are OTF-compiled
+        // and carry `source_file = Some(script_path)`, so they must NOT be
+        // treated as module code — user infix ops must remain available inside
+        // them (lexically scoped per compilation unit).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
+        if is_module_call {
+            self.module_call_depth += 1;
+        }
         // A routine declared directly in this body is lexical to the call.
         // Snapshot the routine registry around the (multi-exit) body so the
         // lexical routine is removed on return — UNLESS it escapes by being
         // returned (then its registry entry must survive so it stays callable
         // by name). The snapshot is cheap relative to the rare case it guards.
-        if !cf.declares_inner_routines {
-            return self.call_compiled_function_named_inner(
+        let result = if !cf.declares_inner_routines {
+            self.call_compiled_function_named_inner(cf, args, compiled_fns, fn_package, fn_name)
+        } else {
+            let snapshot = self.snapshot_routine_registry();
+            let r = self.call_compiled_function_named_inner(
                 cf,
                 args,
                 compiled_fns,
                 fn_package,
                 fn_name,
             );
-        }
-        let snapshot = self.snapshot_routine_registry();
-        let result =
-            self.call_compiled_function_named_inner(cf, args, compiled_fns, fn_package, fn_name);
-        match &result {
-            Ok(v) if Self::return_value_escapes_routine(v) => {}
-            _ => self.restore_routine_registry(snapshot),
+            match &r {
+                Ok(v) if Self::return_value_escapes_routine(v) => {}
+                _ => self.restore_routine_registry(snapshot),
+            }
+            r
+        };
+        if is_module_call {
+            self.module_call_depth -= 1;
         }
         result
     }
