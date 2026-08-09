@@ -728,6 +728,78 @@ mod declaration_plan_tests {
         assert!(matches!(typed[2], RoleBodyOp::Method));
         assert!(matches!(typed[3], RoleBodyOp::Parent));
     }
+
+    /// ADR-0019 D8-1: each deferred (non-attribute, non-method, non-`does`)
+    /// role-body statement gets its own precompiled `DeferredBodyOp`, one
+    /// per `RoleBodyOp::Deferred` entry in `body_plan` — a `token`/`rule`
+    /// statement is classified `TokenRule` and kept `chunk: None` (the
+    /// composing class's package isn't known until composition), a
+    /// non-`our`/non-`dynamic` `VarDecl` records its own name in
+    /// `declared_vars`, and every other statement compiles a chunk.
+    #[test]
+    fn role_declarations_precompute_deferred_body() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            r#"
+            role R {
+                has $.x;
+                method m { 42 }
+                my $y = 1;
+                token t { a }
+                say "hi";
+            }
+            "#,
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_r = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+
+        use crate::opcode::RoleBodyOp;
+        let deferred_count = plan_r
+            .body_plan
+            .iter()
+            .filter(|op| matches!(op, RoleBodyOp::Deferred { .. }))
+            .count();
+        assert_eq!(plan_r.deferred_body_ops.len(), deferred_count);
+
+        use crate::opcode::DeferredBodyOpKind;
+        let var_op = plan_r
+            .deferred_body_ops
+            .iter()
+            .find(|op| matches!(&op.raw, Stmt::VarDecl { name, .. } if name == "y"))
+            .expect("the `my $y = 1` deferred op");
+        assert_eq!(var_op.kind, DeferredBodyOpKind::Plain);
+        assert!(var_op.chunk.is_some());
+        assert_eq!(
+            var_op
+                .declared_vars
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
+            vec!["y"]
+        );
+
+        let token_op = plan_r
+            .deferred_body_ops
+            .iter()
+            .find(|op| matches!(&op.raw, Stmt::TokenDecl { .. }))
+            .expect("the `token t { a }` deferred op");
+        assert_eq!(token_op.kind, DeferredBodyOpKind::TokenRule);
+        assert!(token_op.chunk.is_none());
+        assert!(token_op.declared_vars.is_empty());
+
+        // Every other deferred op (the `SetLine` markers and the `say`
+        // statement) is `Plain` and compiled a chunk.
+        for op in &plan_r.deferred_body_ops {
+            if op.kind != DeferredBodyOpKind::TokenRule {
+                assert!(op.chunk.is_some(), "missing chunk for {op:?}");
+            }
+        }
+    }
 }
 mod const_fold;
 mod decl_plan;

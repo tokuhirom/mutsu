@@ -638,6 +638,7 @@ impl Interpreter {
             our_scope_violation,
             parent_ops,
             body_plan: _,
+            deferred_body_ops,
         }) = code.role_decl_plans.get(idx as usize)
         {
             let name_str = name.resolve();
@@ -673,6 +674,7 @@ impl Interpreter {
                     *is_stub,
                     *our_scope_violation,
                     parent_ops,
+                    deferred_body_ops,
                     compiled_fns,
                 )
             )?;

@@ -3002,6 +3002,72 @@ fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
     }
 }
 
+/// How a deferred role-body statement's package resolves at composition
+/// time (ADR-0019 D8-1), mirroring `run_composed_role_deferred_body`'s
+/// `is_type_decl`/`is_regex_decl` classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum DeferredBodyOpKind {
+    /// A nested `class`/`role` declaration — registers under the role's
+    /// OWN package at composition time.
+    TypeDecl,
+    /// A `token`/`rule`/`regex` declaration — registers under the
+    /// COMPOSING class's package, which is not known until composition;
+    /// excluded from the compiled-chunk cutover, the same ADR-0009
+    /// carve-out D6/D9 apply to class-body token/rule statements.
+    TokenRule,
+    /// Everything else — runs with whatever package was ambient when
+    /// composition started.
+    Plain,
+}
+
+/// One deferred role-body statement, precompiled (ADR-0019 D8-1) — the
+/// per-statement unit a future slice moves onto `RoleDef::deferred_body`,
+/// eventually replacing `deferred_body_stmts` (D8-4). Purely additive for
+/// now: no consumer reads a `chunk` yet, registration still runs
+/// `deferred_body_stmts` unchanged. Reuses [`RoleBodyOp::Deferred`]'s raw
+/// statements as input — see [`deferred_body_ops`].
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct DeferredBodyOp {
+    pub(crate) kind: DeferredBodyOpKind,
+    /// `None` for `TokenRule` (excluded from the compiled-chunk cutover —
+    /// see [`DeferredBodyOpKind::TokenRule`]); compiled against the role's
+    /// own package for `TypeDecl`/`Plain`. That package guess is a
+    /// reasonable default (a nested type declares under the role's own
+    /// package; most `Plain` statements are lexical `my`/`state`
+    /// declarations needing no package qualification at all) but not
+    /// verified against every case — see the D7/D8 design doc's "frozen
+    /// plan" verification item, deferred to the consumer-cutover slice.
+    pub(crate) chunk: Option<CompiledDeclExpr>,
+    /// The name this statement declares as a plain (non-`our`,
+    /// non-`dynamic`) lexical `VarDecl`, replacing
+    /// `run_composed_role_deferred_body`'s own re-scan of every deferred
+    /// statement for this same fact. Empty for every other statement kind.
+    pub(crate) declared_vars: Vec<Symbol>,
+    pub(crate) raw: Stmt,
+}
+
+pub(crate) fn classify_deferred_body_op_kind(stmt: &Stmt) -> DeferredBodyOpKind {
+    match stmt {
+        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => DeferredBodyOpKind::TypeDecl,
+        Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => DeferredBodyOpKind::TokenRule,
+        _ => DeferredBodyOpKind::Plain,
+    }
+}
+
+pub(crate) fn deferred_body_op_declared_vars(stmt: &Stmt) -> Vec<Symbol> {
+    match stmt {
+        Stmt::VarDecl {
+            name,
+            is_our: false,
+            is_dynamic: false,
+            ..
+        } => vec![Symbol::intern(name)],
+        _ => Vec::new(),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) name: Symbol,
@@ -3062,6 +3128,15 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// yet. See [`RoleBodyOp`].
     #[allow(dead_code)]
     pub(crate) body_plan: Vec<RoleBodyOp>,
+    /// Precompiled per-statement chunk for each deferred (non-attribute,
+    /// non-method, non-`does`) statement in the role body (ADR-0019 D8-1),
+    /// derived from `body_plan`'s `Deferred` ops. `register_role_decl`
+    /// copies this onto `RoleDef::deferred_body`; `deferred_body_stmts`
+    /// remains the authoritative execution path until D8-2's consumer
+    /// cutover — this field is written but not yet read back. See
+    /// [`DeferredBodyOp`].
+    #[allow(dead_code)]
+    pub(crate) deferred_body_ops: Vec<DeferredBodyOp>,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -6334,6 +6409,7 @@ impl CompiledCode {
         idx
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_role_decl_plan(
         &mut self,
         stmt: &Stmt,
@@ -6342,6 +6418,7 @@ impl CompiledCode {
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_ops: Vec<RoleParentOp>,
         method_compiled_keys: Vec<Option<Symbol>>,
+        deferred_body_ops: Vec<DeferredBodyOp>,
     ) -> u32 {
         let Stmt::RoleDecl {
             name,
@@ -6388,6 +6465,7 @@ impl CompiledCode {
             our_scope_violation,
             parent_ops,
             body_plan,
+            deferred_body_ops,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));

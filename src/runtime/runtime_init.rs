@@ -1930,6 +1930,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_body: Vec::new(),
                             deferred_custom_traits: Vec::new(),
                         },
                     );
@@ -1947,6 +1948,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_body: Vec::new(),
                             deferred_custom_traits: Vec::new(),
                         },
                     );
@@ -1964,6 +1966,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_body: Vec::new(),
                             deferred_custom_traits: Vec::new(),
                         },
                     );
@@ -1981,6 +1984,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_body: Vec::new(),
                             deferred_custom_traits: Vec::new(),
                         },
                     );
@@ -1998,6 +2002,7 @@ impl Interpreter {
                             attribute_conflicts: Vec::new(),
                             own_attribute_names: std::collections::HashSet::new(),
                             deferred_body_stmts: Vec::new(),
+                            deferred_body: Vec::new(),
                             deferred_custom_traits: Vec::new(),
                         },
                     );
@@ -2048,6 +2053,7 @@ impl Interpreter {
                                 attribute_conflicts: Vec::new(),
                                 own_attribute_names: std::collections::HashSet::new(),
                                 deferred_body_stmts: Vec::new(),
+                                deferred_body: Vec::new(),
                                 deferred_custom_traits: Vec::new(),
                             },
                         );
@@ -2101,6 +2107,7 @@ impl Interpreter {
                                 attribute_conflicts: Vec::new(),
                                 own_attribute_names: std::collections::HashSet::new(),
                                 deferred_body_stmts: Vec::new(),
+                                deferred_body: Vec::new(),
                                 deferred_custom_traits: Vec::new(),
                             },
                         );

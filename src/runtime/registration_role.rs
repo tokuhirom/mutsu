@@ -323,6 +323,7 @@ impl Interpreter {
         is_stub_body: bool,
         our_scope_violation: Option<&str>,
         parent_ops: &[crate::opcode::RoleParentOp],
+        deferred_body_ops: &[crate::opcode::DeferredBodyOp],
         compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
@@ -373,6 +374,7 @@ impl Interpreter {
             attribute_conflicts: Vec::new(),
             own_attribute_names: HashSet::new(),
             deferred_body_stmts: Vec::new(),
+            deferred_body: deferred_body_ops.to_vec(),
             deferred_custom_traits: Vec::new(),
         };
         let mut cx = RoleDeclCx {

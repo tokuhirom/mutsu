@@ -65,6 +65,12 @@ pub(crate) struct RoleDef {
     /// These are non-method/non-attribute statements that may reference type parameters
     /// and must be re-executed for each class composition with concrete type bindings.
     pub(crate) deferred_body_stmts: Vec<Stmt>,
+    /// Precompiled per-statement mirror of `deferred_body_stmts` (ADR-0019
+    /// D8-1), copied from `CompiledRoleDeclPlan::deferred_body_ops` at
+    /// registration. Purely additive: `deferred_body_stmts` remains the
+    /// authoritative execution path until D8-2's consumer cutover.
+    #[allow(dead_code)]
+    pub(crate) deferred_body: Vec<crate::opcode::DeferredBodyOp>,
     /// Unknown lowercase trait names deferred for custom `trait_mod:<is>` dispatch.
     pub(crate) deferred_custom_traits: Vec<String>,
 }
