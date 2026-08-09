@@ -153,7 +153,7 @@ impl Compiler {
             // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
             // names keep marking every argument, as they always did.
             let arg_esc = esc
-                && (Self::is_closure_literal_arg(arg)
+                && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.with_thread_escape(thread_esc, |s| {
                 s.compile_method_arg_with_escape(arg, arg_esc)
@@ -557,7 +557,7 @@ impl Compiler {
         for arg in args {
             // See the sibling loop in `compile_expr_method_call`.
             let arg_esc = esc
-                && (Self::is_closure_literal_arg(arg)
+                && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
                     || matches!(mname.as_str(), "then" | "tap" | "act" | "start"));
             self.with_thread_escape(thread_esc, |s| {
                 s.compile_method_arg_with_escape(arg, arg_esc)

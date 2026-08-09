@@ -145,6 +145,23 @@ impl Compiler {
         )
     }
 
+    /// Strip a fat-arrow named-argument wrapper (`key => value`) down to the
+    /// value expression, so a closure literal named argument (`now => { $x }`)
+    /// is recognized by [`is_closure_literal_arg`] the same way a positional
+    /// one is. Every call-argument-escaping check must unwrap through this
+    /// (not just re-match `Expr::Binary { op: FatArrow, .. }` locally) so the
+    /// function-call and method-call compile paths cannot drift apart again.
+    pub(super) fn unwrap_named_arg_value(arg: &Expr) -> &Expr {
+        match arg {
+            Expr::Binary {
+                op: TokenKind::FatArrow,
+                right,
+                ..
+            } => right.as_ref(),
+            other => other,
+        }
+    }
+
     /// Compile a method call argument.
     pub(super) fn compile_method_arg(&mut self, arg: &Expr) {
         self.compile_method_arg_with_escape(arg, false);
