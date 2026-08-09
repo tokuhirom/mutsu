@@ -2843,7 +2843,7 @@ pub(crate) enum ClassBodyOp {
 /// match does, then append nested-sub `has` declarations (in
 /// `Interpreter::collect_nested_class_has_decls` order) as more `Attr` ops —
 /// `run_class_body` appends them to the same iteration, not a separate pass.
-fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
+pub(crate) fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
     let mut flattened: Vec<&Stmt> = body
         .iter()
         .flat_map(|s| match s {
@@ -6198,6 +6198,7 @@ impl CompiledCode {
         method_name_chunks: Vec<Option<CompiledDeclExpr>>,
         parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
         method_compiled_keys: Vec<Option<Symbol>>,
+        body_plan: Vec<ClassBodyOp>,
     ) -> u32 {
         let Stmt::ClassDecl {
             name,
@@ -6230,7 +6231,6 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
-        let body_plan = class_body_plan(body);
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk

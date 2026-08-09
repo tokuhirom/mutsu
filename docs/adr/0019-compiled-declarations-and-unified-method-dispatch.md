@@ -1168,6 +1168,28 @@ walkers wholesale is not possible before then.
   `body_plan.len()` against an independently re-derived flattened-statement
   count and the typed-op sequence for one of each kind. D6-3b (compiling
   `Other` chunks) is next.
+  **D6-3b landed 2026-08-09**: every `Other` op's raw statement is now
+  compiled into its own standalone `CompiledDeclExpr` chunk, via a
+  generalization of `compile_decl_expr_inner`'s child-`Compiler` setup
+  (`Compiler::new_decl_chunk_compiler`) into a new
+  `Compiler::compile_decl_stmt_chunk(&Stmt)` sibling that compiles a whole
+  statement instead of one wrapped `Expr` — the ADR's own suggested
+  generalization. `ClassSub` gets a chunk the same way (it runs through the
+  identical `class_body_other_stmt` path at registration, per the original
+  design sketch's "the SubDecl tail probe fact + Other chunk" comment) via
+  a new `Compiler::compile_class_body_plan` pass that fills in both arms'
+  `chunk` after `crate::opcode::class_body_plan`'s pure AST classification.
+  `token`/`rule` statements are explicitly excluded (checked by a new
+  `class_declarations_body_plan_excludes_token_rule_chunks` test) — they
+  keep `chunk: None`, per the phase preamble's ADR-0009 carve-out; D6-3e
+  will confirm the driver still routes them through `run_block_raw`
+  unchanged once D6-3d cuts over. `CodeAlias`/`ProtoMethod`/`LeavePhaser`
+  remain `chunk: None` (D6-3c). Still additive — nothing outside the
+  compiler unit tests reads a compiled `Other`/`ClassSub` chunk yet.
+  Verified via the full `t/` suite (28,019 tests) and the `S12-class`/
+  `S12-construction`/`S14-roles` roast files (only the pre-existing,
+  non-whitelisted `S12-class/open_closed.t` failure, unrelated). D6-3c
+  (compiling the remaining small arms) is next.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**
