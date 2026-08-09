@@ -14,9 +14,16 @@ impl Interpreter {
     /// is driven — the sweep tooling uses it, and it replaces the throwaway
     /// `unit module Test2;` rename the exercise ran under before.
     pub(crate) fn real_test_module_enabled() -> bool {
-        std::env::var("MUTSU_REAL_TEST")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
+        // Captured once at startup so that `%*ENV<MUTSU_REAL_TEST> = '1'` set
+        // mid-run in a parent process (as `t/vendored-real-test-module.t` does)
+        // does NOT retroactively silence the native TAP provider already in
+        // charge of that process.
+        static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ENABLED.get_or_init(|| {
+            std::env::var("MUTSU_REAL_TEST")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+        })
     }
 
     /// Save current function/class/proto keys for lexical import scoping.
