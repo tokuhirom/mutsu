@@ -115,15 +115,16 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 31/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+**Current progress: 32/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
 landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08). Phase C is fully checked; the open box is
+2026-08-08; D3-8b landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
-precompute), D3-8a also landed (the additive compiler-side half of the method-body main-pass
-compile — see below), and a 2026-08-08 scoping pass found D3's literal goal — compiling method *bodies*
+precompute), D3-8a and D3-8b also landed (the additive compiler-side half and the class-walker
+install-by-key cutover of the method-body main-pass compile — see below), and a 2026-08-08 scoping
+pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
 design (parity-first bare compile, per-decl `compiled_routine_key` on `CompiledMethodDecl`,
@@ -890,6 +891,50 @@ walkers wholesale is not possible before then.
   an actual `Interpreter::run` — and asserts the two `CompiledCode`s are `Debug`-identical (after
   normalizing the process-global closure-ordinal/Symbol-intern-id noise both compiles pick up from
   unrelated background compilation). All pass.
+  **D3-8b landed 2026-08-09**: the class-walker install-by-key cutover (design decision 4).
+  `class_body_method_decl` (`runtime/registration_class_body_method.rs`) now looks up
+  `decl.compiled_routine_key` in the ambient `CompiledFns` pool and, when it resolves AND the
+  resolved `CompiledFunction`'s `params`/`param_defs` match what this registration walk just
+  computed for the same declaration, installs `MethodDef::compiled_code`/`compiled_fns` directly
+  from it instead of leaving them `None` for the bulk `compile_class_methods` pass to fill in later
+  via the registration-time throwaway compile. The comparison snapshots `effective_param_defs`
+  *before* the `::?CLASS` substitution (which `compile_method_body` never performs — design
+  decision 3) so the two sides line up; `ParamDef` has no `PartialEq` (it embeds `Expr`, which
+  doesn't either, and deriving it project-wide is a separate, much larger change), so the guard
+  compares `Debug`-formatted strings instead — exact, not a heuristic, since both sides are derived
+  from the same cloned `decl.param_defs`/`decl.body` within one process, unlike the D3-8a test's
+  two-separate-compiles comparison which has to normalize cross-run Symbol/closure-ordinal drift.
+  The ambient `CompiledFns` table reaches `class_body_method_decl` through a new plumbing path:
+  `exec_register_class_op` gained a `compiled_fns: &CompiledFns` parameter (mirroring
+  `exec_register_sub_op`, threaded from `exec_register_decl_op`, which already had it),
+  `ClassDeclModifiers`/`ClassBodyCx` gained a `compiled_fns` field, and the two non-VM-op call
+  sites of `register_class_decl` (role-pun synthesis in `registration_class_augment.rs`, mixin-type
+  synthesis in `types/role_mixin_class.rs`) pass `&CompiledFns::default()` — harmless, since both
+  call with an empty body, so `method_decls` is empty and the lookup is never reached. Verified
+  with a `MUTSU_VM_STATS=1` stress repro (`class C { method m($x) { $x + 1 } }` redeclared and
+  instantiated 50 times in a loop): `method_body_runtime_compiles` dropped from 50 (baseline, one
+  throwaway compile per loop iteration) to 0. `make test` and a full `make roast` both green, no
+  regressions. **One real regression was caught by the full `make roast` run and fixed in the same
+  slice**: `roast/S12-introspection/walk.t`'s `$?PACKAGE.^name` returned a mangled name (e.g.
+  `"GLOBAL::&::C2"` instead of `"C2"`) for a class declared inside a closure body (`subtest "..."
+  => { my class C2 { ... } }`). Root cause: D3-8a's `qualified_class_decl_name` (the compile-time
+  predictor of a class's registration-time qualified name, used both to key the compiled body and
+  to seed `$?PACKAGE`'s baked-in `LoadConst`) did not account for the compiler's synthetic
+  STATE-SCOPE pseudo-package (`current_package` containing `"::&"`, used purely for `state`
+  variable key uniqueness inside a sub/closure body) — a case `qualify_package_name`/
+  `qualify_variable_name` already special-cased elsewhere in the same file. Inside a state scope,
+  `current_package` does NOT track the runtime's real `current_package()` the way ordinary
+  package-scope bracketing does, so the "compile-time mirrors registration-time" assumption breaks
+  silently — undetectable by the params-equality guard, since a wrong package name is baked
+  directly into the body's bytecode, not carried as a parameter. The params-equality guard alone
+  cannot catch a wrong *package* prediction; fixed by extending the bail-out itself: both
+  `add_class_decl_plan` and `add_role_decl_plan` (`compiler/decl_plan.rs`) now skip main-pass
+  method-body compilation entirely (`compiled_routine_key` stays `None`, same as the
+  computed-name/hoisted-shell cases) whenever the declaration is nested inside such a state scope,
+  falling back to the unaffected registration-time throwaway compile. Fixed on the role side too
+  (`qualified_role_decl_name`) even though not yet observable (D3-8c doesn't install from it yet),
+  to avoid reintroducing the identical bug there. `role_body_method_decl` (D3-8c) is untouched — a separate future PR, since
+  parametric-role method dispatch needs its own roast S14 + battery-gate verification.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

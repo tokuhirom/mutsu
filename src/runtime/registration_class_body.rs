@@ -38,6 +38,9 @@ pub(super) struct ClassBodyCx<'a> {
     /// Cursor into `method_name_chunks`/`method_decls`, advanced by one on
     /// every method statement `class_body_method_decl` processes.
     pub(super) method_name_chunk_idx: usize,
+    /// The ambient program-wide compiled-function pool (ADR-0019 D3-8b); see
+    /// `ClassDeclModifiers::compiled_fns`.
+    pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
 }
 
 impl ClassBodyCx<'_> {
@@ -99,6 +102,7 @@ impl Interpreter {
         method_name_chunks: &[Option<crate::opcode::CompiledDeclExpr>],
         method_decls: &[crate::opcode::CompiledMethodDecl],
         declared_static_names: &[Symbol],
+        compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -144,6 +148,7 @@ impl Interpreter {
             method_name_chunks,
             method_decls,
             method_name_chunk_idx: 0,
+            compiled_fns,
         };
         let saved_functions_keys: HashSet<String> = self
             .registry()
