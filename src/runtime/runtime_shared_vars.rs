@@ -541,6 +541,18 @@ impl Interpreter {
                 // older seed must not overwrite the live frame's invocant
                 // (mirrors the seeding exclusion in `clone_for_thread`).
                 .filter(|k| *k != "self" && !k.starts_with('?'))
+                // Defense in depth: a SCALAR dynamic variable must never be
+                // pulled back from the store even if some stale entry exists
+                // there (mirrors the seeding exclusion in `clone_for_thread`)
+                // — dynamics are thread-local in Raku. `@`/`%` aggregate
+                // dynamics are deliberately exempt, same as in
+                // `clone_for_thread` — their cross-thread mutation visibility
+                // depends on this store.
+                .filter(|k| {
+                    !(crate::env::is_dynamic_var_name(k)
+                        && !k.starts_with('@')
+                        && !k.starts_with('%'))
+                })
                 .cloned()
                 .collect()
         };
