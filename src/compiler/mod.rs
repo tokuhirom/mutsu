@@ -33,6 +33,7 @@ pub(crate) fn shadow_slots_active() -> bool {
 #[cfg(test)]
 mod declaration_plan_tests {
     use super::Compiler;
+    use crate::ast::Stmt;
 
     #[test]
     fn sub_declarations_leave_the_generic_statement_pool() {
@@ -305,6 +306,119 @@ mod declaration_plan_tests {
             .collect();
         names.sort_unstable();
         assert_eq!(names, vec!["w", "x", "y"]);
+    }
+
+    /// ADR-0019 D6-3a: `body_plan` mirrors `run_class_body`'s own flattened
+    /// dispatch order one-op-per-statement (including the interstitial
+    /// `Stmt::SetLine` markers the parser inserts, which classify as
+    /// `Other` the same way `run_class_body`'s `_` arm treats them today),
+    /// with a nested-sub `has` appended at the end (matching
+    /// `own_attribute_names`'s own append order), and classifies each
+    /// statement kind into the right op.
+    #[test]
+    fn class_declarations_precompute_body_plan() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            r#"
+            class A {
+                has $.x;
+                method m() { 42 }
+                also does Baz;
+                sub helper() { 1 }
+                our &alias ::= &m;
+                proto method p(|) {*}
+                my $will-be-static = 1;
+                sub f { has $.w }
+            }
+            "#,
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+
+        // Independently re-derive the flattened statement count (same
+        // transform `class_body_plan` applies) straight from the AST, so
+        // the length check does not hardcode a count sensitive to the
+        // parser's own `SetLine` insertion behavior.
+        let Stmt::ClassDecl { body, .. } = stmts
+            .iter()
+            .find(|s| matches!(s, Stmt::ClassDecl { name, .. } if name.as_str() == "A"))
+            .expect("class A declaration statement")
+        else {
+            unreachable!()
+        };
+        let mut flattened: Vec<&Stmt> = body
+            .iter()
+            .flat_map(|s| match s {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .collect();
+        fn collect_nested_has<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+            for s in stmts {
+                match s {
+                    Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
+                    Stmt::SubDecl { body, .. } => {
+                        for inner in body {
+                            if matches!(inner, Stmt::HasDecl { .. }) {
+                                out.push(inner);
+                            }
+                        }
+                        collect_nested_has(body, out);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        collect_nested_has(body, &mut flattened);
+        assert_eq!(plan_a.body_plan.len(), flattened.len());
+
+        // Filtering out `Other` ops (which absorb both `SetLine` markers and
+        // the `my`-lexical statement, matching `declared_static_names`'s own
+        // separate handling of body statics) leaves exactly the typed arms,
+        // in source order, with the nested-sub `has` appended at the tail.
+        use crate::opcode::ClassBodyOp;
+        let typed: Vec<&ClassBodyOp> = plan_a
+            .body_plan
+            .iter()
+            .filter(|op| !matches!(op, ClassBodyOp::Other { .. }))
+            .collect();
+        assert_eq!(typed.len(), 8, "typed ops: {typed:?}");
+        assert!(matches!(
+            typed[0],
+            ClassBodyOp::Attr { name } if name.as_str() == "x"
+        ));
+        assert!(matches!(typed[1], ClassBodyOp::Method));
+        assert!(matches!(
+            typed[2],
+            ClassBodyOp::Does { name } if name.as_str() == "Baz"
+        ));
+        assert!(matches!(
+            typed[3],
+            ClassBodyOp::ClassSub { name, chunk: None, .. } if name.as_str() == "helper"
+        ));
+        assert!(matches!(
+            typed[4],
+            ClassBodyOp::CodeAlias { chunk: None, .. }
+        ));
+        assert!(matches!(
+            typed[5],
+            ClassBodyOp::ProtoMethod { chunk: None, .. }
+        ));
+        // `sub f { has $.w }` is itself a `SubDecl` (another `ClassSub`),
+        // whose nested `has $.w` is the last op, appended at the tail.
+        assert!(matches!(
+            typed[6],
+            ClassBodyOp::ClassSub { name, chunk: None, .. } if name.as_str() == "f"
+        ));
+        assert!(matches!(
+            typed[7],
+            ClassBodyOp::Attr { name } if name.as_str() == "w"
+        ));
     }
 
     /// ADR-0019 D2a: a role declaration's own attribute names, `use`d module

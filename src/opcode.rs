@@ -2776,6 +2776,144 @@ pub(crate) struct CompiledClassDeclPlan {
     /// Evaluated at composition time (ADR-0019 D4-3) instead of
     /// `resolve_role_candidate` re-parsing the concatenated parent string.
     pub(crate) parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
+    /// Ordered, typed mirror of the flattened class body (ADR-0019 D6-3a),
+    /// one op per statement `run_class_body`'s dispatch loop visits (the
+    /// same `SyntheticBlock`-flattened top level, with nested-sub `has`
+    /// declarations appended at the end — see [`class_body_plan`]). Purely
+    /// additive: no non-test consumer reads this field yet (D6-3d wires
+    /// `run_class_body` to it). The already-typed arms (`Attr`/`Method`/
+    /// `Does`/`ClassSub`) carry only a name/marker, since their real
+    /// payload already lives in `attr_decls`/`method_decls`/
+    /// `parent_arg_chunks`; the remaining arms carry their raw statement
+    /// with `chunk: None` until D6-3b/c precompile them.
+    #[allow(dead_code)]
+    pub(crate) body_plan: Vec<ClassBodyOp>,
+}
+
+/// One class-body statement, typed (ADR-0019 D6-3a). See
+/// [`CompiledClassDeclPlan::body_plan`].
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) enum ClassBodyOp {
+    /// A top-level (or nested-sub) `has` declaration. Its typed descriptor
+    /// lives in `attr_decls`, keyed by this same name.
+    Attr { name: Symbol },
+    /// A `method`/`submethod` declaration. Advances the existing
+    /// `method_name_chunks`/`method_decls` position cursor.
+    Method,
+    /// A body-level `also does Role` clause.
+    Does { name: Symbol },
+    /// A `sub` declaration. Runs like `Other` (via `chunk`), plus carries
+    /// the fact that a successful registration also needs the
+    /// `class_subs` tail-probe `run_class_body` performs after executing it.
+    ClassSub {
+        name: Symbol,
+        chunk: Option<CompiledDeclExpr>,
+        raw: Stmt,
+    },
+    /// `our &baz ::= &bar` — alias a method under a new name.
+    CodeAlias {
+        chunk: Option<CompiledDeclExpr>,
+        raw: Stmt,
+    },
+    /// A `proto method`/`proto submethod` declaration.
+    ProtoMethod {
+        chunk: Option<CompiledDeclExpr>,
+        raw: Stmt,
+    },
+    /// A `will leave { ... }`-style class-body-scoped LEAVE phaser.
+    LeavePhaser {
+        chunk: Option<CompiledDeclExpr>,
+        raw: Stmt,
+    },
+    /// Everything else (`use`/`need`, nested `class`/`role`, BEGIN/CHECK,
+    /// EVAL, `my`/`our` lexicals, `token`/`rule` declarations, ...).
+    /// `token`/`rule` statements are excluded from D6/D9's compiled-chunk
+    /// cutover (the phase preamble's ADR-0009 carve-out) and keep `chunk:
+    /// None` permanently — every other kind gets one in D6-3b.
+    Other {
+        chunk: Option<CompiledDeclExpr>,
+        raw: Stmt,
+    },
+}
+
+/// Lower a class body into its ordered, typed op mirror (ADR-0019 D6-3a),
+/// matching `run_class_body`'s own dispatch loop exactly: `SyntheticBlock`-
+/// flatten the top level, classify each statement the same way the runtime
+/// match does, then append nested-sub `has` declarations (in
+/// `Interpreter::collect_nested_class_has_decls` order) as more `Attr` ops —
+/// `run_class_body` appends them to the same iteration, not a separate pass.
+fn class_body_plan(body: &[Stmt]) -> Vec<ClassBodyOp> {
+    let mut flattened: Vec<&Stmt> = body
+        .iter()
+        .flat_map(|s| match s {
+            Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+            other => vec![other],
+        })
+        .collect();
+    collect_nested_has_decl_stmts(body, &mut flattened);
+    flattened
+        .iter()
+        .map(|stmt| classify_class_body_stmt(stmt))
+        .collect()
+}
+
+/// `Interpreter::collect_nested_class_has_decls`'s compile-time mirror: `has`
+/// declarations inside a body `sub`, in the same order, as statement
+/// references rather than just names (unlike [`collect_nested_has_decl_names`]).
+fn collect_nested_has_decl_stmts<'a>(stmts: &'a [Stmt], out: &mut Vec<&'a Stmt>) {
+    for s in stmts {
+        match s {
+            Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } | Stmt::HasDecl { .. } => {}
+            Stmt::SubDecl { body, .. } => {
+                for inner in body {
+                    if matches!(inner, Stmt::HasDecl { .. }) {
+                        out.push(inner);
+                    }
+                }
+                collect_nested_has_decl_stmts(body, out);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
+    match stmt {
+        Stmt::Phaser {
+            kind: crate::ast::PhaserKind::Leave,
+            ..
+        } => ClassBodyOp::LeavePhaser {
+            chunk: None,
+            raw: stmt.clone(),
+        },
+        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr { name: *name },
+        Stmt::MethodDecl { .. } => ClassBodyOp::Method,
+        Stmt::DoesDecl { name, .. } => ClassBodyOp::Does { name: *name },
+        Stmt::VarDecl {
+            expr: Expr::CodeVar(_),
+            name: var_name,
+            ..
+        } if var_name.starts_with('&') => ClassBodyOp::CodeAlias {
+            chunk: None,
+            raw: stmt.clone(),
+        },
+        Stmt::ProtoDecl {
+            is_method: true, ..
+        } => ClassBodyOp::ProtoMethod {
+            chunk: None,
+            raw: stmt.clone(),
+        },
+        Stmt::SubDecl { name, .. } => ClassBodyOp::ClassSub {
+            name: *name,
+            chunk: None,
+            raw: stmt.clone(),
+        },
+        _ => ClassBodyOp::Other {
+            chunk: None,
+            raw: stmt.clone(),
+        },
+    }
 }
 
 /// One `does`/`hides`/`is hidden` clause from a role's own body, as a typed
@@ -6092,6 +6230,7 @@ impl CompiledCode {
             .collect();
         let own_attribute_names = class_own_attribute_names(body);
         let declared_static_names = class_declared_static_names(body);
+        let body_plan = class_body_plan(body);
         let mut method_decls = compile_method_decls(body);
         // ADR-0019 D3-8a: attach each method's precomputed main-pass
         // bytecode key, position-aligned by the same flattened walk
@@ -6123,6 +6262,7 @@ impl CompiledCode {
             method_decls,
             declared_static_names,
             parent_arg_chunks,
+            body_plan,
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Class(plan_idx));

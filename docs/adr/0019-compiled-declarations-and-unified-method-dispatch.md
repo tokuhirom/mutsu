@@ -1148,6 +1148,26 @@ walkers wholesale is not possible before then.
   now safely falls through to the catch-all `class_body_other_stmt` arm with
   no behavior change. D9-1 (the role-side twin: `is_stub` + our-scope-violation
   plan facts) is not part of this slice.
+  **D6-3a landed 2026-08-09**: `CompiledClassDeclPlan` gained
+  `body_plan: Vec<ClassBodyOp>`, a new typed enum (`Attr`/`Method`/`Does`/
+  `ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser`/`Other`) computed at plan
+  lowering by a new `class_body_plan` free function that mirrors
+  `run_class_body`'s own dispatch loop exactly: the same `SyntheticBlock`-
+  flattened top level, classified the same way the runtime `match` does, with
+  nested-sub `has` declarations appended at the end (same order as
+  `own_attribute_names`). The already-typed arms (`Attr`/`Does`/`ClassSub`
+  carry a name, `Method` is a bare marker) advance the existing
+  `attr_decls`/`method_decls`/`parent_arg_chunks` cursors rather than
+  duplicating their payload; `CodeAlias`/`ProtoMethod`/`LeavePhaser`/`Other`
+  carry `chunk: None` plus the raw statement, to be precompiled by D6-3b/c.
+  Purely additive — no non-test consumer reads the field yet (`#[allow(dead_code)]`
+  on the field/enum, following the `current_pos`/`is_rw` precedent, since
+  `cargo clippy -- -D warnings` lints the non-test target where a
+  `#[cfg(test)]`-only reader does not silence the lint). Pinned by a new
+  compiler unit test (`class_declarations_precompute_body_plan`) asserting
+  `body_plan.len()` against an independently re-derived flattened-statement
+  count and the typed-op sequence for one of each kind. D6-3b (compiling
+  `Other` chunks) is next.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**
