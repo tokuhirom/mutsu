@@ -526,11 +526,20 @@ impl Compiler {
         // pseudo-package, but `qualified_role_decl_name` now resolves the
         // correct runtime package in that case via `enclosing_package`, so no
         // special-casing is needed at this call site either.
-        let method_compiled_keys = if is_hoisted_shell {
-            self.compile_method_body_keys(body, None, false, false)
+        let package_name = if is_hoisted_shell {
+            None
         } else {
-            let package_name = self.qualified_role_decl_name(&name.resolve());
-            self.compile_method_body_keys(body, Some(&package_name), false, false)
+            Some(self.qualified_role_decl_name(&name.resolve()))
+        };
+        let method_compiled_keys =
+            self.compile_method_body_keys(body, package_name.as_deref(), false, false);
+        // ADR-0019 D8-1: a hoisted shell's deferred-body compile would be
+        // fully redundant too (same reasoning as `method_compiled_keys`
+        // above), so it stays empty; only the source-order declaration's
+        // plan compiles chunks.
+        let deferred_body_ops = match &package_name {
+            Some(package_name) => self.compile_role_deferred_body(body, package_name),
+            None => Vec::new(),
         };
         self.code.add_role_decl_plan(
             stmt,
@@ -539,7 +548,48 @@ impl Compiler {
             method_name_chunks,
             parent_ops,
             method_compiled_keys,
+            deferred_body_ops,
         )
+    }
+
+    /// Precompile each deferred role-body statement into a
+    /// [`crate::opcode::DeferredBodyOp`] (ADR-0019 D8-1) — reuses D7-4's
+    /// `RoleBodyOp::Deferred` raw statements as its input, one op per
+    /// `Deferred` entry `crate::opcode::role_body_plan` produces, in the
+    /// same order. `package_name` is the role's own qualified name; see
+    /// `DeferredBodyOp::chunk`'s doc comment for why this is a reasonable
+    /// default rather than a verified-correct package for every deferred
+    /// statement kind.
+    fn compile_role_deferred_body(
+        &self,
+        body: &[Stmt],
+        package_name: &str,
+    ) -> Vec<crate::opcode::DeferredBodyOp> {
+        crate::opcode::role_body_plan(body)
+            .into_iter()
+            .filter_map(|op| match op {
+                crate::opcode::RoleBodyOp::Deferred { raw } => Some(raw),
+                _ => None,
+            })
+            .map(|raw| {
+                let kind = crate::opcode::classify_deferred_body_op_kind(&raw);
+                let chunk = if kind == crate::opcode::DeferredBodyOpKind::TokenRule {
+                    None
+                } else {
+                    Some(self.compile_decl_stmts_chunk_in_package(
+                        std::slice::from_ref(raw.as_ref()),
+                        package_name,
+                    ))
+                };
+                let declared_vars = crate::opcode::deferred_body_op_declared_vars(&raw);
+                crate::opcode::DeferredBodyOp {
+                    kind,
+                    chunk,
+                    declared_vars,
+                    raw: *raw,
+                }
+            })
+            .collect()
     }
 
     /// Precompile each `does`/`hides`/`is hidden` clause of a role's own body

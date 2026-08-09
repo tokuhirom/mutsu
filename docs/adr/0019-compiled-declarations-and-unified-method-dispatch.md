@@ -1346,6 +1346,25 @@ walkers wholesale is not possible before then.
   role-global `pun:`/`mixin:` memos and the unguarded class path are recorded; any
   raku-conformance divergence gets its own ticket). Includes the `run_role_submethod` rider
   (the C6d-3 leftover goes bytecode after D3-8). Slices D8-1..4 in the doc.
+  **D8-1 landed 2026-08-09**: `CompiledRoleDeclPlan` gained `deferred_body_ops:
+  Vec<DeferredBodyOp>` (`{ kind: TypeDecl | TokenRule | Plain, chunk: Option<CompiledDeclExpr>,
+  declared_vars: Vec<Symbol>, raw: Stmt }`), one op per `RoleBodyOp::Deferred` entry in D7-4's
+  `body_plan` — reusing D7-4's already-classified raw statements as input instead of re-deriving
+  them from `legacy_body`. `kind` mirrors `run_composed_role_deferred_body`'s own
+  `is_type_decl`/`is_regex_decl` classification; `declared_vars` replaces its `VarDecl` re-scan
+  (a non-`our`/non-`dynamic` `VarDecl`'s own name, empty otherwise). `chunk` compiles against the
+  role's own qualified package for `TypeDecl`/`Plain` — a reasonable but not yet
+  raku-cross-verified default per the design doc's "frozen plan" item, since a `Plain`
+  statement's true package at composition time is whatever was ambient at the call site, not
+  necessarily the role's own; `TokenRule` (the composing class's package, unknown until
+  composition — the same ADR-0009 carve-out D6/D9 apply to class-body token/rule statements)
+  keeps `chunk: None`. `register_role_decl` copies the ops onto a new `RoleDef::deferred_body`
+  field (`#[allow(dead_code)]`); `deferred_body_stmts` remains the sole execution path — nothing
+  reads `deferred_body` back yet. Pinned by a new compiler unit test
+  (`role_declarations_precompute_deferred_body`) asserting the op count against `body_plan`'s
+  own `Deferred` count and the `TypeDecl`/`TokenRule`/`declared_vars` classification for a
+  `my $y = 1`/`token t { a }` pair. Verified via the full `t/` suite (28,037 tests). D8-2
+  (consumer cutover behind the design doc's V1/V2 raku case tables) is next.
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.
