@@ -281,6 +281,13 @@ impl Interpreter {
         if cf.code.is_routine {
             self.set_when_matched(false);
         }
+        // Track executing CF source file (see vm_call_fast.rs for rationale).
+        let saved_exec_src = if let Some(f) = cf.source_file.as_ref() {
+            let old = self.executing_cf_source_file.replace(f.clone());
+            Some(old)
+        } else {
+            None
+        };
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.
@@ -557,6 +564,9 @@ impl Interpreter {
             }
         }
 
+        if let Some(prev) = saved_exec_src {
+            self.executing_cf_source_file = prev;
+        }
         self.set_current_package(saved_package);
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);

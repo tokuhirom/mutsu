@@ -675,6 +675,13 @@ impl Interpreter {
                 None
             }
         };
+        // Track executing CF source file (see vm_call_fast.rs for rationale).
+        let saved_exec_src = if let Some(f) = data.source_file.as_ref() {
+            let old = self.executing_cf_source_file.replace(f.clone());
+            Some(old)
+        } else {
+            None
+        };
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -807,6 +814,9 @@ impl Interpreter {
 
         if let Some(p) = saved_pkg {
             self.set_current_package(p);
+        }
+        if let Some(prev) = saved_exec_src {
+            self.executing_cf_source_file = prev;
         }
 
         // Natural fall-through completion (no explicit return / break arm): a

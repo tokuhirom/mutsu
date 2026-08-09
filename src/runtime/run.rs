@@ -382,6 +382,10 @@ impl Interpreter {
             .unwrap_or_else(|| "<unknown>".to_string());
         self.env
             .insert("?FILE".to_string(), Value::str(file_name.clone()));
+        // Track the main script's path as the initial "executing compiled-function
+        // source file" so `user_infix_override` can distinguish top-level
+        // main-script declarations from module code at call time.
+        self.executing_cf_source_file = Some(file_name.clone());
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());

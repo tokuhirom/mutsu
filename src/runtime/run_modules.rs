@@ -771,10 +771,13 @@ impl Interpreter {
             // routine registration records the module as each sub's
             // `source_file` (module backtrace frames, error-reporting.t 15).
             let saved_qfile = self.env.get("?FILE").cloned();
-            self.env.insert(
-                "?FILE".to_string(),
-                Value::str(source_path.to_string_lossy().to_string()),
-            );
+            let module_path = source_path.to_string_lossy().to_string();
+            self.env
+                .insert("?FILE".to_string(), Value::str(module_path.clone()));
+            // Mirror into executing_cf_source_file so block-local infix-operator
+            // declarations inside the module body record the MODULE's path, not
+            // the caller's. Restored alongside ?FILE below.
+            let saved_exec_src = self.executing_cf_source_file.replace(module_path);
             // See `package_type_aliases`: the module body runs in the CALLER's env,
             // so the short-name type aliases its own `use` statements install are
             // only as long-lived as the frame that triggered the load. Snapshot the
@@ -835,6 +838,7 @@ impl Interpreter {
                     self.env.remove("?FILE");
                 }
             }
+            self.executing_cf_source_file = saved_exec_src;
             if pushed_unit {
                 self.unit_module_loading_stack.pop();
             }

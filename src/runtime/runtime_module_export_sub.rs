@@ -96,7 +96,11 @@ impl Interpreter {
                 self.imported_operator_names.insert(op.to_string());
             }
             if op.starts_with("infix:<") {
-                self.user_declared_infix_ops.insert(op.to_string());
+                // Exported operators: use None (universal) so they are active in
+                // ANY executing source file.  Must use `insert` not `or_insert`
+                // because `registration_sub.rs` already inserted `Some(path)` at
+                // declaration time; `or_insert` would leave that file-scoped entry.
+                self.user_declared_infix_ops.insert(op.to_string(), None);
                 crate::vm::vm_jit::note_user_infix_decl();
             }
         }

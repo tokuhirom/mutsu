@@ -129,6 +129,16 @@ impl Interpreter {
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
+        // Track executing CF source file so user_infix_override can distinguish
+        // "am I in the declaring compilation unit?" from module code (e.g.
+        // Test.rakumod's proclaim using `$n + 1`). Only update when the CF has
+        // a known source; anonymous/inherited CFs keep the caller's value.
+        let saved_exec_src = if let Some(f) = cf.source_file.as_ref() {
+            let old = self.executing_cf_source_file.replace(f.clone());
+            Some(old)
+        } else {
+            None
+        };
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -331,6 +341,9 @@ impl Interpreter {
         }
 
         self.leave_routine_package(saved_package);
+        if let Some(prev) = saved_exec_src {
+            self.executing_cf_source_file = prev;
+        }
 
         let final_result = match result {
             Ok(()) if fail_bypass => Ok(ret_val),

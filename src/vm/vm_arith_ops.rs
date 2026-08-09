@@ -39,11 +39,24 @@ pub(super) fn seed_meta_assign_identity(
 
 impl Interpreter {
     /// Whether a user-declared `sub infix:<op>` is in scope for `canon`
-    /// (e.g. `"infix:<+>"`). The set is empty in the overwhelming common
+    /// (e.g. `"infix:<+>"`). The map is empty in the overwhelming common
     /// case, keeping tight numeric loops free of any registry lookup.
+    ///
+    /// The check is source-file aware: a block-local `sub infix:<+>` declared
+    /// in the test script does NOT apply when executing inside a
+    /// separately-compiled module (e.g. Test.rakumod's `proclaim`, which uses
+    /// `$n + 1` for the test counter). `executing_cf_source_file` tracks
+    /// the source file of the CURRENTLY EXECUTING compiled-function body
+    /// (updated on every compiled-function entry/exit), not the env-inherited
+    /// `?FILE` (which stays as the main script's path throughout all calls).
+    /// `None` value = exported/universal (visible from any compilation unit).
     #[inline]
-    fn user_infix_override(&self, canon: &str) -> bool {
-        !self.user_declared_infix_ops.is_empty() && self.user_declared_infix_ops.contains(canon)
+    pub(super) fn user_infix_override(&self, canon: &str) -> bool {
+        match self.user_declared_infix_ops.get(canon) {
+            None => false,
+            Some(None) => true, // exported / visible everywhere
+            Some(decl_file) => *decl_file == self.executing_cf_source_file,
+        }
     }
 
     /// METAOP_ASSIGN identity substitution (`$x OP= $y` with an undefined `$x`).
@@ -157,10 +170,7 @@ impl Interpreter {
     /// (`f(a, b)`) are compiled directly, not through `MakeArray`, so they are
     /// unaffected — matching raku, where `infix:<,>` overloads value lists only.
     pub(super) fn try_comma_overload(&mut self, n: u32) -> Result<bool, RuntimeError> {
-        if n < 2
-            || self.user_declared_infix_ops.is_empty()
-            || !self.user_declared_infix_ops.contains("infix:<,>")
-        {
+        if n < 2 || !self.user_infix_override("infix:<,>") {
             return Ok(false);
         }
         let n = n as usize;

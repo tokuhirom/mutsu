@@ -378,6 +378,7 @@ impl Interpreter {
             operator_assoc: self.operator_assoc.clone(),
             imported_operator_names: self.imported_operator_names.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
+            executing_cf_source_file: self.executing_cf_source_file.clone(),
             lib_paths: self.lib_paths.clone(),
             bundled_lib_paths: self.bundled_lib_paths.clone(),
             io_handles: Arc::new(RwLock::new(io_handles::IoHandleTable {

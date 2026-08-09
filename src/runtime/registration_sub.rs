@@ -664,7 +664,12 @@ impl Interpreter {
         compiled: Option<&crate::opcode::CompiledFunction>,
     ) -> Result<SubRegisterOutcome, RuntimeError> {
         if name.starts_with("infix:<") {
-            self.user_declared_infix_ops.insert(name.to_string());
+            // Record the declaring compilation unit so `user_infix_override` can
+            // filter out block-local overrides when executing in a different unit
+            // (e.g. Test.rakumod's proclaim must not see a test-script-block-local
+            // `sub infix:<+>`).
+            self.user_declared_infix_ops
+                .insert(name.to_string(), self.current_source_file());
             crate::vm::vm_jit::note_user_infix_decl();
         }
         // A plain (non-multi) `sub name` supersedes any earlier empty-signature

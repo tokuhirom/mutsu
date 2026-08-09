@@ -1000,14 +1000,23 @@ pub struct Interpreter {
     /// preseed the parser when EVAL is called so that imported operators
     /// remain visible, but non-exported operators from loaded modules do not.
     pub(crate) imported_operator_names: HashSet<String>,
-    /// Short-form infix operator sub names (`infix:<+>`, ...) that have ever
-    /// been user-declared, regardless of package/associativity. Consulted as a
+    /// Short-form infix operator sub names (`infix:<+>`, ...) mapped to the
+    /// source file of their declaration (`None` = main script or imported
+    /// export, `Some(path)` = declared inside that module). Consulted as a
     /// cheap guard by the VM's native-arithmetic fast paths (`exec_add_op` and
-    /// friends) so they only pay for a full multi-dispatch resolution lookup
-    /// when a user override could plausibly exist, keeping the common
-    /// no-override hot path (e.g. tight `Int + Int` loops) free of registry
-    /// lookups.
-    pub(crate) user_declared_infix_ops: HashSet<String>,
+    /// friends). `user_infix_override` compares the stored source file against
+    /// `current_source_file()` so that a block-local `sub infix:<+>` in the
+    /// test script does NOT leak into separately-compiled module code (e.g.
+    /// Test.rakumod's `proclaim` which uses `$n + 1` for the test counter).
+    pub(crate) user_declared_infix_ops: rustc_hash::FxHashMap<String, Option<String>>,
+    /// Source file of the currently-executing compiled function body. Updated on
+    /// every compiled-function entry/exit so `user_infix_override` can check
+    /// "is the operator declaration from THIS compilation unit?" rather than
+    /// reading `?FILE` from env (which is inherited through call frames and
+    /// always reads the main script path even when executing module code).
+    /// `None` = before any compiled function is entered (top-level script code).
+    /// Initialized to the main script's path in `run.rs` alongside `?FILE`.
+    pub(crate) executing_cf_source_file: Option<String>,
     lib_paths: Vec<String>,
     /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
     /// alongside the binary). Searched *after* every `lib_paths` entry so the
@@ -2417,6 +2426,7 @@ pub(crate) type RoutineRegistrySnapshot = (
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<String>,
     rustc_hash::FxHashSet<Symbol>,
+    rustc_hash::FxHashMap<String, Option<String>>, // user_declared_infix_ops snapshot
 );
 
 /// What a lexical import scope (`{ use Foo; ... }`) restores when it pops: the

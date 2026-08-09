@@ -356,7 +356,13 @@ impl Interpreter {
                 self.imported_operator_names.insert(name.clone());
             }
             if name.starts_with("infix:<") {
-                self.user_declared_infix_ops.insert(name.clone());
+                // Exported operators are installed into the importer's namespace.
+                // Use `None` (universal visibility) so they are active in ANY
+                // executing source file.  We must use `insert` (not `or_insert`)
+                // because the operator was already registered with
+                // `Some(module_path)` by `registration_sub.rs` at declaration
+                // time; `or_insert` would leave that file-scoped entry in place.
+                self.user_declared_infix_ops.insert(name.clone(), None);
                 crate::vm::vm_jit::note_user_infix_decl();
             }
             let source_single = format!("{module}::{name}");

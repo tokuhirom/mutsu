@@ -436,6 +436,13 @@ impl Interpreter {
         // Run the body under the routine's declaring package (set after the
         // required-param early returns above). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
+        // Track executing CF source file (see vm_call_fast.rs for rationale).
+        let saved_exec_src = if let Some(f) = cf.source_file.as_ref() {
+            let old = self.executing_cf_source_file.replace(f.clone());
+            Some(old)
+        } else {
+            None
+        };
 
         // A routine body is its own topicalizer for a bare `when`/`default`: a
         // matching `when` sets the global `when_matched` flag, which must not
@@ -581,6 +588,9 @@ impl Interpreter {
             }
         }
         self.leave_routine_package(saved_package);
+        if let Some(prev) = saved_exec_src {
+            self.executing_cf_source_file = prev;
+        }
 
         // Slice F (env<->locals coherence): record the captured-outer variables
         // this body writes so the call-site op writes them straight through to the

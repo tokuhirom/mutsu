@@ -223,6 +223,13 @@ impl Interpreter {
         // arity/type-check early returns above, which run under the caller's
         // package). Restored after the env merge below.
         let saved_package = self.enter_routine_package(cf);
+        // Track executing CF source file (see vm_call_fast.rs for rationale).
+        let saved_exec_src = if let Some(f) = cf.source_file.as_ref() {
+            let old = self.executing_cf_source_file.replace(f.clone());
+            Some(old)
+        } else {
+            None
+        };
 
         // A routine (sub/method) body is its own topicalizer for a bare
         // `when`/`default`: a matching `when` sets the global `when_matched`
@@ -396,6 +403,9 @@ impl Interpreter {
             }
         }
         self.leave_routine_package(saved_package);
+        if let Some(prev) = saved_exec_src {
+            self.executing_cf_source_file = prev;
+        }
 
         // Return type check (if specified). Allows type objects, Nil, and Failure through.
         if result.is_ok()
