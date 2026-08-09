@@ -115,10 +115,10 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 41/53 slices merged (C6, C7, C8, D1, D2d, D3, D6, D7, D8, D9, and D10 complete;
-D2a and D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3,
-and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D3-9, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4,
-D9-5, and D10 landed 2026-08-09). Phase C is fully checked; the open box is
+**Current progress: 42/53 slices merged (C6, C7, C8, D1, D2d, D3, D4, D6, D7, D8, D9, and D10
+complete; D2a and D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2,
+D4-3, D7-3, and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D3-9, D7-4, D8-1, D8-2, D8-3, D8-4,
+D6-3e, D6-4, D9-5, and D10 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as
@@ -133,13 +133,13 @@ through the single main-pass `Compiler` the way `SubDecl` does, instead of a thr
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
 design (parity-first bare compile, per-decl `compiled_routine_key` on `CompiledMethodDecl`,
 guarded registration install, D3-8a-d slice plan) landed 2026-08-08 as
-`todo/deep/adr0019-d3-8-method-body-main-pass-compilation.md`. D4 (class
-declaration-time expressions) was also scoped 2026-08-08, no code landed: its "aliases" piece is
-closed as already-bytecode-native (a lateral move, not a gain), its "deferred class bodies" piece
-folds into D8 rather than needing its own slice, and its "parent expressions" piece is a real
-re-parse-per-registration bug but is gated on parser/AST work and constrained by a shared `&str`
-resolver API also used for genuinely dynamic type-name concretization — scoped as future
-D4-1/D4-2/D4-3. A 2026-08-08 design sweep then produced detailed designs for **every remaining
+`todo/deep/adr0019-d3-8-method-body-main-pass-compilation.md`. D4 (class declaration-time
+expressions) is closed: its "aliases" piece is closed as already-bytecode-native (a lateral move,
+not a gain), its "deferred class bodies" piece folded into D8, and its "parent expressions" piece
+(a real re-parse-per-registration bug, constrained by a shared `&str` resolver API also used for
+genuinely dynamic type-name concretization) landed as D4-1/D4-2/D4-3 (2026-08-08), closing the box
+outright once D8 also landed (see below). A 2026-08-08 design sweep then produced detailed designs
+for **every remaining
 Phase D box** — the D2 remainder, D4, D5, D6, D7, D8, D9, and D10 — recorded as
 `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`, `adr0019-d4-parent-expr-chunks.md`,
 `adr0019-d5-plan-driven-how-ops.md`, `adr0019-d6-d9-legacy-body-removal.md` (includes the
@@ -1018,7 +1018,7 @@ walkers wholesale is not possible before then.
   `validate_private_access_in_stmt`, which was already noted as unaffected by the original D3
   scoping pass — it recurses into every statement kind identically, not just method bodies, and
   builds no `MethodDef`).
-- [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
+- [x] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies
   remain.)
@@ -1144,6 +1144,23 @@ walkers wholesale is not possible before then.
   during root-causing (present on `main` before D4-3 too: composing the same parametric role
   twice, multi dispatch always picks one candidate regardless of the call's argument type) is
   out of scope and filed as `todo/tickets/same-role-composed-twice-multi-dispatch-picks-one-candidate.md`.
+  **Closed 2026-08-09.** With D4-1/2/3, D8 (deferred class bodies), and the D2d-precedent closure
+  of the aliases piece all landed, every named piece of the box's own decision text is accounted
+  for: computed names and custom-trait arguments (C5), parent expressions (D4-1/2/3), aliases
+  (closed as-is), and deferred class bodies (D8). Three residuals are deliberate, not violations
+  of the box, and stay open as their own tracked items rather than blocking this one: the
+  `methods_qualified.rs:291` string-only `resolve_role_candidate` call (genuinely dynamic
+  runtime-built type names with no source `Expr` to carry, so it cannot move to the `Expr` path by
+  construction — noted in the D4 scoping pass as a permanent exception, the same shape as D10's
+  augment-walker carve-out); `registration_role_body.rs`'s `concretized_parent` lookup, which
+  still double-evaluates a role-body `does`'s bracket arguments once for that lookup and once for
+  the D4-3-cutover composition (collapsing it to one evaluation is a real behavior change for a
+  side-effecting bracket argument, explicitly deferred by D4-3's own note); and the pre-existing
+  `also does Role[Args]` bracket-argument-dropping bug found while reading the parent-expression
+  call sites, filed as `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md` (an
+  independent correctness bug, not a plan-migration gap — `class_body_does_decl` never reads a
+  `CompiledClassDeclPlan` field at all today, so there is no plan encoding for D4 to have migrated
+  here in the first place).
 - [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**
