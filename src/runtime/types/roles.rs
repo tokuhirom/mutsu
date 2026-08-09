@@ -547,9 +547,25 @@ impl Interpreter {
         // Set self for the body
         let saved_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), target.clone());
-        // Execute body directly in current scope so closure
-        // variable mutations propagate to the outer scope.
-        let _result = self.eval_block_value(&def.body)?;
+        // Execute the body directly in current scope so closure variable
+        // mutations propagate to the outer scope. `$!attr` reads/writes
+        // inside the compiled body resolve to `GetLocal`/`SetLocal` ops on a
+        // slot named `"!attr"` (ADR-0019 D8-3): `self_instance_attrs` finds
+        // no cell for a Mixin over a non-Instance `self` (the scenario here
+        // — `does`/`but` on a plain value) and its cell-mirror is a silent
+        // no-op both ways, so the locals<->env bridge that `run_nested`
+        // performs at entry/exit is what actually threads the seeded
+        // `env["!attr"]` values through. Run D8-1's precompiled chunk when
+        // available instead of re-parsing/re-compiling `def.body` on every
+        // composition; a method not yet compiled (e.g. installed via a
+        // meta-programming hook) falls back to the raw-AST carrier.
+        if let Some(cc) = &def.compiled_code {
+            let empty_fns = crate::opcode::CompiledFns::default();
+            let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
+            self.run_compiled_block_raw(cc, fns_ref)?;
+        } else {
+            self.eval_block_value(&def.body)?;
+        }
         // Read back modified attribute values from env into the mixin map
         let updated_target = if let ValueView::Mixin(inner, existing_mixins) = target.view() {
             let mut mixins = (**existing_mixins).clone();
