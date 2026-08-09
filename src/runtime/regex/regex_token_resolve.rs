@@ -138,6 +138,19 @@ impl Interpreter {
         if switch_pkg {
             self.set_current_package_shared(sub_pkg.to_string());
         }
+        // A token/rule body may reference a `my` variable declared in its own
+        // grammar body (`grammar G { my @opts = ...; token t:sym<x> { ...
+        // @opts ... } }`). Such a body-level `my` is unbound from `self.env`
+        // once the body finishes (its authoritative copy lives only in
+        // `package_lexicals` — see the class-body-my-lexical-scope fix), and
+        // method dispatch re-injects it fresh on every call
+        // (`inject_class_body_statics`). A non-static pattern (one containing
+        // a `@`/`$`/`%` interpolation) is re-parsed on every match attempt via
+        // this function, so without the same re-injection here, `@opts`
+        // silently resolves to Nil during interpolation and the array
+        // vanishes from the compiled pattern instead of becoming its declared
+        // alternation.
+        self.inject_class_body_statics(sub_pkg);
         let parsed = self.parse_regex(sub_pat);
         if switch_pkg {
             self.set_current_package_shared(saved_pkg);

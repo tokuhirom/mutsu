@@ -83,6 +83,52 @@ impl Interpreter {
         saved
     }
 
+    /// A grammar body may declare a plain lexical (`grammar G { my @opts =
+    /// <a b c>; token t:sym<x> { ... @opts ... } }`), unlike the `:my
+    /// $*/%*/@*NAME` DYNAMIC declarations `establish_grammar_dynamic_vars`
+    /// handles above. Such a body-level `my` is a lexical of the class/grammar
+    /// body, not a global: its bare env binding is unbound once the body
+    /// finishes, and the authoritative copy lives only in `package_lexicals`
+    /// (see `news/2026-08/class-body-my-lexical-scope.md`). Method dispatch
+    /// re-injects it fresh on every call via `inject_class_body_statics`; a
+    /// grammar's token/rule bodies need the same treatment, because a
+    /// non-static pattern (one that interpolates a `$`/`@`/`%` variable) is
+    /// re-parsed against `self.env` on every match attempt rather than through
+    /// normal method-call machinery — without this, `@opts` silently resolves
+    /// to Nil during interpolation and vanishes from the compiled pattern
+    /// instead of becoming its declared alternation.
+    ///
+    /// Walks the grammar's package and its MRO ancestors (mirroring
+    /// `establish_grammar_dynamic_vars`) so an inherited grammar's own body
+    /// statics are visible too. Returns the prior bindings so the caller can
+    /// restore them when the parse ends.
+    fn establish_grammar_body_statics(&mut self, package: &str) -> Vec<(String, Option<Value>)> {
+        let mut packages = vec![package.to_string()];
+        packages.extend(
+            self.mro_readonly(package)
+                .into_iter()
+                .filter(|p| p != package),
+        );
+        let mut saved: Vec<(String, Option<Value>)> = Vec::new();
+        for pkg in &packages {
+            let Some(statics) = self.package_lexicals.get(pkg) else {
+                continue;
+            };
+            let entries: Vec<(String, Value)> = statics
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            for (k, v) in entries {
+                if saved.iter().any(|(sk, _)| sk == &k) {
+                    continue;
+                }
+                saved.push((k.clone(), self.env.get(&k).cloned()));
+                self.env.insert(k, v);
+            }
+        }
+        saved
+    }
+
     /// Collect `:my $*/%*/@*… = …;` declaration substrings (main-slang code
     /// between `:my ` and the terminating `;`) from a rule pattern.
     fn collect_dynamic_var_decls(pattern: &str, out: &mut Vec<String>) {
@@ -334,6 +380,11 @@ impl Interpreter {
         // Establish any `:my $*/%*/@*… = …;` dynamic variables the grammar's rules
         // declare, so action methods run during the match share them (`%*PLAYED`).
         let saved_grammar_dynvars = self.establish_grammar_dynamic_vars(package_name);
+        // Re-inject the grammar body's own `my` statics (`grammar G { my @opts
+        // = ...; token t { ... } }`): a plain `my` (unlike the `:my $*...`
+        // dynvars above) is unbound from `self.env` once the body finishes —
+        // see `establish_grammar_body_statics`.
+        let saved_grammar_body_statics = self.establish_grammar_body_statics(package_name);
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
             let (pattern, start_rule_sym) =
@@ -592,6 +643,17 @@ impl Interpreter {
 
         // Restore any dynamic vars the grammar's rules established for this parse.
         for (key, prev) in saved_grammar_dynvars {
+            match prev {
+                Some(v) => {
+                    self.env.insert(key, v);
+                }
+                None => {
+                    self.env.remove(&key);
+                }
+            }
+        }
+        // Restore whatever `establish_grammar_body_statics` overwrote.
+        for (key, prev) in saved_grammar_body_statics {
             match prev {
                 Some(v) => {
                     self.env.insert(key, v);
