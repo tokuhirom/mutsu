@@ -1,6 +1,6 @@
 use Test;
 
-plan 39;
+plan 45;
 
 sub j(*@i) {
     @i.map({ $_ ?? '1' !! '0' }).join(' ');
@@ -100,4 +100,36 @@ sub j(*@i) {
     my @l = &f.signature.params;
     is @l[0].positional, True,  '$x is positional';
     is @l[1].positional, False, ':$y is not positional';
+}
+
+# constraint_list: the underlying List behind the .constraints junction
+# (Cro's route compiler uses both: `$p.constraint_list == 1 && ...`).
+{
+    sub with-literal("x") { }
+    is &with-literal.signature.params[0].constraint_list.raku, '("x",)',
+        'constraint_list reflects a literal-value constraint';
+
+    sub with-where($x where * > 0) { }
+    is +&with-where.signature.params[0].constraint_list, 1,
+        'constraint_list reflects a where-clause constraint';
+
+    sub no-constraint($x) { }
+    is +&no-constraint.signature.params[0].constraint_list, 0,
+        'constraint_list is empty for an unconstrained parameter';
+}
+
+# usage-name: the variable name minus sigil and twigil
+{
+    sub named-usage($x, :$y) { }
+    is &named-usage.signature.params[0].usage-name, 'x',
+        'usage-name strips the sigil from a positional parameter';
+}
+
+# default: the undefined Code type object when absent, not a missing method
+{
+    sub no-default($x) { }
+    is &no-default.signature.params[0].default.raku, 'Code',
+        'default is the undefined Code type object when absent';
+    nok &no-default.signature.params[0].default.defined,
+        'default is undefined when absent';
 }
