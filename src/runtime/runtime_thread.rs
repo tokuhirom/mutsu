@@ -230,8 +230,17 @@ impl Interpreter {
                 // it would overwrite the lane with a value that is about to be
                 // stale. Seed it only to give the child *something* under the name
                 // (it captured the outer binding), and keep the mask below.
+                //
+                // A name masked because of a *parameter* binding
+                // (`thread_param_shadow_vars`, see `mask_thread_redeclared_params`)
+                // never takes the force-`declare` branch, even outside any
+                // in-flight window: the parameter's shadow is scoped to exactly
+                // the call that bound it, not "the rest of this block", so a
+                // nested spawn inside that call must not overwrite an unrelated
+                // caller's live entry for the same bare name.
                 if self.thread_redeclared_vars.contains(&key)
                     && !self.thread_decl_in_flight.contains(&key)
+                    && !self.thread_param_shadow_vars.contains(&key)
                 {
                     shared.declare(&key, val.clone());
                     seed_inserts += 1;
@@ -280,9 +289,19 @@ impl Interpreter {
         // the new binding — `my $tap = IO::Socket::Async.listen(...).tap({...})`
         // in a loop reverted to the previous iteration's `Tap`, which is what
         // made a restarted `Cro::HTTP::Server` keep answering from the old one.
+        //
+        // A parameter-binding mask (`thread_param_shadow_vars`) survives this
+        // pass unconditionally for the same reason as an in-flight `my`: the
+        // shadow is scoped to the still-executing call, not to "since the last
+        // spawn", so dropping it here (because the call didn't happen to be the
+        // very first spawn) would let the next `sync_shared_vars_to_env` pull
+        // the caller's unrelated value back over the parameter for the
+        // remainder of the call. Explicit `unmask_thread_redeclared_params` at
+        // the call's return is the only thing that ever clears it.
         self.thread_redeclared_vars.retain(|n| {
             captured_scalars.contains(n.trim_start_matches('$'))
                 || self.thread_decl_in_flight.contains(n)
+                || self.thread_param_shadow_vars.contains(n)
         });
         let mut cloned_handles = HashMap::new();
         let handles_guard = self.io_handles();
@@ -496,6 +515,9 @@ impl Interpreter {
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
+            // The child starts no call of its own; its own parameter bindings
+            // populate this as they run.
+            thread_param_shadow_vars: std::collections::HashSet::new(),
             // The child re-binds its own env-bound parameters if it runs any.
             param_bound_aggregates: std::collections::HashMap::new(),
             suppress_shared_publish: false,

@@ -565,6 +565,23 @@ impl Interpreter {
                 return Err(e);
             }
         };
+        // A method parameter is a fresh per-invocation binding, exactly like a
+        // sub parameter (see the matching mark in
+        // `call_compiled_function_named_inner`): while the cross-thread shared
+        // store is active, its writes must stay thread-local instead of leaking
+        // to an unrelated caller's same-named lexical through the name-keyed
+        // store. Without this, a method whose own parameter happens to share a
+        // name with a lexical live in the awaiting frame (e.g.
+        // `Cro::HTTP::Client.request(Str $method, $url, ...)` called from a
+        // `start { ... await ... }` block that has its own `my $url`) clobbers
+        // the caller's variable once `await` syncs shared vars back — the
+        // callee's `$url` parameter is mistaken for a write to the caller's
+        // `$url`. See `mask_thread_redeclared_params` for why a bare
+        // `thread_redeclared_vars` mask alone is not sufficient and the
+        // `thread_param_shadow_vars` companion is also needed. Unmasked again
+        // at return (search `unmask_thread_redeclared_params`).
+        let masked_params =
+            self.mask_thread_redeclared_params(bind_param_defs.iter().map(|pd| pd.name.as_str()));
 
         // Initialize locals from env
         self.locals = vec![Value::NIL; cc.locals.len()];
@@ -873,6 +890,11 @@ impl Interpreter {
             let frame = self.pop_call_frame();
             *self.env_mut() = frame.saved_env;
         }
+
+        // Restore bare-name shared-store visibility for this call's own
+        // parameter names now that the call is over (see
+        // `mask_thread_redeclared_params`).
+        self.unmask_thread_redeclared_params(&masked_params);
 
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),

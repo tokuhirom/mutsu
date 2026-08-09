@@ -209,23 +209,15 @@ impl Interpreter {
         // `$desc` holding `inner`'s argument (`t/thread-callee-param-does-not-
         // clobber-caller.t`). Scalars only, for the same reason as the `my`
         // case: `@`/`%` names back the atomic element stores and `&` names are
-        // routines.
-        if self.shared_vars_active {
-            for pd in &cf.param_defs {
-                let name = pd.name.as_str();
-                if name.is_empty()
-                    || name == "_"
-                    || name == "self"
-                    || name.starts_with('@')
-                    || name.starts_with('%')
-                    || name.starts_with('&')
-                {
-                    continue;
-                }
-                self.thread_redeclared_vars
-                    .insert(name.trim_start_matches('$').to_string());
-            }
-        }
+        // routines. See `mask_thread_redeclared_params` for why a nested spawn
+        // *inside this call's own body* also needs the `thread_param_shadow_vars`
+        // companion mark (a bare `thread_redeclared_vars` mask alone still lets
+        // `clone_for_thread_excluding` force-publish the parameter's shadowed
+        // value over an unrelated caller's live entry of the same bare name);
+        // unmasked again at every return path below (search
+        // `unmask_thread_redeclared_params`).
+        let masked_params =
+            self.mask_thread_redeclared_params(cf.param_defs.iter().map(|pd| pd.name.as_str()));
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
@@ -470,6 +462,11 @@ impl Interpreter {
         }
 
         self.stack.truncate(saved_stack_depth);
+
+        // Restore bare-name shared-store visibility for this call's own
+        // parameter names now that the call is over (see
+        // `mask_thread_redeclared_params`).
+        self.unmask_thread_redeclared_params(&masked_params);
 
         // Sync state variables back to persistent storage.
         // Read from env first (methods like push update env directly),
