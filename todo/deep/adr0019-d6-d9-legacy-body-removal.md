@@ -105,6 +105,41 @@ ADR-0019's scope.
   (C6e-3a's `MUTSU_DROP_LEGACY_BODY` precedent) that forces op-only execution for validation
   sweeps. This is the big slice; expect it to subdivide per arm the way C6d did
   (other-stmt chunks first, then code-alias/proto/leave-phaser).
+
+  **Tentative sub-slice breakdown (2026-08-09, no code landed), mirroring D3-8a-d's
+  additive-then-cutover shape:**
+  - **D6-3a — skeleton, fully additive.** Define `ClassBodyOp` (the shape already sketched
+    above) and the `body_plan: Vec<ClassBodyOp>` field; lower every flattened body statement to
+    an op in source order. The already-typed arms (`Attr`/`Method`/`Does`/`ClassSub`) carry only
+    a name/marker — their real payload stays in `attr_decls`/`method_decls`/
+    `parent_arg_chunks`, which `body_plan` just orders a cursor-advance against, so this is cheap.
+    `Other`/`ProtoMethod`/`CodeAlias`/`LeavePhaser` initially carry `chunk: None` and the raw
+    `Stmt` only (no compiled chunk yet) — `body_plan.len()` matching the flattened statement
+    count is the checkable invariant, pinned by a compiler unit test. Nothing reads the field;
+    zero behavior risk, same class as D3-8a/D7-1/D6-1.
+  - **D6-3b — compile `Other` chunks.** The largest reader (per the inventory table above) and
+    the highest-value target: generalize `compile_decl_expr_inner` (currently wraps one `Expr`
+    into a one-statement body) to accept an arbitrary `&Stmt` directly, and populate
+    `Other.chunk` for every non-token/rule statement. Still additive — the driver keeps reading
+    `legacy_body`.
+  - **D6-3c — compile the remaining small arms.** `CodeAlias`/`ProtoMethod`/`LeavePhaser` chunks
+    (each far smaller than `Other`; `ProtoMethod` may reuse `CompiledProtoDeclPlan`'s existing
+    shape rather than inventing a new one). `body_plan` is now a complete, compiled mirror of
+    `legacy_body` with zero consumers.
+  - **D6-3d — driver cutover, instrument-gated.** `run_class_body` switches its statement source
+    from `legacy_body` to `body_plan`, behind the `MUTSU_DROP_LEGACY_BODY`-style env var
+    (C6e-3a precedent) forcing op-only execution for validation sweeps; verify with the full `t/`
+    suite + roast whitelist + the bundled-battery gate (`scripts/battery-testsuite.sh`, since
+    class bodies with nested `use`/BEGIN/EVAL are load-bearing for several batteries) under the
+    forced-instrument env var, then flip the default. Per C6e-3c's precedent this step alone may
+    need to subdivide further once the real per-op driver rewiring is in front of the diff.
+  - **D6-3e — token/rule carve-out check.** Confirm `Other.raw` is the only thing left populated
+    for a `TokenDecl`/`RuleDecl` statement (per the phase preamble's ADR-0009 exclusion) and that
+    the driver still routes those through today's `run_block_raw` path unchanged. Likely folds
+    into D6-3d rather than needing its own PR — flagged here so it isn't silently dropped.
+
+  These boundaries are a starting estimate, not a commitment — like D3-8's own slice plan, expect
+  the real diff to reveal a different natural cut line once D6-3a is in hand.
 - **D6-4 — drop the class field** (modulo the token/rule rump) after a forced-instrument run
   of the full `t/` suite and the roast whitelist, per the C6e-3c playbook. D5's verification
   gate (OO::Monitors battery + metamodel roast) rides on D6-3/D6-4.
