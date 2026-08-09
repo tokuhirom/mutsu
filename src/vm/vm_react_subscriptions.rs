@@ -636,9 +636,22 @@ impl Interpreter {
                     }
                 }
             }
+            // A whenever body dispatched just above (Phase 1's `dispatch_waker_events`
+            // or Phase 2's `run_react_consumer`) may itself have registered a nested
+            // `whenever` — e.g. `whenever <Promise> -> $x { whenever <Supply> -> $y {
+            // emit $y } }`, where the Promise-backed subscription's callback runs the
+            // inner `whenever` and marks itself done in the very same drain (its
+            // `emit`+`done` are pushed back-to-back by the resolving thread and land
+            // in one `waker.drain()` batch). That registration sits in
+            // `pending_react_subscriptions` until the *next* iteration's top-of-loop
+            // `adopt_newly_registered_subscriptions` call — so "every known
+            // subscription is done" must not end the react while a fresh one is still
+            // waiting to be adopted, or the nested whenever's source is silently
+            // dropped (Cro::TCP::Connector.establish never received its response).
+            let has_pending_adoptions = !self.pending_react_subscriptions.is_empty();
             match &policy {
                 SupplyDrivePolicy::React => {
-                    if all_done || react_subs.iter().all(|s| s.done) {
+                    if !has_pending_adoptions && (all_done || react_subs.iter().all(|s| s.done)) {
                         break;
                     }
                 }
@@ -659,7 +672,7 @@ impl Interpreter {
                     // that had emitted as though it never had, so
                     // `await (supply { whenever $p { emit … } })` answered Nil
                     // after waiting out the whole 30s deadline.
-                    if all_done || react_subs.iter().all(|s| s.done) {
+                    if !has_pending_adoptions && (all_done || react_subs.iter().all(|s| s.done)) {
                         if let Some(sid) = emitter_supplier_id {
                             crate::runtime::native_methods::supplier_done(*sid);
                         }
