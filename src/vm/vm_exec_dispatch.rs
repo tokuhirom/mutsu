@@ -2707,6 +2707,37 @@ impl Interpreter {
                 self.pop_warn_suppression();
                 *ip += 1;
             }
+            OpCode::SinkPopAssign => {
+                self.sync_source_line(code, *ip);
+                if let Some(val) = self.stack.pop() {
+                    match val.view() {
+                        // Keep SinkPop's lazy handling: mutsu's lazy closures do
+                        // not yet track later mutations of captured outer
+                        // lexicals, so leaving `@a[$i] = gather ... for ...;`
+                        // unreified until first access would read the captures'
+                        // final values (gather.t 31-32). Reifying here matches
+                        // the pre-SinkPopAssign behavior exactly.
+                        ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+                        ValueView::LazyList(list) => {
+                            self.force_lazy_list_vm(&list)?;
+                        }
+                        ValueView::LazyIoLines { handle, words, .. } => {
+                            loan_env!(self, force_lazy_io_lines(handle, words))?;
+                        }
+                        _ => {
+                            // An assignment statement is wanted, not sunk: the
+                            // assigned Failure stays soft — unless `use fatal`
+                            // is in effect.
+                            if self.fatal_mode
+                                && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
+                            {
+                                return Err(err);
+                            }
+                        }
+                    }
+                }
+                *ip += 1;
+            }
             OpCode::SinkPop(user_sink) => {
                 self.sync_source_line(code, *ip);
                 let user_sink = *user_sink;
@@ -2810,8 +2841,15 @@ impl Interpreter {
                             loan_env!(self, force_lazy_io_lines(handle, words))?;
                         }
                         _ => {
-                            // Sinking an unhandled Failure always throws (Raku behavior)
-                            if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
+                            // Sinking an unhandled Failure throws (Raku behavior) —
+                            // except inside a regex `{ ... }` code block, whose
+                            // statements rakudo compiles as wanted, not sunk: a
+                            // stored Failure there stays soft (only a DESTROY-time
+                            // warning), e.g. Cro's generated route matcher relies
+                            // on the Failure reaching the signature-bind check.
+                            if !self.in_regex_code_block
+                                && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
+                            {
                                 return Err(err);
                             }
                             // Under `use fatal`, sinking a reified list/Seq whose

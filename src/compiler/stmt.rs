@@ -678,12 +678,56 @@ impl Compiler {
         }
     }
 
+    /// Whether a statement-expression's value can only be the value of an
+    /// element assignment — directly (`%h{$k} = ...;`) or behind an
+    /// `if`/`unless` statement modifier. Deliberately does NOT descend into a
+    /// `with`/`given` modifier: rakudo's topicalizing modifiers sink the
+    /// assignment's value and DO throw a stored unhandled Failure
+    /// (`%h{$k} = .UInt with "-1";` explodes in rakudo; the `if` form and the
+    /// bare form do not — verified against raku 2026-08-09).
+    fn stmt_value_is_assignment(expr: &Expr) -> bool {
+        fn tail_is_assignment(stmts: &[Stmt]) -> bool {
+            stmts
+                .iter()
+                .rev()
+                .find(|s| !matches!(s, Stmt::SetLine(_)))
+                .is_some_and(|s| match s {
+                    Stmt::Expr(e) => Compiler::stmt_value_is_assignment(e),
+                    _ => false,
+                })
+        }
+        match expr {
+            Expr::IndexAssign { .. } | Expr::MultiDimIndexAssign { .. } => true,
+            Expr::DoStmt(inner) => match inner.as_ref() {
+                Stmt::Expr(e) => Self::stmt_value_is_assignment(e),
+                Stmt::If {
+                    then_branch,
+                    else_branch,
+                    is_statement_modifier: true,
+                    ..
+                } => else_branch.is_empty() && tail_is_assignment(then_branch),
+                _ => false,
+            },
+            _ => false,
+        }
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
                 self.compile_condition_expr(expr);
-                self.code
-                    .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(expr)));
+                // Assignment statements are wanted, not sunk (rakudo): storing
+                // an unhandled Failure via `%h{$k} = ...;` / `@a[$i] = ...;`
+                // (also with an `if`/`with` statement modifier) must not throw
+                // it — except under `use fatal`, which the opcode handles.
+                // Scalar `$x = ...` takes the Stmt::Assign path and already
+                // behaves this way.
+                if Self::stmt_value_is_assignment(expr) {
+                    self.code.emit(OpCode::SinkPopAssign);
+                } else {
+                    self.code
+                        .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(expr)));
+                }
             }
             // Feed split for an assignment to an already-declared variable:
             // `@x = SOURCE ==> SINK` — the feed operator is at Sequencer precedence
