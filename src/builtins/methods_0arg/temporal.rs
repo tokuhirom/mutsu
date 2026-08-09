@@ -53,26 +53,42 @@ pub fn epoch_days_to_civil(days: i64) -> (i64, i64, i64) {
 /// Validate a civil date. Returns Ok(()) or an error.
 pub fn validate_date(year: i64, month: i64, day: i64) -> Result<(), RuntimeError> {
     if !(1..=12).contains(&month) {
-        return Err(RuntimeError::new(format!(
-            "X::OutOfRange: Month out of range. Is: {}, should be in 1..12",
-            month
-        )));
+        return Err(make_out_of_range_error_int("Month", month, "1..12"));
     }
     let max_day = days_in_month(year, month);
     if day < 1 || day > max_day {
-        return Err(RuntimeError::new(format!(
-            "X::OutOfRange: Day out of range. Is: {}, should be in 1..{}",
-            day, max_day
-        )));
+        return Err(make_out_of_range_error_int(
+            "Day",
+            day,
+            &format!("1..{}", max_day),
+        ));
     }
     Ok(())
 }
 
+fn make_out_of_range_error_int(what: &str, got: i64, range: &str) -> RuntimeError {
+    let msg = format!("{} out of range. Is: {}, should be in {}", what, got, range);
+    let mut attrs = HashMap::new();
+    attrs.insert("what".to_string(), Value::str(what.to_string()));
+    attrs.insert("got".to_string(), Value::int(got));
+    attrs.insert("range".to_string(), Value::str(range.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg));
+    RuntimeError::typed("X::OutOfRange", attrs)
+}
+
 fn make_out_of_range_error(what: &str, got: String, range: &str) -> RuntimeError {
-    RuntimeError::new(format!(
-        "X::OutOfRange: {} out of range. Is: {}, should be in {}",
-        what, got, range
-    ))
+    // Parse `got` as an int or fall back to a string value.
+    let got_val = got
+        .parse::<i64>()
+        .map(Value::int)
+        .unwrap_or_else(|_| Value::str(got.clone()));
+    let msg = format!("{} out of range. Is: {}, should be in {}", what, got, range);
+    let mut attrs = HashMap::new();
+    attrs.insert("what".to_string(), Value::str(what.to_string()));
+    attrs.insert("got".to_string(), got_val);
+    attrs.insert("range".to_string(), Value::str(range.to_string()));
+    attrs.insert("message".to_string(), Value::str(msg));
+    RuntimeError::typed("X::OutOfRange", attrs)
 }
 
 /// X::OutOfRange for a `second` value in `[60, 61)` that is not a legal leap
@@ -119,14 +135,10 @@ pub fn validate_datetime(
 ) -> Result<(), RuntimeError> {
     validate_date(year, month, day)?;
     if !(0..=23).contains(&hour) {
-        return Err(make_out_of_range_error("Hour", hour.to_string(), "0..23"));
+        return Err(make_out_of_range_error_int("Hour", hour, "0..23"));
     }
     if !(0..=59).contains(&minute) {
-        return Err(make_out_of_range_error(
-            "Minute",
-            minute.to_string(),
-            "0..59",
-        ));
+        return Err(make_out_of_range_error_int("Minute", minute, "0..^60"));
     }
     if second < 0.0 {
         return Err(make_out_of_range_error(
@@ -495,8 +507,10 @@ fn parse_tz_offset(s: &str) -> Result<i64, RuntimeError> {
         return Err(make_err());
     };
     if !(0..=59).contains(&minutes) {
-        return Err(RuntimeError::new(
-            "X::OutOfRange: minutes of timezone".to_string(),
+        return Err(make_out_of_range_error_int(
+            "minutes of timezone",
+            minutes,
+            "0..^60",
         ));
     }
     if hours < 0 {
