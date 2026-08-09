@@ -9,9 +9,13 @@ impl Interpreter {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
-        // Gate user-infix overrides out of module code (source_file = Some):
-        // operators are lexically scoped per compilation unit.
-        let is_module_call = cf.source_file.is_some();
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script.  User-defined `multi sub` in the test file are OTF-compiled
+        // and carry `source_file = Some(script_path)`, so they must NOT be
+        // treated as module code — user infix ops must remain available inside
+        // them (lexically scoped per compilation unit).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
         if is_module_call {
             self.module_call_depth += 1;
         }

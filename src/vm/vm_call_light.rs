@@ -12,9 +12,10 @@ impl Interpreter {
         // so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
         self.record_cf_deprecation(cf);
-        // Gate user-infix overrides out of module code (source_file = Some):
-        // operators are lexically scoped per compilation unit.
-        let is_module_call = cf.source_file.is_some();
+        // Gate user-infix overrides out of module code: only count a call as
+        // "module code" when the function's source file differs from the main
+        // script (same logic as call_compiled_function_named).
+        let is_module_call = Self::is_module_call(cf, self.program_path.as_deref());
         if is_module_call {
             self.module_call_depth += 1;
         }

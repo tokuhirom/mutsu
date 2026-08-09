@@ -1028,7 +1028,7 @@ pub struct Interpreter {
     /// Interpreter behind transitional `Arc<RwLock>` scaffolding. Snapshot-cloned
     /// per thread (see [`io_handles`] module docs and `clone_for_thread`).
     io_handles: Arc<RwLock<io_handles::IoHandleTable>>,
-    program_path: Option<String>,
+    pub(crate) program_path: Option<String>,
     /// Name of the package currently in scope (e.g. `GLOBAL`, `Foo::Bar`),
     /// used to build fully-qualified names during function/method dispatch and
     /// declaration. Held behind transitional `Arc<RwLock>` scaffolding so the VM

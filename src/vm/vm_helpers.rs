@@ -1,6 +1,28 @@
 use super::*;
 
 impl Interpreter {
+    /// Whether calling `cf` should be treated as a cross-module call for the
+    /// purpose of gating user-declared infix operators.
+    ///
+    /// A function is a "module call" when it was compiled from a *different*
+    /// compilation unit than the main script:
+    ///
+    /// - AOT-compiled functions (`source_file = None`) are always from the
+    ///   user's own script — never a module call.
+    /// - OTF-compiled functions from the main script (`source_file ==
+    ///   program_path`) are also user code — not a module call.
+    /// - OTF-compiled functions from a *different* file (e.g. Test.rakumod)
+    ///   are module code — counted as a module call so user infix ops defined
+    ///   in the test script do not override arithmetic inside the module.
+    #[inline]
+    pub(super) fn is_module_call(cf: &CompiledFunction, program_path: Option<&str>) -> bool {
+        match (&cf.source_file, program_path) {
+            (None, _) => false,
+            (Some(cf_file), Some(prog)) => cf_file.as_str() != prog,
+            (Some(_), None) => true,
+        }
+    }
+
     /// Enforce a `ContainerRef` cell's registered `of`-type constraint before a
     /// write-through (`$ref = v` on a `:=`-bound typed slot — a typed rw
     /// attribute accessor bind, or a `my T $` anonymous typed scalar). Mirrors
