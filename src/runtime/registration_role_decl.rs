@@ -149,8 +149,8 @@ impl Interpreter {
         // the real registration happens when the role body runs below.
         for op in body_plan {
             match op {
-                crate::opcode::RoleBodyOp::Attr { raw, .. } => {
-                    self.role_body_has_decl(cx, raw)?;
+                crate::opcode::RoleBodyOp::Attr { name } => {
+                    self.role_body_has_decl(cx, *name)?;
                 }
                 crate::opcode::RoleBodyOp::Parent => {
                     self.role_body_does_decl(cx)?;

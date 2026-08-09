@@ -2796,14 +2796,12 @@ pub(crate) struct CompiledClassDeclPlan {
 /// One class-body statement, typed (ADR-0019 D6-3a). See
 /// [`CompiledClassDeclPlan::body_plan`].
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum ClassBodyOp {
     /// A top-level (or nested-sub) `has` declaration. Its typed descriptor
-    /// normally lives in `attr_decls`, keyed by this same name; `raw` is
-    /// used only as a fallback when it is not there (a class-level
-    /// `our`/`my` attribute, which `attr_decls`'s compiler-side collector
-    /// deliberately excludes — see `class_body_has_decl`).
-    Attr { name: Symbol, raw: Stmt },
+    /// lives in `attr_decls`, keyed by this same name (ADR-0019 D10:
+    /// `attr_decls` covers a class-level `our`/`my` attribute too, so no
+    /// raw-statement fallback is needed here — see `class_body_has_decl`).
+    Attr { name: Symbol },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -2894,10 +2892,7 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
             chunk: None,
             raw: stmt.clone(),
         },
-        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr {
-            name: *name,
-            raw: stmt.clone(),
-        },
+        Stmt::HasDecl { name, .. } => ClassBodyOp::Attr { name: *name },
         Stmt::MethodDecl { .. } => ClassBodyOp::Method,
         Stmt::DoesDecl { name, .. } => ClassBodyOp::Does { name: *name },
         Stmt::VarDecl {
@@ -2964,20 +2959,12 @@ pub(crate) struct RoleParentOp {
 /// separate type built from this one's `Deferred` ops.
 #[derive(Debug, Clone)]
 pub(crate) enum RoleBodyOp {
-    /// A top-level `has` declaration. Its typed descriptor normally lives in
-    /// `attr_decls`, keyed by this same name; `raw` is used only as a
-    /// fallback when it is not there (a role-level `our`/`my` attribute,
-    /// which `attr_decls`'s compiler-side collector excludes — see
-    /// `role_body_has_decl`). Boxed for the same enum-size reason as
-    /// `Deferred`'s `raw`. `name` has no non-test reader (`walk_role_body`
-    /// reads the name back out of `raw` via `role_body_has_decl`'s own
-    /// `Stmt::HasDecl` match instead) — kept for parity with
-    /// `ClassBodyOp::Attr` and pinned by `role_declarations_precompute_body_plan`.
-    Attr {
-        #[allow(dead_code)]
-        name: Symbol,
-        raw: Box<Stmt>,
-    },
+    /// A top-level `has` declaration. Its typed descriptor lives in
+    /// `attr_decls`, keyed by this same name — `compile_role_attr_decls` has
+    /// always covered a role-level `our`/`my` attribute too, so no
+    /// raw-statement fallback is needed here (ADR-0019 D10; see
+    /// `role_body_has_decl`).
+    Attr { name: Symbol },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -3013,10 +3000,7 @@ pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
 
 fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
     match stmt {
-        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr {
-            name: *name,
-            raw: Box::new(stmt.clone()),
-        },
+        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr { name: *name },
         Stmt::MethodDecl { .. } => RoleBodyOp::Method,
         Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
         _ => RoleBodyOp::Deferred {

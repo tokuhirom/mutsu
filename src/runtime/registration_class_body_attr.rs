@@ -112,31 +112,19 @@ impl Interpreter {
     pub(super) fn class_body_has_decl(
         &mut self,
         cx: &mut ClassBodyCx<'_>,
-        stmt: &Stmt,
+        name: crate::symbol::Symbol,
     ) -> Result<ClassBodyFlow, RuntimeError> {
         // Look up this attribute's precompiled descriptor (ADR-0019 D2b
-        // remainder) by name before falling back — `Stmt::HasDecl::name` is
-        // cheap to read directly, and a name-keyed lookup does not depend on
-        // this walk visiting attributes in the same order
-        // `compile_class_attr_decls` built the plan's vec in. A miss (a
-        // class-level `our`/`my` attribute, which the compiler-side vec
-        // excludes, or a registration path with no compiled plan at all)
-        // falls back to building one from the raw statement, same as before
-        // this migration.
-        let decl = match stmt {
-            Stmt::HasDecl { name, .. } => cx
-                .attr_decls
-                .iter()
-                .find(|(n, _)| n == name)
-                .map(|(_, decl)| decl.clone()),
-            _ => None,
-        }
-        .unwrap_or_else(|| {
-            crate::opcode::CompiledAttrDecl::from_stmt(
-                stmt,
-                crate::opcode::AttrDeclChunks::default(),
-            )
-        });
+        // remainder/D10) by name — `compile_class_attr_decls` walks the same
+        // (flattened, nested-sub-surfaced) statement sequence as
+        // `class_body_plan`, unfiltered, so every `Attr` op this walk visits
+        // has a matching entry here by construction.
+        let decl = cx
+            .attr_decls
+            .iter()
+            .find(|(n, _)| *n == name)
+            .map(|(_, decl)| decl.clone())
+            .expect("class_body_has_decl: no attr_decls entry for this Attr op's name");
         let attr_name_str = decl.name.clone();
 
         // An initializer that can never satisfy the constraint is a

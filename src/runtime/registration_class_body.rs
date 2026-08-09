@@ -152,9 +152,9 @@ impl Interpreter {
                     });
                     continue;
                 }
-                crate::opcode::ClassBodyOp::Attr { raw, .. } => {
+                crate::opcode::ClassBodyOp::Attr { name } => {
                     if matches!(
-                        self.class_body_has_decl(&mut cx, raw)?,
+                        self.class_body_has_decl(&mut cx, *name)?,
                         ClassBodyFlow::SkipTail
                     ) {
                         continue;

@@ -1539,6 +1539,42 @@ walkers wholesale is not possible before then.
   beyond a cleanup PR, an earlier slice landed incompletely. The doc also fixes the
   cross-box dependency order: D2b-2 → D6-1..3 (D3-8a-d and D4-1/2 parallel) → D4-3 → D7 →
   D8 → D9 → field drops → D5 gate → D10.
+  **Partial progress 2026-08-09** (grep survey after D6-4/D9-5 landed): the `from_stmt`
+  criterion had two live violations — `class_body_has_decl`/`role_body_has_decl`'s
+  our/my-attribute fallback, added in D6-4/D9-5 themselves to preserve behavior for an
+  attribute the compiler's `attr_decls` collector deliberately excluded. Both collectors
+  (`compile_class_attr_decls`/`compile_role_attr_decls`) already build a full
+  `CompiledAttrDecl` via the identical `from_stmt` logic at COMPILE time; the class-side
+  exclusion (`if !*is_our && !*is_my`) was dropped (the role side already had no such
+  exclusion, so `role_body_has_decl`'s fallback had in fact been dead code since D7-4/D2c-4
+  landed, just never noticed until this grep pass), closing the gap for good. Both functions
+  now take the attribute's `Symbol` name and `.expect()` a lookup hit instead of falling back
+  to `from_stmt` — sound because `attr_decls` and `body_plan`/`class_body_plan` walk the
+  identical (flattened, nested-sub-surfaced) statement sequence, so every `Attr` op has a
+  matching `attr_decls` entry by construction. `ClassBodyOp::Attr`/`RoleBodyOp::Attr` shrank
+  back to a bare `{ name: Symbol }` marker (dropping the `raw: Stmt`/`raw: Box<Stmt>` field
+  D6-4/D9-5 had just added for this fallback), and `CompiledClassDeclPlan`/`CompiledRoleDeclPlan`
+  no longer carry any `#[allow(dead_code)]` shims from the pre-cutover "purely additive"
+  phase. Verified via the full `t/` suite, all Rust unit tests, the `S12-class`/
+  `S12-construction`/`S14-roles`/`S05-grammar`/`S12-attributes` roast files (the
+  `S12-attributes/trusts.t` 6-subtest failure is pre-existing per `TODO_roast/BLOCKERS.md`,
+  unrelated), `scripts/battery-testsuite.sh`, and a hand comparison against `raku` covering a
+  class/role `our`/`my` attribute plus a nested-sub `has`.
+  **Box left open**: the grep criterion's stricter reading — *zero* `Stmt::`-matching
+  registration code outside token/rule/augment — is not met and is not attempted here. The
+  remaining `Stmt::` reads are `ClassBodyOp::Other`/`ClassSub`/`CodeAlias`/`ProtoMethod`/
+  `LeavePhaser`'s own `raw: Stmt` field (each already a *typed op*, chosen by `body_plan`
+  without any AST walk; `raw` supplies that one op's specific payload — e.g. `ProtoMethod`'s
+  param defs, `LeavePhaser`'s inner body) and `RoleBodyOp::Deferred`'s `raw` (the stub-marker
+  check). This is the same shape the ADR's own C6 precedent blessed for `FunctionDef.body`
+  (a body-less def still needs *some* raw form for its pure-interpreter fallback) — it is
+  payload extraction from an already-classified op, not AST-shape dispatch, so it is not
+  itself a walker. Closing D10 to the letter of the design note's criterion would mean
+  giving every one of those five/six arms a fully typed payload with zero `Stmt` reads —
+  out of proportion to a "cleanup PR" and not scoped here. Leaving D10 unchecked rather than
+  overclaiming; a future session should either accept the `Other`/`Deferred`-style raw
+  payload as the permanent D10 end state (parallel to C6's accept-and-move-on) or scope the
+  remaining typed-payload work explicitly.
 
 ### Phase E — one dispatch resolver and native handler table
 
