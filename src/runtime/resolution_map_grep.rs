@@ -25,18 +25,21 @@ pub(crate) fn frame_authoritative_set(
 /// Does this callable's `$_` stay at the caller's topic instead of being
 /// topicalized to the element a map/grep/first loop is visiting?
 ///
-/// A WhateverCode whose body references `$_` (`*.new($_)`, `* eq $_`) compiles
-/// its `*` placeholder to a synthetic `__wc_N` param so the element binds
-/// there, NOT to `$_`; the body's `$_` must stay the caller's topic (S02 "no
-/// scoping issues when using topic variables": `do { $_ = 42; (Int).map(*.new($_)) }`
-/// -> `Int.new(42)`). A plain `*.abs` (no `$_` in the body) keeps `_` AS its
-/// placeholder param, so it must still receive the element — hence the
-/// `_`-is-not-a-param guard.
-pub(crate) fn whatever_code_keeps_outer_topic(data: &SubData) -> bool {
-    matches!(
-        data.env.get("__mutsu_callable_type").map(Value::view),
-        Some(ValueView::Str(kind)) if kind.as_str() == "WhateverCode"
-    ) && !data.params.iter().any(|p| p == "_")
+/// Any block with an explicit signature binds the element to its parameters,
+/// NOT to `$_`; its `$_` is a lexical reference to the enclosing topic. This
+/// covers pointy blocks (`-> $c { $c eq $_ }` — the CookieJar uniqueness-check
+/// shape), placeholder blocks (`{ $^x ~ $_ }`), and a WhateverCode whose body
+/// references `$_` (`*.new($_)` compiles its `*` to a synthetic `__wc_N`
+/// param; S02 "no scoping issues when using topic variables":
+/// `do { $_ = 42; (Int).map(*.new($_)) }` -> `Int.new(42)`). All verified
+/// against rakudo: `for "o" { <a b>.map(-> $c { $c ~ $_ }) }` is
+/// `("ao", "bo")`.
+///
+/// Only a block whose parameter IS the implicit `_` topicalizes the element —
+/// a bare `{ $_ }` block, or a plain `*.abs` WhateverCode (no `$_` in the
+/// body), which keeps `_` as its placeholder param.
+pub(crate) fn block_keeps_outer_topic(data: &SubData) -> bool {
+    !data.params.is_empty() && !data.params.iter().any(|p| p == "_")
 }
 
 /// A carrier Sub delegates its behaviour through env markers instead of its
@@ -58,7 +61,7 @@ pub(crate) fn sub_is_call_carrier(data: &SubData) -> bool {
 /// For a `$_`-referencing WhateverCode the topic is held at `outer_topic` for
 /// every iteration (re-set, so a prior iteration's tail value cannot leak into
 /// the next one's `$_`); otherwise the element is the topic.
-/// See [`whatever_code_keeps_outer_topic`].
+/// See [`block_keeps_outer_topic`].
 pub(crate) fn bind_loop_topic(
     env: &mut Env,
     item: &Value,
@@ -395,7 +398,7 @@ impl Interpreter {
                 }
             }
 
-            let is_whatever_code = whatever_code_keeps_outer_topic(&data);
+            let is_whatever_code = block_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
 
             // CP-3 collapse: run the map loop with fresh execution registers
@@ -445,10 +448,12 @@ impl Interpreter {
                                     vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
                                 }
                             }
-                            vm.env_mut()
-                                .insert(underscore.clone(), list_items[i].clone());
-                            vm.env_mut()
-                                .insert(dollar_topic.clone(), list_items[i].clone());
+                            bind_loop_topic(
+                                vm.env_mut(),
+                                &list_items[i],
+                                is_whatever_code,
+                                &outer_topic,
+                            );
                         }
                     }
                     match vm.run_reuse(&code, &compiled_fns) {
@@ -676,7 +681,7 @@ impl Interpreter {
             self.env.insert_sym(*k, v.clone());
         }
 
-        let keeps_outer_topic = whatever_code_keeps_outer_topic(&data);
+        let keeps_outer_topic = block_keeps_outer_topic(&data);
         let outer_topic = self.env.get("_").cloned();
 
         let mut found: Option<(usize, Value)> = None;

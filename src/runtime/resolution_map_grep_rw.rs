@@ -439,8 +439,7 @@ impl Interpreter {
                 self.env.insert_sym(*k, v.clone());
             }
 
-            let keeps_outer_topic =
-                super::resolution_map_grep::whatever_code_keeps_outer_topic(&data);
+            let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(&data);
             let outer_topic = self.env.get("_").cloned();
 
             // CP-3 collapse: run the grep loop with fresh execution registers
