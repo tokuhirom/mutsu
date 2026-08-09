@@ -1,5 +1,19 @@
 # Regex alternation `|` picks the first matching branch, not the LTM-longest declarative prefix
 
+> **Design complete (2026-08-09): see ADR-0022**
+> (`docs/adr/0022-regex-alternation-ltm-ranking.md`) for the full validated
+> semantics, implementation slices, and acceptance matrix. Corrections found
+> during that investigation:
+> - mutsu's `|` is NOT plain first-match: all three engine paths rank by
+>   **longest actual full-branch match, ties broken by declaration order**. The
+>   Cro repro below is a length *tie* (14 vs 14) lost on the tie-break — rakudo
+>   breaks ties by longest-literal (litlen) first.
+> - `roast/S05-metasyntax/longest-alternative.t` is at **59/62** (fails 28, 50,
+>   54), not the 57/62 recorded in BLOCKERS.md.
+> - The engine also lacks backtracking into shorter ends of the chosen branch
+>   (`"aaab" ~~ / [ a+ | q ] ab /` fails; raku matches "aaab") — folded into
+>   ADR-0022 Slice 3.
+
 ## Symptom
 
 `Cro::HTTP` `t/http-router.rakutest` test 61 ("Two optional segments handled
