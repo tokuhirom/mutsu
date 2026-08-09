@@ -118,22 +118,20 @@ impl Interpreter {
         prev_parents
     }
 
-    /// Walk the (flattened) role body, dispatching each statement through the
-    /// per-statement arms. Declared attributes, used modules, and
-    /// body-declared types are precomputed by the compiler (ADR-0019 D2a)
-    /// and already populate `cx` by the time this runs.
+    /// Walk the role body, dispatching each op through the per-statement
+    /// arms. Declared attributes, used modules, and body-declared types are
+    /// precomputed by the compiler (ADR-0019 D2a) and already populate `cx`
+    /// by the time this runs.
+    ///
+    /// `body_plan` (ADR-0019 D7-4/D9) is the sole driver of this walk — it
+    /// is already single-level `SyntheticBlock`-flattened and classified by
+    /// the compiler (`crate::opcode::role_body_plan`), so there is no
+    /// runtime-side flatten to redo.
     pub(super) fn walk_role_body(
         &mut self,
-        body: &[Stmt],
+        body_plan: &[crate::opcode::RoleBodyOp],
         cx: &mut RoleDeclCx<'_>,
     ) -> Result<(), RuntimeError> {
-        let flattened_body: Vec<&Stmt> = body
-            .iter()
-            .flat_map(|s| match s {
-                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
-                other => vec![other],
-            })
-            .collect();
         // Attribute names, `use`d/`need`ed module names, and body-declared
         // types are precomputed by the compiler at plan lowering (ADR-0019
         // D2a) and already populate `cx.role_own_attrs`/`body_used_modules`/
@@ -149,33 +147,32 @@ impl Interpreter {
         // while the role's method signatures are validated, so the
         // precomputed names are accepted as parameter/attribute constraints;
         // the real registration happens when the role body runs below.
-        for stmt in flattened_body {
-            match stmt {
-                Stmt::HasDecl { .. } => {
-                    self.role_body_has_decl(cx, stmt)?;
+        for op in body_plan {
+            match op {
+                crate::opcode::RoleBodyOp::Attr { raw, .. } => {
+                    self.role_body_has_decl(cx, raw)?;
                 }
-                Stmt::DoesDecl { .. } => {
+                crate::opcode::RoleBodyOp::Parent => {
                     self.role_body_does_decl(cx)?;
                 }
-                Stmt::MethodDecl { .. } => {
+                crate::opcode::RoleBodyOp::Method => {
                     self.role_body_method_decl(cx)?;
                 }
-                Stmt::Expr(Expr::Call { name, .. })
-                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn" =>
-                {
-                    cx.role_def.is_stub_role = true;
-                }
-                Stmt::SetLine(_) => {
-                    // Skip source line annotations
-                }
-                _ => {
-                    // Every other statement (non-method/non-attribute/non-`does`) is
-                    // deferred to composition time, so role methods can be called
-                    // from within the role block body (e.g. `role R { method foo {};
+                crate::opcode::RoleBodyOp::Deferred { raw } => {
+                    if let Stmt::Expr(Expr::Call { name, .. }) = raw.as_ref()
+                        && (name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
+                    {
+                        cx.role_def.is_stub_role = true;
+                    }
+                    // Every other statement (non-method/non-attribute/non-`does`,
+                    // including `SetLine` source-line markers) is deferred to
+                    // composition time, so role methods can be called from
+                    // within the role block body (e.g. `role R { method foo {};
                     // R.foo }`) and, for a parameterized role, so it can be
                     // re-evaluated with concrete type bindings. The compiler's
-                    // `deferred_body_ops` (ADR-0019 D8-1/D8-2) already covers running
-                    // it at every composition site — nothing to record here.
+                    // `deferred_body_ops` (ADR-0019 D8-1/D8-2) already covers
+                    // running it at every composition site — nothing to record
+                    // here.
                 }
             }
         }

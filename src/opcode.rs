@@ -2782,16 +2782,14 @@ pub(crate) struct CompiledClassDeclPlan {
     /// `resolve_role_candidate` re-parsing the concatenated parent string.
     pub(crate) parent_arg_chunks: Vec<(String, Vec<DeclTraitArg>)>,
     /// Ordered, typed mirror of the flattened class body (ADR-0019 D6-3a),
-    /// one op per statement `run_class_body`'s dispatch loop visits (the
-    /// same `SyntheticBlock`-flattened top level, with nested-sub `has`
-    /// declarations appended at the end — see [`class_body_plan`]). Purely
-    /// additive: no non-test consumer reads this field yet (D6-3d wires
-    /// `run_class_body` to it). The already-typed arms (`Attr`/`Method`/
+    /// one op per statement — the sole driver of `run_class_body`'s dispatch
+    /// loop since D6-4 (the same `SyntheticBlock`-flattened top level, with
+    /// nested-sub `has` declarations appended at the end — see
+    /// [`class_body_plan`]). The already-typed arms (`Attr`/`Method`/
     /// `Does`/`ClassSub`) carry only a name/marker, since their real
     /// payload already lives in `attr_decls`/`method_decls`/
     /// `parent_arg_chunks`; the remaining arms carry their raw statement
-    /// with `chunk: None` until D6-3b/c precompile them.
-    #[allow(dead_code)]
+    /// alongside their precompiled `chunk`.
     pub(crate) body_plan: Vec<ClassBodyOp>,
 }
 
@@ -2956,20 +2954,30 @@ pub(crate) struct RoleParentOp {
 }
 
 /// One role-body statement, typed (ADR-0019 D7-4) — the role-side twin of
-/// [`ClassBodyOp`]. Purely additive: no consumer reads this yet
-/// (`walk_role_body` still walks raw `Stmt`s). Deliberately narrower than
-/// `ClassBodyOp`: a role body has no nested-sub `has` collection and no
-/// `ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser` arms (those class-only
-/// statement kinds fall through to `Deferred` in a role body, exactly as
-/// `walk_role_body`'s own catch-all treats them), and carries no compiled
-/// chunk yet — deferred-statement chunk compilation is D8's job
-/// (`RoleDef::deferred_body`'s own `DeferredBodyOp`, a separate type).
+/// [`ClassBodyOp`], and since D9 the sole driver of `walk_role_body`.
+/// Deliberately narrower than `ClassBodyOp`: a role body has no nested-sub
+/// `has` collection and no `ClassSub`/`CodeAlias`/`ProtoMethod`/`LeavePhaser`
+/// arms (those class-only statement kinds fall through to `Deferred` in a
+/// role body, exactly as `walk_role_body`'s own catch-all treats them), and
+/// carries no compiled chunk itself — deferred-statement chunk compilation
+/// is `RoleDef::deferred_body`'s own `DeferredBodyOp` (ADR-0019 D8), a
+/// separate type built from this one's `Deferred` ops.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub(crate) enum RoleBodyOp {
-    /// A top-level `has` declaration. Its typed descriptor lives in
-    /// `attr_decls`, keyed by this same name.
-    Attr { name: Symbol },
+    /// A top-level `has` declaration. Its typed descriptor normally lives in
+    /// `attr_decls`, keyed by this same name; `raw` is used only as a
+    /// fallback when it is not there (a role-level `our`/`my` attribute,
+    /// which `attr_decls`'s compiler-side collector excludes — see
+    /// `role_body_has_decl`). Boxed for the same enum-size reason as
+    /// `Deferred`'s `raw`. `name` has no non-test reader (`walk_role_body`
+    /// reads the name back out of `raw` via `role_body_has_decl`'s own
+    /// `Stmt::HasDecl` match instead) — kept for parity with
+    /// `ClassBodyOp::Attr` and pinned by `role_declarations_precompute_body_plan`.
+    Attr {
+        #[allow(dead_code)]
+        name: Symbol,
+        raw: Box<Stmt>,
+    },
     /// A `method`/`submethod` declaration. Advances the existing
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
@@ -3005,7 +3013,10 @@ pub(crate) fn role_body_plan(body: &[Stmt]) -> Vec<RoleBodyOp> {
 
 fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
     match stmt {
-        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr { name: *name },
+        Stmt::HasDecl { name, .. } => RoleBodyOp::Attr {
+            name: *name,
+            raw: Box::new(stmt.clone()),
+        },
         Stmt::MethodDecl { .. } => RoleBodyOp::Method,
         Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
         _ => RoleBodyOp::Deferred {
@@ -3089,8 +3100,6 @@ pub(crate) struct CompiledRoleDeclPlan {
     pub(crate) type_param_defs: Vec<ParamDef>,
     pub(crate) is_export: bool,
     pub(crate) export_tags: Vec<String>,
-    /// Compatibility payload for the role-composition registry walker.
-    pub(crate) legacy_body: Vec<Stmt>,
     pub(crate) is_rw: bool,
     pub(crate) language_version: String,
     pub(crate) custom_traits: Vec<(String, Option<DeclTraitArg>)>,
@@ -3137,10 +3146,8 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// [`RoleParentOp`].
     pub(crate) parent_ops: Vec<RoleParentOp>,
     /// Ordered, typed mirror of the (single-level flattened) role body
-    /// (ADR-0019 D7-4), one op per statement `walk_role_body`'s dispatch
-    /// loop visits. Purely additive — no non-test consumer reads this field
-    /// yet. See [`RoleBodyOp`].
-    #[allow(dead_code)]
+    /// (ADR-0019 D7-4), one op per statement — the sole driver of
+    /// `walk_role_body`'s dispatch loop since D9. See [`RoleBodyOp`].
     pub(crate) body_plan: Vec<RoleBodyOp>,
     /// Precompiled per-statement chunk for each deferred (non-attribute,
     /// non-method, non-`does`) statement in the role body (ADR-0019 D8-1),
@@ -6462,7 +6469,6 @@ impl CompiledCode {
             type_param_defs: type_param_defs.clone(),
             is_export: *is_export,
             export_tags: export_tags.clone(),
-            legacy_body: body.clone(),
             is_rw: *is_rw,
             language_version: language_version.clone(),
             custom_traits: zip_decl_trait_args(custom_traits, trait_args),

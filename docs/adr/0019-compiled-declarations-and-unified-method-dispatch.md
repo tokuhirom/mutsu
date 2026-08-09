@@ -115,9 +115,9 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 38/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, and D8 complete; D2a and
+**Current progress: 39/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, D8, and D9 complete; D2a and
 D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a
-landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, and D6-4 landed
+landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4, and D9-5 landed
 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
@@ -1489,7 +1489,7 @@ walkers wholesale is not possible before then.
   the field. Verified via the full `t/` suite (28,037 tests) and every whitelisted
   `S06-signature`/`S12-*`/`S14-*` roast file (release binary). This closes ADR-0019's D8
   box now that D8-1..4 have all landed.
-- [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
+- [x] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.
   **Survey + design pass done 2026-08-08 (no code landed), same doc as D6.** The role body's
@@ -1500,6 +1500,34 @@ walkers wholesale is not possible before then.
   D9-4 (= D8 chunks), D9-5 (field drop, forced-instrument playbook). **D9-1 landed
   2026-08-08 — see D7-1 above (same slice). D9-3 landed 2026-08-08 — see D7-3 above (same
   slice): `parent_ops` covers the role side's typed `DoesDecl` encoding D9-3 asked for.**
+  **D9-5 landed 2026-08-09**: unlike the class side, the role side needed no separate
+  default-flip slice — `body_plan: Vec<RoleBodyOp>` (D7-4) had sat purely additive with zero
+  non-test consumers, so this box went straight from "additive" to "sole driver, field
+  dropped" in one PR, mirroring D6-4's shape (`walk_role_body` now iterates `body_plan`
+  directly, no raw `Vec<Stmt>` to zip it against) but smaller: roles have only one
+  `register_role_decl` call site (no pun/mixin/augment-style synthetic caller passing a
+  hand-built body the way classes have three), and no nested-sub `has` collection to drop.
+  `RoleBodyOp::Attr` gained a `raw: Box<Stmt>` field (boxed, matching `Deferred`'s existing
+  boxing rationale — an unboxed `Stmt` on `Attr` alone would trip
+  `clippy::large_enum_variant` against the marker-sized `Method`/`Parent` variants) so
+  `role_body_has_decl`'s existing our/my-attribute fallback (identical rationale to the class
+  side) still has a raw statement to read. `RoleBodyOp::Deferred`'s existing `raw` already
+  covered the walk's other two raw-statement uses (the `__mutsu_stub_die`/`__mutsu_stub_warn`
+  stub-marker check and the no-op `SetLine`/everything-else fallthrough), needing no change.
+  `CompiledRoleDeclPlan::legacy_body`, its one construction site, and
+  `register_role_decl`'s `body: &[Stmt]` parameter (replaced by `body_plan: &[RoleBodyOp]`,
+  threaded through from the VM opcode handler) are deleted. Verified via the full `t/` suite
+  (28,087 tests), all 701 Rust unit tests, the `S12-class`/`S12-construction`/`S14-roles`/
+  `S05-grammar` roast files (957 tests, same pre-existing `open_closed.t` failure),
+  `scripts/battery-testsuite.sh` (158/164, byte-identical), and a hand comparison against
+  `raku` exercising every `RoleBodyOp` variant in one role composed onto a class (an
+  attribute with a `my`-scoped sibling to force the fallback path, a nested `does`, a method,
+  and a nested `my class`) — byte-identical output. Verification also surfaced a real,
+  pre-existing, unrelated divergence — an `our`-scoped role attribute (`our $.x` inside a
+  role body) is accepted by mutsu instead of raising raku's
+  `X::Declaration::OurScopeInRole` — filed as
+  `todo/tickets/role-our-scoped-attribute-not-rejected.md` rather than fixed here (out of
+  scope for a structural field-removal slice). This closes ADR-0019's D9 box.
 - [ ] **D10 — Delete class/role AST registration walkers.** Keep only VM plan execution plus
   metadata helpers that do not inspect executable AST declarations. The token/rule arms of the
   body walk stay until their ADR-0009-scoped slice lands; D10 deletes everything else.
