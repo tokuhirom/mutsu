@@ -237,6 +237,18 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// cases. Empty for registration paths with no compiled plan available
     /// (role-pun/mixin synthesis, `augment class`).
     pub(crate) parent_pre_args: &'a [Option<&'a [crate::opcode::DeclTraitArg]>],
+    /// The ambient program-wide compiled-function pool (ADR-0019 D3-8b),
+    /// threaded down to `class_body_method_decl` via `ClassBodyCx` so it can
+    /// look up each `method_decls[i].compiled_routine_key` and install the
+    /// main-pass-compiled bytecode (ADR-0019 D3-8a,
+    /// `Compiler::compile_method_body`) directly, instead of leaving
+    /// `MethodDef::compiled_code` `None` for the registration-time
+    /// throwaway-compile fallback (`compile_method_def_in_place_with_dist`)
+    /// to fill in later. Call sites with no compiled plan available
+    /// (role-pun/mixin synthesis, `augment class`) pass an empty table —
+    /// harmless, since their `method_decls` is empty too, so the lookup is
+    /// never reached.
+    pub(crate) compiled_fns: &'a crate::opcode::CompiledFns,
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

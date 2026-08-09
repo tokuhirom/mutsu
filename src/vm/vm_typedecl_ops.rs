@@ -15,7 +15,7 @@ impl Interpreter {
             }
             Some(crate::opcode::CompiledDeclPlanRef::Class(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
-                match self.exec_register_class_op(code, plan_idx) {
+                match self.exec_register_class_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
                     Err(_)
                         if code.class_decl_plans[plan_idx as usize]
@@ -105,6 +105,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Registering a class can shadow a same-named earlier class (`my class A`
         // in a fresh lexical scope) with different method bodies/candidates, so the
@@ -276,6 +277,7 @@ impl Interpreter {
                         method_decls,
                         declared_static_names,
                         parent_pre_args: &parent_pre_args,
+                        compiled_fns,
                     },
                     body,
                 )

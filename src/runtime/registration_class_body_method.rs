@@ -69,6 +69,17 @@ impl Interpreter {
             &decl.param_defs,
             cx.is_hidden,
         );
+        // ADR-0019 D3-8b: the main-pass compiled bytecode this method body
+        // may already have (`decl.compiled_routine_key`,
+        // `Compiler::compile_method_body`, ADR-0019 D3-8a) was compiled from
+        // `effective_param_defs` at THIS point in the pipeline — before the
+        // ::?CLASS substitution below, which `compile_method_body`
+        // deliberately never performs (design decision 3: a type-constraint
+        // STRING is bind-time-only data, never baked into bytecode).
+        // Snapshot it here so the install-by-key guard further down compares
+        // against exactly what the compiler computed, not this function's
+        // substituted copy.
+        let mut raw_param_defs_for_key_check = effective_param_defs.clone();
         // Resolve the ::?CLASS pseudo-type in parameter type
         // constraints to the enclosing class (raku fixes ::?CLASS
         // at compile time to the declaring class), mirroring the
@@ -88,10 +99,53 @@ impl Interpreter {
             &decl.body,
             &mut effective_param_defs,
         );
+        // Mirror the same auto-slurpy insertion onto the pre-substitution
+        // snapshot: it depends only on names/slurpy-ness (never on
+        // `type_constraint` content), so it commutes with the substitution
+        // above and this stays byte-identical to what `compile_method_body`
+        // computed.
+        crate::method_signature_shared::apply_auto_positional_slurpy(
+            decl.param_defs.is_empty(),
+            &decl.body,
+            &mut raw_param_defs_for_key_check,
+        );
         let effective_params: Vec<String> = effective_param_defs
             .iter()
             .map(|p| p.name.clone())
             .collect();
+        // ADR-0019 D3-8b (design decision 4): install the main-pass compiled
+        // bytecode by key when it resolves in the ambient compiled-function
+        // pool AND its params/param_defs match what THIS registration walk
+        // just computed. `ParamDef` has no `PartialEq` (it embeds `Expr`,
+        // which does not derive it either — adding that is a much larger,
+        // separate change), so structural equality is checked via `Debug`
+        // formatting, matching the comparison already used to pin
+        // main-pass/registration-time byte parity in the D3-8a test suite
+        // (`compiler/helpers_method_body.rs`). This is exact, not a
+        // heuristic: both sides are derived from the SAME cloned
+        // `decl.param_defs`/`decl.body` in this single process, so there is
+        // no cross-run Symbol-id or closure-ordinal divergence to normalize
+        // away (unlike that test, which compares two separate compiles).
+        // A mismatch (or missing key) leaves `compiled_code`/`compiled_fns`
+        // `None`, falling back unchanged to the registration-time throwaway
+        // compile (`compile_method_def_in_place_with_dist` via the bulk
+        // `compile_class_methods` pass).
+        let matched_compiled_fn = decl
+            .compiled_routine_key
+            .and_then(|key| cx.compiled_fns.get(&key))
+            .filter(|cf| {
+                let expected_full_params: Vec<String> =
+                    ["self", "__ANON_STATE__", "?CLASS", "?ROLE"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .chain(effective_params.iter().cloned())
+                        .collect();
+                cf.params == expected_full_params
+                    && format!("{:?}", cf.param_defs) == format!("{raw_param_defs_for_key_check:?}")
+            });
+        let installed_compiled_code =
+            matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
+        let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         let def = MethodDef {
             lexical_package: cx.saved_package.clone(),
             params: effective_params.clone(),
@@ -108,8 +162,8 @@ impl Interpreter {
             role_origin: None,
             original_role: None,
             return_type: decl.return_type.clone(),
-            compiled_code: None,
-            compiled_fns: None,
+            compiled_code: installed_compiled_code,
+            compiled_fns: installed_compiled_fns,
             delegation: None,
             is_default: decl.is_default_candidate,
             deprecated_message: decl.deprecated_message.clone(),
