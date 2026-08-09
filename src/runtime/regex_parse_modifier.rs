@@ -740,17 +740,40 @@ impl Interpreter {
         if s.contains("::(") {
             return true;
         }
-        // Check for double-quoted strings with interpolation
+        // Check for double-quoted strings with interpolation. A naive
+        // split-on-`"` parity count misfires on a `"` that is itself just a
+        // literal character inside a single-quoted literal (`'boundary="'`)
+        // or a character class (`<-["]>` — matching anything but `"`), both
+        // legal regex source with no double-quote region at all: verified
+        // against `raku` directly, `'a' ~~ /<$p>/` for
+        // `$p = Q/'boundary="' $<b>=[<-["]>+] '"'/` matches (see
+        // `t/regex-interp-capture-alias.t`). Track single-quote and `[...]`
+        // char-class state so a `"` inside either is never treated as a
+        // double-quote delimiter.
         if s.contains('"') {
-            let in_dq: Vec<&str> = s.split('"').collect();
-            for (i, chunk) in in_dq.iter().enumerate() {
-                if i % 2 == 1
-                    && (chunk.contains('$')
-                        || chunk.contains('@')
-                        || chunk.contains('%')
-                        || chunk.contains('&'))
-                {
-                    return true;
+            let mut in_squote = false;
+            let mut in_dquote = false;
+            let mut class_depth: u32 = 0;
+            let mut dq_chunk = String::new();
+            for c in s.chars() {
+                match c {
+                    '[' if !in_squote && !in_dquote => class_depth += 1,
+                    ']' if !in_squote && !in_dquote && class_depth > 0 => class_depth -= 1,
+                    '\'' if !in_dquote && class_depth == 0 => in_squote = !in_squote,
+                    '"' if !in_squote && class_depth == 0 => {
+                        if in_dquote
+                            && (dq_chunk.contains('$')
+                                || dq_chunk.contains('@')
+                                || dq_chunk.contains('%')
+                                || dq_chunk.contains('&'))
+                        {
+                            return true;
+                        }
+                        in_dquote = !in_dquote;
+                        dq_chunk.clear();
+                    }
+                    _ if in_dquote => dq_chunk.push(c),
+                    _ => {}
                 }
             }
         }
