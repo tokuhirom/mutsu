@@ -1,6 +1,6 @@
 use Test;
 
-plan 31;
+plan 36;
 
 sub j(*@i) {
     @i.map({ $_ ?? '1' !! '0' }).join(' ');
@@ -54,6 +54,22 @@ sub j(*@i) {
     sub d(:x(:y(:z($a)))) { };
     is ~&d.signature.params.[0].named_names.sort, 'x y z', 'multi named_names';
     is ~&d.signature.params.[0].name, '$a', '... and .name still works';
+    is ~&d.signature.params.[0].named_names, 'z y x',
+        'alias chain is reported innermost-first (rakudo order)';
+}
+
+# named_names on plain named params (no alias sub-signature)
+{
+    sub e(:$x, *%h) { };
+    is ~&e.signature.params[0].named_names, 'x', 'plain :$x has its own name as named_names';
+    is +&e.signature.params[1].named_names, 0, 'slurpy *%h has no named_names';
+
+    my $blk = -> :$min-price { };
+    my $p = $blk.signature.params.grep(*.named).head;
+    is ~$p.named_names, 'min-price', 'pointy-block plain named param has named_names';
+
+    sub f(:y($a)) { };
+    is ~&f.signature.params[0].named_names, 'y', 'single alias reports the external name only';
 }
 
 # Capture param introspection

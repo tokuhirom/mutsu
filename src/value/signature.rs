@@ -179,15 +179,22 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     }
 }
 
-/// For named params with alias sub-signatures (`:x($a)`, `:x(:y(:z($a)))`),
-/// collect the chain of alias names as named_names.
+/// Collect the externally usable names of a named parameter: the primary name
+/// for a plain `:$x`, plus the alias chain for alias sub-signatures (`:x($a)`,
+/// `:x(:y(:z($a)))`). Slurpy `*%h` and captures have no named_names.
 fn collect_named_names(p: &ParamDef, name: &str, is_capture: bool) -> Vec<String> {
-    if !p.named || is_capture || !matches!(&p.sub_signature, Some(subs) if subs.len() == 1) {
+    if !p.named || is_capture || name.is_empty() {
         return Vec::new();
     }
-    let subs = p.sub_signature.as_ref().unwrap();
     let mut names = vec![name.to_string()];
-    collect_named_names_recursive(&subs[0], &mut names);
+    if let Some(subs) = &p.sub_signature
+        && subs.len() == 1
+    {
+        collect_named_names_recursive(&subs[0], &mut names);
+    }
+    // Rakudo reports alias chains innermost-first (`:z(:w(:v($b)))` gives
+    // `("v", "w", "z")`).
+    names.reverse();
     names
 }
 
