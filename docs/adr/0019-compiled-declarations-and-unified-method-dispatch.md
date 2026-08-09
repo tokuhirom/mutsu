@@ -115,19 +115,20 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 40/53 slices merged (C6, C7, C8, D1, D2d, D6, D7, D8, D9, and D10 complete;
+**Current progress: 41/53 slices merged (C6, C7, C8, D1, D2d, D3, D6, D7, D8, D9, and D10 complete;
 D2a and D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3,
-and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4, D9-5,
-and D10 landed 2026-08-09). Phase C is fully checked; the open box is
+and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D3-9, D7-4, D8-1, D8-2, D8-3, D8-4, D6-3e, D6-4,
+D9-5, and D10 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
-shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
-D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
-precompute), D3-8a, D3-8b, D3-8c, and D3-8d also landed (the additive compiler-side half, the
-class-walker and role-walker install-by-key cutovers, and the fallback-narrowing survey — which
-found and fixed a real closure-nesting gap rather than just a straggler list — of the method-body
-main-pass compile; see below), and a 2026-08-08 scoping
-pass found D3's literal goal — compiling method *bodies*
+shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as
+compiled candidates) is closed: D3-1 through D3-7 landed (walker-drift unification plus the
+compile-time `CompiledMethodDecl` precompute), D3-8a through D3-8d landed the method-body
+main-pass-compilation cutover (the additive compiler-side half, the class-walker and role-walker
+install-by-key cutovers, and the fallback-narrowing survey — which found and fixed a real
+closure-nesting gap rather than just a straggler list), and D3-9 closed the box outright by
+precomputing the last registration-time AST re-scan (see below). A 2026-08-08 scoping
+pass had found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
 design (parity-first bare compile, per-decl `compiled_routine_key` on `CompiledMethodDecl`,
@@ -640,7 +641,7 @@ walkers wholesale is not possible before then.
   `S09-typed-arrays`/`S12-construction`/`S12-meta`/`S06-signature` roast file (102 files) with the
   release binary, and a manual raku-vs-mutsu comparison of a construction-in-a-loop (confirming no
   per-construction recompile) covering class/role `default`/`where`/`is default`.
-- [ ] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
+- [x] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. That
   walk exists in three places, not one — the class walker (~508 lines), the role walker
   (~263 lines), and augmentation (`registration_class_augment.rs`) — plus a fourth reader in
@@ -978,6 +979,45 @@ walkers wholesale is not possible before then.
   always-runtime-fallback on every invocation of the common `plan N; class C {...}` idiom — real,
   but out of D3-8's scope; recorded as `todo/tickets/subtest-recompiles-block-from-ast-every-call.md`
   rather than re-opened as a D3-8 straggler.
+  **D3-9 landed 2026-08-09**: with D3-1 through D3-8d done, the box's own literal text ("install
+  ... compiled candidates ... without walking `Stmt::MethodDecl`") is largely satisfied — the class
+  and role walkers dispatch on the compiler-computed `ClassBodyOp::Method`/`RoleBodyOp::Method`
+  markers (D6-3a/D7-4) and read `CompiledMethodDecl` by position, never re-matching the raw
+  statement to decide what it is. A grep-and-read pass over `class_body_method_decl`/
+  `role_body_method_decl`/`registration_class_augment.rs`'s `MethodDecl` arm found one remaining
+  registration-time AST walk that fires on every registration (including a class/role declared
+  inside a loop): `apply_auto_positional_slurpy`'s bare-`@_`-detection scan of `decl.body`, called
+  twice per class method (once for the installed `MethodDef.param_defs`, once for the D3-8b
+  install-by-key parity snapshot) and once per augmented method — even though
+  `compile_method_body` (D3-8a) already runs the identical scan once, at compile time, to build the
+  same method's compiled-bytecode signature. Fixed by precomputing the scan's `positional` result as
+  `CompiledMethodDecl::uses_bare_positional_args: bool` inside `from_stmt` (mirroring the
+  `is_stub`/`own_attribute_names`/`method_name_chunks` precompute precedent) and adding
+  `method_signature_shared::apply_auto_positional_slurpy_from_flag`, a sibling of
+  `apply_auto_positional_slurpy` that takes the scan result directly instead of `body: &[Stmt]`. The
+  class walker's two call sites and the augment walker's one call site now read
+  `decl.uses_bare_positional_args` instead of re-scanning — for the class walker (whose
+  `CompiledMethodDecl`s come from the plan-lowered `method_decls` field, D3-7) this moves the scan
+  from "every registration" to "once, at compile time"; for the augment walker (which has no
+  compiled plan and still calls `CompiledMethodDecl::from_stmt` at registration time) it collapses
+  two scans into the one already inside `from_stmt`. `compile_method_body`'s own call
+  (`compiler/helpers_method_body.rs`) is untouched — it does not consume a `CompiledMethodDecl` and
+  keeps calling the original `apply_auto_positional_slurpy(body, ...)`. Role methods are unaffected
+  (`role_body_method_decl` never called the scanning function to begin with — a role method never
+  gets the auto-`@_` insertion, by design). No behavior change: verified via the full `t/` suite
+  (28,087 tests), the `d3_8a_byte_parity_tests` suite (including
+  `auto_positional_slurpy_method_byte_parity` and `role_method_auto_positional_slurpy_not_applied`),
+  every whitelisted `S12-methods`/`S12-attributes`/`S14-roles` roast file (only the pre-existing
+  `trusts.t` failure per `TODO_roast/BLOCKERS.md`), and a manual raku-vs-mutsu comparison of a
+  signature-less class method reading `@_`, a role method reading `@_` (must NOT auto-insert), and
+  an `augment class` method reading `@_`. This closes ADR-0019's D3 box: no registration-time code
+  matches a raw `Stmt::MethodDecl` (or re-scans its body) to decide what kind of declaration it is
+  or what to install, outside the `stmt_pool`-fed augment walker's own one-shot
+  `CompiledMethodDecl::from_stmt` build (already out of scope, matching D10's amended criterion) and
+  the private-access validator's generic body recursion (`registration.rs`'s
+  `validate_private_access_in_stmt`, which was already noted as unaffected by the original D3
+  scoping pass — it recurses into every statement kind identically, not just method bodies, and
+  builds no `MethodDef`).
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

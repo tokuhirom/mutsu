@@ -447,6 +447,17 @@ pub(crate) struct CompiledMethodDecl {
     /// (`compile_method_def_in_place_with_dist`). D3-8a only *populates*
     /// this field; nothing reads it yet (that is D3-8b/c's cutover).
     pub(crate) compiled_routine_key: Option<Symbol>,
+    /// ADR-0019 D3-9: whether this method's body reads a bare `@_`
+    /// (`method_signature_shared::auto_signature_uses`'s `positional`
+    /// flag), precomputed once here instead of re-scanning `body` at every
+    /// registration (`class_body_method_decl`/`registration_class_augment.rs`
+    /// each used to call `auto_signature_uses` themselves, on every class
+    /// declaration — including one declared inside a loop). Only meaningful
+    /// together with an empty `param_defs` (an explicit signature, even
+    /// `()`, opts out) — callers already gate on that themselves, mirroring
+    /// `apply_auto_positional_slurpy`'s own `original_param_defs_is_empty`
+    /// guard.
+    pub(crate) uses_bare_positional_args: bool,
 }
 
 impl CompiledMethodDecl {
@@ -478,6 +489,7 @@ impl CompiledMethodDecl {
         else {
             unreachable!("CompiledMethodDecl::from_stmt called on a non-MethodDecl statement");
         };
+        let uses_bare_positional_args = crate::method_signature_shared::auto_signature_uses(body).0;
         CompiledMethodDecl {
             name: *name,
             name_expr: name_expr.clone(),
@@ -498,6 +510,7 @@ impl CompiledMethodDecl {
             is_export: *is_export,
             export_tags: export_tags.clone(),
             compiled_routine_key: None,
+            uses_bare_positional_args,
         }
     }
 }

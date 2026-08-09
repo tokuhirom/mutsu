@@ -93,10 +93,13 @@ impl Interpreter {
                 pd.type_constraint = Some(tc.replace("::?CLASS", cx.name));
             }
         }
-        // Auto-detect @_ usage in methods without explicit signatures
-        crate::method_signature_shared::apply_auto_positional_slurpy(
+        // Auto-detect @_ usage in methods without explicit signatures.
+        // ADR-0019 D3-9: `decl.uses_bare_positional_args` is precomputed at
+        // plan-lowering time, so this reads a bool instead of re-scanning
+        // `decl.body` on every registration.
+        crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
             decl.param_defs.is_empty(),
-            &decl.body,
+            decl.uses_bare_positional_args,
             &mut effective_param_defs,
         );
         // Mirror the same auto-slurpy insertion onto the pre-substitution
@@ -104,9 +107,9 @@ impl Interpreter {
         // `type_constraint` content), so it commutes with the substitution
         // above and this stays byte-identical to what `compile_method_body`
         // computed.
-        crate::method_signature_shared::apply_auto_positional_slurpy(
+        crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
             decl.param_defs.is_empty(),
-            &decl.body,
+            decl.uses_bare_positional_args,
             &mut raw_param_defs_for_key_check,
         );
         let effective_params: Vec<String> = effective_param_defs
