@@ -113,8 +113,30 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         let saved_pragmas = self.save_pragma_state();
+        // Initialise fatal_mode (and other pragmas) from the closure's captured
+        // state so that `use fatal` propagates into lazily-evaluated sub-closures
+        // (e.g. a WhateverCode created inside a `use fatal` block still throws
+        // when evaluated after the block has returned).
+        self.fatal_mode = data.captured_fatal_mode;
         let result =
             self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
+        // Under `use fatal` (active at this point, before the scope-restore below),
+        // a returned Failure must throw rather than propagate silently. This makes
+        // a WhateverCode like `*.Int` throw when it produces a Failure — matching
+        // Raku semantics where the pragma is captured at closure-creation time and
+        // applies to every invocation of the closure, even after the creating scope
+        // has exited.
+        let result = if self.fatal_mode {
+            result.and_then(|val| {
+                if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
+                    Err(err)
+                } else {
+                    Ok(val)
+                }
+            })
+        } else {
+            result
+        };
         self.restore_pragma_state(saved_pragmas);
         result
     }

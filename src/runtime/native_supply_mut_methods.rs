@@ -1221,6 +1221,7 @@ impl Interpreter {
             owned_captures: Vec::new(),
             authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
+            captured_fatal_mode: false,
         }));
         let args = vec![
             tick,

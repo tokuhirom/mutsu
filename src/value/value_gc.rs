@@ -741,6 +741,7 @@ mod tests {
             owned_captures: Vec::new(),
             authoritative_captures: Vec::new(),
             upvalues: Vec::new(),
+            captured_fatal_mode: false,
         }
     }
 

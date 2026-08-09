@@ -930,6 +930,11 @@ pub struct SubData {
     /// Installed as `Interpreter::upvalues` on closure entry. Empty for closures
     /// with no upvalue-eligible free variables.
     pub(crate) upvalues: Vec<Option<Value>>,
+    /// `fatal_mode` value captured at closure-creation time. When a closure is
+    /// created inside a `use fatal` scope, this is `true`; the pragma propagates
+    /// into the closure so that Failures produced inside it (even via sub-closures
+    /// evaluated lazily after the creating scope has exited) still throw.
+    pub(crate) captured_fatal_mode: bool,
 }
 
 fn gcd(mut a: i64, mut b: i64) -> i64 {

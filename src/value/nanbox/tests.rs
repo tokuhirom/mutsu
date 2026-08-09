@@ -233,6 +233,7 @@ fn sample_sub() -> Gc<SubData> {
         owned_captures: vec![],
         authoritative_captures: vec![],
         upvalues: vec![],
+        captured_fatal_mode: false,
     })
 }
 
