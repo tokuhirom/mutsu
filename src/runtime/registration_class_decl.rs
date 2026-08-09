@@ -132,6 +132,7 @@ impl Interpreter {
             declared_static_names,
             parent_pre_args,
             compiled_fns,
+            body_plan,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -234,6 +235,7 @@ impl Interpreter {
             method_decls,
             declared_static_names,
             compiled_fns,
+            body_plan,
         )?;
         self.finalize_class_registration(name, parents, class_def, &snapshot)?;
         self.install_class_exporthow(name, parents)?;

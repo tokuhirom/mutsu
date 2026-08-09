@@ -728,11 +728,25 @@ impl Interpreter {
             return Ok(());
         }
         let (code, compiled_fns) = self.compile_block_raw(stmts);
+        self.run_compiled_block_raw(&code, &compiled_fns)
+    }
+
+    /// [`Self::run_block_raw`]'s precompiled-chunk twin (ADR-0019 D6-3d):
+    /// same execution/writeback semantics, but takes an already-compiled
+    /// `CompiledCode`/`CompiledFns` pair (e.g. a `ClassBodyOp` arm's
+    /// `CompiledDeclExpr`) instead of compiling `stmts` on the fly on every
+    /// call. Split out so both paths share the free-var-writeback drain
+    /// instead of duplicating it.
+    pub(crate) fn run_compiled_block_raw(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        compiled_fns: &crate::opcode::CompiledFns,
+    ) -> Result<(), RuntimeError> {
         // CP-3 collapse: run the compiled block re-entrantly in place (no
         // `mem::take(self)` + `VM::new` ping-pong), exactly like the VM-side
         // `vm_run_block_raw`. `run_nested` saves/resets/restores the per-execution
         // registers and flags env_dirty so the outer locals re-sync from env.
-        let result = self.run_nested(&code, &compiled_fns);
+        let result = self.run_nested(code, compiled_fns);
         // Slice F (env<->locals coherence): a deferred class/role body that
         // mutates an outer lexical (`class C { $tracker = 99 }`) writes it into
         // `env` by name; record those names so the caller (the class/role

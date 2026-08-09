@@ -1006,6 +1006,7 @@ impl Interpreter {
             declared_static_names: &[],
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
+            body_plan: &[],
         };
         self.register_class_decl(&pun_name, &parents, modifiers, &[])?;
         self.store_language_revision_from_version(&pun_name, &language_version);

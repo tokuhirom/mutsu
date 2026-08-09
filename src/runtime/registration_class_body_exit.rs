@@ -4,7 +4,7 @@
 //! rollback on failure) and custom-HOW installation. Pure mechanical
 //! extraction from `registration_class_decl.rs` — no behavior change.
 
-use super::registration_class_body::ClassBodyCx;
+use super::registration_class_body::{ClassBodyCx, ClassBodyLeavePhaser};
 use super::registration_class_validate::ClassRegSnapshot;
 use super::*;
 
@@ -17,10 +17,10 @@ impl Interpreter {
     pub(super) fn run_class_body_leave_phasers(
         &mut self,
         cx: &ClassBodyCx<'_>,
-        class_leave_phasers: &[Vec<Stmt>],
+        class_leave_phasers: &[ClassBodyLeavePhaser],
     ) -> Result<(), RuntimeError> {
-        for body in class_leave_phasers.iter().rev() {
-            self.run_block_raw(body)?;
+        for phaser in class_leave_phasers.iter().rev() {
+            self.run_class_body_chunk_or_raw(phaser.chunk.as_ref(), &phaser.body)?;
             for outer_name in cx.saved_env.keys() {
                 let class_scoped_name = format!("{}::{}", cx.name, outer_name);
                 if let Some(updated) = self.env.get(&class_scoped_name).cloned() {
