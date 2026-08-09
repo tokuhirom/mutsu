@@ -117,7 +117,7 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress: 35/53 slices merged (C6, C7, C8, D1, D2d, and D7 complete; D2a and D2c-1/2/3
 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, and D8-2 landed 2026-08-09). Phase C is fully checked; the open box is
+2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, and D8-3 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1398,6 +1398,31 @@ walkers wholesale is not possible before then.
   gate (`scripts/battery-testsuite.sh`, 158/164, `OO::Monitors` green).
   `news/2026-08/d8-2-role-deferred-body-consumer-cutover.md`. D8-3 (the
   `run_role_submethod` rider) and D8-4 (dropping `deferred_body_stmts`) remain.
+  **D8-3 landed 2026-08-09**: `run_role_submethod` (the BUILD/TWEAK submethod runner
+  `call_role_build_submethods` uses after `$value does Role` / `$value but Role` composes
+  a role onto a non-`Instance` value — an `Int`/`Str`/etc., not a class construction,
+  which stays on its own already-compiled path) now runs the submethod's precompiled
+  `MethodDef::compiled_code` via `run_compiled_block_raw` instead of re-parsing/
+  re-compiling `def.body` through the AST-walking `eval_block_value` carrier on every
+  composition, falling back to `eval_block_value` only when a method has no compiled
+  chunk (e.g. installed via a meta-programming hook). No behavior change: `$!attr`
+  reads/writes inside the body were already resolved through env keys
+  (`self`/`"!attr_name"`, seeded/read back by `run_role_submethod` itself, not through
+  an instance attribute cell — `self` here is a `Mixin` over a non-`Instance`, so the
+  compiled `GetLocal`/`SetLocal` ops' `self_instance_attrs` cell lookup no-ops both ways
+  and execution falls through to the ordinary local-slot read/write, which `run_nested`
+  bridges to/from `env` at entry/exit exactly as `eval_block_value` did) — verified via
+  a raku-checked repro (scalar-attribute BUILD/TWEAK, BUILD-before-TWEAK ordering,
+  captured-outer-lexical writeback, the non-mutating `but` form) pinned by
+  `t/role-submethod-runtime-does-compiled.t`, the full `t/` suite (28,037 tests), and
+  every whitelisted `S06-signature`/`S12-*`/`S14-*` roast file (release binary).
+  Verification also surfaced two pre-existing, unrelated bugs in this same composition
+  path — confirmed identical before and after this slice's change, so not regressions —
+  filed as `todo/tickets/role-submethod-array-hash-attr-key-mismatch.md` (an `@!attr`/
+  `%!attr` write inside such a submethod silently no-ops: only the scalar-shaped env key
+  is seeded/read back) and `todo/tickets/role-submethod-runtime-does-parameterized-value.md`
+  (a parameterized role's own type/value parameter is invisible inside its BUILD/TWEAK
+  when composed this way). D8-4 (dropping `deferred_body_stmts`) remains, closing D8.
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.
