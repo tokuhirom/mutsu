@@ -1190,6 +1190,25 @@ walkers wholesale is not possible before then.
   `S12-construction`/`S14-roles` roast files (only the pre-existing,
   non-whitelisted `S12-class/open_closed.t` failure, unrelated). D6-3c
   (compiling the remaining small arms) is next.
+  **D6-3c landed 2026-08-09**: `CodeAlias`/`ProtoMethod`/`LeavePhaser` now
+  compile their raw statement into a chunk the same way
+  (`Compiler::compile_class_body_plan`'s match widened to all five
+  raw-statement-carrying arms) — each still executes its raw statement
+  wholesale at registration (`class_body_code_alias`'s trailing
+  `run_block_raw`, `class_body_proto_method_decl`'s `FunctionDef.body`
+  clone, `run_class_body_leave_phasers`'s per-phaser `run_block_raw`), so a
+  single-statement chunk mirrors each exactly; no arm needed a richer typed
+  payload for this purely-additive slice (the "`ProtoMethod` may reuse
+  `CompiledProtoDeclPlan`'s shape" idea floated in the design doc turned
+  out unnecessary). `body_plan` is now a complete, compiled mirror of
+  `legacy_body` with zero consumers — matching the slice-plan's own
+  description of D6-3c's end state. Verified via the full `t/` suite
+  (28,023 tests, two new: `t/cro-client-nested-param-shadow.t` and
+  `t/react-whenever-broken-promise.t` landed on `main` from unrelated PRs
+  in between) and the `S12-class`/`S12-construction`/`S14-roles`/
+  `S05-grammar` (proto/protoregex) roast files (only the same pre-existing
+  `open_closed.t` failure). D6-3d (driver cutover, instrument-gated) is
+  next.
 - [ ] **D7 — Encode role structure and composition.** Put role parameters, attributes, methods,
   parent roles, conflicts, hides, and pun metadata into immutable plan operations.
   **Design pass done 2026-08-08 (no code landed):**

@@ -308,14 +308,15 @@ mod declaration_plan_tests {
         assert_eq!(names, vec!["w", "x", "y"]);
     }
 
-    /// ADR-0019 D6-3a/D6-3b: `body_plan` mirrors `run_class_body`'s own
+    /// ADR-0019 D6-3a/b/c: `body_plan` mirrors `run_class_body`'s own
     /// flattened dispatch order one-op-per-statement (including the
     /// interstitial `Stmt::SetLine` markers the parser inserts, which
     /// classify as `Other` the same way `run_class_body`'s `_` arm treats
     /// them today), with a nested-sub `has` appended at the end (matching
     /// `own_attribute_names`'s own append order), classifies each statement
-    /// kind into the right op, and (D6-3b) compiles a standalone chunk for
-    /// every `Other`/`ClassSub` statement.
+    /// kind into the right op, and compiles a standalone chunk for every
+    /// arm that carries a raw statement (`Other`/`ClassSub` in D6-3b,
+    /// `CodeAlias`/`ProtoMethod`/`LeavePhaser` in D6-3c).
     #[test]
     fn class_declarations_precompute_body_plan() {
         let (stmts, _) = crate::parse_dispatch::parse_source(
@@ -327,7 +328,7 @@ mod declaration_plan_tests {
                 sub helper() { 1 }
                 our &alias ::= &m;
                 proto method p(|) {*}
-                my $will-be-static = 1;
+                my $will-be-static will leave { 1 } = 1;
                 sub f { has $.w }
             }
             "#,
@@ -395,7 +396,7 @@ mod declaration_plan_tests {
             .iter()
             .filter(|op| !matches!(op, ClassBodyOp::Other { .. }))
             .collect();
-        assert_eq!(typed.len(), 8, "typed ops: {typed:?}");
+        assert_eq!(typed.len(), 9, "typed ops: {typed:?}");
         assert!(matches!(
             typed[0],
             ClassBodyOp::Attr { name } if name.as_str() == "x"
@@ -410,22 +411,30 @@ mod declaration_plan_tests {
             typed[3],
             ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "helper"
         ));
+        // `CodeAlias`/`ProtoMethod`/`LeavePhaser` compile the same way (D6-3c).
         assert!(matches!(
             typed[4],
-            ClassBodyOp::CodeAlias { chunk: None, .. }
+            ClassBodyOp::CodeAlias { chunk: Some(_), .. }
         ));
         assert!(matches!(
             typed[5],
-            ClassBodyOp::ProtoMethod { chunk: None, .. }
+            ClassBodyOp::ProtoMethod { chunk: Some(_), .. }
+        ));
+        // `my $will-be-static will leave { 1 } = 1` lowers to a
+        // `SyntheticBlock` of [the `VarDecl` (an `Other` op), the `will
+        // leave` trait's own `Phaser { kind: Leave, .. }` statement].
+        assert!(matches!(
+            typed[6],
+            ClassBodyOp::LeavePhaser { chunk: Some(_), .. }
         ));
         // `sub f { has $.w }` is itself a `SubDecl` (another `ClassSub`),
         // whose nested `has $.w` is the last op, appended at the tail.
         assert!(matches!(
-            typed[6],
+            typed[7],
             ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "f"
         ));
         assert!(matches!(
-            typed[7],
+            typed[8],
             ClassBodyOp::Attr { name } if name.as_str() == "w"
         ));
     }

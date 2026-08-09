@@ -216,8 +216,8 @@ impl Compiler {
     }
 
     /// Lower a class body into its ordered, typed op mirror (ADR-0019
-    /// D6-3a), then compile the `Other`/`ClassSub` arms' raw statement into
-    /// its own standalone chunk (ADR-0019 D6-3b) —
+    /// D6-3a), then compile every remaining raw-statement arm's own
+    /// standalone chunk (ADR-0019 D6-3b/c) —
     /// `crate::opcode::class_body_plan` classifies statements purely from
     /// the AST; only this compiler-side pass can turn a raw statement into
     /// a `CompiledDeclExpr`, since that needs a child `Compiler`
@@ -225,16 +225,27 @@ impl Compiler {
     /// `ClassSub` shares `Other`'s chunk mechanism (a top-level `SubDecl`
     /// runs through the same `class_body_other_stmt` path at registration,
     /// `ClassSub` only adds the `class_subs` tail-probe fact on top).
-    /// `token`/`rule` statements are excluded per the phase preamble's
-    /// ADR-0009 carve-out — they keep `chunk: None` and stay on the
-    /// registration-time `run_block_raw` path (D6-3e verifies this
-    /// explicitly once the driver cuts over).
+    /// `CodeAlias`/`ProtoMethod`/`LeavePhaser` (D6-3c) compile the same way
+    /// — each still executes its raw statement wholesale at registration
+    /// (`class_body_code_alias`'s trailing `run_block_raw`,
+    /// `class_body_proto_method_decl`'s `FunctionDef.body` clone,
+    /// `run_class_body_leave_phasers`'s per-phaser `run_block_raw`), so a
+    /// single-statement chunk mirrors each exactly; no arm needs a richer
+    /// typed payload for D6-3c's purely-additive scope. `token`/`rule`
+    /// statements are excluded per the phase preamble's ADR-0009 carve-out
+    /// — they keep `chunk: None` and stay on the registration-time
+    /// `run_block_raw` path (D6-3e verifies this explicitly once the
+    /// driver cuts over). After this, `body_plan` is a complete, compiled
+    /// mirror of `legacy_body` with zero consumers.
     fn compile_class_body_plan(&self, body: &[Stmt]) -> Vec<crate::opcode::ClassBodyOp> {
         let mut ops = crate::opcode::class_body_plan(body);
         for op in &mut ops {
             let (chunk, raw) = match op {
                 crate::opcode::ClassBodyOp::Other { chunk, raw }
-                | crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. } => (chunk, raw),
+                | crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
+                | crate::opcode::ClassBodyOp::CodeAlias { chunk, raw }
+                | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw }
+                | crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } => (chunk, raw),
                 _ => continue,
             };
             if !matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. }) {
