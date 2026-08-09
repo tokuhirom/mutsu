@@ -19,6 +19,11 @@ impl Interpreter {
         if is_module_call {
             self.module_call_depth += 1;
         }
+        // Lexical pragmas (`use fatal`, `use strict`, `use MONKEY-TYPING`,
+        // `use newline`) are scoped to the compilation unit where they appear.
+        // Save the caller's pragma state and restore it on every exit path so
+        // `use fatal` inside the callee does not bleed into the caller.
+        let saved_pragmas = self.save_pragma_state();
         // A routine declared directly in this body is lexical to the call.
         // Snapshot the routine registry around the (multi-exit) body so the
         // lexical routine is removed on return — UNLESS it escapes by being
@@ -41,6 +46,7 @@ impl Interpreter {
             }
             r
         };
+        self.restore_pragma_state(saved_pragmas);
         if is_module_call {
             self.module_call_depth -= 1;
         }
