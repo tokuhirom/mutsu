@@ -44,6 +44,9 @@ pub(super) struct RoleDeclCx<'a> {
     /// Cursor into `parent_ops`, advanced by one on every `DoesDecl`
     /// statement `role_body_does_decl` processes.
     pub(super) parent_op_idx: usize,
+    /// The ambient program-wide compiled-function pool (ADR-0019 D3-8c); see
+    /// `role_body_method_decl`.
+    pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
 }
 
 impl RoleDeclCx<'_> {

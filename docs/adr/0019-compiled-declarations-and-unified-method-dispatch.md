@@ -115,15 +115,16 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 32/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+**Current progress: 33/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
 landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b landed 2026-08-09). Phase C is fully checked; the open box is
+2026-08-08; D3-8b and D3-8c landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
-precompute), D3-8a and D3-8b also landed (the additive compiler-side half and the class-walker
-install-by-key cutover of the method-body main-pass compile — see below), and a 2026-08-08 scoping
+precompute), D3-8a, D3-8b, and D3-8c also landed (the additive compiler-side half plus the
+class-walker and role-walker install-by-key cutovers of the method-body main-pass compile — see
+below; D3-8d, the fallback-narrowing survey, remains open), and a 2026-08-08 scoping
 pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
@@ -933,8 +934,25 @@ walkers wholesale is not possible before then.
   computed-name/hoisted-shell cases) whenever the declaration is nested inside such a state scope,
   falling back to the unaffected registration-time throwaway compile. Fixed on the role side too
   (`qualified_role_decl_name`) even though not yet observable (D3-8c doesn't install from it yet),
-  to avoid reintroducing the identical bug there. `role_body_method_decl` (D3-8c) is untouched — a separate future PR, since
-  parametric-role method dispatch needs its own roast S14 + battery-gate verification.
+  to avoid reintroducing the identical bug there.
+  **D3-8c landed 2026-08-09**: the role-walker install-by-key cutover, the same design-decision-4
+  guard as D3-8b applied to `role_body_method_decl`
+  (`runtime/registration_role_method.rs`). Simpler than the class side: `role_body_method_decl`
+  never performs a `::?CLASS`-style param-type substitution, so `effective_param_defs` computed
+  here IS exactly what `compile_method_body` computed at plan-lowering time (`is_hidden: false`,
+  no auto-`@_` detection, per `add_role_decl_plan`'s existing comment) — no separate
+  pre-substitution snapshot is needed, unlike D3-8b. The ambient `CompiledFns` pool reaches
+  `role_body_method_decl` the same way: `exec_register_role_op` gained a
+  `compiled_fns: &CompiledFns` parameter (threaded from `exec_register_decl_op`, which already had
+  it), `register_role_decl`/`RoleDeclCx` gained a `compiled_fns` field. `register_role_decl` has
+  only the one call site (the VM op), so no `CompiledFns::default()` plumbing was needed anywhere
+  else. Because the install happens inside `register_role_decl` itself — before the
+  `role_candidates` snapshot used by composition is cloned — the per-composing-class recompile
+  disappears for free (design decision 6), verified with a `MUTSU_VM_STATS=1` repro (a role with
+  two methods composed into 3 classes directly plus 5 more inside a loop):
+  `method_body_runtime_compiles` dropped from 18 (baseline) to 0. The D3-8a byte-parity unit tests
+  (including the two role-specific fixtures) and the full `t/` suite (2974 files, 28019 tests) both
+  stayed green, and all 121 whitelisted `roast/S12-*`/`S14-*` files passed on a release build.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

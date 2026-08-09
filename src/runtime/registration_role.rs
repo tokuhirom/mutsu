@@ -323,6 +323,7 @@ impl Interpreter {
         is_stub_body: bool,
         our_scope_violation: Option<&str>,
         parent_ops: &[crate::opcode::RoleParentOp],
+        compiled_fns: &crate::opcode::CompiledFns,
     ) -> Result<(), RuntimeError> {
         self.clear_private_zeroarg_method_cache();
 
@@ -389,6 +390,7 @@ impl Interpreter {
             method_name_chunk_idx: 0,
             parent_ops,
             parent_op_idx: 0,
+            compiled_fns,
         };
         self.walk_role_body(body, &mut cx)?;
         self.finish_role_registration(

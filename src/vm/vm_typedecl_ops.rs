@@ -30,7 +30,7 @@ impl Interpreter {
             }
             Some(crate::opcode::CompiledDeclPlanRef::Role(plan_idx)) => {
                 self.note_type_body_written_lexicals(code);
-                match self.exec_register_role_op(code, plan_idx) {
+                match self.exec_register_role_op(code, plan_idx, compiled_fns) {
                     Ok(()) => Ok(()),
                     Err(_)
                         if code.role_decl_plans[plan_idx as usize]
@@ -614,6 +614,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         idx: u32,
+        compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         if let Some(crate::opcode::CompiledRoleDeclPlan {
             name,
@@ -669,6 +670,7 @@ impl Interpreter {
                     *is_stub,
                     *our_scope_violation,
                     parent_ops,
+                    compiled_fns,
                 )
             )?;
             // Link `is Parent` references on this role to the lexical class visible
