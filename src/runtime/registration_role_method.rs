@@ -203,6 +203,34 @@ impl Interpreter {
             .iter()
             .map(|p| p.name.clone())
             .collect();
+        // ADR-0019 D3-8c: install by key with the same equality guard as
+        // the class walker (D3-8b, decision 4). `add_role_decl_plan`
+        // compiled this body with `is_hidden: false` and no auto `@_`
+        // detection (matching this walk exactly, no ::?CLASS-style
+        // substitution here), so `effective_param_defs` above IS what
+        // `compile_method_body` computed — no separate pre-substitution
+        // snapshot needed, unlike the class side. A mismatch (or missing
+        // key) leaves `compiled_code`/`compiled_fns` `None`, falling back
+        // unchanged to the registration-time throwaway compile. Installing
+        // here (inside `register_role_decl`, before the `role_candidates`
+        // snapshot is cloned) is what makes the per-composing-class
+        // recompile disappear for free (design decision 6).
+        let matched_compiled_fn = decl
+            .compiled_routine_key
+            .and_then(|key| cx.compiled_fns.get(&key))
+            .filter(|cf| {
+                let expected_full_params: Vec<String> =
+                    ["self", "__ANON_STATE__", "?CLASS", "?ROLE"]
+                        .iter()
+                        .map(|s| s.to_string())
+                        .chain(effective_params.iter().cloned())
+                        .collect();
+                cf.params == expected_full_params
+                    && format!("{:?}", cf.param_defs) == format!("{effective_param_defs:?}")
+            });
+        let installed_compiled_code =
+            matched_compiled_fn.map(|cf| std::sync::Arc::new(cf.code.clone()));
+        let installed_compiled_fns = matched_compiled_fn.and_then(|cf| cf.compiled_fns.clone());
         let def = MethodDef {
             lexical_package: self.current_package(),
             params: effective_params,
@@ -215,8 +243,8 @@ impl Interpreter {
             role_origin: None,
             original_role: None,
             return_type: decl.return_type.clone(),
-            compiled_code: None,
-            compiled_fns: None,
+            compiled_code: installed_compiled_code,
+            compiled_fns: installed_compiled_fns,
             delegation: None,
             is_default: decl.is_default_candidate,
             deprecated_message: decl.deprecated_message.clone(),
