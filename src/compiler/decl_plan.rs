@@ -608,11 +608,10 @@ impl Compiler {
             // `RoleBodyOp::Deferred`'s catch-all (D7-4) also matches
             // `SetLine` source-line markers and the `__mutsu_stub_die`/
             // `__mutsu_stub_warn` stub markers, but `walk_role_body`'s own
-            // runtime dispatch never pushes either onto
-            // `RoleDef::deferred_body_stmts` (`Stmt::SetLine(_) => {}` is a
-            // silent skip; a stub marker sets `is_stub_role` instead of
-            // deferring). Filtering them out here keeps `deferred_body_ops`
-            // empty exactly when `deferred_body_stmts` would have been —
+            // runtime dispatch treats neither as a deferred statement
+            // (`Stmt::SetLine(_) => {}` is a silent skip; a stub marker sets
+            // `is_stub_role` instead of deferring). Filtering them out here
+            // keeps `deferred_body_ops` empty exactly when it should be —
             // without it, a method-only role body (no real deferred
             // statement) still produced non-empty `deferred_body_ops` from
             // its `SetLine` markers alone, and D8-2's consumer cutover

@@ -115,9 +115,9 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 35/53 slices merged (C6, C7, C8, D1, D2d, and D7 complete; D2a and D2c-1/2/3
+**Current progress: 36/53 slices merged (C6, C7, C8, D1, D2d, D7, and D8 complete; D2a and D2c-1/2/3
 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, and D8-3 landed 2026-08-09). Phase C is fully checked; the open box is
+2026-08-08; D3-8b, D3-8c, D3-8d, D7-4, D8-1, D8-2, D8-3, and D8-4 landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
@@ -1330,7 +1330,7 @@ walkers wholesale is not possible before then.
   role-header `does` clause's synthetic `DoesDecl`, prepended to the body ahead of a body-level
   `does`, both classifying as `Parent`). Verified via the full `t/` suite (28,037 tests). This
   closes D7 — all of D7-1..4 have now landed.
-- [ ] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
+- [x] **D8 — Compile role declaration-time bodies and traits.** Run parameterized-role and composed
   ancestor bodies as bytecode child chunks with correct once-per-composition behavior. (Custom-trait
   arguments already landed with C5; the bodies remain.)
   **Design pass done 2026-08-08 (no code landed), same doc as D7.** Unit of compilation is
@@ -1422,7 +1422,18 @@ walkers wholesale is not possible before then.
   `%!attr` write inside such a submethod silently no-ops: only the scalar-shaped env key
   is seeded/read back) and `todo/tickets/role-submethod-runtime-does-parameterized-value.md`
   (a parameterized role's own type/value parameter is invisible inside its BUILD/TWEAK
-  when composed this way). D8-4 (dropping `deferred_body_stmts`) remains, closing D8.
+  when composed this way).
+  **D8-4 landed 2026-08-09**: dropped `RoleDef::deferred_body_stmts` outright — the raw
+  `Vec<Stmt>` `walk_role_body` mirrored into it had been write-only (never read by any
+  consumer) since D8-2 made every composition site run `deferred_body`'s precompiled
+  ops instead. The catch-all statement arm in `walk_role_body` (which only ever did that
+  push, in both its `is_parametric` and non-parametric branches — identically, a
+  pre-existing redundant split) becomes a no-op; `RoleDeclCx::is_parametric` is dropped
+  too, since that push was its only reader. Pure dead-field/dead-branch removal, no
+  behavior change — confirmed via `grep` that nothing outside the push sites ever read
+  the field. Verified via the full `t/` suite (28,037 tests) and every whitelisted
+  `S06-signature`/`S12-*`/`S14-*` roast file (release binary). This closes ADR-0019's D8
+  box now that D8-1..4 have all landed.
 - [ ] **D9 — Remove `CompiledRoleDeclPlan::legacy_body`.** Preserve role puns, runtime mixins,
   conflicts, BUILD/TWEAK, custom HOWs, and EVAL. Same rule as D6: survey first, token/rule arms
   excluded.
