@@ -13,7 +13,7 @@ pub(crate) mod sub;
 pub(crate) mod sub_param;
 pub(crate) mod word_logical_split;
 
-use super::memo::{MemoEntry, MemoStats, ParseMemo};
+use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{MISSING_BLOCK, PError, PResult, parse_char, update_best_error};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -62,7 +62,7 @@ pub(super) use pub_shims::{
 };
 
 thread_local! {
-    static STMT_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
+    static STMT_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Stmt>>> = RefCell::new(HashMap::new());
     static STMT_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     /// The anonymous-state names (`__ANON_STATE_<id>__`) each memoized statement
     /// minted into its ENCLOSING block's scope, keyed exactly like `STMT_MEMO`.
@@ -73,14 +73,14 @@ thread_local! {
     /// hit). The names were recorded in that first scope, so without replaying
     /// them here the surviving block would emit no implicit `state` declaration
     /// for its bare `$` — see `simple::take_anon_state_decls`.
-    static STMT_ANON_STATES_TLS: RefCell<HashMap<(usize, usize), Vec<String>>> =
+    static STMT_ANON_STATES_TLS: RefCell<HashMap<MemoKey, Vec<String>>> =
         RefCell::new(HashMap::new());
 }
 
 static STMT_MEMO: ParseMemo<Stmt> = ParseMemo::new(&STMT_MEMO_TLS, &STMT_MEMO_STATS_TLS);
 
-fn stmt_memo_key(input: &str) -> (usize, usize) {
-    (input.as_ptr() as usize, input.len())
+fn stmt_memo_key(input: &str) -> MemoKey {
+    super::memo::memo_key(input)
 }
 
 pub(super) fn reset_statement_memo() {

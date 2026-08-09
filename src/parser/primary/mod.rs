@@ -12,7 +12,7 @@ pub(crate) mod regex;
 pub(in crate::parser) mod string;
 pub(crate) mod var;
 
-use super::memo::{MemoEntry, MemoStats, ParseMemo};
+use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::{PError, PResult, update_best_error};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,7 +21,7 @@ use crate::ast::Expr;
 use crate::value::Value;
 
 thread_local! {
-    static PRIMARY_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Expr>>> = RefCell::new(HashMap::new());
+    static PRIMARY_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
     static PRIMARY_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
     /// Original source pointer and length, set at parse_program start for $?LINE computation.
     static ORIGINAL_SOURCE: RefCell<(usize, usize)> = const { RefCell::new((0, 0)) };

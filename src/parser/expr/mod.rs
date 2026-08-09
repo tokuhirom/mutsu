@@ -15,7 +15,7 @@ mod tests_meta;
 #[cfg(test)]
 mod tests_postfix;
 
-use super::memo::{MemoEntry, MemoStats, ParseMemo};
+use super::memo::{MemoEntry, MemoKey, MemoStats, ParseMemo};
 use super::parse_result::PResult;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -45,7 +45,7 @@ use whatever_wrap::{try_wrap_whatevercode_call_chain, wrap_composition_operands}
 pub(crate) use whatever_replace::{replace_whatever_numbered, replace_whatever_single};
 
 thread_local! {
-    static EXPR_MEMO_TLS: RefCell<HashMap<(usize, usize), MemoEntry<Expr>>> = RefCell::new(HashMap::new());
+    static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
     static EXPR_MEMO_STATS_TLS: RefCell<MemoStats> = RefCell::new(MemoStats::default());
 }
 
