@@ -115,13 +115,13 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 42/53 slices merged (C6, C7, C8, D1, D2d, D3, D4, D6, D7, D8, D9, and D10
+**Current progress: 43/53 slices merged (C6, C7, C8, D1, D2d, D3, D4, D5, D6, D7, D8, D9, and D10
 complete; D2a and D2c-1/2/3 also landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2,
-D4-3, D7-3, and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D3-9, D7-4, D8-1, D8-2, D8-3, D8-4,
-D6-3e, D6-4, D9-5, and D10 landed 2026-08-09). Phase C is fully checked; the open box is
-D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
-done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
-shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as
+D4-3, D7-3, and D3-8a landed 2026-08-08; D3-8b, D3-8c, D3-8d, D3-9, D5-1, D5-2, D7-4, D8-1, D8-2,
+D8-3, D8-4, D6-3e, D6-4, D9-5, and D10 landed 2026-08-09). Phase C is fully checked; the open box
+is D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d
+are done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification
+of shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as
 compiled candidates) is closed: D3-1 through D3-7 landed (walker-drift unification plus the
 compile-time `CompiledMethodDecl` precompute), D3-8a through D3-8d landed the method-body
 main-pass-compilation cutover (the additive compiler-side half, the class-walker and role-walker
@@ -1161,7 +1161,7 @@ walkers wholesale is not possible before then.
   independent correctness bug, not a plan-migration gap — `class_body_does_decl` never reads a
   `CompiledClassDeclPlan` field at all today, so there is no plan encoding for D4 to have migrated
   here in the first place).
-- [ ] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
+- [x] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**
   `todo/deep/adr0019-d5-plan-driven-how-ops.md`. The survey found the user-HOW protocol
@@ -1174,6 +1174,37 @@ walkers wholesale is not possible before then.
   instantiate → new_type → add_method → trait dispatch → compose; HOW installs keyed on the
   resolved storage name), and D5-2 is a verification gate (OO::Monitors battery + metamodel
   roast) riding on D6's slices rather than a separate code PR.
+  **D5-1 landed 2026-08-09 (documentation only).** The ordering invariant every plan-driven
+  registration step (D1-D10) must preserve, codified here as the box's own contract rather than
+  left implicit in the survey doc: shell publish → body registration (direct, per-statement
+  registry writes — a plan executor must never batch into a private `ClassDef` clobbered only at
+  the end, since user code inside a trait or nested declaration can `^add_method` onto the class
+  mid-registration and observe/mutate the registry the same walk is still populating) → HOW
+  instantiate (`install_custom_class_how`, before trait dispatch, so a custom HOW sees every
+  trait) → `new_type` → `add_method` (reads the *finished* registry, not the AST, so it is
+  automatically correct once the registry itself matches — this is why D5 needed no independent
+  migration) → class `trait_mod:<is>` → `compose` (must observe every prior step's side effects,
+  e.g. `@!aspects` mutations a trait made). Every HOW install keys on the resolved storage name
+  (lexical mangling is per-execution) — never the plan's static declared name. D6's `body_plan`
+  cutover (D6-3d/e, D6-4) and D10's walker-classification cutover both preserve this sequence
+  unchanged: `run_class_body`'s per-op dispatch loop still runs one `ClassBodyOp` at a time with
+  the same interleaved direct-registry-write/re-publish shape the old per-`Stmt` walk had, and the
+  DECLARE-keyword attach / `new_type`/`add_method`/`compose` drive (`vm_typedecl_ops.rs`) is
+  untouched by either box — it still runs after `register_class_decl` returns, exactly as the
+  survey found. The optional mechanical move the design doc floated (relocating the DECLARE-attach
+  call next to `install_class_exporthow`) was skipped as flagged: behavior-neutral, low value,
+  would only churn a working call site.
+  **D5-2 landed 2026-08-09 (verification only, no code).** Re-ran the box's own completion
+  criterion now that D6/D9/D10 have all landed (the survey's gate was written before any of them
+  did): `scripts/battery-testsuite.sh` (OO::Monitors — the `EXPORTHOW::DECLARE`-based `monitor`
+  declarator's own acceptance bar — green, matching the pre-D6/D9/D10 baseline byte-for-byte) and
+  every whitelisted metamodel-adjacent roast file (`S12-meta/classhow.t`, `S12-meta/grammarhow.t`,
+  `S12-methods/how.t`) on a release build — all pass; `S12-meta/exporthow.t` is not whitelisted
+  and fails the same pre-existing, documented way (`TODO_roast/BLOCKERS.md`: rakudo itself lacks
+  the `tryit` EXPORTHOW-SUPERSEDE method the test needs), unrelated to this gate. This closes
+  ADR-0019's D5 box: the user-HOW protocol behaves identically with the registry populated by
+  D1-D10's plan-op execution as it did under the retired AST walk, confirmed empirically rather
+  than only by the survey's static reasoning.
 - [x] **D6 — Remove `CompiledClassDeclPlan::legacy_body`.** Preserve augmentation, rollback,
   redeclaration errors, language revisions, nested types, and EVAL behavior. Excludes the
   token/rule arms (see the phase preamble). Start with the C6d-style instrumentation survey —
