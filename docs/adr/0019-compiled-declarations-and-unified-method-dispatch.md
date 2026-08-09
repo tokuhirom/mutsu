@@ -115,16 +115,17 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress: 33/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
+**Current progress: 34/53 slices merged (C6, C7, C8, D1, and D2d complete; D2a and D2c-1/2/3 also
 landed, 2026-08-07; D2b-2, D2c-4, D6-1, D7-1/D9-1, D4-1, D4-2, D4-3, D7-3, and D3-8a landed
-2026-08-08; D3-8b and D3-8c landed 2026-08-09). Phase C is fully checked; the open box is
+2026-08-08; D3-8b, D3-8c, and D3-8d landed 2026-08-09). Phase C is fully checked; the open box is
 D2 (attributes and generated accessors), subdivided D2a-D2d — D2a, D2b-2, D2c-1/2/3/4, and D2d are
 done; only the optional D2c-5 (A/B env-setup unification, gated on raku-behavior verification of
 shape B's `has_class_scoped_subs` gate) remains open in D2. D3 (class methods/submethods as compiled candidates) is open;
 D3-1 through D3-7 landed (walker-drift unification plus the compile-time `CompiledMethodDecl`
-precompute), D3-8a, D3-8b, and D3-8c also landed (the additive compiler-side half plus the
-class-walker and role-walker install-by-key cutovers of the method-body main-pass compile — see
-below; D3-8d, the fallback-narrowing survey, remains open), and a 2026-08-08 scoping
+precompute), D3-8a, D3-8b, D3-8c, and D3-8d also landed (the additive compiler-side half, the
+class-walker and role-walker install-by-key cutovers, and the fallback-narrowing survey — which
+found and fixed a real closure-nesting gap rather than just a straggler list — of the method-body
+main-pass compile; see below), and a 2026-08-08 scoping
 pass found D3's literal goal — compiling method *bodies*
 through the single main-pass `Compiler` the way `SubDecl` does, instead of a throwaway
 per-registration `Compiler::new()` — still fully open and scoped as a future D3-8, whose detailed
@@ -953,6 +954,29 @@ walkers wholesale is not possible before then.
   `method_body_runtime_compiles` dropped from 18 (baseline) to 0. The D3-8a byte-parity unit tests
   (including the two role-specific fixtures) and the full `t/` suite (2974 files, 28019 tests) both
   stayed green, and all 121 whitelisted `roast/S12-*`/`S14-*` files passed on a release build.
+  **D3-8d landed 2026-08-09**: the fallback-narrowing survey — but instead of finding only the
+  enumerated dynamic shapes, a `MUTSU_VM_STATS=1` sweep over all of `t/` and the whitelisted
+  `S12`/`S14` roast files found a real, general gap: `qualified_class_decl_name`/
+  `qualified_role_decl_name` predicted the wrong base package for **any** class/role declared
+  inside **any** closure (a `sub`, a bare block, `if`/`for`, a block passed to `subtest`, ...) —
+  not just the narrow "declared inside a `subtest` block" case D3-8b's regression fix addressed —
+  because D3-8b's fix bailed out of main-pass compilation entirely whenever `current_package`
+  carried the synthetic STATE-SCOPE pseudo-package marker (`::&`, assigned unconditionally to
+  every closure/sub body for `state`-variable key uniqueness), rather than resolving the real
+  package. Fixed by using `self.enclosing_package` (already captured and correctly propagated
+  through nested closures for `$?PACKAGE`) as the base package whenever `current_package` is
+  state-scope-mangled, and dropping the now-unnecessary `in_state_scope` bail-out from
+  `add_class_decl_plan`/`add_role_decl_plan`. Verified with the D3-8a byte-parity tests, the full
+  `t/` suite, all 121 whitelisted roast files, and the `walk.t` regression pin (all green); a
+  before/after `MUTSU_VM_STATS=1` sweep over the 121 whitelisted files measured the effect
+  directly: summed `method_body_runtime_compiles` dropped from 494 to 330 (33%), with 6 files
+  (`walk.t` among them, 29 → 0) reaching zero entirely. The remaining hits are a second, distinct,
+  already-documented cost — `subtest NAME => { ... }`, called as an ordinary function (not the
+  dedicated `Stmt::Subtest` statement form), recompiles its block from AST on every call
+  (`eval_block_value`, EVAL-like), re-triggering the hoisted-shell's by-design
+  always-runtime-fallback on every invocation of the common `plan N; class C {...}` idiom — real,
+  but out of D3-8's scope; recorded as `todo/tickets/subtest-recompiles-block-from-ast-every-call.md`
+  rather than re-opened as a D3-8 straggler.
 - [ ] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5; parents, aliases, and deferred bodies

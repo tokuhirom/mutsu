@@ -208,11 +208,49 @@ plan-declared methods.
   dedup (counter drops for a `for ^N { class C does R {...} }`-shaped stress) and roast S14 +
   the bundled-battery gate (`scripts/battery-testsuite.sh`), since parametric-role method
   dispatch is load-bearing for Cro/the batteries.
-- **D3-8d — fallback narrowing survey.** Instrument-and-sweep (C6d precedent): confirm every
-  remaining `method_body_runtime_compiles` hit is an enumerated dynamic shape; record any
-  stragglers as their own tickets (candidates: proto method bodies registered as `FunctionDef`
-  via `registration_class_body.rs:292`, BUILD/TWEAK plan pinning, `nextsame` MRO walk — all
-  expected to be served automatically once defs carry bytecode, but the sweep proves it).
+- **D3-8d — fallback narrowing survey. Landed 2026-08-09.** Instrument-and-sweep (C6d precedent):
+  a `MUTSU_VM_STATS=1` sweep over all 2974 `t/` files and all 121 whitelisted `roast/S12-*`/
+  `S14-*` files found the survey's premise wrong — most remaining hits were NOT the enumerated
+  dynamic shapes (`augment`, `.^add_method`, computed names), but a genuine gap: **any**
+  class/role declared inside **any** closure body (a `sub`, a bare `{ ... }` block, `if`/`for`,
+  an anonymous block passed to `subtest`, ...) unconditionally bailed out of main-pass
+  compilation. Root cause: `qualified_class_decl_name`/`qualified_role_decl_name` used
+  `self.current_package` to predict the declaration's runtime-qualified name, but EVERY
+  closure/sub body compiles under a synthetic STATE-SCOPE pseudo-package
+  (`current_package` containing `::&`, assigned unconditionally by `compile_sub_body`/
+  `compile_closure_body` purely for `state`-variable key uniqueness — see
+  `helpers_sub_body.rs`), which does not track the real runtime package at all. D3-8b's own
+  bail-out (added to fix `roast/S12-introspection/walk.t`'s `$?PACKAGE.^name`) treated this as
+  unrecoverable and skipped compilation entirely whenever `in_state_scope`. It is recoverable:
+  `self.enclosing_package` (already captured before the state-scope override, for `$?PACKAGE`,
+  and already propagated unchanged through arbitrarily deep closure nesting) IS the real runtime
+  package — a bare block/closure body never itself changes the interpreter's `current_package()`
+  (only an explicit `class`/`package`/`module`/`unit` bracketing does, which always sets
+  `current_package` directly to the real name, bypassing the mangled form). Fixed by using
+  `enclosing_package` as the base package whenever `current_package` is state-scope-mangled, in
+  both name-prediction helpers, and dropping the `in_state_scope` bail-out entirely from
+  `add_class_decl_plan`/`add_role_decl_plan` (`compiler/decl_plan.rs`) — the helpers now resolve
+  correctly either way. Verified: the D3-8a byte-parity unit tests (11/11, including a
+  closure-nesting case), the full `t/` suite (2974 files), all 121 whitelisted `S12`/`S14` roast
+  files, and the original `walk.t` regression pin all stayed green; a `MUTSU_VM_STATS=1` sweep
+  measured the fix's effect directly — across the 121 whitelisted `S12`/`S14` files, the summed
+  `method_body_runtime_compiles` count dropped from 494 to 330 (33%), and 6 files (including
+  `walk.t` itself, 29 → 0) dropped to zero entirely. **The remaining ~330 hits are a second,
+  distinct, already-documented cost, not a new straggler**: `subtest "..." => { ... }` is
+  implemented by re-running the block's AST through a **fresh** `Compiler::compile()` call on
+  every invocation (`test_fn_subtest` → `eval_block_value` → `compile_block_value_opts`, an
+  EVAL-like re-entrant compile unit, confirmed via `rust-gdb` backtrace) — NOT the dedicated
+  `Stmt::Subtest`/`SubtestScope` bytecode path (that parser form exists but the common
+  `subtest NAME => { ... }` idiom, called as an ordinary function taking a `Pair`, never reaches
+  it). Each such fresh compile re-runs `hoist_type_decl_shells`, and the common test-file idiom
+  `plan N; class C { ... }` places a runtime statement (`plan`) before the class, which is exactly
+  the shelling trigger — so the shell's method-body compile, which by design 2026-08-08's D3-8a/b
+  text already documents as "otherwise-redundant" and deliberately left uncompiled (skipped, not
+  a bug), fires on every single `subtest` call. This is real, pre-existing, and out of D3-8's
+  scope (subtest's whole-block re-compile-per-call is a distinct architectural fact, unrelated to
+  method-body compilation); recorded here rather than re-opened as a new ticket, since it is the
+  SAME accepted cost D3-8a/b already named, just more visible now that the closure-nesting gap
+  around it is closed.
 
 Follow-ups explicitly out of this box, to be filed/kept as separate findings:
 

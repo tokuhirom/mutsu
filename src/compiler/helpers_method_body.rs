@@ -138,17 +138,35 @@ impl Compiler {
     /// would execute (both are updated in lockstep by the same
     /// `PackageScope`/`SetCurrentPackage`/unit-package bracketing), so this
     /// produces the same qualified name `class_body_method_decl` sees as
-    /// `cx.name`.
+    /// `cx.name` — EXCEPT inside a synthetic STATE-SCOPE pseudo-package
+    /// (`current_package` containing `::&`, assigned to every closure/sub
+    /// body purely for `state`-variable key uniqueness — see
+    /// `compile_sub_body`/`compile_closure_body`), which does not track the
+    /// runtime `current_package()` at all. There, `self.enclosing_package`
+    /// (captured before the state-scope override, and propagated unchanged
+    /// through arbitrarily deep closure nesting) IS the runtime package: a
+    /// bare block/closure body never itself changes the interpreter's
+    /// current package (only an explicit `class`/`package`/`module`/`unit`
+    /// bracketing does, and that always sets `current_package` directly to
+    /// the real name, bypassing the mangled form) — see
+    /// `qualified_role_decl_name`'s identical rule and ADR-0019 D3-8d.
     pub(super) fn qualified_class_decl_name(&self, resolved_name: &str) -> String {
+        let base_package: &str = if self.current_package.contains("::&") {
+            self.enclosing_package
+                .as_deref()
+                .unwrap_or(&self.current_package)
+        } else {
+            &self.current_package
+        };
         if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
-        } else if self.current_package == "GLOBAL"
-            || resolved_name == self.current_package
-            || resolved_name.starts_with(&format!("{}::", self.current_package))
+        } else if base_package == "GLOBAL"
+            || resolved_name == base_package
+            || resolved_name.starts_with(&format!("{base_package}::"))
         {
             resolved_name.to_string()
         } else {
-            format!("{}::{}", self.current_package, resolved_name)
+            format!("{base_package}::{resolved_name}")
         }
     }
 
@@ -156,17 +174,25 @@ impl Compiler {
     /// mirroring `exec_register_role_op`'s slightly different (but
     /// equivalent for the unqualified-name case) qualification rule: a role
     /// name that already contains `::` anywhere is left as-is, not just one
-    /// that starts with the current package prefix.
+    /// that starts with the current package prefix. Uses the same
+    /// state-scope `enclosing_package` fallback.
     pub(super) fn qualified_role_decl_name(&self, resolved_name: &str) -> String {
+        let base_package: &str = if self.current_package.contains("::&") {
+            self.enclosing_package
+                .as_deref()
+                .unwrap_or(&self.current_package)
+        } else {
+            &self.current_package
+        };
         if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
         } else if resolved_name.contains("::")
-            || self.current_package == "GLOBAL"
-            || resolved_name == self.current_package
+            || base_package == "GLOBAL"
+            || resolved_name == base_package
         {
             resolved_name.to_string()
         } else {
-            format!("{}::{}", self.current_package, resolved_name)
+            format!("{base_package}::{resolved_name}")
         }
     }
 }
