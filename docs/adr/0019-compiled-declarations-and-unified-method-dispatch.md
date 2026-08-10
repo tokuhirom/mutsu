@@ -1870,6 +1870,31 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     (`uniprop`/`AST`), `Int` (`fmt`/`rand`/`FatRat`), `FatRat::floor`, exception types
     (`X::AdHoc`, `CX::Warn`), and `RakuAST::StatementList::gist`. New
     `pair_seq_rows_are_backed_by_the_cascade` inverse-probe test. `make test` green.
+    **Progress 2026-08-10** (third slice): hand-probed `Match` rows (78 entries), sourced
+    from a real Match value (`'foo' ~~ /f(o)(o)/` run through the interpreter, `$/` read
+    back) rather than `builtin_sample_value` — `Match` has no
+    `builtin_type_method_names` entry either. Two candidate sources were probed against
+    that sample: the explicit 0-arg arm in `methods_0arg/mod.rs` (`"from" | "to" | "pos"
+    | ...`), and every `Str` row name — that arm's `_` default falls through to
+    `native_method_0arg` on the matched string, and the narg cascades for string-shaped
+    methods coerce via `target.to_string_value()` regardless of receiver type, so most of
+    `Str`'s surface is reachable from a `Match` receiver too; only names the probe
+    actually recognized (non-zero arity bits) were kept. `so`/`not`/`defined` stay absent
+    (a Match's `dispatch_owner_chain` includes `Any`, so the chain-walk already covers
+    them, confirmed by a new `match_so_not_defined_are_covered_via_the_any_chain` test).
+    A fresh `t/`-wide sweep (MUTSU_VM_STATS=1 over all `t/*.t`, 8-way parallel) confirmed
+    `native_call_unmodeled` dropped from 8654 to 5431 (cumulative -85.7% from the
+    original 37904); `Match` disappeared from the top-40 breakdown except two
+    single-digit non-method-surface hits (`Match x Stringy` from a role-coercion check,
+    `Match x __mutsu_zen_angle` from word-list quoting internals — left unmodeled, out of
+    scope for the documented Match method surface this slice targets). Remaining top
+    pairs are now `Array`/`List` (`list`/`item`/`Slip`, ~470/121/113/58/55 hits), `Str`
+    (`uniprop`/`AST`, ~365/326), `Hash` (`pick`, ~200), `Int` (`rand`, ~150),
+    `RakuAST::StatementList` (`gist`/`statements`, ~141/31), exception types (`X::AdHoc`,
+    `CX::Warn`), and `Buf`/`Set`/`Failure` odds and ends. New
+    `match_rows_are_backed_by_the_cascade` inverse-probe test. `make test` (732 unit
+    tests) and a targeted `prove` over all `t/*match*.t`/`t/*regex*.t`/`t/*grammar*.t`
+    (204 files/1716 tests) both green.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
