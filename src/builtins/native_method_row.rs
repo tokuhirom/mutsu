@@ -1055,4 +1055,139 @@ mod tests {
             }
         }
     }
+
+    /// ADR-0019 E2b (eleventh slice, 2026-08-10): the RakuAST node-accessor
+    /// cluster. Every owner probed here dispatches through the single
+    /// shared, data-driven `rakuast::node_accessor` site, so this test
+    /// exists to pin the actual field names each class carries (verified
+    /// against real nodes, not `rakuast::accessor_names`, which is a
+    /// separate and in a few cases incomplete introspection-only registry)
+    /// rather than to exercise per-class dispatch logic.
+    #[test]
+    fn eleventh_slice_rakuast_accessor_rows_are_backed_by_the_cascade() {
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(
+                r#"
+                use experimental :rakuast;
+                use MONKEY-SEE-NO-EVAL;
+
+                sub target($name) { RakuAST::ParameterTarget::Var.new(name => $name) }
+                my $target = target('$x');
+                my $int-type = RakuAST::Type::Simple.new(RakuAST::Name.from-identifier('Int'));
+                my $typed-param = RakuAST::Parameter.new(type => $int-type, target => $target);
+                my $named-param = RakuAST::Parameter.new(names => ['value'], target => target('$value'));
+                my $optional-param = RakuAST::Parameter.new(target => target('$y'), optional => True);
+                my $default-param = RakuAST::Parameter.new(target => target('$z'), default => RakuAST::IntLiteral.new(7));
+                my $slurpy-param = RakuAST::Parameter.new(target => target('@r'), slurpy => RakuAST::Parameter::Slurpy::Flattened);
+                my $where-param = RakuAST::Parameter.new(target => target('$w2'), where => RakuAST::IntLiteral.new(1));
+                my $sig = RakuAST::Signature.new(parameters => [$typed-param]);
+                my $strlit = RakuAST::StrLiteral.new("abc");
+
+                my $decl_ast = Q[my $y = 1 + -2].AST;
+                my $decl = $decl_ast.statements[0].expression;
+                my $init = $decl.initializer;
+                my $applyinfix = $init.expression;
+                my $intlit = $applyinfix.left;
+                my $applyprefix = $applyinfix.right;
+
+                my $ratlit_ast = Q[1.5].AST;
+                my $ratlit = $ratlit_ast.statements[0].expression;
+
+                my $qs_ast = Q[my $w; "a$w b"].AST;
+                my $qs = $qs_ast.statements[1].expression;
+
+                my $call_ast = Q[say 42].AST;
+                my $call = $call_ast.statements[0].expression;
+
+                my $if_ast = Q[if 1 {2} else {4}].AST;
+                my $ifnode = $if_ast.statements[0];
+
+                my $pb_ast = Q[-> $x { $x }].AST;
+                my $pb = $pb_ast.statements[0].expression;
+                my $pbsig = $pb.signature;
+
+                my $sub_ast = Q[sub foo($x) { $x }].AST;
+                my $sub = $sub_ast.statements[0].expression;
+                my $blockoid = $sub.body;
+
+                my $varlex_ast = Q[$y].AST;
+                my $varlex = $varlex_ast.statements[0].expression;
+
+                my $block_ast = Q[{ 42 }].AST;
+                my $block = $block_ast.statements[0].expression;
+                "#,
+            )
+            .unwrap();
+        let get = |name: &str| interp.env().get(name).cloned().unwrap();
+        let samples: &[(&str, Value)] = &[
+            ("RakuAST::IntLiteral", get("intlit")),
+            ("RakuAST::RatLiteral", get("ratlit")),
+            ("RakuAST::StrLiteral", get("strlit")),
+            ("RakuAST::QuotedString", get("qs")),
+            ("RakuAST::Var::Lexical", get("varlex")),
+            ("RakuAST::VarDeclaration::Simple", get("decl")),
+            ("RakuAST::Initializer::Assign", get("init")),
+            ("RakuAST::ApplyInfix", get("applyinfix")),
+            ("RakuAST::ApplyPrefix", get("applyprefix")),
+            ("RakuAST::Call::Name::WithoutParentheses", get("call")),
+            ("RakuAST::Statement::If", get("ifnode")),
+            ("RakuAST::Block", get("block")),
+            ("RakuAST::PointyBlock", get("pb")),
+            ("RakuAST::Signature", get("sig")),
+            ("RakuAST::Signature", get("pbsig")),
+            ("RakuAST::Sub", get("sub")),
+            ("RakuAST::Blockoid", get("blockoid")),
+            ("RakuAST::Parameter", get("typed-param")),
+            ("RakuAST::Parameter", get("named-param")),
+            ("RakuAST::Parameter", get("optional-param")),
+            ("RakuAST::Parameter", get("default-param")),
+            ("RakuAST::Parameter", get("slurpy-param")),
+            ("RakuAST::Parameter", get("where-param")),
+            ("RakuAST::ParameterTarget::Var", get("target")),
+            ("RakuAST::Type::Simple", get("int-type")),
+        ];
+        // `RakuAST::Parameter` models several OPTIONAL fields (`names`/
+        // `optional`/`default`/`slurpy`/`where`): each sample only carries
+        // the fields it was actually `.new()`-constructed with, so a row is
+        // "backed by the cascade" if ANY probed sample of that owner
+        // recognizes it (mirroring `native_method_arities`'s own "a small
+        // spread of representative arguments -- recognition just needs ONE
+        // to return `Some`" discipline), not every sample of that owner.
+        for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS {
+            if !row_owner.starts_with("RakuAST::") {
+                continue;
+            }
+            let flags = NativeRowFlags(flags);
+            if flags.contains(NativeRowFlags::SPECIAL)
+                || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+            {
+                continue;
+            }
+            let matching_samples: Vec<&Value> = samples
+                .iter()
+                .filter(|(owner, _)| *owner == row_owner)
+                .map(|(_, sample)| sample)
+                .collect();
+            if matching_samples.is_empty() {
+                continue;
+            }
+            let observed = matching_samples
+                .iter()
+                .fold(0u8, |acc, sample| acc | native_method_arities(sample, name));
+            let mask = NativeArityMask(arity);
+            for (bit, m) in [
+                (0u8, NativeArityMask::A0),
+                (1u8, NativeArityMask::A1),
+                (2u8, NativeArityMask::A2),
+            ] {
+                if mask.contains(m) {
+                    assert!(
+                        observed & (1 << bit) != 0,
+                        "{row_owner}x{name} row claims arity {bit} but no probed sample's cascade recognizes it"
+                    );
+                }
+            }
+        }
+    }
 }
