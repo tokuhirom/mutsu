@@ -2679,6 +2679,12 @@ fn role_body_our_scope_violation(body: &[Stmt]) -> Option<&'static str> {
                 Some("sub")
             }
             Stmt::MethodDecl { is_our: true, .. } => Some("method"),
+            // `our $.attr` / `our @.attr` / `our %.attr` — an our-scoped
+            // class attribute — is rejected exactly like `our $x`, with the
+            // same generic "variable" message (verified against raku: both
+            // report "Cannot declare our-scoped variable inside of a role").
+            // `my $.attr` (`is_my`) and a plain `has $.attr` are unaffected.
+            Stmt::HasDecl { is_our: true, .. } => Some("variable"),
             _ => None,
         };
         if declaration.is_some() {
