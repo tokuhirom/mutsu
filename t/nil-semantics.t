@@ -1,4 +1,6 @@
 use Test;
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use Test::Util;
 
 # Subscripting Nil (positionally or associatively) yields Nil again, so
 # chained access keeps returning Nil rather than an out-of-range Failure.

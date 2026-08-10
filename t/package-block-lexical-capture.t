@@ -1,4 +1,6 @@
 use Test;
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
+use Test::Util;
 
 # A named sub defined inside a `package`/`module` BLOCK closes over the block's
 # `my` lexicals. mutsu's registry subs have no per-sub closure env and resolve
