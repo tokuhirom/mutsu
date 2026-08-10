@@ -860,20 +860,17 @@ impl Interpreter {
                         }
                         // *@ (flattening slurpy): recursively flatten list args
                         // but preserve itemized Arrays ($[...] / .item) as single values.
-                        // Skip Pair values -- they are named args for *%_ or will be rejected
+                        // Skip Pair values -- they are named args for *%_ or will be rejected.
+                        // `flatten_into_slurpy` takes RAW (un-pre-unwrapped) arguments --
+                        // hand it the whole `arg`, not its extracted elements, matching
+                        // every other call site (`sprintf`, `catdir`, ...).
                         let arg = unwrap_varref_value(raw_arg);
                         match arg.view() {
                             ValueView::Pair(..) => {
                                 // Named arg -- leave for *%_ slurpy or post-loop check
                             }
-                            ValueView::Array(arr, kind) => {
-                                if kind.is_itemized() {
-                                    items.push(Value::array_with_kind(arr.clone(), kind));
-                                } else {
-                                    flatten_into_slurpy(&arr, &mut items);
-                                }
-                            }
-                            ValueView::Range(..)
+                            ValueView::Array(..)
+                            | ValueView::Range(..)
                             | ValueView::RangeExcl(..)
                             | ValueView::RangeExclStart(..)
                             | ValueView::RangeExclBoth(..)

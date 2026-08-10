@@ -547,7 +547,20 @@ impl Interpreter {
     /// Ranges and Seqs are also expanded into their elements.
     pub(super) fn flatten_value_for_slurpy(val: &Value, out: &mut Vec<Value>) {
         match val.view() {
+            ValueView::Array(items, kind) if kind.is_real_array() => {
+                // Every element of a real Array (the `[...]` constructor or
+                // an `@`-var) lives in an implicit Scalar container in
+                // Raku, so expanding the array contributes its elements
+                // AS-IS -- one level only, never recursing into a nested
+                // Array element (`f [[1,2],[3,4]]` is 2 elements, not 4;
+                // `f [1,[2,3]]` is `1, $[2,3]`, not `1, 2, 3`).
+                for item in items.iter() {
+                    out.push(item.clone());
+                }
+            }
             ValueView::Array(items, kind) if !kind.is_itemized() => {
+                // List-kind (uncontainerized): flatten fully, e.g.
+                // `f (1,(2,3))` is 3 elements.
                 for item in items.iter() {
                     Self::flatten_value_for_slurpy(item, out);
                 }
