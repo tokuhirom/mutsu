@@ -897,4 +897,69 @@ mod tests {
             );
         }
     }
+
+    /// ADR-0019 E2b (ninth slice, 2026-08-10): the full `Date`/`DateTime`
+    /// accessor cluster plus `Backtrace`/`Backtrace::Frame`/`Complex` extras
+    /// left after the eighth slice's partial coverage, hand-probed against
+    /// real values the same way.
+    #[test]
+    fn ninth_slice_rows_are_backed_by_the_cascade() {
+        use crate::builtins::builtin_type_methods::native_method_arities;
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(
+                r#"
+                my $date = Date.new(2024,3,15);
+                my $datetime = DateTime.new(2024,3,15,12,30,45);
+                try { 42.no-such-method() };
+                my $notfound = $!;
+                my $frame;
+                {
+                    my sub with-frame { fail }();
+                    CATCH { default {
+                        my $bt2 = .backtrace;
+                        $frame = $bt2.list[0];
+                    }}
+                }
+                my $bt = $notfound.backtrace;
+                my $complex = 3+4i;
+                "#,
+            )
+            .unwrap();
+        let get = |name: &str| interp.env().get(name).cloned().unwrap();
+        let samples: &[(&str, Value)] = &[
+            ("Date", get("date")),
+            ("DateTime", get("datetime")),
+            ("Backtrace", get("bt")),
+            ("Backtrace::Frame", get("frame")),
+            ("Complex", get("complex")),
+        ];
+        for (label, sample) in samples {
+            for &(row_owner, name, arity, flags) in RAW_ROWS {
+                if row_owner != *label {
+                    continue;
+                }
+                let flags = NativeRowFlags(flags);
+                if flags.contains(NativeRowFlags::SPECIAL)
+                    || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                {
+                    continue;
+                }
+                let observed = native_method_arities(sample, name);
+                let mask = NativeArityMask(arity);
+                for (bit, m) in [
+                    (0u8, NativeArityMask::A0),
+                    (1u8, NativeArityMask::A1),
+                    (2u8, NativeArityMask::A2),
+                ] {
+                    if mask.contains(m) {
+                        assert!(
+                            observed & (1 << bit) != 0,
+                            "{label}x{name} row claims arity {bit} but the cascade does not recognize it"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

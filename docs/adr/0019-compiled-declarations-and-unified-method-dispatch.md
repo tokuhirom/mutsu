@@ -2092,6 +2092,38 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     instant-related whitelisted files, 83 files) rather than the full suite,
     per the "touched name/type resolution" rule -- all green, full `make
     roast` left to CI.
+    **Progress 2026-08-10** (ninth slice): the `todo/deep/adr0019-e2-e4-resolver-core.md`
+    design's own risk note says E4b/E3 "may [not] land while `native_call_unmodeled`
+    ... is nonzero on the sweep corpus", so this slice closed three more
+    coherent clusters left after the eighth slice's partial coverage: the
+    full `Date`/`DateTime` accessor surface (`day`/`month`/`minute`/`second`/
+    `offset-in-minutes`/`offset-in-hours`/`timezone`/`days-in-year`/
+    `formatter`/`day-of-week`/`succ`/`perl`/`daycount`/`dd-mm-yyyy`/
+    `mm-dd-yyyy`/`yyyy-mm-dd`/`Date`/`Instant`, 21 rows total), plus
+    `Backtrace` (`flat`/`defined`/`concise`/`summary`/`Stringy`),
+    `Backtrace::Frame` (`is-setting`/`code`/`Str`), and `Complex`
+    (`re`/`im`/`reals`/`conj`/`reverse`/`Complex`), all hand-probed the same
+    way. A fresh `t/`-wide sweep confirmed `native_call_unmodeled` dropped
+    from 593 to 528 (cumulative **-98.6%** from the original ~37904). New
+    `ninth_slice_rows_are_backed_by_the_cascade` test. `cargo test --lib`
+    (743 tests) and `make test` (3004 files/28181 tests) both green; this
+    slice is pure row-table addition (no `dispatch_owner_chain`/registration
+    change), so no local roast run was required per the "touched name/type
+    resolution" rule.
+    **Assessment**: the remaining 528 is genuinely one-off -- individual
+    RakuAST node-accessor getters (one row per AST node class), NativeCall
+    `CArray[T]` element-type variants, and ad-hoc test-fixture class names
+    that appear as an "owner" only because that specific `t/` file declared
+    a class with that name (`Foo`, `TC`, `Wrapper`, `FooDate`, ...) -- not a
+    reusable cluster like `Any`/`Exception`/`Date` were. Continuing to chase
+    individual 1-2-hit entries here has sharply diminishing returns per the
+    effort already spent on three slices' worth of clustering. Before
+    E4b starts, re-run the sweep and either (a) accept a small nonzero
+    floor with each remaining hit justified inline (mirroring the
+    `flaky-tests.txt` precedent for accepted exceptions), or (b) spend one
+    more slice specifically on the RakuAST node-accessor family (the
+    largest remaining homogeneous cluster) if a session wants to push
+    further before flipping the switch.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
