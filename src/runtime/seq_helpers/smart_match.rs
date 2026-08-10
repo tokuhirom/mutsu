@@ -437,6 +437,7 @@ impl Interpreter {
                         invocation_id: crate::runtime::next_invocation_id(),
                     });
                     if let Some(mut captures) = self.regex_match_with_captures(&pat, &text) {
+                        self.reset_capture_env_vars();
                         // Set positional captures before executing code blocks
                         for (i, v) in captures.positional.iter().enumerate() {
                             self.env
@@ -886,18 +887,8 @@ impl Interpreter {
                     self.env.remove("_");
                 }
                 if let Some(mut captures) = match_result {
-                    // Reset stale numeric capture vars from any previous match.
-                    let stale_numeric: Vec<Symbol> = self
-                        .env
-                        .keys()
-                        .filter(|k| {
-                            k.with_str(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()))
-                        })
-                        .copied()
-                        .collect();
-                    for key in stale_numeric {
-                        self.env.insert_sym(key, Value::NIL);
-                    }
+                    // Reset stale numeric/named capture vars from any previous match.
+                    self.reset_capture_env_vars();
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
                         self.env

@@ -1,5 +1,25 @@
 # `$<name>` for a capture absent from the current match leaks the previous match's value
 
+**Resolved.** Implemented per the fix plan below: a new
+`Interpreter::reset_capture_env_vars` helper (`src/runtime/seq_helpers/regex_captures.rs`)
+purges stale numeric (Nil-out) and named (`remove_sym`) capture env keys, called
+at every top-level `$/`-install site (`clear_match_state`,
+`apply_single_regex_captures`, `apply_multi_regex_captures`, both
+`smart_match_inner` regex arms, `dispatch_match_method`'s multi- and
+single-match branches, `exec_subst_op`/`exec_non_destructive_subst_op`,
+`try_native_subst`'s regex branch, and `dispatch_package_parse`). A second,
+smaller fix was needed alongside it: `$<name>` after a *failed* match (where
+`$/` is `Nil`) fell through to calling `AT-KEY` on `Nil`, which answers an
+undefined `Any` type object (Nil's ordinary Cool-autoboxing behavior) rather
+than `Nil` itself — `exec_get_capture_var_op`
+(`src/vm/vm_misc_codevar.rs`) now short-circuits `ValueView::Nil` to
+`Value::NIL` directly instead of round-tripping through `AT-KEY`. All 7
+verification probes and the 14-assertion regression test
+(`t/regex-stale-named-capture-cleared.t`) now match raku exactly. Verified
+against the whitelisted roast S05-capture/S05-match/S05-grammar/S05-modifier
+suites (18 files, 477 tests) and the full local `t/` suite (3004 files,
+28189 tests) with no regressions.
+
 Found while writing a regression test for
 `news/2026-08/regex-token-named-optional-atom-empty-match-not-nil.md`
 (the `?`-on-the-named-token fix).

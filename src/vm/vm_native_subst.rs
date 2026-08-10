@@ -77,6 +77,10 @@ impl Interpreter {
         match pattern.view() {
             // Plain (non-adverb, non-Perl5) regex literal: `.subst(/pat/, ...)`.
             ValueView::Regex(pat) => {
+                // A regex `.subst` performs a real match, so clear any stale
+                // numeric/named capture vars from a previous match first (this
+                // path bypasses `exec_subst_op`, which does the same).
+                self.reset_capture_env_vars();
                 Some(self.native_subst_regex(&text, &pat.to_string(), &replacement_str, global))
             }
             // Literal string pattern: pure string replacement, never touches `$/`.
