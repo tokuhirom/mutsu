@@ -372,6 +372,7 @@ pub(crate) mod resolution_map_grep;
 mod resolution_map_grep_rw;
 mod resolution_method;
 mod resolution_private_method;
+mod resolution_sequence;
 mod run;
 mod run_dist;
 mod run_main;

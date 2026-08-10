@@ -397,6 +397,46 @@ pub(crate) fn record_native_call_recognition(site: &str, owner: &str, name: &str
     }
 }
 
+// ADR-0019 Phase E box E4a: shadow comparison between
+// `resolution_sequence::resolve_sequence`'s user-candidate winner and the existing
+// `resolve_method_with_owner_impl` answer, at the two `resolve_method_cached`
+// resolution boundaries (multi-cache miss and fresh resolve).
+// `RESOLVER_SHADOW_CHECKS`/`_MISMATCHES` are the totals; `resolver_shadow_mismatch_by_site`
+// breaks mismatches down by `"<site> [class=... method=... real=... shadow=...]"` for
+// the E4a PR's accepted-mismatch ledger — the sequence builder does not yet model
+// `resolve_method_with_owner_impl`'s early-stopping rule that a non-multi method
+// resolves by name alone, independent of whether the call's arguments actually bind
+// it (see `runtime::resolution_sequence`'s module doc and
+// `todo/deep/adr0019-e2-e4-resolver-core.md`). Nothing reads these counters to make a
+// dispatch decision: shadow-only, zero behavior change.
+static RESOLVER_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static RESOLVER_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn resolver_shadow_mismatch_by_site() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_SITE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_SITE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one E4a shadow comparison at `site`. `detail` is only evaluated on a
+/// mismatch, mirroring [`record_owner_shadow_check`].
+#[inline]
+pub(crate) fn record_resolver_shadow_check(
+    site: &str,
+    matched: bool,
+    detail: impl FnOnce() -> String,
+) {
+    if !enabled() {
+        return;
+    }
+    RESOLVER_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        RESOLVER_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = resolver_shadow_mismatch_by_site().lock() {
+            *map.entry(format!("{site} [{}]", detail())).or_insert(0) += 1;
+        }
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -704,6 +744,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e2a native_call_unmodeled by (owner x name [site]) (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let resolver_shadow_checks = RESOLVER_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let resolver_shadow_mismatches = RESOLVER_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-e4a: resolver_shadow_checks={resolver_shadow_checks} resolver_shadow_mismatches={resolver_shadow_mismatches}"
+    );
+    if let Ok(map) = resolver_shadow_mismatch_by_site().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e4a resolver-shadow mismatches by site (top {}): {}",
             top.len(),
             top.join(" ")
         );

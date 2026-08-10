@@ -195,6 +195,17 @@ impl Interpreter {
                 self,
                 resolve_method_with_owner_invocant(cn, method, args, target)
             );
+            // ADR-0019 E4a shadow probe (zero behavior change): see
+            // `todo/deep/adr0019-e2-e4-resolver-core.md`.
+            self.shadow_check_resolver(
+                "resolve_method_cached:multi",
+                cn,
+                method,
+                method_sym,
+                args,
+                target,
+                resolved.as_ref(),
+            );
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
             if !self.dispatch_ambiguous {
                 self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
@@ -202,11 +213,22 @@ impl Interpreter {
             return resolved_arc;
         }
         // 4. Resolve fresh; cache the result when it is non-multi.
-        let resolved_arc = loan_env!(
+        let resolved = loan_env!(
             self,
             resolve_method_with_owner_invocant(cn, method, args, target)
-        )
-        .map(|(o, d)| (o, std::sync::Arc::new(d)));
+        );
+        // ADR-0019 E4a shadow probe (zero behavior change): see
+        // `todo/deep/adr0019-e2-e4-resolver-core.md`.
+        self.shadow_check_resolver(
+            "resolve_method_cached:fresh",
+            cn,
+            method,
+            method_sym,
+            args,
+            target,
+            resolved.as_ref(),
+        );
+        let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
             self.method_resolve_cache
                 .insert((class_sym, method_sym), resolved_arc.clone());

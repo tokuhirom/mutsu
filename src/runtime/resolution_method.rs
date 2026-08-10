@@ -214,6 +214,26 @@ impl Interpreter {
                 }
             }
         }
+        let _ = submethod_blocks; // used for control flow above
+        self.pick_method_winner(&mro, arg_values, invocant, all_matches)
+    }
+
+    /// Pick the winning candidate from an MRO walk's collected multi-method
+    /// matches: type-hierarchy distance, then `is default`/narrowness/
+    /// explicit-named/most-derived-owner tie-breaks, raising
+    /// `X::Multi::Ambiguous` (`self.dispatch_ambiguous`) when none of those
+    /// break the tie. Extracted from `resolve_method_with_owner_impl`
+    /// (ADR-0019 E4a) so a candidate list collected a different way — e.g.
+    /// `resolution_sequence::resolve_sequence`'s TypeId-chain walk — can be
+    /// ranked with the exact same rules instead of re-deriving them. `mro` is
+    /// consulted only for the most-derived-owner tie-break's position lookup.
+    pub(crate) fn pick_method_winner(
+        &mut self,
+        mro: &[Symbol],
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        mut all_matches: Vec<(Symbol, MethodDef)>,
+    ) -> Option<(Symbol, MethodDef)> {
         if all_matches.len() <= 1 {
             return all_matches.into_iter().next();
         }
@@ -377,7 +397,6 @@ impl Interpreter {
                 self.dispatch_ambiguous = true;
             }
         }
-        let _ = submethod_blocks; // used for control flow above
         Some(all_matches.remove(best_idx))
     }
 
