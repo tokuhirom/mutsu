@@ -535,7 +535,7 @@ pub(in crate::runtime) fn supplier_done_deferred(
     }
 }
 
-pub(in crate::runtime) fn supplier_quit(supplier_id: u64, reason: Value) {
+pub(crate) fn supplier_quit(supplier_id: u64, reason: Value) {
     if let Ok(mut map) = supplier_state_map().lock() {
         let state = map.entry(supplier_id).or_default();
         if state.done || state.quit_reason.is_some() {
