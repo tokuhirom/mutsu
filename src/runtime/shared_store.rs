@@ -35,6 +35,23 @@ fn is_internal_key(key: &str) -> bool {
     key.starts_with("__mutsu_")
 }
 
+/// Strip the `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::` lane prefix off
+/// an internal key, returning the plain container name it lanes for (e.g.
+/// `@a`), or `None` if `key` is not one of these two lanes.
+///
+/// These two lanes are the odd ones out among `__mutsu_*` internals: unlike
+/// `atomicint`/`cas`-on-a-scalar (genuinely process-wide by design) or the
+/// `state`-cell/dirty-marker machinery, an array/hash push/element-assign
+/// lane exists to serialize concurrent mutation of ONE lexical binding — it
+/// must resolve at the lineage that owns that binding's base name, not
+/// unconditionally at the root, or two sibling threads' unrelated `my @a`
+/// bindings collide through the one root-scoped entry (see
+/// `sibling-thread-my-array-merges-through-root-atomic-lane`).
+fn atomic_lane_base_name(key: &str) -> Option<&str> {
+    key.strip_prefix("__mutsu_atomic_arr::")
+        .or_else(|| key.strip_prefix("__mutsu_atomic_hash::"))
+}
+
 #[derive(Debug)]
 pub(crate) struct SharedStore {
     own: RwLock<HashMap<String, Value>>,
@@ -69,9 +86,16 @@ impl SharedStore {
         self.root.clone().unwrap_or_else(|| Arc::clone(self))
     }
 
-    /// The lineage an operation on `key` belongs to: the root for a
-    /// runtime-internal key, this lineage for a user lexical.
+    /// The lineage an operation on `key` belongs to: the lineage owning the
+    /// base name for an atomic array/hash lane key (falling back to root when
+    /// no lineage owns it), the root for any other runtime-internal key, this
+    /// lineage for a user lexical.
     fn scope_for(&self, key: &str) -> &SharedStore {
+        if let Some(base) = atomic_lane_base_name(key) {
+            return self
+                .owner_of(base)
+                .unwrap_or_else(|| self.root.as_deref().unwrap_or(self));
+        }
         if is_internal_key(key) {
             self.root.as_deref().unwrap_or(self)
         } else {
@@ -94,6 +118,26 @@ impl SharedStore {
             cur = p;
         }
         cur
+    }
+
+    /// The lineage owning `base_name` (e.g. `@a`), falling back to root when
+    /// no lineage owns it yet. `Arc`-returning twin of the `owner_of`/
+    /// `scope_for` routing for callers that lock `own_map()` directly instead
+    /// of going through `get`/`set`/`contains_key` (the
+    /// `__mutsu_atomic_arr::`/`__mutsu_atomic_hash::` element-cell machinery
+    /// in `builtins_atomic_shared.rs`). Must stay in lockstep with
+    /// `scope_for`'s atomic-lane branch or the two paths split-brain.
+    pub(crate) fn atomic_lane_scope(self: &Arc<Self>, base_name: &str) -> Arc<Self> {
+        let mut cur = Arc::clone(self);
+        loop {
+            if cur.owns(base_name) {
+                return cur;
+            }
+            match cur.parent.clone() {
+                Some(p) => cur = p,
+                None => return cur,
+            }
+        }
     }
 
     /// This lineage's own map. Only for callers that need to hold the lock
