@@ -69,6 +69,88 @@ are nonetheless aliased (attribute-cell-sharing bug, the family documented in
 Print/log the session cookie value and `self.WHICH`/`$session.WHICH` on each request to
 distinguish the two hypotheses before touching any code.
 
+## 2026-08-10 follow-up: session/cookie-jar side is CLEARED, bug is on the client's request path
+
+Instrumented (shadow-bisect via `tmp/shadow/lib/Cro/HTTP/Session/InMemory.rakumod` and
+`tmp/shadow/lib/Cro/HTTP/Client{,/CookieJar}.rakumod`, gated on `%*ENV<CRODBG>`, run via
+`bash tmp/croshadow.sh -I tmp/cro-http/lib -I tmp/cro-http/t tmp/repro-session-full.raku` — a copy
+of the real `t/http-session-inmemory.rakutest` with `TEST_PORT` bumped to avoid clashing with a
+concurrently-running suite) against the FULL test file (the earlier warm-up requests matter — a
+standalone 2-client repro copied from just the failing subtest, `tmp/repro-session-concurrent.raku`,
+does NOT reproduce on its own).
+
+**Session store and cookie-jar are innocent.** The trace shows, at the moment the concurrent block
+starts: client A and client B each independently receive their OWN correctly-distinct session
+cookie (`add-from-response` fires once per client, each with a different cookie value, each
+landing in that client's own `CookieJar` instance — confirmed distinct `.WHICH` for both the
+`Cro::HTTP::Client` and its `CookieJar` throughout). **But from that point on, EVERY subsequent
+`add-to-request`/`add-from-response` log line in the whole run is exclusively client B's
+`Cro::HTTP::Client`/`CookieJar` instance — client A's instance never appears again.** Yet the test
+still produces 5 "Visit N" results for BOTH `@a`/`@b`, and the counts show the classic
+odd/even-interleave signature (one shared server-side counter incremented by both clients this
+whole time). So client A's `Cro::HTTP::Client` object stopped issuing/completing requests through
+its OWN connection after its first one, while client B's connection carried roughly double the
+real traffic (both clients' "Visit" increments are actually flowing through client B's connection
+alone).
+
+**Ruled out via two additional isolated reproductions:**
+1. `tmp/repro-monitor-array-attr-concurrent.raku` — a `monitor` class with a private ARRAY
+   attribute (`has @!items`), two instances, each driven by its own concurrent `start` block with
+   5 `.add()` calls. Correct on both instances (mirrors the earlier-ruled-out hash-attribute
+   monitor repro from this ticket's original write-up, this time for an array attribute, since
+   `CookieJar` uses `@!cookies`). **Not the bug.**
+2. `tmp/repro-forloop-client-identity.raku` — `for $client-a, $client-b -> $client { start { for
+   1..5 { await $client.get } } }` where `.get` itself does `start { $.id }` (nested start +
+   await, mirroring the shape of `await $client.get(...)` in the real test). `$client`'s identity
+   (`.WHICH`) stays correctly distinct across all 5 inner iterations for both outer-loop
+   iterations, with or without the inner `await`. **Not the bug** — the single-param `for` +
+   `start` variable-capture mechanism (the class of bug already fixed twice this campaign for
+   multi-param `for` and slurpy parameters) is fine here; `$client`'s own identity never drifts.
+
+**Where this leaves it:** the bug is NOT variable/attribute identity confusion at the Raku level
+visible so far — it's specifically that client A's `Cro::HTTP::Client` instance's OWN HTTP
+request/response cycle silently stops progressing after request 1, while client B's carries extra
+load. This points at the CONNECTION/TRANSPORT layer shared between concurrent `Cro::HTTP::Client`
+instances — e.g. a connection-pool or persistent-connection cache keyed in a way that lets two
+DIFFERENT `Cro::HTTP::Client` instances collide on the same underlying socket/response-supply
+plumbing (the same general family as the already-fixed `IO::Socket::Async.connect` cross-thread
+gaps and `StreamConsumer` delivery bugs from earlier in this campaign, but a new instance of it).
+
+**Next step:** instrument `Cro::HTTP::Client`'s connection-acquisition path (grep for
+`persistent`/pool/connection-cache in `lib/Cro/HTTP/Client.rakumod`, look for anything keyed by
+host:port rather than by the `Cro::HTTP::Client` instance itself) with `self.WHICH` +
+connection-object `.WHICH` logging, and/or shadow-bisect `Cro::HTTP::Client`'s
+`request`/`!get-pipeline` methods directly rather than the cookie-jar (which is now cleared).
+Also worth checking whether the two concurrent `.get()` calls end up sharing one `Cro::TCP::Connector`/
+`Cro::Connection` object via a bare-name shared-store collision the same way `%options` and
+`$client` were checked (a private attribute on `Cro::HTTP::Client`, not a lexical or parameter, so
+grep for any `my`-scoped or class-level (not instance-level) state in the connection path).
+
+**Two more hypotheses ruled out (2026-08-10, same session):** `Cro::HTTP::Client`'s connection pool
+is exactly a `my monitor ConnectionCache { has %!cached-http1; has %!cached-http2; ... }`
+**declared inside the `Client` class body** (`lib/Cro/HTTP/Client.rakumod` around line 278), with
+`has $!connection-cache = ConnectionCache.new;` giving each `Client` instance its own cache — this
+is precisely the "`my class`/`my monitor` nested inside another class body" shape that was the root
+cause of an earlier campaign cluster (session 62, PR #5745/#5749/#5756). Two targeted repros with
+this exact nesting shape did NOT reproduce:
+- `tmp/repro-attr-default-new-shared.raku` — an instance attribute default-initialized via
+  `SomeClass.new` (`has $!inner = Inner.new`) correctly gets a fresh object per instance (rules out
+  the default-initializer-evaluated-once class of bug).
+- `tmp/repro-nested-my-monitor-concurrent.raku` — two `Outer` instances, each with its own
+  `$!cache = Cache.new` where `Cache` is a `my monitor` nested in `Outer`'s body, driven
+  concurrently from two `start` blocks doing a get-or-set connection-pool dance. Both instances'
+  state stayed fully independent across 3 repeated runs.
+
+So the connection-cache's OWN plumbing (as a synthetic model) is sound; the real bug must depend on
+something more specific to the live pipeline — most likely the actual `IO::Socket::Async`/TLS
+connection object churn, the HTTP/1.1 response-supply demultiplexing, or a global registry the
+socket layer uses that these synthetic repros don't touch. Whoever picks this up next should
+shadow-bisect the REAL `Cro::HTTP::Client.rakumod` (not a synthetic model) around `!get-pipeline`/
+`request`, logging `self.WHICH` and the underlying pipeline/connection object's `.WHICH` on every
+call, using the same `tmp/repro-session-full.raku` + `tmp/croshadow.sh` harness this session set up
+(see `tmp/shadow/lib/Cro/HTTP/Client.rakumod` for the existing cookie-jar-focused instrumentation
+to extend).
+
 ## Verification
 - `t/http-session-inmemory.rakutest` subtests 8-9: 5 elements each, `Visit 1,2,3,4,5` for both A
   and B (not interleaved).
