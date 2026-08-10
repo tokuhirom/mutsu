@@ -1298,6 +1298,10 @@ pub(crate) enum OpCode {
     Succeed,
     /// `done` — terminate the innermost react event loop
     ReactDone,
+    /// The `supply { ... }` desugar's own `done` terminator (see
+    /// `ast::Stmt::SupplyBodyDone`) — ends just the current closure's
+    /// synchronous execution, distinct from both `Return` and `ReactDone`.
+    SupplyBodyDone,
     /// Tag the current value as coming from a named container (for Scalar binding).
     /// The second field is the compile-time-resolved local slot for the source
     /// name (§1.5 slot baking; `None` = non-local): with shadow slots active the

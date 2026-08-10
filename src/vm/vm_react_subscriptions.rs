@@ -551,7 +551,10 @@ impl Interpreter {
                                     // supply: keep the promise with the last emitted
                                     // value immediately rather than spinning to the
                                     // deadline.
-                                    if err.is_react_done() || err.is_last() {
+                                    if err.is_react_done()
+                                        || err.is_last()
+                                        || err.is_supply_body_done()
+                                    {
                                         promise.keep(
                                             last_value.clone(),
                                             String::new(),

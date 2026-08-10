@@ -802,6 +802,23 @@ impl Interpreter {
                     result = Ok(());
                     break;
                 }
+                Err(e) if e.is_supply_body_done() => {
+                    // The `supply { ... }` desugar's own `done` terminator
+                    // (`ast::Stmt::SupplyBodyDone`) always ends just the
+                    // closure that raised it — the on-demand body lambda
+                    // itself, or a nested `whenever` closure within it —
+                    // regardless of whether that closure was created inside a
+                    // sub or a method. Unlike a routine `return`, it never
+                    // consults a target callable id.
+                    let ret_val = Value::NIL;
+                    explicit_return = Some(ret_val.clone());
+                    self.stack.truncate(saved_stack_depth);
+                    self.stack.push(ret_val);
+                    self.resolve_let_saves_on_success(let_mark, true);
+                    handled_let_saves = true;
+                    result = Ok(());
+                    break;
+                }
                 Err(mut e) if e.return_value.is_some() && !e.is_yield_signal() => {
                     // Non-routine closures (bare blocks, pointy blocks) are NOT
                     // return boundaries.  `return` inside them propagates up to

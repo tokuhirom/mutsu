@@ -2686,6 +2686,9 @@ impl Compiler {
             Stmt::ReactDone => {
                 self.code.emit(OpCode::ReactDone);
             }
+            Stmt::SupplyBodyDone => {
+                self.code.emit(OpCode::SupplyBodyDone);
+            }
             // MatchAssign (~~=): coerce value to string
             Stmt::Assign {
                 name,

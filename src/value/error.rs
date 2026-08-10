@@ -62,6 +62,11 @@ pub enum Control {
     Resume,
     /// `done` for a `react`/`supply` (consumed by the react runtime).
     ReactDone,
+    /// The `supply { ... }` desugar's own `done` terminator (`ast::Stmt::SupplyBodyDone`):
+    /// ends just the currently-executing closure's synchronous body, always caught
+    /// at that closure's frame boundary — never a routine `return`, never travels
+    /// to an enclosing react loop like `ReactDone` does.
+    SupplyBodyDone,
     /// `warn` — emit a warning (resumable); message in `RuntimeError::message`.
     Warn,
     /// `last` — break out of the enclosing loop. (A `LEAVE`/routine unwind also
@@ -302,6 +307,11 @@ impl RuntimeError {
     pub(crate) fn is_react_done(&self) -> bool {
         self.control == Some(Control::ReactDone)
     }
+    /// The `supply { ... }` desugar's own `done` terminator — see
+    /// [`Control::SupplyBodyDone`].
+    pub(crate) fn is_supply_body_done(&self) -> bool {
+        self.control == Some(Control::SupplyBodyDone)
+    }
     /// `warn` control signal (resumable warning).
     pub(crate) fn is_warn(&self) -> bool {
         self.control == Some(Control::Warn)
@@ -528,6 +538,18 @@ impl RuntimeError {
     pub(crate) fn supply_terminate_signal() -> Self {
         Self {
             control: Some(Control::ReactDone),
+            ..Self::new("")
+        }
+    }
+
+    /// The `supply { ... }` desugar's own `done` terminator (see
+    /// [`Control::SupplyBodyDone`]). Always caught locally at the frame
+    /// boundary of the closure that raised it (`vm_closure_dispatch.rs`), so
+    /// it carries no exception payload — nothing ever observes it as a
+    /// user-visible error.
+    pub(crate) fn supply_body_done_signal() -> Self {
+        Self {
+            control: Some(Control::SupplyBodyDone),
             ..Self::new("")
         }
     }

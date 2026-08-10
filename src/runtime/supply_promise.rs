@@ -76,6 +76,10 @@ impl Interpreter {
         // `whenever` callback (one written in a `supply` block) claims it; a
         // react block's `done` still travels to the react loop.
         match (res, stamped, emitter) {
+            // The desugar's own terminator (`ast::Stmt::SupplyBodyDone`) —
+            // its preceding `$emitter.done()` statement already ran, so just
+            // absorb the signal; nothing further to call.
+            (Err(err), ..) if err.is_supply_body_done() => Ok(Value::NIL),
             (Err(err), true, Some(e)) if err.is_react_done() => {
                 self.call_method_with_values(e, "done", vec![])?;
                 Ok(Value::NIL)
@@ -117,8 +121,18 @@ impl Interpreter {
         // A bare `emit` reached from a *sub* called by the body is not rewritten
         // to `$emitter.emit(...)`, so it needs the emitter dynamically.
         self.active_supply_emitters.push(emitter.clone());
-        let result = self.call_sub_value(on_demand_cb, vec![emitter], false);
+        let mut result = self.call_sub_value(on_demand_cb, vec![emitter], false);
         self.active_supply_emitters.pop();
+        // The body's own bare `done` (`ast::Stmt::SupplyBodyDone`) always ends
+        // just this synchronous call — absorb it here rather than relying on
+        // callers to special-case it (they already treat a stray
+        // `is_react_done()` this way, but that signal means something
+        // different: an *actual* react-level `done`, not this one).
+        if let Err(ref e) = result
+            && e.is_supply_body_done()
+        {
+            result = Ok(Value::NIL);
+        }
         let done_after = match emitter_supplier_id {
             Some(sid) => supplier_done_call_count(sid),
             None => thread_supplier_done_count(),
@@ -638,7 +652,7 @@ impl Interpreter {
             };
             for item in items {
                 if let Err(err) = run_capture(self, callback.clone(), vec![item], &mut captured) {
-                    if err.is_react_done() || err.is_last() {
+                    if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
                         break 'replay;
                     }
                     if err.is_next() || err.is_redo() {
@@ -754,7 +768,7 @@ impl Interpreter {
             };
             for item in items {
                 if let Err(err) = run_capture(self, callback.clone(), vec![item], last_value) {
-                    if err.is_react_done() || err.is_last() {
+                    if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
                         break 'replay;
                     }
                     if err.is_next() || err.is_redo() {

@@ -205,7 +205,8 @@ impl Interpreter {
                     || e.is_take()
                     || e.is_emit()
                     || e.is_done()
-                    || e.is_react_done())
+                    || e.is_react_done()
+                    || e.is_supply_body_done())
                     // ...except a loop-control signal raised with no construct
                     // to act on. There is nothing further up that would consume
                     // it, so passing it through makes `X::ControlFlow`
@@ -226,7 +227,8 @@ impl Interpreter {
                     || e.is_take()
                     || e.is_emit()
                     || e.is_done()
-                    || e.is_react_done())
+                    || e.is_react_done()
+                    || e.is_supply_body_done())
                     && control_begin < end =>
             {
                 self.discard_let_saves(let_mark);
@@ -336,7 +338,8 @@ impl Interpreter {
                                         || new_err.is_take()
                                         || new_err.is_emit()
                                         || new_err.is_done()
-                                        || new_err.is_react_done() =>
+                                        || new_err.is_react_done()
+                                        || new_err.is_supply_body_done() =>
                                 {
                                     pending_err = new_err;
                                     continue;
