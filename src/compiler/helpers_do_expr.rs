@@ -241,12 +241,15 @@ impl Compiler {
     }
 
     /// Compile `do for` expression: like a for loop but collects each iteration result.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_do_for_expr(
         &mut self,
         iterable: &Expr,
         param: &Option<String>,
         param_def: &Option<crate::ast::ParamDef>,
         params: &[String],
+        params_def: &[crate::ast::ParamDef],
+        rw_block: bool,
         body: &[Stmt],
         label: &Option<String>,
     ) {
@@ -271,18 +274,28 @@ impl Compiler {
         let param_idx = param
             .as_ref()
             .map(|p| self.code.add_constant(Value::str(p.clone())));
-        // No params_def available on the lazy-for path; pass empty so all params
-        // are treated as required (the pre-feature behavior). See the TODO at the
-        // `inner_for` construction below.
-        let bind_stmts = Self::build_for_bind_stmts(param, param_def, param_idx, params, &[]);
+        let bind_stmts =
+            Self::build_for_bind_stmts(param, param_def, param_idx, params, params_def);
         if !bind_stmts.is_empty() {
             let mut merged = bind_stmts;
             merged.extend(loop_body);
             loop_body = merged;
         }
-        let has_rw = param_def
+        // Mirrors the statement-form `has_rw`/`has_copy` computation in
+        // `stmt.rs` — multi-param defs live in `params_def`, not `param_def`.
+        let has_sigilless = param_def.as_ref().is_some_and(|def| def.sigilless)
+            || params_def.iter().any(|def| def.sigilless);
+        let has_rw = rw_block
+            || has_sigilless
+            || param_def
+                .as_ref()
+                .is_some_and(|def| def.traits.iter().any(|t| t == "rw"))
+            || params_def
+                .iter()
+                .any(|def| def.traits.iter().any(|t| t == "rw"));
+        let has_copy = param_def
             .as_ref()
-            .is_some_and(|def| def.traits.iter().any(|t| t == "rw"));
+            .is_some_and(|def| def.traits.iter().any(|t| t == "copy"));
         let arity = if !params.is_empty() {
             params.len() as u32
         } else {
@@ -319,6 +332,40 @@ impl Compiler {
             .flatten();
         let source_var_names = Self::for_iterable_var_names(iterable);
         let source_var_locals = self.for_source_var_locals(&source_var_names);
+        let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
+        // Mirrors `stmt.rs`'s `rw_param_names` / `multi_param_locals`
+        // construction — see the field docs on `ForLoopSpec` for why each
+        // param's writeback name and pre-bind local slot must be captured
+        // here (before `bind_stmts` above resolves them via `Stmt::Assign`).
+        let rw_param_names: Vec<String> = if has_rw && !params.is_empty() {
+            params
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    let stripped = p.strip_prefix('\\').unwrap_or(p).to_string();
+                    let per_param_rw = kv_mode
+                        || rw_block
+                        || params_def
+                            .get(i)
+                            .is_some_and(|d| d.sigilless || d.traits.iter().any(|t| t == "rw"))
+                        || (params_def.get(i).is_none() && p.starts_with('\\'));
+                    if per_param_rw {
+                        stripped
+                    } else {
+                        String::new()
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let multi_param_locals: Vec<Option<u32>> = params
+            .iter()
+            .map(|p| {
+                let bare = p.strip_prefix('\\').unwrap_or(p);
+                self.local_map.get(bare).copied()
+            })
+            .collect();
         let loop_idx = self
             .code
             .emit(OpCode::ForLoop(Box::new(crate::opcode::ForLoopSpec {
@@ -331,18 +378,23 @@ impl Compiler {
                 arity,
                 collect: true,
                 threaded: false,
-                is_rw: has_rw,
-                do_writeback: has_rw,
-                rw_param_names: Vec::new(),
-                kv_mode: false,
+                is_rw: has_rw || has_copy,
+                do_writeback: has_rw && !has_copy,
+                rw_param_names,
+                kv_mode,
                 source_var_names,
                 source_var_locals,
                 autothread_junctions: false,
                 explicit_zero_params: false,
-                multi_param_names: Vec::new(),
-                multi_param_locals: Vec::new(),
+                multi_param_names: params
+                    .iter()
+                    .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                    .collect(),
+                multi_param_locals,
                 param_type_constraint: param_def.as_ref().and_then(|d| d.type_constraint.clone()),
-                multi_param_type_constraints: Vec::new(),
+                multi_param_type_constraints: (0..params.len())
+                    .map(|i| params_def.get(i).and_then(|d| d.type_constraint.clone()))
+                    .collect(),
                 loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                 values_mode: Self::for_iterable_is_values_alias(iterable),
                 single_array_source: Self::for_single_array_source(iterable),

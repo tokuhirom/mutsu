@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 7;
 
 # ADR-0023: two concurrently-live `start {}` spawns of a `for LIST -> $x { }`
 # loop must each keep their own per-iteration binding of `$x`, even when `$x`
@@ -134,4 +134,31 @@ class Widget {
     is-deeply [@actual[0] eq $chan-a.WHICH.Str, @actual[1] eq $chan-b.WHICH.Str],
         [True, True],
         'Channel-typed loop items keep their own identity across sibling spawns';
+}
+
+# 7. Multi-param variant through the `do for` EXPRESSION form specifically
+# (not the statement form of #5) — the compiler path that builds ForLoopSpec
+# from `Stmt::For` when it is used as an expression's tail value used to drop
+# `multi_param_names`/`multi_param_locals` entirely
+# (todo/tickets/do-for-expression-form-drops-multi-param-names.md), which
+# defeated ADR-0023's masking for this specific shape even though the
+# statement form (#5) already worked.
+{
+    my $a1 = Widget.new(id => 'A1');
+    my $b1 = Widget.new(id => 'B1');
+    my $a2 = Widget.new(id => 'A2');
+    my $b2 = Widget.new(id => 'B2');
+    my @promises = do for $a1, $b1, $a2, $b2 -> $x, $y {
+        start {
+            my @a;
+            for 1..5 -> $i {
+                await Promise.in(0.01);
+                @a.push($x.id ~ '/' ~ $y.id);
+            }
+            @a.join(',');
+        }
+    }
+    is (await @promises).join(' | '),
+        'A1/B1,A1/B1,A1/B1,A1/B1,A1/B1 | A2/B2,A2/B2,A2/B2,A2/B2,A2/B2',
+        'do-for expression-form multi-param spawns keep their own per-iteration bindings';
 }
