@@ -1858,8 +1858,40 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   ranking/signature selection stays per-call via the existing ladder extracted to consume a
   candidate slice. The six copy-pasted submethod no-inherit rules collapse into the one build
   site. Sibling walkers migrate with their consumers (E7/E8/E9), not here.
-  - [ ] **E4a — sequence builder + shadow parity (user candidates only)**, counter-verified
+  - [x] **E4a — sequence builder + shadow parity (user candidates only)**, counter-verified
     against `resolve_method_with_owner_impl` outcomes.
+    **Landed 2026-08-10**: `ResolvedSequence`/`ResolvedCandidate::User` plus
+    `Interpreter::resolve_sequence` (`src/runtime/resolution_sequence.rs`) walk an E1
+    `TypeId` chain and collect every visible user-declared candidate per level (private
+    skip; `is_my` skip when the level is an ancestor) into the flat, shape-independent
+    candidate universe decision 4 describes. `resolve_method_with_owner_impl`'s winner-
+    picking tie-break ladder (type distance, `is default`, narrowness, explicit-named,
+    most-derived-owner, `X::Multi::Ambiguous`) was extracted verbatim into
+    `Interpreter::pick_method_winner` (`resolution_method.rs`) — a pure code-motion
+    refactor, zero behavior change — so both the real resolver and the shadow builder
+    rank with the exact same rules. `Interpreter::shadow_check_resolver`
+    (`MUTSU_VM_STATS`-gated) builds the sequence at `resolve_method_cached`'s two
+    resolution boundaries (multi-cache-miss and fresh-resolve), filters candidates
+    through `method_args_match_for_invocant`, ranks with `pick_method_winner`, and
+    compares the winner (owner symbol + `MethodDef.body` `Arc` pointer identity)
+    against the real answer under new `resolver_shadow_checks`/`_mismatches` counters.
+    Two correctness-critical guards keep this a true zero-behavior-change probe:
+    `self.dispatch_ambiguous` is saved/restored around the shadow ranking (it can set
+    the flag, which the caller reads immediately after the real resolve); candidates
+    with a `where`-clause param are skipped entirely, since `where` is user code whose
+    dynamic-variable writes are a deliberately-preserved side effect
+    (`restore_env_preserving_dynamics`) that must not run twice. Verified via a
+    `MUTSU_VM_STATS=1` sweep over full `t/` (2996 files, 12396 shadow checks) plus the
+    whitelisted `roast/{S12,S14,S32}-*` corpus (382 files, 12767 checks): 3 mismatches
+    total (0.012%), all in `t/`, all the same explained bucket — a non-multi method
+    resolves by name alone in the real resolver even when its signature does not bind
+    the call (`method assign-rw($a is rw)` called with a literal; a role-typed param
+    called with the wrong type), which the shadow builder does not yet model since it
+    only ranks args-matching candidates. This is the E8-deferred early-stopping rule
+    documented in `resolution_sequence.rs`'s module doc, not a new finding — E1a set
+    the precedent of landing with an explained-mismatch ledger rather than blocking on
+    it. `make test` (2996 files/28149 tests) and the full whitelisted roast sweep both
+    green.
   - [ ] **E4b — authoritative switch at the cached-resolve boundaries**, native rows included,
     `should_bypass_native_fastpath` deleted. Local `make roast` before PR.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
