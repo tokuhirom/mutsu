@@ -35,6 +35,7 @@ impl Interpreter {
         } else {
             None
         };
+        let closures_created_before = self.closures_created;
         // Only save env when there are local variables to clean up.
         // When the function has no locals, the env save/restore is a
         // no-op (nothing to remove), but still causes an Arc clone that
@@ -357,11 +358,15 @@ impl Interpreter {
             Err(e) => Err(e),
         };
         // Restore the routine registry (removing this body's lexical routines)
-        // unless an inner routine escaped via the return value.
+        // unless an inner routine escaped via the return value, or a closure
+        // literal created during the call may have escaped via a side channel
+        // (e.g. handed to `.tap`) — see `closures_created`.
         if let Some(snapshot) = routine_snapshot {
-            match &final_result {
-                Ok(v) if Self::return_value_escapes_routine(v) => {}
-                _ => self.restore_routine_registry(snapshot),
+            let closure_escaped = self.closures_created != closures_created_before;
+            let skip_restore = closure_escaped
+                || matches!(&final_result, Ok(v) if Self::return_value_escapes_routine(v));
+            if !skip_restore {
+                self.restore_routine_registry(snapshot);
             }
         }
         if is_module_call {

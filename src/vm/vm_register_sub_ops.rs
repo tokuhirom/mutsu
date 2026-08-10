@@ -65,6 +65,8 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
+        // See `closures_created` doc comment.
+        self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             params,
@@ -149,6 +151,8 @@ impl Interpreter {
         idx: u32,
         cc_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // See `closures_created` doc comment.
+        self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let compiled_code = Self::resolve_closure_code(code, cc_idx);

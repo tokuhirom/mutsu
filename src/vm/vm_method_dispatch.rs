@@ -631,6 +631,7 @@ impl Interpreter {
         } else {
             None
         };
+        let closures_created_before = self.closures_created;
         // A method body is its own topicalizer for a bare `when`/`default`: a
         // matching `when` sets the global `when_matched` flag, which must not
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
@@ -915,12 +916,15 @@ impl Interpreter {
         };
 
         // Restore the routine registry (removing this body's lexical routines)
-        // unless an inner routine escaped via the return value -- see
-        // `routine_snapshot` above.
+        // unless an inner routine escaped via the return value, or a closure
+        // literal created during the call may have escaped via a side channel
+        // (e.g. handed to `.tap`) -- see `closures_created`.
         if let Some(snapshot) = routine_snapshot {
-            match &final_result {
-                Ok(v) if Self::return_value_escapes_routine(v) => {}
-                _ => self.restore_routine_registry(snapshot),
+            let closure_escaped = self.closures_created != closures_created_before;
+            let skip_restore = closure_escaped
+                || matches!(&final_result, Ok(v) if Self::return_value_escapes_routine(v));
+            if !skip_restore {
+                self.restore_routine_registry(snapshot);
             }
         }
 
@@ -1533,6 +1537,7 @@ impl Interpreter {
         } else {
             None
         };
+        let closures_created_before = self.closures_created;
         // A method body is its own topicalizer for a bare `when`/`default`; its
         // `when_matched` must not leak to an enclosing given/with (see the slow
         // path above / vm_call_light.rs for the full rationale).
@@ -1760,12 +1765,15 @@ impl Interpreter {
         };
 
         // Restore the routine registry (removing this body's lexical routines)
-        // unless an inner routine escaped via the return value -- see
-        // `routine_snapshot` above.
+        // unless an inner routine escaped via the return value, or a closure
+        // literal created during the call may have escaped via a side channel
+        // (e.g. handed to `.tap`) -- see `closures_created`.
         if let Some(snapshot) = routine_snapshot {
-            match &final_result {
-                Ok(v) if Self::return_value_escapes_routine(v) => {}
-                _ => self.restore_routine_registry(snapshot),
+            let closure_escaped = self.closures_created != closures_created_before;
+            let skip_restore = closure_escaped
+                || matches!(&final_result, Ok(v) if Self::return_value_escapes_routine(v));
+            if !skip_restore {
+                self.restore_routine_registry(snapshot);
             }
         }
 

@@ -1016,6 +1016,25 @@ pub struct Interpreter {
     /// counter arithmetic), mirroring Raku's lexical-per-compilation-unit
     /// operator scoping. `user_infix_override` gates on this being zero.
     pub(crate) module_call_depth: u32,
+    /// Monotonically increasing count of closures created by the
+    /// block/lambda/anon-sub-literal exec ops (`MakeAnonSub`,
+    /// `MakeAnonSubParams`, `MakeLambda`, `MakeBlockClosure` —
+    /// `exec_make_anon_sub_op` and siblings). A routine body that declares an
+    /// inner routine snapshots the routine registry and restores it on
+    /// return so the lexical routine stops being callable by name — unless it
+    /// escaped via the return value (`return_value_escapes_routine`). That
+    /// check misses every *side-channel* escape: a closure literal created
+    /// during the call and handed to `.tap`/stored in an attribute/pushed
+    /// onto an array can reference the inner routine by name and outlive the
+    /// call. Comparing this counter before/after the call is a runtime
+    /// over-approximation that also skips the restore whenever *any* closure
+    /// literal was created during the call — see
+    /// `todo/tickets/lexical-sub-lost-after-routine-return.md`. This can
+    /// leave an unrelated inner routine registered a little longer than
+    /// strictly necessary, but never wrongly unregisters one that is still
+    /// reachable, and a routine that declares no inner routines never pays
+    /// for the snapshot at all (`declares_inner_routines` gates it).
+    pub(crate) closures_created: u64,
     lib_paths: Vec<String>,
     /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
     /// alongside the binary). Searched *after* every `lib_paths` entry so the
