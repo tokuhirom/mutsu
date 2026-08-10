@@ -1895,6 +1895,32 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `match_rows_are_backed_by_the_cascade` inverse-probe test. `make test` (732 unit
     tests) and a targeted `prove` over all `t/*match*.t`/`t/*regex*.t`/`t/*grammar*.t`
     (204 files/1716 tests) both green.
+    **Progress 2026-08-10** (fourth slice): hand-probed `List`/`Array` extra rows (30
+    entries total) for names absent from `LIST_METHODS` (the candidate source
+    `builtin_type_method_names` uses for these two owners) -- `list`/`item`/`Slip`/
+    `cache`/`sink`/`invert`/`WHICH`/`AT-POS`/`EXISTS-POS`/`is-lazy`/`Capture`/`hyper`/
+    `race`/`Supply` on both owners, plus `dynamic` on `Array` only (the cascade's own
+    guard in `methods_0arg/mod.rs` restricts `.dynamic` to non-`List`-kind Array
+    values, confirmed by a new `list_dynamic_is_not_recognized` test). Same
+    probe-the-real-cascade discipline as the `Match`/`Pair`/`Seq` slices. A fresh
+    `t/`-wide sweep (after confirming `target/debug/mutsu` was actually rebuilt --
+    `cargo test --lib`/`cargo clippy --lib` do not rebuild the `mutsu` bin target,
+    only `cargo build` does, and the first post-edit sweep attempt silently ran
+    against a stale binary) confirmed `native_call_unmodeled` dropped from 5431 to
+    4377 (cumulative -88.5% from the original 37904); `Array`/`List` disappeared
+    entirely from the top-40 breakdown. Remaining top pairs are now `Str`
+    (`uniprop`/`AST`/`indent`, ~365/326/31), `Hash` (`pick`/`item`/`EXISTS-KEY`/
+    `AT-KEY`, ~200/25/25/21), `Int` (`rand`/`elems`/`WHICH`/`clone`, ~150/23/17/18),
+    `RakuAST::StatementList`/`RakuAST::Statement::Expression` (`gist`/`statements`/
+    `expression`, ~141/31/21), exception types (`X::AdHoc`, `CX::Warn`,
+    `X::TypeCheck::Assignment`), `Failure` (`defined`/`exception`/`sink`, ~46/30/21),
+    `Buf` (`list`/`decode`/`elems`/`values`, ~43/39/36/37), `Set`/`SetHash` (`keys`/
+    `elems`/`gist`, ~37/35/21/19), and `Match x Stringy`/`Backtrace x list`/`Version x
+    Str`/`Junction x gist`/`Date x Str`/`Seq x is-lazy` (17-50 each). New
+    `array_list_extra_rows_are_backed_by_the_cascade` and
+    `list_dynamic_is_not_recognized` tests. `cargo test --lib` (734 tests) and a
+    targeted `prove` over all `t/*array*.t`/`t/*list*.t` (214 files/2272 tests) both
+    green.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

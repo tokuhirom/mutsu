@@ -216,6 +216,30 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("List", "Int", 1, 0),
     ("List", "Array", 1, 1),
     ("List", "List", 1, 1),
+    // ADR-0019 E2b: `List`/`Array` rows for names absent from `LIST_METHODS`
+    // (`builtin_type_method_names`'s candidate source for these two owners),
+    // hand-probed against a real `Value::array` sample (2026-08-10) the same
+    // way the `Match` rows above were -- `list`/`item`/`Slip`/`WHICH`/
+    // `AT-POS`/etc. are real recognized names the original 14-slice
+    // candidate list never included, not a probing gap. `dynamic` is
+    // deliberately `Array`-only (not `List`): the cascade's own guard
+    // (`methods_0arg/mod.rs`) restricts `.dynamic` to non-`List`-kind Array
+    // values. Verified by `array_list_extra_rows_are_backed_by_the_cascade`
+    // in `native_method_row.rs`.
+    ("List", "list", 1, 0),
+    ("List", "item", 1, 0),
+    ("List", "Slip", 1, 0),
+    ("List", "cache", 1, 0),
+    ("List", "sink", 1, 0),
+    ("List", "invert", 1, 0),
+    ("List", "WHICH", 1, 0),
+    ("List", "AT-POS", 2, 0),
+    ("List", "EXISTS-POS", 2, 0),
+    ("List", "is-lazy", 1, 0),
+    ("List", "Capture", 1, 0),
+    ("List", "hyper", 1, 0),
+    ("List", "race", 1, 0),
+    ("List", "Supply", 1, 0),
     ("Array", "elems", 1, 1),
     ("Array", "end", 1, 1),
     ("Array", "keys", 1, 0),
@@ -270,6 +294,21 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Array", "Int", 1, 0),
     ("Array", "Array", 1, 1),
     ("Array", "List", 1, 1),
+    ("Array", "list", 1, 0),
+    ("Array", "item", 1, 0),
+    ("Array", "Slip", 1, 0),
+    ("Array", "cache", 1, 0),
+    ("Array", "sink", 1, 0),
+    ("Array", "invert", 1, 0),
+    ("Array", "WHICH", 1, 0),
+    ("Array", "AT-POS", 2, 0),
+    ("Array", "EXISTS-POS", 2, 0),
+    ("Array", "is-lazy", 1, 0),
+    ("Array", "Capture", 1, 0),
+    ("Array", "dynamic", 1, 0),
+    ("Array", "hyper", 1, 0),
+    ("Array", "race", 1, 0),
+    ("Array", "Supply", 1, 0),
     ("Hash", "elems", 1, 1),
     ("Hash", "keys", 1, 0),
     ("Hash", "values", 1, 0),
