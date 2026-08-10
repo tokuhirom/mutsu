@@ -2,6 +2,24 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// ADR-0024: `mainline_lexical_frame_active` (the read/write resolver for
+    /// a mainline named sub's captured free variables) keys off the LAST
+    /// `routine_stack` frame. Every "light"/"fast" compiled-call path
+    /// (`call_compiled_function_fast`, `call_compiled_function_light[_spec]`,
+    /// `call_compiled_function_positional_light`) deliberately skips pushing
+    /// a `RoutineFrame` — that is precisely the overhead they exist to avoid
+    /// — so a mainline sub dispatched through one of them would run with
+    /// stale/no frame info and its captured cells would silently never
+    /// resolve. Force such a sub onto the frame-pushing path
+    /// (`call_compiled_function_named[_inner]`) by excluding it from every
+    /// light/fast eligibility check at the call site. `mainline_lexical_subs`
+    /// is empty for the overwhelmingly common program, so this is one
+    /// `is_empty` test beyond what those checks already do.
+    #[inline]
+    fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
+        !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains(name)
+    }
+
     /// Names of builtin listops/functions that a same-named user-defined
     /// subroutine may shadow. When both exist, the user sub wins.
     ///
@@ -567,14 +585,18 @@ impl Interpreter {
                         let has_junction = args
                             .iter()
                             .any(|v| matches!(v.view(), ValueView::Junction { .. }));
+                        let mainline_capture_blocked =
+                            self.light_call_blocked_by_mainline_capture(name_str);
                         let result = if !share_into_scalar
                             && !named_share
                             && !has_junction
+                            && !mainline_capture_blocked
                             && Self::is_light_call_eligible(&cf, name_str)
                         {
                             self.call_compiled_function_light(&cf, &args, compiled_fns, name_str)
                         } else if !share_into_scalar
                             && !named_share
+                            && !mainline_capture_blocked
                             && Self::is_positional_light_call_eligible(&cf, name_str)
                         {
                             // Promote to the ultra-fast positional cache at the
@@ -692,6 +714,7 @@ impl Interpreter {
                 && let Some(cf) = compiled_fns.get(cached_key)
                 && cf.fingerprint == *cached_fp
                 && Self::is_fast_call_eligible(cf, name_str)
+                && !self.light_call_blocked_by_mainline_capture(name_str)
                 && !cf.is_raw
             {
                 // Pop the callsite pair arg(s) from the stack and extract callsite line
@@ -1142,6 +1165,7 @@ impl Interpreter {
                     && !self.has_multi_candidates_cached(name)
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
+                    && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     let name_sym = Symbol::intern(name);
                     if !self.pos_light_call_cache.contains_key(&name_sym) {
@@ -1186,6 +1210,7 @@ impl Interpreter {
                     )
                     && !loan_env!(self, routine_is_test_assertion_by_name(name, &args))
                     && self.wrap_sub_id_for_name(name).is_none()
+                    && !self.light_call_blocked_by_mainline_capture(name)
                 {
                     // Populate light-call cache so subsequent calls skip resolution
                     let name_sym = Symbol::intern(name);

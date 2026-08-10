@@ -1,6 +1,6 @@
 # ADR-0024: Mainline is a compunit — named subs resolve mainline free variables through unit-lexical cells, not the ambient env
 
-- Status: Accepted (implementation pending)
+- Status: Accepted (implemented)
 - Date: 2026-08-10
 - Extends: the `unit_lexicals` mechanism (introduced for `unit module` compunits)
 - Related: ADR-0010 (lineage-scoped sharing), ADR-0018 (slot-addressed capture),
@@ -346,3 +346,112 @@ trigger B).
   side by this ADR (the sub consults the store no matter what kind of
   binding shadows the env key); the callback-param capture questions from
   ADR-0023's follow-up list are unaffected.
+
+## Implementation notes (2026-08-10/11): where the plan above was materially wrong
+
+Landed per `news/2026-08/mainline-named-subs-resolve-free-variables-lexically.md`,
+`t/named-sub-lexical-scope.t` (the full divergence matrix, raku-verified
+green), and `tmp/nsub-lex-matrix.raku` / `tmp/nsub-lex-edge.raku`. Seven points
+in the plan above did not survive contact with the running VM and required a
+different mechanism, not just a line-number update — points 1-4 surfaced
+locally before the first PR; points 5-7 surfaced as CI regressions in two
+already-whitelisted roast files and were fixed forward on the same branch:
+
+1. **§2's `code.locals` rposition is unsound, not just simplified.** Under
+   shadow slots (the default), a same-named `my` ANYWHERE else in the
+   compiled unit — before or after the sub, e.g. the ADR's own headline
+   shadowing-block example — occupies a distinct slot with the identical
+   name. `rposition` (or any single positional search) can pick that OTHER
+   slot instead of mainline's own, silently mis-capturing. Implemented
+   instead: collect every slot named `n`, and when there is more than one,
+   disambiguate by liveness — at the exact moment this `RegisterSub` runs, a
+   shadowing block has either not executed yet (still `Nil`) or is
+   unrelated, so only the slot that is genuinely initialized right now can
+   be the binding visible at this declaration point. Skip (legacy dynamic
+   fallback) when that is not exactly one slot. `free_var_parent_slots` (the
+   baked-slot mechanism that solves the analogous problem for closures) is
+   never populated for a plan-derived named sub — only `add_closure_code_baked`
+   bakes it — so it was not available to reuse here.
+2. **§2's capture set was read-only.** A write-only free variable (a setter,
+   `sub set-v($x) { $v = $x }`) never appears in `free_var_syms` — only in
+   the separate `free_var_writes` set. The capture loop unions both.
+3. **§3's frame predicate is invisible to three call paths.**
+   `call_compiled_function_fast`, `call_compiled_function_light[_spec]`, and
+   `call_compiled_function_positional_light` all deliberately skip pushing a
+   `RoutineFrame` (that skip *is* their reason to exist), so
+   `mainline_lexical_frame_active()`'s `routine_stack().last()` check never
+   fires for a sub dispatched through one of them. Fixed by excluding
+   `mainline_lexical_subs` members from all five light/fast eligibility
+   checks in `vm_call_func_ops.rs`, forcing them onto the frame-pushing path
+   (`call_compiled_function_named[_inner]`). `mainline_lexical_subs` is empty
+   for the overwhelmingly common program, so each added check is one more
+   `is_empty` test.
+4. **§1's "consulted BEFORE `env`" claim has two pre-existing exceptions.**
+   `GetGlobal`'s "J4 fast scalar read" hot path and `SetGlobal`'s generic
+   "write through ContainerRef" shortcut both read `env` directly by name
+   BEFORE reaching `get_env_with_main_alias`/`unit_scope_lexical_write` — and
+   env, being flat/name-keyed, can hold a shadowing block's OWN boxed cell
+   under the identical key (`box_decl_local_cell` rewrites the env key when
+   the shadow's own `my` declares) by the time the sub runs. Both shortcuts
+   are now gated: the read path checks `!mainline_lexical_frame_active()`
+   before trusting a raw env hit; the write path calls
+   `unit_scope_lexical_write` up front, before the generic env-cell
+   write-through, so a marked sub's own captured name is claimed first.
+5. **A CALLING-frame writer needs the cell too, not just the callee's own
+   frame.** `sub lastvar is rw { $var2 }; lastvar() = 3` (an `is rw` sub
+   returning a bare lvalue) does not assign inside `lastvar`'s own frame at
+   all: `assign_rw_target_expr` (`runtime/builtins_lvalue.rs`) introspects the
+   callee's AST to find the target *name*, then assigns it directly in the
+   CALLING frame via a raw `self.env.insert` — so `mainline_lexical_frame_active()`
+   is false there (the callee's frame isn't on top) and the blind insert
+   silently replaced the cell reference itself. A Proxy STORE/FETCH pair
+   built from a mainline sub (`roast/S06-routine-modifiers/lvalue-subroutines.t`
+   10-11) made this observable: the assignment from inside STORE never
+   reached the cell `lastvar`'s own reads went through, so FETCH kept
+   returning the pre-assignment value forever. Fixed with a new
+   frame-independent helper, `mainline_lexical_cell(name)` (looks the cell up
+   in `unit_lexicals[MAINLINE_UNIT_KEY]` directly, no frame gate) — the `Var`
+   arm writes through it when present instead of the blind insert.
+6. **Not every by-name write goes through the `SetGlobal` opcode.**
+   `set_env_with_main_alias_sym` — a lower-level helper with call sites
+   outside ordinary opcode dispatch (e.g. an `await` continuation resuming a
+   plain mainline reassignment) — checked `unit_scope_lexical_write` (frame-
+   gated, correctly false for a plain reassignment not inside any sub) but,
+   unlike the full `SetGlobal` handler, had no fallback for "`env` already
+   holds a `ContainerRef` under this name, write through it regardless of
+   frame". Fixed by adding that check, mirroring the `SetGlobal` handler's
+   own generic step.
+7. **A cross-thread pull can silently replace a cell with a stale plain
+   value.** `roast/S32-io/IO-Socket-Async.t` regressed at "Coped with
+   grapheme split across packets": a mainline sub capturing `$port`, reread
+   after `$port = await $tap.socket-port` (a REAL async I/O wait, unlike a
+   same-thread `Promise.new`/`.keep`, which resolves inline and never
+   triggers this path), kept observing the pre-reassignment port. Root cause:
+   the worker thread completing that `await` can have been spawned/cloned
+   *before* the capturing sub registered (its own `env` snapshot predates the
+   cell), so its own write to `$port` lands in `shared_vars` as a plain
+   value; `sync_shared_vars_to_env()` (`runtime/runtime_shared_vars.rs`,
+   called from `await`, pre-existing ADR-0010 cross-thread plumbing) then
+   blindly `env.insert`s that plain value on the awaiting thread, replacing
+   the cell every other reader — including the capturing sub itself — still
+   holds. Fixed the same way as point 6: write through
+   `mainline_lexical_cell(name)` when the pulled value is not itself a
+   `ContainerRef` and the parent has one, instead of the blind insert.
+
+Points 5-7 share a pattern distinct from points 1-4: they are not new call
+paths for *reading/writing a captured lexical from inside a marked sub's own
+frame* (which the frame predicate correctly gates) — they are pre-existing,
+frame-independent "assign this name by value" utilities (AST-introspecting
+`is rw` return assignment, a lower-level env-write helper, cross-thread
+shared-var sync) that never had a concept of "an existing cell here must be
+preserved" because nothing before ADR-0024 boxed a *mainline* name outside of
+`box_captured_lexicals`'s own narrow closure-capture triggers. The fix in
+each case is the same shape: a frame-independent `mainline_lexical_cell(name)`
+lookup, tried before whatever blind `env`/local overwrite the utility used to
+do unconditionally.
+
+None of these change the Decision's chosen mechanism (eager boxing under a
+reserved `unit_lexicals` key, frame-active predicate, writeback suppression,
+closure-capture injection) — they are corrections to how faithfully the
+*existing* VM machinery (shadow slots, the light-call fast paths, the
+env-direct read/write shortcuts) had to be taught about the new store.
