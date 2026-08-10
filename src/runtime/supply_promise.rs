@@ -364,9 +364,12 @@ impl Interpreter {
         // clears the state.
         supplier_register_promise(emitter_supplier_id, promise.clone());
 
-        // Enter react-like context to collect whenever registrations
+        // Enter react-like context to collect whenever registrations. Keep
+        // `on_demand_cb` around (cheap `Value` clone) — the trailing
+        // background drive below needs it to build a correctly-scoped
+        // thread-clone via `clone_for_thread_for_block`.
         let (cb_result, emitted, _) =
-            self.run_on_demand_body(on_demand_cb, Some(emitter_supplier_id));
+            self.run_on_demand_body(on_demand_cb.clone(), Some(emitter_supplier_id));
 
         if let Err(err) = cb_result
             && !err.is_react_done()
@@ -537,18 +540,45 @@ impl Interpreter {
         // or the deadline elapses, keeping the promise with the last emitted
         // value. Seed that value from anything emitted synchronously before the
         // subscriptions.
+        //
+        // This drive runs on a background thread, not the calling thread: the
+        // caller must get back a Planned promise immediately (raku semantics —
+        // `Promise(supply {...})` never blocks), and the calling thread is
+        // sometimes the very thread whose completion the supply is waiting on
+        // (e.g. a Cro response body's `Promise(supply { whenever
+        // self.body-byte-stream {...} })` resolved from inside `.body-text`,
+        // which the producer thread blocks on before it can send `done` —
+        // driving inline here deadlocks that cycle). Everything above this
+        // point (running the body to collect subscriptions, the synchronous
+        // resolution branches) stays on the calling thread; only the
+        // long-lived poll moves off it.
+        //
+        // `clone_for_thread_for_block(&on_demand_cb)` (not a bare
+        // `clone_for_thread`) keeps the callback's own captured scalars off
+        // the cross-thread bare-name lane the same way `start {}` does (see
+        // ADR-0023 if any captured name is also an active for-loop parameter
+        // at the coercion site). The helper thread is GC-registered
+        // (`spawn_gc_helper_thread`) per the Gc-thread registration rule —
+        // never a raw `std::thread::spawn`.
         let seed = static_last_value
             .or_else(|| plain_values.last().cloned())
             .unwrap_or(Value::NIL);
-        self.drive_react_subscriptions(
-            react_subs,
-            crate::runtime::subtest::SupplyDrivePolicy::Promise {
-                promise: promise.clone(),
-                deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
-                last_value: seed,
-                emitter_supplier_id: Some(emitter_supplier_id),
-            },
-        )
+        let policy = crate::runtime::subtest::SupplyDrivePolicy::Promise {
+            promise: promise.clone(),
+            deadline: crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30),
+            last_value: seed,
+            emitter_supplier_id: Some(emitter_supplier_id),
+        };
+        let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
+        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+            // The drive loop keeps/breaks `promise` directly as it runs (see
+            // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
+            // handling); its `Result` here only carries Rust-level plumbing
+            // errors that have nowhere else to go now that the caller has
+            // already returned, so there is nothing to propagate.
+            let _ = thread_interp.drive_react_subscriptions(react_subs, policy);
+        });
+        Ok(())
     }
 
     /// Bridge to the relocated VM-side drive loop for callers that only hold
