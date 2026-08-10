@@ -1860,6 +1860,16 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     artifacts, and are the next E2b sub-slices. `make test` green; two new unit tests
     (`any_mu_universal_rows_are_backed_by_the_cascade_for_multiple_receiver_types` in
     `native_method_row.rs`).
+    **Progress 2026-08-10** (second slice): hand-probed `Pair`/`Seq` rows (67 entries,
+    curated candidate list against a real `Value::pair`/`Value::seq` sample — neither
+    owner has a `builtin_type_method_names` entry to draw candidates from). A fresh
+    `t/`-wide sweep confirmed `native_call_unmodeled` dropped further from 12154 to 8654
+    (cumulative -77% from the original 37904); every `Pair`/`Seq` entry disappeared from
+    the breakdown. Remaining top pairs are now `Match` (~1700, needs a real Match sample
+    — deferred, more involved to construct), `Array`/`List` (`list`/`item`/`Slip`), `Str`
+    (`uniprop`/`AST`), `Int` (`fmt`/`rand`/`FatRat`), `FatRat::floor`, exception types
+    (`X::AdHoc`, `CX::Warn`), and `RakuAST::StatementList::gist`. New
+    `pair_seq_rows_are_backed_by_the_cascade` inverse-probe test. `make test` green.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
