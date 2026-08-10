@@ -26,6 +26,18 @@ impl Interpreter {
         })
     }
 
+    /// True while some module compunit's mainline is currently running
+    /// (`load_module`'s `run_block` is on the Rust call stack, tracked by
+    /// `module_load_stack` for the whole nested chain, not just the outermost
+    /// `use`). A `use`d module's own top-level named subs register under
+    /// `GLOBAL` at `block_scope_depth() == 0` too, exactly like the host
+    /// program's mainline — this distinguishes the two so ADR-0024's mainline
+    /// lexical capture (`exec_register_sub_op`) does not treat a module's subs
+    /// as the host program's mainline subs.
+    pub(crate) fn module_load_active(&self) -> bool {
+        !self.module_load_stack.is_empty()
+    }
+
     /// Save current function/class/proto keys for lexical import scoping.
     pub(crate) fn push_import_scope(&mut self) {
         let snapshot = {

@@ -610,12 +610,15 @@ impl Interpreter {
         for sym in &cf.code.free_var_writes {
             // A write to the callee compunit's own file-scope lexical is not a
             // captured-outer write; replaying it would clobber the caller's
-            // same-named `my` (see `is_unit_lexical_of`).
+            // same-named `my` (see `is_unit_lexical_of`). ADR-0024: same
+            // reasoning for a mainline named sub writing its own captured
+            // mainline lexical (see `call_compiled_function_named_inner`).
             let fname = sym.resolve();
             if fname != "_"
                 && fname != "@_"
                 && fname != "%_"
                 && !self.is_unit_lexical_of(&cf.package, &fname)
+                && !self.is_mainline_lexical_write(func_name, &fname)
             {
                 self.pending_rw_writeback_sources.push(fname.to_string());
             }

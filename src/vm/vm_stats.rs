@@ -470,6 +470,38 @@ pub(crate) fn record_bypass_shadow_check(matched: bool, detail: impl FnOnce() ->
     }
 }
 
+// ADR-0024: mainline named subs resolving free variables through
+// unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
+// cell created by `exec_register_sub_op`'s mainline capture (registration
+// time, one-time per declaration; reusing an already-boxed cell does NOT
+// bump this). `MAINLINE_LEXICAL_HITS` counts every successful resolution
+// through the mainline candidate in `unit_lexical_slot` (reads and, via
+// `unit_scope_lexical_write` sharing the same resolver, writes). The ADR's
+// "measured cost basis" claims `MAINLINE_LEXICAL_BOXES == 0` across
+// `benchmarks/*.raku` (no mainline sub there captures a `my` scalar) — verify
+// with `MUTSU_VM_STATS=1` after any change here.
+static MAINLINE_LEXICAL_BOXES: AtomicU64 = AtomicU64::new(0);
+static MAINLINE_LEXICAL_HITS: AtomicU64 = AtomicU64::new(0);
+
+/// Record one NEW mainline `my` scalar boxed into a shared cell at named-sub
+/// registration time (ADR-0024 §2). Not incremented when an already-boxed
+/// cell is merely reused by a sibling sub capturing the same name.
+#[inline]
+pub(crate) fn record_mainline_lexical_box() {
+    if enabled() {
+        MAINLINE_LEXICAL_BOXES.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
+/// Record one successful resolution through the mainline candidate in
+/// `unit_lexical_slot` (ADR-0024 §3).
+#[inline]
+pub(crate) fn record_mainline_lexical_hit() {
+    if enabled() {
+        MAINLINE_LEXICAL_HITS.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -742,6 +774,11 @@ pub(crate) fn dump() {
     );
     let registry_cow_clones = REGISTRY_COW_CLONES.load(Ordering::Relaxed);
     eprintln!("[mutsu vm-stats] registry-cow: clones={registry_cow_clones}");
+    let mainline_lexical_boxes = MAINLINE_LEXICAL_BOXES.load(Ordering::Relaxed);
+    let mainline_lexical_hits = MAINLINE_LEXICAL_HITS.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0024-mainline-lexicals: boxes={mainline_lexical_boxes} hits={mainline_lexical_hits}"
+    );
     let owner_shadow_checks = OWNER_SHADOW_CHECKS.load(Ordering::Relaxed);
     let owner_shadow_mismatches = OWNER_SHADOW_MISMATCHES.load(Ordering::Relaxed);
     eprintln!(

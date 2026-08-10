@@ -1455,6 +1455,17 @@ pub struct Interpreter {
     /// snapshot keeping a module's bare names reachable once the loading frame is
     /// gone; this store is authoritative and consulted BEFORE `env`.
     pub(crate) unit_lexicals: HashMap<String, HashMap<String, Value>>,
+    /// Names of mainline-declared named subs that captured at least one
+    /// mainline `my` scalar free variable into
+    /// `unit_lexicals[MAINLINE_UNIT_KEY]` at registration time (ADR-0024).
+    ///
+    /// A free-variable read/write resolves through the mainline unit-lexical
+    /// cells ONLY while the last (non-block) routine frame's name is in this
+    /// set AND its package is `GLOBAL` — see
+    /// `Interpreter::mainline_lexical_frame_active`. Empty for a program with
+    /// no such capture: zero cost beyond the map-presence check already paid
+    /// by `unit_lexical_slot`.
+    pub(crate) mainline_lexical_subs: std::collections::HashSet<String>,
     /// Shared cells for block lexicals captured by an `our`-scoped named sub
     /// declared inside a *bare* block (not a package block). Unlike a `my sub`, an
     /// `our sub` is installed into the package registry and stays callable after
@@ -2504,6 +2515,12 @@ impl Default for Interpreter {
 /// convention, which is how registration tells them from a user trait — see
 /// `has_user_custom_traits` in `registration_sub`.
 pub(crate) const PRELUDE_SUB_TRAIT: &str = "__mutsu_prelude";
+
+/// Reserved pseudo-unit key mainline's own captured `my` lexicals are stored
+/// under in `Interpreter::unit_lexicals` (ADR-0024). Contains `<`/`>`, which
+/// cannot appear in a real Raku package name, so no user `package`/`module`/
+/// `class` can collide with it.
+pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
 
 /// Immutable process-constant magic/dynamic variables hoisted into the shared
 /// env base tier (see `Interpreter::new`). These hold the same value for the

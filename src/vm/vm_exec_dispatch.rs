@@ -269,15 +269,32 @@ impl Interpreter {
                 // through the `_`->`-` pre-pass of get_env_with_main_alias).
                 // Gate order reproduces the slow chain's precedence: the stores
                 // consulted before env must be provably inactive (escaping-our
-                // captures empty, no real current package), @/% names keep the
-                // slow path's atomic/thread-clone arms, and Nil / LazyThunk /
-                // ContainerRef hits fall through for the slow tail's
-                // default/type-object, force and deref handling.
+                // captures empty, no real current package, no ADR-0024 mainline
+                // capture active), @/% names keep the slow path's atomic/
+                // thread-clone arms, and Nil / LazyThunk / ContainerRef hits
+                // fall through for the slow tail's default/type-object, force
+                // and deref handling.
+                //
+                // ADR-0024: `mainline_lexical_frame_active()` must also gate
+                // this shortcut, for a reason `is_container_ref()` alone does
+                // NOT cover: a mainline named sub's captured cell is installed
+                // into BOTH its own local slot and the env key at
+                // registration, but an ordinary later `my $name = ...` in an
+                // unrelated (shadow-slot) scope — even one the sub was NOT
+                // declared inside — explicitly clears a stale `ContainerRef`
+                // sitting in env under its own name before writing its fresh
+                // value (`exec_set_local_op_inner`'s redeclaration guard), so
+                // by the time the sub runs the env key can hold a perfectly
+                // plain (non-cell) value that is NOT the sub's own captured
+                // binding. `unit_lexical_slot`/`get_env_with_main_alias`
+                // consult `unit_lexicals[MAINLINE_UNIT_KEY]` before env
+                // precisely to survive that; this shortcut must not bypass it.
                 let fast_hit = {
                     let b0 = name.as_bytes().first().copied();
                     if !matches!(b0, Some(b'@' | b'%'))
                         && (name == "_" || !name.contains('_'))
                         && self.escaping_our_lexical_names.is_empty()
+                        && !self.mainline_lexical_frame_active()
                         && {
                             let cur = self.current_package();
                             cur.is_empty() || cur == "GLOBAL"
@@ -1318,6 +1335,26 @@ impl Interpreter {
                         self.pending_alias_bind_names
                             .push((name.clone(), resolved_source));
                     }
+                }
+                // ADR-0024: a mainline named sub's write to one of its OWN
+                // captured lexicals must route through the shared cell in
+                // `unit_lexicals[MAINLINE_UNIT_KEY]`, checked BEFORE the
+                // generic "any ContainerRef in env" write-through right below
+                // — that shortcut reads `env` by the SAME bare name, and for
+                // a call made inside a shadowing block, env currently holds
+                // the SHADOW's own boxed cell (`box_decl_local_cell` rewrote
+                // the env key when the shadow's `my` declared it), not the
+                // sub's captured mainline cell. Writing through whichever
+                // cell env happens to hold would clobber the shadow instead
+                // of the real lexical (row 2a) and lose the write entirely
+                // once the shadow's scope ends (row 2b). No-op (and falls
+                // through to the checks below) for every other name — this is
+                // the same resolver `unit_scope_lexical_write` calls again,
+                // unconditionally, further down for the general `unit`
+                // compunit case.
+                if self.unit_scope_lexical_write(&name, &val) {
+                    *ip += 1;
+                    return Ok(());
                 }
                 // Write through ContainerRef: update inner value for env-based variables.
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.

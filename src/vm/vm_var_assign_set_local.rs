@@ -1357,12 +1357,19 @@ impl Interpreter {
             {
                 // Reuse the source's existing cell if it already has one (so a
                 // third alias `my @c := @b` joins the same cell); otherwise wrap
-                // the bound value in a fresh cell.
+                // the bound value in a fresh cell. ADR-0024: also check the
+                // mainline capture store — an intervening frame's own
+                // identically-named local can shadow the source in the plain
+                // `env` lookup right above (see `mainline_lexical_cell`).
                 let cell = match val.view() {
                     ValueView::ContainerRef(arc) => arc.clone(),
                     _ => match self.env().get(&effective_source).map(Value::view) {
                         Some(ValueView::ContainerRef(arc)) => arc.clone(),
-                        _ => crate::gc::Gc::new(std::sync::Mutex::new(val.clone())),
+                        _ => self
+                            .mainline_lexical_cell(&effective_source)
+                            .unwrap_or_else(|| {
+                                crate::gc::Gc::new(std::sync::Mutex::new(val.clone()))
+                            }),
                     },
                 };
                 // A bound `@`/`%` variable adopts the *source* container's
@@ -1471,7 +1478,14 @@ impl Interpreter {
                     .or_else(|| match self.env().get(&resolved_source).map(Value::view) {
                         Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
                         _ => None,
-                    });
+                    })
+                    // ADR-0024: an intervening frame's own identically-named
+                    // local (e.g. a raw-captured constructor parameter that
+                    // happens to share a mainline lexical's bare name) can
+                    // shadow the source in both lookups above; fall back to
+                    // the mainline capture store before minting a
+                    // disconnected cell.
+                    .or_else(|| self.mainline_lexical_cell(&resolved_source));
                 let container = match (val.view(), source_cell) {
                     (ValueView::ContainerRef(arc), _) => Value::container_ref(arc.clone()),
                     (_, Some(arc)) => Value::container_ref(arc),

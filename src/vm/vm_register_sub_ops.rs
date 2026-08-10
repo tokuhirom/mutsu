@@ -409,6 +409,143 @@ impl Interpreter {
                     }
                 }
             }
+            // ADR-0024: a mainline named sub whose body reads a free variable
+            // resolves it LEXICALLY (against the binding visible at the sub's
+            // declaration site) instead of dynamically (against whatever the
+            // caller's env happens to hold), by eagerly boxing each captured
+            // mainline `my` scalar into a shared cell at registration time —
+            // see docs/adr/0024-mainline-lexicals-for-named-subs.md. Runs on
+            // both the hoisted and the in-sequence pass, mirroring the
+            // `__our_scoped` block above: at hoist time every mainline local
+            // slot is still its pool-allocated `Nil` (no mainline statement
+            // has run yet, per `hoist_sub_decls` emitting every sub's
+            // registration at the very top of the block), so the per-name
+            // `is_nil()` guard below naturally makes the hoisted pass box
+            // nothing — only the in-sequence pass, which runs after the
+            // captured `my`'s own initializer (raku requires declare-before-
+            // use, so that initializer has always already run by then),
+            // installs live cells.
+            if self.block_scope_depth() == 0
+                && self
+                    .env()
+                    .get("__mutsu_in_eval")
+                    .is_none_or(|v| !v.truthy())
+                && self.current_package() == "GLOBAL"
+                && self.routine_stack().is_empty()
+                && !self.module_load_active()
+                && !self.is_thread_clone()
+            {
+                // Union `free_var_syms` (read) AND `free_var_writes` (a
+                // write-only free var, e.g. a setter `sub set-v($x) { $v = $x
+                // }`, never appears in `free_var_syms` — see
+                // `compute_free_vars`'s doc comment on the two sets).
+                let mut free_syms: std::collections::HashSet<Symbol> =
+                    std::collections::HashSet::new();
+                if let Some(compiled) = primary_compiled {
+                    free_syms.extend(compiled.code.free_var_syms.iter().copied());
+                    free_syms.extend(compiled.code.free_var_writes.iter().copied());
+                }
+                for slot in 0..signature_alternates.len() {
+                    if let Some(alt_compiled) = plan_compiled(slot + 1) {
+                        free_syms.extend(alt_compiled.code.free_var_syms.iter().copied());
+                        free_syms.extend(alt_compiled.code.free_var_writes.iter().copied());
+                    }
+                }
+                let mut captured_any = false;
+                for sym in free_syms {
+                    let name = sym.resolve();
+                    // Scalars only (sigil-less env key); `@`/`%`/`&` are a
+                    // follow-up (ADR-0024 "Known limitations").
+                    if !crate::env::is_plain_user_lexical(&name)
+                        || name.starts_with(['@', '%', '&'])
+                    {
+                        continue;
+                    }
+                    // `our`/`state`/`dynamic`-declared names are excluded —
+                    // `my_declared_sym` is populated only for plain `my`.
+                    if !code.my_declared_sym.contains(&sym) {
+                        continue;
+                    }
+                    // A mainline local slot is required: `code` here IS
+                    // mainline's own CompiledCode (RegisterSub executes in
+                    // mainline's frame), so this is the exact same frame the
+                    // free variable's slot lives in — no cross-frame baked
+                    // index needed, unlike closure capture. `free_var_parent_slots`
+                    // (the baked-slot mechanism closures use for this exact
+                    // ambiguity) is never populated for a plan-derived named
+                    // sub (only `add_closure_code_baked` bakes it), so a
+                    // by-name search is the only option here.
+                    //
+                    // Under shadow slots (the default), a same-named `my` in
+                    // ANOTHER scope of this mainline body — textually before
+                    // OR after this sub, e.g. the shadowing block in
+                    // ADR-0024's own headline example — occupies a DISTINCT
+                    // slot with the SAME name (`dup_named_locals`), so a
+                    // single positional search (first OR last) can pick the
+                    // wrong one: `rposition` would grab a LATER shadow block's
+                    // slot instead of the mainline binding the sub actually
+                    // captures. Disambiguate by liveness instead: at the
+                    // moment THIS `RegisterSub` executes, a shadowing block
+                    // declared elsewhere in the same compiled unit has either
+                    // not run yet (still its pool-allocated `Nil`) or its
+                    // scope has nothing to do with what "declared before this
+                    // sub" means here — only the slot that is genuinely
+                    // initialized (non-`Nil`) right now can be the binding
+                    // visible at this declaration point. Skip (legacy dynamic
+                    // fallback, no partial state) when that is not exactly one
+                    // slot — e.g. a sibling block declared BEFORE this sub
+                    // that also used the name (rare, adversarial) leaves two
+                    // live candidates and neither is preferred over the other.
+                    let candidates: Vec<usize> = code
+                        .locals
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, n)| **n == name)
+                        .map(|(i, _)| i)
+                        .collect();
+                    let idx = match candidates.as_slice() {
+                        [] => continue,
+                        [only] => *only,
+                        many => {
+                            let live: Vec<usize> = many
+                                .iter()
+                                .copied()
+                                .filter(|&i| !self.locals[i].is_nil())
+                                .collect();
+                            match live.as_slice() {
+                                [only_live] => *only_live,
+                                _ => continue,
+                            }
+                        }
+                    };
+                    if self.type_constrained_unboxable(&name) {
+                        continue;
+                    }
+                    let cur = self.locals[idx].clone();
+                    let cell = if cur.is_container_ref() {
+                        cur
+                    } else if cur.is_nil() {
+                        // Hoisted pass (or a `my $x;` whose initializer has not
+                        // run yet): nothing live to box. Skip this name; the
+                        // in-sequence pass (after the real initializer) boxes it.
+                        continue;
+                    } else {
+                        let boxed = cur.into_container_ref();
+                        self.locals[idx] = boxed.clone();
+                        self.env_mut().insert(name.clone(), boxed.clone());
+                        crate::vm::vm_stats::record_mainline_lexical_box();
+                        boxed
+                    };
+                    self.unit_lexicals
+                        .entry(crate::runtime::MAINLINE_UNIT_KEY.to_string())
+                        .or_default()
+                        .insert(name, cell);
+                    captured_any = true;
+                }
+                if captured_any {
+                    self.mainline_lexical_subs.insert(resolved_name.clone());
+                }
+            }
             // A sub declared inside a BLOCK scope is lexical: the block-exit
             // routine-registry restore drops its registration, so a closure
             // that escapes the block (Cro's RequestParser declares

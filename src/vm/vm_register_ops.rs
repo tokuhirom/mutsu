@@ -520,6 +520,11 @@ impl Interpreter {
                     flat.insert_sym(*sym, val.clone());
                 }
             }
+            // ADR-0024 §4: a closure created while a mainline named sub's frame
+            // is running must capture the SAME cells the sub itself resolves
+            // free variables through, overriding whatever the (possibly
+            // shadowed) env/slot capture above just wrote.
+            self.inject_mainline_lexical_captures(cc, &mut flat);
             // `$OUTER::x` inside this closure reads the *enclosing* binding of `x`,
             // which is captured into `flat` right now. But when the closure runs,
             // its own frame may overwrite that name in the live env (most commonly
@@ -599,6 +604,8 @@ impl Interpreter {
                 env.insert_sym(*sym, val.clone());
             }
         }
+        // ADR-0024 §4: see the identical override in the reflective path above.
+        self.inject_mainline_lexical_captures(cc, &mut env);
         // A bare call records only its sigilless callee in bytecode, so it is
         // not normally part of `free_var_syms`. Preserve an existing lexical
         // code binding for each callee the closure (or a nested closure it may
@@ -608,6 +615,30 @@ impl Interpreter {
         self.capture_bare_callees(cc, &mut env);
         self.materialize_frame_self_into_capture(code, &mut env);
         env
+    }
+
+    /// ADR-0024 §4: while [`Self::mainline_lexical_frame_active`] holds (a
+    /// mainline named sub's frame is running), override each of `cc`'s free
+    /// variables that has a `unit_lexicals[MAINLINE_UNIT_KEY]` entry with its
+    /// shared cell, in place of whatever the ordinary env/local-slot capture
+    /// wrote for it. Without this, a closure created inside the sub (e.g.
+    /// `.map({ $y })`) would capture whatever the CALLING frame's env holds
+    /// under that name — the shadow, if the sub was called from inside a
+    /// shadowing block — instead of the sub's own true lexical binding
+    /// (ADR-0024 row 3). A closure created inside a plain (non-mainline)
+    /// frame is unaffected: the predicate is false there, so this is a no-op.
+    fn inject_mainline_lexical_captures(&self, cc: &CompiledCode, env: &mut Env) {
+        if !self.mainline_lexical_frame_active() {
+            return;
+        }
+        let Some(mainline) = self.unit_lexicals.get(crate::runtime::MAINLINE_UNIT_KEY) else {
+            return;
+        };
+        for sym in &cc.free_var_syms {
+            if let Some(cell) = sym.with_str(|s| mainline.get(s).cloned()) {
+                env.insert_sym(*sym, cell);
+            }
+        }
     }
 
     fn capture_bare_callees(&self, cc: &CompiledCode, env: &mut Env) {
@@ -732,6 +763,35 @@ impl Interpreter {
             .collect()
     }
 
+    /// Whether the scalar env-key name `s` carries a type/`where` constraint
+    /// that must NOT be boxed into a `ContainerRef`: the assignment chokepoint
+    /// re-checks such a constraint BY NAME on every mutation, and a
+    /// `ContainerRef` write-through bypasses that check. `Mu` (the universal
+    /// type — every value satisfies it) and the native/builtin scalar value
+    /// types (`int`/`num`/`str` families, `Int`/`UInt`/`Num`/`Str`/`Rat` with
+    /// or without a `:D`/`:U` smiley) ARE boxable: their check also runs at
+    /// the assignment op by name, so the write-through bypasses nothing extra
+    /// for them (see the historical `cas`/`thread_escaping` detail in
+    /// [`Self::box_captured_lexicals`], which does not apply to this shared
+    /// predicate). Shared between closure-capture boxing
+    /// (`box_captured_lexicals`) and mainline `my` capture at named-sub
+    /// registration (ADR-0024, `exec_register_sub_op`).
+    pub(super) fn type_constrained_unboxable(&mut self, s: &str) -> bool {
+        let mut tc = loan_env!(self, var_type_constraint(s));
+        if tc.is_none() {
+            tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
+        }
+        let value_type_boxable = tc.as_deref().is_some_and(|t| {
+            crate::runtime::native_types::is_native_int_type(t)
+                || matches!(t, "num" | "num32" | "num64" | "str")
+                || matches!(
+                    crate::runtime::types::strip_type_smiley(t).0,
+                    "Int" | "UInt" | "Num" | "Str" | "Rat"
+                )
+        });
+        !value_type_boxable && matches!(tc.as_deref(), Some(t) if t != "Mu")
+    }
+
     /// Box-on-capture (lever C Slice 2): a closure captures the *container* of a
     /// closed-over lexical scalar, not a frozen value — but only for the lexicals
     /// that actually need it: an enclosing-scope local that is BOTH captured by a
@@ -851,35 +911,21 @@ impl Interpreter {
                 // `shared_vars` lane, which no longer carries a spawned block's
                 // own captured scalars (PLAN.md §6).
                 // Pin: t/thread-shared-scalar-visibility.t.
-                if !cc.thread_escaping {
-                    let mut tc = loan_env!(self, var_type_constraint(&s));
-                    if tc.is_none() {
-                        tc = loan_env!(self, var_type_constraint(s.trim_start_matches('$')));
-                    }
-                    // EXCEPTION: native value types (`int`/`num`/`str` families)
-                    // and the builtin scalar value types (`Int`/`Num`/`Str`/
-                    // `Rat`/`UInt`, with or without a `:D`/`:U` smiley) are boxed
-                    // like `Mu`. Their wrap/coercion also runs at the assignment
-                    // op by name before any write-through, and the snapshot lane
-                    // genuinely loses coherence for them: a captured
-                    // `my int $pos` (or an `Int:D $pos is rw` parameter)
-                    // reassigned by the OWNER after the closure's `$pos++`
-                    // diverged into two stores — CBOR::Simple's encoder buffer
-                    // position, where every string byte landed one off. The cas
-                    // concern that motivated the skip targets CLASS-typed
-                    // scalars (S17-lowlevel/cas.t `my LittleNodey $head`), which
-                    // keep the skip. Pin: t/nqp-cbor-ops.t.
-                    let value_type_boxable = tc.as_deref().is_some_and(|t| {
-                        crate::runtime::native_types::is_native_int_type(t)
-                            || matches!(t, "num" | "num32" | "num64" | "str")
-                            || matches!(
-                                crate::runtime::types::strip_type_smiley(t).0,
-                                "Int" | "UInt" | "Num" | "Str" | "Rat"
-                            )
-                    });
-                    if !value_type_boxable && matches!(tc.as_deref(), Some(t) if t != "Mu") {
-                        continue;
-                    }
+                // EXCEPTION: native value types (`int`/`num`/`str` families)
+                // and the builtin scalar value types (`Int`/`Num`/`Str`/
+                // `Rat`/`UInt`, with or without a `:D`/`:U` smiley) are boxed
+                // like `Mu`. Their wrap/coercion also runs at the assignment
+                // op by name before any write-through, and the snapshot lane
+                // genuinely loses coherence for them: a captured
+                // `my int $pos` (or an `Int:D $pos is rw` parameter)
+                // reassigned by the OWNER after the closure's `$pos++`
+                // diverged into two stores — CBOR::Simple's encoder buffer
+                // position, where every string byte landed one off. The cas
+                // concern that motivated the skip targets CLASS-typed
+                // scalars (S17-lowlevel/cas.t `my LittleNodey $head`), which
+                // keep the skip. Pin: t/nqp-cbor-ops.t.
+                if !cc.thread_escaping && self.type_constrained_unboxable(&s) {
+                    continue;
                 }
             }
             let Some(idx) = baked_idx else {

@@ -364,6 +364,40 @@ impl Interpreter {
         self.unit_lexical_slot(name).cloned()
     }
 
+    /// ADR-0024: true while the running routine is a mainline-declared named
+    /// sub that captured at least one mainline `my` scalar free variable into
+    /// `unit_lexicals[MAINLINE_UNIT_KEY]` at its own registration
+    /// (`exec_register_sub_op`). Used both by [`Self::unit_lexical_slot`] (the
+    /// read/write/declaredness resolver) and by `capture_closure_env` (a
+    /// closure created while this holds must capture the cells, not the
+    /// shadowed env value — ADR-0024 §4).
+    ///
+    /// Gated cheaply: the map-presence check runs first, so a program with no
+    /// mainline capture pays only that one `is_empty` beyond what
+    /// `unit_lexical_slot` already tests.
+    ///
+    /// Deliberately checks ONLY the last routine-stack frame, not an
+    /// innermost-named-frame walk: a block frame on top (a closure body
+    /// created inside the marked sub, or any nested block) opts OUT of the
+    /// store, so a closure created in a shadow block and invoked from inside
+    /// the marked sub keeps reading its own captured (shadowed) binding
+    /// (ADR-0024 row "adv" — raku-verified `inner`, not the mainline `outer`).
+    pub(super) fn mainline_lexical_frame_active(&self) -> bool {
+        if self
+            .unit_lexicals
+            .get(crate::runtime::MAINLINE_UNIT_KEY)
+            .is_none_or(|m| m.is_empty())
+        {
+            return false;
+        }
+        let Some(frame) = self.routine_stack().last() else {
+            return false;
+        };
+        !frame.is_block
+            && frame.package == "GLOBAL"
+            && self.mainline_lexical_subs.contains(&frame.name)
+    }
+
     /// The store entry `name` names from the frame that is running, or `None`.
     ///
     /// A free reference reaches here in one of two shapes, exactly as it does for
@@ -386,6 +420,21 @@ impl Interpreter {
     fn unit_lexical_slot(&self, name: &str) -> Option<&Value> {
         if self.unit_lexicals.is_empty() || name.is_empty() {
             return None;
+        }
+        // ADR-0024: a mainline named sub's free-variable read consults its own
+        // captured cells first. Tried before the package-chain candidates
+        // below, which all explicitly exclude `GLOBAL` — the running routine's
+        // package IS `GLOBAL` for a mainline sub, so those candidates would
+        // never reach a mainline capture on their own.
+        if !name.contains("::")
+            && self.mainline_lexical_frame_active()
+            && let Some(found) = self
+                .unit_lexicals
+                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .and_then(|m| m.get(name))
+        {
+            crate::vm::vm_stats::record_mainline_lexical_hit();
+            return Some(found);
         }
         let cur = self.current_package();
         if name.contains("::") {
@@ -445,6 +494,54 @@ impl Interpreter {
             return false;
         }
         Self::lookup_in_package_chain(&self.unit_lexicals, pkg, name).is_some()
+    }
+
+    /// ADR-0024 counterpart of [`Self::is_unit_lexical_of`] for a mainline
+    /// named sub: true when `callee_name` is one of `mainline_lexical_subs`
+    /// AND `name` is one of the mainline lexicals it captured. A write to such
+    /// a name went straight to the shared cell (`unit_scope_lexical_write`),
+    /// so replaying it into `pending_rw_writeback_sources` would clobber
+    /// whatever the *caller's* own same-named slot holds — which, for a call
+    /// made inside a shadowing block, is the shadow's `my`, not the mainline
+    /// lexical the cell already updated (ADR-0024 row 2a).
+    pub(crate) fn is_mainline_lexical_write(&self, callee_name: &str, name: &str) -> bool {
+        if self.mainline_lexical_subs.is_empty()
+            || !self.mainline_lexical_subs.contains(callee_name)
+        {
+            return false;
+        }
+        self.unit_lexicals
+            .get(crate::runtime::MAINLINE_UNIT_KEY)
+            .is_some_and(|m| m.contains_key(name))
+    }
+
+    /// ADR-0024: `name`'s mainline-captured cell, if it has one — a fallback
+    /// for the `:=`-bind "reuse an existing cell instead of minting a
+    /// disconnected one" lookups in `vm_var_assign_set_local.rs`, which read
+    /// `self.env().get(name)` (or a same-frame `code.locals` slot) directly
+    /// and so cannot see past an INTERVENING frame's own identically-named
+    /// local shadowing it in the ordinary env chain — e.g. a constructor's
+    /// raw-captured parameter that happens to share the mainline lexical's
+    /// bare name (`Foo.new(\pulled)` binding a private attribute to a
+    /// same-named argument that traces back, through several call frames, to
+    /// a mainline `my $pulled`). Deliberately NOT gated on
+    /// `mainline_lexical_frame_active()`: unlike an ordinary captured-lexical
+    /// read/write, this exists purely to avoid a duplicate cell, from
+    /// whatever frame happens to be running when a bind chain reaches back
+    /// toward a name mainline already boxed.
+    pub(super) fn mainline_lexical_cell(
+        &self,
+        name: &str,
+    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+        match self
+            .unit_lexicals
+            .get(crate::runtime::MAINLINE_UNIT_KEY)?
+            .get(name)?
+            .view()
+        {
+            ValueView::ContainerRef(arc) => Some(arc.clone()),
+            _ => None,
+        }
     }
 
     /// Write companion of [`Self::unit_scope_lexical`]: when `name` is a file-scope
