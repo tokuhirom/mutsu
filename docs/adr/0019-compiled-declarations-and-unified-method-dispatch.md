@@ -2374,7 +2374,8 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
       a `keys` row — the 0-arg call shape specifically needs the
       interpreter's own ordering/freshness semantics the row can't provide).
     - **Likely reduces, not exhaustively proven**: `Supplier`/
-      `Supplier::Preserving.Supply`, `Proc::Async`'s method family, and
+      `Supplier::Preserving.Supply` (**confirmed and dropped, step 5 below**),
+      `Proc::Async`'s method family, and
       `Stash`'s `AT-KEY`/`keys`/`values` — all zero rows for their owner, and
       a grep for generic (non-owner-specific) cascade arms recognizing this
       vocabulary for an arbitrary `Instance` came up empty, but this was not
@@ -2434,6 +2435,36 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     disposition) still needs to be implemented as explicit resolver guards, and the
     switch itself needs the E2 native-row catalog wired in per design decision 4's
     `Native` variant (not yet added — `NativeCallBinding` is a distinct, fourth kind).
+    **Progress 2026-08-11** (step 5, category 1): confirmed the first of step 2's
+    "likely reduces, not exhaustively proven" category-1 guards and removed it
+    live, ahead of the authoritative switch — it does not need to wait, since
+    the finding is "the cascade itself never needed this guard," independent
+    of the resolver work. The `Supplier`/`Supplier::Preserving` `.Supply` guard
+    (`methods_native_bypass.rs`) is provably redundant: the coercion cascade's
+    own `"Supply"` arm (`methods_0arg/coercion.rs:655-661`) already returns
+    `None` for both classes — "Supplier.Supply has runtime behavior (live
+    stream), not generic coercion" — before the guard's `should_bypass_native_fastpath`
+    check is even consulted, and no other 0-arg cascade arm matches the name
+    `"Supply"` (`git grep '"Supply"'` under `builtins/methods_0arg/` has exactly
+    one match arm). Removing the guard changes nothing observable: with it
+    gone, `call_method_with_values` calls the cascade instead of skipping it,
+    the cascade returns `None` either way, and control falls through to the
+    runtime native method identically. Verified empirically, not just by
+    reading: with the guard commented out, `cargo test --lib` (769 tests),
+    `prove -j4 t/` (3011 files / 28230 tests), and the full `S17-supply` roast
+    subset (99 whitelisted files, via `scripts/run-roast-test.sh`) all stayed
+    green — including every `Supplier`/`Supplier::Preserving` test
+    (`t/supplier-preserving-backlog.t`, `t/supplier-preserving-done-replay.t`,
+    `t/promise-supply-coercion-async-drive.t`, `roast/S17-supply/supplier-preserving.t`).
+    Landed as a genuine deletion (not a comment-out), matching the same
+    self-guarding pattern step 2 already found for `IO::Handle.chomp`
+    (`dispatch_core_str.rs:216-221`) — this is the second confirmed instance of
+    that shape, reinforcing that "does the cascade itself already self-guard"
+    is a real, repeatable reduction axis for category 1, distinct from (and
+    not blocked by) the row-table question step 2 closed. The other two
+    "likely reduces" groups (`Proc::Async`'s method family, `Stash`'s
+    `AT-KEY`/`keys`/`values`) and the "mixed" `IO::Handle` `encoding`/`opened`/
+    `DESTROY` group remain open — same audit methodology applies.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
