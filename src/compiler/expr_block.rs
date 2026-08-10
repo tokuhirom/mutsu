@@ -543,11 +543,22 @@ impl Compiler {
                 param,
                 param_def,
                 params,
+                params_def,
                 body,
                 label,
+                rw_block,
                 ..
             } => {
-                self.compile_do_for_expr(iterable, param, param_def.as_ref(), params, body, label);
+                self.compile_do_for_expr(
+                    iterable,
+                    param,
+                    param_def.as_ref(),
+                    params,
+                    params_def,
+                    *rw_block,
+                    body,
+                    label,
+                );
             }
             Stmt::While { cond, body, label } => {
                 self.compile_do_while_expr(cond, body, label);
