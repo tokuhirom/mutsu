@@ -974,11 +974,23 @@ impl Interpreter {
             // Bare blocks and pointy blocks are NOT routine boundaries for `return`.
             // Propagate the return signal with the target callable ID so the
             // enclosing routine can catch it.
+            //
+            // Gated on `e.is_return()`, not just `e.return_value.is_some()`: a
+            // `when`/`default` succeed signal ALSO carries a `return_value` (the
+            // matched branch's tail value, for a `given`/`for` to read back), but
+            // it is not a `return` and must not be redirected to the closure's
+            // captured `__mutsu_callable_id` -- that target routine may have long
+            // since returned (e.g. a `.tap: { when Int {...} }` callback created
+            // inside a `sub`/`method` that registered the tap and returned before
+            // the supply ever emits). Misrouting it here escaped as an uncaught
+            // "return signal with no matching frame" instead of being absorbed
+            // by `finalize_return_with_spec` below like a bare-block succeed
+            // normally is.
             let is_non_routine =
                 data.is_bare_block || data.compiled_code.as_ref().is_some_and(|cc| !cc.is_routine);
             if is_non_routine
                 && let Err(ref e) = result
-                && e.return_value.is_some()
+                && e.is_return()
             {
                 // Only propagate non-local return if we can identify the target
                 // routine (via __mutsu_callable_id in captured env or already set).
