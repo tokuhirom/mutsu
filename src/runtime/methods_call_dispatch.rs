@@ -2788,6 +2788,7 @@ impl Interpreter {
             skip_pseudo,
             is_pseudo_method,
         );
+        self.shadow_check_bypass_user_method_categories(&target, method, is_pseudo_method);
         let method_sym = crate::symbol::Symbol::intern(method);
         let native_result = if bypass_native_fastpath {
             None
