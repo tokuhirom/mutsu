@@ -1802,6 +1802,50 @@ impl Interpreter {
         register_x("X::Channel::SendOnClosed", "Exception");
         register_x("X::Channel::ReceiveOnClosed", "Exception");
 
+        // ADR-0019 E2b (tenth slice, 2026-08-10): these X::* types are
+        // constructed all over the interpreter (either directly via
+        // `Value::make_instance`, or via the `"X::Type: text"` message
+        // convention that `split_typed_message_convention` turns into a typed
+        // instance) but were never `register_x`'d, so their registry MRO
+        // dead-ended at themselves with no `Exception`/`Any`/`Mu` continuation
+        // at all -- found via `dispatch_owner_chain` on live samples
+        // (`X::ControlFlow.^mro` reported `X::ControlFlow, Any, Mu`, skipping
+        // `Exception` entirely). This is not just a coverage-counter artifact:
+        // it means `$exc ~~ Exception` and `$exc.isa(Exception)` were False
+        // for any of these until caught by a CATCH's own class-name-prefix
+        // matching, and `.defined`/`.so` fell through to a different
+        // dispatch path than every other exception. Every name below was
+        // confirmed against `raku -e '... .^mro».^name ...'` to have
+        // `Exception` as its sole direct parent, EXCEPT `X::Role::Composition::Conflict`
+        // (a mutsu-only name from the message convention above, not a real
+        // rakudo type) and `X::React::Died` (a role in rakudo, not a class,
+        // but mutsu already models it as an Instance the same way as every
+        // other X::* here) -- both still belong under Exception for mutsu's
+        // own CATCH/`.isa` semantics to be internally consistent.
+        register_x("X::Attribute::Required", "Exception");
+        register_x("X::Comp::FailGoal", "Exception");
+        register_x("X::CompUnit::UnsatisfiedDependency", "Exception");
+        register_x("X::ControlFlow", "Exception");
+        register_x("X::Declaration::OurScopeInRole", "Exception");
+        register_x("X::Dynamic::NotFound", "Exception");
+        register_x("X::IO::Unlink", "Exception");
+        register_x("X::IllegalDimensionInShape", "Exception");
+        register_x("X::Inheritance::UnknownParent", "Exception");
+        register_x("X::Mixin::NotComposable", "Exception");
+        register_x("X::NoZeroArgMeaning", "Exception");
+        register_x("X::Numeric::CannotConvert", "Exception");
+        register_x("X::Numeric::DivideByZero", "Exception");
+        register_x("X::Numeric::Uninitialized", "Exception");
+        register_x("X::React::Died", "Exception");
+        register_x("X::Role::Composition::Conflict", "Exception");
+        register_x("X::Role::Instantiation", "Exception");
+        register_x("X::Seq::Consumed", "Exception");
+        register_x("X::Str::Sprintf::Directives::Count", "Exception");
+        register_x("X::Syntax::BlockGobbled", "Exception");
+        register_x("X::Syntax::CannotMeta", "Exception");
+        register_x("X::Syntax::Extension::Category", "Exception");
+        register_x("X::Syntax::Extension::TooComplex", "Exception");
+
         // X::Comp::AdHoc does both X::Comp and X::AdHoc in rakudo (it is the
         // compile-time wrapper around an ad-hoc die), so `$e ~~ X::AdHoc` must
         // also be True. register_x only threads a single parent, so splice
