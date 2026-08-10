@@ -375,7 +375,15 @@ impl Interpreter {
                 // a concurrent pipeline's `done` cannot be mistaken for this
                 // emitter's.
                 bump_supplier_done_count(supplier_id_from_attrs(attributes));
+                let preserving = attributes.contains_key("preserving");
                 if let Some(supplier_id) = supplier_id_from_attrs(attributes) {
+                    // With a tap already listening the done is delivered now, so
+                    // it is not left in the preserved replay list for a later
+                    // tap; with nothing listening it stays there for exactly one
+                    // (mirrors the mutable-lane arm below).
+                    if preserving && supplier_tap_count(supplier_id) > 0 {
+                        supplier_mark_terminal_delivered(supplier_id);
+                    }
                     supplier_done(supplier_id);
                     close_supplier_channel_taps(supplier_id, None);
                     // Flush batch buffers before done
@@ -465,7 +473,13 @@ impl Interpreter {
                         }
                     }
                     close_all_supplier_taps(supplier_id);
-                    supplier_reset(supplier_id);
+                    // A `Supplier::Preserving` keeps its whole terminal state
+                    // (backlog + done flag) past `.done` so a tap registered
+                    // afterwards still replays it (see the mutable-lane arm's
+                    // matching comment below for the full rationale).
+                    if !preserving {
+                        supplier_reset(supplier_id);
+                    }
                 }
                 Ok(Value::NIL)
             }

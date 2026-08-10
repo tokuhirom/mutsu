@@ -6,6 +6,8 @@
 
 These are the only two cases in the file whose BODY completion depends on the source supply's `done` (UntilClosed body / ContentLength-too-short + close). All content-length/chunked cases complete from data alone and pass.
 
+**Likely also the cause of `t/http2-request-parser.rakutest` subtest 44 ("Header1 + Header2 + Data1 + Data2", check 4)**, found while verifying the fix for `supplier-preserving-backlog-destroyed-by-done-immutable-lane` (PR #6166, 2026-08-10). After that fix, this file's other backlog-loss flakes disappeared and only this one subtest remains, now deterministic every run. Debug instrumentation showed `.body-blob.result` for the second (later-registered) concurrent stream resolves to an **empty** buffer even though the producer did emit+done the expected bytes — i.e. the `Promise(supply { whenever self.body-byte-stream {...} })` coercion is returning before observing any chunks, consistent with this ticket's synchronous-drive mechanism racing against the still-emitting producer thread. Not yet reduced to a minimal non-Cro repro (a hand-built two-`Supplier::Preserving` analogue in `tmp/repro-two-stream-body-blob.raku` did NOT reproduce it, so the trigger needs the real `Cro::HTTP2::GeneralParser`/HPACK-decoder shape, not just two independent Preserving suppliers).
+
 ## Repro (verified)
 Minimal, no Cro (`tmp/repro-promise-supply-coerce.raku`):
 
