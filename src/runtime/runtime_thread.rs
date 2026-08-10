@@ -536,13 +536,36 @@ impl Interpreter {
             // must treat them exactly like re-declared names: reads and writes
             // stay env-local, and a stale same-named ancestor entry must not be
             // pulled over the captured copy at a sync point.
-            thread_redeclared_vars: captured_scalars.clone(),
+            //
+            // A name the PARENT currently has masked as a slurpy `@`/`%`
+            // parameter (`thread_param_shadow_vars`) must carry the same
+            // treatment into the child: the child's env was just cloned from
+            // the parent's, so it already holds THIS call's own value under
+            // that bare name. Without inheriting the mask here, the child's
+            // read gate (`container_name_is_redeclared`) sees the name as
+            // unmasked and falls through to the shared-store fallback, which
+            // may hold a DIFFERENT, now-stale value seeded by an earlier
+            // sequential call to the same routine (the mask itself is lifted
+            // on the parent as soon as that call's synchronous body returns,
+            // long before an async `start` block spawned from inside it gets
+            // around to reading the parameter — see
+            // `slurpy-hash-param-in-start-block-reads-stale-value-across-
+            // sequential-calls.md`). The mask must instead survive for as
+            // long as the CHILD's own body runs, independent of the parent's
+            // lifetime.
+            thread_redeclared_vars: captured_scalars
+                .iter()
+                .cloned()
+                .chain(self.thread_param_shadow_vars.iter().cloned())
+                .collect(),
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
-            // The child starts no call of its own; its own parameter bindings
-            // populate this as they run.
-            thread_param_shadow_vars: std::collections::HashSet::new(),
+            // The child starts no call of its own, but it inherits the
+            // parent's currently-active parameter shadows (see the
+            // `thread_redeclared_vars` comment above) — its own subsequent
+            // parameter bindings union in as they run.
+            thread_param_shadow_vars: self.thread_param_shadow_vars.clone(),
             // The child re-binds its own env-bound parameters if it runs any.
             param_bound_aggregates: std::collections::HashMap::new(),
             suppress_shared_publish: false,
