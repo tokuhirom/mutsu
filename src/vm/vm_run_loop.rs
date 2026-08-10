@@ -267,6 +267,11 @@ impl Interpreter {
         let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // ADR-0023: a routine called from a loop body starts with an empty
+        // active-loop-param stack, so a spawn inside the callee whose free
+        // variable merely shares an OUTER loop's parameter name is not
+        // mistaken for that loop's own per-iteration binding.
+        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
         let saved_outer_scope_locals = std::mem::take(&mut self.outer_scope_locals);
         let saved_pending_alias_bind_names = std::mem::take(&mut self.pending_alias_bind_names);
         let saved_in_smartmatch_rhs = self.in_smartmatch_rhs;
@@ -344,6 +349,7 @@ impl Interpreter {
         self.block_declared_vars = saved_block_declared_vars;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.active_loop_param_names = saved_active_loop_param_names;
         self.outer_scope_locals = saved_outer_scope_locals;
         self.pending_alias_bind_names = saved_pending_alias_bind_names;
         self.in_smartmatch_rhs = saved_in_smartmatch_rhs;

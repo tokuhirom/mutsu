@@ -146,11 +146,19 @@ impl Interpreter {
     /// in the body marks such free variables as `owned_captures`, giving Raku's
     /// per-iteration binding semantics. Must be balanced by `pop_loop_local_scope`
     /// on every exit path.
-    pub(super) fn push_loop_local_scope(&mut self) {
+    ///
+    /// `param_names` (ADR-0023) are the bare names this loop currently binds as
+    /// fresh per-iteration for-loop parameters — empty for loop forms with no
+    /// parameter (`while`/`until`/C-style/`repeat`) and for the branch-body
+    /// reuse of this scope mechanism. Consulted by `block_captured_scalars` to
+    /// keep such names off the cross-thread bare-name lane regardless of their
+    /// value's type.
+    pub(super) fn push_loop_local_scope(&mut self, param_names: rustc_hash::FxHashSet<String>) {
         self.loop_local_vars
             .push(crate::runtime::NameSet::default());
         self.loop_local_saved_env
             .push(std::collections::HashMap::new());
+        self.active_loop_param_names.push(param_names);
     }
 
     /// Pop the loop-body declaration scope pushed by `push_loop_local_scope` and
@@ -163,6 +171,7 @@ impl Interpreter {
     /// any outer slot sharing the name re-syncs from the restored env on next read.
     pub(super) fn pop_loop_local_scope(&mut self, code: &CompiledCode) {
         self.loop_local_vars.pop();
+        self.active_loop_param_names.pop();
         if let Some(saved) = self.loop_local_saved_env.pop() {
             for (name, val) in saved {
                 // A `None` entry is a body-local `my` that shadowed NOTHING: the
@@ -256,7 +265,7 @@ impl Interpreter {
         let env_had_before: crate::runtime::NameSet = self.env().keys().copied().collect();
         let stack_base = self.stack.len();
         let saved_when_matched = self.when_matched();
-        self.push_loop_local_scope();
+        self.push_loop_local_scope(Default::default());
         // Track `my` declarations made directly in this branch.
         self.block_declared_vars
             .push(crate::runtime::NameSet::default());
@@ -418,7 +427,7 @@ impl Interpreter {
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures, incl. `while my $x = ...` condition declarations).
         // Balanced by pop on every exit path.
-        self.push_loop_local_scope();
+        self.push_loop_local_scope(Default::default());
 
         'while_loop: loop {
             // Deferred lazy-pull suspension (see `gather_suspend_pending`):

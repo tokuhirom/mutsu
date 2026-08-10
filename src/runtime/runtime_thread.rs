@@ -30,6 +30,20 @@ impl Interpreter {
                 if self.type_body_written_lexicals.contains(bare) {
                     continue;
                 }
+                // ADR-0023: a name currently bound as a for-loop parameter is a
+                // fresh, readonly, per-iteration binding — the spawn-time env
+                // clone is its correct per-binding home for ANY value type.
+                // Keeping it off the lane is what lets two sibling iterations'
+                // spawns each hold their own value
+                // (todo/deep/concurrent-for-loop-siblings-...).
+                if self
+                    .active_loop_param_names
+                    .iter()
+                    .any(|s| s.contains(bare))
+                {
+                    out.insert(bare.to_string());
+                    continue;
+                }
                 // Only a genuinely PLAIN scalar is owned per binding by the
                 // closure machinery — either boxed into a shared cell by
                 // `box_captured_lexicals` or correctly frozen by value. An
@@ -762,6 +776,7 @@ impl Interpreter {
             user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: Vec::new(),
             loop_local_vars: Vec::new(),
+            active_loop_param_names: Vec::new(),
             loop_local_saved_env: Vec::new(),
             loop_cond_active: false,
             outer_scope_locals: Vec::new(),

@@ -53,6 +53,10 @@ impl Interpreter {
         // returned 0 instead of 10. Restored on every exit path.
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // ADR-0023: isolate the caller's active-loop-param stack the same way
+        // (mirrors vm_call_fast.rs) — this path also bypasses
+        // `with_nested_registers`.
+        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
         // Isolate the caller's block-scope `my`-declaration tracking (mirrors the
         // loop-local isolation above). Without this, the callee's routine-level
         // `my $x` — which runs before the callee enters any of its own blocks —
@@ -168,6 +172,7 @@ impl Interpreter {
                     self.recycle_locals(used);
                     self.loop_local_vars = saved_loop_local_vars;
                     self.loop_local_saved_env = saved_loop_local_saved_env;
+                    self.active_loop_param_names = saved_active_loop_param_names;
                     self.block_declared_vars = saved_block_declared_vars;
                     if is_module_call {
                         self.module_call_depth -= 1;
@@ -345,6 +350,7 @@ impl Interpreter {
         self.recycle_locals(used);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.active_loop_param_names = saved_active_loop_param_names;
         self.block_declared_vars = saved_block_declared_vars;
         self.exit_readonly_frame(saved_readonly);
 
