@@ -740,4 +740,161 @@ mod tests {
             }
         }
     }
+
+    /// ADR-0019 E2b (eighth slice, 2026-08-10): the long diffuse tail left
+    /// after the seventh slice (no single dominant owner, mostly 4-30 hits
+    /// each) -- rows hand-probed against real values of ~25 owners
+    /// constructed via one shared interpreter script, none of which have a
+    /// `builtin_type_method_names` entry (same situation as `Pair`/`Seq`/
+    /// `Match` in earlier slices). See the table comment in
+    /// `native_method_row_table.rs` for the two root-cause rows (`Any`'s
+    /// `gist`/`raku`/`hash` for the bare type object, `Exception`'s
+    /// `message`/`gist`/`Str` covering the whole un-rowed `X::*`/`CX::*`
+    /// tail via the chain-walk).
+    #[test]
+    fn eighth_slice_tail_rows_are_backed_by_the_cascade() {
+        use crate::builtins::builtin_type_methods::native_method_arities;
+        use crate::symbol::Symbol;
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(
+                r#"
+                my $version = v1.2.3;
+                my $date = Date.new(2024,1,15);
+                my $datetime = DateTime.new(2024,1,15,12,30,0);
+                my $duration = now - now;
+                sub foo($a, $b) { }
+                my $sig = &foo.signature;
+                try { 42.no-such-method() };
+                my $notfound = $!;
+                try { sprintf("%Q", 1) };
+                my $unsupported = $!;
+                try { "abc".Numeric };
+                my $numeric-err = $!;
+                my $frame;
+                {
+                    my sub with-frame { fail }();
+                    CATCH { default {
+                        my $bt2 = .backtrace;
+                        $frame = $bt2.list[0];
+                    }}
+                }
+                my $bt = $notfound.backtrace;
+                my $range = 1..10;
+                my $rat = 1.5;
+                my $map = Map.new("a" => 1);
+                my $pair = ("a" => 1);
+                my $cf = callframe();
+                my $list = (1,2,3);
+                class E2bEighthSliceFoo { has $.x; }
+                my $attr = E2bEighthSliceFoo.^attributes[0];
+                my $iopath = IO::Path.new("/a/b/c.txt");
+                my $parts = $iopath.parts;
+                my $cap = \(1,2,3);
+                my $complex = 1+2i;
+                my $instant = now;
+                my Int @arr = 1,2,3;
+                my $uni = "x".NFC;
+                my $block = { 42 };
+                my $sup = Supply.from-list(1,2,3);
+                "#,
+            )
+            .unwrap();
+        let get = |name: &str| interp.env().get(name).cloned().unwrap();
+        let junction = Value::junction(
+            crate::value::JunctionKind::Any,
+            vec![Value::int(1), Value::int(2), Value::int(3)],
+        );
+        let seq = Value::seq(vec![Value::int(1), Value::int(2), Value::int(3)]);
+        let mut match_interp = crate::runtime::Interpreter::new();
+        match_interp.run("'foo' ~~ /f(o)(o)/;").unwrap();
+        let match_sample = match_interp.env().get("/").cloned().unwrap();
+        let samples: &[(&str, Value)] = &[
+            ("Any", Value::package(Symbol::intern("Any"))),
+            ("Mu", Value::package(Symbol::intern("Mu"))),
+            ("Nil", Value::NIL),
+            ("Version", get("version")),
+            ("Date", get("date")),
+            ("DateTime", get("datetime")),
+            ("Duration", get("duration")),
+            ("Signature", get("sig")),
+            ("Backtrace", get("bt")),
+            ("Backtrace::Frame", get("frame")),
+            ("Range", get("range")),
+            ("Rat", get("rat")),
+            ("Map", get("map")),
+            ("Pair", get("pair")),
+            ("CallFrame", get("cf")),
+            ("List", get("list")),
+            ("Array", get("@arr")),
+            ("Attribute", get("attr")),
+            ("IO::Path::Parts", get("parts")),
+            ("Capture", get("cap")),
+            ("Complex", get("complex")),
+            ("Instant", get("instant")),
+            ("Uni", get("uni")),
+            ("Block", get("block")),
+            ("Supply", get("sup")),
+            ("Junction", junction),
+            ("Seq", seq),
+            ("Match", match_sample),
+        ];
+        let extra_exception_samples: &[(&str, Value)] = &[
+            ("X::Method::NotFound", get("notfound")),
+            (
+                "X::Str::Sprintf::Directives::Unsupported",
+                get("unsupported"),
+            ),
+            ("X::Str::Numeric", get("numeric-err")),
+        ];
+        for (label, sample) in samples {
+            for &(row_owner, name, arity, flags) in RAW_ROWS {
+                if row_owner != *label {
+                    continue;
+                }
+                let flags = NativeRowFlags(flags);
+                if flags.contains(NativeRowFlags::SPECIAL)
+                    || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                {
+                    continue;
+                }
+                let observed = native_method_arities(sample, name);
+                let mask = NativeArityMask(arity);
+                for (bit, m) in [
+                    (0u8, NativeArityMask::A0),
+                    (1u8, NativeArityMask::A1),
+                    (2u8, NativeArityMask::A2),
+                ] {
+                    if mask.contains(m) {
+                        assert!(
+                            observed & (1 << bit) != 0,
+                            "{label}x{name} row claims arity {bit} but the cascade does not recognize it"
+                        );
+                    }
+                }
+            }
+        }
+        // The `Exception` row's whole point is to cover types that have NO
+        // row of their own: confirm the cascade recognizes `message`/`gist`
+        // for each, and that each one's chain actually reaches `Exception`.
+        for (owner, sample) in extra_exception_samples {
+            for name in ["message", "gist"] {
+                assert_ne!(
+                    native_method_arities(sample, name) & 1,
+                    0,
+                    "{owner}x{name} should be recognized at arity 0"
+                );
+                assert_eq!(
+                    native_method_row(owner, name).0,
+                    NativeArityMask::N,
+                    "{owner} should not have its own {name} row (covered via Exception)"
+                );
+            }
+            let chain = interp.dispatch_owner_chain(sample);
+            assert!(
+                chain.iter().any(|t| t.as_str() == "Exception"),
+                "{owner}'s dispatch_owner_chain should reach Exception: {chain:?}"
+            );
+        }
+    }
 }

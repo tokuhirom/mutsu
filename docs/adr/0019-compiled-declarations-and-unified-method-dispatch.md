@@ -2046,6 +2046,52 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     table), ran `make roast` locally, not just `make test`, per the "touched
     name/type resolution" rule -- both green (`cargo test --lib` 740 tests,
     `make test` unchanged file count, `make roast` 1435 files / 218774 tests).
+    **Progress 2026-08-10** (eighth slice): closed most of the diffuse tail
+    left above -- ~25 owners with no `builtin_type_method_names` entry (same
+    situation as `Pair`/`Seq`/`Match`), each hand-probed against a real value
+    built via one shared interpreter script (`Version`, `Date`, `DateTime`,
+    `Duration`, `Signature`, `Backtrace`/`Backtrace::Frame`, `Range` (13 new
+    names), `Rat`, `Map`, `Pair`, `CallFrame`, `List`/`Array` (4 shared
+    names), `Attribute`, `IO::Path::Parts`, `Capture`, `Complex`, `Instant`,
+    `Uni`, `Block`, `Supply`, `Junction`, `Seq`, plus 3 more `Match` names).
+    Two additions were root-cause fixes rather than plain per-owner rows: (1)
+    `Any`'s `gist`/`raku`/`hash` cover the bare `Any` type object (confirmed
+    the same `ValueView::Package` formatting arm in `dispatch_core_repr.rs`
+    renders every type object uniformly, including user classes, so the row
+    is not an `Any`-only artifact); (2) `Exception`'s `message`/`gist`/`Str`
+    are declared at the shared `cn == "Exception" || cn.starts_with("X::") ||
+    cn.starts_with("CX::")` gate in `methods_0arg/mod.rs`, so one
+    `Exception`-owner row -- found via the chain-walk, mirroring the
+    `Failure`/`Exception` catalog fix from the seventh slice -- covers every
+    `X::*`/`CX::*` type without its own more-specific row, verified against
+    three previously-unmodeled types (`X::Method::NotFound`,
+    `X::Str::Sprintf::Directives::Unsupported`, `X::Str::Numeric`) without
+    adding a row for any of them individually. Verifying the `Exception` row
+    surfaced a genuine registration gap, not just a coverage-table gap:
+    `X::Str::Sprintf::Directives::Unsupported`'s `dispatch_owner_chain` was
+    the bare `["X::Str::Sprintf::Directives::Unsupported"]` -- unlike
+    `X::Method::NotFound`/`X::Str::Numeric`, it was never registered via
+    `runtime_init.rs`'s `register_x` helper, so it had no parent info at all
+    and the chain-walk could never reach `Exception` no matter how many rows
+    existed. Fixed with one `register_x("X::Str::Sprintf::Directives::
+    Unsupported", "Exception")` call (confirmed against real `raku`'s
+    `.^mro`: `(Unsupported, Exception, Any, Mu)`). A fresh `t/`-wide sweep
+    confirmed `native_call_unmodeled` dropped from 1498 to 593 (cumulative
+    **-98.4%** from the original ~37904); the only remaining top-40 entries
+    are `ProfiledG x raku` (24, a test-defined grammar under EXPORTHOW custom
+    HOW, not a generalizable builtin owner), `RakuAST::IntLiteral x value`
+    (9), `Int x ^name` / `CArray[uint8] x elems` (7 each, both deferred: the
+    caret-name arm is gated on the value carrying a role mixin, not plain
+    `Int`, and a generic `Int` row would over-claim; `CArray` is NativeCall
+    plumbing, low leverage), and a long single-digit tail. New
+    `eighth_slice_tail_rows_are_backed_by_the_cascade` test
+    (`native_method_row.rs`). `cargo test --lib` (741 tests) and `make test`
+    (3002 files/28169 tests) both green; since the `register_x` fix changes a
+    real `dispatch_owner_chain` answer, ran a targeted local roast sweep
+    (`sprintf`/exception/date/range/signature/junction/version/duration/
+    instant-related whitelisted files, 83 files) rather than the full suite,
+    per the "touched name/type resolution" rule -- all green, full `make
+    roast` left to CI.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

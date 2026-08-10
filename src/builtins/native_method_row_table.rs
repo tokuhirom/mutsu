@@ -898,4 +898,113 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("X::TypeCheck::Assignment", "Str", 3, 0),
     ("X::TypeCheck::Assignment", "Bool", 1, 0),
     ("X::TypeCheck::Assignment", "throw", 1, 0),
+    // ADR-0019 E2b (eighth slice, 2026-08-10): the sweep's remaining tail was a
+    // long list of single-digit-to-dozens owners with no dominant offender.
+    // Each row below was hand-probed against a real value of that owner
+    // (constructed via the interpreter, not `builtin_sample_value`, which has
+    // no entry for any of these) using `native_method_arities`, the same
+    // discipline as every earlier E2b slice. Two are root-cause fixes rather
+    // than plain additions:
+    // - `Any`'s `gist`/`raku`/`hash` cover the BARE `Any` type object
+    //   (`Any.gist` -> "(Any)"), reached via the generic `ValueView::Package`
+    //   formatting arm in `dispatch_core_repr.rs` that renders every type
+    //   object uniformly -- confirmed the same arm serves user classes too
+    //   (`class Foo {}; Foo.gist` -> "(Foo)"), so the row is not a
+    //   `Any`-sample artifact.
+    // - `Exception`'s `message`/`gist`/`Str` are declared at the shared
+    //   `cn == "Exception" || cn.starts_with("X::") || cn.starts_with("CX::")`
+    //   gate in `methods_0arg/mod.rs`, so one `Exception`-owner row (found via
+    //   the chain-walk, same as `Failure`'s fix in the seventh slice) covers
+    //   every `X::*`/`CX::*` type that does NOT already have its own
+    //   more-specific row above -- verified against three previously-unmodeled
+    //   types (`X::Method::NotFound`, `X::Str::Sprintf::Directives::Unsupported`,
+    //   `X::Str::Numeric`) without adding a row for any of them individually.
+    ("Any", "gist", 1, 0),
+    ("Any", "raku", 1, 0),
+    ("Any", "hash", 1, 0),
+    ("Mu", "defined", 1, 0),
+    ("Nil", "gist", 1, 0),
+    ("Nil", "raku", 1, 0),
+    ("Exception", "message", 1, 0),
+    ("Exception", "gist", 1, 0),
+    ("Exception", "Str", 3, 0),
+    ("Version", "Str", 3, 0),
+    ("Version", "raku", 1, 0),
+    ("Version", "gist", 1, 0),
+    ("Version", "parts", 1, 0),
+    ("Date", "Str", 3, 0),
+    ("Date", "raku", 1, 0),
+    ("Date", "gist", 1, 0),
+    ("Date", "year", 1, 0),
+    ("Date", "mm-dd-yyyy", 1, 0),
+    ("Date", "yyyy-mm-dd", 1, 0),
+    ("Date", "dd-mm-yyyy", 1, 0),
+    ("DateTime", "Str", 3, 0),
+    ("DateTime", "raku", 1, 0),
+    ("DateTime", "gist", 1, 0),
+    ("DateTime", "hour", 1, 0),
+    ("DateTime", "year", 1, 0),
+    ("Duration", "Numeric", 1, 0),
+    ("Duration", "abs", 1, 0),
+    ("Duration", "Int", 1, 0),
+    ("Duration", "gist", 1, 0),
+    ("Duration", "raku", 1, 0),
+    ("Signature", "gist", 1, 0),
+    ("Signature", "raku", 1, 0),
+    ("Backtrace", "list", 1, 0),
+    ("Backtrace", "Str", 3, 0),
+    ("Backtrace", "gist", 1, 0),
+    ("Backtrace::Frame", "is-routine", 1, 0),
+    ("Backtrace::Frame", "subname", 1, 0),
+    ("Backtrace::Frame", "is-hidden", 1, 0),
+    ("Backtrace::Frame", "file", 1, 0),
+    ("Backtrace::Frame", "line", 1, 0),
+    ("Backtrace::Frame", "gist", 1, 0),
+    ("Range", "hyper", 1, 0),
+    ("Range", "lazy", 1, 0),
+    ("Range", "int-bounds", 1, 0),
+    ("Range", "Array", 1, 0),
+    ("Range", "join", 1, 0),
+    ("Range", "AT-POS", 2, 0),
+    ("Range", "Supply", 1, 0),
+    ("Range", "race", 1, 0),
+    ("Range", "List", 1, 0),
+    ("Range", "in-range", 2, 0),
+    ("Range", "head", 3, 0),
+    ("Range", "EXISTS-POS", 2, 0),
+    ("Range", "batch", 2, 0),
+    ("Rat", "FatRat", 3, 0),
+    ("Rat", "nude", 1, 0),
+    ("Map", "raku", 1, 0),
+    ("Map", "gist", 1, 0),
+    ("Map", "keys", 1, 0),
+    ("Map", "elems", 1, 0),
+    ("Pair", "Pair", 1, 0),
+    ("CallFrame", "defined", 1, 0),
+    ("List", "tree", 1, 0),
+    ("List", "pairup", 1, 0),
+    ("List", "hash", 1, 0),
+    ("List", "fmt", 7, 0),
+    ("Array", "tree", 1, 0),
+    ("Array", "pairup", 1, 0),
+    ("Array", "hash", 1, 0),
+    ("Array", "fmt", 7, 0),
+    ("Attribute", "defined", 1, 0),
+    ("IO::Path::Parts", "AT-KEY", 2, 0),
+    ("IO::Path::Parts", "AT-POS", 2, 0),
+    ("Capture", "list", 1, 0),
+    ("Capture", "hash", 1, 0),
+    ("Complex", "UInt", 1, 0),
+    ("Complex", "isNaN", 1, 0),
+    ("Instant", "to-posix", 1, 0),
+    ("Instant", "Numeric", 1, 0),
+    ("Uni", "Str", 3, 0),
+    ("Block", "lazy", 1, 0),
+    ("Supply", "list", 1, 0),
+    ("Junction", "gist", 1, 0),
+    ("Junction", "Bool", 1, 0),
+    ("Seq", "is-lazy", 1, 0),
+    ("Match", "Stringy", 1, 0),
+    ("Match", "join", 3, 0),
+    ("Match", "AT-POS", 2, 0),
 ];

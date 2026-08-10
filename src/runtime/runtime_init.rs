@@ -1711,6 +1711,9 @@ impl Interpreter {
         // X::Str::Numeric
         register_x("X::Str::Numeric", "Exception");
 
+        // X::Str::Sprintf::Directives::Unsupported — unsupported sprintf directive.
+        register_x("X::Str::Sprintf::Directives::Unsupported", "Exception");
+
         // X::Str::Match::x — invalid :x argument to .subst / s///
         register_x("X::Str::Match::x", "Exception");
 
