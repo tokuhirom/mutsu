@@ -318,6 +318,24 @@ impl Interpreter {
             .unwrap_or_else(|| well_known_types().any.as_str())
     }
 
+    /// ADR-0019 **E1c**: the owner name a `Metamodel` MOP entry (`.^ver`,
+    /// `.^auth`, `.^attributes`, `.^concretization`, ...) keys its lookup on. A
+    /// type object or instance reports its own declared name directly, exactly
+    /// like the sites this replaces; every other receiver (concrete builtins,
+    /// Enum values, role mixins) resolves through [`Self::dispatch_owner_name`]
+    /// instead of `value_type_name` — the two agree except for the E1a-ledger
+    /// cases (Enum, role mixin) where the classifier is the *correct* answer.
+    /// Collapses the 13+8 duplicated `_ => value_type_name(&args[0]).to_string()`
+    /// fallback arms surveyed across the MOP dispatch modules
+    /// (`todo/deep/adr0019-e1-typeid-receiver-owner.md`) into one call.
+    pub(crate) fn mop_receiver_owner(&mut self, value: &Value) -> String {
+        match value.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => self.dispatch_owner_name(value).to_string(),
+        }
+    }
+
     /// Shadow-mode comparison for ADR-0019 E1a (`MUTSU_VM_STATS`-gated, a no-op
     /// otherwise): compute the classifier's owner for `target` and compare it against
     /// `old_owner` (the name the *existing* dispatch-path logic at `site` already

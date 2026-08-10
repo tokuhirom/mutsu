@@ -289,11 +289,9 @@ impl Interpreter {
     /// defines the method. This implements `.can(method-name)`.
     pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
         let class_name = match target.view() {
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            ValueView::Package(name) => name.resolve(),
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Enum { enum_type, .. } => enum_type.resolve(),
-            _ => utils::value_type_name(target).to_string(),
+            _ => self.mop_receiver_owner(target),
         };
         // RakuAST model classes are native type objects rather than ordinary
         // ClassDef entries. Keep `.^can` in lockstep with `.^methods(:local)`

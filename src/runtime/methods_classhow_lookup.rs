@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(super) fn classhow_lookup(&self, invocant: &Value, method_name: &str) -> Option<Value> {
+    pub(super) fn classhow_lookup(&mut self, invocant: &Value, method_name: &str) -> Option<Value> {
         let (class_name, class_name_str) = match invocant.view() {
             ValueView::Package(name) => (name, name.resolve()),
             // An instance of a user class carries its class name; `value_type_name` would
@@ -10,8 +10,8 @@ impl Interpreter {
             // nothing while `Class.^lookup('m')` did.
             ValueView::Instance { class_name, .. } => (class_name, class_name.resolve()),
             _ => {
-                // For concrete values, derive the type name
-                let type_name = crate::runtime::utils::value_type_name(invocant).to_string();
+                // For concrete values, derive the type name via the classifier.
+                let type_name = self.dispatch_owner_name(invocant).to_string();
                 (Symbol::intern(&type_name), type_name)
             }
         };
@@ -309,7 +309,7 @@ impl Interpreter {
     }
 
     pub(super) fn classhow_find_method(
-        &self,
+        &mut self,
         invocant: &Value,
         method_name: &str,
     ) -> Option<Value> {

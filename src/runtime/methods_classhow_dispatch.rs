@@ -171,7 +171,7 @@ impl Interpreter {
                         .join(",");
                     format!("{}[{}]", base_name, args_str)
                 }
-                _ => value_type_name(&args[0]).to_string(),
+                _ => self.dispatch_owner_name(&args[0]).to_string(),
             })),
             "array_type" if !args.is_empty() => {
                 // The element type of a native array-ish container. Derived from
@@ -193,13 +193,7 @@ impl Interpreter {
                 Ok(Value::str(shorten_type_name(&full)))
             }
             "ver" if args.len() == 1 => {
-                let name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    // A plain value (`42.^ver`): resolve through its type so
-                    // builtins answer below.
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let name = self.mop_receiver_owner(&args[0]);
                 if let Some(meta) = self.type_metadata.get(&name)
                     && let Some(value) = meta.get("ver").cloned()
                 {
@@ -252,11 +246,7 @@ impl Interpreter {
                 ))
             }
             "auth" if args.len() == 1 => {
-                let name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let name = self.mop_receiver_owner(&args[0]);
                 // A bare `package` uses PackageHOW, which has no `.^auth`.
                 if matches!(
                     self.registry().package_kinds.get(&name),
@@ -279,11 +269,7 @@ impl Interpreter {
                 Ok(Value::str(String::new()))
             }
             "api" if args.len() == 1 => {
-                let name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let name = self.mop_receiver_owner(&args[0]);
                 // A bare `package` uses PackageHOW, which has no `.^api`.
                 if matches!(
                     self.registry().package_kinds.get(&name),
@@ -390,11 +376,7 @@ impl Interpreter {
                 }
             }
             "archetypes" if !args.is_empty() => {
-                let invocant_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let invocant_name = self.mop_receiver_owner(&args[0]);
                 let base_name = invocant_name
                     .split_once('[')
                     .map(|(base, _)| base)
@@ -432,11 +414,7 @@ impl Interpreter {
                 ))
             }
             "nominalize" if !args.is_empty() => {
-                let invocant_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let invocant_name = self.mop_receiver_owner(&args[0]);
                 let nominal = self.nominalize_type_name(&invocant_name);
                 Ok(Value::package(Symbol::intern(&nominal)))
             }
@@ -556,10 +534,7 @@ impl Interpreter {
                 // `Base[Arg,...]` package name that `vm_var_index_ops.rs` produces
                 // for the `[ ]` syntax, so `Set.^parameterize(Str)` and `Set[Str]`
                 // yield an identical parameterized type object.
-                let base = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let base = self.mop_receiver_owner(&args[0]);
                 let param_args = args[1..]
                     .iter()
                     .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
@@ -578,11 +553,7 @@ impl Interpreter {
                 ))))
             }
             "coerce" if args.len() >= 2 => {
-                let target_constraint = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let target_constraint = self.mop_receiver_owner(&args[0]);
                 let original = args[1].clone();
                 let parse_coercion = |constraint: &str| -> Option<(String, Option<String>)> {
                     if !constraint.ends_with(')') || constraint.contains('[') {
@@ -971,11 +942,7 @@ impl Interpreter {
             }
             "methods" if !args.is_empty() => self.dispatch_classhow_methods(&args),
             "attributes" if !args.is_empty() => {
-                let owner_class = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let owner_class = self.mop_receiver_owner(&args[0]);
                 let local_only = args[1..].iter().any(
                     |a| matches!(a.view(), ValueView::Pair(k, v) if k == "local" && v.truthy()),
                 );
@@ -1044,11 +1011,7 @@ impl Interpreter {
                 Ok(Value::array(Vec::new()))
             }
             "concretization" if args.len() >= 2 => {
-                let class_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let class_name = self.mop_receiver_owner(&args[0]);
                 let role_name = match args[1].view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::ParametricRole {
@@ -1201,11 +1164,7 @@ impl Interpreter {
                 {
                     return Ok(rev.clone());
                 }
-                let type_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let type_name = self.mop_receiver_owner(&args[0]);
                 if let Some(meta) = self.type_metadata.get(&type_name)
                     && let Some(rev) = meta.get("language-revision")
                 {
@@ -1222,19 +1181,13 @@ impl Interpreter {
             }
             "method_table" if !args.is_empty() => {
                 let type_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
                     ValueView::RakuAst(node) => node.class.printed_name().to_string(),
-                    _ => value_type_name(&args[0]).to_string(),
+                    _ => self.mop_receiver_owner(&args[0]),
                 };
                 Ok(Value::hash(self.class_method_table(&type_name)))
             }
             "submethod_table" if !args.is_empty() => {
-                let type_name = match args[0].view() {
-                    ValueView::Package(name) => name.resolve(),
-                    ValueView::Instance { class_name, .. } => class_name.resolve(),
-                    _ => value_type_name(&args[0]).to_string(),
-                };
+                let type_name = self.mop_receiver_owner(&args[0]);
                 let mut table = HashMap::new();
                 if let Some(class_def) = self.registry().classes.get(&type_name) {
                     for (name, defs) in &class_def.methods {
