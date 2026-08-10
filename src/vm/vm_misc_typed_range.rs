@@ -212,9 +212,27 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn exec_make_range_op(&mut self) -> Result<(), RuntimeError> {
-        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
-        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+    /// Build a Range value from an operator name (`..`, `..^`, `^..`, `^..^`)
+    /// and already-evaluated endpoints. Shared by the dedicated range opcodes
+    /// (which pop `left`/`right` off the stack) and metaop bases like `Z..` /
+    /// `X..^`, which hand endpoints in directly.
+    pub(crate) fn build_range_value_for_op(
+        op: &str,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
+        match op {
+            ".." => Self::build_range_value(left, right),
+            "..^" => Self::build_range_excl_value(left, right),
+            "^.." => Self::build_range_excl_start_value(left, right),
+            "^..^" => Self::build_range_excl_both_value(left, right),
+            _ => unreachable!("build_range_value_for_op called with non-range op: {op}"),
+        }
+    }
+
+    fn build_range_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let right = Self::scalarize_range_endpoint(right);
+        let left = Self::scalarize_range_endpoint(left);
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
@@ -266,13 +284,12 @@ impl Interpreter {
             }
             _ => Value::generic_range(left.clone(), right.clone(), false, false),
         };
-        self.stack.push(result);
-        Ok(())
+        Ok(result)
     }
 
-    pub(super) fn exec_make_range_excl_op(&mut self) -> Result<(), RuntimeError> {
-        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
-        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+    fn build_range_excl_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let right = Self::scalarize_range_endpoint(right);
+        let left = Self::scalarize_range_endpoint(left);
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
@@ -283,13 +300,12 @@ impl Interpreter {
             }
             _ => Value::generic_range(left.clone(), right.clone(), false, true),
         };
-        self.stack.push(result);
-        Ok(())
+        Ok(result)
     }
 
-    pub(super) fn exec_make_range_excl_start_op(&mut self) -> Result<(), RuntimeError> {
-        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
-        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+    fn build_range_excl_start_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let right = Self::scalarize_range_endpoint(right);
+        let left = Self::scalarize_range_endpoint(left);
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
@@ -300,13 +316,12 @@ impl Interpreter {
             }
             _ => Value::generic_range(left.clone(), right.clone(), true, false),
         };
-        self.stack.push(result);
-        Ok(())
+        Ok(result)
     }
 
-    pub(super) fn exec_make_range_excl_both_op(&mut self) -> Result<(), RuntimeError> {
-        let right = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
-        let left = Self::scalarize_range_endpoint(self.stack.pop().unwrap());
+    fn build_range_excl_both_value(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        let right = Self::scalarize_range_endpoint(right);
+        let left = Self::scalarize_range_endpoint(left);
         if let Some(err) = Self::check_range_invalid_arg(&left, &right) {
             return Err(err);
         }
@@ -317,6 +332,37 @@ impl Interpreter {
             }
             _ => Value::generic_range(left.clone(), right.clone(), true, true),
         };
+        Ok(result)
+    }
+
+    pub(super) fn exec_make_range_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = Self::build_range_value(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    pub(super) fn exec_make_range_excl_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = Self::build_range_excl_value(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    pub(super) fn exec_make_range_excl_start_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = Self::build_range_excl_start_value(left, right)?;
+        self.stack.push(result);
+        Ok(())
+    }
+
+    pub(super) fn exec_make_range_excl_both_op(&mut self) -> Result<(), RuntimeError> {
+        let right = self.stack.pop().unwrap();
+        let left = self.stack.pop().unwrap();
+        let result = Self::build_range_excl_both_value(left, right)?;
         self.stack.push(result);
         Ok(())
     }
