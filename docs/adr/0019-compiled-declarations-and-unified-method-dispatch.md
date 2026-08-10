@@ -1921,6 +1921,37 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `list_dynamic_is_not_recognized` tests. `cargo test --lib` (734 tests) and a
     targeted `prove` over all `t/*array*.t`/`t/*list*.t` (214 files/2272 tests) both
     green.
+    **Progress 2026-08-10** (fifth slice): closed the `Str`/`Hash`/`Int` gap named
+    above, plus generalized seven more universal pseudo-methods
+    (`self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`) to `Any`-level rows
+    alongside the existing `so`/`not`/`defined`/`DEFINITE` ones -- found by reading
+    every match arm in `dispatch_core_coerce.rs`/`dispatch_core_math.rs` rather than
+    inferring from the sweep breakdown alone, since each has a receiver-type-agnostic
+    `_ => ...` fallback and therefore covers every owner at once, not just the three
+    this slice targeted. The `Str`/`Hash`/`Int`-specific additions (23/12/26 rows)
+    came from reading `dispatch_core_unicode.rs` (the `uniprop`/`ord`/`uniname`/
+    `uninames`/`unival`/`univals`/`chrs`/`bytes` cluster) and `dispatch_core_numeric.rs`
+    (the `rand`/`elems`/`lsb`/`msb` cluster, tried for every receiver by name only --
+    not gated on a numeric `ValueView`, the same reason `Int` recognizes `flip`/`uc`
+    via `target.to_string_value()`). `Str.sprintf`'s recognition is receiver-content-
+    dependent (needs exactly one `%`-directive), so its inverse-probe test uses a
+    dedicated format-string sample instead of the generic `"abc"` one. A fresh
+    `t/`-wide sweep confirmed `native_call_unmodeled` dropped from 4413 (this
+    session's file set; 3001 files, close to the fourth slice's 4377 over a
+    slightly different set) to 2823 (cumulative -92.5% from the original ~37904);
+    `Str`/`Hash`/`Int` disappeared entirely from the top-40 breakdown. Remaining top
+    pairs are now `RakuAST::StatementList`/`RakuAST::Statement::Expression`
+    (`gist`/`statements`/`expression`, ~141/31/21), exception types (`X::AdHoc`,
+    `CX::Warn`, `X::TypeCheck::Assignment`), `Failure` (`defined`/`exception`/`sink`,
+    ~45/30/18 -- `sink` persisting despite the new `Any` row means `Failure`'s
+    coverage-check chain walk is not finding it for this specific site, worth a
+    dedicated look next slice), `Buf`/`Buf[uint8]`/`utf8` (`list`/`elems`/`decode`/
+    `values`/`raku`/`gist`, ~20-45 each), `Set`/`SetHash` (`keys`/`elems`/`gist`/
+    `raku`, ~15-36 each), and `Match x Stringy`/`Anyxgist`/`Anyxraku`/`ProfiledGxraku`/
+    `Nilxraku`/`Backtracexlist`/`VersionxStr`/`Junctionxgist`/`DatexStr`/`Seqxis-lazy`/
+    `Signaturexgist` (14-50 each). New `any_second_batch_universal_rows_are_backed_by_the_cascade`
+    and `fifth_slice_extra_rows_are_backed_by_the_cascade` tests. `cargo test --lib`
+    (736 tests) and `make test` (3001 files/28167 tests) both green.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
