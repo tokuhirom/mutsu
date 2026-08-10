@@ -451,6 +451,22 @@ mod tests {
         assert_eq!(names, vec!["Int", "Cool", "Any", "Mu"]);
     }
 
+    /// ADR-0019 E2b: `Failure` is never declared as a real class (built
+    /// purely via `Value::make_instance`), so before the `builtin_type_catalog`
+    /// row was added its chain was just `["Failure"]` -- no continuation to
+    /// `Any`/`Mu` at all, meaning the `Any`-declared universal-method rows
+    /// (`so`/`defined`/`sink`/...) could never be found via the chain walk in
+    /// `record_native_row_coverage` no matter how many rows were added.
+    #[test]
+    fn failure_chain_reaches_any_and_mu_via_nil() {
+        let mut i = interp();
+        i.run("my $f = Failure.new(\"oops\");").unwrap();
+        let f = i.env().get("f").cloned().unwrap();
+        let chain = i.dispatch_owner_chain(&f);
+        let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
+        assert_eq!(names, vec!["Failure", "Nil", "Cool", "Any", "Mu"]);
+    }
+
     #[test]
     fn package_type_object_is_type_object_definedness_with_same_chain_as_instance() {
         let mut i = interp();

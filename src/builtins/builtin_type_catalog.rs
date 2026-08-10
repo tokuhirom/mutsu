@@ -243,6 +243,44 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("Junction", mro: ["Junction", "Mu"], roles: [], owner: ""),
     // ---- Nil: distinct from the `Any` that `value_type_name` folds it to today ----
     row!("Nil", mro: ["Nil", "Cool", "Any", "Mu"], roles: [], owner: ""),
+    // `Failure` is never declared as a real class anywhere in mutsu (prelude or
+    // Rust) -- it is built purely via `Value::make_instance(Symbol::intern("Failure"), ...)`
+    // wherever a native method needs one, so the class registry has no model of
+    // its ancestry and `class_mro("Failure")` answers just `["Failure"]` with no
+    // continuation to `Any`/`Mu` at all (found via ADR-0019 E2b: the
+    // `native_call_unmodeled` counter never reached zero for `Failure`'s
+    // `Any`-declared universal methods -- `so`/`defined`/`sink`/... -- no matter
+    // how many rows were added, because the chain walk never got past
+    // `Failure` itself). raku: `Failure ISA Nil` (`Failure.new.^mro` is
+    // `Failure, Nil, Cool, Any, Mu`), which this catalog row supplies via
+    // `class_chain`'s direct `builtin_type_info` lookup, bypassing the
+    // registry entirely for this type the same way `Nil` above already does.
+    row!("Failure", mro: ["Failure", "Nil", "Cool", "Any", "Mu"], roles: [], owner: ""),
+    // `Exception` is a name every built-in `X::*` exception type registers as
+    // its parent (`BUILTIN_PARENT_TYPES` in `registration_class_decl.rs`),
+    // but "Exception" itself is never registered as an actual class in the
+    // registry -- so `compute_class_mro`'s implicit-`Any` rule (which only
+    // fires for a class actually present in `self.classes`) never applies to
+    // it, and every `X::*` type's registry MRO dead-ends at `Exception` with
+    // no `Any`/`Mu` continuation (e.g. `X::AdHoc`'s registry MRO was
+    // `["X::AdHoc", "Exception"]`). This catalog row lets
+    // `class_chain_with_catalog_tail`'s splice logic supply the missing tail
+    // for every such type in one place, the same mechanism the `Failure` row
+    // above uses. raku: `Exception.^mro` is `Exception, Any, Mu`.
+    row!("Exception", mro: ["Exception", "Any", "Mu"], roles: [], owner: ""),
+    // `CX::Warn` (and the sibling `CX::*` control-exception types) is built
+    // purely via `Value::make_instance` with no registered parent at all
+    // (unlike `X::AdHoc`, which at least registers `is Exception` even
+    // though `Exception` itself was unregistered) -- its registry MRO was
+    // the bare `["CX::Warn"]`, so the `Exception` splice above never
+    // triggers for it (its registry chain never mentions `Exception`).
+    // raku: `CX::Warn.^mro` is `CX::Warn, Exception, Any, Mu`.
+    row!(
+        "CX::Warn",
+        mro: ["CX::Warn", "Exception", "Any", "Mu"],
+        roles: [],
+        owner: "",
+    ),
     // ---- Allomorphs (V4) ----
     row!(
         "Allomorph",
