@@ -1842,6 +1842,24 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `try_native_method_raw` and its twin `should_bypass_native_fastpath`.
   - [ ] **E2a — row schema + instruments + pinned regression tests.** Zero behavior change.
   - [ ] **E2b — drive `native_call_unmodeled` to zero** through the gate-classification table.
+    **Progress 2026-08-10** (first slice): the E4a sweep's own `MUTSU_VM_STATS=1` run over
+    `t/` found the coverage *check* itself over-counting — `record_native_row_coverage`
+    did a flat point lookup at the receiver's own concrete owner (via
+    `dispatch_owner_name`), so a method declared on `Any`/`Mu` but recognized for every
+    concrete receiver by the shared arity-0 cascade arms (`so`, `not`, `defined`, the
+    `DEFINITE` quoted pseudo-method) was flagged unmodeled at every owner even though it
+    was already correctly served. Fixed by walking the full
+    `Interpreter::dispatch_owner_chain` (same principle E4a's `resolve_sequence` already
+    applies) instead of checking only the first element, plus four hand-added rows for
+    `Any`/`Mu`'s universal methods (E2a's generator only covered 11 concrete-type owners
+    from `builtin_sample_value`, which has no representative sample for an abstract
+    owner). A fresh `t/`-wide sweep (2996 files) confirmed `native_call_unmodeled` dropped
+    from 37904 to 12154 (-68%) — `Str x so` alone had been 20392 of the original total.
+    Remaining unmodeled pairs (`Match`, `Pair`, `Seq`, `Array x list/item`, `FatRat`,
+    exception types, `RakuAST::*`) are genuinely missing per-owner rows, not measurement
+    artifacts, and are the next E2b sub-slices. `make test` green; two new unit tests
+    (`any_mu_universal_rows_are_backed_by_the_cascade_for_multiple_receiver_types` in
+    `native_method_row.rs`).
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

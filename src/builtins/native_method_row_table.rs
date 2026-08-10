@@ -344,4 +344,26 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "Str", 3, 0),
     ("Blob", "gist", 1, 0),
     ("Blob", "raku", 1, 0),
+    // ADR-0019 E2b: universal Any/Mu methods, added by hand (not probed via
+    // `builtin_sample_value`, which has no representative sample for an
+    // abstract owner) after `dispatch_owner_coverage`'s 2026-08-10 sweep
+    // showed these dominating `native_call_unmodeled` (Str x so alone was
+    // 54% of ~38k hits) -- `dispatch_core_str::dispatch`/`dispatch_core_coerce::dispatch`
+    // recognize `so`/`not`/`defined` unconditionally for every receiver type
+    // (see the `try_dispatch!` chain in `methods_0arg/mod.rs`), so one row
+    // per name at the owner that actually declares it (`Any`) is correct and
+    // complete once the coverage check walks the MRO chain to find it (see
+    // `Interpreter::record_native_row_coverage`) rather than doing a flat
+    // point lookup at the receiver's own concrete owner.
+    ("Any", "so", 1, 0),
+    ("Any", "not", 1, 0),
+    ("Any", "defined", 1, 1),
+    // `.DEFINITE` is a quoted pseudo-method (like `.WHAT`/`.HOW`/`.WHICH`),
+    // deliberately excluded from `MU_METHODS`'s `.^methods` introspection
+    // list since it is a compiler-level construct rather than an ordinary
+    // dispatchable method -- but `dispatch_core_coerce::dispatch` still
+    // recognizes it via the plain arity-0 cascade for any receiver, so it
+    // needs a SPECIAL row (never claims a `.^methods`-visible slot) to stop
+    // being counted as unmodeled.
+    ("Mu", "DEFINITE", 1, 4),
 ];
