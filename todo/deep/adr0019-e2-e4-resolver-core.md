@@ -251,7 +251,15 @@ ordered layers, not necessarily five single PRs.
 
 The reverted attempt is the risk model: rows becoming load-bearing while incomplete. The
 counter-to-zero discipline (E2b) and shadow-first sequencing (E4a before E4b) are the
-mitigations; neither E4b nor E3 may land while `native_call_unmodeled` or
-`resolver_shadow_mismatches` is nonzero on the sweep corpus. Second risk: perf regression from
-double resolution during shadow phases — shadow probes are `MUTSU_VM_STATS`-gated so the
-default build pays one branch, not two resolutions.
+mitigations. **Gate renegotiated 2026-08-10** (see the ADR's E2b twelfth-slice note): after
+twelve E2b slices `native_call_unmodeled` is down ~99% (~37904 to ~400) with no dominant
+cluster left in the diminishing-returns tail, so a literal-zero precondition is replaced by a
+structural one — E4b's resolver falls back to the pure native-arity cascade on any row miss
+(rather than treating a miss as "no candidate"), so an incomplete table degrades to today's
+behavior instead of misdispatching, and `native_call_unmodeled` continues to fire through that
+fallback path in production as an ongoing monitoring signal. `resolver_shadow_mismatches`
+already carries the same spirit of precedent from E4a's own landing (3 mismatches / 0.012%,
+one explained, bucketed shape — not literally zero either): a *new, unexplained* mismatch shape
+blocks a box; an explained, ledgered one does not. Second risk: perf regression from double
+resolution during shadow phases — shadow probes are `MUTSU_VM_STATS`-gated so the default build
+pays one branch, not two resolutions.
