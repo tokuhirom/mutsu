@@ -2183,6 +2183,54 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `cargo test --lib` (745 tests) and `make test` (3007 files/28205 tests)
     both green; pure row-table addition (no dispatch/registration change),
     so no local roast run required per the established rule.
+    **Progress 2026-08-10** (twelfth slice): fixed a genuine MRO-computation
+    bug for parametrized type names (`Array[Int]`, `array[int32]`,
+    `CArray[uint8]`) rather than adding more rows. `catalog_chain_for_name`'s
+    and `class_mro`/`class_mro_readonly`'s fallback for an uncataloged name
+    used to be `[name, Any, Mu]` / a bare `[name]` -- never reaching the
+    base type's real ancestry (`array[int32].^mro` in real raku is
+    `array[int32], array, Cool, Any, Mu`; mutsu's chain skipped straight to
+    `Any`/`Mu` or dead-ended at the name alone). Fixed by stripping the
+    `[...]` argument and splicing the base type's own catalog chain when the
+    base is a catalog builtin (the existing `Blob[uint32]`-style handling
+    only covered a base that was itself a *registered* class). This also
+    required two new catalog rows (`array`, `CArray` -- the NativeCall
+    typed-array bases; only the boxed `Array` collection type had one) and
+    surfaced a SECOND, independent latent bug in
+    `class_chain_with_catalog_tail`: its `continues` branch (detecting when
+    the registry MRO already carries a catalog-consistent continuation)
+    matched the newly-fully-spliced chain and then unconditionally
+    `break`-ed without pushing the rest of it, silently truncating a chain
+    like `[array[int32], array, Cool, Any, Mu]` back down to
+    `[array[int32], array]`. Both fixes are general (not array-specific) --
+    the second one benefits every builtin ancestor whose registry MRO
+    happens to already continue consistently, not just parametrized names.
+    Two new receiver_class.rs tests
+    (`parametrized_type_object_chain_is_not_truncated`,
+    `typed_native_array_type_object_chain_is_not_truncated`) plus a catalog
+    pin (`native_array_bases_match_raku_exactly`). `cargo test --lib` (748
+    tests) and `make test` (3010 files/28218 tests) both green; this touches
+    core MRO computation used far beyond arrays (registry.rs/receiver_class.rs
+    are load-bearing for `.^mro`, method resolution, augment gates, ...), so
+    117 whitelisted roast files across `S09-typed-arrays`/`S12-class`/
+    `S14-roles`/generics/NativeCall were run locally per the "touched
+    name/type resolution" rule -- all green.
+    **Gate-renegotiation proposal (raised with the user, not yet decided):**
+    after 12 slices `native_call_unmodeled` is down **~99%** (~37904 to
+    ~400) with no dominant cluster left; remaining hits are dozens of 1-10-hit
+    one-offs (individual RakuAST-adjacent one-offs, NativeCall `CArray[T]`
+    per-owner methods, ad-hoc test-fixture class names) that so far have
+    turned out NOT to be real dispatch bugs on inspection (unlike the tenth
+    and twelfth slices' finds). The design doc's own risk note requires this
+    counter to be exactly zero before E4b/E3 can land ("neither...may land
+    while `native_call_unmodeled`...is nonzero on the sweep corpus"). Given
+    the diminishing returns on the remaining tail, a proposed alternative
+    surfaced during advice-seeking on this decision: make E4b's resolver
+    fall back to the existing cascade on any row miss AND keep incrementing
+    the counter, so an incomplete table degrades to today's behavior instead
+    of misdispatching -- turning "zero" from a hard precondition into a
+    monitoring goal. This is a change to Phase E's contract and needs an
+    explicit decision, not a silent exception list; not yet adopted.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
