@@ -651,6 +651,19 @@ impl Interpreter {
                 self.walk_quant_chain(ctx, idx, pos, 1, None, true, store, matches)
             }
             RegexQuant::Repeat(..) | RegexQuant::RepeatCode(_) => {
+                // ADR-0022 §4.2: `** {code}` terminates the declarative prefix
+                // WITHOUT evaluating the code (the count may depend on
+                // runtime-only state, and measurement must never execute user
+                // code — ADR-0009). This lives here rather than in
+                // `ltm_atom_mode` because the quantifier sits on the TOKEN,
+                // not the atom. Mirrors the top-of-function termination check.
+                if let RegexQuant::RepeatCode(_) = token.quant
+                    && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+                {
+                    super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    matches.push((pos, store.snapshot()));
+                    return true;
+                }
                 let (min, max) = match &token.quant {
                     RegexQuant::Repeat(min, max) => {
                         // Block-less empty range: /x ** 2..1/ should throw

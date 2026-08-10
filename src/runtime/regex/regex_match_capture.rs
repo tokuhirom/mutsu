@@ -1,6 +1,10 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
-use super::regex_helpers::{is_word_char, matches_named_builtin, merge_regex_captures};
+use super::regex_helpers::{
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, is_word_char, matches_named_builtin,
+    merge_regex_captures,
+};
+use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 impl Interpreter {
     /// Is this atom an inline sub-pattern — part of the *same* regex, just matched
@@ -47,6 +51,36 @@ impl Interpreter {
         ignore_case: bool,
     ) -> Option<(usize, RegexCaptures)> {
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
+
+        // ADR-0022 §4.2: see the identical guard in
+        // `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`) —
+        // the two matchers must stay in sync via the shared `ltm_atom_mode`
+        // classifier. `SequentialAlternation` and `CodeAssertion` are not
+        // covered by `ltm_atom_mode` (see its doc comment) and fall through
+        // to their existing arms below, unaffected by this guard.
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            match ltm_atom_mode(atom) {
+                LtmAtomMode::Terminate => {
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return Some((pos, RegexCaptures::default()));
+                }
+                LtmAtomMode::TerminateAfter(inner) => {
+                    // Measure the inner pattern BEFORE setting TERMINATED —
+                    // see the identical ordering note in
+                    // `regex_match_atom_all_with_capture_in_pkg`.
+                    let best_end = self
+                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
+                        .into_iter()
+                        .map(|(end, _)| end)
+                        .max()
+                        .unwrap_or(pos);
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return Some((best_end, RegexCaptures::default()));
+                }
+                LtmAtomMode::Normal => {}
+            }
+        }
+
         // Handle zero-width and group atoms before the length check
         match atom {
             RegexAtom::Group(pattern) => {
@@ -144,6 +178,12 @@ impl Interpreter {
                     .next_back();
             }
             RegexAtom::SequentialAlternation(alternatives) => {
+                if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+                    // ADR-0022 §4.2: the single-candidate counterpart of the
+                    // plural matcher's ε-bypass — see `ltm_seqalt_best`.
+                    let best = self.ltm_seqalt_best(alternatives, chars, pos, pkg);
+                    return Some(best);
+                }
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)

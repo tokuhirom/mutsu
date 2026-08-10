@@ -4,6 +4,7 @@ mod regex_eval_class;
 mod regex_eval_repeat;
 pub(crate) mod regex_helpers;
 mod regex_interpolate;
+mod regex_ltm_rank;
 mod regex_match_atom;
 mod regex_match_atom_simple;
 mod regex_match_capture;
