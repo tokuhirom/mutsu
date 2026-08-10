@@ -60,7 +60,15 @@ impl Interpreter {
         false
     }
 
-    pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+    /// Hardcoded native-method names for the handful of built-in classes
+    /// whose getters/setters are implemented by dedicated `native_io_*`/
+    /// native dispatch helpers rather than through `ClassDef::native_methods`
+    /// (the `is native(&sym)` trait registry). Exact class-name match only —
+    /// does not apply to subclasses. Shared with `resolve_sequence`'s
+    /// `ResolvedCandidate::NativeCallBinding` detection (ADR-0019 E4b step 3,
+    /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`)
+    /// so the two stay in lockstep by construction rather than by discipline.
+    pub(super) fn hardcoded_native_method(class_name: &str, method_name: &str) -> bool {
         // IO::Pipe has native methods handled by native_io_pipe
         if class_name == "IO::Pipe"
             && matches!(
@@ -207,6 +215,13 @@ impl Interpreter {
                     | "Str"
             )
         {
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn is_native_method(&mut self, class_name: &str, method_name: &str) -> bool {
+        if Self::hardcoded_native_method(class_name, method_name) {
             return true;
         }
         let mro = self.class_mro(class_name);
