@@ -206,6 +206,10 @@ impl Interpreter {
             {
                 let source = &items[0];
                 let callback = items[1].clone();
+                let quit_callbacks = items
+                    .get(3)
+                    .and_then(crate::runtime::Interpreter::value_array_items)
+                    .unwrap_or_default();
 
                 match source.view() {
                     // Supply with a channel
@@ -374,6 +378,18 @@ impl Interpreter {
                                 ) {
                                     if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                                         rsub.on_demand_done = Some(done_promise.clone());
+                                        // Only tag this nested subscription as
+                                        // emitter-owned when there is an outer
+                                        // QUIT handler to actually route a die
+                                        // to (the shadow subscription pushed
+                                        // below, which alone polls
+                                        // `on_demand_done`) — otherwise leave
+                                        // it None so a LAST-phaser die keeps
+                                        // propagating raw exactly as before,
+                                        // with no shadow entry to observe it.
+                                        if !quit_callbacks.is_empty() {
+                                            rsub.emitter_supplier_id = Some(emitter_supplier_id);
+                                        }
                                         react_subs.push(rsub);
                                     } else if let Some(early) =
                                         self.register_nested_on_demand_source(&v, react_subs, 0)?
@@ -409,7 +425,7 @@ impl Interpreter {
                             // `closing` callback runs when the supply is closed.
                             let close_cbs =
                                 Self::extract_supply_on_close_callbacks(&attributes.as_map());
-                            if !close_cbs.is_empty() {
+                            if !close_cbs.is_empty() || !quit_callbacks.is_empty() {
                                 if body_ran_done {
                                     // Synchronous body that ran `done` — closed now.
                                     for close_cb in close_cbs {
@@ -417,12 +433,20 @@ impl Interpreter {
                                     }
                                 } else {
                                     // Async body (e.g. `start { emit; done }`): the
-                                    // supply closes later. Register a source-less
-                                    // subscription carrying the close callbacks so
-                                    // run_react_close_callbacks fires them when the
-                                    // react ends.
+                                    // supply closes later, or a live-source
+                                    // `whenever` nested in the body may die and
+                                    // `supplier_quit` this emitter (see
+                                    // `ReactSubscription::emitter_supplier_id`).
+                                    // Register a source-less subscription carrying
+                                    // the close/quit callbacks and this emitter's
+                                    // own done-signal promise, so
+                                    // `run_react_close_callbacks`/the `on_demand_done`
+                                    // poll in `vm_react_subscriptions.rs` can reach
+                                    // them.
                                     react_subs.push(ReactSubscription {
                                         close_callbacks: close_cbs,
+                                        quit_callbacks: quit_callbacks.clone(),
+                                        on_demand_done: Some(done_promise.clone()),
                                         ..ReactSubscription::new(callback.clone())
                                     });
                                 }

@@ -99,9 +99,40 @@ impl Interpreter {
                             }
                         }
                         for cb in react_subs[key].last_callbacks.clone() {
-                            self.call_react_callback(&cb, Vec::new())?;
+                            if let Err(err) = self.call_react_callback(&cb, Vec::new()) {
+                                // A LAST-phaser die on a subscription flattened
+                                // out of an on-demand `supply { ... }` body is
+                                // that supply's own completion, not a raw crash
+                                // of this drive loop: `supplier_quit` its
+                                // emitter so the owning `on_demand_done`-tracked
+                                // subscription's QUIT phasers (see
+                                // `vm_react_subscriptions.rs`'s Phase 2 poll)
+                                // get a chance to handle it, matching `raku`.
+                                if let Some(sid) = react_subs[key].emitter_supplier_id {
+                                    let cause = err
+                                        .exception
+                                        .as_deref()
+                                        .cloned()
+                                        .unwrap_or_else(|| Value::str(err.message.clone()));
+                                    crate::runtime::native_methods::supplier_quit(sid, cause);
+                                    react_subs[key].done = true;
+                                    break;
+                                }
+                                return Err(err);
+                            }
                         }
                         react_subs[key].done = true;
+                        // Symmetric with the die path above: this subscription
+                        // completing without error is the owning on-demand
+                        // supply's own completion too (the minimal case of one
+                        // nested live-source `whenever` — a body with several
+                        // would need each to finish before the emitter is
+                        // truly done, which this single-emitter signal does not
+                        // yet track). `supplier_done` is a no-op if the emitter
+                        // was already quit/done.
+                        if let Some(sid) = react_subs[key].emitter_supplier_id {
+                            crate::runtime::native_methods::supplier_done(sid);
+                        }
                     }
                     SinkEvent::Quit(error) => {
                         let mut handled = false;
@@ -429,6 +460,29 @@ impl Interpreter {
                 if let Some(done_promise) = sub.on_demand_done.clone()
                     && done_promise.is_resolved()
                 {
+                    // A `supplier_quit`'d emitter (see the `SinkEvent::Done`
+                    // LAST-phaser-die handling above) breaks this promise
+                    // instead of keeping it: that is the on-demand supply's
+                    // own QUIT, not a normal completion — dispatch to this
+                    // subscription's QUIT phasers rather than its LAST ones.
+                    if done_promise.status() == "Broken" {
+                        let reason = done_promise.result_blocking();
+                        let mut handled = false;
+                        for quit_cb in sub.quit_callbacks.clone() {
+                            self.call_supply_quit_handler(quit_cb, reason.clone())?;
+                            handled = true;
+                        }
+                        sub.done = true;
+                        progressed = true;
+                        if !handled {
+                            let quit_err =
+                                crate::runtime::Interpreter::runtime_error_from_supply_reason(
+                                    reason,
+                                );
+                            return Err(crate::runtime::Interpreter::wrap_react_died(quit_err));
+                        }
+                        continue;
+                    }
                     for callback in &sub.last_callbacks {
                         match self.call_react_callback(&callback.clone(), Vec::new()) {
                             Err(e) if e.is_react_done() => break 'react_loop,
@@ -478,7 +532,19 @@ impl Interpreter {
                     continue;
                 }
                 if react_subs[si].receiver.is_none() {
-                    react_subs[si].done = true;
+                    // A source-less subscription normally exists only to carry
+                    // close callbacks (fired by `run_react_close_callbacks`
+                    // regardless of `done`), so it can be marked done right
+                    // away. One that also carries `quit_callbacks` (the
+                    // `emitter_supplier_id`-owning subscription's own QUIT
+                    // phasers, see the `SinkEvent::Done`/die handling above)
+                    // must instead wait for its `on_demand_done` promise to
+                    // actually resolve — marking it done here would let the
+                    // react conclude before that promise's Kept/Broken status
+                    // (checked just above) is ever observed.
+                    if react_subs[si].quit_callbacks.is_empty() {
+                        react_subs[si].done = true;
+                    }
                     continue;
                 }
                 // A `whenever Promise.allof(...)` settles only once every source

@@ -31,6 +31,18 @@ pub(crate) struct ReactSubscription {
     /// promise survives that reset, so the event loop watches it to complete
     /// the subscription once the emitter is done.
     pub on_demand_done: Option<crate::value::SharedPromise>,
+    /// When this subscription's live source (`supplier_id`/`receiver`) was
+    /// flattened directly out of an on-demand `supply { ... }` body (a
+    /// `whenever <live-source> { ... }` statement inside that body), the
+    /// body's own emitter supplier id. A `LAST`-phaser die while processing
+    /// THIS subscription's terminal event is attributed to the *owning*
+    /// on-demand supply's completion (`supplier_quit`) rather than crashing
+    /// the whole drive loop raw, so an outer `whenever <that supply>`'s own
+    /// `QUIT` phaser gets a chance to handle it — matching `raku`, where a
+    /// nested on-demand supply's `LAST`-phaser die reaches the outer
+    /// subscriber's `QUIT` (see
+    /// `todo/deep/nested-on-demand-supply-last-phaser-die-does-not-reach-outer-quit.md`).
+    pub emitter_supplier_id: Option<u64>,
 }
 
 impl ReactSubscription {
@@ -54,6 +66,7 @@ impl ReactSubscription {
             channel: None,
             promise: None,
             on_demand_done: None,
+            emitter_supplier_id: None,
         }
     }
 }
