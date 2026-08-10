@@ -1007,4 +1007,47 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Match", "Stringy", 1, 0),
     ("Match", "join", 3, 0),
     ("Match", "AT-POS", 2, 0),
+    // ADR-0019 E2b (ninth slice, 2026-08-10): three more coherent clusters
+    // hand-probed the same way -- the full `Date`/`DateTime` accessor
+    // surface and `Backtrace`/`Backtrace::Frame`/`Complex` extras left after
+    // the eighth slice's partial coverage. The remaining sweep tail after
+    // this slice is genuinely one-off (RakuAST node accessors, NativeCall
+    // `CArray[T]` variants, ad-hoc test-fixture class names) with no
+    // reusable owner cluster left -- see the ADR progress note for why
+    // chasing it further has diminishing returns.
+    ("Date", "day", 1, 0),
+    ("Date", "month", 1, 0),
+    ("Date", "formatter", 1, 0),
+    ("Date", "day-of-week", 1, 0),
+    ("Date", "succ", 1, 0),
+    ("Date", "perl", 1, 0),
+    ("Date", "days-in-year", 1, 0),
+    ("Date", "daycount", 1, 0),
+    ("DateTime", "minute", 1, 0),
+    ("DateTime", "Date", 1, 0),
+    ("DateTime", "offset-in-minutes", 1, 0),
+    ("DateTime", "day", 1, 0),
+    ("DateTime", "month", 1, 0),
+    ("DateTime", "second", 1, 0),
+    ("DateTime", "timezone", 1, 0),
+    ("DateTime", "days-in-year", 1, 0),
+    ("DateTime", "dd-mm-yyyy", 1, 0),
+    ("DateTime", "mm-dd-yyyy", 1, 0),
+    ("DateTime", "yyyy-mm-dd", 1, 0),
+    ("DateTime", "offset-in-hours", 1, 0),
+    ("DateTime", "Instant", 1, 0),
+    ("Backtrace", "flat", 7, 0),
+    ("Backtrace", "defined", 1, 0),
+    ("Backtrace", "concise", 1, 0),
+    ("Backtrace", "summary", 1, 0),
+    ("Backtrace", "Stringy", 1, 0),
+    ("Backtrace::Frame", "is-setting", 1, 0),
+    ("Backtrace::Frame", "code", 1, 0),
+    ("Backtrace::Frame", "Str", 3, 0),
+    ("Complex", "re", 1, 0),
+    ("Complex", "im", 1, 0),
+    ("Complex", "reals", 1, 0),
+    ("Complex", "conj", 1, 0),
+    ("Complex", "reverse", 1, 0),
+    ("Complex", "Complex", 1, 0),
 ];
