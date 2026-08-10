@@ -371,7 +371,13 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "reallocate", 8, 4),
     ("Blob", "subbuf", 6, 0),
     ("Blob", "subbuf-rw", 4, 0),
-    ("Blob", "decode", 1, 0),
+    // `decode` is recognized at both A0 (default encoding) and A1 (explicit
+    // encoding name, `dispatch_1arg.rs`) -- the A1 arm needs a real encoding
+    // name (`"utf-8"`), not the generic empty-string dummy
+    // `native_method_arities` tries, so it was originally under-counted as
+    // A0-only. Confirmed with a direct `native_method_1arg` probe,
+    // 2026-08-10.
+    ("Blob", "decode", 3, 0),
     ("Blob", "elems", 1, 0),
     ("Blob", "bytes", 1, 0),
     ("Blob", "of", 1, 0),
@@ -383,6 +389,21 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Blob", "Str", 3, 0),
     ("Blob", "gist", 1, 0),
     ("Blob", "raku", 1, 0),
+    // ADR-0019 E2b (sixth slice, 2026-08-10): `Blob`/`Buf`-family extra rows
+    // found once the `record_native_row_coverage` `canonical_builtin_owner`
+    // fold (`receiver_class.rs`) started routing `Buf`/`utf8`/`Buf[uint8]`
+    // receivers to this table's `Blob` rows -- `values`/`List`/the
+    // `read-*`/`write-*` native-endian accessor family
+    // (`dispatch_1arg.rs`) were never probed by the original 11-owner E2a
+    // generation pass (`Blob` was not one of the 11). `read-*` is A1
+    // (offset) or A2 (offset, endianness), never A0.
+    ("Blob", "values", 1, 0),
+    ("Blob", "List", 1, 0),
+    ("Blob", "read-uint8", 6, 0),
+    ("Blob", "read-int8", 6, 0),
+    ("Blob", "read-uint16", 6, 0),
+    ("Blob", "read-int16", 6, 0),
+    ("Blob", "read-uint32", 6, 0),
     // ADR-0019 E2b: universal Any/Mu methods, added by hand (not probed via
     // `builtin_sample_value`, which has no representative sample for an
     // abstract owner) after `dispatch_owner_coverage`'s 2026-08-10 sweep
@@ -692,4 +713,149 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Int", "Complex", 1, 0),
     ("Int", "perl", 1, 0),
     ("Int", "reverse", 1, 0),
+    // ADR-0019 E2b (sixth slice, 2026-08-10): `Set`/`SetHash`/`Bag`/
+    // `BagHash`/`Mix`/`MixHash` rows, hand-probed against real values built
+    // via `set(...)`/`SetHash.new(...)`/etc through the interpreter --
+    // none of the six owners has a `builtin_type_method_names` entry, same
+    // situation as `Pair`/`Seq`/`Match`. `grab` (weighted removal) is
+    // deliberately absent from `Set`/`SetHash`: those carry no weights, and
+    // the cascade genuinely does not recognize it there (confirmed by
+    // `setbagmix_rows_are_backed_by_the_cascade` in `native_method_row.rs`,
+    // which also probes the `Set`/`SetHash` omission directly).
+    ("Set", "keys", 1, 0),
+    ("Set", "values", 1, 0),
+    ("Set", "kv", 1, 0),
+    ("Set", "pairs", 1, 0),
+    ("Set", "elems", 1, 0),
+    ("Set", "gist", 1, 0),
+    ("Set", "raku", 1, 0),
+    ("Set", "Str", 3, 0),
+    ("Set", "Bool", 1, 0),
+    ("Set", "list", 1, 0),
+    ("Set", "List", 1, 0),
+    ("Set", "Array", 1, 0),
+    ("Set", "total", 1, 0),
+    // Immutable `Set`'s `grab` IS recognized by the pure cascade
+    // (`dispatch_core_range.rs`'s `ValueView::Set(_, false)` arm) -- it
+    // always errors ("Cannot call .grab on an immutable Set"), but `Some`
+    // still counts as recognized. The mutable `SetHash` variant
+    // (`Set(_, true)`) falls through to the slow path instead (same as
+    // `BagHash`/`MixHash` above), so `SetHash` deliberately has no `grab`
+    // row here (defaults to `N`/`SPECIAL`).
+    ("Set", "grab", 3, 0),
+    ("Set", "pick", 3, 0),
+    ("Set", "roll", 3, 0),
+    ("Set", "WHICH", 1, 0),
+    ("SetHash", "keys", 1, 0),
+    ("SetHash", "values", 1, 0),
+    ("SetHash", "kv", 1, 0),
+    ("SetHash", "pairs", 1, 0),
+    ("SetHash", "elems", 1, 0),
+    ("SetHash", "gist", 1, 0),
+    ("SetHash", "raku", 1, 0),
+    ("SetHash", "Str", 3, 0),
+    ("SetHash", "Bool", 1, 0),
+    ("SetHash", "list", 1, 0),
+    ("SetHash", "List", 1, 0),
+    ("SetHash", "Array", 1, 0),
+    ("SetHash", "total", 1, 0),
+    ("SetHash", "pick", 3, 0),
+    ("SetHash", "roll", 3, 0),
+    ("SetHash", "WHICH", 1, 0),
+    ("Bag", "keys", 1, 0),
+    ("Bag", "values", 1, 0),
+    ("Bag", "kv", 1, 0),
+    ("Bag", "pairs", 1, 0),
+    ("Bag", "elems", 1, 0),
+    ("Bag", "gist", 1, 0),
+    ("Bag", "raku", 1, 0),
+    ("Bag", "Str", 3, 0),
+    ("Bag", "Bool", 1, 0),
+    ("Bag", "list", 1, 0),
+    ("Bag", "List", 1, 0),
+    ("Bag", "Array", 1, 0),
+    ("Bag", "total", 1, 0),
+    ("Bag", "grab", 3, 0),
+    ("Bag", "pick", 3, 0),
+    ("Bag", "roll", 3, 0),
+    ("Bag", "WHICH", 1, 0),
+    ("BagHash", "keys", 1, 0),
+    ("BagHash", "values", 1, 0),
+    ("BagHash", "kv", 1, 0),
+    ("BagHash", "pairs", 1, 0),
+    ("BagHash", "elems", 1, 0),
+    ("BagHash", "gist", 1, 0),
+    ("BagHash", "raku", 1, 0),
+    ("BagHash", "Str", 3, 0),
+    ("BagHash", "Bool", 1, 0),
+    ("BagHash", "list", 1, 0),
+    ("BagHash", "List", 1, 0),
+    ("BagHash", "Array", 1, 0),
+    ("BagHash", "total", 1, 0),
+    // `grab` on the *mutable* `BagHash`/`MixHash` variant is served by the
+    // `&mut self` slow path (`methods_mut_dispatch.rs`), not the pure
+    // arity cascade -- unlike the immutable `Bag`/`Mix`, whose `grab` the
+    // cascade DOES recognize (always erroring "immutable", still `Some`).
+    // Confirmed by probe: `native_method_arities` returns 0 for a `BagHash`
+    // sample. SPECIAL, not omitted, to keep the choice explicit.
+    ("BagHash", "grab", 8, 4),
+    ("BagHash", "pick", 3, 0),
+    ("BagHash", "roll", 3, 0),
+    ("BagHash", "WHICH", 1, 0),
+    ("Mix", "keys", 1, 0),
+    ("Mix", "values", 1, 0),
+    ("Mix", "kv", 1, 0),
+    ("Mix", "pairs", 1, 0),
+    ("Mix", "elems", 1, 0),
+    ("Mix", "gist", 1, 0),
+    ("Mix", "raku", 1, 0),
+    ("Mix", "Str", 3, 0),
+    ("Mix", "Bool", 1, 0),
+    ("Mix", "list", 1, 0),
+    ("Mix", "List", 1, 0),
+    ("Mix", "Array", 1, 0),
+    ("Mix", "total", 1, 0),
+    ("Mix", "grab", 3, 0),
+    ("Mix", "pick", 3, 0),
+    ("Mix", "roll", 3, 0),
+    ("Mix", "WHICH", 1, 0),
+    ("MixHash", "keys", 1, 0),
+    ("MixHash", "values", 1, 0),
+    ("MixHash", "kv", 1, 0),
+    ("MixHash", "pairs", 1, 0),
+    ("MixHash", "elems", 1, 0),
+    ("MixHash", "gist", 1, 0),
+    ("MixHash", "raku", 1, 0),
+    ("MixHash", "Str", 3, 0),
+    ("MixHash", "Bool", 1, 0),
+    ("MixHash", "list", 1, 0),
+    ("MixHash", "List", 1, 0),
+    ("MixHash", "Array", 1, 0),
+    ("MixHash", "total", 1, 0),
+    // Same as `BagHash`'s `grab` above: the mutable `MixHash` variant's
+    // `grab` is slow-path-only, not pure-cascade-recognized.
+    ("MixHash", "grab", 8, 4),
+    ("MixHash", "pick", 3, 0),
+    ("MixHash", "roll", 3, 0),
+    ("MixHash", "WHICH", 1, 0),
+    // ADR-0019 E2b (sixth slice): `RakuAST::StatementList` rows, hand-probed
+    // against a real `Str.AST` parse tree (`'my $x = 1 + 2;'.AST`) -- no
+    // `builtin_type_method_names` entry either. `RakuAST::Statement::Expression`'s
+    // `expression` field accessor reaches the generic `rakuast::node_accessor`
+    // dispatch (`methods_0arg/mod.rs`), the same mechanism every RakuAST node
+    // class uses for its own fields, not something `StatementList`-specific.
+    // Verified by `rakuast_statementlist_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("RakuAST::StatementList", "gist", 1, 0),
+    ("RakuAST::StatementList", "statements", 1, 0),
+    ("RakuAST::StatementList", "add-statement", 2, 0),
+    ("RakuAST::StatementList", "raku", 1, 0),
+    ("RakuAST::StatementList", "Str", 3, 0),
+    ("RakuAST::StatementList", "WHICH", 1, 0),
+    ("RakuAST::StatementList", "list", 1, 0),
+    ("RakuAST::StatementList", "List", 1, 0),
+    ("RakuAST::StatementList", "elems", 1, 0),
+    ("RakuAST::StatementList", "Bool", 1, 0),
+    ("RakuAST::StatementList", "flat", 7, 0),
+    ("RakuAST::Statement::Expression", "expression", 1, 0),
 ];

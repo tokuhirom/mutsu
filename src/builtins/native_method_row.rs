@@ -456,6 +456,125 @@ mod tests {
         assert_eq!(native_method_row("List", "dynamic").0, NativeArityMask::N);
     }
 
+    /// ADR-0019 E2b (sixth slice): `Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/
+    /// `MixHash` rows, hand-probed against real values constructed via the
+    /// interpreter (`set(...)`/`SetHash.new(...)`/etc.) -- none of the six
+    /// owners has a `builtin_type_method_names` entry, same situation as
+    /// `Pair`/`Seq`/`Match`. `grab` (weighted removal) is deliberately absent
+    /// from `Set`/`SetHash`: those have no weights, and the probe confirmed
+    /// the cascade does not recognize it there while it does for the other
+    /// four.
+    #[test]
+    fn setbagmix_rows_are_backed_by_the_cascade() {
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run("my $set = set(1,2,3); my $sethash = SetHash.new(1,2,3); my $bag = bag(1,1,2); my $baghash = BagHash.new(1,1,2); my $mix = mix(1,1,2); my $mixhash = MixHash.new(1,1,2);")
+            .unwrap();
+        for (var, owner) in [
+            ("set", "Set"),
+            ("sethash", "SetHash"),
+            ("bag", "Bag"),
+            ("baghash", "BagHash"),
+            ("mix", "Mix"),
+            ("mixhash", "MixHash"),
+        ] {
+            let sample = interp.env().get(var).cloned().unwrap();
+            for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS
+            {
+                if row_owner != owner {
+                    continue;
+                }
+                let flags = NativeRowFlags(flags);
+                if flags.contains(NativeRowFlags::SPECIAL)
+                    || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                {
+                    continue;
+                }
+                let observed = native_method_arities(&sample, name);
+                let mask = NativeArityMask(arity);
+                for (bit, m) in [
+                    (0u8, NativeArityMask::A0),
+                    (1u8, NativeArityMask::A1),
+                    (2u8, NativeArityMask::A2),
+                ] {
+                    if mask.contains(m) {
+                        assert!(
+                            observed & (1 << bit) != 0,
+                            "{owner}x{name} row claims arity {bit} but the cascade does not recognize it"
+                        );
+                    }
+                }
+            }
+        }
+        // Immutable `Set.grab` IS recognized by the pure cascade (it always
+        // errors "immutable", but `Some` still counts) -- the mutable
+        // `SetHash` variant is not, same as `BagHash`/`MixHash` above.
+        assert!(
+            native_method_row("Set", "grab")
+                .0
+                .contains(NativeArityMask::A0)
+        );
+        assert_eq!(native_method_row("SetHash", "grab").0, NativeArityMask::N);
+        assert_ne!(
+            native_method_arities(&interp.env().get("set").cloned().unwrap(), "grab"),
+            0
+        );
+        assert_eq!(
+            native_method_arities(&interp.env().get("sethash").cloned().unwrap(), "grab"),
+            0
+        );
+    }
+
+    /// ADR-0019 E2b (sixth slice): `RakuAST::StatementList`/
+    /// `RakuAST::Statement::Expression` rows, hand-probed against a real
+    /// `Str.AST` parse tree (`'my $x = 1 + 2;'.AST`) -- neither owner has a
+    /// `builtin_type_method_names` entry. `RakuAST::Statement::Expression`'s
+    /// `expression` field accessor comes from the generic
+    /// `rakuast::node_accessor` dispatch (`methods_0arg/mod.rs`), reached the
+    /// same way for every RakuAST node class, not a `StatementList`-specific
+    /// mechanism.
+    #[test]
+    fn rakuast_statementlist_rows_are_backed_by_the_cascade() {
+        let mut interp = crate::runtime::Interpreter::new();
+        interp.run("my $ast = 'my $x = 1 + 2;'.AST;").unwrap();
+        let ast = interp.env().get("ast").cloned().unwrap();
+        for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS {
+            if row_owner != "RakuAST::StatementList" {
+                continue;
+            }
+            let flags = NativeRowFlags(flags);
+            if flags.contains(NativeRowFlags::SPECIAL)
+                || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+            {
+                continue;
+            }
+            let observed = native_method_arities(&ast, name);
+            let mask = NativeArityMask(arity);
+            for (bit, m) in [
+                (0u8, NativeArityMask::A0),
+                (1u8, NativeArityMask::A1),
+                (2u8, NativeArityMask::A2),
+            ] {
+                if mask.contains(m) {
+                    assert!(
+                        observed & (1 << bit) != 0,
+                        "RakuAST::StatementList x {name} row claims arity {bit} but the cascade does not recognize it"
+                    );
+                }
+            }
+        }
+        interp
+            .run("my @stmts = $ast.statements; my $inner = @stmts[0];")
+            .unwrap();
+        let inner = interp.env().get("inner").cloned().unwrap();
+        assert_ne!(native_method_arities(&inner, "expression"), 0);
+        assert!(
+            native_method_row("RakuAST::Statement::Expression", "expression")
+                .0
+                .contains(NativeArityMask::A0)
+        );
+    }
+
     /// ADR-0019 E2b: `Any` gained seven more universal pseudo-methods
     /// (`self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`) alongside the
     /// existing `so`/`not`/`defined`/`DEFINITE` rows -- each has a receiver-
