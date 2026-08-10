@@ -2215,22 +2215,27 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     117 whitelisted roast files across `S09-typed-arrays`/`S12-class`/
     `S14-roles`/generics/NativeCall were run locally per the "touched
     name/type resolution" rule -- all green.
-    **Gate-renegotiation proposal (raised with the user, not yet decided):**
-    after 12 slices `native_call_unmodeled` is down **~99%** (~37904 to
-    ~400) with no dominant cluster left; remaining hits are dozens of 1-10-hit
-    one-offs (individual RakuAST-adjacent one-offs, NativeCall `CArray[T]`
-    per-owner methods, ad-hoc test-fixture class names) that so far have
-    turned out NOT to be real dispatch bugs on inspection (unlike the tenth
-    and twelfth slices' finds). The design doc's own risk note requires this
-    counter to be exactly zero before E4b/E3 can land ("neither...may land
-    while `native_call_unmodeled`...is nonzero on the sweep corpus"). Given
-    the diminishing returns on the remaining tail, a proposed alternative
-    surfaced during advice-seeking on this decision: make E4b's resolver
-    fall back to the existing cascade on any row miss AND keep incrementing
-    the counter, so an incomplete table degrades to today's behavior instead
-    of misdispatching -- turning "zero" from a hard precondition into a
-    monitoring goal. This is a change to Phase E's contract and needs an
-    explicit decision, not a silent exception list; not yet adopted.
+    **Gate renegotiation — ADOPTED 2026-08-10** (decided with the user after
+    advice-seeking, not a unilateral change): after 12 slices
+    `native_call_unmodeled` is down **~99%** (~37904 to ~400) with no
+    dominant cluster left; remaining hits are dozens of 1-10-hit one-offs
+    (individual RakuAST-adjacent one-offs, NativeCall `CArray[T]` per-owner
+    methods, ad-hoc test-fixture class names) that so far have turned out
+    NOT to be real dispatch bugs on inspection (unlike the tenth and twelfth
+    slices' finds) — chasing them individually has poor ROI relative to the
+    effort already spent across twelve slices. The design doc's original
+    risk note required this counter to be exactly zero before E4b/E3 could
+    land ("neither...may land while `native_call_unmodeled`...is nonzero on
+    the sweep corpus"); that precondition is **replaced** by: E4b's resolver
+    must fall back to the existing cascade on any row miss AND keep
+    incrementing the counter, so an incomplete table degrades to today's
+    behavior instead of misdispatching. `native_call_unmodeled` is now a
+    monitoring signal (kept low, reviewed periodically, new clusters still
+    fixed at the root cause the way the tenth/twelfth slices did), not a
+    hard precondition. This is a decision about Phase E's contract, recorded
+    here rather than left as a silent exception list. E2b itself is not
+    closed by this — it stays open for opportunistic root-cause fixes, just
+    no longer blocks E4b.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
@@ -2283,6 +2288,22 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     green.
   - [ ] **E4b — authoritative switch at the cached-resolve boundaries**, native rows included,
     `should_bypass_native_fastpath` deleted. Local `make roast` before PR.
+    **Scoping 2026-08-10** (`todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`):
+    `should_bypass_native_fastpath` has exactly one caller
+    (`call_method_with_values`); its ~110-line boolean chain decomposes into
+    (1) receiver-shape safety gates that likely reduce to "no native row"
+    (`NativeRowFlags::SPECIAL`), (2) NativeCall class-binding checks
+    (`is_native_method`, a third candidate kind alongside `ResolvedCandidate::User`
+    and the E2 native-row table), and (3) user-method/accessor priority,
+    which `resolve_user_method_or_accessor` (already production code at 5
+    call sites) appears to already answer correctly in one MRO walk. Land
+    each category shadow-verified against a `MUTSU_VM_STATS` counter (E1a/E4a's
+    own methodology) before the authoritative switch. Per the gate
+    renegotiation above, this box must fall back to the pure
+    `native_method_{0,1,2}arg` cascade on any row miss rather than treat a
+    miss as "no candidate" — `native_call_unmodeled` continues to fire
+    through the fallback path in production, not just in the `MUTSU_VM_STATS`
+    shadow probes.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
