@@ -781,6 +781,24 @@ fn reorder_at_level(
 
         // Hoist VarDecl (bare declarations) so that CHECK/INIT blocks
         // can reference variables declared later in source order.
+        //
+        // A `constant` declaration is NOT split this way: the compiler marks
+        // a constant's local slot readonly unconditionally at the end of
+        // compiling its `Stmt::VarDecl` (`is_constant_decl` does not check
+        // whether an initializer is present), so a bare hoisted `constant E;`
+        // would already be readonly by the time the split-out `E = ...`
+        // assign ran, and a plain `Stmt::Assign` (unlike the VarDecl's own
+        // `MarkVarDeclContext`-guarded store) does not bypass the readonly
+        // check — "Cannot assign to a readonly variable" for e.g.
+        // `constant E = BEGIN 5`, whose nested PhaserExpr is exactly what
+        // triggers this split. Compiling the constant as one unsplit
+        // declaration (its normal, unhoisted path) keeps the mark-readonly
+        // strictly after its one real store, like a phaser-free `constant`.
+        let is_constant_decl = matches!(&stmt, Stmt::VarDecl { custom_traits, .. } if custom_traits.iter().any(|(t, _)| t == "__constant"));
+        if is_constant_decl {
+            rest.push(stmt);
+            continue;
+        }
         if let Stmt::VarDecl {
             name,
             expr: init_expr,
