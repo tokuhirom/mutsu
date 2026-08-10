@@ -455,4 +455,89 @@ mod tests {
         assert_eq!(native_method_arities(&list, "dynamic"), 0);
         assert_eq!(native_method_row("List", "dynamic").0, NativeArityMask::N);
     }
+
+    /// ADR-0019 E2b: `Any` gained seven more universal pseudo-methods
+    /// (`self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`) alongside the
+    /// existing `so`/`not`/`defined`/`DEFINITE` rows -- each has a receiver-
+    /// type-agnostic `_ => ...` fallback arm in `dispatch_core_coerce.rs` /
+    /// `dispatch_core_math.rs` (confirmed by reading every arm, 2026-08-10),
+    /// so one row per name at `Any` is correct and complete once the coverage
+    /// check walks the MRO chain (`Interpreter::record_native_row_coverage`),
+    /// same reasoning as `so`/`not`/`defined`. Verified against three
+    /// structurally different receivers here, the same discipline as
+    /// `any_mu_universal_rows_are_backed_by_the_cascade_for_multiple_receiver_types`.
+    #[test]
+    fn any_second_batch_universal_rows_are_backed_by_the_cascade() {
+        let str_sample = builtin_sample_value("Str").unwrap();
+        let int_sample = builtin_sample_value("Int").unwrap();
+        let hash_sample = builtin_sample_value("Hash").unwrap();
+        for name in ["self", "clone", "WHERE", "WHICH", "sink", "item", "serial"] {
+            let (arity, _flags) = native_method_row("Any", name);
+            assert!(
+                arity.contains(NativeArityMask::A0),
+                "{name} row should claim A0"
+            );
+            for sample in [&str_sample, &int_sample, &hash_sample] {
+                assert!(
+                    native_method_arities(sample, name) & 1 != 0,
+                    "{name} should be recognized at arity 0 for {sample:?}"
+                );
+            }
+        }
+    }
+
+    /// ADR-0019 E2b: `Str`/`Hash`/`Int` extra rows (fifth slice, 2026-08-10),
+    /// hand-probed against `builtin_sample_value` samples -- see the table
+    /// comment in `native_method_row_table.rs` for how each name was found
+    /// (mostly the Unicode-method cluster in `dispatch_core_unicode.rs` for
+    /// `Str`, and the shared numeric-method cluster in
+    /// `dispatch_core_numeric.rs` for `Int`, both read directly rather than
+    /// inferred from the coverage sweep alone).
+    #[test]
+    fn fifth_slice_extra_rows_are_backed_by_the_cascade() {
+        let str_sample = builtin_sample_value("Str").unwrap();
+        let hash_sample = builtin_sample_value("Hash").unwrap();
+        let int_sample = builtin_sample_value("Int").unwrap();
+        // `sprintf` recognition depends on the receiver's own content (it
+        // needs exactly one `%`-directive), so the generic "abc" sample does
+        // not exercise it -- use a format-string-shaped sample just for it.
+        let sprintf_sample = Value::str_from("got %d");
+        for (owner, sample) in [
+            ("Str", &str_sample),
+            ("Hash", &hash_sample),
+            ("Int", &int_sample),
+        ] {
+            for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS
+            {
+                if row_owner != owner {
+                    continue;
+                }
+                let flags = NativeRowFlags(flags);
+                if flags.contains(NativeRowFlags::SPECIAL)
+                    || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                {
+                    continue;
+                }
+                let probe_sample = if owner == "Str" && name == "sprintf" {
+                    &sprintf_sample
+                } else {
+                    sample
+                };
+                let observed = native_method_arities(probe_sample, name);
+                let mask = NativeArityMask(arity);
+                for (bit, m) in [
+                    (0u8, NativeArityMask::A0),
+                    (1u8, NativeArityMask::A1),
+                    (2u8, NativeArityMask::A2),
+                ] {
+                    if mask.contains(m) {
+                        assert!(
+                            observed & (1 << bit) != 0,
+                            "{owner}x{name} row claims arity {bit} but the cascade does not recognize it"
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

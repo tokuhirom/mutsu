@@ -570,4 +570,126 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Match", "gist", 1, 0),
     ("Match", "raku", 1, 0),
     ("Match", "fmt", 7, 0),
+    // ADR-0019 E2b (fifth slice, 2026-08-10): seven more `Any` universal
+    // pseudo-methods, alongside the existing `so`/`not`/`defined`/`DEFINITE`
+    // rows above -- `self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`
+    // each have a receiver-type-agnostic `_ => ...` fallback arm in
+    // `dispatch_core_coerce.rs` (`self`/`WHERE`/`WHICH`/`serial`/`clone`) or
+    // `dispatch_core_math.rs` (`sink`/`item`), found by reading every match
+    // arm in those two files rather than guessing from the sweep breakdown
+    // alone. Verified by
+    // `any_second_batch_universal_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Any", "self", 1, 0),
+    ("Any", "clone", 1, 0),
+    ("Any", "WHERE", 1, 0),
+    ("Any", "WHICH", 1, 0),
+    ("Any", "sink", 1, 0),
+    ("Any", "item", 1, 0),
+    ("Any", "serial", 1, 0),
+    // ADR-0019 E2b (fifth slice): `Str` extra rows, hand-probed against a
+    // real `Value::str_from("abc")` sample -- the Unicode-method cluster
+    // (`ord`/`uniname`/`uninames`/`unival`/`univals`/`chrs`/`bytes`) lives in
+    // `dispatch_core_unicode.rs` alongside the already-modeled `uniprops`;
+    // `uniprop` (singular; distinct from the plural `uniprops` row above) is
+    // in the same file. `AST` is `Str`-only (`methods_0arg/mod.rs`, parses
+    // the string as Raku source, ADR-0010). `indent` is 1-arg
+    // (`methods_narg/dispatch_1arg.rs`). `sprintf`'s recognition depends on
+    // the receiver's own content (needs exactly one `%`-directive), not just
+    // arg shape -- see the dedicated probe sample in
+    // `fifth_slice_extra_rows_are_backed_by_the_cascade`. The remaining
+    // names (`list`/`UInt`/`FatRat`/`tclc`/`Range`/`Complex`/`Version`/
+    // `Real`/`Date`/`DateTime`/`reverse`/`byte`/`perl`) are ordinary coercion
+    // arms that also happen to fire for a plain `Str` receiver. Verified by
+    // `fifth_slice_extra_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Str", "uniprop", 3, 0),
+    ("Str", "AST", 1, 0),
+    ("Str", "indent", 2, 0),
+    ("Str", "list", 1, 0),
+    ("Str", "UInt", 1, 0),
+    ("Str", "FatRat", 3, 0),
+    ("Str", "sprintf", 2, 0),
+    ("Str", "ord", 1, 0),
+    ("Str", "uniname", 1, 0),
+    ("Str", "uninames", 1, 0),
+    ("Str", "unival", 1, 0),
+    ("Str", "univals", 1, 0),
+    ("Str", "chrs", 1, 0),
+    ("Str", "bytes", 1, 0),
+    ("Str", "tclc", 1, 0),
+    ("Str", "Range", 1, 0),
+    ("Str", "Complex", 1, 0),
+    ("Str", "Version", 1, 0),
+    ("Str", "Real", 1, 0),
+    ("Str", "Date", 1, 0),
+    ("Str", "DateTime", 1, 0),
+    ("Str", "reverse", 1, 0),
+    ("Str", "byte", 1, 0),
+    ("Str", "perl", 1, 0),
+    // ADR-0019 E2b (fifth slice): `Hash` extra rows, hand-probed against a
+    // real `Value::hash(...)` sample. `pick`/`roll` (1-arg count form, plus
+    // a bare 0-arg single-pick) live in `dispatch_1arg.rs`/
+    // `dispatch_core_range.rs`. `EXISTS-KEY`/`AT-KEY`/`AT-POS`/
+    // `EXISTS-POS` are the postcircumfix-subscript protocol methods
+    // (`dispatch_1arg.rs`). `List`/`Array`/`invert`/`flat`/`dynamic`/`perl`
+    // are ordinary coercion/collection arms that also fire for a Hash
+    // receiver. Verified by
+    // `fifth_slice_extra_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Hash", "pick", 3, 0),
+    ("Hash", "EXISTS-KEY", 2, 0),
+    ("Hash", "AT-KEY", 2, 0),
+    ("Hash", "List", 1, 0),
+    ("Hash", "invert", 1, 0),
+    ("Hash", "flat", 7, 0),
+    ("Hash", "Array", 1, 0),
+    ("Hash", "AT-POS", 2, 0),
+    ("Hash", "EXISTS-POS", 2, 0),
+    ("Hash", "dynamic", 1, 0),
+    ("Hash", "roll", 3, 0),
+    ("Hash", "perl", 1, 0),
+    // ADR-0019 E2b (fifth slice): `Int` extra rows, hand-probed against a
+    // real `Value::int(2)` sample. `rand`/`elems`/`lsb`/`msb` live in the
+    // shared numeric-method cluster `dispatch_core_numeric.rs`, which is
+    // tried for every receiver by name only (not gated on a numeric
+    // `ValueView`) -- `elems`/`rand` end up recognized for a bare `Int` the
+    // same way `uc`/`lc`/`fc`/`tc` do for a bare `Str` (already modeled).
+    // `flip`/`uniprop`/`uc` reach an `Int` receiver the same way: their
+    // dispatch arms call `target.to_string_value()` unconditionally.
+    // `numerator`/`denominator`/`UInt`/`Real`/`Version`/`Complex`/`perl`/
+    // `reverse`/`kv`/`pairs`/`int8`/`wordcase`/`rindex`/`EXISTS-KEY`/
+    // `AT-KEY`/`EXISTS-POS`/`Array`/`Supply`/`fmt` are ordinary
+    // coercion/collection/subscript arms that also fire for a plain `Int`
+    // receiver (real Raku semantics for some of these are a separate
+    // question from whether mutsu's cascade recognizes the name -- E2b only
+    // models the latter). Verified by
+    // `fifth_slice_extra_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Int", "rand", 1, 0),
+    ("Int", "elems", 1, 0),
+    ("Int", "flip", 1, 0),
+    ("Int", "uniprop", 3, 0),
+    ("Int", "fmt", 7, 0),
+    ("Int", "EXISTS-POS", 2, 0),
+    ("Int", "Array", 1, 0),
+    ("Int", "lsb", 1, 0),
+    ("Int", "msb", 1, 0),
+    ("Int", "Supply", 1, 0),
+    ("Int", "pairs", 1, 0),
+    ("Int", "denominator", 1, 0),
+    ("Int", "numerator", 1, 0),
+    ("Int", "kv", 1, 0),
+    ("Int", "int8", 1, 0),
+    ("Int", "rindex", 2, 0),
+    ("Int", "EXISTS-KEY", 2, 0),
+    ("Int", "AT-KEY", 2, 0),
+    ("Int", "UInt", 1, 0),
+    ("Int", "wordcase", 1, 0),
+    ("Int", "uc", 1, 0),
+    ("Int", "Real", 1, 0),
+    ("Int", "Version", 1, 0),
+    ("Int", "Complex", 1, 0),
+    ("Int", "perl", 1, 0),
+    ("Int", "reverse", 1, 0),
 ];
