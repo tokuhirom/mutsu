@@ -2338,6 +2338,71 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     own explicit candidate kind wired into the resolver — it does not fold
     into `resolve_user_method_or_accessor` for free. `cargo test --lib` (750
     tests) and `make test` both green; shadow-only, zero behavior change.
+    **Progress 2026-08-11** (step 2, docs-only): audited category 1's
+    receiver-shape gates (lines 130-224) against the E2 native-row catalog
+    (`native_method_row_table.rs`) to answer the scoping note's open question
+    — does each gate reduce to "the row table has no entry", so a resolver
+    consulting rows would naturally never route there? **Answer: mostly no,
+    and for a reason the scoping note's framing missed.** The gate
+    renegotiation (above) commits E4b's resolver to falling back to the
+    *existing cascade* (`native_method_{0,1,2}arg`) on any row miss, not to
+    treating a miss as "no candidate" — so "no row" no longer implies "the
+    resolver skips it" the way it would have under the original zero-tolerance
+    design; it only implies "the resolver still tries the cascade, same as
+    today's `should_bypass_native_fastpath == false` path would." Row
+    presence/absence is therefore the wrong axis to check category 1 against;
+    what actually matters is whether the *cascade itself* would misbehave if
+    reached for that owner/method, independent of any row. Two directly
+    confirmed examples prove the point rather than merely suggest it: `Supply`
+    *has* a row (`("Supply", "list", 1, 0)`) and is still unconditionally
+    gated (line 167-168, async Supply state can't be read through a naive
+    getter); `Match.elems`/`Match.gist`/`Match.Str`/`Match.chomp` all have
+    rows too, yet the lazy-Match branch (lines 130-142) gates `elems`
+    unconditionally and `gist`/`Str`/`Stringy` conditionally on
+    `exception_render_needs_interpreter`. Per-case disposition (grep against
+    `native_method_row_table.rs` plus one direct cascade read):
+    - **Confirmed NOT reducible** (real receiver-state hazards, must stay
+      explicit resolver guards regardless of row content): `squish`
+      (universal — no row anywhere, but `methods_0arg/collection.rs:1132`
+      *does* implement it per-view, so a bare row-miss fallback would
+      wrongly serve it); `Supply`'s list-vocabulary methods
+      (`max`/`min`/.../`zip-latest`) and `list`/`Array`/`Seq`/`elems` (the
+      `Supply.list` row proof above); the lazy-Match `elems`/message-lazy
+      `throw`/`rethrow`/`gist`/`Str`/`Stringy` gate (rows exist for all of
+      these, including via E2b's own tenth/eleventh-slice-adjacent `Any`/`Mu`
+      universal rows for `gist`/`Str`); `Hash.keys` with no args (`Hash` *has*
+      a `keys` row — the 0-arg call shape specifically needs the
+      interpreter's own ordering/freshness semantics the row can't provide).
+    - **Likely reduces, not exhaustively proven**: `Supplier`/
+      `Supplier::Preserving.Supply`, `Proc::Async`'s method family, and
+      `Stash`'s `AT-KEY`/`keys`/`values` — all zero rows for their owner, and
+      a grep for generic (non-owner-specific) cascade arms recognizing this
+      vocabulary for an arbitrary `Instance` came up empty, but this was not
+      traced as rigorously as the confirmed cases above (narg/1-arg cascades
+      for `AT-KEY` in particular were not fully read). Treat as "probably
+      already safe to drop once E4b's implementation directly verifies it",
+      not as settled.
+    - **Mixed, one concrete finding**: `IO::Handle`'s `chomp`/`encoding`/
+      `opened`/`DESTROY` gate has zero catalog rows, AND the cascade's own
+      `chomp` arm (`dispatch_core_str.rs:216-221`) *already* self-guards —
+      `if class_name == "IO::Handle" { return Some(None); }` — making
+      `should_bypass_native_fastpath`'s outer gate redundant belt-and-suspenders
+      for `chomp` specifically. `encoding`/`opened`/`DESTROY` were not traced
+      the same way; keep the whole group gated until each name is checked
+      individually.
+    - **Not row-related at all, stays a guard by construction**: the caller-
+      supplied `skip_pseudo` flag; the Real/Numeric `.Bridge` bridge
+      (`does_check` is a role-membership test, not a name lookup); and
+      `has_user_method(class_name, "Bridge")` (pure user-code presence, same
+      shape as category 3 but scoped to one fixed method name for delegation
+      setup rather than the call's own method name).
+    Net effect on the implementation plan: E4b's resolver needs an explicit
+    receiver-state guard list evaluated *before* falling back to the cascade —
+    exactly what design decision 2's classification table already called
+    "receiver-state facts become resolver guards" (`todo/deep/adr0019-e2-e4-resolver-core.md`).
+    This closes the scoping note's step 2 as answered rather than open: the
+    row table cannot decide category 1 for you, full stop, given the adopted
+    fallback contract. No code changed; docs-only.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
