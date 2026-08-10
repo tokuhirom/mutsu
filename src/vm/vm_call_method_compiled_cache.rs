@@ -37,6 +37,12 @@ impl Interpreter {
         for a in args {
             let key = match a.view() {
                 ValueView::Instance { class_name, .. } => class_name,
+                // A bare type object (`Int`, `Foo`, ...) must key on its OWN
+                // name, not the generic `value_type_name` fallback below,
+                // which collapses every type object to the literal string
+                // "Package" regardless of which type it names — see
+                // `todo/tickets/multi-arg-type-keys-package-collision.md`.
+                ValueView::Package(name) => name,
                 ValueView::Junction { .. }
                 | ValueView::Mixin(..)
                 | ValueView::Scalar(_)
@@ -463,5 +469,34 @@ impl Interpreter {
                 has_defaults,
             },
         );
+    }
+}
+
+#[cfg(test)]
+mod multi_arg_type_keys_tests {
+    use super::*;
+
+    fn interp() -> Interpreter {
+        Interpreter::new()
+    }
+
+    #[test]
+    fn distinct_type_object_args_key_distinctly() {
+        // Regression for todo/tickets/multi-arg-type-keys-package-collision.md:
+        // every bare type-object argument used to fall through to the generic
+        // `value_type_name` arm, which reports the literal string "Package"
+        // for ALL type objects regardless of which type they name. That
+        // collapsed e.g. `f(Int)` and `f(Str)` to the same multi-dispatch
+        // cache key.
+        let mut i = interp();
+        let int_key = i
+            .multi_arg_type_keys(&[Value::package(crate::symbol::Symbol::intern("Int"))])
+            .unwrap();
+        let str_key = i
+            .multi_arg_type_keys(&[Value::package(crate::symbol::Symbol::intern("Str"))])
+            .unwrap();
+        assert_ne!(int_key, str_key);
+        assert_eq!(int_key[0].as_str(), "Int");
+        assert_eq!(str_key[0].as_str(), "Str");
     }
 }
