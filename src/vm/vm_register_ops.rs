@@ -198,6 +198,10 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_block: bool,
     ) -> Result<(), RuntimeError> {
+        // See `closures_created` doc comment: a routine-registry restore gate
+        // consults this to detect a closure literal escaping via a side
+        // channel (not just the return value).
+        self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::Block(body) = stmt {
             let params = crate::ast::collect_placeholders_shallow(body);
@@ -264,6 +268,8 @@ impl Interpreter {
         cc_idx: Option<u32>,
         is_whatever_code: bool,
     ) -> Result<(), RuntimeError> {
+        // See `closures_created` doc comment.
+        self.closures_created += 1;
         let stmt = &code.stmt_pool[idx as usize];
         if let Stmt::SubDecl {
             name,

@@ -33,6 +33,7 @@ impl Interpreter {
             self.call_compiled_function_named_inner(cf, args, compiled_fns, fn_package, fn_name)
         } else {
             let snapshot = self.snapshot_routine_registry();
+            let closures_created_before = self.closures_created;
             let r = self.call_compiled_function_named_inner(
                 cf,
                 args,
@@ -40,9 +41,14 @@ impl Interpreter {
                 fn_package,
                 fn_name,
             );
-            match &r {
-                Ok(v) if Self::return_value_escapes_routine(v) => {}
-                _ => self.restore_routine_registry(snapshot),
+            // A closure literal created during the call may have escaped via a
+            // side channel (e.g. handed to `.tap`) rather than the return
+            // value — see `closures_created`.
+            let closure_escaped = self.closures_created != closures_created_before;
+            let skip_restore =
+                closure_escaped || matches!(&r, Ok(v) if Self::return_value_escapes_routine(v));
+            if !skip_restore {
+                self.restore_routine_registry(snapshot);
             }
             r
         };
