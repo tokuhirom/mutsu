@@ -2155,6 +2155,34 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     resolution" rule, since this changes MRO/registration) also green.
     Remaining 475 is the RakuAST/NativeCall/test-fixture tail the ninth
     slice's assessment already described -- still no dominant cluster left.
+    **Progress 2026-08-10** (eleventh slice): closed the `RakuAST::*`
+    node-accessor cluster (55 hits, the largest owner-group left after the
+    tenth slice). Unlike the exception cluster, every field-accessor call on
+    a `RakuAST::*` node dispatches through ONE shared, data-driven site
+    (`rakuast::node_accessor`, `methods_0arg/mod.rs`) that reads the node's
+    own `fields` list by name -- there is no per-class dispatch bug to fix,
+    just 31 missing (owner, field-name) rows across 19 node classes.
+    `rakuast::accessor_names` (a separate introspection-only registry
+    feeding `.^methods`/`.^attributes`) was considered as a mechanical
+    source to generate every row from, but rejected: it is itself
+    incomplete for 4 of the needed classes (`QuotedString`,
+    `Call::Name::WithoutParentheses`, `Statement::If`, `PointyBlock` all
+    have real fields `node_accessor` serves but no `accessor_names` entry),
+    so trusting it would have propagated that gap into the row table.
+    Instead each row was hand-probed against real nodes built the same two
+    ways `t/rakuast-construct-*.t` already does (direct `RakuAST::Foo.new(...)`
+    construction for `Parameter`/`ParameterTarget::Var`/`Type::Simple`/
+    `StrLiteral`, `Q[...].AST` deparse for the rest) -- catching along the
+    way that a plain string literal (`"abc"`) deparses to `QuotedString`,
+    not `StrLiteral`, confirmed by direct probe rather than assumed from the
+    name. A fresh sweep confirmed the entire `RakuAST::*` cluster is gone:
+    `native_call_unmodeled` dropped from 528 to 403 (cumulative **-98.9%**
+    from the original ~37904) -- no dominant cluster left in either of the
+    two E2b-tracked breakdowns run this session. New
+    `eleventh_slice_rakuast_accessor_rows_are_backed_by_the_cascade` test.
+    `cargo test --lib` (745 tests) and `make test` (3007 files/28205 tests)
+    both green; pure row-table addition (no dispatch/registration change),
+    so no local roast run required per the established rule.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

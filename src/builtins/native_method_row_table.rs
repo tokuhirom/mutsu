@@ -1063,4 +1063,55 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Complex", "conj", 1, 0),
     ("Complex", "reverse", 1, 0),
     ("Complex", "Complex", 1, 0),
+    // ADR-0019 E2b (eleventh slice, 2026-08-10): the RakuAST node-accessor
+    // family, the largest remaining homogeneous cluster after the tenth
+    // slice closed `X::*`. Every field-accessor call on a `RakuAST::*` node
+    // (`rakuast::node_accessor`, `methods_0arg/mod.rs`) is served by ONE
+    // shared, data-driven 0-arg dispatch site that reads the node's own
+    // `fields` list by name -- there is no per-class Rust match arm to point
+    // a comment at, so each row here is simply "this class's real field
+    // list", hand-probed against live nodes built the same two ways the
+    // existing `t/rakuast-construct-*.t` suite already does: direct
+    // `RakuAST::Foo.new(...)` construction for `Parameter`/
+    // `ParameterTarget::Var`/`Type::Simple`/`StrLiteral`, and `Q[...].AST`
+    // deparse for everything reached more naturally by parsing (a plain
+    // string literal like `"abc"` deparses to `QuotedString`, not
+    // `StrLiteral` -- confirmed by direct probe, not assumed). See
+    // `rakuast::accessor_names` for the (separate, and in a few cases
+    // incomplete -- e.g. it does not list `QuotedString`/`Call::Name::
+    // WithoutParentheses`/`Statement::If`/`PointyBlock`) introspection-only
+    // registry `.^methods`/`.^attributes` read; `node_accessor`'s real
+    // per-instance `fields` list is the actual source of truth these rows
+    // were verified against.
+    ("RakuAST::IntLiteral", "value", 1, 0),
+    ("RakuAST::RatLiteral", "value", 1, 0),
+    ("RakuAST::StrLiteral", "value", 1, 0),
+    ("RakuAST::QuotedString", "segments", 1, 0),
+    ("RakuAST::Var::Lexical", "name", 1, 0),
+    ("RakuAST::VarDeclaration::Simple", "sigil", 1, 0),
+    ("RakuAST::VarDeclaration::Simple", "desigilname", 1, 0),
+    ("RakuAST::VarDeclaration::Simple", "initializer", 1, 0),
+    ("RakuAST::Initializer::Assign", "expression", 1, 0),
+    ("RakuAST::ApplyInfix", "left", 1, 0),
+    ("RakuAST::ApplyInfix", "right", 1, 0),
+    ("RakuAST::ApplyPrefix", "operand", 1, 0),
+    ("RakuAST::Call::Name::WithoutParentheses", "name", 1, 0),
+    ("RakuAST::Statement::If", "condition", 1, 0),
+    ("RakuAST::Statement::If", "then", 1, 0),
+    ("RakuAST::Block", "body", 1, 0),
+    ("RakuAST::Blockoid", "statement-list", 1, 0),
+    ("RakuAST::PointyBlock", "signature", 1, 0),
+    ("RakuAST::Sub", "name", 1, 0),
+    ("RakuAST::Sub", "signature", 1, 0),
+    ("RakuAST::Sub", "body", 1, 0),
+    ("RakuAST::Signature", "parameters", 1, 0),
+    ("RakuAST::Parameter", "type", 1, 0),
+    ("RakuAST::Parameter", "names", 1, 0),
+    ("RakuAST::Parameter", "target", 1, 0),
+    ("RakuAST::Parameter", "optional", 1, 0),
+    ("RakuAST::Parameter", "default", 1, 0),
+    ("RakuAST::Parameter", "where", 1, 0),
+    ("RakuAST::Parameter", "slurpy", 1, 0),
+    ("RakuAST::ParameterTarget::Var", "name", 1, 0),
+    ("RakuAST::Type::Simple", "name", 1, 0),
 ];
