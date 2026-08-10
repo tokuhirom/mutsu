@@ -1736,11 +1736,69 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `ReceiverExec` hint (e.g. `ArrayStorageDelegate` for `is Array` subclasses). E1a's shadow
   target is "reproduce the site's current decision" with an accepted-mismatch ledger for the
   deliberate differences, which flip in E1b.
-  - [ ] **E1a — shadow mode.** Compute the TypeId-based owner beside the string-based one and
+  - [x] **E1a — shadow mode.** Compute the TypeId-based owner beside the string-based one and
     compare under a `MUTSU_VM_STATS`-gated counter; land with zero behavior change and drive the
     mismatch count to zero on `make test` plus targeted roast.
-  - [ ] **E1b — switch.** Make the TypeId owner authoritative and delete the per-site string
+    **Landed 2026-08-10** (`#6156`): `TypeId` (`src/type_id.rs`, a newtype over `Symbol`) plus
+    `WellKnownTypes` for O(1) comparisons; `BuiltinTypeInfo`, one static catalog
+    (`src/builtins/builtin_type_catalog.rs`) replacing, for the new classifier only, the four
+    divergent builtin MRO tables — every row adjudicated against `raku -e 'say T.^mro; say
+    T.^roles'` (Rakudo 2026.06), pinned by a `#[test]`; `Interpreter::receiver_dispatch_class`/
+    `dispatch_mro` (`src/runtime/receiver_class.rs`), one classifier resolving
+    Instance/Package/ParametricRole (registry MRO + catalog tail splice for builtin subclasses),
+    concrete builtins, Enum (enum type ahead of Int), and role Mixins (allomorph shortcut +
+    role-first chain) to one ordered `TypeId` chain; four shadow probes
+    (`Interpreter::shadow_check_owner`) at the dispatch-critical owner sites, comparing the
+    classifier's answer against each site's existing string-based decision under new
+    `owner_shadow_checks`/`owner_shadow_mismatches` `MUTSU_VM_STATS` counters. Zero behavior
+    change — the probes only compute-compare-count. Verified via a `MUTSU_VM_STATS=1` sweep over
+    all `t/*.t` plus roast S02/S06/S12/S14 (~26k shadow checks, ~611 mismatches, ~2.3%), every
+    mismatch bucketed into exactly three explained causes (no unexplained bucket): Enum receivers
+    (`value_type_name` says `"Int"`, raku's `.^mro` puts the enum type first — the classifier is
+    right, E1b fixes the legacy sites), role Mixin/ParametricRole generic-collapse
+    (`value_type_name` reports `"Any"`/`"Package"`/the pre-mixin type while ignoring the role
+    layer — exactly E1's target failure mode), and a `multi_arg_type_keys` Package-collision case
+    filed as its own ticket (`todo/tickets/multi-arg-type-keys-package-collision.md` — unconfirmed
+    as a live bug after two repro attempts, kept as a small standalone follow-up). Two tickets
+    filed from findings along the way: `todo/tickets/mixin-role-order-not-tracked.md` (mutsu's
+    `MixinOverrides` carries no role-application-order, so `(0 but A) but Z` resolves collisions
+    alphabetically instead of "later wins" like raku — the E1a classifier deliberately mirrors the
+    same wrong-but-deterministic order rather than diverging further, since fixing it needs an
+    order field on every mixin construction site, out of scope for a shadow-only box) and
+    `multi-arg-type-keys-package-collision.md` above. `make test` (2990 files/28109 tests) green,
+    unchanged. **This landed-note and its news entry are retroactive** — filed alongside E1b
+    (below) after the fact; E1a's own PR did not update either.
+  - [x] **E1b — switch.** Make the TypeId owner authoritative and delete the per-site string
     scans; the MOP fallback sites may follow as their own PR if the diff warrants it.
+    **Landed 2026-08-10**: the classifier becomes authoritative at the three E1a shadow sites
+    that were safe to cut over unconditionally — `call_method_with_values`'s augment gate,
+    `dispatch_instance_and_fallback`'s value-type dispatch pick, and the `are_actual_type_name`/
+    `are_value_matches_type`/`.^add_fallback` fallback-arm trio — via two new helpers,
+    `Interpreter::dispatch_owner_chain`/`dispatch_owner_name` (`src/runtime/receiver_class.rs`).
+    These are a `dispatch_mro` variant that skips a role Mixin's role-`TypeId` prefix, returning
+    the *inner* value's own chain instead: every call site consulting this chain runs strictly
+    *after* a dedicated, role-registry-aware path already tried role methods for the same
+    receiver, so re-deriving a role owner here would at best repeat that lookup and at worst
+    regress — confirmed by a direct repro (`augment class Array { method my-foo {...} }; (@a but
+    R).my-foo` resolved fine under the old `value_type_name`-unwrap-to-inner behavior; using the
+    raw role-first chain instead made it unresolvable). `methods_qualified.rs`'s qualified-dispatch
+    membership check and `type_matching.rs`'s `type_matches_value` both moved to walking the full
+    `dispatch_owner_chain`/`dispatch_mro` chain (not just its first element) — required, not just
+    thorough, since an Enum's chain is `[EnumType, Int, Cool, Any, Mu]` and a plain `Int`
+    constraint must still match an enum value through the `Int` link further down. The two
+    remaining divergent MRO tables this box's scope covered (`type_inherits`/
+    `builtin_type_mro_chain` in `methods_call_helpers.rs`) were deleted outright, their two call
+    sites (`methods_qualified.rs`, `vm_call_helpers.rs`'s `.+`/`.*` all-candidates count) now
+    reading the classifier's chain. `try_compiled_method_or_interpret_inner`'s `class_sym` site
+    needed no behavior change — it was already provably classifier-equivalent by construction
+    (confirmed zero mismatches in E1a's sweep) — so its now-redundant shadow probe was removed
+    without adding a chain-walk allocation to that hot fast-dispatch path. Deliberately NOT cut
+    over: `multi_arg_type_keys` (`vm_call_method_compiled_cache.rs`) — unlike the other three
+    original E1a sites, its cutover is not a shadow-mode-safe refactor but IS the fix for
+    `todo/tickets/multi-arg-type-keys-package-collision.md`, so it stays on `shadow_check_owner`
+    until that ticket is picked up on its own, rather than bundling an unverified behavior change
+    into this switch. MOP fallback consolidation (E1c) stays out of scope. Verified via `make
+    test` (28,121 tests) and a full `make roast` (218,774 tests), both green.
   - [ ] **E1c — MOP fallback consolidation.** Collapse the 13+8 per-MOP-entry owner-fallback
     arms into one classifier-backed `mop_receiver_owner` helper.
 - [ ] **E2 — Give every native entry an exact handler ID.** Generate static type×method handler rows

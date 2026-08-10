@@ -3643,10 +3643,13 @@ impl Interpreter {
             target.view(),
             ValueView::Instance { .. } | ValueView::Package(_)
         ) {
-            let type_name = crate::runtime::utils::value_type_name(&target);
-            // ADR-0019 E1a shadow probe (zero behavior change): see
-            // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
-            self.shadow_check_owner("call_method_with_values.augment_gate", &target, type_name);
+            // ADR-0019 E1b: authoritative TypeId classifier owner (was
+            // `value_type_name`) — see `Interpreter::dispatch_owner_name` and
+            // `todo/deep/adr0019-e1-typeid-receiver-owner.md`. This fixes the
+            // Enum ("Int" -> the real enum type) and ParametricRole/Instance-in-
+            // Mixin ("Package"/"Any" -> the real name) collapses the old
+            // `value_type_name`-based owner had.
+            let type_name = self.dispatch_owner_name(&target);
             if self.has_user_method(type_name, method) {
                 return self.dispatch_instance_and_fallback(target, method, args);
             }
