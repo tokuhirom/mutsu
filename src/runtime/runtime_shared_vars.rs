@@ -213,8 +213,10 @@ impl Interpreter {
             && self.thread_redeclared_vars.contains(key)
     }
 
-    /// Mask each scalar parameter name in `names` as a fresh per-invocation
-    /// binding while the cross-thread shared store is active — the call-site
+    /// Mask each scalar parameter, and each **slurpy** `@`/`%` parameter
+    /// (`&` and a plain non-slurpy `@`/`%` are excluded, see below), as a
+    /// fresh per-invocation binding while the cross-thread shared store is
+    /// active — the call-site
     /// analogue of the `my` declaration mask `exec_set_var_dynamic_op` applies
     /// (see its comment). A plain `thread_redeclared_vars` mask alone is not
     /// enough for a *parameter*: unlike a `my` in the current block, the
@@ -249,14 +251,33 @@ impl Interpreter {
     /// without disturbing a still-active ancestor's own mask.
     pub(crate) fn mask_thread_redeclared_params<'a>(
         &mut self,
-        names: impl Iterator<Item = &'a str>,
+        param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
     ) -> ThreadParamMask {
         let mut mask = ThreadParamMask::default();
         if !self.shared_vars_active {
             return mask;
         }
-        for name in names {
-            if name.is_empty() || name == "_" || name == "self" || name.starts_with(['@', '%', '&'])
+        for pd in param_defs {
+            let name = pd.name.as_str();
+            // `&`-sigil parameters are routines, not shared mutable variables
+            // — never masked here. A plain (non-slurpy) `@`/`%` parameter
+            // keeps the name lane too: an ordinary `sub f(@list) {...}`'s
+            // `@list` may be read back through the shared-store fallback by
+            // a nested spawn that did not capture it lexically (mirrors why
+            // a plain `my @a` declaration keeps the lane for its
+            // `__mutsu_atomic_*` CAS copies — see `container_name_is_redeclared`'s
+            // doc). Only a **slurpy** `@`/`%` parameter (`*@x`, `*%h`) is
+            // masked: it collects a FRESH per-invocation value out of thin
+            // air (never a caller's shared container), so nothing legitimate
+            // depends on its bare name resolving to an outer binding — see
+            // `Cro::HTTP::Response.set-cookie`'s `*%options` resolving to an
+            // unrelated `%options` live elsewhere in the process via the
+            // shared bare-name store.
+            if name.is_empty()
+                || name == "_"
+                || name == "self"
+                || name.starts_with('&')
+                || (name.starts_with(['@', '%']) && !pd.slurpy)
             {
                 continue;
             }
