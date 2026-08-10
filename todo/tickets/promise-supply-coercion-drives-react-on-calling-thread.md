@@ -39,6 +39,63 @@ Aggravating factor (secondary): mutsu tap callbacks run synchronously on the emi
 
 Related minor anomaly noticed while bisecting (worth a one-line check in the same campaign): a tap's `done` callback can fire twice (`tmp/repro-class-transformer.raku` prints `OUT DONE` twice under mutsu, once under raku).
 
+## Design decision (2026-08-10, design session — implement from here)
+
+Option (b) alone is **not sufficient** and should not be attempted as the
+primary mechanism: `supplier_register_promise` only keeps pending promises at
+`done` with the last raw emitted value — it has no executor for the supply
+body's `whenever` **callbacks** (`$acc ~= $v; LAST emit $acc`), which is what
+the coercion's result is built from. Reading `supply_promise_on_demand`
+(`src/runtime/supply_promise.rs:344-556`) confirms the callbacks are executed
+only by the react drive loop (`drive_react_subscriptions` under
+`SupplyDrivePolicy::Promise`); the supplier registry path merely resolves
+promises, it never runs subscription callbacks. So (b) would return promises
+that resolve with the wrong (un-transformed) value whenever the body does any
+accumulation — i.e. the Cro `body-blob` case itself.
+
+**Chosen design: option (a), scoped to the final drive only.** The function's
+structure already isolates the blocking part:
+
+1. Body execution (`run_on_demand_body`) stays synchronous on the calling
+   thread — it must run to register whenevers. Unchanged.
+2. The three synchronous resolution branches stay unchanged (no
+   subscriptions → keep; static-only replay → keep; `promise.is_resolved()`
+   early returns). These cannot deadlock and many passing tests go through
+   them.
+3. ONLY the trailing `drive_react_subscriptions(react_subs,
+   SupplyDrivePolicy::Promise { .. })` call (`supply_promise.rs:543-…`) moves
+   to a background thread: `spawn_gc_helper_thread` (the GC-registered spawn
+   already used at `supply_promise.rs:447` — never a raw `std::thread::spawn`,
+   per the Gc-thread registration rule) owning a thread-clone interpreter that
+   runs the drive and keeps/breaks the promise. The coercion then returns the
+   Planned promise immediately.
+
+Thread-clone guidance (this is the risk the sibling tickets warn about):
+build the clone with `clone_for_thread_for_block(&on_demand_cb)` — NOT bare
+`clone_for_thread()` — so `block_captured_scalars` keeps the callback's own
+captured scalars off the bare-name lane, and note ADR-0023 (binding-provenance
+capture) if any captured name is a loop parameter at the coercion site. The
+`react_subs` vector and the `SharedPromise` are both Send; move them into the
+helper. The 30s deadline moves with the policy unchanged.
+
+`await $supply` semantics stay correct for free: awaiting is *allowed* to
+block, and after this change it blocks on the returned Planned promise
+(`promise.wait()`-equivalent) instead of inside the coercion — which is
+exactly what breaks the producer-thread deadlock cycle while preserving
+await's observable behavior.
+
+Implementer survey tasks (time-boxed, before coding):
+- Enumerate `SupplyDrivePolicy::Promise` construction sites; confirm the only
+  one moving off-thread is this coercion path.
+- Check `native_supply_dispatch.rs:431-456` for callers that consume the
+  coercion result synchronously right after (e.g. immediately `.result`) and
+  would now need to wait on the promise rather than assume resolution.
+- Run roast S17-supply/S17-promise whitelist files locally after the change
+  (ordering-sensitive tests are the known risk; the synchronous branches
+  being preserved should keep most of them byte-identical).
+- The `.schedule-on` non-decoupling (secondary aggravator) is NOT part of
+  this fix; leave it and its repro noted here.
+
 ## Fix direction
 Make on-demand `Supply.Promise` asynchronous:
 - In `supply_promise_on_demand`, after `run_on_demand_body` has collected the subscriptions (this part can stay synchronous — it must run the body to register whenevers), do NOT drive the react loop on the calling thread. Instead hand the `react_subs` + policy to a background drive: either
