@@ -1,9 +1,9 @@
 # ADR-0023: Spawn-time capture ownership is decided by binding provenance, not value type
 
-- Status: Proposed
+- Status: Accepted (implemented)
 - Date: 2026-08-10
 - Refines: ADR-0010 (cross-thread lexical sharing scope)
-- Resolves: `todo/deep/concurrent-for-loop-siblings-cannot-share-a-bare-loop-param-name.md`
+- Resolves: `news/2026-08/for-loop-param-binding-provenance-spawn-capture.md` (formerly `todo/deep/concurrent-for-loop-siblings-cannot-share-a-bare-loop-param-name.md`)
 
 ## Context
 
