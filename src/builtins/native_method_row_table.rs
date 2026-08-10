@@ -439,4 +439,96 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Seq", "unique", 1, 0),
     ("Seq", "values", 1, 0),
     ("Seq", "WHICH", 1, 0),
+    // ADR-0019 E2b: `Match` rows, hand-probed against a real Match value
+    // produced by running `'foo' ~~ /f(o)(o)/` through the interpreter
+    // (2026-08-10) -- like `Pair`/`Seq`, `Match` has no
+    // `builtin_type_method_names` entry to draw candidates from. Two
+    // candidate sources were probed: the explicit 0-arg arm in
+    // `methods_0arg/mod.rs` (`"from" | "to" | "pos" | ...`), and every `Str`
+    // row name above -- that arm's `_` default falls through to
+    // `native_method_0arg` on the matched string
+    // (`Value::str(target.to_string_value())`), and the narg cascades for
+    // string-shaped methods (`split`/`substr`/`comb`/...) coerce via
+    // `target.to_string_value()` regardless of receiver type, so most of
+    // `Str`'s surface is reachable from a `Match` receiver too. Only names
+    // the probe actually recognized (non-zero arity bits) are listed here --
+    // `replace-with`/`ends-with`/`indices`/`match`/`starts-with`/`subst`/
+    // `subst-mutate`/`substr-rw`/`substr-eq`/`trans`/`IO` returned zero and
+    // are deliberately absent (not natively recognized for a Match
+    // receiver). `so`/`not`/`defined` are deliberately absent here too: a
+    // Match's `dispatch_owner_chain` includes `Any`, so they are already
+    // covered by the `Any` rows above via the chain-walk in
+    // `Interpreter::record_native_row_coverage`, same as `Pair`/`Seq`.
+    // Verified by `match_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Match", "pos", 1, 0),
+    ("Match", "target", 1, 0),
+    ("Match", "clone", 1, 0),
+    ("Match", "orig", 1, 0),
+    ("Match", "from", 1, 0),
+    ("Match", "to", 1, 0),
+    ("Match", "made", 1, 0),
+    ("Match", "actions", 1, 0),
+    ("Match", "ast", 1, 0),
+    ("Match", "Bool", 1, 0),
+    ("Match", "Numeric", 1, 0),
+    ("Match", "caps", 1, 0),
+    ("Match", "chunks", 1, 0),
+    ("Match", "list", 1, 0),
+    ("Match", "hash", 1, 0),
+    ("Match", "Hash", 1, 0),
+    ("Match", "Array", 1, 0),
+    ("Match", "prematch", 1, 0),
+    ("Match", "postmatch", 1, 0),
+    ("Match", "perl", 1, 0),
+    ("Match", "WHICH", 1, 0),
+    ("Match", "keys", 1, 0),
+    ("Match", "values", 1, 0),
+    ("Match", "pairs", 1, 0),
+    ("Match", "kv", 1, 0),
+    ("Match", "elems", 1, 0),
+    ("Match", "Capture", 1, 0),
+    ("Match", "chars", 1, 0),
+    ("Match", "codes", 1, 0),
+    ("Match", "comb", 7, 0),
+    ("Match", "chomp", 1, 0),
+    ("Match", "chop", 3, 0),
+    ("Match", "contains", 2, 0),
+    ("Match", "fc", 1, 0),
+    ("Match", "flip", 1, 0),
+    ("Match", "index", 2, 0),
+    ("Match", "lc", 1, 0),
+    ("Match", "lines", 3, 0),
+    ("Match", "ords", 1, 0),
+    ("Match", "pred", 1, 0),
+    ("Match", "rindex", 2, 0),
+    ("Match", "samecase", 2, 0),
+    ("Match", "samemark", 2, 0),
+    ("Match", "split", 6, 0),
+    ("Match", "substr", 6, 0),
+    ("Match", "succ", 1, 0),
+    ("Match", "tc", 1, 0),
+    ("Match", "trim", 1, 0),
+    ("Match", "trim-leading", 1, 0),
+    ("Match", "trim-trailing", 1, 0),
+    ("Match", "uc", 1, 0),
+    ("Match", "words", 3, 0),
+    ("Match", "wordcase", 1, 0),
+    ("Match", "NFC", 1, 0),
+    ("Match", "NFD", 1, 0),
+    ("Match", "NFKC", 1, 0),
+    ("Match", "NFKD", 1, 0),
+    ("Match", "encode", 1, 0),
+    ("Match", "uniparse", 1, 0),
+    ("Match", "unimatch", 6, 0),
+    ("Match", "uniprops", 3, 0),
+    ("Match", "parse-names", 1, 0),
+    ("Match", "parse-base", 2, 0),
+    ("Match", "Int", 1, 0),
+    ("Match", "Num", 1, 0),
+    ("Match", "Rat", 3, 0),
+    ("Match", "Str", 3, 0),
+    ("Match", "gist", 1, 0),
+    ("Match", "raku", 1, 0),
+    ("Match", "fmt", 7, 0),
 ];
