@@ -167,9 +167,12 @@ impl Interpreter {
             || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
             || (matches!(method, "list" | "Array" | "Seq")
                 && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
-            || (method == "Supply"
-                && matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if class_name == "Supplier" || class_name == "Supplier::Preserving"))
+            // No explicit `Supplier`/`Supplier::Preserving` `.Supply` gate here:
+            // the coercion cascade arm itself already returns `None` for both
+            // classes (`methods_0arg/coercion.rs`'s `"Supply"` arm), so the
+            // native fast path naturally falls through to the runtime method
+            // without one — confirmed via ADR-0019 E4b's category-1 audit,
+            // `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
             // `.throw`/`.gist`/`.Str` render `$exc.message`; the native fast path
             // can only read the stored `message` attribute, which is still
             // undefined when the class computes its message. See the twin gate in

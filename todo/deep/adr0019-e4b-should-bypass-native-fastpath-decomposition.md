@@ -13,11 +13,36 @@ now has its own `ResolvedCandidate::NativeCallBinding` kind in
 `resolution_sequence.rs`, shadow-verified against the same sweep methodology
 — mismatches fell from 4172/20635 (20.2%) to 34/20634 (0.16%), and the
 residual 34 are the pre-existing category-3-only shape already noted in step
-1, not category 2. What's left before the actual authoritative switch:
-implement category 1's guard list (step 2's per-case disposition) as explicit
-resolver guards, and add design decision 4's E2-row-catalog `Native`
-candidate variant (a fourth kind, distinct from `NativeCallBinding`) so the
-switch has every candidate kind it needs.
+1, not category 2. **Step 4 (scoped, not yet implemented — see "Design
+decision 4's `Native` candidate needs a bigger signature change than it
+looks" below):** the E2-row-catalog candidate is not a same-shape follow-on
+to step 3. It needs (a) `resolve_sequence`'s signature to grow the design
+doc's `shape: CallShape` and `definedness` parameters — `CallShape` does not
+exist as a type anywhere in the codebase yet, it is purely a design-doc
+concept from `todo/deep/adr0019-e2-e4-resolver-core.md`'s E3 cache-key
+sketch — because row coverage is arity/definedness-dependent in a way
+`NativeCallBinding`'s plain boolean membership is not, and (b) several
+`native_method_row.rs` items un-gated from `#[cfg(test)]`
+(`NativeRowFlags::TYPE_OBJECT_OK`/`MUTATES_RECEIVER`/`contains`, and a new
+unambiguous row-existence predicate — see below). Left unimplemented this
+session by deliberate scope decision, not an oversight. Step 5: confirmed and
+dropped the first of step 2's "likely reduces, not exhaustively proven"
+category-1 guards — `Supplier`/`Supplier::Preserving.Supply` — live, ahead of
+the resolver switch, since the finding ("the cascade's own `"Supply"` arm
+already self-guards, `methods_0arg/coercion.rs:655-661`") makes the outer
+`should_bypass_native_fastpath` gate provably redundant today, independent of
+any resolver work. Verified with `cargo test --lib`, `prove -j4 t/`, and the
+full `S17-supply` roast subset (99 files), all green with the guard removed.
+The other two "likely reduces" groups (`Proc::Async`'s method family,
+`Stash`'s `AT-KEY`/`keys`/`values`) and the "mixed" `IO::Handle`
+`encoding`/`opened`/`DESTROY` group are still open — same methodology
+applies: read the cascade arm(s) for the exact method name(s), confirm they
+either don't exist for an arbitrary `Instance` or already self-guard for the
+receiver in question, remove the guard, then verify empirically rather than
+trusting the read alone (`cargo test --lib` + `prove t/` + the relevant
+whitelisted roast files). What remains before the actual authoritative
+switch: finish category 1's guard list (the two still-open groups above),
+and design decision 4's `Native` candidate (step 4).
 
 E4b ("authoritative switch at the cached-resolve boundaries, native rows
 included, `should_bypass_native_fastpath` deleted") is the next unstarted box
@@ -124,4 +149,78 @@ on any row miss while continuing to increment the counter, turning "zero"
 from a hard precondition into an ongoing monitored signal. That decision is
 orthogonal to the decomposition work above and should be made before or
 alongside step 3, not blocking steps 1-2 (which are shadow-only and touch no
-production dispatch decision regardless of the counter's value).
+production dispatch decision regardless of the counter's value). (Adopted —
+see the ADR's "Gate-renegotiation proposal" note.)
+
+## Design decision 4's `Native` candidate needs a bigger signature change than it looks (step 4 scoping, 2026-08-11)
+
+Step 3 added `ResolvedCandidate::NativeCallBinding` (category 2,
+`is_native_method`) cheaply because it is a plain per-`(owner, name)` boolean
+fact — the same shape `resolve_sequence`'s existing `User` candidates already
+have. Design decision 4's `Native` variant
+(`todo/deep/adr0019-e2-e4-resolver-core.md`, the `ResolvedCandidate` sketch)
+looked like the same kind of addition at a glance. It is not, for two
+independent reasons found while scoping the follow-on slice:
+
+1. **Row coverage is call-shape-dependent, not a flat boolean.** A
+   `NativeMethodRow` carries a `NativeArityMask` (which of `native_method_0arg`/
+   `_1arg`/`_2arg`/none actually serves the name) and `NativeRowFlags`
+   (`TYPE_OBJECT_OK`: servable on an undefined type object; `MUTATES_RECEIVER`:
+   really a Tier-A `&mut self` path, not the pure arity cascade; `SPECIAL`:
+   intercepted ahead of the cascade or genuinely unmodeled). Whether a `Native`
+   candidate should even be *offered* at a given call site depends on the
+   call's arity and the receiver's definedness — exactly the two inputs design
+   decision 4's own sketch signature already anticipates:
+   `resolve_sequence(chain: &[TypeId], name: Symbol, shape: CallShape,
+   definedness) -> Option<ResolvedSequence>` (`adr0019-e2-e4-resolver-core.md`
+   line 168). Today's `resolve_sequence(chain, name)` (E4a's original
+   two-argument shape, unchanged by step 3) has neither parameter — `User` and
+   `NativeCallBinding` candidates don't need them (a user method's own
+   signature is checked per-call by the existing ranker, and a NativeCall
+   binding is a pure name-presence fact independent of arity). Adding `Native`
+   without `shape`/`definedness` would force either (a) always including a row
+   candidate regardless of whether the actual call could ever use it — junk
+   candidates the ranker has to filter out with logic that duplicates the
+   arity-mask/flag checks the row already encodes — or (b) reaching back into
+   caller-supplied arity/definedness through some other side channel, which
+   defeats the point of a self-contained sequence builder.
+2. **`CallShape` does not exist as a type anywhere in the codebase.**
+   `git grep CallShape` outside this doc and `adr0019-e2-e4-resolver-core.md`
+   finds nothing — it is a design-doc sketch (`{ arity_bucket: 0|1|2|3+,
+   has_named: bool }`, `adr0019-e2-e4-resolver-core.md` line 193) for E3's
+   future cache key, never implemented. Threading it through
+   `resolve_sequence` now means: defining the type, deciding whether E4b needs
+   the full E3 cache-key shape or a smaller local subset, and updating every
+   existing caller of `resolve_sequence`/`shadow_check_resolver`
+   (`resolve_method_cached`'s two boundaries, step 3's
+   `shadow_check_bypass_user_method_categories`) to pass it — a signature
+   change to code that already landed and is shadow-verified, not a pure
+   addition.
+3. **The row-existence check itself is not production-safe yet.** The only
+   production (`#[cfg(test)]`-free) entry point,
+   `crate::builtins::native_method_row::native_method_row(owner, name) ->
+   (NativeArityMask, NativeRowFlags)`, returns the *same* conservative
+   `(N, SPECIAL)` default both when no row exists for the pair AND when a row
+   genuinely exists and is deliberately classified `N`/`SPECIAL` (e.g. a
+   name recognized at no arity at all, or a Tier-A mutator) — the two cases
+   are indistinguishable from its return value alone. `NativeMethodRow` (the
+   struct design decision 4's candidate wants to hold a `&'static` reference
+   to) and `NativeRowFlags::{TYPE_OBJECT_OK, MUTATES_RECEIVER, contains}` are
+   all `#[cfg(test)]`-gated — deliberately, per the module doc, since E2a's
+   only reader today is its own inverse probe. A `Native` candidate needs a
+   new, unambiguous, production-visible predicate (e.g.
+   `native_method_row_exists(owner, name) -> bool` backed directly by
+   `classification_table().contains_key(..)`, not by the existing
+   conservative-default `native_method_row()`) before it can safely decide
+   "does this level even have a catalog entry" — reusing today's function
+   would misreport every genuine `(N, SPECIAL)`-classified row as absent, or
+   worse, silently treat "absent" and "recognized-but-unservable" the same
+   way a real dispatch decision cannot afford to.
+
+None of this blocks step 3's `NativeCallBinding` (already landed, PR #6213)
+or category 1's guard-list implementation (still open, independent of this
+finding). It does mean `Native` is genuinely the last and most involved of
+the four candidate kinds design decision 4 lists — plan a dedicated slice for
+it (signature change to `resolve_sequence` + its callers, a new
+production-safe row-existence predicate, then the usual shadow-verify sweep)
+rather than expecting it to be a small mechanical follow-on to step 3.
