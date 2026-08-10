@@ -216,8 +216,7 @@ impl Interpreter {
         // value over an unrelated caller's live entry of the same bare name);
         // unmasked again at every return path below (search
         // `unmask_thread_redeclared_params`).
-        let masked_params =
-            self.mask_thread_redeclared_params(cf.param_defs.iter().map(|pd| pd.name.as_str()));
+        let masked_params = self.mask_thread_redeclared_params(cf.param_defs.iter());
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.

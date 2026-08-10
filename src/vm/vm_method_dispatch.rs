@@ -580,8 +580,7 @@ impl Interpreter {
         // `thread_redeclared_vars` mask alone is not sufficient and the
         // `thread_param_shadow_vars` companion is also needed. Unmasked again
         // at return (search `unmask_thread_redeclared_params`).
-        let masked_params =
-            self.mask_thread_redeclared_params(bind_param_defs.iter().map(|pd| pd.name.as_str()));
+        let masked_params = self.mask_thread_redeclared_params(bind_param_defs.iter());
 
         // Initialize locals from env
         self.locals = vec![Value::NIL; cc.locals.len()];
