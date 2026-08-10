@@ -102,12 +102,39 @@ the closure's creation point", or making the merge overwrite for
 the merge site). Needs an ADR-level decision on boxing scope + perf
 measurement (boxing cost was the reason lever C stayed narrow, #2749).
 
+## Second manifestation: http-session expiration (the OPPOSITE direction)
+
+`t/http-session-inmemory.rakutest` / `t/http-session-persistent.rakutest`
+"Session expires appropriately" (expected 'Visit 1', got 'Visit 4'): the
+test passes `now => { $fake-now }` into
+`Cro::HTTP::Session::InMemory[...]`, then advances the mainline
+`$fake-now += Duration.new(...)` between requests. The closure is stored in
+the middleware's `&.now` attribute and called on the server's worker
+threads; under mutsu it returns the CREATION-time value forever (verified
+by shadow-lib instrumentation of `SessionStore!delete-expired`: `&!now()`
+stayed at the initial Instant across all requests while head-exp never
+moved, so sessions never expire). This is the mirror image of the
+`$encoder` hijack: there the capture must win over an unrelated caller
+binding; here the creator's POST-capture mutations must stay visible to
+the (cross-thread) closure. A trivial Channel-based synthetic
+(`tmp/cross-thread-live-read.raku`) works — the name-keyed lane sync
+covers it — but the real path (closure stored in an attribute, invoked on
+a worker several spawn generations deep) loses the update. A shared-cell
+capture satisfies both directions at once, which is why the cell route is
+the fix direction rather than merge-order tweaks.
+
+Related same-family ticket (a THIRD direction — captured value wins over
+the closure's own inner for-loop parameter):
+`todo/tickets/closure-for-loop-param-hijacked-by-same-named-captured-outer.md`.
+Any fix here must be validated against its 11-line repro too.
+
 ## Verification (once fixed)
 
 - `tmp/h2-bisect14.raku`: `in-check enc WHICH` must equal `mainline WHICH`.
 - `bash tmp/cro-suite-run.sh http`: `http2-request-serializer.rakutest`,
   `http2-response-serializer.rakutest`, `http2-request-parser.rakutest`
-  all `notok=0`.
+  all `notok=0`; `http-session-inmemory.rakutest` /
+  `http-session-persistent.rakutest` "Session expires appropriately" pass.
 - The merge-site comment's regression example must keep passing:
   `my $s = 0; my @cb; for 1..3 { @cb.push({ $s }) }; $s = 42; say @cb[0]()`
   → 42.
