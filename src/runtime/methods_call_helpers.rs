@@ -440,37 +440,11 @@ impl Interpreter {
         Ok(crate::value::value_buf::make_buf(class_name, byte_vals))
     }
 
-    /// Check if a builtin type inherits from a given ancestor type.
-    /// Covers the standard Raku type hierarchy for builtin types.
-    pub(super) fn type_inherits(type_name: &str, ancestor: &str) -> bool {
-        Self::builtin_type_mro_chain(type_name).contains(&ancestor)
-    }
-
-    /// The built-in type's MRO chain (self + ancestors), used by `type_inherits`
-    /// and by `.+`/`.*` all-candidates dispatch to count how many MRO levels
-    /// define a method. Roles (e.g. `Positional`) are intentionally omitted: they
-    /// carry no entry in `builtin_type_method_names`, so they never contribute a
-    /// candidate, and omitting them keeps this chain small.
-    pub(crate) fn builtin_type_mro_chain(type_name: &str) -> &'static [&'static str] {
-        match type_name {
-            "Int" => &["Int", "Cool", "Any", "Mu"],
-            "Num" => &["Num", "Cool", "Any", "Mu"],
-            "Rat" | "FatRat" => &["Rat", "Cool", "Any", "Mu"],
-            "Str" => &["Str", "Cool", "Any", "Mu"],
-            "Bool" => &["Bool", "Int", "Cool", "Any", "Mu"],
-            "Array" => &["Array", "List", "Cool", "Any", "Mu"],
-            "List" => &["List", "Cool", "Any", "Mu"],
-            "Hash" => &["Hash", "Cool", "Any", "Mu"],
-            "Range" => &["Range", "Cool", "Any", "Mu"],
-            "Pair" => &["Pair", "Cool", "Any", "Mu"],
-            "Set" => &["Set", "Any", "Mu"],
-            "Bag" => &["Bag", "Any", "Mu"],
-            "Mix" => &["Mix", "Any", "Mu"],
-            "Complex" => &["Complex", "Cool", "Any", "Mu"],
-            "Regex" => &["Regex", "Method", "Routine", "Block", "Code", "Any", "Mu"],
-            "Sub" => &["Sub", "Routine", "Block", "Code", "Any", "Mu"],
-            "Junction" => &["Junction", "Mu"],
-            _ => &["Any", "Mu"],
-        }
-    }
+    // `type_inherits`/`builtin_type_mro_chain` (one of the four divergent
+    // builtin-MRO tables the ADR-0019 E1 design doc calls out) were retired in
+    // E1b: their two call sites (`methods_qualified.rs`'s qualified-dispatch
+    // ancestor check, `vm_call_helpers.rs`'s `.+`/`.*` all-candidates count)
+    // now consult the TypeId classifier's catalog-backed chain instead — see
+    // `Interpreter::dispatch_owner_chain`/`dispatch_mro` and
+    // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
 }

@@ -287,13 +287,19 @@ impl Interpreter {
         ) {
             return 1;
         }
-        // Use the *introspective* type name (List vs Array distinguished by
-        // ArrayKind), so `<a b>` (List) walks the List MRO, not Array's.
-        let type_name = crate::runtime::value_type_name(target);
-        let count = Self::builtin_type_mro_chain(type_name)
+        // ADR-0019 E1b: authoritative TypeId classifier chain (was
+        // `value_type_name` + the `builtin_type_mro_chain` divergent MRO
+        // table) — see `Interpreter::dispatch_mro` and
+        // `todo/deep/adr0019-e1-typeid-receiver-owner.md`. `target` is
+        // guaranteed non-Instance/non-Mixin by the early return above, so the
+        // role-skip `dispatch_owner_chain` variant is unnecessary here — the
+        // classifier's own chain (which still distinguishes List vs Array by
+        // `ArrayKind`, same as the old `value_type_name`) is exactly right.
+        let chain = self.dispatch_mro(target);
+        let count = chain
             .iter()
-            .filter(|cn| {
-                crate::builtins::builtin_type_methods::builtin_type_method_names(cn)
+            .filter(|t| {
+                crate::builtins::builtin_type_methods::builtin_type_method_names(t.as_str())
                     .contains(&method)
             })
             .count();

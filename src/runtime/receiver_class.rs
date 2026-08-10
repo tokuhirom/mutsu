@@ -1,4 +1,4 @@
-//! ADR-0019 Phase E box E1a: the shadow-mode receiver classifier.
+//! ADR-0019 Phase E box E1: the receiver classifier.
 //!
 //! `receiver_dispatch_class`/`dispatch_mro` compute the "who owns this method for this
 //! receiver" decision from a single place, using [`crate::type_id::TypeId`] and the
@@ -7,10 +7,20 @@
 //! `todo/deep/adr0019-e1-typeid-receiver-owner.md` for the full design and the
 //! verification items (V1-V5) referenced in the comments below.
 //!
-//! **E1a is shadow-only.** Nothing here drives dispatch yet — [`Interpreter::shadow_check_owner`]
-//! is the only way this module is reached from the interpreter, and it only records a
-//! `MUTSU_VM_STATS` comparison against the *existing* owner decision. Making the
-//! classifier authoritative is E1b.
+//! **E1a** (landed) wired the classifier in shadow mode only, comparing its answer
+//! against each site's existing string-based decision under `MUTSU_VM_STATS` counters
+//! without changing behavior.
+//!
+//! **E1b** (this slice) makes the classifier authoritative at the dispatch/fallback
+//! sites enumerated in the design doc's E1b bullet, via [`Interpreter::dispatch_owner_chain`]
+//! / [`Interpreter::dispatch_owner_name`] (a `dispatch_mro` variant that skips a role
+//! `Mixin`'s role-TypeId prefix — see its doc comment for why). The lone exception is
+//! `multi_arg_type_keys` (`vm_call_method_compiled_cache.rs`), whose cutover is
+//! deliberately deferred to `todo/tickets/multi-arg-type-keys-package-collision.md`:
+//! unlike the other three original E1a sites, making it authoritative there is not a
+//! shadow-mode-safe refactor but IS the fix for that ticket's Package-collision bug, so
+//! it stays on `shadow_check_owner` until that ticket is picked up on its own. MOP
+//! fallback consolidation (E1c) is still out of scope here.
 
 use super::*;
 use crate::builtins::builtin_type_catalog::builtin_type_info;
@@ -263,11 +273,59 @@ impl Interpreter {
         chain
     }
 
+    /// ADR-0019 **E1b**: the dispatch-owner chain for a **non-Instance,
+    /// non-Package** receiver, authoritative at the fallback/qualified-dispatch
+    /// sites enumerated in `todo/deep/adr0019-e1-typeid-receiver-owner.md`'s E1b
+    /// slice. This is [`Self::dispatch_mro`] with one deliberate difference: for a
+    /// role `Mixin` it skips the role-`TypeId` prefix `dispatch_mro` puts first,
+    /// returning the *inner* value's own chain instead.
+    ///
+    /// Why the skip is required, not optional: every call site that consults this
+    /// chain runs strictly *after* a dedicated, role-registry-aware path has
+    /// already tried role methods for the same receiver
+    /// (`dispatch_mixin_method_call` before `call_method_with_values`'s augment
+    /// gate; `dispatch_qualified_mixin_method` before
+    /// `dispatch_qualified_non_instance_method`). Re-deriving a role owner here
+    /// would at best repeat that lookup, and at worst regress: using the role
+    /// name as the SOLE owner for a role mixed onto a builtin value (`@a but R`)
+    /// stops any lookup keyed on that single name from ever reaching the inner
+    /// value's real builtin ancestry. Confirmed by direct repro before this cutover
+    /// landed: `augment class Array { method my-foo {...} }; (@a but R).my-foo`
+    /// resolved fine under the old `value_type_name`-based owner (which unwraps a
+    /// Mixin to its inner value, same as this skip); switching the owner to
+    /// `dispatch_mro`'s raw role-first chain's first element made it
+    /// unresolvable, since `"R"` has no `augment`-recorded method of that name.
+    /// Allomorphs (`<1/3>`, `IntStr` et al.) are exempted from the skip: their
+    /// classifier chain already starts with the allomorph type itself, not a
+    /// role, so `dispatch_mro`'s answer is already correct.
+    pub(crate) fn dispatch_owner_chain(&mut self, value: &Value) -> Vec<TypeId> {
+        if let ValueView::Mixin(inner, mixins) = value.view()
+            && !mixins.contains_key("Str")
+        {
+            return self.dispatch_mro(inner.as_ref());
+        }
+        self.dispatch_mro(value)
+    }
+
+    /// The single canonical owner name for [`Self::dispatch_owner_chain`] — the
+    /// classifier's authoritative answer for a non-Instance, non-Package receiver,
+    /// replacing `value_type_name` at the E1b-cutover sites (fallback/augment
+    /// gates that key a lookup on ONE name, not a full MRO walk).
+    pub(crate) fn dispatch_owner_name(&mut self, value: &Value) -> &'static str {
+        self.dispatch_owner_chain(value)
+            .first()
+            .map(|t| t.as_str())
+            .unwrap_or_else(|| well_known_types().any.as_str())
+    }
+
     /// Shadow-mode comparison for ADR-0019 E1a (`MUTSU_VM_STATS`-gated, a no-op
     /// otherwise): compute the classifier's owner for `target` and compare it against
     /// `old_owner` (the name the *existing* dispatch-path logic at `site` already
     /// picked). Purely observational — `old_owner` continues to drive dispatch
-    /// unchanged. See `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
+    /// unchanged. Retained in E1b only at `multi_arg_type_keys`
+    /// (`vm_call_method_compiled_cache.rs`), whose cutover is deliberately deferred
+    /// to its own ticket — see `todo/tickets/multi-arg-type-keys-package-collision.md`.
+    /// See `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
     pub(crate) fn shadow_check_owner(
         &mut self,
         site: &'static str,

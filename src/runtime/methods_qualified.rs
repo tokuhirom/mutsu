@@ -894,8 +894,23 @@ impl Interpreter {
             // `Int::abs`): fall back to ordinary unqualified dispatch.
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }
-        let type_name = super::utils::value_type_name(target);
-        let type_matches = qualifier == type_name || Self::type_inherits(type_name, qualifier);
+        // ADR-0019 E1b: authoritative TypeId classifier chain (was
+        // `value_type_name` + the `type_inherits`/`builtin_type_mro_chain`
+        // divergent MRO table) — see `Interpreter::dispatch_owner_chain` and
+        // `todo/deep/adr0019-e1-typeid-receiver-owner.md`. `dispatch_qualified_mixin_method`
+        // already tried a role-qualified call on a Mixin receiver before this
+        // function runs, so `dispatch_owner_chain`'s role-skip is required here
+        // too: an unmatched role name must not satisfy this membership check by
+        // literal equality with the chain's first element (confirmed by repro:
+        // `(@a but R).R::elems` must still raise `X::Method::InvalidQualifier`
+        // when `R` does not define `elems`, not silently re-dispatch through the
+        // Mixin's unqualified fallback).
+        let chain = self.dispatch_owner_chain(target);
+        let type_name = chain
+            .first()
+            .map(|t| t.as_str())
+            .unwrap_or_else(|| crate::type_id::well_known_types().any.as_str());
+        let type_matches = qualifier == type_name || chain.iter().any(|t| t.as_str() == qualifier);
         if type_matches {
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }

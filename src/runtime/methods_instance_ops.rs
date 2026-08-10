@@ -1672,14 +1672,10 @@ impl Interpreter {
             target.view(),
             ValueView::Instance { .. } | ValueView::Package(_)
         ) {
-            let class_name = crate::runtime::utils::value_type_name(&target);
-            // ADR-0019 E1a shadow probe (zero behavior change): see
+            // ADR-0019 E1b: authoritative TypeId classifier owner (was
+            // `value_type_name`) — see `Interpreter::dispatch_owner_name` and
             // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
-            self.shadow_check_owner(
-                "dispatch_instance_and_fallback.value_type_dispatch",
-                &target,
-                class_name,
-            );
+            let class_name = self.dispatch_owner_name(&target);
             let dispatch_class = if self.has_user_method(class_name, method) {
                 Some(class_name)
             } else if matches!(target.view(), ValueView::Array(_, kind) if !kind.is_itemized())
@@ -2265,10 +2261,13 @@ impl Interpreter {
                         );
                     }
                 }
+                // ADR-0019 E1b: authoritative TypeId classifier owner (was
+                // `value_type_name`) in the fallback arm — see
+                // `Interpreter::dispatch_owner_name`.
                 let type_name = match target.view() {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
                     ValueView::Package(name) => name.resolve(),
-                    _ => crate::runtime::utils::value_type_name(&target).to_string(),
+                    _ => self.dispatch_owner_name(&target).to_string(),
                 };
                 // RakuAST construction via a non-`new` constructor (Phase 4),
                 // e.g. `RakuAST::Name.from-identifier("x")` (`.new` is handled
@@ -2305,10 +2304,13 @@ impl Interpreter {
         if self.method_fallbacks.is_empty() {
             return None;
         }
+        // ADR-0019 E1b: authoritative TypeId classifier owner (was
+        // `value_type_name`) in the fallback arm — see
+        // `Interpreter::dispatch_owner_name`.
         let type_name = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Package(name) => name.resolve(),
-            _ => crate::runtime::utils::value_type_name(target).to_string(),
+            _ => self.dispatch_owner_name(target).to_string(),
         };
         // Consult the class itself first, then its ancestors (MRO).
         let mut classes = vec![type_name.clone()];
@@ -2444,7 +2446,7 @@ impl Interpreter {
                 let expected_type = self.are_expected_type_name(expected);
                 for (idx, value) in values.iter().enumerate() {
                     if !self.are_value_matches_type(value, &expected_type) {
-                        let actual = Self::are_actual_type_name(value);
+                        let actual = self.are_actual_type_name(value);
                         let message = if values.len() == 1 {
                             format!("Expected '{}' but got '{}'", expected_type, actual)
                         } else {
@@ -2498,7 +2500,9 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.resolve())
                 .collect(),
-            _ => vec![crate::runtime::utils::value_type_name(value).to_string()],
+            // ADR-0019 E1b: authoritative TypeId classifier owner (was
+            // `value_type_name`) — see `Interpreter::dispatch_owner_name`.
+            _ => vec![self.dispatch_owner_name(value).to_string()],
         }
     }
 
@@ -2536,11 +2540,13 @@ impl Interpreter {
         self.type_matches_value(expected_type, value)
     }
 
-    fn are_actual_type_name(value: &Value) -> String {
+    fn are_actual_type_name(&mut self, value: &Value) -> String {
         match value.view() {
             ValueView::Package(name) => name.resolve(),
             ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => crate::runtime::utils::value_type_name(value).to_string(),
+            // ADR-0019 E1b: authoritative TypeId classifier owner (was
+            // `value_type_name`) — see `Interpreter::dispatch_owner_name`.
+            _ => self.dispatch_owner_name(value).to_string(),
         }
     }
 

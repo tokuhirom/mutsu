@@ -484,13 +484,19 @@ impl Interpreter {
             _ => None,
         };
         if let Some(class_sym) = class_sym_opt {
-            // ADR-0019 E1a shadow probe (zero behavior change): see
-            // `todo/deep/adr0019-e1-typeid-receiver-owner.md`.
-            self.shadow_check_owner(
-                "try_compiled_method_or_interpret_inner.class_sym",
-                &target,
-                class_sym.as_str(),
-            );
+            // ADR-0019 E1b: this site is already TypeId-classifier-authoritative
+            // by construction, with no code change needed. `class_sym` here is
+            // the receiver's own Instance/Package Symbol, which is *always*
+            // `Interpreter::dispatch_mro`'s first chain element for an
+            // Instance/Package receiver (`dispatch_mro`'s Instance/Package arms
+            // both start the chain at the class's own registry-MRO head) — the
+            // E1a shadow sweep confirmed zero mismatches here across all of
+            // `t/*.t` plus S02/S06/S12/S14 roast. Routing this hot fast-dispatch
+            // path through `receiver_dispatch_class`/`dispatch_mro` anyway would
+            // add a `Vec<TypeId>` allocation and a `class_mro` lookup for a
+            // provably-identical answer — a pure perf regression for zero
+            // behavior change — so the shadow probe (now redundant) is removed
+            // and the direct `class_sym.as_str()` read is kept.
             self.refresh_method_caches_for_generation();
             let cn = class_sym.as_str();
             let cache_key = (class_sym, method_sym);

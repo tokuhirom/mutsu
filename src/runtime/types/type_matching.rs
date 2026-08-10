@@ -1460,7 +1460,22 @@ impl Interpreter {
             // rejected when the constraint is Any.
             return Self::type_matches(constraint, &resolved);
         }
-        let value_type = crate::runtime::value_type_name(value);
-        Self::type_matches(constraint, value_type)
+        // ADR-0019 E1b: authoritative TypeId classifier chain (was a single
+        // `value_type_name` string) — see `Interpreter::dispatch_owner_chain`
+        // and `todo/deep/adr0019-e1-typeid-receiver-owner.md`. Walking the
+        // whole chain (not just its first element) is required, not merely
+        // more thorough: an Enum value's chain is `[EnumType, Int, Cool, Any,
+        // Mu]` (V3 -- `value_type_name` collapsed it to the single name
+        // "Int"), and a plain `Int` constraint must still match an enum value
+        // through the `Int` link further down the chain, which a single-name
+        // swap to `EnumType` alone would have broken. Role membership (a
+        // Mixin's applied roles) was already checked above by name via
+        // `mixins.keys()`, so this uses the un-skipped `dispatch_mro` --
+        // finding a role name here again by literal `type_matches` equality
+        // is harmless (it can only re-confirm a match the constraint author
+        // wrote as the bare role name).
+        self.dispatch_mro(value)
+            .iter()
+            .any(|t| Self::type_matches(constraint, t.as_str()))
     }
 }
