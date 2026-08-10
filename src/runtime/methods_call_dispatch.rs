@@ -2788,10 +2788,10 @@ impl Interpreter {
             skip_pseudo,
             is_pseudo_method,
         );
+        let method_sym = crate::symbol::Symbol::intern(method);
         let native_result = if bypass_native_fastpath {
             None
         } else {
-            let method_sym = crate::symbol::Symbol::intern(method);
             match args.as_slice() {
                 [] => crate::builtins::native_method_0arg(&target, method_sym),
                 [a] => crate::builtins::native_method_1arg(&target, method_sym, a),
@@ -2799,6 +2799,14 @@ impl Interpreter {
                 _ => None,
             }
         };
+        if native_result.is_some() {
+            self.record_native_row_coverage(
+                "methods_call_dispatch::call_method_with_values",
+                &target,
+                method_sym.as_str(),
+                args.len(),
+            );
+        }
         // `.Capture` on targets that must call user methods or drain a live source
         // (a `Channel`/`Supply` drains to a list; a List/Array/Seq with a non-Str
         // Pair key stringifies the key via its `.Str`). The pure native fast path

@@ -522,7 +522,7 @@ pub(crate) fn native_responds_to(value: &Value, method_name: &str) -> bool {
 }
 
 #[cfg(test)]
-fn native_method_arities(value: &Value, method_name: &str) -> u8 {
+pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
     let mut arities = u8::from(crate::builtins::native_method_0arg(value, sym).is_some());
     // A few 1/2-arg native methods inspect the argument type before recognizing
