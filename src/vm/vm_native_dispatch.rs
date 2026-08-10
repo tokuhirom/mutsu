@@ -375,6 +375,14 @@ impl Interpreter {
         } else {
             return None;
         };
+        if result.is_some() {
+            self.record_native_row_coverage(
+                "vm_native_dispatch::try_native_method_raw",
+                target,
+                method_sym.as_str(),
+                args.len(),
+            );
+        }
 
         // For gather-based LazyList, .List and .values preserve laziness
         // by returning the LazyList itself (which can be forced on demand).

@@ -362,6 +362,33 @@ impl Interpreter {
             )
         });
     }
+
+    /// ADR-0019 Phase E box E2a shadow check (`MUTSU_VM_STATS`-gated, a no-op
+    /// otherwise): when a native arity cascade at `site` just recognized
+    /// `name` on `target` at `arity` (returned `Some`), verify the
+    /// [`crate::builtins::native_method_row`] catalog already accounts for
+    /// it, bumping `native_call_unmodeled` when it does not. `name` must be a
+    /// `Symbol::as_str()` result (interned, `'static`) so the row lookup does
+    /// not need to allocate. See `todo/deep/adr0019-e2-e4-resolver-core.md`
+    /// decision 2's counter-to-zero discipline; nothing reads this catalog to
+    /// make a real dispatch decision yet.
+    pub(crate) fn record_native_row_coverage(
+        &mut self,
+        site: &str,
+        target: &Value,
+        name: &'static str,
+        arity: usize,
+    ) {
+        if !crate::vm::vm_stats::enabled() {
+            return;
+        }
+        let owner = self.dispatch_owner_name(target);
+        let (row_arity, _flags) =
+            crate::builtins::native_method_row::native_method_row(owner, name);
+        let covered = row_arity
+            .contains(crate::builtins::native_method_row::NativeArityMask::for_arity(arity));
+        crate::vm::vm_stats::record_native_call_recognition(site, owner, name, covered);
+    }
 }
 
 #[cfg(test)]
