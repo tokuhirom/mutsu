@@ -36,6 +36,7 @@ impl Interpreter {
         let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();
+        self.reset_capture_env_vars();
 
         if nth_spec.is_none() && x_spec.is_none() && !global {
             if perl5 {
@@ -319,6 +320,7 @@ impl Interpreter {
         let x_spec = x_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target = self.env().get("_").cloned().unwrap_or(Value::NIL);
         let text = target.to_string_value();
+        self.reset_capture_env_vars();
 
         if nth_spec.is_none() && x_spec.is_none() && !global {
             if perl5 {

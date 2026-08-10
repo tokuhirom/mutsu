@@ -591,6 +591,8 @@ impl Interpreter {
                 }
                 match_obj.match_with_attrs(updates).unwrap_or(match_obj)
             };
+            // Reset stale numeric/named capture vars from any previous match.
+            self.reset_capture_env_vars();
             // Set named capture env vars from match object
             let named_v = match_obj.match_named();
             if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {

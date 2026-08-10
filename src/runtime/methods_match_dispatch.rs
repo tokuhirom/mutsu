@@ -102,6 +102,7 @@ impl Interpreter {
             }
         };
         if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
+            self.reset_capture_env_vars();
             let mut selected = if exhaustive {
                 // :exhaustive keeps every possible match, ordered by start
                 // position ascending and, at each position, longest first.
@@ -200,6 +201,7 @@ impl Interpreter {
             self.regex_match_with_captures(&pat, &text)
         };
         if let Some(mut captures) = captures {
+            self.reset_capture_env_vars();
             let from = captures.from as i64;
             let to = captures.to as i64;
             let mtarget = captures.target_or_new(&text);

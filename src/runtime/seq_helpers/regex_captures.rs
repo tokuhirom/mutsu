@@ -3,9 +3,14 @@ use crate::symbol::Symbol;
 use std::collections::HashMap;
 
 impl Interpreter {
-    /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
-    pub(in crate::runtime) fn clear_match_state(&mut self) {
-        self.env.insert("/".to_string(), Value::NIL);
+    /// Reset capture env vars left over from a previous match: numeric keys
+    /// (`0`, `1`, ...) are set to Nil (`$0` is a plain env `Var` read with no
+    /// fallback), and named-capture keys (`<name>`) are REMOVED so `$<name>`
+    /// (`OpCode::GetCaptureVar`) falls through to the current `$/` AT-KEY
+    /// lookup instead of seeing a stale entry. Removal, not Nil-ing, is
+    /// load-bearing: a present-but-Nil entry would shadow the local-slot
+    /// `$/` fallback action methods rely on (`t/capture-var-topic-slot.t`).
+    pub(crate) fn reset_capture_env_vars(&mut self) {
         let numeric_keys: Vec<Symbol> = self
             .env
             .keys()
@@ -15,6 +20,21 @@ impl Interpreter {
         for key in numeric_keys {
             self.env.insert_sym(key, Value::NIL);
         }
+        let angle_keys: Vec<Symbol> = self
+            .env
+            .keys()
+            .filter(|k| k.with_str(|s| s.len() > 2 && s.starts_with('<') && s.ends_with('>')))
+            .copied()
+            .collect();
+        for key in angle_keys {
+            self.env.remove_sym(key);
+        }
+    }
+
+    /// Clear `$/` and all numeric capture variables (`$0`, `$1`, ...) after a failed match.
+    pub(in crate::runtime) fn clear_match_state(&mut self) {
+        self.env.insert("/".to_string(), Value::NIL);
+        self.reset_capture_env_vars();
     }
 
     /// Clear match state after a failed *multi-match* (`:g` / `:ov` / `:ex`).
@@ -99,16 +119,8 @@ impl Interpreter {
         let match_obj = Value::make_instance(Symbol::intern("Match"), attrs);
         self.env.insert("/".to_string(), match_obj.clone());
 
-        // Reset stale numeric captures before applying new ones.
-        let numeric_keys: Vec<Symbol> = self
-            .env
-            .keys()
-            .filter(|k| k.with_str(|s| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit())))
-            .copied()
-            .collect();
-        for key in numeric_keys {
-            self.env.insert_sym(key, Value::NIL);
-        }
+        // Reset stale numeric/named captures before applying new ones.
+        self.reset_capture_env_vars();
 
         for (i, slot) in captures.positional_slots.iter().enumerate() {
             let value = match slot {
@@ -302,6 +314,7 @@ impl Interpreter {
                 )
             })
             .collect::<Vec<_>>();
+        self.reset_capture_env_vars();
         self.env.insert("/".to_string(), Value::array(slash_list));
         if let Some(first) = selected.first() {
             let t = first.target_or_new(orig);

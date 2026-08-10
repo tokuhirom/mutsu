@@ -30,6 +30,12 @@ impl Interpreter {
         {
             match match_val.view() {
                 ValueView::Hash(map) => map.get(key).cloned().unwrap_or(Value::NIL),
+                // `$/` is Nil after a failed match (`clear_match_state`). Nil's
+                // native `AT-KEY` answers an undefined `Any` type object (its
+                // ordinary Cool-autoboxing behavior), not `Nil` itself — so
+                // `$<name>` after a failed match must short-circuit here
+                // rather than round-trip through AT-KEY.
+                ValueView::Nil => Value::NIL,
                 _ => self
                     .try_compiled_method_or_interpret(
                         match_val,
