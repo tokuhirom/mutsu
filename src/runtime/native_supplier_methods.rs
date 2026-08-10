@@ -121,7 +121,10 @@ impl Interpreter {
                                     // `X::ControlFlow`, which then surfaced on a
                                     // channel reader thread as "done without
                                     // supply or react" and killed the process.
-                                    if err.is_react_done() || err.is_last() {
+                                    if err.is_react_done()
+                                        || err.is_last()
+                                        || err.is_supply_body_done()
+                                    {
                                         return Err(err);
                                     }
                                     // `next` inside a whenever body skips the rest
@@ -630,7 +633,10 @@ impl Interpreter {
                                     // `X::ControlFlow`, which then surfaced on a
                                     // channel reader thread as "done without
                                     // supply or react" and killed the process.
-                                    if err.is_react_done() || err.is_last() {
+                                    if err.is_react_done()
+                                        || err.is_last()
+                                        || err.is_supply_body_done()
+                                    {
                                         return Err(err);
                                     }
                                     // `next` inside a whenever body skips the rest

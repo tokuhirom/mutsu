@@ -518,8 +518,13 @@ impl Interpreter {
             // mid-file. Every other supply drive loop absorbs it the same way —
             // see the `is_react_done() || is_last()` arms in
             // `native_supply_mut_methods` and `vm_react_subscriptions`.
+            // `is_supply_body_done()` is the same story for a `whenever` body
+            // written directly inside a `supply { }` block (its `done` desugars
+            // to this signal, see `ast::Stmt::SupplyBodyDone`) that fires from
+            // *this* reader thread — e.g. a `whenever Supply.interval(...) {
+            // done if ... }` nested in a `supply { }`.
             if let Err(err) = result {
-                if err.is_react_done() || err.is_last() {
+                if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
                     break;
                 }
                 eprintln!(

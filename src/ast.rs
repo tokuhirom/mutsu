@@ -971,6 +971,14 @@ pub(crate) enum Stmt {
     Succeed,
     /// `done` — terminate the innermost react event loop
     ReactDone,
+    /// The `supply { ... }` desugar's own terminator for a bare `done`
+    /// (`src/parser/primary/ident/supply.rs`): ends just the synchronous
+    /// execution of the enclosing on-demand body/whenever closure, never a
+    /// routine-level `return`. Kept distinct from both `Return` (so it can't
+    /// be mistaken for a user `return` and mis-target an enclosing method,
+    /// see `todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md`)
+    /// and `ReactDone` (so it never terminates an *enclosing* react loop).
+    SupplyBodyDone,
     Given {
         topic: Expr,
         body: Vec<Stmt>,

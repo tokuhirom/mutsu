@@ -1,7 +1,6 @@
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::parser::stmt::simple::is_user_declared_sub;
 use crate::symbol::Symbol;
-use crate::value::Value;
 
 static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -136,7 +135,14 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
                 modifier: None,
                 quoted: false,
             }),
-            Stmt::Return(Expr::Literal(Value::NIL)),
+            // Not `Stmt::Return`: a routine-return signal raised from a closure
+            // created inside a *method* gets stamped with that method's
+            // callable id and escapes past the (long-returned) method frame to
+            // the tap as an uncaught `CX::Return` — see
+            // todo/tickets/supply-done-in-method-supply-block-escapes-as-cx-return.md.
+            // `SupplyBodyDone` is always caught at the raising closure's own
+            // frame boundary regardless of nesting.
+            Stmt::SupplyBodyDone,
         ]),
         Stmt::Block(stmts) => Stmt::Block(rewrite_supply_body(stmts, emitter_name)),
         Stmt::SyntheticBlock(stmts) => {

@@ -3444,6 +3444,9 @@ impl Interpreter {
             OpCode::ReactDone => {
                 return Err(RuntimeError::react_done_signal());
             }
+            OpCode::SupplyBodyDone => {
+                return Err(RuntimeError::supply_body_done_signal());
+            }
             OpCode::TagContainerRef(name_idx, slot) => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.container_ref_var = Some((name, *slot));
