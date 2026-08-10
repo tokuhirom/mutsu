@@ -1,8 +1,10 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
-    CaseFoldIter, class_has_only_exact_chars, grapheme_end, is_word_char, matches_named_builtin,
+    CaseFoldIter, LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, class_has_only_exact_chars,
+    grapheme_end, is_word_char, matches_named_builtin,
 };
+use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 impl Interpreter {
     #[allow(dead_code)]
@@ -167,6 +169,36 @@ impl Interpreter {
         pkg: &str,
         ignore_case: bool,
     ) -> Option<usize> {
+        // ADR-0022 §4.2: see the identical guard in
+        // `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`) —
+        // this no-capture prober must stay in sync with the two
+        // capture-bearing matchers via the shared `ltm_atom_mode` classifier.
+        // `SequentialAlternation` is handled specially below (its own arm);
+        // `CodeAssertion` already returns `Some(pos)` unconditionally here
+        // (zero-width, never executed — this function never runs code), which
+        // is a safe (if imprecise for a plain block) default under mode.
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            match ltm_atom_mode(atom) {
+                LtmAtomMode::Terminate => {
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return Some(pos);
+                }
+                LtmAtomMode::TerminateAfter(inner) => {
+                    // Measure the inner pattern BEFORE setting TERMINATED —
+                    // see the identical ordering note in
+                    // `regex_match_atom_all_with_capture_in_pkg`.
+                    let best_end = self
+                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
+                        .into_iter()
+                        .map(|(end, _)| end)
+                        .max()
+                        .unwrap_or(pos);
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return Some(best_end);
+                }
+                LtmAtomMode::Normal => {}
+            }
+        }
         // Group, CaptureGroup, Alternation, ZeroWidth, CodeAssertion can match zero-width
         match atom {
             RegexAtom::Group(pattern) => {
@@ -202,6 +234,12 @@ impl Interpreter {
                 return best;
             }
             RegexAtom::SequentialAlternation(alternatives) => {
+                if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+                    // ADR-0022 §4.2: the no-capture counterpart of the plural
+                    // matcher's ε-bypass — see `ltm_seqalt_best`.
+                    let (end, _) = self.ltm_seqalt_best(alternatives, chars, pos, pkg);
+                    return Some(end);
+                }
                 for alt in alternatives {
                     if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
                         return Some(end);

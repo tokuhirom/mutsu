@@ -398,17 +398,6 @@ impl Interpreter {
         pattern: &str,
         mode: RegexParseMode,
     ) -> Option<RegexPattern> {
-        fn named_lookup_is_ws(name: &str) -> bool {
-            let mut raw = name.trim();
-            if let Some(stripped) = raw.strip_prefix('.') {
-                raw = stripped.trim();
-            }
-            if let Some(stripped) = raw.strip_prefix('&') {
-                raw = stripped.trim();
-            }
-            raw == "ws"
-        }
-
         fn token_is_ws_like(token: &RegexToken) -> bool {
             match &token.atom {
                 RegexAtom::CharClass(class) => {
@@ -419,7 +408,7 @@ impl Interpreter {
                             .first()
                             .is_some_and(|item| matches!(item, ClassItem::Space))
                 }
-                RegexAtom::Named(name) => named_lookup_is_ws(name),
+                RegexAtom::Named(name) => super::regex::regex_helpers::named_lookup_is_ws(name),
                 RegexAtom::WsRule => true,
                 _ => false,
             }

@@ -163,6 +163,24 @@ impl Drop for EnclosingRegexVarsGuard {
     }
 }
 
+/// Normalize a `<name>` / `<.name>` / `<&name>` subrule lookup name and check
+/// whether it names the `ws` rule (implicit sigspace or an explicit `<.ws>` /
+/// `<ws>` / method-form lookup). Shared between the regex parser's own
+/// `<.ws>`-detection (`regex_parse_core.rs`'s `token_is_ws_like`, which needs
+/// this to classify a token as ws-like at parse time) and the LTM
+/// declarative-prefix mode's atom classifier (ADR-0022 §4.2: `ws` terminates
+/// the prefix, same as an explicit code block).
+pub(crate) fn named_lookup_is_ws(name: &str) -> bool {
+    let mut raw = name.trim();
+    if let Some(stripped) = raw.strip_prefix('.') {
+        raw = stripped.trim();
+    }
+    if let Some(stripped) = raw.strip_prefix('&') {
+        raw = stripped.trim();
+    }
+    raw == "ws"
+}
+
 /// Is this env key a dynamic variable (`$*x` is stored as `*x`; `@*a` / `%*h`
 /// keep their sigil)? Such a name declared by an in-regex `:my` belongs to the
 /// per-rule dynvar machinery, not to the regex-lexical snapshot/restore.

@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 9;
+plan 11;
 
 # LTM candidate selection measures how far each candidate *declaratively* matches.
 # A code atom (`{ … }`, `<?{ … }>`, `<!{ … }>`) terminates the declarative prefix,
@@ -65,3 +65,47 @@ grammar Proto {
     token TOP { <t> }
 }
 is ~Proto.parse('abcd'), 'abcd', 'longest declarative prefix still wins LTM';
+
+# ADR-0022 Slice 1: the declarative-prefix measurement now sees through more
+# atom kinds than a bare code block (ADR-0009's original scope) — a
+# backreference, and the `ws` rule, both TERMINATE the measurement instead of
+# running through it as an ordinary (consuming) atom. Two proto candidates
+# below are each real, independently-viable matches; which one measures
+# longer flips once the terminator is honored, so the WINNING candidate
+# (and hence whether the surrounding `.parse`, which requires full
+# consumption, succeeds at all) changes. Both expectations are verified
+# against `raku` directly (2026-08-10) — `raku` also reports these as
+# non-matches, for the same reason: its NFA has no method for `$0` or `ws`,
+# so they end the branch's fate length right where they are reached.
+#
+# The proto must be the grammar's OWN start rule (`TOP`), not referenced via
+# `<name>` from a separate `TOP` — a `<name>` subrule reference inside
+# another pattern's body resolves through the regex engine's own named-atom
+# proto loop (`regex_match_atom.rs`), which ranks by longest ACTUAL match and
+# is untouched by this ADR (that is Slice 3 territory too). Only
+# `Grammar.parse`'s start-rule candidate selection
+# (`dispatch.rs::eval_token_call_values_at`) already ranks by declarative
+# prefix (ADR-0009) and is what this slice's extended atom-mode table changes
+# the measurement for.
+grammar BackrefProto {
+    # Old (pre-Slice-1) measurement ran the backref for real during
+    # candidate ranking, measuring the full 3-char "aaZ"; the correct
+    # (post-Slice-1) measurement terminates right after the capture group,
+    # at 1 char — shorter than sym<pair>'s fully-declarative 2 chars below.
+    proto token TOP {*}
+    token TOP:sym<backref> { (\w) $0 'Z' }
+    token TOP:sym<pair>    { \w \w }
+}
+nok BackrefProto.parse('aaZ').defined,
+    'backref terminates the LTM prefix, so the shorter fully-declarative candidate now ranks first and the parse (needing full consumption) fails';
+
+grammar WsProto {
+    # Old measurement ran <.ws> for real (consuming the space), measuring
+    # the full 4-char "ab Z"; the correct measurement terminates right after
+    # `\w+`, at 2 chars — shorter than sym<lit>'s fully-declarative 3 chars.
+    proto token TOP {*}
+    token TOP:sym<ws>  { \w+ <.ws> 'Z' }
+    token TOP:sym<lit> { 'ab' ' ' }
+}
+nok WsProto.parse('ab Z').defined,
+    'the ws rule terminates the LTM prefix, so the shorter fully-declarative candidate now ranks first and the parse (needing full consumption) fails';

@@ -2,7 +2,10 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
 use super::super::*;
-use super::regex_helpers::{NamedRegexLookupSpec, merge_regex_captures};
+use super::regex_helpers::{
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, merge_regex_captures,
+};
+use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
 thread_local! {
     /// Memoization cache for left-recursive named regex calls.
@@ -87,6 +90,38 @@ impl Interpreter {
         // subrule argument evaluation) — it must never be cloned into results.
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
+        // ADR-0022 §4.2: in LTM declarative-prefix measurement mode, a
+        // non-declarative atom either terminates the prefix at its own
+        // position (zero-width) or — for a positive lookahead — inlines its
+        // inner pattern's consumption first, then terminates. `SequentialAlternation`
+        // is intentionally not covered by `ltm_atom_mode` (it needs its own
+        // ε-bypass measurement below) and `CodeAssertion` keeps its existing
+        // inline handling (ADR-0009), so both fall through to `LtmAtomMode::Normal`
+        // here and are unaffected by this guard.
+        if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            match ltm_atom_mode(atom) {
+                LtmAtomMode::Terminate => {
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return vec![(pos, RegexCaptures::default())];
+                }
+                LtmAtomMode::TerminateAfter(inner) => {
+                    // Measure the inner pattern BEFORE setting TERMINATED: the
+                    // inner walk checks the flag at its own entry, so setting
+                    // it first would short-circuit the inner measurement to
+                    // zero-width instead of letting it consume.
+                    let best_end = self
+                        .regex_match_ends_from_caps_in_pkg(inner, chars, pos, pkg)
+                        .into_iter()
+                        .map(|(end, _)| end)
+                        .max()
+                        .unwrap_or(pos);
+                    LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+                    return vec![(best_end, RegexCaptures::default())];
+                }
+                LtmAtomMode::Normal => {}
+            }
+        }
+
         if let RegexAtom::Alternation(alternatives) = atom {
             // | (LTM): try all alternatives, longest match wins.
             //
@@ -135,6 +170,12 @@ impl Interpreter {
                 .collect();
         }
         if let RegexAtom::SequentialAlternation(alternatives) = atom {
+            if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+                // ADR-0022 §4.2: only the first branch of `X || Y ...`
+                // participates in the declarative prefix, plus a zero-width
+                // epsilon bypass — see `ltm_seqalt_candidates`.
+                return self.ltm_seqalt_candidates(alternatives, chars, pos, pkg);
+            }
             // || (sequential alternation): alt0 has higher priority than alt1, etc.
             // All alternatives are included to allow outer-context backtracking,
             // but in priority order: alt0's matches have highest priority.
