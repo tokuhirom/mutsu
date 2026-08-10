@@ -133,8 +133,10 @@ fn classification_table() -> &'static HashMap<RowKey, RowValue> {
 
 /// The recognition row for one `(owner, name)` pair. A pair with no entry in
 /// [`RAW_ROWS`] -- an owner E2a's probe did not cover (`Sub`/`Signature`/
-/// `IO::Path`/`IO::Handle`/`Cool`/`Any`/`Mu`), or a name the probe itself did
-/// not recognize at any arity -- conservatively reports `N`/`SPECIAL`: "not
+/// `IO::Path`/`IO::Handle`/`Cool`), the untouched majority of `Any`/`Mu`'s own
+/// method surface (E2b added only `so`/`not`/`defined`/`DEFINITE` by hand so
+/// far), or a name the probe itself did not recognize at any arity --
+/// conservatively reports `N`/`SPECIAL`: "not
 /// servable by the pure arity cascades", never a false claim of coverage.
 pub(crate) fn native_method_row(
     owner: &'static str,
@@ -189,6 +191,39 @@ mod tests {
         let (arity, flags) = native_method_row("NoSuchOwner", "no-such-method");
         assert_eq!(arity, NativeArityMask::N);
         assert!(flags.contains(NativeRowFlags::SPECIAL));
+    }
+
+    /// ADR-0019 E2b: the hand-added `Any`/`Mu` universal rows (`so`, `not`,
+    /// `defined`, `DEFINITE`) are not tied to one probed owner's sample value
+    /// -- unlike the per-type rows above, they claim to be recognized by the
+    /// shared arity-0 cascade arms (`dispatch_core_str`/`dispatch_core_coerce`)
+    /// for EVERY receiver, which is exactly why the coverage check must walk
+    /// the dispatch chain to find them (`Interpreter::record_native_row_coverage`).
+    /// Verify that claim directly against two structurally different sample
+    /// receivers.
+    #[test]
+    fn any_mu_universal_rows_are_backed_by_the_cascade_for_multiple_receiver_types() {
+        let str_sample = builtin_sample_value("Str").unwrap();
+        let int_sample = builtin_sample_value("Int").unwrap();
+        for name in ["so", "not", "defined"] {
+            let (arity, _flags) = native_method_row("Any", name);
+            assert!(
+                arity.contains(NativeArityMask::A0),
+                "{name} row should claim A0"
+            );
+            for sample in [&str_sample, &int_sample] {
+                assert!(
+                    native_method_arities(sample, name) & 1 != 0,
+                    "{name} should be recognized at arity 0 for {sample:?}"
+                );
+            }
+        }
+        let (definite_arity, definite_flags) = native_method_row("Mu", "DEFINITE");
+        assert!(definite_arity.contains(NativeArityMask::A0));
+        assert!(definite_flags.contains(NativeRowFlags::SPECIAL));
+        for sample in [&str_sample, &int_sample] {
+            assert!(native_method_arities(sample, "DEFINITE") & 1 != 0);
+        }
     }
 
     #[test]

@@ -372,6 +372,16 @@ impl Interpreter {
     /// not need to allocate. See `todo/deep/adr0019-e2-e4-resolver-core.md`
     /// decision 2's counter-to-zero discipline; nothing reads this catalog to
     /// make a real dispatch decision yet.
+    ///
+    /// **E2b**: walks the full [`Self::dispatch_owner_chain`], not just its
+    /// first (most-derived) element. A row lives at the owner that actually
+    /// *declares* the method (e.g. `so`/`not`/`defined` are `Any`-declared
+    /// and recognized for every concrete receiver by the shared arity-0
+    /// cascade arms), the same way [`Self::resolve_sequence`] walks the whole
+    /// chain rather than probing only the receiver's own concrete type. A
+    /// flat point lookup at the concrete owner alone over-counted every
+    /// inherited-and-recognized method as unmodeled even though a row for it
+    /// already existed further up the chain.
     pub(crate) fn record_native_row_coverage(
         &mut self,
         site: &str,
@@ -382,11 +392,17 @@ impl Interpreter {
         if !crate::vm::vm_stats::enabled() {
             return;
         }
-        let owner = self.dispatch_owner_name(target);
-        let (row_arity, _flags) =
-            crate::builtins::native_method_row::native_method_row(owner, name);
-        let covered = row_arity
-            .contains(crate::builtins::native_method_row::NativeArityMask::for_arity(arity));
+        let chain = self.dispatch_owner_chain(target);
+        let mask = crate::builtins::native_method_row::NativeArityMask::for_arity(arity);
+        let covered = chain.iter().any(|owner| {
+            crate::builtins::native_method_row::native_method_row(owner.as_str(), name)
+                .0
+                .contains(mask)
+        });
+        let owner = chain
+            .first()
+            .map(|t| t.as_str())
+            .unwrap_or_else(|| crate::type_id::well_known_types().any.as_str());
         crate::vm::vm_stats::record_native_call_recognition(site, owner, name, covered);
     }
 }
