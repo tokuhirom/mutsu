@@ -2492,6 +2492,27 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `roast/S17-procasync/` subset (10 files, 155 tests) all green.
     `Stash`'s `AT-KEY`/`keys`/`values` and the mixed `IO::Handle`
     `encoding`/`opened`/`DESTROY` group remain open.
+    **Progress 2026-08-11** (step 7, category 1): closed the `IO::Handle`
+    "mixed" group and split `Stash`'s group. `IO::Handle`'s `encoding`/
+    `opened`/`DESTROY` have no matching arm anywhere in the native fast-path
+    cascade (exhaustive grep, same as `chomp`'s already-confirmed
+    self-guarding arm), so the entire four-name guard is redundant and was
+    deleted outright — the fourth confirmed instance of the "cascade already
+    self-guards or never matches" reduction axis. `Stash` splits instead of
+    reducing wholesale: `AT-KEY` has no cascade arm at all and was dropped,
+    but `keys`/`values` do have arms (`methods_0arg/collection.rs`) whose
+    generic catch-all (`Value::seq(positional_keys(&value_to_list(target)))`
+    for `keys`, `Value::seq(value_to_list(target))` for `values`) would wrap
+    an Instance receiver as if it were a one-element list instead of reading
+    the Stash's own hash — the same shape as the already-known `Hash.keys`
+    0-arg guard, so those two names stay gated. Verified empirically: `cargo
+    test --lib` (769 tests), the full local `Stash`/`IO::Handle` test set (24
+    files, 261 tests: `t/who-stash.t`, `t/stash-exists-key.t`,
+    `t/stash-values.t`, `t/destroy.t`, `t/io-cathandle*.t`,
+    `t/io-handle-*.t`, plus adjacent Stash/destroy coverage), and the
+    `roast/S32-io/{tell,io-path,lock,open,io-handle,slurp,io-cathandle,spurt}.t`
+    subset (8 files, 239 tests) all green. All four "likely reduces"/"mixed"
+    category-1 groups from step 2's audit are now resolved.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
