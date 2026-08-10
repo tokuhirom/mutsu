@@ -382,6 +382,21 @@ impl Interpreter {
     /// flat point lookup at the concrete owner alone over-counted every
     /// inherited-and-recognized method as unmodeled even though a row for it
     /// already existed further up the chain.
+    ///
+    /// Each chain element is also tried through
+    /// [`canonical_builtin_owner`](crate::builtins::builtin_type_methods::canonical_builtin_owner),
+    /// which folds a handful of builtin families to the single owner whose
+    /// native table actually serves them (`Sub`/`Method`/`Block`/`Routine`/
+    /// `Code` -> `Code`; the whole `Buf`/`Blob`/`utf8`/... family -> `Blob`;
+    /// `FatRat` -> `Rat`). raku's own `.^mro` for these types does NOT
+    /// include the folded owner (`Buf.new.^mro` is `Buf, Any, Mu`, not
+    /// `Buf, Blob, Any, Mu`) -- confirmed against real `raku`, 2026-08-10 --
+    /// so [`Self::dispatch_owner_chain`] correctly omits it too, and a plain
+    /// chain walk can never find the folded owner's rows. The row catalog
+    /// itself is generated keyed by this same folded owner (via
+    /// [`super::builtin_type_methods::builtin_method_entries`]), so without
+    /// this second lookup every Buf/Blob/FatRat-family method reads as
+    /// permanently unmodeled no matter how many rows are added.
     pub(crate) fn record_native_row_coverage(
         &mut self,
         site: &str,
@@ -395,9 +410,19 @@ impl Interpreter {
         let chain = self.dispatch_owner_chain(target);
         let mask = crate::builtins::native_method_row::NativeArityMask::for_arity(arity);
         let covered = chain.iter().any(|owner| {
-            crate::builtins::native_method_row::native_method_row(owner.as_str(), name)
+            let owner = owner.as_str();
+            if crate::builtins::native_method_row::native_method_row(owner, name)
                 .0
                 .contains(mask)
+            {
+                return true;
+            }
+            let folded = crate::builtins::builtin_type_methods::canonical_builtin_owner(owner);
+            !folded.is_empty()
+                && folded != owner
+                && crate::builtins::native_method_row::native_method_row(folded, name)
+                    .0
+                    .contains(mask)
         });
         let owner = chain
             .first()

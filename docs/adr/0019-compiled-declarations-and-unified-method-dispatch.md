@@ -1952,6 +1952,49 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `Signaturexgist` (14-50 each). New `any_second_batch_universal_rows_are_backed_by_the_cascade`
     and `fifth_slice_extra_rows_are_backed_by_the_cascade` tests. `cargo test --lib`
     (736 tests) and `make test` (3001 files/28167 tests) both green.
+    **Progress 2026-08-10** (sixth slice): found and fixed a root-cause gap in
+    `record_native_row_coverage` itself (`receiver_class.rs`), not just missing
+    rows -- the `Buf`/`Blob`/`utf8`/`FatRat` families are folded to a single
+    dispatch owner (`Blob`, `Rat`) whose native table actually serves them
+    (`canonical_builtin_owner`, `builtin_type_methods.rs`), but raku's own
+    `.^mro` for these types does NOT include the folded owner (confirmed
+    against real `raku`: `Buf.new.^mro` is `Buf, Any, Mu`, not `Buf, Blob, Any,
+    Mu`), so `dispatch_owner_chain`'s walk correctly omits it too and could
+    never find the folded owner's rows no matter how many were added. The
+    coverage check now also tries each chain owner through
+    `canonical_builtin_owner` as a fallback lookup, closing the whole
+    `Buf`/`Buf[uint8]`/`utf8`/`Blob[uint8]` family and `RatxFatRat`-shaped gaps
+    at once (this fold fix alone dropped the counter from 2825 to 2508). Also
+    closed the `Blob` row gaps the fold then exposed
+    (`decode` was under-counted as A0-only -- its A1 arm needs a real encoding
+    name like `"utf-8"`, not the generic empty-string dummy
+    `native_method_arities` tries; `values`/`List`/the `read-*` native-endian
+    accessor family were simply never probed, `Blob` not being one of the
+    original 11 owners). Then closed two more owner families with no
+    `builtin_type_method_names` entry (same situation as `Pair`/`Seq`/`Match`):
+    `Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/`MixHash` (hand-probed against real
+    `set(...)`/`SetHash.new(...)`/etc values -- `grab` on an immutable
+    `Set`/`Bag`/`Mix` IS pure-cascade-recognized, since it always errors
+    "immutable" but `Some` still counts; the mutable `SetHash`/`BagHash`/
+    `MixHash` variant's `grab` is slow-path-only, so those three deliberately
+    have no `grab` row), and `RakuAST::StatementList`/
+    `RakuAST::Statement::Expression` (hand-probed against a real `Str.AST`
+    parse tree). A fresh `t/`-wide sweep confirmed `native_call_unmodeled`
+    dropped from 2825 (this session's file set after the fifth slice's PR
+    merged) to 1900 (cumulative -95% from the original ~37904); none of
+    `Buf`/`Blob`/`utf8`/`FatRat`/`Set`/`SetHash`/`Bag`/`BagHash`/`Mix`/
+    `MixHash`/`RakuAST::StatementList` remain in the top-40 breakdown.
+    Remaining top pairs are now exception types (`X::AdHoc`/`CX::Warn`/
+    `X::TypeCheck::Assignment`, `message`/`resume`/`backtrace`/`defined`,
+    14-89 each) and `Failure` (`defined`/`exception`/`sink`/`so`/`handled`,
+    9-45 each -- `sink` still not resolving via the `Any` row from the fifth
+    slice despite this slice's fold-lookup fix, worth a dedicated look), plus
+    a long tail (`Backtrace`/`Backtrace::Frame`, `Version`, `Date`/`DateTime`,
+    `Signature`, `Range x hyper/lazy/int-bounds`, `Map x raku`, `Duration x
+    Numeric`, `Mu x defined`, `CallFrame x defined`, `RakuAST::IntLiteral x
+    value`, 9-26 each). New `setbagmix_rows_are_backed_by_the_cascade` and
+    `rakuast_statementlist_rows_are_backed_by_the_cascade` tests. `cargo test
+    --lib` (738 tests) and `make test` (3002 files/28169 tests) both green.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
