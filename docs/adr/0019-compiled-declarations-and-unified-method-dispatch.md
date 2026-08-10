@@ -2403,6 +2403,37 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     This closes the scoping note's step 2 as answered rather than open: the
     row table cannot decide category 1 for you, full stop, given the adopted
     fallback contract. No code changed; docs-only.
+    **Progress 2026-08-11** (step 3): gave category 2 (`is_native_method`) its own
+    candidate kind rather than folding it into `resolve_user_method_or_accessor`,
+    per step 1's finding that the two are genuinely disjoint. `ResolvedCandidate`
+    gains `NativeCallBinding { owner: TypeId }` (`resolution_sequence.rs`); `resolve_sequence`
+    detects it per chain, mirroring `is_native_method`'s own two-part check —
+    the five hardcoded classes (`IO::Pipe`/`IO::Special`/`IO::Handle`/`Thread`/`VM`,
+    extracted into a shared `Interpreter::hardcoded_native_method` so the two
+    checks cannot drift apart) only at level 0 (the receiver's own class, exact-name,
+    matching `is_native_method`'s non-MRO-aware fast checks), and `ClassDef::native_methods`
+    (the `is native(&sym)` registry) walked across the full chain, first hit wins — at
+    most one `NativeCallBinding` candidate per sequence, since `is_native_method` itself
+    is a boolean "does any level bind this", not a per-level fact.
+    `shadow_check_bypass_user_method_categories` (step 1's probe) now ORs this candidate's
+    presence into `shadow` for Instance receivers. Verified with a fixed t/-wide sweep
+    (each process's `MUTSU_VM_STATS` output to its own file — the original single-shared-file
+    sweep script produced torn/interleaved lines under `-P 8`, caught by a sanity check
+    when a totals line briefly read `mismatches=8072721`, impossibly larger than
+    `checks`): **baseline (pre-step-3) 4172/20635 mismatches (20.2%) → post-step-3
+    34/20634 (0.16%)**, a 99.2% reduction, with the same 2996-file corpus shape as step 1's
+    sweep. All 34 remaining mismatches carry `native_binding_owner=None` on both sides
+    (`grep -l native_binding_owner=Some` over the full per-file log set: zero hits) — none
+    are new, and their shape (`WHAT`/`WHO`/`WHY`/`HOW`/`WHICH`/`WHERE`/`DEFINITE` on
+    generic test-fixture classes, plus `new`/`shared`/`val`/`name`/`tag`/`label`) matches
+    step 1's already-noted "opposite shape, not chased further" residual — unrelated to
+    category 2, out of this step's scope. `cargo test --lib` (769 tests) and
+    `prove -j4 t/` (3011 files / 28230 tests) both green. Category 2 is now shadow-verified
+    safe as a resolver candidate; category 3 was already shadow-verified in step 1. What
+    remains before the authoritative switch: category 1's guard list (step 2's per-case
+    disposition) still needs to be implemented as explicit resolver guards, and the
+    switch itself needs the E2 native-row catalog wired in per design decision 4's
+    `Native` variant (not yet added — `NativeCallBinding` is a distinct, fourth kind).
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is

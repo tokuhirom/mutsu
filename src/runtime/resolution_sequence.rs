@@ -45,6 +45,17 @@ pub(crate) enum ResolvedCandidate {
     /// A user-declared method, at its MRO level, in the class's stored
     /// declaration order.
     User { owner: TypeId, def: Arc<MethodDef> },
+    /// A `ClassDef::native_methods` binding — an `is native(&sym)` NativeCall
+    /// trait, or one of the handful of built-in classes whose getters are
+    /// implemented by dedicated `native_io_*` dispatch helpers
+    /// (`Interpreter::hardcoded_native_method`). This is the E4b decomposition
+    /// note's "category 2": a third candidate kind, distinct from both `User`
+    /// and design decision 4's `Native` row-catalog variant (not yet added) —
+    /// see `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
+    /// At most one appears per sequence: `is_native_method` is a boolean "does
+    /// any MRO level bind this name", not a per-level fact, so the sequence
+    /// records only the first (most-derived) owner that has it.
+    NativeCallBinding { owner: TypeId },
 }
 
 /// The shape-independent ordered candidate universe for one `(receiver chain,
@@ -69,22 +80,39 @@ impl Interpreter {
     pub(crate) fn resolve_sequence(&mut self, chain: &[TypeId], name: Symbol) -> ResolvedSequence {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
+        let mut native_binding_found = false;
         for (level, owner) in chain.iter().enumerate() {
             let is_ancestor = level > 0;
-            let Some(overloads) = self
+            let owner_str = owner.as_str();
+            if let Some(overloads) = self
                 .registry()
-                .user_method_overloads(owner.as_str(), name.as_str())
-            else {
-                continue;
-            };
-            for def in overloads {
-                if def.is_private || (def.is_my && is_ancestor) {
-                    continue;
+                .user_method_overloads(owner_str, name.as_str())
+            {
+                for def in overloads {
+                    if def.is_private || (def.is_my && is_ancestor) {
+                        continue;
+                    }
+                    candidates.push(ResolvedCandidate::User {
+                        owner: *owner,
+                        def: Arc::new(def),
+                    });
                 }
-                candidates.push(ResolvedCandidate::User {
-                    owner: *owner,
-                    def: Arc::new(def),
-                });
+            }
+            // `hardcoded_native_method` only ever fires for the receiver's own
+            // (most-derived) class name, mirroring `is_native_method` — it is
+            // never checked against an ancestor level.
+            if !native_binding_found {
+                let hardcoded =
+                    level == 0 && Interpreter::hardcoded_native_method(owner_str, name.as_str());
+                let registered = self
+                    .registry()
+                    .classes
+                    .get(owner_str)
+                    .is_some_and(|cd| cd.native_methods.contains(name.as_str()));
+                if hardcoded || registered {
+                    candidates.push(ResolvedCandidate::NativeCallBinding { owner: *owner });
+                    native_binding_found = true;
+                }
             }
         }
         ResolvedSequence {
@@ -131,7 +159,9 @@ impl Interpreter {
         let chain = self.dispatch_mro(invocant);
         let seq = self.resolve_sequence(&chain, method_sym);
         let has_where_candidate = seq.candidates.iter().any(|c| {
-            let ResolvedCandidate::User { def, .. } = c;
+            let ResolvedCandidate::User { def, .. } = c else {
+                return false;
+            };
             def.param_defs.iter().any(|p| p.where_constraint.is_some())
         });
         if has_where_candidate {
@@ -142,7 +172,9 @@ impl Interpreter {
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
         let mut matched: Vec<(Symbol, MethodDef)> = Vec::new();
         for c in &seq.candidates {
-            let ResolvedCandidate::User { owner, def } = c;
+            let ResolvedCandidate::User { owner, def } = c else {
+                continue;
+            };
             if self.method_args_match_for_invocant(
                 class_name,
                 def,
@@ -188,7 +220,10 @@ mod tests {
         let owners: Vec<&str> = seq
             .candidates
             .iter()
-            .map(|ResolvedCandidate::User { owner, .. }| owner.as_str())
+            .filter_map(|c| match c {
+                ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
+                ResolvedCandidate::NativeCallBinding { .. } => None,
+            })
             .collect();
         assert_eq!(owners, vec!["Child", "Base"]);
     }
@@ -223,5 +258,39 @@ mod tests {
         let chain = vec![TypeId::intern("Base")];
         let seq = i.resolve_sequence(&chain, Symbol::intern("nope"));
         assert!(seq.candidates.is_empty());
+    }
+
+    /// ADR-0019 E4b step 3: a pure `is native(&sym)` binding with no matching
+    /// accessor (the `Supply.tap` shape the step-1 shadow sweep found
+    /// invisible to `resolve_user_method_or_accessor`) must now surface as
+    /// its own candidate.
+    #[test]
+    fn resolve_sequence_finds_a_registry_native_call_binding() {
+        let mut i = interp();
+        assert!(i.is_native_method("Supply", "tap"));
+        let chain = vec![TypeId::intern("Supply")];
+        let seq = i.resolve_sequence(&chain, Symbol::intern("tap"));
+        assert!(
+            seq.candidates.iter().any(
+                |c| matches!(c, ResolvedCandidate::NativeCallBinding { owner }
+                    if owner.as_str() == "Supply")
+            ),
+            "expected a NativeCallBinding candidate for Supply.tap"
+        );
+    }
+
+    /// The hardcoded native-method table (`IO::Handle`, etc.) only applies at
+    /// the receiver's own (most-derived) level, mirroring `is_native_method` —
+    /// an ancestor level must not spuriously pick it up.
+    #[test]
+    fn resolve_sequence_hardcoded_native_binding_is_not_seen_at_an_ancestor_level() {
+        let mut i = interp();
+        assert!(i.is_native_method("IO::Handle", "chomp"));
+        let chain = vec![TypeId::intern("Base"), TypeId::intern("IO::Handle")];
+        let seq = i.resolve_sequence(&chain, Symbol::intern("chomp"));
+        assert!(
+            seq.candidates.is_empty(),
+            "hardcoded native-method names must not apply to an ancestor level"
+        );
     }
 }

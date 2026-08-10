@@ -1,3 +1,4 @@
+use super::resolution_sequence::ResolvedCandidate;
 use super::*;
 use crate::symbol::Symbol;
 
@@ -224,19 +225,25 @@ impl Interpreter {
             || (!is_pseudo_method && self.mixin_role_has_method(target, method))
     }
 
-    /// ADR-0019 E4b step-1 shadow probe (`MUTSU_VM_STATS`-gated, a no-op
-    /// otherwise): compare `should_bypass_native_fastpath`'s "does a user
-    /// method/accessor/class-level-attr (or, for an Instance, a NativeCall
-    /// binding) win" categories — the scoping doc's categories 2 and 3,
+    /// ADR-0019 E4b shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
+    /// compare `should_bypass_native_fastpath`'s "does a user method/
+    /// accessor/class-level-attr (or, for an Instance, a NativeCall binding)
+    /// win" categories — the scoping doc's categories 2 and 3,
     /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`
-    /// — against `resolve_user_method_or_accessor`'s single-MRO-walk answer
-    /// for the receiver's own class. Recomputes the same sub-expression
-    /// `should_bypass_native_fastpath` evaluates at lines 179-180/214-224,
-    /// independent of whatever the real bypass decision turned out to be
-    /// (a category-1 special case can make the real decision `true` while
-    /// this probe's `real` is `false`, and that is expected — this only
-    /// asks whether the two answer this one sub-question the same way).
-    /// Purely observational: nothing here feeds a dispatch decision.
+    /// — against the resolver's answer for the receiver's own class.
+    /// Recomputes the same sub-expression `should_bypass_native_fastpath`
+    /// evaluates at lines 179-180/214-224, independent of whatever the real
+    /// bypass decision turned out to be (a category-1 special case can make
+    /// the real decision `true` while this probe's `real` is `false`, and
+    /// that is expected — this only asks whether the two answer this one
+    /// sub-question the same way). Purely observational: nothing here feeds a
+    /// dispatch decision.
+    ///
+    /// Step 3 (2026-08-11): category 2 (`is_native_method`) is not visible to
+    /// `resolve_user_method_or_accessor` on its own (a pure native-method
+    /// binding with no matching accessor, e.g. `Supply.tap`, ~82% of step 1's
+    /// mismatches) — it now has its own `ResolvedCandidate::NativeCallBinding`
+    /// entry in `resolve_sequence`, OR'd in here for an Instance receiver.
     pub(super) fn shadow_check_bypass_user_method_categories(
         &mut self,
         target: &Value,
@@ -264,11 +271,24 @@ impl Interpreter {
                     || (self.has_class_level_attr(&class_name, method)
                         && !self.has_public_accessor(&class_name, method)))
         };
-        let shadow = self
-            .resolve_user_method_or_accessor(&class_name, method)
-            .is_some();
+        let native_binding_owner = if is_instance {
+            let chain = self.dispatch_mro(target);
+            let seq = self.resolve_sequence(&chain, Symbol::intern(method));
+            seq.candidates.iter().find_map(|c| match c {
+                ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
+                ResolvedCandidate::User { .. } => None,
+            })
+        } else {
+            None
+        };
+        let shadow = native_binding_owner.is_some()
+            || self
+                .resolve_user_method_or_accessor(&class_name, method)
+                .is_some();
         crate::vm::vm_stats::record_bypass_shadow_check(real == shadow, || {
-            format!("class={class_name} method={method} real={real} shadow={shadow}")
+            format!(
+                "class={class_name} method={method} real={real} shadow={shadow} native_binding_owner={native_binding_owner:?}"
+            )
         });
     }
 

@@ -1,16 +1,23 @@
 # ADR-0019 E4b: decomposing `should_bypass_native_fastpath` for the resolver cutover
 
-**Status update (2026-08-11):** steps 1 and 2 below are answered — see the
-ADR's E4b "Progress 2026-08-11" notes (both step-1 and step-2 entries). Step
-1: `resolve_user_method_or_accessor` shadow-verified NOT to subsume category
-2 (`is_native_method`) — confirmed via a `t/`-wide sweep, 99.95% of shadow
+**Status update (2026-08-11):** steps 1-3 below are answered — see the ADR's
+E4b "Progress 2026-08-11" notes (step-1/2/3 entries). Step 1:
+`resolve_user_method_or_accessor` shadow-verified NOT to subsume category 2
+(`is_native_method`) — confirmed via a `t/`-wide sweep, 99.95% of shadow
 mismatches were `Supply.tap`-shaped (a pure native method with no matching
 accessor). Step 2: category 1 does **not** reduce to "the row table has no
 entry" the way this doc originally hoped, because the adopted gate
 renegotiation makes E4b's resolver fall back to the cascade on any row miss
-— row absence no longer implies "the resolver skips it." Read the ADR notes
-for the full per-case disposition before starting step 3 (the actual
-authoritative switch).
+— row absence no longer implies "the resolver skips it." Step 3: category 2
+now has its own `ResolvedCandidate::NativeCallBinding` kind in
+`resolution_sequence.rs`, shadow-verified against the same sweep methodology
+— mismatches fell from 4172/20635 (20.2%) to 34/20634 (0.16%), and the
+residual 34 are the pre-existing category-3-only shape already noted in step
+1, not category 2. What's left before the actual authoritative switch:
+implement category 1's guard list (step 2's per-case disposition) as explicit
+resolver guards, and add design decision 4's E2-row-catalog `Native`
+candidate variant (a fourth kind, distinct from `NativeCallBinding`) so the
+switch has every candidate kind it needs.
 
 E4b ("authoritative switch at the cached-resolve boundaries, native rows
 included, `should_bypass_native_fastpath` deleted") is the next unstarted box
