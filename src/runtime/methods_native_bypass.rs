@@ -224,6 +224,54 @@ impl Interpreter {
             || (!is_pseudo_method && self.mixin_role_has_method(target, method))
     }
 
+    /// ADR-0019 E4b step-1 shadow probe (`MUTSU_VM_STATS`-gated, a no-op
+    /// otherwise): compare `should_bypass_native_fastpath`'s "does a user
+    /// method/accessor/class-level-attr (or, for an Instance, a NativeCall
+    /// binding) win" categories — the scoping doc's categories 2 and 3,
+    /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`
+    /// — against `resolve_user_method_or_accessor`'s single-MRO-walk answer
+    /// for the receiver's own class. Recomputes the same sub-expression
+    /// `should_bypass_native_fastpath` evaluates at lines 179-180/214-224,
+    /// independent of whatever the real bypass decision turned out to be
+    /// (a category-1 special case can make the real decision `true` while
+    /// this probe's `real` is `false`, and that is expected — this only
+    /// asks whether the two answer this one sub-question the same way).
+    /// Purely observational: nothing here feeds a dispatch decision.
+    pub(super) fn shadow_check_bypass_user_method_categories(
+        &mut self,
+        target: &Value,
+        method: &str,
+        is_pseudo_method: bool,
+    ) {
+        if !crate::vm::vm_stats::enabled() {
+            return;
+        }
+        let (class_name, is_instance) = match target.view() {
+            ValueView::Instance { class_name, .. } => (class_name.resolve(), true),
+            ValueView::Package(class_name) => (class_name.resolve(), false),
+            _ => return,
+        };
+        let real = if is_instance {
+            self.is_native_method(&class_name, method)
+                || (!is_pseudo_method
+                    && (self.has_user_method(&class_name, method)
+                        || self.has_public_accessor(&class_name, method)
+                        || (self.has_class_level_attr(&class_name, method)
+                            && !self.has_public_accessor(&class_name, method))))
+        } else {
+            !is_pseudo_method
+                && (self.has_user_method(&class_name, method)
+                    || (self.has_class_level_attr(&class_name, method)
+                        && !self.has_public_accessor(&class_name, method)))
+        };
+        let shadow = self
+            .resolve_user_method_or_accessor(&class_name, method)
+            .is_some();
+        crate::vm::vm_stats::record_bypass_shadow_check(real == shadow, || {
+            format!("class={class_name} method={method} real={real} shadow={shadow}")
+        });
+    }
+
     /// Check if a Mixin's role mixins define the given method.
     /// Used so that role-method dispatch on punned role instances takes
     /// precedence over the built-in Cool fallbacks (e.g. `.uc`).
@@ -412,5 +460,26 @@ impl Interpreter {
             return Err(err);
         }
         Ok(Value::num(r))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ADR-0019 E4b step-1 finding (2026-08-11 sweep): `resolve_user_method_or_accessor`
+    /// only consults `ClassDef::native_methods` as a tiebreak when the same MRO level
+    /// also has a matching public attribute accessor — it never independently answers
+    /// "does this receiver's class have a pure NativeCall/native-methods-table binding
+    /// for this name with no accessor of the same name". `Supply.tap` (a
+    /// `runtime_init.rs`-seeded builtin with `native_methods: [.., "tap", ..]` and no
+    /// `tap` accessor) is exactly that shape, and was ~81% of the sweep's shadow
+    /// mismatches. This pins the gap so a future `resolve_user_method_or_accessor`
+    /// change cannot silently "fix" it by accident without this test also changing.
+    #[test]
+    fn resolve_user_method_or_accessor_does_not_see_a_pure_native_methods_entry() {
+        let mut i = Interpreter::new();
+        assert!(i.is_native_method("Supply", "tap"));
+        assert_eq!(i.resolve_user_method_or_accessor("Supply", "tap"), None);
     }
 }

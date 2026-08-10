@@ -2304,6 +2304,40 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     miss as "no candidate" — `native_call_unmodeled` continues to fire
     through the fallback path in production, not just in the `MUTSU_VM_STATS`
     shadow probes.
+    **Progress 2026-08-11** (step 1, shadow-only): tested the scoping note's
+    open question — whether `resolve_user_method_or_accessor` alone already
+    subsumes categories 2 and 3 — with a `MUTSU_VM_STATS`-gated shadow probe
+    (`Interpreter::shadow_check_bypass_user_method_categories`,
+    `methods_native_bypass.rs`) called from `call_method_with_values`
+    alongside the real `should_bypass_native_fastpath` decision, comparing a
+    faithful re-expression of lines 179-180/214-224 (`is_native_method(..)`
+    for an Instance, plus the `has_user_method`/`has_public_accessor`/
+    `has_class_level_attr` trio, both gated exactly as the original) against
+    `resolve_user_method_or_accessor(class_name, method).is_some()`. **Answer:
+    no** — a `t/`-wide sweep (2996 files, 8-way parallel, 36992 checks) found
+    4171 mismatches (11.3%), 4169 of which (99.95%) are one shape:
+    `real=true shadow=false` on a runtime-hosted builtin class
+    (`Supply`/`Supplier`/`IO::Pipe`/`IO::CatHandle`/`Proc`/`Thread`/
+    `IO::Handle`/`IO::Path`/`IO::Socket::Async::Listener`/`Encoding::Builtin`)
+    whose method is listed in that class's `runtime_init.rs`-seeded
+    `ClassDef::native_methods` but has no same-named public accessor —
+    `Supply.tap` alone is 3365 of the 4171 (81%). Root cause confirmed by
+    reading `resolve_user_method_or_accessor`: it only consults `has_native`
+    (`class_def.native_methods.contains(..)`) as a tiebreak *inside* the
+    `has_attr` (accessor) branch, so a pure native method with no matching
+    accessor is invisible to it — category 2 is genuinely NOT reachable
+    through category 3's helper, confirming the scoping note's "third
+    candidate kind" prediction rather than refuting it. Pinned by a new test,
+    `resolve_user_method_or_accessor_does_not_see_a_pure_native_methods_entry`
+    (`methods_native_bypass.rs`). The remaining 2 mismatches are the opposite
+    shape (`real=false shadow=true`, `class=R method=new`, both from the same
+    single-file run) and were not chased further — negligible fraction, no
+    dominant cluster there. Conclusion for the implementation plan: category
+    3's cutover (`resolve_user_method_or_accessor` replacing lines 214-224) is
+    shadow-verified safe standalone; category 2 (`is_native_method`) needs its
+    own explicit candidate kind wired into the resolver — it does not fold
+    into `resolve_user_method_or_accessor` for free. `cargo test --lib` (750
+    tests) and `make test` both green; shadow-only, zero behavior change.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is

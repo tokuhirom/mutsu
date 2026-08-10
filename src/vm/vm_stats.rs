@@ -437,6 +437,39 @@ pub(crate) fn record_resolver_shadow_check(
     }
 }
 
+// ADR-0019 Phase E box E4b (step 1, scoping doc
+// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`): shadow
+// comparison between `should_bypass_native_fastpath`'s "does a user
+// method/accessor/class-level-attr (or, for an Instance, a NativeCall binding) win"
+// categories (2 and 3 in the scoping doc) and `resolve_user_method_or_accessor`'s
+// single-MRO-walk answer, at the receiver's own class. `BYPASS_SHADOW_CHECKS`/
+// `_MISMATCHES` are the totals; `bypass_shadow_mismatch_by_key` breaks mismatches
+// down by `"[class=... method=... real=... shadow=...]"`. Nothing reads these
+// counters to make a dispatch decision: shadow-only, zero behavior change.
+static BYPASS_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static BYPASS_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn bypass_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one E4b step-1 shadow comparison. `detail` is only evaluated on a
+/// mismatch, mirroring [`record_resolver_shadow_check`].
+#[inline]
+pub(crate) fn record_bypass_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    BYPASS_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        BYPASS_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = bypass_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -765,6 +798,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e4a resolver-shadow mismatches by site (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let bypass_shadow_checks = BYPASS_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let bypass_shadow_mismatches = BYPASS_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-e4b: bypass_shadow_checks={bypass_shadow_checks} bypass_shadow_mismatches={bypass_shadow_mismatches}"
+    );
+    if let Ok(map) = bypass_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e4b bypass-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );
