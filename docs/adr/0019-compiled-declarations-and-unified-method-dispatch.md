@@ -1995,6 +1995,57 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     value`, 9-26 each). New `setbagmix_rows_are_backed_by_the_cascade` and
     `rakuast_statementlist_rows_are_backed_by_the_cascade` tests. `cargo test
     --lib` (738 tests) and `make test` (3002 files/28169 tests) both green.
+    **Progress 2026-08-10** (seventh slice): found and fixed a second
+    root-cause chain-walk gap, this time in `builtin_type_catalog.rs` rather
+    than the coverage-check function itself. `Failure`'s
+    `dispatch_owner_chain` was just `["Failure"]` -- no continuation to
+    `Any`/`Mu` at all -- because `Failure` is never declared as a real class
+    anywhere in mutsu (built purely via `Value::make_instance`), so it had no
+    catalog row and the registry has no model of its ancestry either. Every
+    built-in `X::*` exception type had the same problem one level up: each
+    registers `Exception` as its parent (`BUILTIN_PARENT_TYPES`), but
+    `Exception` itself was never registered as an actual class, so
+    `compute_class_mro`'s implicit-`Any` rule (which only fires for a class
+    present in the registry) never applied to it, and every `X::*` type's
+    registry MRO dead-ended at `Exception` (e.g. `X::AdHoc`'s registry MRO
+    was `["X::AdHoc", "Exception"]`). `CX::Warn` had it worse still: built via
+    `Value::make_instance` with no registered parent at all, so its chain was
+    the bare `["CX::Warn"]` and never even mentioned `Exception`. Fixed with
+    three new `builtin_type_catalog` rows -- `Failure` (`["Failure", "Nil",
+    "Cool", "Any", "Mu"]`, raku: `Failure ISA Nil`), `Exception` (`["Exception",
+    "Any", "Mu"]`, letting `class_chain_with_catalog_tail`'s splice logic
+    patch every `X::*` type at once), and `CX::Warn` (`["CX::Warn",
+    "Exception", "Any", "Mu"]`, needed directly since its own registry chain
+    never reaches `Exception`) -- all three verified against real `raku`
+    `.^mro` output. This alone made the `Any`-declared universal rows
+    (`so`/`not`/`defined`/`self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/
+    `serial`) finally resolve for every `Failure`/`X::*`/`CX::Warn` receiver,
+    which is why `Failure`'s `sink`/`so`/`defined` gap from the sixth slice's
+    notes closed without a `Failure`-specific row. Then hand-probed the
+    concrete per-type rows still needed on top (`message`/`resume`/
+    `backtrace`/`gist`/`raku`/`Str`/`Bool`/`throw`/`exception`/`handled`,
+    varying per type -- e.g. `CX::Warn` lacks `throw`/`raku`, `Failure` lacks
+    `message`/`backtrace` -- confirmed by direct probe rather than assumed
+    shared, since `CX::Warn`'s own `resume` arm in `methods_0arg/mod.rs` is
+    gated on its exact class name, not a generic exception check). A fresh
+    `t/`-wide sweep confirmed `native_call_unmodeled` dropped from 1818 (this
+    session's file set) to 1498 (cumulative **-96%** from the original
+    ~37904); none of `Failure`/`X::AdHoc`/`CX::Warn`/`X::TypeCheck::Assignment`
+    remain in the top-40 breakdown. Remaining top pairs are now a long,
+    diffuse tail with no single dominant owner (`Match x Stringy`, `Any x
+    gist/raku/hash`, `Backtrace`/`Backtrace::Frame`, `ProfiledG x raku`, `Nil
+    x raku/gist`, `Version`, `Junction x gist`, `Seq x is-lazy`, `Date`/
+    `DateTime`, `Supply x list`, `Signature x gist`, `Range x hyper/lazy/
+    int-bounds/Array`, `Rat x FatRat/nude`, `Map x raku/gist`, `Duration x
+    Numeric`, `Pair x Pair`, `Mu x defined`, `CallFrame x defined`,
+    `RakuAST::IntLiteral x value`, `Attribute x defined`, `IO::Path::Parts x
+    AT-KEY`, `Int x ^name`, 7-28 each). New `failure_chain_reaches_any_and_mu_via_nil`
+    (`receiver_class.rs`) and `exception_family_rows_are_backed_by_the_cascade`
+    (`native_method_row.rs`) tests. Since this slice changes real
+    `dispatch_owner_chain`/`class_chain` answers (not just the coverage-check
+    table), ran `make roast` locally, not just `make test`, per the "touched
+    name/type resolution" rule -- both green (`cargo test --lib` 740 tests,
+    `make test` unchanged file count, `make roast` 1435 files / 218774 tests).
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

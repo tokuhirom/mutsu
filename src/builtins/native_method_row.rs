@@ -575,6 +575,87 @@ mod tests {
         );
     }
 
+    /// ADR-0019 E2b (seventh slice, 2026-08-10): `Failure`/`X::AdHoc`/
+    /// `CX::Warn`/`X::TypeCheck::Assignment` rows, hand-probed against real
+    /// values raised via the interpreter. This is on top of two
+    /// `builtin_type_catalog` fixes (see `Exception`/`CX::Warn` rows there):
+    /// `Failure`'s chain used to dead-end at `["Failure"]` (no catalog row at
+    /// all), and every `X::*` exception type's chain dead-ended at
+    /// `["..., Exception"]` (a catalog row for the synthetic, never-declared
+    /// `Exception` parent was missing) -- so the `Any`-declared universal
+    /// rows (`so`/`not`/`defined`/`self`/`clone`/`WHERE`/`WHICH`/`sink`/
+    /// `item`/`serial`) could never be found for any exception-family
+    /// receiver via the chain walk no matter how many rows were added,
+    /// mirroring the `Failure` root-cause fix from the sixth slice. `resume`
+    /// is deliberately NOT generalized to a shared `Exception` row despite
+    /// appearing for all four probed types here: `CX::Warn`'s `resume` arm
+    /// (`methods_0arg/mod.rs`) is gated on `class_name == "CX::Warn"`
+    /// specifically, not a generic exception check, so each type's
+    /// recognition is verified independently instead of assumed shared.
+    #[test]
+    fn exception_family_rows_are_backed_by_the_cascade() {
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(
+                r#"
+                my $f = Failure.new("oops");
+                my $adhoc = X::AdHoc.new(:message("boom"));
+                my $warn;
+                sub trigger-warn {
+                    CONTROL { when CX::Warn { $warn = $_; .resume } }
+                    warn "w";
+                }
+                trigger-warn();
+                my $tca;
+                try { my Int $x = "not an int"; CATCH { default { $tca = $_ } } }
+                "#,
+            )
+            .unwrap();
+        for (var, owner) in [
+            ("f", "Failure"),
+            ("adhoc", "X::AdHoc"),
+            ("warn", "CX::Warn"),
+            ("tca", "X::TypeCheck::Assignment"),
+        ] {
+            let sample = interp.env().get(var).cloned().unwrap();
+            let sample = sample.with_deref(|v| v.clone());
+            for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS
+            {
+                if row_owner != owner {
+                    continue;
+                }
+                let flags = NativeRowFlags(flags);
+                if flags.contains(NativeRowFlags::SPECIAL)
+                    || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                {
+                    continue;
+                }
+                let observed = native_method_arities(&sample, name);
+                let mask = NativeArityMask(arity);
+                for (bit, m) in [
+                    (0u8, NativeArityMask::A0),
+                    (1u8, NativeArityMask::A1),
+                    (2u8, NativeArityMask::A2),
+                ] {
+                    if mask.contains(m) {
+                        assert!(
+                            observed & (1 << bit) != 0,
+                            "{owner}x{name} row claims arity {bit} but the cascade does not recognize it"
+                        );
+                    }
+                }
+            }
+            // Every probed exception-family receiver's chain must reach `Any`
+            // (via the `Exception`/`Failure` catalog splice), or the `Any`
+            // universal rows would silently stop applying again.
+            let chain = interp.dispatch_owner_chain(&sample);
+            assert!(
+                chain.iter().any(|t| t.as_str() == "Any"),
+                "{owner}'s dispatch_owner_chain should reach Any: {chain:?}"
+            );
+        }
+    }
+
     /// ADR-0019 E2b: `Any` gained seven more universal pseudo-methods
     /// (`self`/`clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial`) alongside the
     /// existing `so`/`not`/`defined`/`DEFINITE` rows -- each has a receiver-

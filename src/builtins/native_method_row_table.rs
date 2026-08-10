@@ -858,4 +858,44 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("RakuAST::StatementList", "Bool", 1, 0),
     ("RakuAST::StatementList", "flat", 7, 0),
     ("RakuAST::Statement::Expression", "expression", 1, 0),
+    // ADR-0019 E2b (seventh slice, 2026-08-10): `Failure`/`X::AdHoc`/
+    // `CX::Warn`/`X::TypeCheck::Assignment` rows, hand-probed against real
+    // values raised via the interpreter -- `so`/`not`/`defined`/`self`/
+    // `clone`/`WHERE`/`WHICH`/`sink`/`item`/`serial` are deliberately absent
+    // from all four: they are the `Any` universal rows above, now reachable
+    // via the chain walk after the `Exception`/`CX::Warn`/`Failure`
+    // `builtin_type_catalog` fixes. `resume`/`backtrace`/`message`/`throw`/
+    // `raku` vary per concrete type (confirmed by direct probe, not assumed
+    // shared -- e.g. `CX::Warn` lacks `throw`/`raku`; `Failure` lacks
+    // `message`/`backtrace`). Verified by
+    // `exception_family_rows_are_backed_by_the_cascade` in
+    // `native_method_row.rs`.
+    ("Failure", "resume", 1, 0),
+    ("Failure", "exception", 1, 0),
+    ("Failure", "handled", 1, 0),
+    ("Failure", "gist", 1, 0),
+    ("Failure", "raku", 1, 0),
+    ("Failure", "Str", 3, 0),
+    ("Failure", "Bool", 1, 0),
+    ("Failure", "throw", 1, 0),
+    ("X::AdHoc", "message", 1, 0),
+    ("X::AdHoc", "resume", 1, 0),
+    ("X::AdHoc", "backtrace", 1, 0),
+    ("X::AdHoc", "gist", 1, 0),
+    ("X::AdHoc", "Str", 3, 0),
+    ("X::AdHoc", "Bool", 1, 0),
+    ("X::AdHoc", "throw", 1, 0),
+    ("CX::Warn", "message", 1, 0),
+    ("CX::Warn", "resume", 1, 0),
+    ("CX::Warn", "backtrace", 1, 0),
+    ("CX::Warn", "gist", 1, 0),
+    ("CX::Warn", "Str", 3, 0),
+    ("CX::Warn", "Bool", 1, 0),
+    ("X::TypeCheck::Assignment", "message", 1, 0),
+    ("X::TypeCheck::Assignment", "resume", 1, 0),
+    ("X::TypeCheck::Assignment", "backtrace", 1, 0),
+    ("X::TypeCheck::Assignment", "gist", 1, 0),
+    ("X::TypeCheck::Assignment", "Str", 3, 0),
+    ("X::TypeCheck::Assignment", "Bool", 1, 0),
+    ("X::TypeCheck::Assignment", "throw", 1, 0),
 ];
