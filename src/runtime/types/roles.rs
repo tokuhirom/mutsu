@@ -529,18 +529,24 @@ impl Interpreter {
                 }
             }
         }
-        // Set up private attribute env vars from mixin attributes
-        // so that `$!foo = 42` works inside BUILD/TWEAK
-        let attr_names: Vec<String> = role
+        // Set up private attribute env vars from mixin attributes so that
+        // `$!foo = 42` / `@!bar.push(...)` / `%!baz<k> = v` work inside
+        // BUILD/TWEAK. The env key must carry the attribute's sigil prefix
+        // (`!foo`, `@!bar`, `%!baz`) to match what the compiled/interpreted
+        // body actually reads/writes — a scalar-only key silently no-ops
+        // array/hash attribute mutations (`@!attr`/`%!attr` resolve through
+        // the sigil-prefixed key, never seeded by a bare `"!attr"` write).
+        let attr_names: Vec<(String, char)> = role
             .attributes
             .iter()
-            .map(|attr| attr.name.clone())
+            .map(|attr| (attr.name.clone(), attr.sigil))
             .collect();
         if let ValueView::Mixin(_, mixins) = target.view() {
-            for attr_name in &attr_names {
+            for (attr_name, sigil) in &attr_names {
                 let key = format!("__mutsu_attr__{}", attr_name);
                 if let Some(val) = mixins.get(&key) {
-                    self.env.insert(format!("!{}", attr_name), val.clone());
+                    self.env
+                        .insert(attr_env_key(*sigil, attr_name), val.clone());
                 }
             }
         }
@@ -569,15 +575,15 @@ impl Interpreter {
         // Read back modified attribute values from env into the mixin map
         let updated_target = if let ValueView::Mixin(inner, existing_mixins) = target.view() {
             let mut mixins = (**existing_mixins).clone();
-            for attr_name in &attr_names {
-                let env_key = format!("!{}", attr_name);
+            for (attr_name, sigil) in &attr_names {
+                let env_key = attr_env_key(*sigil, attr_name);
                 if let Some(val) = self.env.get(&env_key) {
                     mixins.insert(format!("__mutsu_attr__{}", attr_name), val.clone());
                 }
             }
             // Clean up env vars
-            for attr_name in &attr_names {
-                self.env.remove(&format!("!{}", attr_name));
+            for (attr_name, sigil) in &attr_names {
+                self.env.remove(&attr_env_key(*sigil, attr_name));
             }
             Value::mixin((**inner).clone(), mixins)
         } else {
@@ -590,5 +596,17 @@ impl Interpreter {
             self.env.remove("self");
         }
         Ok(updated_target)
+    }
+}
+
+/// The private-attribute env key a compiled/interpreted body actually reads
+/// and writes for `$!attr`/`@!attr`/`%!attr`, keyed by the attribute's
+/// declared sigil. A scalar attribute's key has no sigil prefix (`"!attr"`);
+/// array/hash attributes carry their sigil (`"@!attr"`/`"%!attr"`).
+fn attr_env_key(sigil: char, attr_name: &str) -> String {
+    if sigil == '$' {
+        format!("!{attr_name}")
+    } else {
+        format!("{sigil}!{attr_name}")
     }
 }
