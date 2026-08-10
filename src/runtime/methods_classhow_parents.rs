@@ -15,10 +15,8 @@ impl Interpreter {
         let all = has_flag("all");
         let tree = has_flag("tree");
         let class_name = match args[0].view() {
-            ValueView::Package(name) => name.resolve(),
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => value_type_name(&args[0]).to_string(),
+            _ => self.mop_receiver_owner(&args[0]),
         };
         if tree {
             // `.^parents(:tree)` returns the parent tree. A single direct parent
@@ -147,7 +145,10 @@ impl Interpreter {
             .any(|r| r.split_once('[').map(|(b, _)| b).unwrap_or(r) == role)
     }
 
-    pub(crate) fn dispatch_classhow_roles(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(crate) fn dispatch_classhow_roles(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
         // Detect whether the invocant is an instance (Mixin or Instance) vs a
         // type object (Package). For punned role instances, the role itself
         // should be included in the result.
@@ -156,13 +157,11 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Mixin(_, _)
         );
         let class_name = match args[0].view() {
-            ValueView::Package(name) => name.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
             ValueView::Mixin(inner, _) => match inner.as_ref().view() {
                 ValueView::Instance { class_name, .. } => class_name.resolve(),
-                _ => value_type_name(&args[0]).to_string(),
+                _ => self.dispatch_owner_name(&args[0]).to_string(),
             },
-            _ => value_type_name(&args[0]).to_string(),
+            _ => self.mop_receiver_owner(&args[0]),
         };
         let local = args[1..]
             .iter()

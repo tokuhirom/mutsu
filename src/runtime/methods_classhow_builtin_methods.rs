@@ -7,11 +7,7 @@ impl Interpreter {
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
         let invocant = &args[0];
-        let class_name = match invocant.view() {
-            ValueView::Package(name) => name.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => value_type_name(invocant).to_string(),
-        };
+        let class_name = self.mop_receiver_owner(invocant);
 
         // Parse named arguments
         let mut local = false;

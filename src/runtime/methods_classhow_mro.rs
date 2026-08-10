@@ -4,10 +4,8 @@ use crate::symbol::Symbol;
 impl Interpreter {
     pub(super) fn classhow_mro_names(&mut self, invocant: &Value) -> Vec<String> {
         let class_name = match invocant.view() {
-            ValueView::Package(name) => name.resolve(),
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => value_type_name(invocant).to_string(),
+            _ => self.mop_receiver_owner(invocant),
         };
         let mut mro = if let Some(mro) = crate::rakuast::type_object_mro(&class_name) {
             mro
@@ -67,11 +65,7 @@ impl Interpreter {
         invocant: &Value,
         _concretizations: bool,
     ) -> Vec<Value> {
-        let class_name = match invocant.view() {
-            ValueView::Package(name) => name.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => value_type_name(invocant).to_string(),
-        };
+        let class_name = self.mop_receiver_owner(invocant);
         let base_mro = self.classhow_mro_names(invocant);
         let mut result: Vec<Value> = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
@@ -150,12 +144,8 @@ impl Interpreter {
     }
 
     /// Filter MRO to remove hidden classes and their associated roles.
-    pub(super) fn filter_mro_unhidden(&self, invocant: &Value, mro: Vec<Value>) -> Vec<Value> {
-        let class_name = match invocant.view() {
-            ValueView::Package(name) => name.resolve(),
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            _ => value_type_name(invocant).to_string(),
-        };
+    pub(super) fn filter_mro_unhidden(&mut self, invocant: &Value, mro: Vec<Value>) -> Vec<Value> {
+        let class_name = self.mop_receiver_owner(invocant);
         // Collect hidden parent names for this class
         let hidden_parents: rustc_hash::FxHashSet<String> = self
             .registry()

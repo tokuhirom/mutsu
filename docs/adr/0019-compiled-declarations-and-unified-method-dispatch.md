@@ -1799,8 +1799,36 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     until that ticket is picked up on its own, rather than bundling an unverified behavior change
     into this switch. MOP fallback consolidation (E1c) stays out of scope. Verified via `make
     test` (28,121 tests) and a full `make roast` (218,774 tests), both green.
-  - [ ] **E1c — MOP fallback consolidation.** Collapse the 13+8 per-MOP-entry owner-fallback
+  - [x] **E1c — MOP fallback consolidation.** Collapse the 13+8 per-MOP-entry owner-fallback
     arms into one classifier-backed `mop_receiver_owner` helper.
+    **Landed 2026-08-10**: `Interpreter::mop_receiver_owner` (`src/runtime/receiver_class.rs`) —
+    Package/Instance report their own name directly, everything else resolves through
+    `dispatch_owner_name` (the E1b classifier) instead of `value_type_name` — replaces the
+    22 duplicated `_ => value_type_name(&args[0]).to_string()` / `let name = match ... {
+    Package(..)=>.., Instance(..)=>.., _=>value_type_name(..) }` fallback sites across
+    `methods_classhow_dispatch.rs` (13), `methods_classhow_mro.rs` (3),
+    `methods_classhow_parents.rs` (3), `methods_classhow_builtin_methods.rs` (1),
+    `methods_classhow_lookup.rs` (1), and `methods_classhow_method_obj.rs` (1) — one more than
+    the design doc's 21-site estimate because `dispatch_classhow_roles`'s Mixin arm nests two
+    fallback arms in one match. Four call sites (`classhow_lookup`, `classhow_find_method`,
+    `dispatch_classhow_roles`, `filter_mro_unhidden`) needed `&self` -> `&mut self` promotion
+    since the classifier caches the registry MRO lookup (`class_mro`) mutably; every caller of
+    those four was already `&mut self`, so the promotion did not cascade further. Sites with an
+    extra non-Package/Instance arm the plain 3-arm pattern didn't cover (`RakuAst` in
+    `classhow_mro_names`/`dispatch_classhow_parents`/`method_table`/`collect_can_methods`,
+    `Enum` in `collect_can_methods`) kept that arm explicit ahead of the fallback rather than
+    folding it into the helper, since those arms carry different logic than a plain owner
+    lookup. Two sites deliberately broadened behavior in a direction the E1b rules already
+    established as correct: `"parameterize"`'s `base` and `dispatch_classhow_roles`'s Mixin
+    fallback previously had no `Instance` arm at all (falling to `value_type_name`'s "Any"
+    answer for a receiver that in practice is never an Instance); `mop_receiver_owner` now
+    resolves an Instance there too, consistent with the owner rules E1b already made
+    authoritative elsewhere — not exercised by any known test, called out here for review
+    honesty. Verified via `make test` (2994 files/28129 tests) and a full `make roast` (1435
+    files/218,748 tests), both green — the three `make roast` failures seen on the first run
+    (`spurt.t`, `socket-recv-vs-read.t`, `S17-supply/syntax.t`) were confirmed to be artifacts of
+    an interrupted prior local run (stale `temp-file-RT-126006-test` plus load-induced timing)
+    by re-running each file individually, not regressions from this change.
 - [ ] **E2 — Give every native entry an exact handler ID.** Generate static type×method handler rows
   for pure arity handlers and stateful/special handlers; pin type-object, subclass, Map/Seq,
   Failure, and Rat-style cases that broke the reverted attempt.
