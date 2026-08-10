@@ -289,7 +289,23 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match target {
             Expr::Var(name) => {
-                self.env.insert(name.clone(), value.clone());
+                // ADR-0024: `name` was extracted from the callee's OWN AST body
+                // (`rw_sub_target_expr`) but this assignment runs in the
+                // CALLING frame's context, not the callee's — so if `name` is
+                // one of the mainline-captured cells (`unit_lexicals`), write
+                // through that cell directly instead of the blind
+                // `self.env.insert` below, which would REPLACE the cell
+                // reference in env with a plain value. That replacement is
+                // invisible to every OTHER reader of `name` still resolving
+                // through the cell (e.g. a Proxy's FETCH closure calling the
+                // same `is rw` sub later), which would then observe a
+                // permanently stale value — the callee's own captured cell
+                // was never actually written.
+                if let Some(cell) = self.mainline_lexical_cell(name) {
+                    cell.lock().unwrap().clone_from(&value);
+                } else {
+                    self.env.insert(name.clone(), value.clone());
+                }
                 // Slice F (env<->locals coherence): an `is rw` sub returning an
                 // lvalue (`sub () is rw { $value }; f() = 9`) writes the target
                 // variable in env by name and relied on the reverse

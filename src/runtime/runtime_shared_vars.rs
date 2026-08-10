@@ -644,6 +644,27 @@ impl Interpreter {
             if !self.pending_caller_var_writeback.contains(&key) {
                 self.pending_caller_var_writeback.push(key.clone());
             }
+            // ADR-0024: a mainline named sub's captured free variable may be
+            // reassigned from a worker thread (e.g. `$port = await
+            // $tap.socket-port` completing a real async I/O wait, not a
+            // same-thread `Promise.new`/`.keep`, which never dirties
+            // `shared_vars` in the first place). That worker's own write can
+            // land in `shared_vars` as a plain value if ITS OWN env snapshot
+            // predates the capture (the worker was spawned/cloned before the
+            // capturing sub registered) — the `set_env_with_main_alias_sym`/
+            // `SetGlobal` guards elsewhere only catch a `ContainerRef`
+            // reachable through THAT frame's own `env`, which is exactly what
+            // is missing there. Blindly `env.insert`-ing this plain value
+            // back on the awaiting (parent) thread would silently replace the
+            // cell the capturing sub still reads through, permanently
+            // disconnecting it from every future write. Write through the
+            // parent's own cell instead, when it has one.
+            if !matches!(val.view(), ValueView::ContainerRef(_))
+                && let Some(cell) = self.mainline_lexical_cell(&key)
+            {
+                cell.lock().unwrap().clone_from(&val);
+                continue;
+            }
             self.env.insert(key, val);
         }
     }

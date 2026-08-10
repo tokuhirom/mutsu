@@ -351,9 +351,11 @@ trigger B).
 
 Landed per `news/2026-08/mainline-named-subs-resolve-free-variables-lexically.md`,
 `t/named-sub-lexical-scope.t` (the full divergence matrix, raku-verified
-green), and `tmp/nsub-lex-matrix.raku` / `tmp/nsub-lex-edge.raku`. Four points
+green), and `tmp/nsub-lex-matrix.raku` / `tmp/nsub-lex-edge.raku`. Seven points
 in the plan above did not survive contact with the running VM and required a
-different mechanism, not just a line-number update:
+different mechanism, not just a line-number update — points 1-4 surfaced
+locally before the first PR; points 5-7 surfaced as CI regressions in two
+already-whitelisted roast files and were fixed forward on the same branch:
 
 1. **§2's `code.locals` rposition is unsound, not just simplified.** Under
    shadow slots (the default), a same-named `my` ANYWHERE else in the
@@ -395,6 +397,58 @@ different mechanism, not just a line-number update:
    before trusting a raw env hit; the write path calls
    `unit_scope_lexical_write` up front, before the generic env-cell
    write-through, so a marked sub's own captured name is claimed first.
+5. **A CALLING-frame writer needs the cell too, not just the callee's own
+   frame.** `sub lastvar is rw { $var2 }; lastvar() = 3` (an `is rw` sub
+   returning a bare lvalue) does not assign inside `lastvar`'s own frame at
+   all: `assign_rw_target_expr` (`runtime/builtins_lvalue.rs`) introspects the
+   callee's AST to find the target *name*, then assigns it directly in the
+   CALLING frame via a raw `self.env.insert` — so `mainline_lexical_frame_active()`
+   is false there (the callee's frame isn't on top) and the blind insert
+   silently replaced the cell reference itself. A Proxy STORE/FETCH pair
+   built from a mainline sub (`roast/S06-routine-modifiers/lvalue-subroutines.t`
+   10-11) made this observable: the assignment from inside STORE never
+   reached the cell `lastvar`'s own reads went through, so FETCH kept
+   returning the pre-assignment value forever. Fixed with a new
+   frame-independent helper, `mainline_lexical_cell(name)` (looks the cell up
+   in `unit_lexicals[MAINLINE_UNIT_KEY]` directly, no frame gate) — the `Var`
+   arm writes through it when present instead of the blind insert.
+6. **Not every by-name write goes through the `SetGlobal` opcode.**
+   `set_env_with_main_alias_sym` — a lower-level helper with call sites
+   outside ordinary opcode dispatch (e.g. an `await` continuation resuming a
+   plain mainline reassignment) — checked `unit_scope_lexical_write` (frame-
+   gated, correctly false for a plain reassignment not inside any sub) but,
+   unlike the full `SetGlobal` handler, had no fallback for "`env` already
+   holds a `ContainerRef` under this name, write through it regardless of
+   frame". Fixed by adding that check, mirroring the `SetGlobal` handler's
+   own generic step.
+7. **A cross-thread pull can silently replace a cell with a stale plain
+   value.** `roast/S32-io/IO-Socket-Async.t` regressed at "Coped with
+   grapheme split across packets": a mainline sub capturing `$port`, reread
+   after `$port = await $tap.socket-port` (a REAL async I/O wait, unlike a
+   same-thread `Promise.new`/`.keep`, which resolves inline and never
+   triggers this path), kept observing the pre-reassignment port. Root cause:
+   the worker thread completing that `await` can have been spawned/cloned
+   *before* the capturing sub registered (its own `env` snapshot predates the
+   cell), so its own write to `$port` lands in `shared_vars` as a plain
+   value; `sync_shared_vars_to_env()` (`runtime/runtime_shared_vars.rs`,
+   called from `await`, pre-existing ADR-0010 cross-thread plumbing) then
+   blindly `env.insert`s that plain value on the awaiting thread, replacing
+   the cell every other reader — including the capturing sub itself — still
+   holds. Fixed the same way as point 6: write through
+   `mainline_lexical_cell(name)` when the pulled value is not itself a
+   `ContainerRef` and the parent has one, instead of the blind insert.
+
+Points 5-7 share a pattern distinct from points 1-4: they are not new call
+paths for *reading/writing a captured lexical from inside a marked sub's own
+frame* (which the frame predicate correctly gates) — they are pre-existing,
+frame-independent "assign this name by value" utilities (AST-introspecting
+`is rw` return assignment, a lower-level env-write helper, cross-thread
+shared-var sync) that never had a concept of "an existing cell here must be
+preserved" because nothing before ADR-0024 boxed a *mainline* name outside of
+`box_captured_lexicals`'s own narrow closure-capture triggers. The fix in
+each case is the same shape: a frame-independent `mainline_lexical_cell(name)`
+lookup, tried before whatever blind `env`/local overwrite the utility used to
+do unconditionally.
 
 None of these change the Decision's chosen mechanism (eager boxing under a
 reserved `unit_lexicals` key, frame-active predicate, writeback suppression,

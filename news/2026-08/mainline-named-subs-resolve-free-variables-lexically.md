@@ -88,6 +88,40 @@ marked mainline sub.
   `unit_scope_lexical_write` check (write) so a marked sub's own captured
   names never reach the generic env-cell shortcut.
 
+## Two more gaps, found by CI (real regressions in already-whitelisted roast files)
+
+The initial PR's CI run regressed two whitelisted files deterministically.
+Both traced back to the same underlying pattern: a **frame-independent**
+"assign this name by value" utility that predates ADR-0024 and had no notion
+of "an existing cell here must be preserved" — unlike the frame-gated
+read/write paths above, these do not run inside the capturing sub's own
+frame, so `mainline_lexical_frame_active()` is unhelpful for them. Both are
+fixed with the same new tool: `mainline_lexical_cell(name)`, a
+frame-independent lookup straight into `unit_lexicals[MAINLINE_UNIT_KEY]`,
+tried before the utility's own blind overwrite.
+
+- **`roast/S06-routine-modifiers/lvalue-subroutines.t` (a Proxy built from an
+  `is rw` mainline sub).** `sub lastvar is rw { $var2 }; lastvar() = 3` does
+  not assign inside `lastvar`'s own frame: `assign_rw_target_expr`
+  (`runtime/builtins_lvalue.rs`) introspects the callee's AST for the target
+  *name* and assigns it directly in the CALLING frame via a raw
+  `self.env.insert`. From inside a Proxy STORE closure built by a mainline
+  `checklastval` sub, that blind insert replaced the cell reference itself,
+  so a later FETCH (reading through the SAME cell `lastvar`'s own body reads)
+  kept returning the pre-assignment value forever.
+- **`roast/S32-io/IO-Socket-Async.t` ("Coped with grapheme split across
+  packets").** A mainline sub capturing `$port`, reread after `$port = await
+  $tap.socket-port` (a REAL async I/O wait — unlike a same-thread
+  `Promise.new`/`.keep`, which resolves inline and never touches this path),
+  kept observing the pre-reassignment port. The worker thread completing that
+  `await` can have been spawned/cloned *before* the capturing sub registered
+  (its own `env` snapshot predates the cell), so its own write to `$port`
+  landed in `shared_vars` as a plain value; `sync_shared_vars_to_env()`
+  (`runtime/runtime_shared_vars.rs`, pre-existing ADR-0010 cross-thread
+  plumbing, invoked from `await`) then blindly `env.insert`ed that plain
+  value on the awaiting thread, replacing the cell every other reader —
+  including the capturing sub — still held.
+
 ## Verification
 
 `t/named-sub-lexical-scope.t` pins the ADR's full divergence matrix (rows

@@ -515,21 +515,25 @@ impl Interpreter {
             .is_some_and(|m| m.contains_key(name))
     }
 
-    /// ADR-0024: `name`'s mainline-captured cell, if it has one — a fallback
-    /// for the `:=`-bind "reuse an existing cell instead of minting a
-    /// disconnected one" lookups in `vm_var_assign_set_local.rs`, which read
-    /// `self.env().get(name)` (or a same-frame `code.locals` slot) directly
-    /// and so cannot see past an INTERVENING frame's own identically-named
-    /// local shadowing it in the ordinary env chain — e.g. a constructor's
-    /// raw-captured parameter that happens to share the mainline lexical's
-    /// bare name (`Foo.new(\pulled)` binding a private attribute to a
-    /// same-named argument that traces back, through several call frames, to
-    /// a mainline `my $pulled`). Deliberately NOT gated on
-    /// `mainline_lexical_frame_active()`: unlike an ordinary captured-lexical
-    /// read/write, this exists purely to avoid a duplicate cell, from
-    /// whatever frame happens to be running when a bind chain reaches back
-    /// toward a name mainline already boxed.
-    pub(super) fn mainline_lexical_cell(
+    /// ADR-0024: `name`'s mainline-captured cell, if it has one. `pub(crate)`
+    /// (not `pub(super)`) because it has two call sites outside the `vm`
+    /// module tree: the `:=`-bind "reuse an existing cell instead of minting
+    /// a disconnected one" lookups in `vm_var_assign_set_local.rs`, which
+    /// read `self.env().get(name)` (or a same-frame `code.locals` slot)
+    /// directly and so cannot see past an INTERVENING frame's own
+    /// identically-named local shadowing it in the ordinary env chain (e.g. a
+    /// constructor's raw-captured parameter that happens to share the
+    /// mainline lexical's bare name); and `assign_rw_target_expr`
+    /// (`runtime/builtins_lvalue.rs`), the `is rw` sub `f() = val` mechanism,
+    /// which extracts the target *name* from the callee's own AST body via
+    /// `rw_sub_target_expr` and assigns it directly in the CALLING frame —
+    /// not the callee's — via a raw `self.env.insert`, so it must resolve the
+    /// cell itself rather than relying on `mainline_lexical_frame_active()`
+    /// (false there, since the callee's frame is not on top). Deliberately
+    /// NOT gated on `mainline_lexical_frame_active()` in either case: unlike
+    /// an ordinary captured-lexical read/write, both exist purely to reach a
+    /// name mainline already boxed from whatever frame happens to be running.
+    pub(crate) fn mainline_lexical_cell(
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
@@ -870,6 +874,26 @@ impl Interpreter {
         // `set_env_plain_lexical` deliberately does NOT redirect — a routine's own
         // plain `my` shadowing a compunit lexical is a distinct variable.
         if self.unit_scope_lexical_write(name, &value) {
+            return;
+        }
+        // Write through an existing ContainerRef in env, mirroring the generic
+        // check in the `SetGlobal` opcode handler (`vm_exec_dispatch.rs`) —
+        // this helper is ALSO reached by non-opcode-dispatch writers (an
+        // async/`await` continuation resuming a plain mainline reassignment
+        // after a genuine I/O wait calls this directly, not through the
+        // `SetGlobal` opcode), which would otherwise silently orphan an
+        // existing cell instead of writing through it: replacing the env
+        // entry with a plain value here leaves any OTHER reader still holding
+        // the cell (e.g. ADR-0024's `unit_lexicals[MAINLINE_UNIT_KEY]`, whose
+        // entry IS this same cell) permanently stale. Skipped for a value
+        // that is itself a fresh `ContainerRef` bind target — a `:=` bind
+        // replacing the whole binding must not be redirected into the OLD
+        // cell's contents.
+        if !matches!(value.view(), ValueView::ContainerRef(_))
+            && let Some(cell_val) = self.env().get(name).cloned()
+            && let ValueView::ContainerRef(arc) = cell_val.view()
+        {
+            Self::cell_store_preserving_container_identity(&arc, &value);
             return;
         }
         // Slice B (docs/vm-single-store.md): while a carrier (EVAL / interpreter
