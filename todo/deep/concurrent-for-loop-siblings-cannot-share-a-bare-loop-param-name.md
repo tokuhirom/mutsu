@@ -1,5 +1,13 @@
 # Two concurrent `for LIST -> $x { start {...} }` sibling iterations of a non-"plain" value collide on the bare-name shared-store lane
 
+> **Design settled (2026-08-10):** `docs/adr/0023-binding-provenance-spawn-capture.md`
+> — a third path, smaller than either option (a)/(b) below: track active
+> for-loop parameter names and have `block_captured_scalars` treat them as
+> closure-owned regardless of value type, so each spawn's env clone (already
+> correct per iteration) is never seeded into or overwritten by the bare-name
+> lane. The ADR contains the full implementation plan and acceptance criteria;
+> implement from there, not from the (a)/(b) sketches below.
+
 ## TL;DR
 
 `for $client-a, $client-b -> $client { start { ... $client ... } }` — a
