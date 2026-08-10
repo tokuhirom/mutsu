@@ -174,6 +174,20 @@ impl Interpreter {
         {
             return info.mro.iter().map(|s| TypeId::intern(s)).collect();
         }
+        // A parametrized name (`Array[Int]`, `array[int32]`, `CArray[uint8]`)
+        // not itself in the catalog: strip the `[...]` argument and splice the
+        // BASE type's own catalog chain ahead of it (mirrors `registry.rs`'s
+        // `class_mro`/`class_mro_readonly` fix for the same pattern, ADR-0019
+        // E2b twelfth slice) -- without this, every typed-array VALUE's chain
+        // dead-ended at itself, never reaching `Array`/`List`/`Any`/`Mu`.
+        if let Some((base, _)) = name.split_once('[')
+            && name.ends_with(']')
+            && let Some(info) = builtin_type_info(base)
+        {
+            let mut chain = vec![TypeId::intern(name)];
+            chain.extend(info.mro.iter().map(|s| TypeId::intern(s)));
+            return chain;
+        }
         vec![
             TypeId::intern(name),
             well_known_types().any,
@@ -214,7 +228,15 @@ impl Interpreter {
                     .mro
                     .get(1)
                     .is_some_and(|next| reg_mro.get(i + 1).is_some_and(|s| s.as_str() == *next));
-                if !continues {
+                if continues {
+                    // `reg_mro` already carries the catalog's own continuation
+                    // (ADR-0019 E2b twelfth slice: `class_mro`'s parametrized-name
+                    // fallback for `Array[Int]`/`array[int32]`/`CArray[uint8]`
+                    // splices the full catalog tail itself) -- push the rest of
+                    // `reg_mro` verbatim instead of stopping here, or the chain
+                    // would silently drop everything past this builtin ancestor.
+                    chain.extend(reg_mro[i + 1..].iter().map(|s| TypeId::from_symbol(*s)));
+                } else {
                     for tail_name in &info.mro[1..] {
                         let tid = TypeId::intern(tail_name);
                         if !chain.contains(&tid) {
@@ -465,6 +487,49 @@ mod tests {
         let chain = i.dispatch_owner_chain(&f);
         let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
         assert_eq!(names, vec!["Failure", "Nil", "Cool", "Any", "Mu"]);
+    }
+
+    /// ADR-0019 E2b (twelfth slice, 2026-08-10): a bare parametrized TYPE
+    /// OBJECT (`Array[Int]`, `array[int32].WHAT`, ...) is a `Package` whose
+    /// name is the literal parametrized string -- never a user-declared
+    /// class, so `class_mro("Array[Int]")` used to treat it as parentless
+    /// (`compute_class_mro`'s fallback for an unregistered class with no
+    /// parents), yielding just `["Array[Int]"]` with no continuation at
+    /// all, unlike raku's real `Array[Int].^mro` (`Array[Int], Array, List,
+    /// Cool, Any, Mu`). Confirmed against raku (`Array[Int].gist` was
+    /// `native_call_unmodeled`-flagged before this fix, per the full `t/`
+    /// sweep), then fixed in two steps: (1) `class_mro`/`class_mro_readonly`
+    /// strip the `[...]` argument and splice the base's own catalog chain
+    /// when the base is a catalog builtin (not just a registered class,
+    /// which the existing `Blob[uint32]`-style handling already covered),
+    /// and (2) `class_chain_with_catalog_tail`'s `continues` branch, which
+    /// matched the now-already-spliced tail and `break`-ed WITHOUT pushing
+    /// the rest of `reg_mro` -- silently truncating the chain right back
+    /// down to `[Array[Int], Array]`. Fixed by extending `chain` with the
+    /// remaining `reg_mro` elements on the `continues` branch instead of
+    /// dropping them.
+    #[test]
+    fn parametrized_type_object_chain_is_not_truncated() {
+        let mut i = interp();
+        let package = Value::package(crate::symbol::Symbol::intern("Array[Int]"));
+        let chain = i.dispatch_owner_chain(&package);
+        let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["Array[Int]", "Array", "List", "Cool", "Any", "Mu"]
+        );
+    }
+
+    /// ADR-0019 E2b (twelfth slice): the NativeCall-facing sibling of the
+    /// test above, using the newly-added `array` catalog row (previously
+    /// only `Array`, the boxed collection type, had one).
+    #[test]
+    fn typed_native_array_type_object_chain_is_not_truncated() {
+        let mut i = interp();
+        let package = Value::package(crate::symbol::Symbol::intern("array[int32]"));
+        let chain = i.dispatch_owner_chain(&package);
+        let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
+        assert_eq!(names, vec!["array[int32]", "array", "Cool", "Any", "Mu"]);
     }
 
     #[test]

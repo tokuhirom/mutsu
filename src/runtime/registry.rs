@@ -631,11 +631,22 @@ impl Registry {
         if !self.classes.contains_key(class_name)
             && let Some((base, _)) = class_name.split_once('[')
             && class_name.ends_with(']')
-            && self.classes.contains_key(base)
         {
-            let mut mro = vec![Symbol::intern(class_name)];
-            mro.extend(self.class_mro(base).iter().copied());
-            return mro.into();
+            if self.classes.contains_key(base) {
+                let mut mro = vec![Symbol::intern(class_name)];
+                mro.extend(self.class_mro(base).iter().copied());
+                return mro.into();
+            }
+            // `base` is not a user-registered class but IS a catalog builtin
+            // (`Array[Int]`, `array[int32]`, `CArray[uint8]`, ...): splice the
+            // catalog's own chain directly rather than recursing through
+            // `class_mro`, whose `compute_class_mro` fallback would otherwise
+            // treat an un-registered `base` like "Array" as parentless.
+            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(base) {
+                let mut mro = vec![Symbol::intern(class_name)];
+                mro.extend(info.mro.iter().map(|s| Symbol::intern(s)));
+                return mro.into();
+            }
         }
         let mut stack = Vec::new();
         match self.compute_class_mro(class_name, &mut stack) {
@@ -664,11 +675,17 @@ impl Registry {
             }
             if let Some((base, _)) = class_name.split_once('[')
                 && class_name.ends_with(']')
-                && self.classes.contains_key(base)
             {
-                let mut mro = vec![Symbol::intern(class_name)];
-                mro.extend(self.class_mro_readonly(base)?.iter().copied());
-                return Some(mro.into());
+                if self.classes.contains_key(base) {
+                    let mut mro = vec![Symbol::intern(class_name)];
+                    mro.extend(self.class_mro_readonly(base)?.iter().copied());
+                    return Some(mro.into());
+                }
+                if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(base) {
+                    let mut mro = vec![Symbol::intern(class_name)];
+                    mro.extend(info.mro.iter().map(|s| Symbol::intern(s)));
+                    return Some(mro.into());
+                }
             }
             // Not a registered class at all: the write side computes but has no
             // `ClassDef` to cache into, so the result is identical read-only.
