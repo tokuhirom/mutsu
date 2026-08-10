@@ -47,3 +47,6 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Proposed |
 | [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately) |
 | [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Accepted (P1-P3a and P3 shipped; P4/P5 remain) |
+| [0022](0022-regex-alternation-ltm-ranking.md) | `\|` alternation ranks branches by declarative-prefix LTM, not by longest actual match | Proposed (design complete; implementation not started) |
+| [0023](0023-binding-provenance-spawn-capture.md) | Spawn-time capture ownership is decided by binding provenance, not value type | Accepted (implemented) |
+| [0024](0024-mainline-lexicals-for-named-subs.md) | Mainline is a compunit — named subs resolve mainline free variables through unit-lexical cells | Accepted (implementation pending) |

@@ -1,5 +1,14 @@
 # A named `sub`'s free-variable reads are dynamically scoped, not lexical: any later same-named inner-block `my` shadows it for every call made from inside that block
 
+> **Design complete (2026-08-10): see
+> [ADR-0024](../../docs/adr/0024-mainline-lexicals-for-named-subs.md)** —
+> mainline is treated as a compunit; captured free variables become
+> `unit_lexicals` cells under a reserved key, resolved via a last-frame
+> predicate, with a write redirect, closure-capture cell injection, and
+> writeback suppression. The ADR supersedes this file's "Sketch of a fix"
+> section (which underestimated the write side — see the ADR's divergence
+> matrix rows 2a/2b/3) and carries the full implementation plan.
+
 ## TL;DR
 
 This supersedes and broadens `todo/tickets/named-sub-reads-enclosing-for-loop-param-dynamically-not-lexically.md`
