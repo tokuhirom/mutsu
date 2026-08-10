@@ -2124,6 +2124,37 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     more slice specifically on the RakuAST node-accessor family (the
     largest remaining homogeneous cluster) if a session wants to push
     further before flipping the switch.
+    **Progress 2026-08-10** (tenth slice): took option (a)'s spirit but as a
+    root-cause fix rather than a row addition -- the ninth slice's own
+    breakdown showed a 61-hit `X::*` cluster (biggest owner-group left) that
+    the eighth slice's `Exception` row should already have covered but did
+    not. The cause was not a missing row: `raku -e 'X::ControlFlow.^mro'`
+    confirmed `X::ControlFlow, Exception, Any, Mu`, but mutsu's own
+    `X::ControlFlow.^mro».^name` reported just `X::ControlFlow, Any, Mu` --
+    `Exception` was missing entirely. Twenty-one `X::*` types built all over
+    the interpreter (directly via `Value::make_instance`, or via the
+    `"X::Type: text"` message convention `split_typed_message_convention`
+    parses into a typed instance) were never `register_x`'d in
+    `runtime_init.rs`, so their registry MRO dead-ended at themselves with no
+    `Exception` continuation -- meaning `$exc ~~ Exception` and
+    `$exc.isa(Exception)` were silently `False` for any of them, not just a
+    counter artifact. Every name was confirmed against a live `raku -e`
+    probe before registering (one, `X::Role::Composition::Conflict`, is a
+    mutsu-only name from the message convention with no real rakudo
+    counterpart; `X::React::Died` is a role in rakudo but an Instance in
+    mutsu already) both still get `Exception` ancestry for mutsu's own
+    `CATCH`/`.isa` semantics to be internally consistent. Also added the
+    `Exception`-owner rows for `line`/`file`/`backtrace`/`throw`/`resume` --
+    declared in the same `cn.starts_with("X::")`-gated match blocks as
+    `message`/`gist`/`Str` but not yet in the row table. A fresh sweep
+    confirmed the entire `X::*` cluster (61 hits) is gone: `native_call_unmodeled`
+    dropped from 528 to 475. New `tenth_slice_exception_registration_rows_are_backed_by_the_cascade`
+    test. `cargo test --lib` (745 tests) and `make test` (3007 files/28205
+    tests) both green; local roast run on the 45 whitelisted files
+    referencing any touched `X::*` name (per the "touched name/type
+    resolution" rule, since this changes MRO/registration) also green.
+    Remaining 475 is the RakuAST/NativeCall/test-fixture tail the ninth
+    slice's assessment already described -- still no dominant cluster left.
 - [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where

@@ -928,6 +928,19 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Exception", "message", 1, 0),
     ("Exception", "gist", 1, 0),
     ("Exception", "Str", 3, 0),
+    // ADR-0019 E2b (tenth slice): `line`/`file`/`backtrace` and `throw`/
+    // `resume` are declared in the SAME `cn == "Exception" ||
+    // cn.starts_with("X::") || cn.starts_with("CX::")`-gated match blocks in
+    // `methods_0arg/mod.rs` as `message`/`gist`/`Str` above (the `throw`/
+    // `resume` gates additionally admit `Failure` and `CX::Warn` by name, but
+    // those already have their own rows), so one `Exception`-owner row each
+    // covers every `X::*`/`CX::*` subtype the chain walk now reaches (see the
+    // `register_x` additions in `runtime_init.rs` this same slice).
+    ("Exception", "line", 1, 0),
+    ("Exception", "file", 1, 0),
+    ("Exception", "backtrace", 1, 0),
+    ("Exception", "throw", 1, 0),
+    ("Exception", "resume", 1, 0),
     ("Version", "Str", 3, 0),
     ("Version", "raku", 1, 0),
     ("Version", "gist", 1, 0),

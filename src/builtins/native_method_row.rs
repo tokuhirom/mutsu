@@ -962,4 +962,97 @@ mod tests {
             }
         }
     }
+
+    /// ADR-0019 E2b (tenth slice, 2026-08-10): closes the `X::*` cluster --
+    /// not by adding per-type rows, but by fixing the root cause the eighth
+    /// slice's `Exception` row already assumed: dozens of `X::*` types were
+    /// never `register_x`'d (see `runtime_init.rs`), so their registry MRO
+    /// dead-ended at themselves with no `Exception` continuation, and the
+    /// `Exception`-owner rows never applied to them via the chain walk. Also
+    /// covers `line`/`file`/`backtrace`/`throw`/`resume`, the remaining
+    /// `Exception`-gated methods the eighth slice's `message`/`gist`/`Str`
+    /// rows did not yet include.
+    #[test]
+    fn tenth_slice_exception_registration_rows_are_backed_by_the_cascade() {
+        let mut interp = crate::runtime::Interpreter::new();
+        interp
+            .run(
+                r#"
+                my $cf = X::ControlFlow.new(:message("boom"));
+                my $unsat = X::CompUnit::UnsatisfiedDependency.new(:message("nope"));
+                my $seqc = X::Seq::Consumed.new(:message("consumed"));
+                my $dbz = X::Numeric::DivideByZero.new(:message("div0"));
+                my $plain;
+                try { die "X::Role::Composition::Conflict: multiple candidates" };
+                $plain = $!;
+                "#,
+            )
+            .unwrap();
+        let get = |name: &str| interp.env().get(name).cloned().unwrap();
+        let samples: &[(&str, Value)] = &[
+            ("X::ControlFlow", get("cf")),
+            ("X::CompUnit::UnsatisfiedDependency", get("unsat")),
+            ("X::Seq::Consumed", get("seqc")),
+            ("X::Numeric::DivideByZero", get("dbz")),
+            ("X::Role::Composition::Conflict", get("plain")),
+        ];
+        for (owner, sample) in samples {
+            let chain = interp.dispatch_owner_chain(sample);
+            assert!(
+                chain.iter().any(|t| t.as_str() == "Exception"),
+                "{owner}'s dispatch_owner_chain should reach Exception now it is register_x'd: {chain:?}"
+            );
+            for name in [
+                "message",
+                "gist",
+                "Str",
+                "line",
+                "file",
+                "backtrace",
+                "throw",
+                "resume",
+            ] {
+                assert_ne!(
+                    native_method_arities(sample, name) & 1,
+                    0,
+                    "{owner}x{name} should be recognized at arity 0"
+                );
+                assert_eq!(
+                    native_method_row(owner, name).0,
+                    NativeArityMask::N,
+                    "{owner} should not need its own {name} row (covered via Exception)"
+                );
+            }
+        }
+        // The new Exception-owner rows themselves must be backed by the
+        // cascade too, probed against the bare `Exception` type's own row
+        // declaration (mirrors the eighth slice's `message`/`gist`/`Str`
+        // check for the same owner).
+        for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS {
+            if row_owner != "Exception" {
+                continue;
+            }
+            let flags = NativeRowFlags(flags);
+            if flags.contains(NativeRowFlags::SPECIAL)
+                || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+            {
+                continue;
+            }
+            let (_, sample) = &samples[0];
+            let observed = native_method_arities(sample, name);
+            let mask = NativeArityMask(arity);
+            for (bit, m) in [
+                (0u8, NativeArityMask::A0),
+                (1u8, NativeArityMask::A1),
+                (2u8, NativeArityMask::A2),
+            ] {
+                if mask.contains(m) {
+                    assert!(
+                        observed & (1 << bit) != 0,
+                        "Exceptionx{name} row claims arity {bit} but the cascade does not recognize it"
+                    );
+                }
+            }
+        }
+    }
 }
