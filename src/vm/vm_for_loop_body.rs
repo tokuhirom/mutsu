@@ -331,7 +331,34 @@ impl Interpreter {
             });
         // Track loop-body declarations for per-iteration closure capture
         // (owned_captures). Balanced by pop on every exit.
-        self.push_loop_local_scope();
+        //
+        // ADR-0023: the loop's own parameter name(s) are fresh, readonly,
+        // per-iteration bindings independent of value type — recording them
+        // here lets `block_captured_scalars` keep a spawned `start {}`'s
+        // capture of the loop parameter off the cross-thread bare-name lane
+        // even when the item is not a "plain" scalar type (e.g. an Instance).
+        // Gate on `is_rw`: an `<->`/rw loop param writes back to the source
+        // element, so keep it on its pre-ADR path.
+        let loop_param_names: rustc_hash::FxHashSet<String> = if spec.is_rw {
+            Default::default()
+        } else {
+            param_name
+                .iter()
+                .cloned()
+                .chain(
+                    spec.multi_param_names
+                        .iter()
+                        .map(|name| name.trim_start_matches('$').to_string()),
+                )
+                .filter(|name| {
+                    !name.starts_with('&')
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && name != "_"
+                })
+                .collect()
+        };
+        self.push_loop_local_scope(loop_param_names);
         // Determine if the implicit topic ($_) should be read-only.
         // Only mark $_ readonly when iterating over an *immutable* collection
         // (Mix/Set/Bag, the `(_, false)` variants). This blocks `.value = ...`

@@ -58,7 +58,22 @@ impl Interpreter {
 
         // Track loop-body declarations so closures created in the body capture
         // them per-iteration (owned_captures). Balanced by pop on every exit.
-        self.push_loop_local_scope();
+        //
+        // ADR-0023: the loop param name is a fresh, readonly, per-iteration
+        // binding (int-range items happen to already be "plain", but the
+        // invariant should hold by construction, not by type coincidence).
+        // Gate on `is_rw`: an `<->` rw param writes back to the source, so
+        // keep it on its pre-ADR path.
+        let loop_param_names: rustc_hash::FxHashSet<String> = if spec.is_rw {
+            Default::default()
+        } else {
+            param_name
+                .as_ref()
+                .filter(|n| !n.starts_with('@') && !n.starts_with('%') && !n.starts_with('&'))
+                .map(|n| std::iter::once(n.clone()).collect())
+                .unwrap_or_default()
+        };
+        self.push_loop_local_scope(loop_param_names);
 
         // When resuming a gather coroutine, start from the saved position and
         // restore the chained inner state (a loop nested in this body) into

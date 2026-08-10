@@ -79,6 +79,12 @@ impl Interpreter {
         // the inner `my $r` polluted the outer loop's scope, resetting $r to 0.
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // ADR-0023: this fast path bypasses `with_nested_registers`, so
+        // isolate the caller's active-loop-param stack the same way — a
+        // callee's own free variable must not be mistaken for an outer
+        // loop's per-iteration parameter binding just because it shares a
+        // name.
+        let saved_active_loop_param_names = std::mem::take(&mut self.active_loop_param_names);
         // Isolate the caller's block-scope `my`-declaration tracking (see the
         // matching comment in `call_compiled_function_positional_light`): a
         // callee's routine-level `my $x` must not register in the caller's active
@@ -234,6 +240,7 @@ impl Interpreter {
         self.recycle_locals(used);
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.active_loop_param_names = saved_active_loop_param_names;
         self.block_declared_vars = saved_block_declared_vars;
 
         // Restore env: if env was mutated, merge non-local changes back.

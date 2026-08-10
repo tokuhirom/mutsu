@@ -321,6 +321,13 @@ pub(crate) struct VmCallFrame {
     /// (overwrite) capture semantics (runtime transitive vouching). Saved here so
     /// a nested call restores it, mirroring `saved_upvalues`.
     pub saved_frame_authoritative: Vec<crate::symbol::Symbol>,
+    /// The caller's active-for-loop-parameter-name stack (ADR-0023). A
+    /// compiled-function body runs via its own `exec_one` mini-loop, not
+    /// `run()`/`with_nested_registers` (which save these), so without
+    /// snapshotting here a callee's own free variable that merely shares an
+    /// OUTER loop's parameter name would be mistaken for that loop's
+    /// per-iteration binding by `block_captured_scalars`.
+    pub saved_active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
 }
 
 // CP-3 collapse: the bytecode Interpreter has been fully dissolved into the `Interpreter`

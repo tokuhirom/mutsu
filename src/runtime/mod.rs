@@ -2284,6 +2284,10 @@ pub struct Interpreter {
     pub(crate) user_declared_classes: std::collections::HashSet<String>,
     pub(crate) block_declared_vars: Vec<NameSet>,
     pub(crate) loop_local_vars: Vec<NameSet>,
+    /// Names currently bound as for-loop parameters in this frame chain, one
+    /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
+    /// env keys. Consulted by `block_captured_scalars` only; never persisted.
+    pub(crate) active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
     /// Per loop-body scope: what each body-local `my` name must be restored to
     /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
     /// binding's value); `None` means the name did not exist before the loop, so
