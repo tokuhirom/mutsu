@@ -55,7 +55,8 @@ gaps with general interpreter fixes.
 
 - [ ] **Finalize the bundle list.** Selection criterion: "a web blog can be written with the bundle
       alone". Method and per-battery selection records:
-      [docs/batteries/](docs/batteries/), [BATTERIES.md](BATTERIES.md).
+      [docs/batteries/](docs/batteries/), [BATTERIES.md](BATTERIES.md). Candidate slots ranked by
+      value: [python-stdlib-comparison.md](docs/batteries/python-stdlib-comparison.md).
 - [ ] **Web-framework slot: make Cro run** — the campaign that fills the last hole in that criterion.
       Target, rationale, and gate order: [docs/batteries/web-framework.md](docs/batteries/web-framework.md).
 - [ ] **Documentation per battery** — a usage document (no install needed, API, examples) for each
