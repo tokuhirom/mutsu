@@ -76,7 +76,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::TopicDotAssign(_)
             | OpCode::AtomicCompoundVar { .. }
             | OpCode::IndexAssignExprNamed { .. }
-            | OpCode::WrapVarRef(_)
+            | OpCode::WrapVarRef { .. }
             | OpCode::LetSave { .. }
             | OpCode::CheckReadOnly(_)
             | OpCode::MarkVarReadonly(_)

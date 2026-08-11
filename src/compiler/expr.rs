@@ -280,8 +280,7 @@ impl Compiler {
                             && !name.contains("::")
                             && !c.suppress_list_var_alias
                         {
-                            let name_idx = c.code.add_constant(Value::str(name.clone()));
-                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                            c.emit_wrap_var_ref(name);
                         } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
                         }
@@ -306,8 +305,7 @@ impl Compiler {
                         {
                             c.compile_expr(left);
                             c.compile_expr(right);
-                            let name_idx = c.code.add_constant(Value::str(name.clone()));
-                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                            c.emit_wrap_var_ref(name);
                             c.code.emit(OpCode::MakeNamedArg);
                             continue;
                         }
@@ -330,8 +328,7 @@ impl Compiler {
                         if let Expr::Var(name) = item
                             && !name.contains("::")
                         {
-                            let name_idx = c.code.add_constant(Value::str(name.clone()));
-                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                            c.emit_wrap_var_ref(name);
                         }
                     }
                 });

@@ -176,8 +176,7 @@ impl Compiler {
                     self.code.ops.pop();
                     self.code.op_lines.pop();
                 }
-                let src_idx = self.code.add_constant(Value::str(n.clone()));
-                self.code.emit(OpCode::WrapVarRef(src_idx));
+                self.emit_wrap_var_ref(n);
             }
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));

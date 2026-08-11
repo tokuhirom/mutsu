@@ -21,6 +21,18 @@ impl Compiler {
     /// path that a circular `.raku.EVAL` roundtrip relies on —
     /// `roast/S32-array/perl.t` #7). Keeping the default path on `AssignExpr`
     /// avoids that divergence; the baked slot is only needed when shadows are live.
+    /// Emit `WrapVarRef` for the variable `name` (bare, as stored in
+    /// `code.locals`), recording the local slot the name resolves to at this
+    /// site so runtime cell capture (`capture_var_cell_inner`) targets the
+    /// binding actually in scope — a by-name slot search would pick the LAST
+    /// same-named slot, i.e. an inner shadow's slot (`{ my $x }` after/inside
+    /// the site), and box that dead slot's stale value into the shared cell.
+    pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
+        self.code.emit(OpCode::WrapVarRef { name_idx, slot });
+    }
+
     fn emit_assign_local_or_name(&mut self, name: &str) {
         if shadow_slots_active()
             && let Some(&slot) = self.local_map.get(name)

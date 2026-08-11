@@ -562,7 +562,7 @@ impl Interpreter {
     /// so it must not allocate more than the one `VarRef` payload. The name is
     /// taken from the chunk's pre-interned constant symbols: no `String`, no
     /// hashing.
-    pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32) {
+    pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32, slot: u32) {
         let mut value = self.stack.pop().unwrap_or(Value::NIL);
         // GetGlobal intentionally dereferences a captured cell for ordinary
         // value reads. WrapVarRef is different: it denotes the variable's
@@ -578,7 +578,16 @@ impl Interpreter {
         {
             value = captured.clone();
         }
-        self.stack.push(Value::varref(sym, value, None));
+        // Propagate the compile-time slot resolution verbatim, INCLUDING the
+        // `u32::MAX` "known not a local of this frame" sentinel: the cell
+        // capture (`capture_var_cell_inner`) must not fall back to a by-name
+        // slot guess for such a variable — a same-named shadow slot elsewhere
+        // in the frame would be picked and its stale value boxed (the
+        // CSV::Table loop-param case, t/list-alias-shadowed-name.t). Only a
+        // VarRef built without compiler slot info (`slot: None`, the legacy
+        // constructors) keeps the by-name fallback.
+        self.stack
+            .push(Value::varref_slotted(sym, value, None, Some(slot)));
     }
 
     /// Validate and coerce a value for native integer type assignment.

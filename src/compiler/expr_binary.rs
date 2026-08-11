@@ -634,8 +634,7 @@ impl Compiler {
         {
             self.compile_expr(left);
             self.compile_expr(right);
-            let name_idx = self.code.add_constant(Value::str(name.clone()));
-            self.code.emit(OpCode::WrapVarRef(name_idx));
+            self.emit_wrap_var_ref(name);
             self.code.emit(if mint_named_pair {
                 OpCode::MakeNamedArg
             } else {

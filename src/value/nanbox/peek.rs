@@ -294,6 +294,20 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::VarRef))
     }
 
+    /// The `slot` recorded on a `VarRef` word (`None` for non-VarRefs and for
+    /// VarRefs whose source was not a local of the emitting frame). See
+    /// `ValueRepr::VarRef::slot`.
+    #[inline]
+    pub(in crate::value) fn varref_slot(&self) -> Option<u32> {
+        let bits = self.0.get();
+        if !matches!(classify(bits), Classified::Kind(Kind::VarRef)) {
+            return None;
+        }
+        // SAFETY: the tag probe above guarantees the payload is a `VarRefBox`
+        // Arc this NanBox keeps alive for the duration of the borrow.
+        unsafe { peek_arc::<VarRefBox>(bits) }.slot
+    }
+
     /// Whether this word is a `ContainerRef` — a pure tag probe (checked on
     /// every `GetLocal`; same motivation as [`Self::is_junction`]).
     #[inline]

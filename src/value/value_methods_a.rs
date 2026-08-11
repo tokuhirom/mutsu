@@ -106,11 +106,28 @@ impl Value {
     /// tagged with the name of the variable it was read from, so the binder can
     /// alias the caller's container for an `is rw` / `is raw` / `:=` target.
     pub fn varref(name: Symbol, value: Value, index: Option<u32>) -> Self {
+        Self::varref_slotted(name, value, index, None)
+    }
+    /// [`Value::varref`] with the emitting frame's local slot recorded, so
+    /// consumers that box the source variable into a shared cell
+    /// (`capture_var_cell_inner`) target the binding that was actually in
+    /// scope rather than a same-named shadow slot.
+    pub fn varref_slotted(
+        name: Symbol,
+        value: Value,
+        index: Option<u32>,
+        slot: Option<u32>,
+    ) -> Self {
         Value::from_repr(ValueRepr::VarRef {
             name,
             value: Box::new(value),
             index,
+            slot,
         })
+    }
+    /// The `slot` recorded on a [`ValueRepr::VarRef`], or `None`.
+    pub fn varref_slot(&self) -> Option<u32> {
+        self.0.varref_slot()
     }
     /// The `(name, value, index)` of a [`ValueRepr::VarRef`], or `None`.
     /// Tag-probe gated: runs once per bound parameter, and a `view()` on a

@@ -580,7 +580,8 @@ impl Interpreter {
                     ValueView::VarRef { name, value, .. } => {
                         let inner = value.clone();
                         if native_pair_new {
-                            self.capture_var_cell(code, &name.resolve(), inner)
+                            let slot_hint = a.varref_slot();
+                            self.capture_var_cell(code, &name.resolve(), inner, slot_hint)
                         } else {
                             inner
                         }

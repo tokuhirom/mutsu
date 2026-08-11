@@ -172,12 +172,18 @@ impl NanBox {
             ValueRepr::Capture { positional, named } => {
                 pack_arc(Kind::Capture, Arc::new(CaptureBox { positional, named }))
             }
-            ValueRepr::VarRef { name, value, index } => pack_arc(
+            ValueRepr::VarRef {
+                name,
+                value,
+                index,
+                slot,
+            } => pack_arc(
                 Kind::VarRef,
                 Arc::new(VarRefBox {
                     name,
                     value: *value,
                     index,
+                    slot,
                 }),
             ),
             ValueRepr::Uni(u) => pack_arc(Kind::Uni, Arc::new(*u)),

@@ -84,6 +84,9 @@ pub(in crate::value) struct VarRefBox {
     /// Index of the caller argument this reference came from, when the source is
     /// an element of a slurpy (`*@v is rw`) rather than a plain variable.
     pub(in crate::value) index: Option<u32>,
+    /// Local slot of the variable at the `WrapVarRef` site (shadow-slot-exact),
+    /// when it was a local of the emitting frame. See `ValueRepr::VarRef::slot`.
+    pub(in crate::value) slot: Option<u32>,
 }
 
 #[derive(Debug, Clone)]

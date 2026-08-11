@@ -712,7 +712,15 @@ pub(crate) enum OpCode {
     // -- Logic / coercion --
     Not,
     BoolCoerce,
-    WrapVarRef(u32),
+    /// Tag the top-of-stack value with the variable name it was read from
+    /// (`name_idx` constant), for `is rw`/`is raw`/`:=` aliasing and
+    /// list-element container capture. `slot` is the emitting frame's local
+    /// slot for that name at this site (shadow-slot-exact), or `u32::MAX`
+    /// when the source is not a local of this frame.
+    WrapVarRef {
+        name_idx: u32,
+        slot: u32,
+    },
     /// Signal that the next SetLocal is a `:=` bind (preserve container type for `@` vars).
     MarkBindContext,
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via

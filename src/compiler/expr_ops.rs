@@ -597,8 +597,7 @@ impl Compiler {
                         if let Expr::Var(name) = elem
                             && !name.contains("::")
                         {
-                            let name_idx = c.code.add_constant(Value::str(name.clone()));
-                            c.code.emit(OpCode::WrapVarRef(name_idx));
+                            c.emit_wrap_var_ref(name);
                         } else if Self::expr_is_scalar_var(elem) {
                             c.code.emit(OpCode::Itemize);
                         }
@@ -608,8 +607,7 @@ impl Compiler {
             }
             Expr::Var(name) if !name.contains("::") => {
                 self.compile_expr(operand);
-                let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::WrapVarRef(name_idx));
+                self.emit_wrap_var_ref(name);
             }
             _ => self.compile_expr(operand),
         }
