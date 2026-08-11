@@ -556,6 +556,15 @@ impl Interpreter {
             return Value::hash(std::collections::HashMap::new());
         }
         if let Some(constraint) = &pd.type_constraint {
+            // A native int type has no undefined state (`int8 $x;` is 0, not
+            // an uninitialized `Int`), so an unpassed `int8 :$id` / `int8 $y?`
+            // must bind the native zero, not a type object — mirrors how
+            // `wrap_native_int_for_binding` special-cases native ints when a
+            // real value IS passed.
+            let (base, _) = strip_type_smiley(constraint);
+            if native_types::is_native_int_type(base) {
+                return Value::int(0);
+            }
             return Value::package(Symbol::intern(&Self::optional_type_object_name(constraint)));
         }
         // An unpassed untyped optional binds the parameter's implicit nominal

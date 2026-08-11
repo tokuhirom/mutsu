@@ -1198,6 +1198,27 @@ impl Interpreter {
                 }
                 Ok(Value::hash(table))
             }
+            "nativesize" if args.len() == 1 => {
+                let type_name = self.mop_receiver_owner(&args[0]);
+                match native_types::native_type_bits(&type_name) {
+                    Some(bits) => Ok(Value::int(i64::from(bits))),
+                    None => Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): nativesize",
+                    )),
+                }
+            }
+            "unsigned" if args.len() == 1 => {
+                let type_name = self.mop_receiver_owner(&args[0]);
+                if native_types::native_type_bits(&type_name).is_some() {
+                    Ok(Value::int(i64::from(!native_types::is_signed_native(
+                        &type_name,
+                    ))))
+                } else {
+                    Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): unsigned",
+                    ))
+                }
+            }
             _ => Err(RuntimeError::new(format!(
                 "X::Method::NotFound: Unknown method value dispatch (fallback disabled): {}",
                 method
