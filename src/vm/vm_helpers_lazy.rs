@@ -301,6 +301,17 @@ impl Interpreter {
         let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
+        // `LazyList` has no upvalue array of its own (its captures live in
+        // `list.env`, installed as the scoped env below) -- this inline exec
+        // bypasses closure dispatch, so without resetting `self.upvalues` a
+        // `GetUpvalue` in the gather body would index whatever array the
+        // ENCLOSING frame installed, silently reading an unrelated capture
+        // on an index collision. Empty is always safe here: `exec_get_upvalue_op`
+        // falls back to a by-name env read on any out-of-range index, which is
+        // correct since the gather body's captures are reachable through the
+        // scoped env installed just below. See
+        // todo/tickets/inline-closure-exec-sites-skip-upvalue-array-install.md.
+        let saved_upvalues = std::mem::take(&mut self.upvalues);
 
         // Set up the lazy list's environment as a scoped overlay's parent: the
         // gather body reads its captured lexicals through to `list.env` and its
@@ -419,6 +430,7 @@ impl Interpreter {
         // Restore Interpreter state
         self.locals = saved_locals;
         self.stack = saved_stack;
+        self.upvalues = saved_upvalues;
 
         // Check for errors
         run_result?;
