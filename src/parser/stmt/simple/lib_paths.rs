@@ -7,6 +7,12 @@ pub fn set_parser_lib_paths(paths: Vec<String>) {
     });
 }
 
+/// The parser's current module search paths (runtime lib paths + bundled
+/// batteries, plus any parse-time `use lib` additions).
+pub(in crate::parser) fn parser_lib_paths() -> Vec<String> {
+    LIB_PATHS.with(|p| p.borrow().clone())
+}
+
 /// Set the program path for module resolution relative to the script.
 pub fn set_parser_program_path(path: Option<String>) {
     PROGRAM_PATH.with(|p| {

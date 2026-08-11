@@ -395,6 +395,7 @@ mod seq_helpers;
 mod sequence;
 pub(crate) mod shared_store;
 mod signal_watcher;
+pub(crate) mod slang_activation;
 pub(super) mod sprintf;
 mod sprintf_helpers;
 mod sprintf_validate;
@@ -1194,6 +1195,10 @@ pub struct Interpreter {
     /// imported one), remembered so a re-`use` of the already-loaded module
     /// can run it again with the new import's arguments.
     module_export_defs: HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
+    /// Grammar-rule names recorded by `$*LANG.define_slang` during a slang
+    /// activation run (ADR-0026). Only ever populated in the dedicated
+    /// activation sub-interpreter; read once by its thread runner.
+    pub(crate) defined_slang_rules: Vec<String>,
     /// Registered END phasers, in registration order (they run in reverse).
     end_phasers: Vec<EndPhaser>,
     /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one

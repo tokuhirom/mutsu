@@ -88,6 +88,30 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         match method {
+            "mixin" if args.len() >= 2 => {
+                // `.^mixin(Role)` on a slang-activation handle (ADR-0026):
+                // record the composition without composing anything.
+                if let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } = args[0].view()
+                    && class_name.resolve().starts_with("Mutsu::Slang::")
+                {
+                    return Ok(Self::slang_handle_mixin(
+                        &class_name.resolve(),
+                        &attributes.as_map(),
+                        &args[1..],
+                    ));
+                }
+                // Generic `.^mixin(R)`: same composition as infix `but`
+                // (`Str.^mixin(R)` is the `Str+{R}` mixin type object).
+                let mut result = args[0].clone();
+                for role in &args[1..] {
+                    result = Self::apply_but_mixin(result, role.clone())?;
+                }
+                Ok(result)
+            }
             "set_name" if args.len() == 2 => {
                 // `$type.^set_name($name)` renames a metaobject (Rakudo's ClassHOW
                 // method). It is most often applied to a freshly-composed

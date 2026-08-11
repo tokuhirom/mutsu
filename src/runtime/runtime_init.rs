@@ -2170,6 +2170,7 @@ impl Interpreter {
             pending_use_export_args: None,
             pending_inner_export_subs: HashMap::new(),
             module_export_defs: HashMap::new(),
+            defined_slang_rules: Vec::new(),
             end_phasers: Vec::new(),
             end_phaser_seq: 0,
             module_load_order: Vec::new(),

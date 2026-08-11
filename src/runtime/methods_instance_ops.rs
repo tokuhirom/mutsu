@@ -578,6 +578,14 @@ impl Interpreter {
             {
                 return result;
             }
+            // The compile-time $*LANG object graph (ADR-0026 slang activation):
+            // slang_grammar/slang_actions/define_slang on Mutsu::Slang::CompLang.
+            if class_name.resolve().starts_with("Mutsu::Slang::")
+                && let Some(result) =
+                    self.dispatch_slang_comp_lang_method(&class_name.resolve(), method, &args)
+            {
+                return result;
+            }
             // CompUnit::Repository base methods shared by every repository kind
             // (FileSystem / Installation / ...). `repo-chain` walks the
             // `next-repo` links starting at self; mutsu's repositories are not
