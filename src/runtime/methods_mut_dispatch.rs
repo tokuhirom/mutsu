@@ -15,6 +15,25 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Augmented native-type dispatch (mut-path twin of the non-mut guard in
+        // `call_method_with_values`): see `native_lever_a_user_override`'s doc
+        // comment. A native-typed receiver never carries an attribute cell, so
+        // there is nothing for an augmented method to write back through — a
+        // plain value dispatch (like the non-mut path) is the correct shape.
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) && self.native_lever_a_user_override(&target, method)
+        {
+            let (result, _) = self.run_instance_method(
+                crate::runtime::utils::value_type_name(&target),
+                crate::value::AttrMap::new(),
+                method,
+                args,
+                Some(target),
+            )?;
+            return Ok(result);
+        }
         // Track B/Track C: an aggregate that lives in a shared `ContainerRef`
         // cell (a `state @a`/`state %h` under an active thread context — see
         // `exec_state_var_init_op`). Dispatch on the cell's CONTENT, then fold

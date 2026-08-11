@@ -3184,6 +3184,38 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E6b step 1: shadow-verifying the Native candidate at
   CallMethodMut itself". Next: E6b step 2 (does `try_compiled_method_mut_or_interpret_sym`'s
   `User`-candidate resolution duplicate `resolve_method_cached`, mirroring E5b step 3/4's dedup?).
+  **Progress 2026-08-11** (E6b step 2, closing E6b): answered by inspection + git archaeology, no
+  dedup needed — `try_compiled_method_mut_or_interpret_sym`'s resolution block already calls
+  `resolve_method_cached` directly (that shared, `shadow_check_resolver`-instrumented function was
+  introduced *for this exact call site* pre-ADR-0019, #4583; E5b step 4 later deduped `CallMethod`'s
+  own separate inlined copy onto it, never touching the Mut path). Classifying the surrounding
+  cascade (mirroring E5b step 4's table) found every pre-resolution item structurally identical to
+  its non-mut twin (already annotated "mut path twin of the above" in source), but surfaced a real,
+  independent dispatch-order bug in the *post*-resolution "lever A" native probes
+  (`.sort`/`.map`/`.first`/coercions on a plain `Array`/`List`/`Str`/... receiver, `ValueView` not
+  `Instance`/`Package` so the resolution block's `has_user_method` check never runs for them):
+  `augment class Array { method sort {...} }` (legal raku — `Array` does not declare its own `sort`,
+  unlike the already-known `Str.uc` redeclaration case) was silently shadowed by the native fast
+  path, on three independent unguarded tiers (Tier-1 `try_native_method_raw`, the lever-A block, and
+  the interpreter fallback's own by-name dispatch). Fixed with one shared predicate
+  (`native_lever_a_user_override`) consulted at all three tiers plus both `call_method_with_values`
+  entry points. That predicate's own correctness exposed a second, pre-existing gap:
+  `class_mro`/`has_user_method` answered `false` for a bare unregistered builtin collection name
+  (`"Array"`) even though `.^mro` reports its full chain via a different path — `class_mro_readonly`
+  never consulted `builtin_type_catalog` for a *bare* name (only for the bracketed-parametrized
+  case), so it fell to `compute_class_mro`, which had no `ClassDef` to read parents from. Fixed by
+  teaching both `class_mro_readonly` and `compute_class_mro` to consult the catalog for a bare
+  builtin name (ordered strictly *after* the existing bracketed-parametrized branch — an earlier
+  version of this fix matched a bracketed name like `"Blob[uint8]"` too, dropping `Blob` from its
+  own MRO since the catalog's parametrized rows track their base via `roles` not `mro`; caught by
+  `t/digest-battery.t`'s SHA3 sub before landing). New regression test
+  `t/augment-native-lever-a-methods.t` (raku-verified). Full local `t/` (3032 files/28,384 tests)
+  green; a 192-file roast slice (S12-methods/S12-attributes/S14-roles/S02-types/S06-signature/
+  S32-array/S03-metaops, release binary, `MUTSU_FUDGE=1`) green, 19,320 tests; clippy/fmt clean.
+  Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E6b step 2: the User-candidate
+  resolution was already deduped -- no code change needed; classifying the surrounding cascade
+  surfaced a real, unrelated dispatch-order bug instead". **All of E6b (steps 1-2) is now closed.**
+  Next: E6c (the two dynamic gaps) or E6d (`ArrayPush`'s `array_dispatch_pristine` bit).
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`

@@ -142,6 +142,22 @@ impl Interpreter {
         cacheable
     }
 
+    /// True when `target`'s intrinsic native type (or an ancestor in its MRO,
+    /// e.g. `List` for `Array`) carries a user-declared/augmented method of this
+    /// name. Guards the "lever A" pure-value native probes (`.sort`/`.map`/
+    /// `.first`/the QuantHash/Map/Hash/IO/encode-decode coercions) in
+    /// `try_compiled_method_or_interpret_inner` / `try_compiled_method_mut_or_interpret_sym`:
+    /// those probes run for plain `Array`/`List`/`Hash`/`Str`/... values, not
+    /// `Instance` receivers, so the `has_user_method` gate the Instance branch
+    /// already applies earlier in the same functions never covers them. Without
+    /// this guard a legal `augment class Array { method sort {...} }` (legal
+    /// because `Array` itself does not declare `sort` — no redeclaration error,
+    /// unlike `augment class Str { method uc {...} }`) was silently shadowed by
+    /// the native fast path. See `t/augment-native-lever-a-methods.t`.
+    pub(crate) fn native_lever_a_user_override(&mut self, target: &Value, method: &str) -> bool {
+        self.has_user_method(crate::runtime::utils::value_type_name(target), method)
+    }
+
     /// Resolve a method, consulting the sound multi-resolution cache for a
     /// type+arity-deterministic multi (avoids the per-call MRO/specificity walk).
     /// Non-multi / uncacheable / un-keyable calls resolve fresh (the non-multi

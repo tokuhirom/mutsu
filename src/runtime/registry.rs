@@ -460,9 +460,16 @@ impl Registry {
             .unwrap_or_default();
         // If a user-defined class has no explicit parents, it implicitly
         // inherits from Any (which in turn inherits from Mu).  This matches
-        // Raku's default class hierarchy.
+        // Raku's default class hierarchy. A directly-*augmented* builtin
+        // collection/Cool type (`augment class Array {...}`, which registers a
+        // `ClassDef` for "Array" with no `is` clause of its own) instead keeps
+        // its real builtin parent (`List`, not `Any`) so the rest of its
+        // catalog ancestor chain (`Cool`/`Any`/`Mu`) is still reachable below.
         let parents = if explicit_parents.is_empty() && self.classes.contains_key(class_name) {
-            vec!["Any".to_string()]
+            match crate::builtins::builtin_type_catalog::builtin_type_info(class_name) {
+                Some(info) if info.mro.len() > 1 => vec![info.mro[1].to_string()],
+                _ => vec!["Any".to_string()],
+            }
         } else {
             explicit_parents
         };
@@ -525,6 +532,16 @@ impl Registry {
                     seq.push(base.to_string());
                 }
                 seqs.push(seq);
+            } else if let Some(info) =
+                crate::builtins::builtin_type_catalog::builtin_type_info(parent)
+            {
+                // An unregistered bare (non-parametrized; the bracketed case is
+                // handled above) builtin collection/Cool parent (`List`,
+                // `Hash`, `Range`, ...): use the catalog's own full ancestor
+                // chain instead of stopping at the bare name (which would
+                // silently drop `Cool`/`Any`/`Mu`, the same gap `Any`/`Cool`
+                // are hardcoded above to avoid).
+                seqs.push(info.mro.iter().map(|s| s.to_string()).collect());
             } else {
                 seqs.push(vec![parent.clone()]);
             }
@@ -686,6 +703,25 @@ impl Registry {
                     mro.extend(info.mro.iter().map(|s| Symbol::intern(s)));
                     return Some(mro.into());
                 }
+            }
+            // A bare (non-parametrized) builtin collection/Cool type name
+            // (`Array`, `List`, `Hash`, `Range`, ...) that has never itself
+            // been augmented: the catalog already carries its full ancestor
+            // chain -- without this, an unregistered "Array" fell through to
+            // `compute_class_mro`, which has no `ClassDef` to read parents
+            // from and answers the singleton `[Array]`, silently losing
+            // `List`/`Cool`/`Any`/`Mu`. That made `has_user_method("Array",
+            // "first")` blind to a method the user augmented onto `List`
+            // instead of `Array` directly (still legal raku -- `@a.first`
+            // dispatches through `List` either way). Checked AFTER the
+            // bracketed-parametrized branch above: a catalog row for a
+            // parametrized name like `Blob[uint8]` deliberately omits its own
+            // base (`Blob`) from `mro` (tracked instead via `roles`), so
+            // matching it here first would drop `Blob` from the chain that
+            // branch already builds correctly.
+            if let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(class_name)
+            {
+                return Some(info.mro.iter().map(|s| Symbol::intern(s)).collect());
             }
             // Not a registered class at all: the write side computes but has no
             // `ClassDef` to cache into, so the result is identical read-only.
