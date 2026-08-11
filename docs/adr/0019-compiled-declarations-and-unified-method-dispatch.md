@@ -2932,6 +2932,38 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   detail, mismatch examples, and the two-option resolution in
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 1: shadow-verifying
   the Native candidate at CallMethod itself".
+  **Progress 2026-08-11** (E5b step 2, answers step 1's open question --
+  analysis only, no code change): the top-level `skip_native` gate does
+  **not** by itself guarantee `User` outranks `Native` (it only extracts a
+  `class_name` for `Instance`/`Package` receivers, missing e.g. a
+  `Mixin`-shaped `"hello" but SomeRole` receiver). Yet raku-verified
+  behavior is already correct (`$s.uc` on a `but`-mixed `Loud` role prints
+  `MIXED-UC` in both raku and mutsu) because a *second*, independent bypass
+  lives inside `try_native_method_raw` itself
+  (`mixin_role_has_method(target, &method_name) => return None`,
+  `vm_native_dispatch.rs:164-166`) -- one of 22 distinct per-shape
+  `return None` bypass sites in that file alone. The augment-collision
+  angle (`augment class Str { method uc {...} }`) isn't a real threat
+  either, but because raku itself rejects it at compile time (redeclaring
+  an already-declared core method without `multi` is a hard error; with
+  `multi` it's an unimplemented multi-dispatch ambiguity) -- not an E5b
+  ordering gap. **Conclusion: option (b) is confirmed as more than
+  "cheaper" -- it is the only mechanism keeping today's dispatch correct**;
+  option (a) is now actively discouraged, since making the `Native`
+  candidate alone safe to route on would require reimplementing the same
+  ~22 scattered shape-specific checks, ending up with two copies to keep in
+  sync. **This generalizes past `CallMethod`: the `Native` candidate from
+  `resolve_sequence` is measurement/hint-only at every E5/E6/E7 entry, not
+  a routing decision** -- decision 1's "decision match" applies to the
+  `User`/`NativeCallBinding` candidates only; the native probe stays a
+  direct, self-guarding call in its existing cascade position through
+  E5b-E7. Left open for the actual E5b cutover PR: how much of
+  `try_compiled_method_or_interpret_sym`'s own pre-lookup interceptor
+  cascade (default construction, Buf/Blob construction, Seq reification,
+  ...) is safe to fold into a decision match, separate from the
+  native-ordering question this step closes. Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 2: the top-level
+  `skip_native` gate does NOT settle the ordering question".
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

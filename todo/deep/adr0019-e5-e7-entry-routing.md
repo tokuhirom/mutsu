@@ -629,3 +629,100 @@ candidate at this specific arm, which would make option (b) sufficient and
 this whole `Native`-candidate refinement moot for `CallMethod` specifically
 (though not for other E5/E6 entries that reach this arm's twin without an
 equivalent gate).
+
+### E5b step 2: the top-level `skip_native` gate does NOT settle the ordering question -- the real guarantee is ~22 scattered per-shape bypass checks inside `try_native_method_raw` itself; option (b) confirmed, option (a) is now actively discouraged
+
+Answers step 1's open next question directly, by raku-verified experiment plus code
+inspection (no code change; this step is analysis only, like several prior scoping
+slices in this campaign).
+
+**The top-level gate does not cover every receiver shape that can carry a user
+override.** `exec_call_method_op_impl`'s `skip_native`/`has_user_method` computation
+(`vm_call_method_ops.rs:964-980`) only extracts a `class_name` to check for
+`ValueView::Instance`/`ValueView::Package` receivers -- a `Mixin`-shaped receiver
+(`"hello" but SomeRole`, the standard `but`-mixin idiom) falls through the `_ => None`
+arm and never sets `skip_native`. So the top-level gate, by itself, does **not**
+guarantee `User` outranks `Native` for a mixed-in method whose name collides with a
+native row.
+
+**Yet the actual behavior is already correct.** Verified directly:
+
+```raku
+role Loud { method uc { "MIXED-UC" } }
+my $s = "hello" but Loud;
+say $s.uc;   # raku: MIXED-UC, mutsu: MIXED-UC (confirmed, tmp/mixin-native-outrank.raku)
+```
+
+The reason is NOT the top-level gate -- it is a *second*, independent bypass check
+living inside `try_native_method_raw` itself (`vm_native_dispatch.rs:164-166`):
+
+```rust
+// Mixin role method bypass
+if self.mixin_role_has_method(target, &method_name) {
+    return None;
+}
+```
+
+This is one of **22 distinct `return None` bypass sites in `vm_native_dispatch.rs`
+alone** (grep count, this file only -- `builtins/` and the row-cascade modules likely
+add more), several of which exist specifically to decline native dispatch when a user
+override applies to a receiver *shape* the top-level `skip_native` gate cannot see:
+`mixin_role_has_method` (Mixin), `has_user_method("Match", ...)` +
+`exception_render_needs_interpreter` (lazy Match render overrides), the parallel
+`has_user_method(&cn, ...)` + `exception_render_needs_interpreter` block for realized
+Instance/Exception receivers (lines 239-263, a second, finer-grained check than the
+top-level gate's own Instance handling -- it additionally distinguishes "pure render"
+methods from others and checks a `Bridge` method), plus Seq-deferred-iterator and
+Buf-write-method bypasses unrelated to user overrides at all.
+
+**The augment-collision angle is not a real threat either, but for a different
+reason: raku itself forbids it.** Tried to construct a case where a *plain* builtin
+value (not mixin) has a colliding augmented method:
+
+```raku
+augment class Str { method uc { "AUGMENTED-UC" } }
+# raku: ===SORRY!=== Package 'Str' already has a method 'uc' (did you mean to declare a multi method?)
+augment class Str { multi method uc { "AUGMENTED-UC" } }
+# raku: Ambiguous call to 'uc(Str: )'; ... (real multi-dispatch ambiguity, a separate unimplemented feature)
+```
+
+Both forms raku rejects before the ordering question even arises (mutsu currently
+does neither -- it silently native-dispatches to the builtin `uc`, `HELLO` -- a
+latent gap, but a *compile-time-redeclaration/multi-ambiguity-detection* gap, not an
+E5b dispatch-ordering gap; out of scope here, not filed separately since augmenting
+an already-declared core method without `multi` is not a legitimate program shape
+worth a dedicated ticket by itself).
+
+**Conclusion, closing step 1's open question:**
+
+1. **Option (b) is confirmed correct** -- and more than "cheaper": it is *already
+   the only mechanism keeping today's dispatch correct*. The top-level `skip_native`
+   gate is a fast common-case bypass (avoids the `try_native_method_raw` call
+   entirely for the frequent Instance/Package-with-user-override case), not the
+   safety mechanism itself.
+2. **Option (a) (refining `native_row_servable` to be shape-aware) is now actively
+   discouraged, not just unnecessary.** To make the `Native` candidate alone safe to
+   route on, it would have to absorb the same ~22-and-growing scattered per-shape
+   checks `try_native_method_raw` already encodes -- at which point the resolver
+   candidate *is* a reimplementation of the cascade's own guard logic, with two
+   copies to keep in sync instead of one. That is strictly worse than calling the
+   real function.
+3. **This generalizes past `CallMethod`.** Every E5/E6/E7 entry that currently calls
+   `try_native_method`/`try_native_method_raw` inherits the same guarantee from the
+   same shared function -- the `Native` candidate from `resolve_sequence` should be
+   treated as **measurement/hint-only, never a routing decision, at every entry**,
+   not re-litigated per entry. Design decision 1's "decision match" framing should be
+   read as applying to the `User`/`NativeCallBinding` candidates (which E4a's
+   `shadow_check_resolver` already proved trustworthy) -- the native probe stays a
+   direct, self-guarding call in its existing cascade position at every cutover,
+   E5b through E7.
+4. **Left open for the actual E5b cutover PR** (not resolved by this analysis step):
+   whether the `User` candidate can cleanly replace any part of
+   `try_compiled_method_or_interpret_sym`'s own dispatch. Inspection shows that
+   function (`vm_call_method_compiled_interpret.rs`) is not a simple MRO-walk call
+   sitting behind the native probe -- it carries its own substantial native-ish
+   interceptor cascade first (default construction, Buf/Blob construction, Seq
+   reification, ...) before reaching the actual compiled/interpreted method lookup.
+   Scoping how much of *that* is safe to fold into a decision match is real,
+   unstarted work for the cutover PR itself, separate from the native-ordering
+   question this step closes.
