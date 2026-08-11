@@ -3106,6 +3106,29 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results — CallMethodDynamicMut
   (E6a, second slice)". Still to do: `call_method_mut_with_values` measurement, the Tier-A
   helper survey, then E6b/E6c/E6d.
+  **Progress 2026-08-11** (E6a, third slice, measurement for `call_method_mut_with_values`):
+  instrumented `call_method_mut_with_values` (`src/runtime/methods_mut_dispatch.rs:11-2748`,
+  "the second slow path" per design decision 4's E6a scope), a ~2750-line function comparable in
+  size to `CallMethodMut`'s own handler, entry key `"callmethodmutwithvalues"` — 182 lines
+  inserted, zero behavior change. This is a plain `Interpreter` method (not an opcode handler)
+  reached from ~10 call sites, dominated by but not limited to `CallMethodMut`'s own generic-fork
+  tail. 41 named intercept arms added, including three near-duplicate method-match families for
+  different receiver shapes (`@`-sigil array mutators, sigilless-array-binding mutators, `%`-sigil
+  hash push/append). No opcode-histogram cross-check is available for a plain function; verified
+  instead via 6 individually-run files checking `callmethodmutwithvalues`'s disjoint sum never
+  exceeds `callmethodmut:user` in the same run (3 exact matches, 3 proper-subset). Full `t/`
+  sweep: `native=14501` (52.9%), `user=11100` (40.5%), `intercept=1812` (6.6%), `accessor=0` (0%),
+  disjoint total 27413 (~61% of `callmethodmut:user`'s own sweep total). Notable: `accessor=0`
+  (the rw-accessor-write fast path never fires in `t/`) and `promise-channel-delegate=1011` (the
+  single largest arm, pure pass-through to the non-mut sibling for `Promise`/`Channel` receivers —
+  a concrete E6c/E6d cutover target). 20 files fail under `MUTSU_VM_STATS=1` in this sweep
+  (broader than the 6-file list above; same root cause — vm-stats writes to stderr at process
+  exit, and this sweep exercised more subprocess-spawning tests than the prior two slices'
+  spot-checks did), confirmed pre-existing by reproducing 2 of them against the pre-slice base
+  commit. `make test` (3023 files/28293 tests, no `MUTSU_VM_STATS`) green; clippy/fmt clean. Full
+  detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
+  call_method_mut_with_values (E6a, third slice)". **All three E6a sub-slices are now measured.**
+  Still to do: the Tier-A helper survey, then E6b/E6c/E6d.
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`

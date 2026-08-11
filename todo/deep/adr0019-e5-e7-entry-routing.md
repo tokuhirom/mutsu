@@ -1167,6 +1167,143 @@ No `modifier-plus`/`modifier-star` traffic in `t/` (0 — matches `CallMethodDyn
 the same modifiers in E5 step 2's sweep). `make test` (3023 files/28293 tests) green; `cargo
 clippy -- -D warnings` and `cargo fmt` clean.
 
-**E6a's `CallMethodDynamicMut` measurement is done. Still to do**: `call_method_mut_with_values`
-measurement slice (the second slow path, `runtime/methods_mut_dispatch.rs`), the Tier-A helper
-survey, then E6b/E6c/E6d cutover.
+## Measurement slice results — call_method_mut_with_values (E6a, third slice)
+
+Landed 2026-08-11: instrumented `call_method_mut_with_values`
+(`src/runtime/methods_mut_dispatch.rs:11-2748`), "the second slow path" per design decision 4's
+E6a scope — a single ~2750-line function that IS the whole file (only one `impl Interpreter`
+block), comparable in size to `CallMethodMut`'s own ~2300-line handler. Same counter functions,
+entry key `"callmethodmutwithvalues"`, pure insertions (182 lines added / 0 deleted), zero behavior
+change (every insertion sits immediately before an already-existing `return`/fall-through path;
+none alters a condition).
+
+Unlike `CallMethodMut`/`CallMethodDynamicMut` (VM opcode handlers reached once per bytecode
+dispatch), this function is a plain `Interpreter` method reached from ~10 call sites across the
+codebase: `CallMethodMut`'s own generic-fork tail (`vm_call_method_mut_ops.rs:2363/2432/2441`,
+the `user` outcome), `CallMethodDynamicMut`'s fallback, `vm_call_method_compiled_mut.rs`,
+`vm_var_trait_ops.rs` (`.VAR`), `vm_call_helpers.rs`, `vm_for_loop_dispatch.rs` (`pull-one`),
+`class_dispatch.rs`, `methods_call_dispatch.rs`, `builtins_multidim_subscript.rs`,
+`methods_mut_method_lvalue.rs`, and `methods_collection_ops/tail_rotate.rs` — plus the function
+recurses into itself once (the `ContainerRef` cell-unwrap branch) and calls itself again from the
+Instance delegation branch. So its traffic is not a strict subset of `CallMethodMut`'s `user`
+count; the two are correlated but distinct populations.
+
+The function's body is almost entirely a cascade of top-level `if`/`match method` special cases —
+30-odd named receiver/method-identity checks — with no single dominant "generic" middle tier of its
+own; the true generic tail is the very last line, which delegates the receiver to the non-mut
+sibling `call_method_with_values`. 41 named intercept arms were added. Three families repeat with
+near-identical bodies for different receiver shapes and got distinct arm names per shape rather
+than being collapsed: the `@`-sigil array mutator match (`array-push`/`array-append`/
+`array-unshift`/`array-prepend`/`array-pop`/`array-shift`/`array-splice`/`array-squish`), the
+sigilless-array-binding twin of the same match (`sigilless-push-append`/`sigilless-pop`/
+`sigilless-unshift`/`sigilless-prepend`/`sigilless-shift` — no separate splice/squish arm here,
+those route through the `@`-sigil block instead per a shared `scalar_holds_real_array`/`starts_with
+('@')` guard), and the `%`-sigil hash push/append match (`hash-push-append`, one arm covering both
+`push`/`append` since an internal `is_push` flag distinguishes them, mirroring the granularity
+`CallMethodMut`'s own `lock-protect` used). Other arms: `container-ref-cell`, `immutable-list-
+reject`, `incdec`, `keyof`, `var-reflect` (`.VAR`), `of`, `collation-set`, `sethash-set-unset`, ten
+`buf-*` arms (`buf-read-bits`/`buf-write-bits`/`buf-write-num-mut`/`buf-write-num-fresh`/
+`buf-write-int-mut`/`buf-write-int-fresh`/`buf-reallocate`/`buf-pop-shift-splice`/
+`buf-mutate-append`/`buf-bits-instance-fallback`), `map-rw-writeback`,
+`sethash-grab`/`baghash-grab`/`mixhash-grab`, `promise-channel-delegate`, `classhow`,
+`iterator-protocol` (one arm covering the whole `class_name == "Iterator"` sub-cascade, which is
+itself ~170 lines with its own internal method dispatch — left uninstrumented internally per the
+"not every return needs a counter" rule, since every path through it already returns before
+reaching the end), `delegation`, and two accessor-write sub-outcomes (`rw-proxy-signal`,
+`rw-readonly-reject`) alongside the `accessor` outcome itself for the successful-write case.
+Outcomes used: `intercept`/`native`/`user`/`accessor` — no `notfound`, since every error this
+function raises is a typed `X::` error thrown from within an already-committed named arm (not a
+generic "no such method" completion); the final generic fallback line hands `notfound`
+classification to whatever the non-mut sibling decides, outside this entry's own count.
+
+### Verification: no opcode-histogram cross-check available; self-consistency against `callmethodmut:user` instead
+
+This entry is a plain function, not an opcode handler, so there is no `opcode_histogram()` row to
+cross-check against (unlike `CallMethodMut`/`CallMethodDynamicMut`, which are VM dispatch loop
+entries). Five individually-run files were used instead, checking `callmethodmutwithvalues`'s
+disjoint sum against `callmethodmut:user` from the same run as an order-of-magnitude sanity check
+(not a formal subset, per the multi-caller point above, but the dominant caller by far):
+
+| File | `callmethodmutwithvalues` disjoint sum | `callmethodmut:user` (same run) | Relationship |
+|---|---|---|---|
+| `t/array-push-byref-coherence.t` | `intercept=20` (`sigilless-push-append=17`, `-pop=1`, `-shift=1`, `-unshift=1`) | 20 | 20 == 20 |
+| `t/buf-splice-count.t` | `intercept=5` (`buf-pop-shift-splice=5`) | 11 | 5 <= 11 |
+| `t/buf-splice-list-bytes.t` | `intercept=5` (`buf-pop-shift-splice=5`) | 11 | 5 <= 11 |
+| `t/from-iterator.t` | `user=15` | 15 | 15 == 15 |
+| `t/pop-shift-sub-empty-failure.t` | `user=1` | 1 | 1 == 1 |
+| `t/array-subclass-vector.t` | `user=10` | 25 | 10 <= 25 (the other 15 resolve inside `try_compiled_method_mut_or_interpret_sym` without reaching this function) |
+
+All six checked files are consistent (`callmethodmutwithvalues` never exceeds `callmethodmut:user`
+in the same run), three are exact matches. This is the closest available correctness signal short
+of a formal cross-check; it is not proof of completeness the way the opcode-histogram match was for
+`CallMethodMut`, and is reported as such rather than overstated.
+
+### Sweep results (2026-08-11, debug build, full `t/` 3023 files, `prove -j8`, 63 wallclock secs)
+
+No truncation in this sweep: the `dispatch-entry outcomes` line's displayed `(top N)` never exceeded
+10 per process (cap 25), and the `intercept arms` line's never exceeded 7 (cap 40) — so the whole-
+suite aggregate sums below (computed by summing every `key=count` token across all 3023 per-process
+lines) are exact, not undercounts.
+
+Outcomes (disjoint): `callmethodmutwithvalues:native=14501` (52.9%),
+`callmethodmutwithvalues:user=11100` (40.5%), `callmethodmutwithvalues:intercept=1812` (6.6%),
+`callmethodmutwithvalues:accessor=0` (0%). Disjoint total 27413 — about 61% of `callmethodmut:user`'s
+own full-sweep total (45085, close to but not identical to E6a slice 1's 45097, expected drift from
+intervening commits), consistent with this function being `CallMethodMut`'s dominant but not sole
+feeder.
+
+`accessor=0` is a notable negative finding: the single-arg rw-accessor-write fast path
+(`attributes.contains_key(method)` / `is_rw` public attribute, writing `args[0]` directly) never
+fired anywhere in `t/`, meaning ordinary `$obj.attr = val`-style rw-attribute writes in the local
+suite are all resolved before reaching this function (compiled-method fast paths, or Proxy-mediated
+writes that reach `rw-proxy-signal` instead — which itself is very low-traffic at 7).
+
+Intercept arms by count (28 of 41 fired, 13 scored zero in `t/`):
+`promise-channel-delegate=1011`, `delegation=212`, `buf-pop-shift-splice=87`,
+`sigilless-push-append=75`, `var-reflect=74`, `map-rw-writeback=59`, `buf-mutate-append=47`,
+`iterator-protocol=44`, `incdec=44`, `array-splice=28`, `array-push=26`, `classhow=22`, `of=20`,
+`hash-push-append=10`, `array-append=8`, `sigilless-pop=7`, `rw-proxy-signal=7`,
+`sethash-set-unset=6`, `array-pop=5`, `sigilless-shift=4`, `array-unshift=4`, `buf-reallocate=3`,
+`array-squish=2`, `array-shift=2`, `array-prepend=2`, `sigilless-unshift=1`, `keyof=1`,
+`immutable-list-reject=1`. The sum of these 28 counts is exactly 1812, matching the `intercept`
+outcome total above — confirms the counting semantics hold here too (every intercept bump goes
+through `record_dispatch_entry_intercept`, which bumps both the outcome and the arm histogram
+atomically). Zero in `t/`: `container-ref-cell`, `collation-set`, `sethash-grab`, `baghash-grab`,
+`mixhash-grab`, `buf-read-bits`, `buf-write-bits`, `buf-write-num-mut`, `buf-write-num-fresh`,
+`buf-write-int-mut`, `buf-write-int-fresh`, `buf-bits-instance-fallback`, `rw-readonly-reject` — all
+rare/edge-case receiver shapes (native-int Buf bit/num/int writes, SetHash/BagHash/MixHash `.grab`,
+`state`-cell-held aggregate mutation, readonly-attribute-assignment rejection) that the local `t/`
+suite happens not to exercise, not evidence they are dead code.
+
+`promise-channel-delegate` (1011) being the single largest arm is notable: `Promise`/`Channel`
+mutation calls are common in `t/`'s concurrency tests and this entry's *only* job for them is an
+immediate one-line delegate to the non-mut sibling (`ValueView::Promise(_) | ValueView::Channel(_)
+=> return self.call_method_with_values(...)`), so essentially all of that traffic is pure pass-
+through overhead — a concrete future E6c/E6d cutover target (a fast pre-check could route straight
+to the non-mut entry without ever compiling/reaching the mut fork for these two receiver kinds).
+
+20 files fail under `MUTSU_VM_STATS=1` in this sweep (broader than the 6 files noted in the
+`CallMethodMut` section above): `cli-lines-regressions.t`, `command-line-negation.t`,
+`constant-hash-coerce-once.t`, `dd-instance.t`, `exit-skips-main-dispatch.t`, `get-out.t`,
+`io-handle-lock.t`, `io-handle-stdout-stderr-native.t`, `io-pipe-slurp-rest.t`, `is-run.t`,
+`note-with-parens.t`, `precomp-warm-cache-parity.t`, `proc-async.t`, `quietly.t`,
+`say-env-roundtrip.t`, `sink-warning.t`, `slip-listop-args.t`,
+`undeclared-routine-compile-time.t`, `vendored-real-test-module.t`, `weird-errors-parse-forms.t`.
+All share the same root cause the `CallMethodMut` section already identified — the vm-stats dump
+unconditionally writes to stderr at process exit, and any test asserting exact/empty stderr (either
+of its own process, or of a subprocess it spawns via `is_run`/`shell`/`Proc::Async` inheriting
+`MUTSU_VM_STATS` from the parent environment) fails. Verified pre-existing and unrelated to this
+diff: `t/cli-lines-regressions.t` and `t/constant-hash-coerce-once.t` were individually re-run
+against the pre-slice commit (`be980a448`, this branch's base, before any of the 182-line diff) with
+`MUTSU_VM_STATS=1` and failed identically. The earlier 6-file list was evidently a partial spot-
+check, not an exhaustive one — this slice's sweep is the first full `MUTSU_VM_STATS=1` `t/` run
+against this many call sites at once, so more of the pre-existing subprocess-stderr-inheritance
+files got exercised. Not a regression; `make test` (no `MUTSU_VM_STATS`) is unaffected by this
+class of failure entirely, since it never sets the env var.
+
+`make test` (no `MUTSU_VM_STATS`, 3023 files/28293 tests) green. `cargo clippy -- -D warnings` and
+`cargo fmt` clean.
+
+**E6a's `call_method_mut_with_values` measurement is done — all three E6a sub-slices
+(`CallMethodMut`/`CallMethodDynamicMut`/`call_method_mut_with_values`) are now measured. Still to
+do**: the Tier-A helper survey, then the actual E6b/E6c/E6d cutover work.
