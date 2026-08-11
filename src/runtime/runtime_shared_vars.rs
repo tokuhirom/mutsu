@@ -37,6 +37,25 @@ impl Interpreter {
         if self.container_name_is_redeclared(key) {
             return None;
         }
+        // A hash already boxed into a shared `ContainerRef` cell (e.g.
+        // `share_supply_block_lexicals` boxing a `supply { }` body's own `my`
+        // lexicals so every `whenever` callback mutates the same binding) is
+        // already visible and mutable through every alias via the Mutex — the
+        // `__mutsu_atomic_hash::` lane below only understands a bare
+        // `ValueView::Hash`, so it would silently treat the cell as absent,
+        // read/write an unrelated (stale or empty) snapshot, and reinstall a
+        // plain unboxed Hash into env, permanently un-sharing the cell and
+        // losing every write another alias made through it (root cause of a
+        // sibling event's aggregate write clobbering the supply block's hash,
+        // see `todo/deep/nested-whenever-registration-clobbers-sibling-event-
+        // aggregate-writes.md`). Let the general assignment path write through
+        // the cell instead.
+        if matches!(
+            self.env.get(key).map(|v| v.view()),
+            Some(ValueView::ContainerRef(_))
+        ) {
+            return None;
+        }
         // A genuinely-shared plain lexical `%name` is routed through the
         // `__mutsu_atomic_hash::` shared store, the same way concurrent `.push`
         // is (see `shared_array_extend`). Writing the base key directly lets a
@@ -124,6 +143,15 @@ impl Interpreter {
         }
         // See `assign_hash_elem_to_shared_var`.
         if self.container_name_is_redeclared(key) {
+            return None;
+        }
+        // See `assign_hash_elem_to_shared_var`: an array already boxed into a
+        // shared `ContainerRef` cell is already shared through the Mutex; let
+        // the general assignment path write through it.
+        if matches!(
+            self.env.get(key).map(|v| v.view()),
+            Some(ValueView::ContainerRef(_))
+        ) {
             return None;
         }
         // A genuinely-shared plain lexical `@name` routes through the
