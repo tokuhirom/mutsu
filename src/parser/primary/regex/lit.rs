@@ -1397,13 +1397,20 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
     let name = Symbol::intern(name);
     // Detect illegal space between method name and parens: .method (args) is Confused
     // Raku requires no space between method name and opening paren.
+    let mut rest = rest;
     if (rest.starts_with(' ') || rest.starts_with('\t')) && !rest.starts_with('\\') {
         let after_ws = rest.trim_start_matches([' ', '\t']);
         if after_ws.starts_with('(') {
-            return Err(PError::expected_at(
-                "Confused. no space allowed between method name and the left parenthesis",
-                rest,
-            ));
+            // Slang spaced-methodop mode (ADR-0026 §2.3): `.method (args)`
+            // is a method call with the parenthesized arguments.
+            if crate::parser::stmt::simple::slang_spaced_methodop() {
+                rest = after_ws;
+            } else {
+                return Err(PError::expected_at(
+                    "Confused. no space allowed between method name and the left parenthesis",
+                    rest,
+                ));
+            }
         }
     }
     // Handle unspace between method name and parens: .method\ (args)

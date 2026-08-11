@@ -1206,6 +1206,29 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
 
     // Check if followed by `(` for function call (including degenerate unspace: `foo\(42)`)
     let rest_unspaced = consume_unspace(rest);
+    // Slang spaced-call mode (ADR-0026 §2.3, Slang::Tuxic's
+    // `term:sym<identifier>` override): an identifier followed by whitespace
+    // and `(` parses as a call with the parenthesized arguments — except for
+    // control keywords and known type names (the token's own exclusion list).
+    let rest_unspaced = if !rest_unspaced.starts_with('(')
+        && rest_unspaced.starts_with(char::is_whitespace)
+        && crate::parser::stmt::simple::slang_spaced_call()
+        && !matches!(
+            name.as_str(),
+            "sub" | "if" | "elsif" | "while" | "until" | "for"
+        )
+        && !crate::runtime::utils::is_known_type_constraint(&name)
+        && !crate::parser::stmt::simple::is_user_declared_type(&name)
+    {
+        let trimmed = rest_unspaced.trim_start();
+        if trimmed.starts_with('(') {
+            trimmed
+        } else {
+            rest_unspaced
+        }
+    } else {
+        rest_unspaced
+    };
     if rest_unspaced.starts_with('(') {
         let (rest, _) = parse_char(rest_unspaced, '(')?;
         let (rest, _) = ws(rest)?;

@@ -365,6 +365,10 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     // wholesale, so keywords the scanned module itself imports stay lexical
     // to that module.
     let saved_declare_keywords = declare_keywords_snapshot();
+    // Slang modes are unit-scoped the same way: the scanned module's slang
+    // activation is lexical to that module, and the importer's modes must
+    // survive the nested parse's reset (ADR-0026 §2.1 scoping).
+    let saved_slang_modes = super::slang_modes_snapshot();
     let (stmts, _) = crate::parser::parse_program_partial(source);
     // A `package X::Foo { }` block installs its contents into GLOBAL, so the
     // types it declares are visible to whoever loads the module — including
@@ -397,6 +401,7 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     });
     set_current_language_version(&saved_language_version);
     restore_declare_keywords(saved_declare_keywords);
+    super::restore_slang_modes(saved_slang_modes);
     // Collect the module's declared type names (classes/roles/enums/grammars)
     // for the importer's scope. A `use`d module makes its `our`-scoped and
     // exported types visible to the importer, but mutsu loads modules at run
