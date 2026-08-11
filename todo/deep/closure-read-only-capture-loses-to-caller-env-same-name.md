@@ -79,6 +79,19 @@ notok 3 → **0**; `http2-response-serializer.rakutest` 3 → 1;
    and may be a smaller targeted fix than the full decl-site-cell set
    extension.** The ADR's block-2/HPACK-trajectory and `@headers`
    suspects are exonerated (probe shows `+@headers == 2`, correct).
+   FINAL datum (decisive for the gdb session): inserting ANY mainline
+   `start { }` spawn between the line-74 rebind and the block-3 `test()`
+   call — even one that references NOTHING — makes every reader
+   (including the tap thread) see the fresh object and the check pass.
+   A mainline spawn's most relevant side effect is
+   `clone_for_thread_excluding`'s `self.env = self.env.flattened()` on
+   the PARENT env, so the prime suspect is scoped-env overlay staleness:
+   the rebind lands in an overlay tier, and some captured-env clone or
+   merge path (used by the tap-dispatch chain but not by direct mainline
+   calls) resolves `encoder` from a stale base tier until a flatten
+   collapses the overlay. Start the gdb session by checking
+   `self.env.is_scoped()` at the block-3 closure creations and at the
+   tap-dispatch merge.
 2. **`http2-request-parser.rakutest` test 49** ("check 4" of
    'Header1 + Header2 + Data1 + Data2'): root-caused 2026-08-11 — NOT a
    capture bug and NOT expected to be fixed by slice 2. A nested
