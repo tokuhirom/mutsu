@@ -3423,6 +3423,18 @@ pub(crate) struct CompiledCode {
     /// from `free_var_syms` instead, which is also what keeps them resolving to
     /// the block's own binding inside a `whenever` callback.
     pub(crate) my_declared_enum_sym: rustc_hash::FxHashSet<Symbol>,
+    /// Names bound by a single, plain-scalar `for`-loop parameter (`for @a ->
+    /// $i {...}`) declared anywhere in this compiled code. Like
+    /// `my_declared_enum_sym`, these get no local slot when the name has none
+    /// already (the loop's per-iteration binding writes env-only inside the
+    /// `ForLoop` opcode exec, not a compiled name-write op), so a pure body
+    /// read of the param looks like a free variable to `compute_free_vars`
+    /// and would otherwise be rewritten to `GetUpvalue` -- resolving against
+    /// whatever same-named OUTER lexical this code happened to capture,
+    /// bypassing the loop's own binding entirely. Subtracted from
+    /// `free_var_syms` instead. See
+    /// `todo/tickets/closure-for-loop-param-hijacked-by-same-named-captured-outer.md`.
+    pub(crate) for_loop_param_syms: rustc_hash::FxHashSet<Symbol>,
     /// Names this code declares in EXPRESSION position (`(my $p := ...)`,
     /// `(my $x = 1)`, compiled as `Expr::DoStmt(VarDecl)`).
     ///
@@ -4016,6 +4028,7 @@ impl CompiledCode {
             inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
+            for_loop_param_syms: rustc_hash::FxHashSet::default(),
             expr_declared_syms: rustc_hash::FxHashSet::default(),
             free_var_syms: Vec::new(),
             free_var_parent_slots: Vec::new(),
@@ -5514,6 +5527,12 @@ impl CompiledCode {
         // back onto a same-named caller lexical. See `my_declared_enum_sym`.
         if !self.my_declared_enum_sym.is_empty() {
             free.retain(|sym| !self.my_declared_enum_sym.contains(sym));
+        }
+        // A plain-scalar for-loop parameter (`for @a -> $i {...}`) is this
+        // code's OWN binding, never something to capture from an enclosing
+        // scope. See `for_loop_param_syms`.
+        if !self.for_loop_param_syms.is_empty() {
+            free.retain(|sym| !self.for_loop_param_syms.contains(sym));
         }
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;

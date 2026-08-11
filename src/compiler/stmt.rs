@@ -2249,6 +2249,30 @@ impl Compiler {
                 let param_local = param
                     .as_ref()
                     .and_then(|p| self.local_map.get(p.as_str()).copied());
+                // A single scalar for-loop param is this compiled code's OWN
+                // declaration, not something it could ever need to capture
+                // from an enclosing scope -- record it so `compute_free_vars`
+                // (opcode.rs) excludes it from `free_var_syms`, mirroring the
+                // `my_declared_enum_sym` precedent for a `my enum`'s bareword
+                // bindings. Without this, a pure body read of the param name
+                // (the loop's own binding write happens inside the ForLoop
+                // opcode exec, not a compiled name-write op the free-var scan
+                // recognizes) is misclassified as free and rewritten to
+                // `GetUpvalue`, which resolves against whatever same-named
+                // OUTER lexical this closure happened to capture -- bypassing
+                // the loop's per-iteration binding entirely. See
+                // todo/tickets/closure-for-loop-param-hijacked-by-same-named-captured-outer.md
+                // (Cro::HTTP::Router::LinkGenerator's `signature-to-sub`).
+                // `@`/`%`-sigil and sigilless (`\v`) params are excluded: they
+                // don't hit this GetUpvalue path the same way and giving them
+                // blanket free-var immunity is unproven for this fix's scope.
+                if let Some(p) = param.as_ref()
+                    && !p.starts_with(['@', '%', '\\'])
+                {
+                    self.code
+                        .for_loop_param_syms
+                        .insert(crate::symbol::Symbol::intern(p));
+                }
                 // Only an implicit-topic loop rebinds `$_`; see
                 // `ForLoopSpec::topic_local`.
                 let topic_local = param
