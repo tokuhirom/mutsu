@@ -30,7 +30,9 @@ pub(super) use param_validate::{
 // Sub name / operator name parsing (sub_name.rs, op_name.rs).
 pub(crate) use op_name::parse_bracket_op_name;
 pub(crate) use sub_name::validate_categorical_parts;
-pub(super) use sub_name::{null_operator_group_error, parse_sub_name, parse_sub_name_inner};
+pub(super) use sub_name::{
+    null_operator_group_error, parse_method_sub_name, parse_sub_name, parse_sub_name_inner,
+};
 
 // Sub declaration parsing (sub_decl.rs).
 pub(super) use sub_decl::{
