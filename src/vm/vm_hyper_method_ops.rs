@@ -479,6 +479,10 @@ impl Interpreter {
         // target is not consumed. `.WHICH`/`.WHY`/`.VAR` *are* ordinary methods
         // and do hyper, so they are deliberately absent here.
         if arity == 0 && !quoted && Self::is_target_level_introspector(method_raw) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "hypermethodcall",
+                "target-introspector",
+            );
             let (result, _) =
                 self.call_method_mut_with_temp_target(&target, method_raw, vec![], 0)?;
             self.stack.push(result);
@@ -499,6 +503,10 @@ impl Interpreter {
                 ValueView::Bag(..) | ValueView::Mix(..) | ValueView::Set(..)
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "hypermethodcall",
+                "quant-postfix",
+            );
             return self.exec_hyper_quant_postfix(
                 code,
                 &target,
@@ -571,6 +579,7 @@ impl Interpreter {
                         | ValueView::Mixin(..)
                 )
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("hypermethodcall", "call-me");
                 let val = self.vm_call_on_value(item.clone(), args.clone(), None)?;
                 results.push(val);
                 continue;
@@ -581,6 +590,10 @@ impl Interpreter {
             if method.starts_with("postfix:<")
                 && !matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "hypermethodcall",
+                    "user-postfix-op",
+                );
                 let mut call_args = vec![item.clone()];
                 call_args.extend(args.clone());
                 let empty_fns = CompiledFns::default();
@@ -597,6 +610,10 @@ impl Interpreter {
             if matches!(method.as_str(), "postfix:<++>" | "postfix:<-->")
                 && let ValueView::ContainerRef(cell) = item.view()
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "hypermethodcall",
+                    "containerref-postfix",
+                );
                 let inner = cell.lock().unwrap().clone();
                 let new_val = if method == "postfix:<++>" {
                     self.increment_value_smart(&inner)?
@@ -658,8 +675,16 @@ impl Interpreter {
                         if let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                         {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "native",
+                            );
                             native_result.unwrap_or(Value::package(Symbol::intern("Any")))
                         } else {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "user",
+                            );
                             match self
                                 .call_method_mut_with_temp_target(item, &method, item_args, idx)
                             {
@@ -671,6 +696,10 @@ impl Interpreter {
                             }
                         }
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcall",
+                            "user",
+                        );
                         match self.call_method_mut_with_temp_target(item, &method, item_args, idx) {
                             Ok((v, updated)) => {
                                 *item = updated;
@@ -686,18 +715,30 @@ impl Interpreter {
                         if let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                         {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "native",
+                            );
                             // One result per MRO level defining the method
                             // (builtin-MRO all-candidates; hyper `».+`).
                             let r = native_result?;
                             let count = self.builtin_mro_method_candidate_count(item, &method);
                             vec![r; count]
                         } else {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "user",
+                            );
                             let (v, updated) = self
                                 .call_method_all_with_temp_target(item, &method, item_args, idx)?;
                             *item = updated;
                             v
                         }
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcall",
+                            "user",
+                        );
                         let (v, updated) =
                             self.call_method_all_with_temp_target(item, &method, item_args, idx)?;
                         *item = updated;
@@ -711,6 +752,10 @@ impl Interpreter {
                         && let Some(native_result) =
                             self.try_native_method(item, Symbol::intern(&method), &item_args)
                     {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcall",
+                            "native",
+                        );
                         match native_result {
                             Ok(v) => {
                                 let count = self.builtin_mro_method_candidate_count(item, &method);
@@ -719,6 +764,10 @@ impl Interpreter {
                             Err(_) => results.push(Value::array(vec![])),
                         }
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcall",
+                            "user",
+                        );
                         match self.call_method_all_with_temp_target(item, &method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
@@ -737,6 +786,10 @@ impl Interpreter {
                     // `%h>>.{1,2}`): apply the postcircumfix subscript to each
                     // element (which slices) rather than the single-key accessor
                     // method (which returns Nil for a Range/list key).
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "hypermethodcall",
+                        "subscript-slice",
+                    );
                     let is_positional = method == "AT-POS";
                     self.stack.push(item.clone());
                     self.stack.push(item_args[0].clone());
@@ -771,6 +824,10 @@ impl Interpreter {
                         method_is_nodal = true;
                     }
                     if is_iterable_item && !is_list_native_method {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "hypermethodcall",
+                            "descend-recursive",
+                        );
                         // Hyper methods descend recursively through nested
                         // Iterables (and Hash values) down to the leaves, and
                         // any in-place leaf mutation (e.g. `@a>>++` on nested
@@ -794,12 +851,20 @@ impl Interpreter {
                         // leaf raised "No such method 'ast' for ... 'Any'", which
                         // silently aborted grammar action methods doing
                         // `@<op>».ast` over an absent capture (99problems P47).
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "hypermethodcall",
+                            "nil-absorb",
+                        );
                         results.push(Value::NIL);
                     } else {
                         let val = if !skip_native {
                             if let Some(native_result) =
                                 self.try_native_method(item, Symbol::intern(&method), &item_args)
                             {
+                                crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                    "hypermethodcall",
+                                    "native",
+                                );
                                 match native_result {
                                     Ok(v) => v,
                                     // Resumable warn from a per-element native
@@ -815,6 +880,10 @@ impl Interpreter {
                                     Err(e) => return Err(e),
                                 }
                             } else {
+                                crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                    "hypermethodcall",
+                                    "user",
+                                );
                                 let (v, updated) = self.call_method_mut_with_temp_target(
                                     item, &method, item_args, idx,
                                 )?;
@@ -822,6 +891,10 @@ impl Interpreter {
                                 v
                             }
                         } else {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "hypermethodcall",
+                                "user",
+                            );
                             let (v, updated) = self
                                 .call_method_mut_with_temp_target(item, &method, item_args, idx)?;
                             *item = updated;
@@ -1197,6 +1270,10 @@ impl Interpreter {
                 };
                 let callable_is_nodal = is_nodal_list_method(&callable_name);
                 if callable_is_nodal {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "hypermethodcalldynamic",
+                        "callable-nodal",
+                    );
                     // Node level: apply the callable to each top-level element.
                     let mut call_args = Vec::with_capacity(item_args.len() + 1);
                     call_args.push(item.clone());
@@ -1221,6 +1298,10 @@ impl Interpreter {
                     results.push(val);
                     continue;
                 }
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "hypermethodcalldynamic",
+                    "callable-descend",
+                );
                 let r = self.hyper_sub_apply_recursive(&name_val, item, &item_args, modifier)?;
                 push_hyper_result(&mut results, itemize_if_descended(item, r));
                 continue;
@@ -1233,8 +1314,16 @@ impl Interpreter {
                     let val = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "native",
+                        );
                         native_result.unwrap_or(Value::package(Symbol::intern("Any")))
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "user",
+                        );
                         match self.call_method_mut_with_temp_target(item, method, item_args, idx) {
                             Ok((v, updated)) => {
                                 *item = updated;
@@ -1249,10 +1338,18 @@ impl Interpreter {
                     let vals = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "native",
+                        );
                         let r = native_result?;
                         let count = self.builtin_mro_method_candidate_count(item, method);
                         vec![r; count]
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "user",
+                        );
                         let (v, updated) =
                             self.call_method_all_with_temp_target(item, method, item_args, idx)?;
                         *item = updated;
@@ -1264,6 +1361,10 @@ impl Interpreter {
                     if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "native",
+                        );
                         match native_result {
                             Ok(v) => {
                                 let count = self.builtin_mro_method_candidate_count(item, method);
@@ -1272,6 +1373,10 @@ impl Interpreter {
                             Err(_) => results.push(Value::array(vec![])),
                         }
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "user",
+                        );
                         match self.call_method_all_with_temp_target(item, method, item_args, idx) {
                             Ok((vals, updated)) => {
                                 *item = updated;
@@ -1285,8 +1390,16 @@ impl Interpreter {
                     let val = if let Some(native_result) =
                         self.try_native_method(item, Symbol::intern(method), &item_args)
                     {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "native",
+                        );
                         native_result?
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "hypermethodcalldynamic",
+                            "user",
+                        );
                         let (v, updated) =
                             self.call_method_mut_with_temp_target(item, method, item_args, idx)?;
                         *item = updated;

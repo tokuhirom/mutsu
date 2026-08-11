@@ -2845,6 +2845,40 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   CallMethodDynamic (E5 step 2)". Still to do: the hyper non-mut paths and
   `call_method_all_with_fallback` measurement slices, and all cutover
   sub-slices (E5b/E5c/E5d).
+  **Progress 2026-08-11** (E5 step 3, measurement slice for the hyper
+  non-mut paths): instrumented `exec_hyper_method_call_op`
+  (`HyperMethodCall`, entry `hypermethodcall`) and
+  `exec_hyper_method_call_dynamic_op` (`HyperMethodCallDynamic`, entry
+  `hypermethodcalldynamic`), both in `src/vm/vm_hyper_method_ops.rs`, with
+  the same step-1 counter functions — no new counter functions. Pure
+  insertions, zero behavior change; `make test` (3018 files, 28265
+  subtests) unchanged. Unlike `CallMethod`/`CallMethodDynamic`, a hyper
+  opcode loops over every target element and dispatches once per element
+  (design decision 4's "per-element probe"), so the verification identity
+  here is element-level plausibility, not `sum(outcomes) ==
+  opcode-histogram count` — confirmed directly that outcome sums exceed
+  opcode counts on multi-element targets (`t/hyper-nested-itemize.t`: 12
+  `HyperMethodCall` opcodes, 18 recorded outcomes). Full `t/` sweep (3018
+  files, 50 hyper-active): `hypermethodcall` disjoint element dispatches
+  `native=575`/`user=191`/`intercept=99` (native/user dominate ~75%/25%,
+  same ordering conclusion as step 1 — E5c's plain-probe conversion is the
+  highest-value single change); `hypermethodcalldynamic` recorded only
+  `intercept=65` (mostly `callable-descend`/`callable-nodal`, i.e.
+  `>>.&sub`) and **zero** `native`/`user` locally — real bug-adjacent
+  finding, not dead code: `t/` never exercises `».method`/`».$name(...)`
+  the string-dispatch branch, but three whitelisted roast files do, and
+  running two directly confirmed real traffic (`roast/S03-metaops/hyper.t`
+  `native=8`, `roast/S12-methods/parallel-dispatch.t` `user=12`, both still
+  all-`ok`). Also re-confirmed inventory correction 4 from the design
+  doc's "Facts that shape the cutover": `exec_hyper_method_call_dynamic_op`
+  genuinely has no `skip_native`/`has_user_method` gate anywhere, unlike
+  its static twin — V1 (raku-verify this gap) is still open, to be closed
+  by the E6/E5c cutover per the doc. Full taxonomy tables (both entries,
+  classes a-d) and the sweep detail are in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
+  hyper non-mut paths (E5 step 3)". Still to do: the
+  `call_method_all_with_fallback` measurement slice (the last of the four),
+  then E5b/E5c/E5d cutovers.
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow
