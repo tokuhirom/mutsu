@@ -296,3 +296,77 @@ Zero-count arms (18): `nativecall`, `exception-str-message`,
 receivers route the same shapes through `CallMethodMut`, and this sweep covered
 `t/` plus only three roast directories, not the whole whitelist. Re-run the sweep
 over whitelisted roast (CI-scale) before proposing any arm removal.
+
+### Measurement slice results — CallMethodDynamic (E5 step 2)
+
+Landed 2026-08-11: instruments the second E5 measurement entry named in step 1's
+"still to do" list, `exec_call_method_dynamic_op`
+(`src/vm/vm_call_method_mut_ops.rs:30-345`, current revision — grew from the
+~250-line estimate in the corrected entry inventory to ~315 lines purely from
+this slice's own insertions). Reuses the exact same two generic functions step 1
+added (`record_dispatch_entry_outcome`, `record_dispatch_entry_intercept`) with
+`entry = "callmethoddynamic"` — no new counter functions. Pure insertions only:
+the diff is 70 insertions / 1 "deletion", and that one line is a single-statement
+match arm (`Err(e) if is_method_not_found_error(&e) => self.stack.push(Value::NIL)`)
+rewrapped in braces so a counter call could precede the identical push — no
+branch, condition, or return value changed.
+
+Re-verifying the design doc's inventory-correction note (item 3) against the
+current code: that note is about `exec_call_method_dynamic_mut_op` (the *Mut*
+twin, `CallMethodDynamicMut`, a separate E6 entry, out of scope here), not this
+one. `exec_call_method_dynamic_op` itself does have both a native probe and a
+compiled/interpret fallthrough (:310-318) — the design doc's "no native probe
+and no compiled-method probe gap" framing for this entry is correct as written;
+nothing was stale.
+
+Taxonomy table (line numbers as of this PR's revision; anchor is each
+`record_dispatch_entry_*` call site):
+
+| Line range | Class | Arm name / description | Counter key | Notes |
+|---|---|---|---|---|
+| ~30-56 | — | entry bookkeeping (arg decode, flatten, stack pops) | (none) | stack-underflow errors uninstrumented: internal errors, not dispatch outcomes |
+| ~57-68 | a | LazyIoLines force | (none) | |
+| ~70-94 | b | `.+`/`.*` all-methods modifiers | `callmethoddynamic:modifier-plus` / `callmethoddynamic:modifier-star` | delegates to `call_method_all_with_fallback` (its own E5 measurement entry, later slice); `.*`'s not-found→empty-list completion is covered by this arm, not `notfound`, matching CallMethod's own convention |
+| ~96-107 | b | name-value is a `Sub`/`WeakSub`/`Routine` (`$obj.$coderef(...)`) — invocant bound positionally, dispatched via `vm_call_on_value` | `callmethoddynamic:call-sub-value` | unique to this entry: `CallMethod`'s name is always a literal identifier, never a callable value |
+| ~111-116 | b | `.return` control flow | `callmethoddynamic:return` | |
+| ~118-182 | b | `.hyper`/`.race` with named-arg validation, creates HyperSeq/RaceSeq | `callmethoddynamic:hyper-race-config` | branch-entry record also covers the two X::Invalid::Value completions, matching CallMethod's convention |
+| ~184-192 | a | HyperSeq/RaceSeq receiver unwrap (`is_hyper`, `items_arc`) | (none) | normalization only, no completion |
+| ~193-308 | b | HyperSeq/RaceSeq delegate-method dispatch (9 arms) | `callmethoddynamic:hyperseq-{hyper,race,is-lazy,configuration,name,what,defined,map-grep,delegate}` | `map-grep` and the catch-all `delegate` arm each wrap their own inner native/compiled probe, but per CallMethod's own `hyperseq-map-grep` convention the arm name is the single count — no additional `native`/`user` recorded inside |
+| ~310-318 | c | plain native probe + compiled/interpret fallthrough | `callmethoddynamic:native` / `callmethoddynamic:user` | `user` includes calls that later fail with X::Method::NotFound (see overlay note below) |
+| ~320-343 | c | not-found completions (`.?` Nil absorb; propagated-Err peek) | `callmethoddynamic:notfound` | overlay subset of `user`, same pattern as CallMethod |
+| ~344 | d | (none — no writeback tail at this entry; the result is pushed inline at each completion point) | (none) | this entry has no separate writeback-tail region distinct from its outcome completions, unlike `CallMethod`'s dedicated tail (`drain_and_reconcile_after_cached_call`) |
+
+Counting semantics mirror CallMethod exactly: each executed `CallMethodDynamic`
+records exactly one of `intercept`/`native`/`user` (no `accessor` outcome exists
+at this entry — there is no fast 0-arg public-accessor read probe here, only at
+`CallMethod`). `notfound` is an overlay subset of `user`. Disjoint total =
+`intercept + native + user`.
+
+Verification (debug build, targeted files rather than a full `t/` sweep — this
+entry is far smaller-traffic than `CallMethod` and a handful of files gave a
+clean disjoint-sum proof quickly, so the full multi-process `t/`-wide sweep
+infrastructure from step 1 was not reused, per the task's own guidance not to
+over-invest): ran every `t/*.t` file matching `.$name`/`."$name"` dynamic-call
+syntax or a `dynamic`/`dispatch`/`indirect`/`hyper`/`proxy` filename (161
+candidates). 5 files actually exercised `CallMethodDynamic` (most `.$name`/`."$"`
+call sites on a plain variable receiver compile to `CallMethodDynamicMut`
+instead — the same "bareword/variable receiver picks the Mut opcode" pattern
+CallMethod's own sweep documented). All 5 are disjoint-and-complete
+(`sum(intercept+native+user) == CallMethodDynamic` opcode-histogram count):
+
+| File | CallMethodDynamic (opcode histogram) | Outcome sum | Detail |
+|---|---|---|---|
+| `t/array-value-path-mutation.t` | 8 | 8 | `user=8` |
+| `t/buf-write-native.t` | 5 | 5 | `native=5` |
+| `t/dynamic-method-type-object.t` | 4 | 4 | `native=3`, `user=1` (overlay `notfound=1`) |
+| `t/format-class.t` | 11 | 11 | `user=11` |
+| `t/topic-quoted-method-call.t` | 1 | 1 | `native=1` |
+
+No intercept-arm traffic was observed in this targeted set (`.$coderef(...)`,
+`.hyper`/`.race`, HyperSeq/RaceSeq delegation, and the `.*`/`.+` modifiers were
+not exercised by these particular files) — those arms remain unmeasured until a
+broader sweep (full `t/` + whitelisted roast, CI-scale, as step 1 ran) is done.
+This is a smaller/simpler entry than `CallMethod` so that broader sweep is
+deferred rather than run locally; the box stays open regardless — the remaining
+E5 measurement entries (hyper non-mut paths, `call_method_all_with_fallback`)
+and all cutover sub-slices (E5b/E5c/E5d) are still to do.

@@ -69,11 +69,19 @@ impl Interpreter {
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethoddynamic",
+                    "modifier-plus",
+                );
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
                 return Ok(());
             }
             Some("*") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethoddynamic",
+                    "modifier-star",
+                );
                 match self.call_method_all_with_fallback(&target, &method, &args, false) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
@@ -89,6 +97,10 @@ impl Interpreter {
             name_val.view(),
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethoddynamic",
+                "call-sub-value",
+            );
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(Self::invocant_as_positional(target));
             call_args.extend(args);
@@ -97,12 +109,17 @@ impl Interpreter {
             let method = Self::dynamic_method_name(&name_val);
             // .return method: triggers a return from the enclosing sub
             if method == "return" && args.is_empty() {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethoddynamic", "return");
                 let mut err = RuntimeError::new("return");
                 err.return_value = Some(target);
                 return Err(err);
             }
             // .hyper/.race with named arguments: validate, then create HyperSeq/RaceSeq
             if matches!(method.as_str(), "hyper" | "race") {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethoddynamic",
+                    "hyper-race-config",
+                );
                 // Extract batch/degree for validation
                 let mut batch: Option<i64> = None;
                 let mut degree: Option<i64> = None;
@@ -175,14 +192,26 @@ impl Interpreter {
                 };
                 match method.as_str() {
                     "hyper" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-hyper",
+                        );
                         self.stack.push(Value::hyper_seq_arc(items_arc));
                         return Ok(());
                     }
                     "race" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-race",
+                        );
                         self.stack.push(Value::race_seq_arc(items_arc));
                         return Ok(());
                     }
                     "is-lazy" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-is-lazy",
+                        );
                         self.stack.push(Value::FALSE);
                         return Ok(());
                     }
@@ -190,6 +219,10 @@ impl Interpreter {
                         // `HyperSeq.configuration` — expose the `.batch`/`.degree`
                         // the sequence was hyperized with (defaults otherwise).
                         // Used by the `hyperize` dist.
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-configuration",
+                        );
                         let (batch, degree) =
                             crate::value::hyper_config_get(&items_arc).unwrap_or((None, None));
                         self.stack
@@ -197,12 +230,20 @@ impl Interpreter {
                         return Ok(());
                     }
                     "^name" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-name",
+                        );
                         self.stack.push(Value::str(
                             if is_hyper { "HyperSeq" } else { "RaceSeq" }.to_string(),
                         ));
                         return Ok(());
                     }
                     "WHAT" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-what",
+                        );
                         self.stack.push(Value::package(Symbol::intern(if is_hyper {
                             "HyperSeq"
                         } else {
@@ -211,10 +252,18 @@ impl Interpreter {
                         return Ok(());
                     }
                     "defined" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-defined",
+                        );
                         self.stack.push(Value::TRUE);
                         return Ok(());
                     }
                     "map" | "grep" => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-map-grep",
+                        );
                         let array_target = Value::array_with_kind(
                             crate::value::Value::array_arc(items_arc.to_vec()),
                             crate::value::ArrayKind::List,
@@ -238,6 +287,10 @@ impl Interpreter {
                     }
                     _ => {
                         // Convert to array and delegate
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethoddynamic",
+                            "hyperseq-delegate",
+                        );
                         let array_target = Value::array_with_kind(
                             crate::value::Value::array_arc(items_arc.to_vec()),
                             crate::value::ArrayKind::List,
@@ -257,18 +310,34 @@ impl Interpreter {
             if let Some(native_result) =
                 self.try_native_method(&target, Symbol::intern(&method), &args)
             {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "native");
                 native_result
             } else {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamic", "user");
                 self.try_compiled_method_or_interpret(target, &method, args)
             }
         };
         match modifier {
             Some("?") => match call_result {
                 Ok(val) => self.stack.push(val),
-                Err(e) if Self::is_method_not_found_error(&e) => self.stack.push(Value::NIL),
+                Err(e) if Self::is_method_not_found_error(&e) => {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome(
+                        "callmethoddynamic",
+                        "notfound",
+                    );
+                    self.stack.push(Value::NIL)
+                }
                 Err(e) => return Err(e),
             },
             _ => {
+                if let Err(e) = &call_result
+                    && Self::is_method_not_found_error(e)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome(
+                        "callmethoddynamic",
+                        "notfound",
+                    );
+                }
                 self.stack.push(call_result?);
             }
         }
