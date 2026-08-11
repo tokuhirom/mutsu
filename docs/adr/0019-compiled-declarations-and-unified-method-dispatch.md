@@ -2964,6 +2964,34 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   native-ordering question this step closes. Full detail in
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 2: the top-level
   `skip_native` gate does NOT settle the ordering question".
+  **Progress 2026-08-11** (E5b step 3, shadow-verify the `User` candidate
+  at `try_compiled_method_or_interpret`'s own resolution point): closes
+  the "`User` candidate" half of step 2's open item 4. That function's
+  Instance/Package resolution block turned out to be an inlined duplicate
+  of `resolve_method_cached`'s exact three-tier cache and its two
+  `resolve_method_with_owner_invocant` calls -- but reached only from the
+  higher-traffic non-mut `CallMethod` opcode, which `resolve_method_cached`
+  itself does not serve (only the Mut path does), so E4a's shadow probe had
+  never actually run on this call site. Added the same
+  `shadow_check_resolver` call `resolve_method_cached` already makes at its
+  two resolve points, here too (sites `try_compiled_method_or_interpret:multi`/
+  `:fresh`) -- pure instrumentation, zero behavior change. Full `t/` sweep
+  (3022 files, `-P8`): 15085 total checks (both this box's new sites and
+  `resolve_method_cached`'s existing ones), 25 mismatches (0.166%), every
+  one decomposing to the single already-documented divergence class (a
+  non-multi candidate whose signature doesn't match the call, e.g.
+  `assign-rw($a is rw)` called with a literal) -- no new divergence class,
+  confirming E4a's resolver is trustworthy at the busiest call site too, not
+  just inferred from the Mut-path sweep. `make test`-equivalent (`prove -j8
+  t/*.t`, 3022 files/28279 tests) green, unchanged. Still open: whether any
+  of the ~430-line pre-lookup interceptor cascade ahead of this resolution
+  block (Seq reification, the `.new`/`bless` native construction forks,
+  IO::Handle/IO::Path native methods, MOP pseudo-methods, private methods,
+  `^`-metamethods) can fold into a decision match, or must stay direct
+  self-guarding pre-checks like the `Native` candidate -- most already gate
+  on `has_user_method`/`is_native_method` internally, the same
+  irreplaceable per-shape-check pattern step 2 found for `Native`. Full
+  detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 3".
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

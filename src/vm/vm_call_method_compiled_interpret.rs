@@ -584,6 +584,23 @@ impl Interpreter {
                                 self,
                                 resolve_method_with_owner_invocant(cn, method, &args, &target)
                             );
+                            // ADR-0019 E5b step 3 shadow probe (zero behavior
+                            // change): E4a's `resolve_sequence`/
+                            // `pick_method_winner` was shadow-verified only at
+                            // `resolve_method_cached` (the Mut path); this is
+                            // the equivalent resolution point on the hotter
+                            // non-mut `CallMethod` path, previously unchecked.
+                            // See `todo/deep/adr0019-e5-e7-entry-routing.md`
+                            // §"E5b step 3".
+                            self.shadow_check_resolver(
+                                "try_compiled_method_or_interpret:multi",
+                                cn,
+                                method,
+                                method_sym,
+                                &args,
+                                &target,
+                                resolved.as_ref(),
+                            );
                             let resolved_arc =
                                 resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
                             // Never cache an ambiguous multi resolution — it must
@@ -597,6 +614,17 @@ impl Interpreter {
                         let resolved = loan_env!(
                             self,
                             resolve_method_with_owner_invocant(cn, method, &args, &target)
+                        );
+                        // ADR-0019 E5b step 3 shadow probe (zero behavior
+                        // change): see the note above.
+                        self.shadow_check_resolver(
+                            "try_compiled_method_or_interpret:fresh",
+                            cn,
+                            method,
+                            method_sym,
+                            &args,
+                            &target,
+                            resolved.as_ref(),
                         );
                         let resolved_arc =
                             resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
