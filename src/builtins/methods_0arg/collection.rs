@@ -1201,9 +1201,18 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 ))));
             }
             // An already-reified Positional caches as itself: `@a.cache` is
-            // `@a` (an Array, not a List view of it).
-            if matches!(target.view(), ValueView::Array(_, kind) if kind.is_real_array()) {
-                return Some(Ok(target.clone()));
+            // `@a` (an Array, not a List view of it). A method result is
+            // decontainerized in raku, so an itemized invocant (`$node.cache`)
+            // returns the PLAIN array — `for $node.cache` iterates elements,
+            // not the item (zef's `Zef::Config::plugin-lookup` recursion
+            // terminates on exactly this).
+            if let ValueView::Array(items, kind) = target.view()
+                && kind.is_real_array()
+            {
+                return Some(Ok(Value::array_with_kind(
+                    items.clone(),
+                    kind.decontainerize(),
+                )));
             }
             let items = target
                 .as_list_items()

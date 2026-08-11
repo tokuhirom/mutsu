@@ -805,7 +805,12 @@ impl Interpreter {
                 // without this the flag leaks into the NEXT SetLocal (e.g. a
                 // following `my $a = 0`), which would spuriously treat it as a
                 // value-bind and mark it readonly.
+                let was_scalar_bind = self.scalar_bind_context;
                 self.scalar_bind_context = false;
+                // A sigilless-target bind (`-> \v` loop-param bind stmts):
+                // skip itemization only, no other bind semantics.
+                let was_param_raw_bind = self.param_raw_bind_context;
+                self.param_raw_bind_context = false;
                 // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
                 // not SetLocal/AssignExpr. Consume the array-share flag here (the
                 // global copies for now — reference sharing for globals is Slice 2d)
@@ -1135,6 +1140,22 @@ impl Interpreter {
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }
+                } else if !is_bind_ctx
+                    && !is_rebind
+                    && !was_scalar_bind
+                    && !was_param_raw_bind
+                    && bind_source.is_none()
+                    && !is_internal_temp
+                {
+                    // A plain `=` into a `$` scalar reached by name (for-loop
+                    // multi-param binds, `our $x`, closure-captured scalars)
+                    // installs a Scalar container, exactly like the SetLocal
+                    // path: itemize the stored aggregate so `.raku` shows
+                    // `$[...]` and list context sees ONE element. Binds (`:=`),
+                    // rebinds, and internal `__*` temporaries (for-loop element
+                    // sources, `with` topic temps) keep the raw value — an
+                    // itemized loop source would iterate as a single item.
+                    Self::itemize_scalar_store(&name, raw_val)
                 } else {
                     raw_val
                 };
@@ -1960,6 +1981,10 @@ impl Interpreter {
             }
             OpCode::MarkBindContext => {
                 self.bind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkParamRawBindContext => {
+                self.param_raw_bind_context = true;
                 *ip += 1;
             }
             OpCode::MarkScalarBindContext => {

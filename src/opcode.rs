@@ -726,6 +726,10 @@ pub(crate) enum OpCode {
     /// Signal that the next SetLocal binds a `$` scalar to a Positional value via
     /// `:=`, so it must be recorded as decontainerized (so `@a = $bound` flattens).
     MarkScalarBindContext,
+    /// Marks the next SetLocal/SetGlobal as a raw (non-itemizing) bind of a
+    /// sigilless target (`-> \v` loop-param binds). Skips scalar-store
+    /// itemization ONLY — no readonly/decont/bind side effects.
+    MarkParamRawBindContext,
     /// Signal that the next SetLocal is a `:=` rebind (not a VarDecl).
     /// Triggers cleanup of old bind pairs and reverse aliases.
     MarkRebindContext,

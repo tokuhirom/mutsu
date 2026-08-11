@@ -1897,6 +1897,17 @@ impl Compiler {
                     }
                     self.compile_assignment_rhs_for_target(effective_name, expr);
                 }
+                // An assignment whose target is a sigilless binding (`-> \v`
+                // loop-param bind stmts — `build_for_bind_stmts` strips the
+                // `\` so the runtime cannot tell — or a write through a
+                // sigilless alias) must NOT itemize the stored value: a
+                // sigilless name is a non-container alias, so `\seed` bound
+                // to a List stays a bare List (roast S03-sequence/exhaustive.t
+                // drives `-> \description, \seed, ...` through these binds).
+                if matches!(op, AssignOp::Assign) && self.sigilless_locals.contains(effective_name)
+                {
+                    self.code.emit(OpCode::MarkParamRawBindContext);
+                }
                 self.emit_set_named_var(effective_name);
             }
             Stmt::If {

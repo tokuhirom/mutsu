@@ -18,6 +18,19 @@ pub(crate) fn hash_elem_key(
     }
 }
 
+/// List view for quanthash coercion of a whole OPERAND: an itemized
+/// list/array (`$`-param bound, `.item`ed) contributes its ELEMENTS — raku
+/// decontainerizes coercion invocants (`$(<a b>).Bag` has two keys) — unlike
+/// `value_to_list`'s one-element treatment used by list assignment.
+pub(crate) fn quanthash_operand_list(v: &Value) -> Vec<Value> {
+    match v.view() {
+        ValueView::Array(items, kind) if kind.is_itemized() => value_to_list(
+            &Value::array_with_kind(items.clone(), kind.decontainerize()),
+        ),
+        _ => value_to_list(v),
+    }
+}
+
 pub(crate) fn coerce_to_set(
     val: &Value,
     originals: &mut HashMap<String, Value>,
@@ -321,7 +334,7 @@ pub(crate) fn to_mix_map(
         }
         _ => {
             // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2.0, b: 1.0})
-            let items = value_to_list(v);
+            let items = quanthash_operand_list(v);
             let mut result = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);
@@ -387,7 +400,7 @@ pub(crate) fn to_bag_map(
         }
         _ => {
             // Count occurrences for list-like values (e.g. (a, a, b) → {a: 2, b: 1})
-            let items = value_to_list(v);
+            let items = quanthash_operand_list(v);
             let mut result = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);

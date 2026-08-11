@@ -13,8 +13,11 @@ at the slot: enumerate the field from the local REA/fez indices, measure
 license + dependents + raku baseline + mutsu result for each candidate, and
 record what would have to happen before any of them can be bundled.
 
-**Headline finding: nothing in the field is bundle-ready today, but not for
-the reason usually seen in these surveys.** The two credible RFC4180-style
+**Headline finding (updated 2026-08-11): `CSV::Table` now runs its full suite
+10/10 under mutsu — the field has a measurement-green candidate; what remains
+for bundling is the API-fit call in Recommendation point 3.** The original
+finding stands as history: nothing was bundle-ready at survey time, but not
+for the reason usually seen in these surveys. The two credible RFC4180-style
 candidates are *healthy under raku* (Text::CSV 33/33 files, CSV::Table
 10/10). What originally blocked both on mutsu was **one shared, general,
 false-positive compiler bug** that misfired on the ordinary pattern "`my $x
@@ -47,7 +50,7 @@ candidates.
 | Candidate | Version | Released | License | Runtime deps | Read+generate? | Native/C dep? | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **`Text::CSV`** | 0.022 | 2023-10-30 | Artistic-2.0 | `Slang::Tuxic`, `File::Temp` | ✅ both, incl. from-scratch `csv(out=>…)` | none | 0 | **33/33** (22697 tests) | **0/33** — blocked at `use` by the slang dependency (heredoc fix does not touch this) |
-| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **9/10** — see below; only `t/5-save.t` left (element itemization → sprintf arity) |
+| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **10/10** ✅ — fully green as of 2026-08-11 (param-bind itemization fixed `t/5-save.t`) |
 | `CSV::Parser` | 0.1.4 | 2023-06-06 | *(README only — see below)* | **0** | ❌ read-only — **disqualified** | none | 0 | **5/5** | **5/5** ✅ |
 | `CSV-AutoClass` | 0.2.0 | 2023-11-19 | Artistic-2.0 | `CSV::Parser`, `File::Find`, `Text::Utils` | ❌ codegen utility, not a reader/writer | none | 0 | **2/2** | **2/2** ✅ — was 0/2, unblocked by the heredoc fix |
 | `Duck::CSV` | 0.0.2 | 2026-05-30 | MIT | `Duckie` (→ system `libduckdb`) | not evaluated — disqualified below | **DuckDB (native)** | 0 | not measured² | not measured² |
@@ -138,10 +141,12 @@ test files runs and constructs `CSV::Table` objects. The comment-handling
 failures (`t/1-delimiters.t`, `t/2-commented.t`, `t/7-half-matrix.t`) were all
 one bug — the `WrapVarRef` shadow-slot cell-capture state-sync defect
 (`news/2026-08/csv-table-comment-strip-loop-var-state-sync.md`) — fixed
-2026-08-11, bringing the suite to **9/10**. The one remaining failure,
-`t/5-save.t`, is the element-itemization gap (`sprintf "%-*.*s", $w, $w, $v`
-flattens a row Array bound to `$v`) —
-`todo/deep/element-itemization-lost-in-scalar-binding.md`.
+2026-08-11, bringing the suite to 9/10. The last failure, `t/5-save.t`
+(`sprintf "%-*.*s", $w, $w, $v` flattened a row Array bound to `$v`), fell to
+the `$`-parameter-bind itemization campaign the same day
+(`news/2026-08/param-bind-itemization.md`), making the suite **10/10 (184
+assertions)** — no known interpreter blockers remain on the `CSV::Table`
+path.
 
 ### `Text::CSV` also needs real slang support — a second, harder blocker
 
@@ -229,18 +234,16 @@ read-and-generate API), the field narrows to exactly two live candidates —
 compiler bug that blocked both is now fixed; each still has its own
 remaining blocker, and each blocker now has its own ticket:
 
-1. **`CSV::Table` is at 9/10.** All three parse/crash blockers on this path
-   (`@0` inside a `[...]` array literal; `dispatch:<.?>` method-syntax
-   parsing; the `return-rw`/`AT-POS` index-assign drop) are fixed
-   (`news/2026-08/numbered-capture-array-var-in-array-literal.md`,
-   `news/2026-08/method-dispatch-colon-question-syntax.md`,
-   `news/2026-08/return-rw-at-pos-postcircumfix-assign.md`; those two also
-   cleared `t/1-delimiters.t`), and the remaining comment-handling failures
-   (`t/2-commented.t`, `t/7-half-matrix.t`) turned out to be one interpreter
-   bug — the `WrapVarRef` shadow-slot cell capture
-   (`news/2026-08/csv-table-comment-strip-loop-var-state-sync.md`), fixed
-   2026-08-11. Only `t/5-save.t` remains, blocked on element itemization
-   (`todo/deep/element-itemization-lost-in-scalar-binding.md`).
+1. **`CSV::Table` is at 10/10 — bundle-ready on the measurement axis.** All
+   blockers on this path were fixed as general interpreter bugs, in order:
+   the shared heredoc-scope false positive; `@0` inside a `[...]` array
+   literal; `dispatch:<.?>` method-syntax parsing; the `return-rw`/`AT-POS`
+   index-assign drop; the `WrapVarRef` shadow-slot cell capture
+   (`t/1-delimiters.t`, `t/2-commented.t`, `t/7-half-matrix.t`); and finally
+   the `$`-parameter-bind itemization gap that flattened a row Array inside
+   sprintf (`t/5-save.t`, `news/2026-08/param-bind-itemization.md`). The
+   remaining question for bundling is not compatibility but the API-fit
+   caveat in point 3 below — a user decision, not more interpreter work.
 2. **`Text::CSV` stays blocked on the harder problem** —
    **[`todo/deep/text-csv-needs-slang-tuxic-support.md`](../../todo/deep/text-csv-needs-slang-tuxic-support.md)**.
    `use Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real
