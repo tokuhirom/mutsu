@@ -2879,6 +2879,26 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   hyper non-mut paths (E5 step 3)". Still to do: the
   `call_method_all_with_fallback` measurement slice (the last of the four),
   then E5b/E5c/E5d cutovers.
+  **Progress 2026-08-11** (E5 step 4, measurement slice for
+  `call_method_all_with_fallback`): instrumented the last of the four E5
+  measurement entries, `vm_call_helpers.rs::call_method_all_with_fallback`
+  (entry `callmethodallfallback`) — a shared helper (not an opcode handler)
+  with a trivial 2-outcome body (`native`/`user`), called from 6 sites
+  across 5 files: `CallMethod`'s own `.+`/`.*` modifier arms (already
+  measured at the caller in step 1), `CallMethodMut` and
+  `CallMethodDynamicMut` (2 sites each — E6 territory, not yet measured
+  independently), and three sites unrelated to the `.+`/`.*` modifiers
+  (`.cache`/`.Map` coercions, a cached scalar-accessor probe). Pure
+  insertion, zero behavior change; `make test` (3018 files, 28265 subtests)
+  unchanged. Full `t/` sweep: 7 files hit, `user=22`/`native=3`, all
+  confirmed by inspection to be `.+`/`.*` MRO-walk tests on *variable*
+  receivers (so routed through the Mut opcodes, not `CallMethod` itself) —
+  sample too small to draw a sub-slice-ordering conclusion on its own;
+  clearer once E6a's `CallMethodMut` sweep runs. **All four E5 measurement
+  sub-slices are done** (steps 1-4). Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
+  call_method_all_with_fallback (E5 step 4)". Next: E5b, the `CallMethod`
+  probe-section cutover to the E4 resolver decision.
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

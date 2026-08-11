@@ -317,6 +317,7 @@ impl Interpreter {
             && let Some(native_result) =
                 self.try_native_method(target, Symbol::intern(method), args)
         {
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodallfallback", "native");
             let result = native_result?;
             // `.+`/`.*` on a built-in: emit one result per MRO level that defines
             // the method (all identical — same native handler). §2 builtin-MRO
@@ -324,6 +325,7 @@ impl Interpreter {
             let count = self.builtin_mro_method_candidate_count(target, method);
             return Ok(vec![result; count]);
         }
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodallfallback", "user");
         loan_env!(
             self,
             call_method_all_with_values(target.clone(), method, args.to_vec())
