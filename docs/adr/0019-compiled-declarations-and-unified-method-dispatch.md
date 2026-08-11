@@ -3216,6 +3216,22 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   resolution was already deduped -- no code change needed; classifying the surrounding cascade
   surfaced a real, unrelated dispatch-order bug instead". **All of E6b (steps 1-2) is now closed.**
   Next: E6c (the two dynamic gaps) or E6d (`ArrayPush`'s `array_dispatch_pristine` bit).
+  **Progress 2026-08-11** (E6d, closing with no code change): ran V2's own raku baseline first —
+  `augment class Array { method push(...) }` and its `multi method push` variant are both illegal
+  in raku (`X::Redeclaration` / `X::Multi::Ambiguous`, on both `Array` and `List` — the same
+  "already a legitimate program shape" exemption E5b step 2 established for `augment class Str {
+  method uc {...} }`), so `ArrayPush`'s bypass of an illegal augment is not a new gap. The one
+  legal override mechanism (a `does`-mixin: `@a does Loud` where `Loud` declares `push`) already
+  dispatches correctly with zero code change — `exec_array_push_op`'s existing `is_simple_array`
+  gate rebinds a mixed-in array away from `ValueView::Array`, so the fast path never runs and the
+  call falls through to `call_method_with_values`, matching raku byte-for-byte. `Method.wrap` on a
+  `.^lookup`-ed builtin (raku's own legal mechanism for intercepting `Array.push`) is out of scope
+  — mutsu has no `Method.wrap` support at all, an unrelated missing-feature gap. **Conclusion: the
+  `array_dispatch_pristine` generation-refreshed bit the design doc proposed is not needed — it
+  would defend against a divergence that does not exist for any legal program.** Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E6d: ArrayPush's augmented-Array divergence (V2) --
+  raku-verified moot, array_dispatch_pristine not built". **E6a, E6b, and E6d are now closed; E6c
+  (the two dynamic gaps) is the only remaining open box in E6.**
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
