@@ -297,6 +297,12 @@ impl Interpreter {
                         }
                     }
                 }
+                if let Some(where_expr) = &param.where_constraint {
+                    let slurpy_value = Value::real_array(positional[pos_idx..].to_vec());
+                    if !self.signature_where_ok(&slurpy_value, where_expr) {
+                        return false;
+                    }
+                }
                 pos_idx = positional.len();
                 continue;
             }
