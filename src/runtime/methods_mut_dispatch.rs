@@ -637,7 +637,9 @@ impl Interpreter {
                 target.view(),
                 ValueView::Array(_, crate::value::ArrayKind::Array)
             );
-        if target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array) {
+        if (target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array))
+            && !self.mixin_role_has_method(&target, method)
+        {
             // Check for shaped (multidimensional) arrays - these don't support
             // mutating operations like push/pop/shift/unshift/splice/append/prepend
             if matches!(
@@ -1278,7 +1280,7 @@ impl Interpreter {
         }
 
         // Handle push/append on hash variables
-        if target_var.starts_with('%') {
+        if target_var.starts_with('%') && !self.mixin_role_has_method(&target, method) {
             let key = target_var.to_string();
             match method {
                 "push" | "append" => {

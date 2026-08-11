@@ -1795,3 +1795,90 @@ already moot, the same outcome E5c parts 1 and 2 reached for their own entries. 
 E6d are now closed; E6c (the two dynamic gaps) is the only remaining open box in E6.** Next: E6c,
 or move on to E7 (metaobject/qualified/re-entrant calls) if E6c is judged low-value after its own
 raku-verification step (V1).
+
+## E6c: the two dynamic gaps -- item 4 already redundant (E5c), item 3 real and general, fixed one level deeper than the opcode
+
+**Item 4** (`exec_hyper_method_call_dynamic_op` / `HyperMethodCallDynamic` lacking the
+`skip_native`/`has_user_method` gate its static twin `HyperMethodCall` computes) was already
+closed before E6 started: "E5c, part 2" (above) raku-verified it with three targeted collision
+attempts and found `try_native_method_raw`'s own internal guards (`mixin_role_has_method`, the
+`render_overridden` check, the `native_lever_a_user_override` bypass, ...) are the real safety
+net regardless of whether the caller precomputes an outer gate — `HyperMethodCall`'s own gate is
+a fast-path bypass, not a distinct correctness mechanism. Nothing left to do for item 4 here.
+
+**Item 3** (`exec_call_method_dynamic_mut_op` / `CallMethodDynamicMut` reaching the interpreter
+with no native probe and no compiled-method probe at all -- `vm_call_method_mut_ops.rs:353` goes
+straight to `vm_call_method_mut_with_values`, past only the Buf-specific `try_native_buf_mut`) was
+raku-verified real, with the same "collision attempt" methodology V1 prescribed:
+
+```raku
+role Loud {
+    method push($x) { say "ROLE-PUSH: $x"; self }
+}
+my @a = (1, 2, 3);
+@a does Loud;
+my $name = "push";
+@a."$name"(4);
+say @a;
+# raku:  ROLE-PUSH: 4 / [1 2 3]  (the role's push wins; it never mutates @a)
+# mutsu (pre-fix): [4]  (silently ran the native push, dropping the role method entirely)
+```
+
+Tracing where the wrong output came from (rather than guessing) found the divergence is NOT
+local to the opcode handler. `CallMethodDynamicMut`'s generic fork and `CallMethodMut`'s own
+generic fork (reached for any mutator without a dedicated fast opcode) both bottom out in the
+same function, `call_method_mut_with_values` (`runtime/methods_mut_dispatch.rs`, the "second slow
+path" E6a's third measurement slice already sized at ~2750 lines). That function special-cases
+`push`/`append`/`unshift`/`prepend`/`pop`/`shift`/`splice` on an `@`-sigiled variable, and
+`push`/`append` on a `%`-sigiled one, purely by **sigil**:
+
+```rust
+if target_var.starts_with('@') || (method == "splice" && scalar_holds_real_array) { ... }
+...
+if target_var.starts_with('%') { match method { "push" | "append" => { ... } ... } }
+```
+
+Neither guard checks that the value *behind* the sigil is still a plain `Array`/`Hash` and not a
+`does`-mixed `Mixin` -- unlike every other native-vs-user gate this campaign has touched: the
+`ArrayPush` opcode's own `is_simple_array` gate (E6d, requires `ValueView::Array`), the Tier-A
+`try_native_array_mut` helper this same file's E6a survey found (`vm_call_method_mut_ops.rs:2696`,
+also requires `ValueView::Array(_, ArrayKind::Array)`), and `try_native_method_raw`'s
+`mixin_role_has_method` bypass (the exact mechanism item 4 above found "redundant" only because it
+*is* consulted here). So the opcode-level "item 3" framing and this deeper slow-path gap are the
+same bug wearing two faces: patching only `exec_call_method_dynamic_mut_op` to add a probe before
+falling through would not have closed it, since the fallback it already reaches has the identical
+hole -- and the same hole is reachable from the *static* `CallMethodMut` path too, for any of the
+six mutators without their own fast opcode (`ArrayPush` is the only one that has one):
+
+```raku
+role Loud { method unshift($x) { say "ROLE-UNSHIFT: $x"; self } }
+my @a = (1, 2, 3);
+@a does Loud;
+@a.unshift(4);   # raku: ROLE-UNSHIFT: 4 / [1 2 3] -- mutsu (pre-fix): [4]
+```
+
+**Fix**: gate both the array-mutator block and the hash push/append block with
+`!self.mixin_role_has_method(&target, method)` -- the identical guard already used at
+`vm_native_dispatch.rs:165` inside `try_native_method_raw` -- so a mixin-role method for the
+called name skips the native block entirely and falls through to the function's own existing
+generic tail, `self.call_method_with_values(target, method, args)` (the same fallback `ArrayPush`
+already uses for its own excluded Mixin case per E6d, confirmed correct there). Two-line diff,
+same "the shape check already is the safety net" pattern E5b step 2 and E6d both established, now
+confirmed a fourth time at yet another dispatch site.
+
+**Verification**: `t/mixin-array-hash-mutator-override.t` (8 assertions, raku-verified
+byte-identical output) pins `push`/`unshift`/`append` role-mixin overrides on both `Array` and
+`Hash` receivers, in both static (`@a.push(...)`) and dynamic-name (`@a."$name"(...)`) mut call
+forms, plus a control assertion that a plain (non-mixed) `Array.push` still runs natively. Full
+local `t/` suite (3034 files/28,400 tests) green. A 190-file roast slice (S14-roles, S32-array,
+S02-types, S06-signature, S03-metaops, S12-attributes, S12-methods -- chosen for role/mixin/array/
+hash dispatch relevance) run against the release binary with `MUTSU_FUDGE=1`: the only two
+failures, `S02-types/quanthash.t` (weight-zero-removes-key semantics, unrelated to mutator
+dispatch) and `S12-attributes/trusts.t` (friend-class private-attribute access, unrelated), both
+reproduce identically with this change reverted (rebuilt from the pre-E6c commit and re-run) --
+confirmed pre-existing, not a regression. `cargo clippy -- -D warnings` / `cargo fmt` clean.
+
+**Conclusion: E6c is closed.** Item 4 needed no code change (already redundant per E5c); item 3
+needed a two-line fix one level below the opcode it was filed against, closing the same hole for
+both dynamic and static mut dispatch at once. **All of E6 (E6a, E6b, E6c, E6d) is now closed.**
+Next: E7 (metaobject, qualified, and re-entrant calls).
