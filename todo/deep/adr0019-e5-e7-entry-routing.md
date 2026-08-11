@@ -370,3 +370,126 @@ This is a smaller/simpler entry than `CallMethod` so that broader sweep is
 deferred rather than run locally; the box stays open regardless — the remaining
 E5 measurement entries (hyper non-mut paths, `call_method_all_with_fallback`)
 and all cutover sub-slices (E5b/E5c/E5d) are still to do.
+
+### Measurement slice results — hyper non-mut paths (E5 step 3)
+
+Landed 2026-08-11: instruments the two remaining opcode entries named in step
+1's "still to do" list, `exec_hyper_method_call_op` (`HyperMethodCall`,
+`src/vm/vm_hyper_method_ops.rs:446-984`, entry name `hypermethodcall`) and
+`exec_hyper_method_call_dynamic_op` (`HyperMethodCallDynamic`, same file
+`:1150-1385`, entry name `hypermethodcalldynamic`). Reuses the same two
+generic functions from step 1/2, no new counter functions. Pure insertions
+only — every new line is a `record_dispatch_entry_outcome`/
+`record_dispatch_entry_intercept` call; no branch, condition, guard, or
+return value changed. `make test` (full `t/`, 3018 files, 28265 subtests)
+passes unchanged after the insertion.
+
+**Granularity differs from `CallMethod`/`CallMethodDynamic` by design.**
+Those two entries dispatch exactly one method call per opcode execution, so
+`sum(outcomes) == opcode count` was the verification identity. A hyper
+opcode instead loops over every element of its target and dispatches once
+per element (design decision 4's "per-element probe" — the whole point of
+E5c's eventual cutover is to touch only that inner per-element probe pair).
+So here `sum(outcomes)` counts **element-level dispatches**, not opcode
+executions, and is expected to exceed the `HyperMethodCall`/
+`HyperMethodCallDynamic` opcode-histogram count whenever a target has more
+than one element (confirmed directly: `t/hyper-nested-itemize.t` executes
+`HyperMethodCall` 12 times per the opcode histogram but records 18
+`hypermethodcall:*` outcomes, from arrays with >1 element per call). Do not
+treat opcode-count parity as the correctness bar for these two entries —
+per-file *plausibility* (arm names matching the source's actual `>>`/`».`
+usage, no arm firing on a file that doesn't exercise its shape) is the
+check used instead, same as the informal spot-checks below.
+
+Taxonomy table — `HyperMethodCall` (line numbers as of this PR's revision):
+
+| Line range | Class | Arm name / description | Counter key | Notes |
+|---|---|---|---|---|
+| ~481-489 | b (op-level) | metaobject introspector (`.WHAT`/`.WHO`/`.HOW`/`.DEFINITE`/`.WHERE`) applies to the target itself, no per-element loop | `hypermethodcall:target-introspector` | consumes the whole opcode; entire result path elsewhere in this table does not run |
+| ~496-511 | b (op-level) | `>>++`/`>>--` on a Bag/Mix/Set (applies to weights, no per-element loop) | `hypermethodcall:quant-postfix` | consumes the whole opcode via `exec_hyper_quant_postfix` |
+| ~564-579 (per element) | b | `CALL-ME` on a callable item (`>>.(args)` syntax) | `hypermethodcall:call-me` | |
+| ~583-596 (per element) | b | user-defined `postfix:<...>` operator via hyper (excludes builtin `++`/`--`) | `hypermethodcall:user-postfix-op` | function call, not method dispatch |
+| ~601-616 (per element) | b | builtin `++`/`--` on a `ContainerRef` element (shared alias, e.g. `@a.grep(...)>>++`) | `hypermethodcall:containerref-postfix` | mutates through the cell in place |
+| ~663-696 (per element) | c | modifier `?` (`».?method`) native/user probe | `hypermethodcall:native` / `hypermethodcall:user` | errors swallowed to `Any`; no `notfound` overlay possible here |
+| ~697-733 (per element) | c | modifier `+` (`».+method`) native/user probe via `call_method_all_with_temp_target` | `hypermethodcall:native` / `hypermethodcall:user` | one result per MRO candidate |
+| ~734-757 (per element) | c | modifier `*` (`».*method`) native/user probe, same helper as `+` but swallows errors to `()` | `hypermethodcall:native` / `hypermethodcall:user` | |
+| ~758-775 (per element) | b | hyper subscript with a slice index (`@a>>.[0..2]`, `%h>>.{1,2}`) | `hypermethodcall:subscript-slice` | applies the postcircumfix subscript, not the single-key accessor |
+| ~791-806 (per element) | b | non-nodal descend into a nested Iterable/Hash element | `hypermethodcall:descend-recursive` | delegates to `hyper_method_apply_recursive`, itself uninstrumented (recursion-internal probes deliberately out of scope, same convention as `CallMethod`'s `junction-invocant`) |
+| ~807-819 (per element) | b | Nil absorbs an undefined method (`Nil.FALLBACK`) | `hypermethodcall:nil-absorb` | |
+| ~820-861 (per element) | c | plain (no modifier) native/user probe | `hypermethodcall:native` / `hypermethodcall:user` | includes the resumable-warn carry-through; errors otherwise propagate via `?` (no observable not-found completion at this entry, unlike `CallMethodDynamic`) |
+| ~866-984 | d | writeback tails (array/hash/QuantHash rebuild, `write_back_hyper_target_var`, identity-scan overwrite) | (none) | untouched per design decision 2 |
+
+Taxonomy table — `HyperMethodCallDynamic` (line numbers as of this PR's
+revision; this entry has no op-level early-return branches — hash-keys
+handling and the per-element loop are the only structure):
+
+| Line range | Class | Arm name / description | Counter key | Notes |
+|---|---|---|---|---|
+| ~1198-1225 (per element) | b | `>>.&callable` where the callable name is nodal (applies at the node level, one call per top-level element) | `hypermethodcalldynamic:callable-nodal` | approximated by name (`is_nodal_list_method`); see the pre-existing `TODO` at this site about a missing `is nodal` trait on user `Sub`s |
+| ~1226-1232 (per element) | b | `>>.&callable` where the callable is not nodal (descends recursively) | `hypermethodcalldynamic:callable-descend` | delegates to `hyper_sub_apply_recursive`, uninstrumented internally, same convention as `descend-recursive` above |
+| ~1237-1251 (per element) | c | modifier `?` native/user probe (name-value branch) | `hypermethodcalldynamic:native` / `hypermethodcalldynamic:user` | no `skip_native` gate exists at this entry at all — unlike the static `HyperMethodCall`, there is no `has_user_method` check anywhere in the dynamic dispatch path |
+| ~1252-1266 (per element) | c | modifier `+` native/user probe via `call_method_all_with_temp_target` | `hypermethodcalldynamic:native` / `hypermethodcalldynamic:user` | |
+| ~1267-1287 (per element) | c | modifier `*` native/user probe | `hypermethodcalldynamic:native` / `hypermethodcalldynamic:user` | |
+| ~1288-1301 (per element) | c | plain (no modifier) native/user probe | `hypermethodcalldynamic:native` / `hypermethodcalldynamic:user` | any error (including not-found) propagates via `?`, same as the static entry's plain-probe arm |
+| ~1302-1341 | d | writeback tails (array rebuild, QuantHash/Hash reassembly) | (none) | untouched |
+
+**Real finding from the classification pass, not just a table gap**: unlike
+`exec_hyper_method_call_op`, `exec_hyper_method_call_dynamic_op` has no
+`skip_native`/`has_user_method` gate anywhere — every per-element dispatch
+tries `try_native_method` first regardless of whether the item's class
+defines a same-named user method. This is exactly inventory correction 4 in
+the design doc's "Facts that shape the cutover" section (which named this
+gap for `exec_hyper_method_call_dynamic_op` vs its static twin). It was not
+re-verified against raku here (out of scope for a measurement-only slice —
+V1 in the doc's "Verification items" still needs to raku-verify it before
+the E6/E5c cutover fixes it by construction).
+
+### Sweep results
+
+Full `t/` sweep (debug build, all 3018 files, `MUTSU_VM_STATS=1`, one
+process per file): 50 files recorded at least one `hypermethodcall*`
+outcome. Aggregated element-level outcome totals:
+
+| Key | Count |
+|---|---|
+| `hypermethodcall:native` | 575 |
+| `hypermethodcall:user` | 191 |
+| `hypermethodcall:intercept` | 99 |
+| `hypermethodcalldynamic:intercept` | 65 |
+| `hypermethodcalldynamic:callable-descend` | 57 |
+| `hypermethodcall:descend-recursive` | 31 |
+| `hypermethodcall:user-postfix-op` | 25 |
+| `hypermethodcall:subscript-slice` | 10 |
+| `hypermethodcall:containerref-postfix` | 10 |
+| `hypermethodcalldynamic:callable-nodal` | 8 |
+| `hypermethodcall:target-introspector` | 7 |
+| `hypermethodcall:quant-postfix` | 7 |
+| `hypermethodcall:call-me` | 5 |
+| `hypermethodcall:nil-absorb` | 4 |
+
+`hypermethodcalldynamic:native` and `hypermethodcalldynamic:user` were
+**zero across the entire local `t/` sweep** — every `t/*.t` exercise of
+`HyperMethodCallDynamic` went through the `>>.&callable` branch
+(`callable-nodal`/`callable-descend`) or an intercept, never the plain
+`».method`/`».$name(...)` string-dispatch branch. This is a coverage gap in
+`t/`, not evidence the branch is dead: three whitelisted roast files use
+`»."name"`/`»."$name"` syntax (`roast/S03-metaops/hyper.t`,
+`roast/S12-methods/parallel-dispatch.t`, `roast/S05-mass/properties-script.t`),
+and running the first two directly (`MUTSU_FUDGE=1 MUTSU_VM_STATS=1`, debug
+build) confirms real traffic there: `hyper.t` records
+`hypermethodcalldynamic:native=8`, `parallel-dispatch.t` records
+`hypermethodcalldynamic:user=12` (both files' TAP output unaffected —
+all `ok`, same as pre-change). Sub-slice ordering (decision 3(i)):
+`hypermethodcall`'s `native`/`user` dominate (575/191, ~75%/25% of its
+disjoint element dispatches), so E5c's decision-match conversion of
+`HyperMethodCall`'s plain-probe arm is the highest-value single change
+in this pair; the dynamic entry's real native/user traffic requires the
+roast corpus, not `t/`, as its parity set.
+
+**What's left for E5 (per design decision 4's slicing)**: the last
+measurement entry, `call_method_all_with_fallback`
+(`vm_call_helpers.rs:303`, backing the `.+`/`.*` all-methods modifiers at
+the `CallMethod`/`CallMethodDynamic` entries — already visible as zero-detail
+intercept arms `modifier-plus`/`modifier-star` in steps 1/2's own tables).
+Once that lands, all four E5 measurement sub-slices are done and E5b
+(`CallMethod` cutover) can start.
