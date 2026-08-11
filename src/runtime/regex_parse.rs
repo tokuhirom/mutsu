@@ -516,6 +516,57 @@ pub(super) fn make_null_regex_error() -> RuntimeError {
     err
 }
 
+/// True if `s`, once regex comments (`#...` to end of line, and embedded
+/// `` #`[...] `` comments) are stripped, contains only whitespace. Comments
+/// are invisible to matching, so a branch consisting of just a comment must
+/// be treated the same as a whitespace-only branch by the "leading empty
+/// branch is allowed for alignment" idiom (`/ | a /`) and the null-regex
+/// check below — otherwise it parses into a spurious, always-succeeding empty
+/// `RegexPattern` alternative. That phantom branch used to be harmless (the
+/// old longest-actual-match ranking always ranked a zero-width match last),
+/// but ADR-0022's declarative-prefix ranking can tie it with a real branch
+/// that also terminates its measurement early (e.g. a leading code block) and
+/// then prefer it via the declaration-order tie-break
+/// (`roast/S05-grammar/signatures.t`).
+pub(super) fn regex_branch_is_blank(s: &str) -> bool {
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0usize;
+    while i < chars.len() {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+            continue;
+        }
+        if c == '#' {
+            if chars.get(i + 1) == Some(&'`') {
+                i += 2;
+                if i < chars.len() {
+                    let bracket = chars[i];
+                    let close =
+                        crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
+                    i += 1;
+                    let mut depth = 1u32;
+                    while i < chars.len() && depth > 0 {
+                        if chars[i] == bracket && bracket != close {
+                            depth += 1;
+                        } else if chars[i] == close {
+                            depth -= 1;
+                        }
+                        i += 1;
+                    }
+                }
+            } else {
+                while i < chars.len() && chars[i] != '\n' {
+                    i += 1;
+                }
+            }
+            continue;
+        }
+        return false;
+    }
+    true
+}
+
 /// Detect a null branch among a split alternation/conjunction. Returns the
 /// NullRegex error if any branch is empty/whitespace-only, except that a single
 /// leading empty branch is permitted when `allow_leading_empty` is set (Raku
@@ -525,7 +576,7 @@ pub(super) fn null_regex_if_empty_branch(
     allow_leading_empty: bool,
 ) -> Option<RuntimeError> {
     for (i, b) in branches.iter().enumerate() {
-        if b.trim().is_empty() {
+        if regex_branch_is_blank(b) {
             if allow_leading_empty && i == 0 {
                 continue;
             }
