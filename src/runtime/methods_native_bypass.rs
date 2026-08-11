@@ -113,6 +113,96 @@ impl Interpreter {
         )
     }
 
+    /// ADR-0019 E4b design decision 3's "receiver-state facts become
+    /// resolver guards" bucket (category 1 of the three-way split in
+    /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`):
+    /// hazards where the native fast-path cascade itself would misbehave for
+    /// this receiver if reached, independent of whether a user method/
+    /// accessor/NativeCall binding also exists for the name (those are
+    /// categories 2/3 — `is_native_method`/`resolve_user_method_or_accessor`
+    /// — handled separately, not folded in here). The ADR's step-2 audit
+    /// (2026-08-11) confirmed these do NOT reduce to "the row table has no
+    /// entry for this (owner, method)": E4b's resolver falls back to the
+    /// pure arity cascade on any row miss, so row absence alone would not
+    /// stop the cascade from being (wrongly) tried — each of these stays an
+    /// explicit guard even after the eventual resolver cutover. Only used
+    /// from the main (non-lazy-Match) body of
+    /// [`Self::should_bypass_native_fastpath`]: the lazy-Match branch avoids
+    /// `target.view()` (it would materialize the lazy value) and instead
+    /// inlines the subset of these checks that can ever apply to a Match
+    /// receiver.
+    fn native_fastpath_receiver_state_guard(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> bool {
+        // `squish` always routes to the interpreter regardless of owner:
+        // `methods_0arg/collection.rs` implements it per-view, so a row miss
+        // must not fall through to a wrong native answer (ADR-0019 E4b step
+        // 2's "confirmed NOT reducible" finding).
+        method == "squish"
+            || (matches!(
+                method,
+                "max"
+                    | "min"
+                    | "head"
+                    | "flat"
+                    | "sort"
+                    | "comb"
+                    | "words"
+                    | "batch"
+                    | "rotor"
+                    | "rotate"
+                    | "produce"
+                    | "snip"
+                    | "minmax"
+                    | "start"
+                    | "wait"
+                    | "zip"
+                    | "zip-latest"
+                    | "list"
+                    | "Array"
+                    | "Seq"
+            ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
+            || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
+            // `.throw`/`.gist`/`.Str`/`.Stringy`/`.rethrow` render
+            // `$exc.message`; the native fast path can only read the stored
+            // `message` attribute, which is still undefined when the class
+            // computes its message lazily. See the twin gate in
+            // `vm_native_dispatch::try_native_method`.
+            || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
+                && matches!(target.view(), ValueView::Instance { class_name, .. }
+                    if self.exception_render_needs_interpreter(target, &class_name.resolve())))
+            || (matches!(target.view(), ValueView::Instance { .. })
+                && (target.does_check("Real") || target.does_check("Numeric")))
+            // Only `Proc::Async.Supply` needs an explicit gate: the coercion
+            // cascade's generic `"Supply"` arm (`methods_0arg/coercion.rs`)
+            // does not special-case `Proc::Async` the way it does
+            // `Supplier`, so a bare row-miss fallback would wrap the
+            // `Proc::Async` instance itself in a bogus values-Supply
+            // (ADR-0019 E4b step 6). `Supplier`/`Supplier::Preserving.Supply`
+            // needs no such gate — the coercion arm already returns `None`
+            // for both (step 5). `IO::Handle`'s `chomp`/`encoding`/`opened`/
+            // `DESTROY` need no gate either — `chomp`'s own cascade arm
+            // already self-guards and the other three have no cascade arm
+            // at all (step 7).
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
+                && method == "Supply")
+            // `Stash.keys`/`.values` need the interpreter's own package-stash
+            // enumeration; the generic `.keys`/`.values` cascade arms
+            // (`methods_0arg/collection.rs`) have a catch-all that would
+            // misread an Instance receiver as a one-element list instead of
+            // reading the Stash's own hash (step 7). `Stash.AT-KEY` needs no
+            // gate — it has no cascade arm at all.
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
+                && matches!(method, "keys" | "values"))
+            || (method == "keys"
+                && args.is_empty()
+                && (matches!(target.view(), ValueView::Hash(_))
+                    || matches!(target.view(), ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)))))
+    }
+
     /// Determine whether to bypass the native method fast path.
     pub(super) fn should_bypass_native_fastpath(
         &mut self,
@@ -122,7 +212,6 @@ impl Interpreter {
         skip_pseudo: bool,
         is_pseudo_method: bool,
     ) -> bool {
-        let _ = args;
         // Lazy-Match head branch: the chain below reads `target.view()`
         // repeatedly, which would materialize a lazy Match per method call.
         // Its class is statically "Match", so evaluate the Instance arms that
@@ -143,84 +232,10 @@ impl Interpreter {
                             && !self.has_public_accessor("Match", method))));
         }
         skip_pseudo
-            || method == "squish"
-            || (matches!(
-                method,
-                "max"
-                    | "min"
-                    | "head"
-                    | "flat"
-                    | "sort"
-                    | "comb"
-                    | "words"
-                    | "batch"
-                    | "rotor"
-                    | "rotate"
-                    | "produce"
-                    | "snip"
-                    | "minmax"
-                    | "start"
-                    | "wait"
-                    | "zip"
-                    | "zip-latest"
-            ) && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
-            || (method == "elems" && matches!(target.view(), ValueView::Instance { .. }))
-            || (matches!(method, "list" | "Array" | "Seq")
-                && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply"))
-            // No explicit `Supplier`/`Supplier::Preserving` `.Supply` gate here:
-            // the coercion cascade arm itself already returns `None` for both
-            // classes (`methods_0arg/coercion.rs`'s `"Supply"` arm), so the
-            // native fast path naturally falls through to the runtime method
-            // without one — confirmed via ADR-0019 E4b's category-1 audit,
-            // `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
-            // `.throw`/`.gist`/`.Str` render `$exc.message`; the native fast path
-            // can only read the stored `message` attribute, which is still
-            // undefined when the class computes its message. See the twin gate in
-            // `vm_native_dispatch::try_native_method`.
-            || (matches!(method, "throw" | "rethrow" | "gist" | "Str" | "Stringy")
-                && matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if self.exception_render_needs_interpreter(target, &class_name.resolve())))
+            || self.native_fastpath_receiver_state_guard(target, method, args)
             || matches!(target.view(), ValueView::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
-            // No explicit `IO::Handle` `chomp`/`encoding`/`opened`/`DESTROY` gate
-            // here: `chomp`'s own cascade arm (`dispatch_core_str.rs:216-221`)
-            // already returns `None` for `IO::Handle`, and `encoding`/`opened`/
-            // `DESTROY` have no arm anywhere in the native fast-path cascade
-            // (`native_method_{0,1,2}arg`) — confirmed by exhaustive grep,
-            // ADR-0019 E4b step 7 — so the whole group was redundant
-            // belt-and-suspenders, the same shape as the `Supplier.Supply` case
-            // step 5 removed.
-            || (matches!(target.view(), ValueView::Instance { .. })
-                && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
-            // Only `.Supply` needs an explicit gate: the coercion cascade's
-            // generic `"Supply"` arm (`methods_0arg/coercion.rs`) does not
-            // special-case `Proc::Async` the way it does `Supplier`, so a
-            // bare row-miss fallback would wrap the `Proc::Async` instance
-            // itself in a bogus values-Supply. The other sixteen names
-            // (`start`/`kill`/`write`/`close-stdin`/`bind-stdin`/
-            // `bind-stdout`/`bind-stderr`/`ready`/`print`/`put`/`say`/
-            // `command`/`started`/`w`/`pid`/`stdout`/`stderr`) have no arm
-            // anywhere in the native fast-path cascade
-            // (`native_method_{0,1,2}arg`) — confirmed by exhaustive grep,
-            // ADR-0019 E4b step 6 — so gating them here was redundant
-            // belt-and-suspenders identical to the `Supplier.Supply` case
-            // step 5 already removed.
-            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
-                && method == "Supply")
-            // No explicit `Stash` `AT-KEY` gate here: it has no arm anywhere in
-            // the native fast-path cascade, so a row-miss falls through to the
-            // runtime method identically — confirmed by exhaustive grep,
-            // ADR-0019 E4b step 7. `keys`/`values` stay gated: their cascade
-            // arms (`methods_0arg/collection.rs`) have a generic catch-all
-            // (`value_to_list(target)`) that would wrongly serve an Instance
-            // receiver, unlike `AT-KEY`.
-            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
-                && matches!(method, "keys" | "values"))
-            || (method == "keys"
-                && args.is_empty()
-                && (matches!(target.view(), ValueView::Hash(_))
-                    || matches!(target.view(), ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)))))
             || (!is_pseudo_method
                 && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
             || (!is_pseudo_method
