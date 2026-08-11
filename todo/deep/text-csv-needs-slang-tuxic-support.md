@@ -64,7 +64,23 @@ for dynamically patching grammar rules via role composition. There is no
 mutsu to have *some* notion of a parser that can be told, mid-file, "some
 token/term rules are different from here on" — which does not exist.
 
-## Options (undecided — needs a design call, not a unilateral pick)
+## DECIDED (2026-08-11): option 1, per ADR-0026
+
+The user picked the rung-2 road: **bundle the real `Slangify` +
+`Slang::Tuxic` verbatim and grow the interpreter** — the OO::Monitors /
+EXPORTHOW::DECLARE shape. The design is recorded in
+[`docs/adr/0026-slang-activation-architecture.md`](../../docs/adr/0026-slang-activation-architecture.md)
+(Proposed): compile-time `use` effect for slang activation, a `$*LANG`
+object with `slang_grammar`/`^mixin`/`define_slang` whose interpretation
+maps *recognized overridden rule names* onto parser modes (unknown rules =
+hard error), and vendoring both modules as batteries. Key measurement
+(2026-08-11): `Slang::Tuxic` delegates all registration to `Slangify`'s
+EXPORT (`$*LANG.define_slang('MAIN', ...^mixin(...))`); mutsu already runs
+`sub EXPORT` with `use`-args, but has no `$*LANG`, no slang API, no parser
+mode switch, and no compile-time `use`. Read the ADR before implementing;
+the historical options below are kept for context.
+
+## Options (historical — superseded by the decision above)
 
 1. **Build minimal, general slang-switching infrastructure.** The
    architecturally faithful answer, and the one `CLAUDE.md` explicitly
