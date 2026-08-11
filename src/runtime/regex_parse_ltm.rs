@@ -2,6 +2,51 @@ use super::regex_parse::*;
 use super::*;
 use ::regex::Regex;
 
+/// If the iterator is positioned right after a `<` that opens a code
+/// assertion (`<?{ ... }>`, `<!{ ... }>`) or closure interpolation
+/// (`<{ ... }>`), consume the whole thing verbatim into `current` and
+/// return `true`. Otherwise leave the iterator untouched and return `false`.
+///
+/// The body is arbitrary Raku code and may contain unbalanced `<`/`>` (e.g.
+/// `<=`, `>=`), which would desynchronize a naive angle-bracket depth
+/// counter and hide a top-level `|` that follows the assertion — see
+/// `split_top_level_alternation`. Mirrors the real `CodeAssertion` scanner
+/// in `regex_parse_core.rs`, which tracks braces only, not angle brackets.
+pub(super) fn consume_code_assertion_verbatim(
+    open_ch: char,
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+    current: &mut String,
+) -> bool {
+    let mut lookahead = chars.clone();
+    let marker = lookahead.next();
+    let opens_code = matches!(marker, Some('?') | Some('!')) && lookahead.peek() == Some(&'{')
+        || marker == Some('{');
+    if !opens_code {
+        return false;
+    }
+    current.push(open_ch); // '<'
+    if marker != Some('{') {
+        current.push(chars.next().unwrap()); // '?' or '!'
+    }
+    current.push(chars.next().unwrap()); // '{'
+    let mut brace_depth = 1usize;
+    for ch in chars.by_ref() {
+        current.push(ch);
+        if ch == '{' {
+            brace_depth += 1;
+        } else if ch == '}' {
+            brace_depth -= 1;
+            if brace_depth == 0 {
+                break;
+            }
+        }
+    }
+    if chars.peek() == Some(&'>') {
+        current.push(chars.next().unwrap());
+    }
+    true
+}
+
 impl Interpreter {
     fn regex_alternation_separator(out: &str) -> Option<&'static str> {
         let trimmed = out.trim_end_matches(char::is_whitespace);
@@ -113,6 +158,9 @@ impl Interpreter {
                         continue;
                     }
                     if skip_char_class_content(&mut chars, &mut current, ch) {
+                        continue;
+                    }
+                    if consume_code_assertion_verbatim(ch, &mut chars, &mut current) {
                         continue;
                     }
                     depth_angle += 1;

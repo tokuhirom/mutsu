@@ -123,7 +123,7 @@ pub(crate) fn native_int_bounds(type_name: &str) -> Option<(NumBigInt, NumBigInt
 }
 
 /// Number of bits for each native type.
-fn native_type_bits(type_name: &str) -> Option<u32> {
+pub(crate) fn native_type_bits(type_name: &str) -> Option<u32> {
     match type_name {
         "int8" | "uint8" | "byte" | "bool" => Some(8),
         "int16" | "uint16" => Some(16),
@@ -135,7 +135,7 @@ fn native_type_bits(type_name: &str) -> Option<u32> {
 }
 
 /// Whether the native type is signed.
-fn is_signed_native(type_name: &str) -> bool {
+pub(crate) fn is_signed_native(type_name: &str) -> bool {
     matches!(
         type_name,
         "int8" | "int16" | "int32" | "int64" | "int" | "long" | "longlong" | "ssize_t" | "bool"

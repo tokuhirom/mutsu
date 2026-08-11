@@ -56,6 +56,8 @@ impl Interpreter {
                 | "language-revision"
                 | "method_table"
                 | "submethod_table"
+                | "nativesize"
+                | "unsigned"
         )
     }
 
