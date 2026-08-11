@@ -503,6 +503,8 @@ impl Interpreter {
             pending_dispatch_error: None,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,
+            pending_inner_export_subs: HashMap::new(),
+            module_export_defs: HashMap::new(),
             end_phasers: Vec::new(),
             end_phaser_seq: 0,
             module_load_order: Vec::new(),

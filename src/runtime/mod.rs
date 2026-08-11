@@ -1183,6 +1183,17 @@ pub struct Interpreter {
     /// a local before running the module body (so a transitive `use` inside the
     /// body cannot see them) and hands them to the module's `sub EXPORT`.
     pub(crate) pending_use_export_args: Option<Vec<Value>>,
+    /// An `&EXPORT` sub a module *imported* from another module's EXPORT map
+    /// (the Slangify pattern: `sub EXPORT($grammar, ...) { ...; Map.new:
+    /// '&EXPORT' => &inner-EXPORT }`), keyed by the name of the module that was
+    /// loading when the import happened. `apply_module_export` consumes the
+    /// entry: the imported sub becomes that module's own EXPORT for *its*
+    /// importers, called with their `use` arguments.
+    pending_inner_export_subs: HashMap<String, Value>,
+    /// Each loaded module's EXPORT (own `sub EXPORT` or a Slangify-style
+    /// imported one), remembered so a re-`use` of the already-loaded module
+    /// can run it again with the new import's arguments.
+    module_export_defs: HashMap<String, crate::runtime::runtime_module_export_sub::ModuleExportDef>,
     /// Registered END phasers, in registration order (they run in reverse).
     end_phasers: Vec<EndPhaser>,
     /// Monotonic tie-breaker for [`EndPhaser::order`], so phasers within one
