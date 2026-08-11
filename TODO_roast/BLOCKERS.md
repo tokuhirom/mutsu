@@ -118,7 +118,7 @@ noted.
 | No oracle | `S02-names/pseudo-6d.t` | aborts at 116/159 | SORRY (`::=` NYI) | `::("CALLER")::<$*bar>` CALLER pseudo-package deref unsupported. Even on v2026.06 rakudo SORRYs because `::=` binding is unimplemented |
 | No oracle | `S02-names/pseudo-6e.t` | aborts at 79/202 | SORRY (`$?` constant twigil NYI) | Same as above (the 6.e version). Still SORRY on v2026.06 |
 | No oracle | `S02-names-vars/names.t` | 144/156, notok 3 | SORRY (unfudged line) | test 142 "Null PMC access when printing a var typed as ::foo" edge. raku SORRYs on a fudge-dependent line (a bare `$`) |
-| No oracle | `S05-metasyntax/longest-alternative.t` | 59/62, notok 3 (28/50/54) | SORRY (`::` LTM stopper NYI) | Remaining 3 all need declarative-prefix LTM ranking — design complete in ADR-0022 (`docs/adr/0022-regex-alternation-ltm-ranking.md`): 28 = `<.ws>` prefix stopper, 50 = non-constant interpolation (ADR Slice 5), 54 = `\|\|` first-branch-only. Line 461 (negative lookahead) is `#?rakudo todo` upstream. Still SORRY on v2026.06 because rakudo has not implemented `::` |
+| No oracle | `S05-metasyntax/longest-alternative.t` | 61/62, notok 1 (50) | SORRY (`::` LTM stopper NYI) | ADR-0022 Slices 1-3 (declarative-prefix + litlen ranking) implemented and merged: tests 28 (`<.ws>` prefix stopper) and 54 (`\|\|` first-branch-only) now pass. Only 50 (non-constant interpolation must terminate the declarative prefix — ADR Slice 5, not yet implemented) remains. Line 461 (negative lookahead) is `#?rakudo todo` upstream. Still SORRY on v2026.06 because rakudo has not implemented `::` |
 | No oracle | `S10-packages/basic.t` | 59/83, notok 9 | 6/83 (mutsu ahead; same on v2026.06) | Error-detection edges for the semicolon form of package declarations |
 | No oracle | `S12-attributes/trusts.t` | 9/15, notok 4-9 | SORRY (forward reference `trusts B`) | Cross-class private access via `trusts` unsupported. Still SORRY on v2026.06. Failing set shifted 2026-07-15 (private-attr wrong-class throw): tests 4-9 read `$!an_A` which class B never declares (throws now, matching rakudo semantics — likely a typo for the lexical `$an_A` in the test), while the class-C "untrusted access dies" tests now pass |
 | No oracle | `S19-command-line-options/01-dash-uppercase-i.t` | 0/8 | 0/8 (`$*OS` unsupported; same on v2026.06) | `-I` + `@*INC` + `$*OS` introspection (is_run subprocess) |
@@ -157,17 +157,19 @@ completed fix history lives in `news/`.
   test 52: the `<$subrule>` block compiles a string containing a `{...}` code block as a regex
   → "Prohibited regex interpolation" (X::SecurityPolicy); real raku dies at the same point
   (no MONKEY-SEE-NO-EVAL). Later blocks additionally need `<*literal>` partial-match support.
-- **`S05-metasyntax/longest-alternative.t`** — down to 3 failures (28/50/54; the
-  IETF::RFC_Grammar and Gproto blocks pass now). All three require the declarative-prefix
-  LTM ranking model, fully designed in **ADR-0022**
+- **`S05-metasyntax/longest-alternative.t`** — down to 1 failure (50; the IETF::RFC_Grammar
+  and Gproto blocks pass, and tests 28/54 were fixed by **ADR-0022 Slices 1-3**
   (`docs/adr/0022-regex-alternation-ltm-ranking.md`, with a raku-validated acceptance
-  matrix): mutsu's `|` currently ranks by longest *actual* match with declaration-order
-  ties, rakudo ranks by longest *declarative prefix* with longest-literal (litlen) ties.
-  Test 28 = a `rule`'s implicit `<.ws>` stops the prefix; test 50 = a non-constant
-  interpolated alternative must not count toward LTM (ADR Slice 5); test 54 = a `||`
-  group contributes only its first branch (plus a zero-width bypass). Negative lookahead
-  (line 461) is `#?rakudo todo` upstream — mutsu matches rakudo. The same ranking gap is
-  the last failure in Cro::HTTP `t/http-router.rakutest` (test 61).
+  matrix, pinned locally by `t/regex-ltm-alternation.t`): mutsu's `|` now ranks by
+  declarative-prefix length with longest-literal (litlen) ties, matching rakudo, instead
+  of the old longest-*actual*-match-with-declaration-order-ties rule. Test 28 = a `rule`'s
+  implicit `<.ws>` stops the prefix (fixed); test 54 = a `||` group contributes only its
+  first branch, plus a zero-width bypass (fixed). Test 50 = a non-constant interpolated
+  alternative must not count toward LTM — needs ADR Slice 5 (not yet implemented: thread
+  interpolated-span info out of `interpolate_bound_regex_scalars` so the parser can flag a
+  token born from runtime interpolation as non-declarative). Negative lookahead (line 461)
+  is `#?rakudo todo` upstream — mutsu matches rakudo. The same ranking model fixed the last
+  failure in Cro::HTTP `t/http-router.rakutest` (test 61 → now 83/83 fully green).
 - **`S06-advanced/caller.t`** — unpassable on the plan count alone: `plan 22` but only 19
   assertions exist (the trailing "WRITEME: label tests" were never written). The 4 failing
   assertions are **stale old-Rakudo expectations that mutsu correctly diverges from** — do NOT

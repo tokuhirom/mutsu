@@ -132,8 +132,13 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::Alternation(alternatives) => {
-                // Explore all alternatives and keep the longest successful one.
-                let mut best: Option<(usize, RegexCaptures)> = None;
+                // ADR-0022 §4.4(b): explore all alternatives, keep the one
+                // ranked best by (prefix_len desc, litlen desc), ties broken
+                // by declaration order (iterating in written order and only
+                // replacing on a STRICT rank improvement keeps the earlier
+                // branch on a tie — no index needs to travel alongside the
+                // key). Replaces the old "longest end wins" rule.
+                let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
@@ -148,16 +153,17 @@ impl Interpreter {
                         new_caps.positional.append(&mut inner_caps.positional);
                         new_caps.code_blocks.append(&mut inner_caps.code_blocks);
                         new_caps.regex_vars.extend(inner_caps.regex_vars);
+                        let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
                         let replace = best
                             .as_ref()
-                            .map(|(best_next, _)| next > *best_next)
+                            .map(|(best_rank, _, _)| rank > *best_rank)
                             .unwrap_or(true);
                         if replace {
-                            best = Some((next, new_caps));
+                            best = Some((rank, next, new_caps));
                         }
                     }
                 }
-                return best;
+                return best.map(|(_, next, caps)| (next, caps));
             }
             RegexAtom::Conjunction(_) => {
                 // ALL branches must match the SAME substring (end at the same

@@ -31,6 +31,10 @@ thread_local! {
         = RefCell::new(HashSet::new());
 }
 
+/// ADR-0022 §4.4(a): one `|` branch's rank key (prefix_len, litlen) paired
+/// with its PLURAL ends (highest-priority-first).
+type RankedAlternationBranch = ((usize, usize), Vec<(usize, RegexCaptures)>);
+
 impl Interpreter {
     /// An alternation alternative that is a lone plain `{ … }` code block
     /// (`|| { die "no match" }`). Such a branch matches zero-width and exists
@@ -68,6 +72,47 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// ADR-0022 §4.4(a) helper: rank each of `alts` by
+    /// [`Self::ltm_branch_rank_key`] and collect its PLURAL ends (highest-
+    /// priority-first, same convention as `regex_match_ends_from_caps_in_pkg`).
+    /// A branch whose real ends are empty (declaratively promising but not
+    /// an actual match here) contributes nothing and is dropped — the
+    /// rank-only "sound filter" from ADR-0022 §4.1 is subsumed by this
+    /// stronger, always-correct check. Caller sorts the returned vec by rank
+    /// key descending (stable, so ties keep `alts`' original order) and
+    /// flattens branch-major, worst-to-best, each branch's own ends
+    /// worst-to-best, to build this arm's lowest-priority-first output.
+    fn ltm_rank_and_collect_branches<'a>(
+        &mut self,
+        alts: impl Iterator<Item = &'a RegexPattern>,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+    ) -> Vec<RankedAlternationBranch> {
+        let mut out = Vec::new();
+        for alt in alts {
+            let raw_ends = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+            if raw_ends.is_empty() {
+                continue;
+            }
+            let ends: Vec<(usize, RegexCaptures)> = raw_ends
+                .into_iter()
+                .map(|(end, mut inner_caps)| {
+                    let mut new_caps = RegexCaptures::default();
+                    for (k, v) in inner_caps.named.drain() {
+                        new_caps.named.entry(k).or_default().merge(v);
+                    }
+                    new_caps.positional.append(&mut inner_caps.positional);
+                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
+                    (end, new_caps)
+                })
+                .collect();
+            let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
+            out.push((rank, ends));
+        }
+        out
     }
 
     pub(super) fn regex_match_atom_all_with_capture_in_pkg(
@@ -123,51 +168,43 @@ impl Interpreter {
         }
 
         if let RegexAtom::Alternation(alternatives) = atom {
-            // | (LTM): try all alternatives, longest match wins.
+            // ADR-0022 §4.4(a): rank branches by (prefix_len desc, litlen
+            // desc), ties broken by declaration order — free via a stable
+            // sort over the branches in their original written order, so no
+            // index needs to travel with the rank key. Collects PLURAL ends
+            // per branch (fixes ADR-0022 gap #4: backtracking into shorter
+            // ends of the chosen branch before falling to the next-ranked
+            // branch — `[ a+ | q ] ab` on "aaab" needs `a+`'s shorter ends
+            // available once `ab` fails against its greedy longest end).
             //
             // A side-effect-only alternative (`| { die ... }` — a lone plain
             // code block) is deferred: it matches zero-width, so it can only
             // win when NOTHING else matched, and running it eagerly would fire
             // its side effects (a `die`!) on paths raku never executes.
-            let mut indexed: Vec<(usize, usize, RegexCaptures)> = Vec::new();
-            let mut deferred_code: Vec<(usize, &RegexPattern)> = Vec::new();
-            for (i, alt) in alternatives.iter().enumerate() {
-                if Self::is_pure_code_block_alt(alt) {
-                    deferred_code.push((i, alt));
-                    continue;
-                }
-                if let Some((next, mut inner_caps)) =
-                    self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
-                {
-                    let mut new_caps = RegexCaptures::default();
-                    for (k, v) in inner_caps.named.drain() {
-                        new_caps.named.entry(k).or_default().merge(v);
-                    }
-                    new_caps.positional.append(&mut inner_caps.positional);
-                    new_caps.code_blocks.append(&mut inner_caps.code_blocks);
-                    indexed.push((i, next, new_caps));
-                }
+            let mut branches = self.ltm_rank_and_collect_branches(
+                alternatives
+                    .iter()
+                    .filter(|alt| !Self::is_pure_code_block_alt(alt)),
+                chars,
+                pos,
+                pkg,
+            );
+            if branches.is_empty() {
+                branches = self.ltm_rank_and_collect_branches(
+                    alternatives
+                        .iter()
+                        .filter(|alt| Self::is_pure_code_block_alt(alt)),
+                    chars,
+                    pos,
+                    pkg,
+                );
             }
-            if indexed.is_empty() {
-                for (i, alt) in deferred_code {
-                    if let Some((next, mut inner_caps)) =
-                        self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
-                    {
-                        let mut new_caps = RegexCaptures::default();
-                        for (k, v) in inner_caps.named.drain() {
-                            new_caps.named.entry(k).or_default().merge(v);
-                        }
-                        new_caps.positional.append(&mut inner_caps.positional);
-                        new_caps.code_blocks.append(&mut inner_caps.code_blocks);
-                        indexed.push((i, next, new_caps));
-                    }
-                }
+            branches.sort_by_key(|b| std::cmp::Reverse(b.0));
+            let mut out = Vec::new();
+            for (_, ends) in branches.into_iter().rev() {
+                out.extend(ends.into_iter().rev());
             }
-            indexed.sort_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)));
-            return indexed
-                .into_iter()
-                .map(|(_, end, caps)| (end, caps))
-                .collect();
+            return out;
         }
         if let RegexAtom::SequentialAlternation(alternatives) = atom {
             if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {

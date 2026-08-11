@@ -1,6 +1,11 @@
 # ADR-0022: `|` alternation ranks branches by declarative-prefix LTM, not by longest actual match
 
-- **Status**: Proposed (2026-08-09). Design complete; implementation not started.
+- **Status**: Accepted (2026-08-09); Slices 1-3 implemented and merged 2026-08-11
+  (measurement infrastructure, litlen, and the ranking swap in all three consumer
+  arms — `roast/S05-metasyntax/longest-alternative.t` tests 28/54 and Cro::HTTP
+  `t/http-router.rakutest` test 61 now pass, pinned by `t/regex-ltm-alternation.t`
+  and `t/regex-ltm-declarative-prefix.t`). Slices 4 (ledger update) and 5 (non-constant
+  interpolation marking, needed for roast test 50) remain — see §5 and §2.
 - **Context**: `todo/deep/regex-alternation-ltm-longest-literal-prefix.md`;
   `Cro::HTTP` `t/http-router.rakutest` test 61 (the file's last remaining failure);
   `roast/S05-metasyntax/longest-alternative.t` tests 28/50/54 (the file's only failures,
@@ -123,6 +128,25 @@ Key mechanics of the reference implementation:
 - `:m` (ignoremark) literals: rakudo has no `_M_LL` edge (XXX comments in NFA.nqp), so
   they never extend litlen. mutsu may treat them like `:i` literals (which do, via
   `_I_LL`); no test pins the difference.
+- **mutsu-only quirk, found while implementing Slice 2**: a captureless, separator-less,
+  single-atom fixed-count `atom ** N` is string-unrolled into literal repeated text by the
+  pre-existing `expand_ltm_pattern` engine pass (`regex_parse_ltm.rs`, invoked from
+  `regex_parse_core.rs` whenever `mode == RegexParseMode::Match`) *before* the token parser
+  ever runs — this predates ADR-0022 and exists for matcher correctness/perf around small
+  fixed bounds, unrelated to LTM ranking. When such a `**N` is the ENTIRE text of a
+  standalone top-level pattern (`/'ab' ** 2/` parsed on its own), by the time
+  `ltm_litlen_at` walks it the quantifier boundary is already gone — it is
+  indistinguishable from a hand-written literal of the same expanded length, so litlen
+  extends fully through it instead of stopping at 0. Verified NOT to affect the §7
+  acceptance-matrix line it looks like it should break (`"abab" ~~ / (\w+) | 'ab' ** 2 /`):
+  when `'ab' ** 2` is a *branch inside* a larger alternation rather than a standalone
+  pattern, the anchored `expand_ltm_pattern` rewrite does not fire on it (its regex
+  requires the whole current parse-unit text to be exactly `atom**count`), so branch
+  ranking still measures litlen 0 there, correctly. The divergence is real but narrower
+  than it first appeared: a `**N` literal quantifier alone as an entire pattern (rare) can
+  rank differently than the same quantifier as one branch of an alternation (the common,
+  ADR-relevant case). No roast test pins the standalone-pattern case; `+`/`*`/`?` are
+  unaffected (`expand_ltm_pattern`'s trigger regex matches literal `**` only).
 
 ## 3. Current mutsu structure (what has to change)
 
