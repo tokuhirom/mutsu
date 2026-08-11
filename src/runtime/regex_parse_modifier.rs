@@ -125,6 +125,32 @@ impl Interpreter {
         None
     }
 
+    /// ADR-0022 Slice 5: toggles `RegexToken::from_runtime_interpolation` in
+    /// the tokenizer that runs immediately after this interpolation pass,
+    /// within the same `parse_regex_uncached` call. Wrapping a substituted
+    /// span in a pair of these (push once before, once after) marks every
+    /// `RegexAtom::Literal` token the tokenizer builds from that span as
+    /// non-declarative for LTM ranking. A reserved control character that
+    /// can never appear in ordinary pattern source, mirroring
+    /// `SILENT_ACTION_MARKER_PREFIX`'s convention — it never survives past
+    /// the tokenizer, which strips every occurrence without emitting an
+    /// atom for it, so it cannot leak into a matched literal or a
+    /// displayed pattern string.
+    pub(crate) const NON_DECLARATIVE_INTERP_MARK: char = '\u{1}';
+
+    /// Was `name` (a bare, sigilless scalar name, e.g. `"x"` for `$x`)
+    /// declared with `constant` and thus a value Rakudo inlines as a
+    /// literal at compile time (ADR-0022 §2's "constants participate" —
+    /// see the `__mutsu_constant_var::` marker written by
+    /// `exec_set_local_op_inner`)? An ordinary `my`/`state`/param scalar
+    /// answers `false` here even if it happens to never be reassigned:
+    /// only a genuine `constant` is a Rakudo compile-time value.
+    fn is_compile_time_constant_scalar(&self, name: &str) -> bool {
+        self.env
+            .get(&format!("__mutsu_constant_var::{name}"))
+            .is_some()
+    }
+
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
         let chars: Vec<char> = pattern.chars().collect();
         let mut out = String::new();
@@ -360,7 +386,28 @@ impl Interpreter {
                             .unwrap_or(Value::NIL);
                         let value = value.into_deref();
                         Self::check_hash_in_regex(&value)?;
+                        // A double-quoted regex literal (`"${name}..."`) is
+                        // scanned by the structural parser's OWN inner loop
+                        // (its `"..."` arm reads chars directly, bypassing
+                        // the main token loop that consumes
+                        // `NON_DECLARATIVE_INTERP_MARK`), so a mark placed
+                        // inside it would leak through as a literal control
+                        // character instead of being stripped. Skip marking
+                        // there — such an interpolation stays declarative,
+                        // same as before this slice.
+                        // TODO: teach the double-quoted-literal tokenizer arm
+                        // to also strip/honor the mark, so `$var` inside
+                        // `"..."` gets the same non-constant treatment as
+                        // everywhere else.
+                        let is_const = is_inside_double_quoted_regex_literal(&chars, i)
+                            || self.is_compile_time_constant_scalar(&name);
+                        if !is_const {
+                            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+                        }
                         Self::push_value_as_regex_pattern(&value, &mut out);
+                        if !is_const {
+                            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+                        }
                         i = j + 1;
                         continue;
                     }
@@ -420,13 +467,30 @@ impl Interpreter {
                     } else {
                         None
                     };
+                    // A `$*` dynamic var resolved from the overlay is always
+                    // runtime-only, regardless of any stale `constant`
+                    // marker of the same bare name.
+                    let is_overlay = overlay_value.is_some();
                     let value = overlay_value
                         .or_else(|| self.env.get(&name).cloned())
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                         .unwrap_or(Value::NIL);
                     let value = value.into_deref();
                     Self::check_hash_in_regex(&value)?;
+                    // See the `${name}` arm above: a double-quoted regex
+                    // literal is scanned by the structural parser's own
+                    // inner loop, which does not strip
+                    // `NON_DECLARATIVE_INTERP_MARK`, so skip marking there.
+                    let is_const = !is_overlay
+                        && (is_inside_double_quoted_regex_literal(&chars, i)
+                            || self.is_compile_time_constant_scalar(&name));
+                    if !is_const {
+                        out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+                    }
                     Self::push_value_as_regex_pattern(&value, &mut out);
+                    if !is_const {
+                        out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+                    }
                     i = j;
                     continue;
                 } else if j < chars.len() && chars[j] == '(' {

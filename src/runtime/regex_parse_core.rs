@@ -297,6 +297,7 @@ impl Interpreter {
                 ratchet: false,
                 frugal: false,
                 separator: None,
+                from_runtime_interpolation: false,
             }],
             anchor_start: false,
             anchor_end: false,
@@ -623,6 +624,7 @@ impl Interpreter {
                         ratchet: false,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -672,6 +674,7 @@ impl Interpreter {
                         ratchet: false,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -720,7 +723,20 @@ impl Interpreter {
         // `ENCLOSING_REGEX_VARS`). The guard restores that set on the way out.
         let (_enclosing_vars_guard, mut declared_regex_vars) =
             super::regex::regex_helpers::EnclosingRegexVarsGuard::enter();
+        // ADR-0022 Slice 5: `interpolate_regex_scalars` wraps a span
+        // substituted from a non-constant runtime variable in a pair of
+        // `NON_DECLARATIVE_INTERP_MARK` sentinels. Toggled (not
+        // stack-pushed) because these marks always nest one pair deep —
+        // `interpolate_regex_scalars` never recurses into its own output —
+        // and consumed here without ever producing an atom, so it cannot
+        // leak into a matched literal. Every `RegexToken` this loop pushes
+        // while the flag is set is marked `from_runtime_interpolation`.
+        let mut in_non_declarative_interp = false;
         while let Some(c) = chars.next() {
+            if c == Self::NON_DECLARATIVE_INTERP_MARK {
+                in_non_declarative_interp = !in_non_declarative_interp;
+                continue;
+            }
             // In Raku, unescaped whitespace in regex is insignificant
             if c.is_whitespace() {
                 if sigspace {
@@ -742,6 +758,7 @@ impl Interpreter {
                                 ratchet,
                                 frugal: false,
                                 separator: None,
+                                from_runtime_interpolation: false,
                             });
                         }
                     } else {
@@ -770,6 +787,7 @@ impl Interpreter {
                             ratchet,
                             frugal: false,
                             separator: None,
+                            from_runtime_interpolation: false,
                         });
                     }
                 }
@@ -819,6 +837,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 } else if tokens.is_empty() {
@@ -839,6 +858,7 @@ impl Interpreter {
                     ratchet,
                     frugal: false,
                     separator: None,
+                    from_runtime_interpolation: false,
                 });
                 continue;
             }
@@ -883,6 +903,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 }
@@ -920,6 +941,7 @@ impl Interpreter {
                     ratchet,
                     frugal: false,
                     separator: None,
+                    from_runtime_interpolation: false,
                 });
                 continue;
             }
@@ -964,6 +986,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 }
@@ -1040,6 +1063,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 }
@@ -1063,6 +1087,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                 };
                 if c == '$' {
@@ -1119,6 +1144,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 }
@@ -1225,6 +1251,7 @@ impl Interpreter {
                         ratchet,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     });
                     continue;
                 }
@@ -1607,6 +1634,7 @@ impl Interpreter {
                                         ratchet: false,
                                         frugal: false,
                                         separator: None,
+                                        from_runtime_interpolation: false,
                                     });
                                 }
                                 RegexAtom::Literal(*resolved.last().unwrap())
@@ -1947,6 +1975,7 @@ impl Interpreter {
                                         ratchet: false,
                                         frugal: false,
                                         separator: None,
+                                        from_runtime_interpolation: false,
                                     }],
                                     anchor_start: false,
                                     anchor_end: false,
@@ -2209,6 +2238,7 @@ impl Interpreter {
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
+                                                    from_runtime_interpolation: false,
                                                 })
                                                 .collect();
                                             RegexPattern {
@@ -2351,6 +2381,7 @@ impl Interpreter {
                                             ratchet: false,
                                             frugal: false,
                                             separator: None,
+                                            from_runtime_interpolation: false,
                                         }],
                                         anchor_start: false,
                                         anchor_end: false,
@@ -2425,6 +2456,7 @@ impl Interpreter {
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
+                                                            from_runtime_interpolation: false,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -2443,6 +2475,7 @@ impl Interpreter {
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
+                                                            from_runtime_interpolation: false,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -2469,6 +2502,7 @@ impl Interpreter {
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
+                                                    from_runtime_interpolation: false,
                                                 }],
                                                 anchor_start: false,
                                                 anchor_end: false,
@@ -2710,6 +2744,7 @@ impl Interpreter {
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
+                                                    from_runtime_interpolation: false,
                                                 },
                                                 RegexToken {
                                                     atom: RegexAtom::CharClass(CharClass {
@@ -2726,6 +2761,7 @@ impl Interpreter {
                                                     ratchet: false,
                                                     frugal: false,
                                                     separator: None,
+                                                    from_runtime_interpolation: false,
                                                 },
                                             ],
                                             anchor_start: false,
@@ -2753,6 +2789,7 @@ impl Interpreter {
                                                 ratchet: false,
                                                 frugal: false,
                                                 separator: None,
+                                                from_runtime_interpolation: false,
                                             }],
                                             anchor_start: false,
                                             anchor_end: false,
@@ -2871,6 +2908,7 @@ impl Interpreter {
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
+                                                            from_runtime_interpolation: false,
                                                         },
                                                         RegexToken {
                                                             atom: RegexAtom::CharClass(CharClass {
@@ -2889,6 +2927,7 @@ impl Interpreter {
                                                             ratchet: false,
                                                             frugal: false,
                                                             separator: None,
+                                                            from_runtime_interpolation: false,
                                                         },
                                                     ],
                                                     anchor_start: false,
@@ -3118,6 +3157,7 @@ impl Interpreter {
                                     ratchet: false,
                                     frugal: false,
                                     separator: None,
+                                    from_runtime_interpolation: false,
                                 }],
                                 anchor_start: false,
                                 anchor_end: false,
@@ -3690,6 +3730,7 @@ impl Interpreter {
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: None,
+                    from_runtime_interpolation: in_non_declarative_interp,
                 };
                 tokens.push(RegexToken {
                     atom: RegexAtom::Group(RegexPattern {
@@ -3715,6 +3756,10 @@ impl Interpreter {
                     ratchet: token_ratchet && !token_frugal,
                     frugal: token_frugal,
                     separator: None,
+                    // The wrapping Group atom is structural, not itself a
+                    // literal born from interpolation; the inner token above
+                    // carries the real flag.
+                    from_runtime_interpolation: false,
                 });
             } else {
                 tokens.push(RegexToken {
@@ -3727,6 +3772,7 @@ impl Interpreter {
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: token_separator,
+                    from_runtime_interpolation: in_non_declarative_interp,
                 });
             }
         }

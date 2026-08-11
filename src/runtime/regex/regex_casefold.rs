@@ -107,6 +107,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
             ratchet: token.ratchet,
             frugal: token.frugal,
             separator: casefold_separator(&token.separator),
+            from_runtime_interpolation: false,
         }],
         CasefoldedAtom::Multiple(chars) => {
             // A literal that expanded to multiple chars (e.g., 'ß' -> 's','s').
@@ -123,6 +124,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                     ratchet: token.ratchet,
                     frugal: false,
                     separator: None,
+                    from_runtime_interpolation: false,
                 })
                 .collect();
             let group = RegexPattern {
@@ -142,6 +144,7 @@ fn casefold_token(token: &RegexToken) -> Vec<RegexToken> {
                 ratchet: token.ratchet,
                 frugal: token.frugal,
                 separator: casefold_separator(&token.separator),
+                from_runtime_interpolation: false,
             }]
         }
     }

@@ -947,6 +947,7 @@ pub(super) fn rewrite_tilde_tokens(
                     ratchet: false,
                     frugal: false,
                     separator: None,
+                    from_runtime_interpolation: false,
                 };
                 inner_tokens.push(ws_tok.clone());
                 inner_tokens.push(inner_token);
@@ -975,6 +976,7 @@ pub(super) fn rewrite_tilde_tokens(
                 ratchet: false,
                 frugal: false,
                 separator: None,
+                from_runtime_interpolation: false,
             });
             // Skip past the inner token and any trailing ws-like tokens
             i = k + 1;
@@ -1144,6 +1146,7 @@ pub(super) fn regex_single_quote_atom(literal: String, ignore_case: bool) -> Reg
                 ratchet: false,
                 frugal: false,
                 separator: None,
+                from_runtime_interpolation: false,
             })
             .collect();
         RegexAtom::Group(RegexPattern {

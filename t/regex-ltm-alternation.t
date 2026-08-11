@@ -101,4 +101,38 @@ ok !$0.defined, ':i literal still participates in litlen ranking (case-insensiti
 # ratchet interaction unchanged (roast S05 486-489 already pass)
 ok !('ab' ~~ / [ab | a ]: b /).defined, 'ratchet interaction with alternation ranking is unchanged';
 
+# ADR-0022 Slice 5, raku-verified 2026-08-11: non-constant `$var` interpolation
+# does not participate in LTM prefix/litlen ranking (Rakudo only inlines a
+# `constant`'s value as a compile-time literal); a `constant`-interpolated
+# value keeps participating exactly like a hand-written literal.
+{
+    # roast/S05-metasyntax/longest-alternative.t test 50's exact shape.
+    constant $x = 'ab';
+    is ~('ab' ~~ / a | b | $x /), 'ab',
+        'constant-interpolated branch competes on length like a literal';
+
+    my $y = 'ab';
+    is ~('ab' ~~ / a | b | $y /), 'a',
+        'non-constant $var interpolation does not count toward LTM';
+}
+
+{
+    # A longer DECLARATIVE literal branch beats a non-constant interpolated
+    # branch that would otherwise win on raw match length.
+    my $z = 'abcd';
+    is ~('abcd' ~~ / 'abc' | $z /), 'abc',
+        'declarative literal branch beats a longer non-constant $var branch';
+
+    # The same shape with a `constant` of identical text: the constant still
+    # competes on length, since it participates like a literal.
+    constant $w = 'abcd';
+    is ~('abcd' ~~ / 'abc' | $w /), 'abcd',
+        'constant-interpolated branch still wins on length like a literal';
+}
+
+# A plain (non-interpolated) alternation is unaffected by the non-constant
+# marking machinery.
+is ~('abab' ~~ / 'a' | 'ab' /), 'ab',
+    'plain literal alternation (no interpolation) ranks normally';
+
 done-testing;

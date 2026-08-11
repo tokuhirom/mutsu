@@ -909,6 +909,7 @@ impl Interpreter {
                         ratchet: false,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     }],
                     anchor_start: false,
                     anchor_end: false,
@@ -942,6 +943,7 @@ impl Interpreter {
                 ratchet: false,
                 frugal: false,
                 separator: None,
+                from_runtime_interpolation: false,
             }],
             anchor_start: false,
             anchor_end: false,
@@ -963,6 +965,7 @@ impl Interpreter {
                         ratchet: false,
                         frugal: false,
                         separator: None,
+                        from_runtime_interpolation: false,
                     },
                 );
             }
