@@ -2000,6 +2000,69 @@ impl Interpreter {
                                 if ch == '\'' || ch == '"' {
                                     quote = Some(ch);
                                     inner.push(ch);
+                                } else if ch == '<' && {
+                                    let mut la = chars.clone();
+                                    match la.next() {
+                                        Some('[') => true,
+                                        Some('-' | '+' | '!') => la.next() == Some('['),
+                                        _ => false,
+                                    }
+                                } {
+                                    // A character class inside the assertion
+                                    // (`<!before '"' <-["]>*? >`): copy its
+                                    // content verbatim — a quote or bracket char
+                                    // in it must not move the quote/angle state.
+                                    // Only `\]` escapes `]` inside `[...]`.
+                                    inner.push(ch);
+                                    for c2 in chars.by_ref() {
+                                        inner.push(c2);
+                                        if c2 == '[' {
+                                            break;
+                                        }
+                                    }
+                                    'char_class: loop {
+                                        loop {
+                                            match chars.next() {
+                                                Some('\\') => {
+                                                    inner.push('\\');
+                                                    if let Some(n) = chars.next() {
+                                                        inner.push(n);
+                                                    }
+                                                }
+                                                Some(']') => {
+                                                    inner.push(']');
+                                                    break;
+                                                }
+                                                Some(c2) => inner.push(c2),
+                                                None => break 'char_class,
+                                            }
+                                        }
+                                        // After ']': '>' closes the class;
+                                        // `+[` / `-[` / `[` continue a compound
+                                        // class. Anything else falls back to the
+                                        // outer loop.
+                                        let mut la = chars.clone();
+                                        match la.next() {
+                                            Some('>') => {
+                                                chars.next();
+                                                inner.push('>');
+                                                break 'char_class;
+                                            }
+                                            Some(p @ ('+' | '-')) if la.next() == Some('[') => {
+                                                chars.next();
+                                                chars.next();
+                                                inner.push(p);
+                                                inner.push('[');
+                                                continue 'char_class;
+                                            }
+                                            Some('[') => {
+                                                chars.next();
+                                                inner.push('[');
+                                                continue 'char_class;
+                                            }
+                                            _ => break 'char_class,
+                                        }
+                                    }
                                 } else if ch == '<' {
                                     angle_depth += 1;
                                     inner.push(ch);

@@ -184,6 +184,75 @@ pub(in crate::parser) fn scan_to_delim_p5(
     scan_to_delim_inner(input, open_ch, close_ch, is_paired, true, false)
 }
 
+/// Skip a character-class body (`<[...]>`, `<-[...]>`, `<+[...]>`, `<![...]>`,
+/// including compound classes like `<-[...]+[...]>`). The iterator must be
+/// positioned just after the leading `<`. Consumes through the class's closing
+/// `>`. Class content is literal — quote characters and brackets inside it
+/// must not affect any outer quote/bracket state. Inside each `[...]`, an
+/// unescaped `[` is a literal character (only `\]` escapes `]`).
+fn skip_char_class(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
+    // Advance past any prefix chars before '['
+    loop {
+        if let Some((_, ch)) = chars.next() {
+            if ch == '[' {
+                break;
+            }
+        } else {
+            return None;
+        }
+    }
+    // Scan bracket groups sequentially. After ']', check for compound class
+    // operators (+[, -[) or the closing '>'.
+    'char_class: loop {
+        // Scan inside a [...] group until unescaped ']'
+        loop {
+            match chars.next() {
+                Some((_, '\\')) => {
+                    chars.next(); // skip escaped char
+                }
+                Some((_, ']')) => {
+                    break; // end of this bracket group
+                }
+                Some(_) => {}
+                None => return None,
+            }
+        }
+        // After ']', check for compound class or closing '>'
+        let saved = chars.clone();
+        match chars.next() {
+            Some((_, '>')) => break, // done
+            Some((_, '+' | '-')) => {
+                if let Some((_, '[')) = chars.next() {
+                    continue 'char_class;
+                }
+                // Not a compound group; try consuming '>'
+                *chars = saved;
+                if let Some((_, '>')) = chars.next() {
+                    break;
+                }
+                break;
+            }
+            Some((_, '[')) => continue 'char_class,
+            _ => {
+                *chars = saved;
+                if let Some((_, '>')) = chars.next() {
+                    break;
+                }
+                break;
+            }
+        }
+    }
+    Some(())
+}
+
+/// Does `rest` (the text just after a `<`) open a character class?
+fn starts_char_class(rest: &str) -> bool {
+    rest.starts_with('[')
+        || rest.starts_with("-[")
+        || rest.starts_with("+[")
+        || rest.starts_with("![")
+}
+
 fn scan_to_delim_inner(
     input: &str,
     open_ch: char,
@@ -250,69 +319,10 @@ fn scan_to_delim_inner(
             // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early. In P5
             // mode `{n,m}` is a quantifier, not code, so this is Raku-only.
             skip_interp_block(&mut chars)?;
-        } else if !p5_mode
-            && c == '<'
-            && (input[i + 1..].starts_with('[')
-                || input[i + 1..].starts_with("-[")
-                || input[i + 1..].starts_with("+[")
-                || input[i + 1..].starts_with("!["))
-        {
+        } else if !p5_mode && c == '<' && starts_char_class(&input[i + 1..]) {
             // Skip character class <[...]>, <-[...]>, <+[...]>, <![...]> content
             // without interpreting quotes. Handles <['"]>, <-["\\\t]>, etc.
-            // Advance past any prefix chars before '['
-            loop {
-                if let Some((_, ch)) = chars.next() {
-                    if ch == '[' {
-                        break;
-                    }
-                } else {
-                    return None;
-                }
-            }
-            // Inside a Raku character class like <[...]>, <-[...]+[...]>, etc.
-            // We scan bracket groups sequentially. Inside each [...], an
-            // unescaped '[' is a literal character (only '\]' escapes ']').
-            // After ']', we check for compound class operators (+[, -[) or
-            // the closing '>'.
-            'char_class: loop {
-                // Scan inside a [...] group until unescaped ']'
-                loop {
-                    match chars.next() {
-                        Some((_, '\\')) => {
-                            chars.next(); // skip escaped char
-                        }
-                        Some((_, ']')) => {
-                            break; // end of this bracket group
-                        }
-                        Some(_) => {}
-                        None => return None,
-                    }
-                }
-                // After ']', check for compound class or closing '>'
-                let saved = chars.clone();
-                match chars.next() {
-                    Some((_, '>')) => break, // done
-                    Some((_, '+' | '-')) => {
-                        if let Some((_, '[')) = chars.next() {
-                            continue 'char_class;
-                        }
-                        // Not a compound group; try consuming '>'
-                        chars = saved;
-                        if let Some((_, '>')) = chars.next() {
-                            break;
-                        }
-                        break;
-                    }
-                    Some((_, '[')) => continue 'char_class,
-                    _ => {
-                        chars = saved;
-                        if let Some((_, '>')) = chars.next() {
-                            break;
-                        }
-                        break;
-                    }
-                }
-            }
+            skip_char_class(&mut chars)?;
         } else if !p5_mode
             && c == '<'
             && !input[i + 1..].starts_with('[')
@@ -386,6 +396,17 @@ fn scan_to_delim_inner(
                                 None => return None,
                             }
                         },
+                        // A nested character class inside the assertion
+                        // (`<!before '"' <-["]>*? >`): its content is literal,
+                        // so a quote or bracket char in it must not move the
+                        // quote/angle state. Without this, the class's `"`
+                        // opens a bogus quote (when honor_quotes) that
+                        // swallows the rest of the regex.
+                        Some((i2, '<'))
+                            if paren_depth == 0 && starts_char_class(&input[i2 + 1..]) =>
+                        {
+                            skip_char_class(&mut chars)?;
+                        }
                         Some((_, '(')) => paren_depth += 1,
                         Some((_, ')')) => paren_depth = paren_depth.saturating_sub(1),
                         Some((_, '<')) if paren_depth == 0 => angle_depth += 1,
