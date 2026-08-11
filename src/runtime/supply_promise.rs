@@ -558,8 +558,14 @@ impl Interpreter {
         // the cross-thread bare-name lane the same way `start {}` does (see
         // ADR-0023 if any captured name is also an active for-loop parameter
         // at the coercion site). The helper thread is GC-registered
-        // (`spawn_gc_helper_thread`) per the Gc-thread registration rule —
-        // never a raw `std::thread::spawn`.
+        // (`spawn_user_thread`) per the Gc-thread registration rule — never a
+        // raw `std::thread::spawn`. This must be `spawn_user_thread`, not
+        // `spawn_gc_helper_thread`: `drive_react_subscriptions` below runs the
+        // whenever body as real VM bytecode (method dispatch, grammar/regex
+        // recursion, ...), i.e. genuine user code, not GC-helper plumbing —
+        // `spawn_gc_helper_thread`'s default ~2 MiB stack overflows on deep
+        // recursion there (observed as a SIGSEGV inside grammar-driven regex
+        // matching, e.g. `Cro::HTTP::Cookie.from-set-cookie`).
         let seed = static_last_value
             .or_else(|| plain_values.last().cloned())
             .unwrap_or(Value::NIL);
@@ -570,7 +576,7 @@ impl Interpreter {
             emitter_supplier_id: Some(emitter_supplier_id),
         };
         let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
-        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+        crate::runtime::builtins_system::spawn_user_thread(move || {
             // The drive loop keeps/breaks `promise` directly as it runs (see
             // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
             // handling); its `Result` here only carries Rust-level plumbing
