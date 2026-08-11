@@ -6,7 +6,7 @@ use Test;
 # in the calling chain (hijack) nor freezes the creation-time value
 # (staleness).
 
-plan 6;
+plan 7;
 
 class Enc { has $.v }
 
@@ -90,4 +90,20 @@ class Enc { has $.v }
     @cb.push({ $s });
     $s = 42;
     is @cb[0](), 42, 'post-capture mutation stays visible to call-arg closure';
+}
+
+# 6) A multi-param for-loop parameter sharing its name with a captured,
+#    cell-boxed Instance scalar is a FRESH binding: it must not write the
+#    iteration values through the cell (roast integration/advent2013-day14.t
+#    config_combiner — `for %kvs.kv -> $k, $v` corrupted the captured vow,
+#    and `$v.keep` after the loop found a Str).
+{
+    my $p = Promise.new;
+    my $v = $p.vow;
+    my %kvs = a => "x", b => "y";
+    await start {
+        for %kvs.kv -> $k, $v { }
+        $v.keep("kept");
+    }
+    is $p.result, "kept", 'multi-param loop name does not corrupt a captured vow cell';
 }

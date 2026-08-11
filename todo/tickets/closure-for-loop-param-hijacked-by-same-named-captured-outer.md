@@ -98,6 +98,20 @@ widen cell prevalence, so this repro must be re-run when its slices land
 — still wrong, and a ForLoop binding that wrote through such a cell would
 corrupt the outer counter).
 
+**Update 2026-08-11: the write-corruption direction fired in CI and is now
+guarded for MULTI-params.** ADR-0025 slice 1 boxed the captured vow in
+roast `integration/advent2013-day14.t`'s `config_combiner`, and
+`for %kvs.kv -> $k, $v`'s `Stmt::Assign`-based binding wrote iteration
+Strs through the vow's cell (`$v.keep` then hit a Str; file hung). Fixed
+in `exec_for_loop`'s multi-param prep (`vm_for_loop_body.rs`): a scalar
+multi-param name currently bound to a cell is severed for the loop's
+duration (save/restore already preserves the cell). Pin: test 7 of
+`t/closure-capture-instance-cell.t`. Still open here: the READ-side
+GetUpvalue bypass (the 11-line single-param repro still prints `i=2`),
+and single-param loops were not audited for an equivalent write-through
+(their bind is native env insert, believed rebind-safe — verify when
+fixing).
+
 ## Verification (once fixed)
 
 - The 11-line repro prints `i=1`.

@@ -144,6 +144,29 @@ This is the expected shape of slice-1 fallout: cells entering paths that
 never saw them, each surfacing as a deterministic test failure (the safety
 net working, per CLAUDE.md's risk definitions).
 
+CI's full roast then caught a second member of the same fallout class
+(deterministic across all three jobs):
+`roast/integration/advent2013-day14.t` hung after test 6 — the
+`config_combiner` shape. The captured vow `my $v = $p.vow` (an Instance,
+newly cell-boxed: the nested loop-param assignment registers as a free
+write, so `v` is captured-and-mutated and the `start` block is
+thread-escaping) shares its name with a **multi-param for-loop parameter**
+(`for %kvs.kv -> $k, $v`). `build_for_bind_stmts` binds multi-params via
+plain `Stmt::Assign`, whose exec writes THROUGH a `ContainerRef` — every
+iteration wrote a config Str into the vow's cell, and `$v.keep(%result)`
+after the loop called `.keep` on a Str, so the promise never resolved.
+This is precisely the corruption direction the loop-param ticket predicted
+("a ForLoop binding that wrote through such a cell would corrupt the outer
+counter"). Fixed in `exec_for_loop`'s multi-param prep
+(`vm_for_loop_body.rs`): a scalar multi-param whose name is currently
+bound to a cell has that binding SEVERED for the loop's duration (env
+entry removed, slot reset) — the pre-loop save/restore already preserves
+the cell itself, so only the loop-duration binding becomes a plain fresh
+value, per ADR-0023's fresh-binding provenance. Pin: test 7 of
+`t/closure-capture-instance-cell.t`. The READ-side loop-param bug
+(GetUpvalue bypass, single-param shape) remains open in its ticket — this
+fix removes only the write-corruption direction for multi-params.
+
 ### Slice 2 (planned): the escape verdict must stop being a correctness gate
 
 Invariant to establish: **every captured plain user scalar is either
