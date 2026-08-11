@@ -1,6 +1,7 @@
 # ADR-0026: Slang activation — bundle Slangify + Slang::Tuxic verbatim, map recognized grammar-mixin overrides onto parser modes
 
-- Status: Proposed
+- Status: Accepted (2026-08-11 — approved by tokuhirom same day; implementation
+  to start as its own campaign, slices in dependency order §2.1 → §2.2 → §2.3 → §2.4)
 - Date: 2026-08-11
 - Deciders: tokuhirom, Claude
 - Related: [BATTERIES.md](../../BATTERIES.md) §1 (rung 2: grow the interpreter
