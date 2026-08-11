@@ -223,15 +223,25 @@ impl Interpreter {
                 return None;
             }
             RegexAtom::Alternation(alternatives) => {
-                let mut best: Option<usize> = None;
+                // ADR-0022 §4.4(c): same ranking rule as the singular
+                // capture-bearing matcher (`regex_match_capture.rs`) — keep
+                // the alternative ranked best by (prefix_len desc, litlen
+                // desc), ties broken by declaration order (iterating in
+                // written order, replacing only on a strict improvement).
+                let mut best: Option<((usize, usize), usize)> = None;
                 for alt in alternatives {
-                    if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg)
-                        && (best.is_none() || end > best.unwrap())
-                    {
-                        best = Some(end);
+                    if let Some(end) = self.regex_match_end_from_in_pkg(alt, chars, pos, pkg) {
+                        let rank = self.ltm_branch_rank_key(alt, chars, pos, pkg);
+                        let replace = best
+                            .as_ref()
+                            .map(|(best_rank, _)| rank > *best_rank)
+                            .unwrap_or(true);
+                        if replace {
+                            best = Some((rank, end));
+                        }
                     }
                 }
-                return best;
+                return best.map(|(_, end)| end);
             }
             RegexAtom::SequentialAlternation(alternatives) => {
                 if LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {

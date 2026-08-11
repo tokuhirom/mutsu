@@ -99,11 +99,6 @@ impl Interpreter {
     /// is neutralized by `ltm_atom_mode` or the `CodeAssertion` arm's
     /// existing mode check.
     ///
-    /// Not yet called from non-test code: this is ADR-0022 Slice 1
-    /// (measurement infrastructure only). Slice 3 wires it into the three
-    /// alternation-ranking consumer arms, at which point this attribute goes
-    /// away. TODO(ADR-0022 Slice 3): remove `#[allow(dead_code)]` once wired.
-    #[allow(dead_code)]
     pub(crate) fn ltm_prefix_len_at(
         &mut self,
         pattern: &RegexPattern,
@@ -171,9 +166,6 @@ impl Interpreter {
     /// `seen` cycle-guards subrule recursion by lookup name; `depth` is capped
     /// by `LTM_LITLEN_MAX_DEPTH`. Never executes user code and never runs the
     /// real matcher (so it cannot itself set `LTM_PREFIX_TERMINATED`).
-    // TODO(ADR-0022 Slice 3): remove once wired into the alternation-ranking
-    // consumer arms (only this module's own unit tests call it today).
-    #[allow(dead_code)]
     pub(crate) fn ltm_litlen_at(
         &mut self,
         pattern: &RegexPattern,
@@ -310,6 +302,28 @@ impl Interpreter {
             }
         }
         (acc, true)
+    }
+
+    /// ADR-0022 §4.4: the `(prefix_len, litlen)` rank key for one `|` branch
+    /// at `pos` — the two-part tie-break the three alternation-ranking
+    /// consumer arms sort branches by (declaration order, the third and
+    /// final tie-break, comes for free from a stable sort over the branches
+    /// in their original written order — no index needs to travel with this
+    /// key). Descending on both fields wins: `unwrap_or(0)` on a `None`
+    /// prefix measurement is safe here because a `None` with `stopped ==
+    /// false` (a sound "never matches" verdict) is filtered out by each
+    /// caller before ranking ever sees it — see ADR-0022 §4.1's contract.
+    pub(super) fn ltm_branch_rank_key(
+        &mut self,
+        alt: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+    ) -> (usize, usize) {
+        let (plen, _stopped) = self.ltm_prefix_len_at(alt, chars, pos, pkg);
+        let mut seen = HashSet::new();
+        let litlen = self.ltm_litlen_at(alt, chars, pos, pkg, &mut seen, 0);
+        (plen.unwrap_or(0), litlen)
     }
 
     /// [`Self::ltm_seqalt_candidates`] collapsed to the single longest

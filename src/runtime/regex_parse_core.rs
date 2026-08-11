@@ -587,7 +587,7 @@ impl Interpreter {
             let mut alt_patterns = Vec::new();
             for alt in &top_alts {
                 let alt_src = alt.trim();
-                if alt_src.is_empty() {
+                if regex_branch_is_blank(alt_src) {
                     continue;
                 }
                 // Re-apply inline adverbs for each alternative. Both `:i`
@@ -648,7 +648,7 @@ impl Interpreter {
             let mut conj_patterns = Vec::new();
             for part in &conj_parts {
                 let part_src = part.trim();
-                if part_src.is_empty() {
+                if regex_branch_is_blank(part_src) {
                     continue;
                 }
                 let part_pat = if ignore_case && !part_src.starts_with(":i") {
@@ -3000,10 +3000,10 @@ impl Interpreter {
                         let mut alt_patterns = Vec::new();
                         for (alt_idx, alt) in alternatives.iter().enumerate() {
                             // A leading null alternative is ignored in Raku: `( || X )`
-                            // and `( | X )` behave like `( X )`. Skip a whitespace-only
+                            // and `( | X )` behave like `( X )`. Skip a whitespace/comment-only
                             // first alternative so it does not contribute a spurious
                             // empty-matching (and, under ratchet, empty-winning) branch.
-                            if alt_idx == 0 && alt.trim().is_empty() {
+                            if alt_idx == 0 && regex_branch_is_blank(alt) {
                                 continue;
                             }
                             let parsed_alt = if needs_capture_scope {
@@ -3143,10 +3143,10 @@ impl Interpreter {
                         let mut alt_patterns = Vec::new();
                         for (alt_idx, alt) in alternatives.iter().enumerate() {
                             // A leading null alternative is ignored in Raku: `[ || X ]`
-                            // and `[ | X ]` behave like `[ X ]`. Skip a whitespace-only
+                            // and `[ | X ]` behave like `[ X ]`. Skip a whitespace/comment-only
                             // first alternative so it does not contribute a spurious
                             // empty-matching (and, under ratchet, empty-winning) branch.
-                            if alt_idx == 0 && alt.trim().is_empty() {
+                            if alt_idx == 0 && regex_branch_is_blank(alt) {
                                 continue;
                             }
                             let parsed_alt = if needs_scope {
