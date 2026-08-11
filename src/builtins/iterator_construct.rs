@@ -45,6 +45,15 @@ pub(crate) fn build_iterator_instance(target: &Value) -> Value {
     };
     let items = if crate::runtime::utils::is_shaped_array(target) {
         crate::runtime::utils::shaped_array_leaves(target)
+    } else if let ValueView::Array(arr, kind) = target.view()
+        && kind.is_itemized()
+    {
+        // `.iterator` on an ITEMIZED array (`$[1,2,3].iterator`) still iterates
+        // the array's elements — itemization only prevents flattening in list
+        // context, which `value_to_list` below models by returning the array as
+        // one opaque item (that made `pull-one` yield the whole array once;
+        // Text::CSV's `CSV::Diag.iterator` returns `$[...].iterator`).
+        arr.iter().cloned().collect()
     } else if let Some(bytes) = blob_elements(target) {
         // A Buf/Blob is an Instance holding its elements in a `bytes` attribute,
         // so `value_to_list` would see one opaque object. It iterates its elements

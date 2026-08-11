@@ -80,6 +80,16 @@ fn paren_has_toplevel_semicolon(input: &str) -> bool {
                 }
             }
             ';' if depth == 1 => return true,
+            // Skip a `#` line comment: a `;` inside one is prose, not a
+            // C-style separator (`for (1, # has no ;\n 2) {}` — Text::CSV's
+            // t/80_diag.t annotates its fragment-spec list this way).
+            '#' => {
+                for c2 in chars.by_ref() {
+                    if c2 == '\n' {
+                        break;
+                    }
+                }
+            }
             // Skip a backslash-escaped char so an escaped delimiter is ignored.
             '\\' => {
                 chars.next();

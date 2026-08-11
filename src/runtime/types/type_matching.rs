@@ -230,10 +230,13 @@ impl Interpreter {
             false
         };
         if container_kind_matches && let Some(source) = source_constraint {
-            return self.type_matches_value(
-                &resolved_constraint,
-                &Value::package(Symbol::intern(source)),
-            );
+            // Like the metadata path below, compare declared element types with
+            // any :D/:U smiley stripped — the smiley constrains the elements'
+            // definedness, not the source variable's element TYPE OBJECT
+            // (`my Field @f` must satisfy `Field:D @fld`, Text::CSV's
+            // `multi method string`).
+            let (base, _smiley) = crate::runtime::types::strip_type_smiley(&resolved_constraint);
+            return self.type_matches_value(base, &Value::package(Symbol::intern(source)));
         }
         if let Some(metadata) = self.container_type_metadata(value)
             && !metadata.value_type.is_empty()

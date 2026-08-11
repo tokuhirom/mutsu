@@ -551,7 +551,12 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
 
     // In Raku, `foo(args)` (no space) = paren call, but `foo (expr)` (space) = listop call.
     // When there was whitespace before `(`, treat `(` as expression grouping, not call parens.
-    let (rest, args) = if had_ws {
+    // Under the slang spaced-call mode (ADR-0026, Slang::Tuxic's
+    // `term:sym<identifier>` override) `is ($a, $b, $desc)` IS a paren call:
+    // the parenthesized contents bind as the argument list.
+    let spaced_paren_call =
+        had_ws && rest.starts_with('(') && crate::parser::stmt::simple::slang_spaced_call();
+    let (rest, args) = if had_ws && !spaced_paren_call {
         parse_stmt_call_args_no_paren(rest).map_err(|err| PError {
             messages: merge_expected_messages("expected known call arguments", &err.messages),
             remaining_len: err.remaining_len.or(Some(rest.len())),

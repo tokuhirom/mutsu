@@ -8,7 +8,7 @@ use Slang::Tuxic;
 # overrides flip the parser's spaced-call / spaced-methodop modes for the
 # rest of this compilation unit — and only this unit.
 
-plan 9;
+plan 11;
 
 sub foo($a, $b) { $a * $b }
 is foo (3, 5), 15, 'spaced call passes the paren contents as an arg list';
@@ -40,3 +40,9 @@ class WithPrivate {
     method pub () { self!mul (6, 7) }
     }
 is WithPrivate.new.pub, 42, 'spaced private methodop (self!m (args))';
+
+# IMPORTED functions (statement-level known calls like Test's `is`) take the
+# spaced-call reading too: `is (a, b, desc)` is a 3-arg call, not a listop
+# applied to one parenthesized List (every Text::CSV test line).
+is (3 + 4, 7, 'imported function spaced call binds the arg list');
+ok (1, 'imported ok spaced call keeps its description');
