@@ -596,6 +596,10 @@ impl Interpreter {
         // because the bareword target routes through CallMethodMut) requires a
         // concrete invocant: X::Parameter::InvalidConcreteness.
         if let Some(err) = self.exception_concreteness_error(&method, &args, &target) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "exception-concreteness",
+            );
             return Err(err);
         }
         // Force lazy IO lines for non-lazy-preserving methods
@@ -632,6 +636,7 @@ impl Interpreter {
             self,
             try_native_method_on_receiver(&target, method.as_str(), &args)
         ) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "nativecall");
             self.stack.push(result?);
             return Ok(());
         }
@@ -665,6 +670,10 @@ impl Interpreter {
                 _ => None,
             }
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "lazy-array-mutate-reject",
+            );
             return Err(RuntimeError::cannot_lazy_with_action(action, "Array"));
         }
         let target = if let ValueView::LazyList(ll) = target.view()
@@ -688,12 +697,14 @@ impl Interpreter {
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "pair-freeze");
             let frozen = self.pair_freeze(&target, &target_name);
             self.stack.push(frozen);
             return Ok(());
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, &method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "proto");
             let v = result?;
             // Drain captured-outer writeback recorded by the dispatched multi
             // candidate (see exec_call_method_op). No-op in default builds.
@@ -705,6 +716,10 @@ impl Interpreter {
         // parameterized role). `$e.Str` on a variable compiles to CallMethodMut, so
         // the mut path needs the same interception as CallMethod.
         if let Some(out) = self.try_exception_str_via_user_message(&target, &method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "exception-str-message",
+            );
             self.stack.push(out);
             return Ok(());
         }
@@ -716,6 +731,10 @@ impl Interpreter {
             && matches!(method.as_str(), "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "lazy-placeholder",
+            );
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
                     method.as_str(),
@@ -730,6 +749,7 @@ impl Interpreter {
             && method == "first"
             && let Some(result) = self.try_lazy_gather_first(&ll, &args)
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-first");
             self.stack.push(result?);
             return Ok(());
         }
@@ -747,6 +767,10 @@ impl Interpreter {
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
                 _ => crate::value::IndexTransform::Kv,
             };
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "lazy-index-pipe",
+            );
             let pipe = Value::lazy_list(crate::gc::Gc::new(
                 crate::value::LazyList::new_index_pipe(target.clone(), transform),
             ));
@@ -759,6 +783,7 @@ impl Interpreter {
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-cache");
             self.stack.push(Value::lazy_list(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
@@ -825,6 +850,7 @@ impl Interpreter {
         ) {
             // Pure attribute read: does not mutate the invocant (see comment
             // above), so it does not dirty the caller's locals (Slice 6.3).
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
             self.stack.push(val);
             return Ok(());
         }
@@ -840,6 +866,10 @@ impl Interpreter {
             if let Some(cn) = user_bool_owner
                 && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmut",
+                    "so-not-user-bool",
+                );
                 let t = self.eval_truthy(&target);
                 self.stack
                     .push(Value::truth(if method == "not" { !t } else { t }));
@@ -866,6 +896,10 @@ impl Interpreter {
             && !Self::is_builtin_type(&target_name)
             && !self.has_class(&target_name)
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "undeclared-type-new",
+            );
             let suggestions = self.suggest_type_names(&target_name);
             return Err(RuntimeError::undeclared_type_symbols(
                 &target_name,
@@ -892,6 +926,10 @@ impl Interpreter {
                     | "note"
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "junction-invocant",
+            );
             let mut results = Vec::new();
             // env_dirty substrate (docs/captured-outer-cell-sharing.md §10):
             // accumulate EVERY eigenstate's by-name caller write. Each eigenstate's
@@ -942,6 +980,7 @@ impl Interpreter {
 
         // Junction auto-threading for method arguments (mut variant)
         if let Some(result) = self.maybe_autothread_method_args(&target, &method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "junction-args");
             self.stack.push(result);
             return Ok(());
         }
@@ -952,6 +991,10 @@ impl Interpreter {
             && args.is_empty()
             && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "who-pseudo-package",
+            );
             if let ValueView::Package(pkg_name) = target.view() {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
@@ -974,6 +1017,10 @@ impl Interpreter {
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
             if is_lock_type_object || is_lock_instance_bad_arg {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmut",
+                    "lock-protect-nomatch",
+                );
                 return Err(
                     crate::runtime::methods_signature_errors::make_multi_no_match_error("protect"),
                 );
@@ -989,6 +1036,7 @@ impl Interpreter {
             } = target.view()
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
                 Some(ValueView::Int(id)) if id > 0 => id as u64,
                 _ => {
@@ -1056,6 +1104,10 @@ impl Interpreter {
                 // `populate-distributions` bug (`push @idx, ...; append @idx,
                 // ...` on a hyper worker lost every appended element).
                 "push" | "unshift" | "append" | "prepend" if plain && !args.is_empty() => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "shared-array-push-atomic",
+                    );
                     let items = if matches!(method.as_str(), "push" | "unshift") {
                         crate::runtime::Interpreter::normalize_push_unshift_args(args.clone())
                     } else {
@@ -1070,6 +1122,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 "push" | "unshift" if !args.is_empty() => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "shared-array-push-legacy",
+                    );
                     let result = loan_env!(
                         self,
                         push_to_existing_shared_array(&target_name, args.clone())
@@ -1093,6 +1149,10 @@ impl Interpreter {
                         )
                         && self.atomic_array_entry_exists(&target_name) =>
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "shared-array-pop-shift",
+                    );
                     let (result, _) = self.shared_array_mutate(&target_name, |data, _| {
                         if data.items().is_empty() {
                             crate::runtime::utils::make_empty_array_failure_what(&method, "Array")
@@ -1113,6 +1173,10 @@ impl Interpreter {
                         )
                         && self.atomic_array_entry_exists(&target_name) =>
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "shared-array-splice",
+                    );
                     let (removed, _) = self.shared_array_mutate(&target_name, |data, _| {
                         crate::runtime::Interpreter::splice_array_data(data, &args)
                     });
@@ -1218,6 +1282,7 @@ impl Interpreter {
         // Handle Match.make — must mutate the Match instance's `ast` attribute
         // and write the modified Match back to the variable.
         if method == "make" && target.is_match_instance() {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "match-make");
             let value = args.into_iter().next().unwrap_or(Value::NIL);
             if let Some(updated) = target.match_with_ast_keeping_id(value.clone()) {
                 self.env_mut().insert(target_name.to_string(), updated);
@@ -1234,6 +1299,7 @@ impl Interpreter {
         // and the `.match` machinery for the return, then writes the new string
         // back to the variable -- mirroring the `Match.make` pattern above.
         if method == "subst-mutate" && matches!(target.view(), ValueView::Str(_)) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "subst-mutate");
             let new_str = self.dispatch_subst(target.clone(), &args)?;
             // `.match` takes the pattern + adverbs but not the replacement (the
             // 2nd positional), so drop the replacement when building its args.
@@ -1268,6 +1334,10 @@ impl Interpreter {
         }
         // .hyper/.race with named arguments in mut path
         if matches!(method.as_str(), "hyper" | "race") && !args.is_empty() {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "hyper-race-config",
+            );
             let mut batch: Option<i64> = None;
             let mut degree: Option<i64> = None;
             for arg in &args {
@@ -1362,6 +1432,16 @@ impl Interpreter {
                         }
                         _ => unreachable!(),
                     };
+                    let arm = match method.as_str() {
+                        "hyper" => "hyperseq-hyper",
+                        "race" => "hyperseq-race",
+                        "is-lazy" => "hyperseq-is-lazy",
+                        "defined" => "hyperseq-defined",
+                        "^name" => "hyperseq-name",
+                        "WHAT" => "hyperseq-what",
+                        _ => unreachable!(),
+                    };
+                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", arm);
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -1394,10 +1474,18 @@ impl Interpreter {
                     } else {
                         Value::race_seq_arc(std::sync::Arc::new(result_items))
                     };
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "hyperseq-map-grep",
+                    );
                     self.stack.push(wrapped);
                     return Ok(());
                 }
                 "iterator" if args.is_empty() => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "hyperseq-iterator",
+                    );
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
                     // a second `.iterator` throws X::Seq::Consumed. The consumed-state
                     // is tracked on the inner Arc via the shared Seq registry.
@@ -1450,6 +1538,7 @@ impl Interpreter {
                         args[0].to_string_value()
                     };
                     let result = self.resolve_hash_entry(&map, &key);
+                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "at-key");
                     self.stack.push(result);
                     return Ok(());
                 }
@@ -1486,11 +1575,19 @@ impl Interpreter {
                         });
                         let new_hash = self.tag_container_metadata(new_hash, meta);
                         self.env_mut().insert(target_name.to_string(), new_hash);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
                     ValueView::Set(_, false) => {
                         let repr = crate::runtime::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
                     ValueView::Set(data, true) => {
@@ -1511,11 +1608,19 @@ impl Interpreter {
                         }
                         let new_val = Value::set_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
                     ValueView::Bag(_, false) => {
                         let repr = crate::runtime::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
@@ -1537,11 +1642,19 @@ impl Interpreter {
                         }
                         let new_val = Value::bag_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
                     ValueView::Mix(_, false) => {
                         let repr = crate::runtime::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
@@ -1563,6 +1676,10 @@ impl Interpreter {
                         }
                         let new_val = Value::mix_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
@@ -1573,6 +1690,10 @@ impl Interpreter {
                             target_name.to_string(),
                             Value::hash_with_data(Value::hash_arc(hash)),
                         );
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "assign-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
@@ -1580,7 +1701,13 @@ impl Interpreter {
                 }
             }
             "DELETE-KEY" if args.len() == 1 => {
-                crate::runtime::refuse_map_removal(&target)?;
+                if let Err(e) = crate::runtime::refuse_map_removal(&target) {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "delete-key",
+                    );
+                    return Err(e);
+                }
                 let key = args[0].to_string_value();
                 let inner_target = match target.view() {
                     ValueView::Scalar(inner) => inner,
@@ -1634,11 +1761,19 @@ impl Interpreter {
                             let new_hash = self.tag_container_metadata(new_hash, meta);
                             self.env_mut().insert(target_name.to_string(), new_hash);
                         }
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         self.stack.push(old_value);
                         return Ok(());
                     }
                     ValueView::Set(_, false) => {
                         let repr = crate::runtime::utils::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Set", &repr));
                     }
                     ValueView::Set(data, true) => {
@@ -1651,11 +1786,19 @@ impl Interpreter {
                         }
                         let new_val = Value::set_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         self.stack.push(Value::truth(existed));
                         return Ok(());
                     }
                     ValueView::Bag(_, false) => {
                         let repr = crate::runtime::utils::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Bag", &repr));
                     }
                     ValueView::Bag(data, true) => {
@@ -1668,11 +1811,19 @@ impl Interpreter {
                         }
                         let new_val = Value::bag_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         self.stack.push(Value::from_bigint(old_count));
                         return Ok(());
                     }
                     ValueView::Mix(_, false) => {
                         let repr = crate::runtime::utils::gist_value(inner_target);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         return Err(RuntimeError::assignment_ro_typename("Mix", &repr));
                     }
                     ValueView::Mix(data, true) => {
@@ -1686,10 +1837,18 @@ impl Interpreter {
                         let new_val = Value::mix_parts(crate::gc::Gc::new(new_data), true);
                         self.env_mut().insert(target_name.to_string(), new_val);
                         let result = crate::value::mix_weight_to_value(old_weight);
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         self.stack.push(result);
                         return Ok(());
                     }
                     ValueView::Nil | ValueView::Package(_) => {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "delete-key",
+                        );
                         self.stack.push(Value::NIL);
                         return Ok(());
                     }
@@ -1754,6 +1913,10 @@ impl Interpreter {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
                             self.update_local_if_exists(code, &source_name, &cell_val);
                         }
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "bind-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
@@ -1789,19 +1952,35 @@ impl Interpreter {
                             self.set_env_with_main_alias(&source_name, cell_val.clone());
                             self.update_local_if_exists(code, &source_name, &cell_val);
                         }
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "bind-key",
+                        );
                         self.stack.push(value);
                         return Ok(());
                     }
                     ValueView::Set(_, mutable) => {
                         let name = if mutable { "SetHash" } else { "Set" };
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "bind-key",
+                        );
                         return Err(RuntimeError::bind(name));
                     }
                     ValueView::Bag(_, mutable) => {
                         let name = if mutable { "BagHash" } else { "Bag" };
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "bind-key",
+                        );
                         return Err(RuntimeError::bind(name));
                     }
                     ValueView::Mix(_, mutable) => {
                         let name = if mutable { "MixHash" } else { "Mix" };
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmut",
+                            "bind-key",
+                        );
                         return Err(RuntimeError::bind(name));
                     }
                     _ => {}
@@ -1889,6 +2068,10 @@ impl Interpreter {
                         self.set_env_with_main_alias(&source_name, cell_val.clone());
                         self.update_local_if_exists(code, &source_name, &cell_val);
                     }
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "bind-pos",
+                    );
                     self.stack.push(value);
                     return Ok(());
                 }
@@ -1907,6 +2090,10 @@ impl Interpreter {
             && let Some(err) =
                 crate::vm::vm_call_method_ops::nil_predispatch_error(&method, args.is_empty())
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmut",
+                "nil-predispatch",
+            );
             return Err(err);
         }
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
@@ -1929,11 +2116,19 @@ impl Interpreter {
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier {
             Some("+") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmut",
+                    "modifier-plus",
+                );
                 let vals =
                     self.call_method_all_with_fallback(&target, &method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
             }
             Some("*") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmut",
+                    "modifier-star",
+                );
                 match self.call_method_all_with_fallback(&target, &method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
@@ -1954,6 +2149,7 @@ impl Interpreter {
                     && let Some(result) =
                         self.try_native_array_mut(&target_name, &target, &method, &args)
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -1967,6 +2163,7 @@ impl Interpreter {
                     && let Some(result) =
                         self.try_native_hash_mut_bound(&target_name, &method, &args)
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -1977,6 +2174,7 @@ impl Interpreter {
                     && let Some(result) =
                         self.try_native_array_splice(&target_name, &target, &method, &args)
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -1986,6 +2184,7 @@ impl Interpreter {
                     && let Some(result) =
                         self.try_native_buf_mut(&target_name, &target, &method, &args)
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -1996,6 +2195,7 @@ impl Interpreter {
                 if modifier.is_none()
                     && let Some(result) = self.try_native_iterator(&target, &method, &args)
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
                     self.stack.push(result?);
                     return Ok(());
                 }
@@ -2098,6 +2298,10 @@ impl Interpreter {
                                 inst_id,
                                 storage,
                             );
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "native",
+                            );
                             self.stack.push(result);
                             return Ok(());
                         }
@@ -2113,14 +2317,26 @@ impl Interpreter {
                         // those keep the fallback — they need the first-class
                         // element-cell write-back the interpreter owns.
                         if let Some(r) = self.try_native_array_map(None, &storage, &method, &args) {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "native",
+                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
                         if let Some(r) = self.try_native_first(&storage, &method, &args) {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "native",
+                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
                         if let Some(r) = self.try_native_minmax(&storage, &method, &args) {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "native",
+                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
@@ -2133,6 +2349,10 @@ impl Interpreter {
                         if Self::is_array_storage_native_safe(&method)
                             && let Some(r) = self.try_native_method(&storage, method_sym, &args)
                         {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "native",
+                            );
                             self.stack.push(r?);
                             return Ok(());
                         }
@@ -2140,6 +2360,7 @@ impl Interpreter {
                         // TODO: compile to bytecode — Array-backed instance method
                         // (non-simple methods on `is Array` storage). See ledger §1.
                         crate::vm::vm_stats::record_method_fallback(&method);
+                        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                         let result = loan_env!(
                             self,
                             call_method_mut_with_values(
@@ -2202,8 +2423,13 @@ impl Interpreter {
                         // writeback branches above and return early). So it is
                         // env-pure w.r.t. the caller -> no per-call locals pull.
                         self.method_dispatch_pure = true;
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "callmethodmut",
+                            "native",
+                        );
                         native_result
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                         self.try_compiled_method_mut_or_interpret_sym(
                             &target_name,
                             target,
@@ -2212,6 +2438,7 @@ impl Interpreter {
                         )
                     }
                 } else {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
                     self.try_compiled_method_mut_or_interpret_sym(
                         &target_name,
                         target,
@@ -2225,11 +2452,23 @@ impl Interpreter {
                             self.stack.push(val);
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "notfound",
+                            );
                             self.stack.push(Value::NIL);
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
+                        if let Err(e) = &call_result
+                            && Self::is_method_not_found_error(e)
+                        {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethodmut",
+                                "notfound",
+                            );
+                        }
                         self.stack.push(call_result?);
                     }
                 }
