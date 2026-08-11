@@ -3159,6 +3159,31 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   dispatch today, and E5b's "Native candidate is hint-only, never routing" conclusion already
   generalizes here. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"Tier-A helper
   survey (E6a, final sub-slice)". **All of E6a is now closed.** Next: E6b.
+  **Progress 2026-08-11** (E6b step 1, shadow-verify the `Native` candidate at `CallMethodMut`
+  itself — mirrors E5b step 1): instrumented all ~10 `record_dispatch_entry_outcome("callmethodmut",
+  "native"/"user")` sites inside `exec_call_method_mut_op_impl`
+  (`src/vm/vm_call_method_mut_ops.rs`) — the five Tier-A helper completions, the
+  `__mutsu_array_storage` delegation pair, and the generic-fork pair — with the same
+  `shadow_check_native_row_candidate` call E5b step 1 used, skipping only the `skip_native` branch
+  (no cascade-outcome to compare there). Pure insertion, 106 lines, 0 deletions, zero behavior
+  change. Full `t/` sweep (3026 files, `-j8`, `MUTSU_VM_STATS=1`): 118117 checks, 5756 mismatches
+  (4.88%, roughly double `CallMethod`'s 2.4%); the 20 stderr-assertion failures exactly match E6a
+  third slice's pre-existing list, confirming no regression. Mismatch breakdown, three classes: (1)
+  **2074 (36%), new to E6b** — Tier-A-served `push`/`shift`/`splice`/`append`/`unshift`/`pop`/
+  `prepend` calls are *structurally* invisible to the `Native` candidate (`native_row_servable`
+  excludes `MUTATES_RECEIVER` rows by construction, per the Tier-A helper survey's finding 4), not
+  a predicate bug; (2) 2934 (51%) reproduces `CallMethod`'s own two root causes — missing rows
+  (`DEFINITE`, 2066 alone, 36% of all mismatches) and shape-blind predicate exceptions
+  (`gist`/`raku`/`FatRat`/`pull-one`); (3) 748 (13%) reproduces the reverse class (predicate
+  over-claims by owner name, concrete shape declines — `raku`/`join`/`Int`/`sprintf`/`gist`/
+  `comb`). **Confirms and sharpens E5b step 2's generalization**: the `Native` candidate stays
+  hint-only at `CallMethodMut` too, and Tier-A traffic specifically could never route through it
+  even with a shape-complete predicate, since `MUTATES_RECEIVER` rows are excluded by design — a
+  future Tier-A-aware routing candidate would need to be a distinct kind, not attempted here.
+  `cargo build`/`clippy -- -D warnings`/`fmt --check` clean. Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E6b step 1: shadow-verifying the Native candidate at
+  CallMethodMut itself". Next: E6b step 2 (does `try_compiled_method_mut_or_interpret_sym`'s
+  `User`-candidate resolution duplicate `resolve_method_cached`, mirroring E5b step 3/4's dedup?).
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
