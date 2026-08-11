@@ -14,6 +14,12 @@
 use super::super::*;
 use super::regex_helpers::{LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, named_lookup_is_ws};
 use std::cell::Cell;
+use std::collections::HashSet;
+
+/// Recursion cap for `ltm_litlen_at`'s subrule/group descent (ADR-0022 §4.3),
+/// mirroring the ADR's suggested bound. Guards against pathological grammars
+/// even though `seen` already cuts direct cycles.
+const LTM_LITLEN_MAX_DEPTH: usize = 16;
 
 /// How an atom participates in LTM declarative-prefix measurement
 /// (ADR-0022 §4.2's prefix-construction table). `CodeAssertion` and
@@ -151,6 +157,159 @@ impl Interpreter {
             }
         }
         out
+    }
+
+    /// ADR-0022 §4.3: length of the leading-literal region of `pattern` at
+    /// `pos` — the longest run of leading declarative-literal content, used
+    /// (only) to break `prefix_len` ties between `|` branches. NOT a matcher
+    /// run: a direct char-comparison walk over `pattern`'s own token list, per
+    /// the construction table in ADR-0022 §2 (concatenated literals extend it;
+    /// capture groups end it even though their own content is literal;
+    /// quantifiers end it; non-capturing groups and subrule calls descend and
+    /// keep extending only if their own chain reaches their own end; nested
+    /// alternation extends only when every branch is itself pure-literal).
+    /// `seen` cycle-guards subrule recursion by lookup name; `depth` is capped
+    /// by `LTM_LITLEN_MAX_DEPTH`. Never executes user code and never runs the
+    /// real matcher (so it cannot itself set `LTM_PREFIX_TERMINATED`).
+    // TODO(ADR-0022 Slice 3): remove once wired into the alternation-ranking
+    // consumer arms (only this module's own unit tests call it today).
+    #[allow(dead_code)]
+    pub(crate) fn ltm_litlen_at(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+        seen: &mut HashSet<String>,
+        depth: usize,
+    ) -> usize {
+        self.ltm_litlen_walk(pattern, chars, pos, pkg, seen, depth)
+            .0
+    }
+
+    /// Internal walk for [`Self::ltm_litlen_at`]: returns `(consumed_len,
+    /// reached_end)`, where `reached_end` is true only when the walk consumed
+    /// every token in `pattern` without hitting a region-ender. Callers that
+    /// descend into a sub-pattern (`Group`, `Alternation` branch, subrule
+    /// candidate) use `reached_end` to decide whether their OWN outer chain
+    /// may keep extending past the sub-pattern, per ADR-0022 §4.3.
+    fn ltm_litlen_walk(
+        &mut self,
+        pattern: &RegexPattern,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+        seen: &mut HashSet<String>,
+        depth: usize,
+    ) -> (usize, bool) {
+        if depth > LTM_LITLEN_MAX_DEPTH {
+            return (0, false);
+        }
+        let mut acc = 0usize;
+        for token in &pattern.tokens {
+            // Quantifiers (and their separators) always end the litlen chain,
+            // even around otherwise-literal content (ADR-0022 §2 table).
+            if !matches!(token.quant, RegexQuant::One) || token.separator.is_some() {
+                return (acc, false);
+            }
+            // A capture alias on this token — `(...)`'s own token-level
+            // capture, `$<x>=...`, or `%<x>=...` — ends litlen unconditionally,
+            // even for a token whose atom is otherwise pure-literal ("capture
+            // kills litlen", validated by the `'a' \w\w | ('abc')` probe).
+            if token.named_capture.is_some()
+                || token.secondary_named_capture.is_some()
+                || token.hash_capture.is_some()
+            {
+                return (acc, false);
+            }
+            match &token.atom {
+                RegexAtom::Literal(ch) => {
+                    let idx = pos + acc;
+                    if idx >= chars.len() {
+                        return (acc, false);
+                    }
+                    let hit = if pattern.ignore_case {
+                        ch.to_lowercase().eq(chars[idx].to_lowercase())
+                    } else {
+                        *ch == chars[idx]
+                    };
+                    if !hit {
+                        return (acc, false);
+                    }
+                    acc += 1;
+                }
+                RegexAtom::Group(inner) => {
+                    let (len, full) =
+                        self.ltm_litlen_walk(inner, chars, pos + acc, pkg, seen, depth + 1);
+                    acc += len;
+                    if !full {
+                        return (acc, false);
+                    }
+                }
+                // `( … )` — a capture group is transparent for prefix LENGTH
+                // but always ends litlen, contributing nothing at all (not
+                // even its own leading-literal content), matching Rakudo's
+                // NFA (`subcapture` is not in the litlen-exempt set).
+                RegexAtom::CaptureGroup(_) => {
+                    return (acc, false);
+                }
+                RegexAtom::Alternation(alts) => {
+                    let mut all_pure = true;
+                    let mut best = 0usize;
+                    for alt in alts {
+                        let (len, full) =
+                            self.ltm_litlen_walk(alt, chars, pos + acc, pkg, seen, depth + 1);
+                        all_pure &= full;
+                        best = best.max(len);
+                    }
+                    acc += best;
+                    // Only continue the outer chain past the nested `|` when
+                    // EVERY branch was itself pure-literal-to-its-end
+                    // (mirrors NFA.nqp `method alt`'s "stop litlen at
+                    // recombination unless all alts are pure literal").
+                    if !all_pure {
+                        return (acc, false);
+                    }
+                }
+                RegexAtom::Named(name) => {
+                    if depth >= LTM_LITLEN_MAX_DEPTH || seen.contains(name) {
+                        return (acc, false);
+                    }
+                    let spec = Self::parse_named_regex_lookup_spec(name);
+                    if !spec.arg_exprs.is_empty() {
+                        return (acc, false);
+                    }
+                    let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &[]);
+                    if raw_empty {
+                        return (acc, false);
+                    }
+                    seen.insert(name.clone());
+                    let mut best = 0usize;
+                    let mut all_full = true;
+                    for (cand_pattern, cand_pkg, _sym) in candidates.iter() {
+                        let (len, full) = self.ltm_litlen_walk(
+                            cand_pattern,
+                            chars,
+                            pos + acc,
+                            cand_pkg,
+                            seen,
+                            depth + 1,
+                        );
+                        best = best.max(len);
+                        all_full &= full;
+                    }
+                    seen.remove(name);
+                    acc += best;
+                    if !all_full {
+                        return (acc, false);
+                    }
+                }
+                // Everything else (char classes, quantified-in-spirit atoms,
+                // ws, code, backrefs, lookaround, anchors, …) ends litlen.
+                _ => return (acc, false),
+            }
+        }
+        (acc, true)
     }
 
     /// [`Self::ltm_seqalt_candidates`] collapsed to the single longest
@@ -372,5 +531,150 @@ mod tests {
         let (len, stopped) = interp.ltm_prefix_len_at(&outer, &chars, 0, "G");
         assert!(stopped);
         assert_eq!(len, Some(1));
+    }
+
+    /// Measure `pattern`'s `ltm_litlen_at` against `text` at position 0 in
+    /// the empty package.
+    fn litlen(pattern: &str, text: &str) -> usize {
+        let mut interp = Interpreter::new();
+        let parsed = interp
+            .parse_regex_with_mode(pattern, RegexParseMode::Match)
+            .expect("pattern should parse");
+        let chars: Vec<char> = text.chars().collect();
+        let mut seen = HashSet::new();
+        interp.ltm_litlen_at(&parsed, &chars, 0, "", &mut seen, 0)
+    }
+
+    #[test]
+    fn pure_literal_chain_measures_full_length() {
+        assert_eq!(litlen("abc", "abcdef"), 3);
+    }
+
+    #[test]
+    fn literal_chain_stops_at_mismatch() {
+        assert_eq!(litlen("abc", "abx"), 2);
+    }
+
+    #[test]
+    fn capture_group_kills_litlen_even_when_pure_literal() {
+        // `('abc')` as the whole pattern: capture ends litlen immediately,
+        // contributing nothing at all — ADR-0022 §2/§4.3.
+        assert_eq!(litlen("('abc')", "abc"), 0);
+    }
+
+    #[test]
+    fn capture_group_kills_litlen_after_leading_literal() {
+        // `'a' (\w\w)`: the leading 'a' still counts; the capture group ends
+        // the chain right after it.
+        assert_eq!(litlen(r"a (\w\w)", "abc"), 1);
+    }
+
+    #[test]
+    fn quantifier_ends_litlen() {
+        // NOT `'ab' ** 2`: a captureless, separator-less, single-atom fixed-
+        // count `**N` is string-unrolled into literal repeated text by the
+        // pre-existing `expand_ltm_pattern` engine pass BEFORE the token
+        // parser ever runs (`regex_parse_core.rs`'s `mode ==
+        // RegexParseMode::Match` branch) — so by the time this walk sees it,
+        // it is indistinguishable from a hand-written `'abab'` and the
+        // quantifier-boundary information this rule depends on is already
+        // gone. `+`/`*`/`?` are NOT touched by that pass (its trigger regex
+        // matches literal `**` only), so they exercise the real check.
+        assert_eq!(litlen("'ab'+", "abab"), 0);
+    }
+
+    #[test]
+    fn non_capturing_group_descends_and_continues() {
+        // `[ab]c`: the group is pure literal and reaches its own end, so the
+        // outer chain continues past it into the trailing 'c'.
+        assert_eq!(litlen("[ab] c", "abc"), 3);
+    }
+
+    #[test]
+    fn nested_alternation_all_pure_literal_extends_chain() {
+        // `"/c/" [ 'tree' | 'x' ]`: both nested branches are pure literal, so
+        // litlen continues through the longest one that actually matches.
+        assert_eq!(litlen(r#""/c/" [ 'tree' | 'x' ]"#, "/c/tree"), 7);
+    }
+
+    #[test]
+    fn nested_alternation_non_pure_branch_stops_chain_after_contribution() {
+        // One branch is not pure-literal (`\w+`); the nested `|` still
+        // contributes its best matching length, but does not let the OUTER
+        // chain continue past it.
+        assert_eq!(litlen(r"a [ 'b' | \w+ ] c", "abc"), 2);
+    }
+
+    #[test]
+    fn char_class_ends_litlen() {
+        assert_eq!(litlen(r"a \w b", "aab"), 1);
+    }
+
+    #[test]
+    fn case_insensitive_literal_extends_via_pattern_flag() {
+        assert_eq!(litlen("abc", "ABC"), 0); // :i not set -> no match at all
+        let mut interp = Interpreter::new();
+        let parsed = interp
+            .parse_regex_with_mode("abc", RegexParseMode::Match)
+            .expect("pattern should parse");
+        // Simulate `:i` by constructing the pattern with ignore_case set —
+        // the parser's own `:i` plumbing is exercised elsewhere; this test
+        // only pins that ltm_litlen_at honors `pattern.ignore_case`.
+        let mut ci_pattern = parsed;
+        ci_pattern.ignore_case = true;
+        let chars: Vec<char> = "ABC".chars().collect();
+        let mut seen = HashSet::new();
+        let len = interp.ltm_litlen_at(&ci_pattern, &chars, 0, "", &mut seen, 0);
+        assert_eq!(len, 3);
+    }
+
+    #[test]
+    fn subrule_descent_extends_litlen_through_pure_literal_callee() {
+        let mut interp = Interpreter::new();
+        interp
+            .run("grammar G { token abb { 'abb' } }")
+            .expect("grammar declaration should run");
+        let pattern = interp
+            .parse_regex_with_mode("<abb>", RegexParseMode::Match)
+            .expect("pattern should parse");
+        let chars: Vec<char> = "abb".chars().collect();
+        let mut seen = HashSet::new();
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        assert_eq!(len, 3);
+    }
+
+    #[test]
+    fn subrule_descent_stops_at_non_literal_callee_content() {
+        let mut interp = Interpreter::new();
+        interp
+            .run(r"grammar G { token item { a \w } }")
+            .expect("grammar declaration should run");
+        let pattern = interp
+            .parse_regex_with_mode("<item>", RegexParseMode::Match)
+            .expect("pattern should parse");
+        let chars: Vec<char> = "ab".chars().collect();
+        let mut seen = HashSet::new();
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        assert_eq!(len, 1);
+    }
+
+    #[test]
+    fn direct_left_recursive_subrule_cycle_guard_terminates() {
+        // A token whose body calls itself must not blow the stack: `seen`
+        // cuts the cycle and the chain simply stops there.
+        let mut interp = Interpreter::new();
+        interp
+            .run("grammar G { token loopy { 'a' <loopy> } }")
+            .expect("grammar declaration should run");
+        let pattern = interp
+            .parse_regex_with_mode("<loopy>", RegexParseMode::Match)
+            .expect("pattern should parse");
+        let chars: Vec<char> = "aaaa".chars().collect();
+        let mut seen = HashSet::new();
+        // Must terminate (not stack-overflow / infinite-loop) and return SOME
+        // bounded length; the exact value is an implementation detail of
+        // where the cycle guard cuts in, so only assert boundedness.
+        let len = interp.ltm_litlen_at(&pattern, &chars, 0, "G", &mut seen, 0);
+        assert!(len <= chars.len());
     }
 }
