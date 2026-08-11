@@ -74,24 +74,57 @@ pub(crate) struct NativeRowFlags(pub(crate) u8);
 
 impl NativeRowFlags {
     /// Callable on a type object (`Str:U`), not just a defined instance.
-    /// Only consumed by the E2a inverse probe today; E4 reads it once the
-    /// resolver admits type-object receivers to a candidate sequence.
-    #[cfg(test)]
+    /// E4b's [`native_row_servable`] is the first production reader (design
+    /// decision 4's `Native` candidate); before that it only backed the E2a
+    /// inverse probe.
     pub(crate) const TYPE_OBJECT_OK: NativeRowFlags = NativeRowFlags(1 << 0);
     /// Implemented by a Tier-A mutable-method helper (`vm_call_method_mut_ops.rs`)
     /// or a `&mut self` slow path, not the pure `native_method_*arg` layer.
-    /// Only consumed by the E2a inverse probe today; E6 is the real reader.
-    #[cfg(test)]
+    /// E4b's [`native_row_servable`] is the first production reader; E6 is
+    /// the eventual authoritative one.
     pub(crate) const MUTATES_RECEIVER: NativeRowFlags = NativeRowFlags(1 << 1);
     /// Handled by a named interceptor ahead of the arity cascades (or not
     /// natively recognized at all) -- never resolved by plain
     /// `native_method_*arg` name matching.
     pub(crate) const SPECIAL: NativeRowFlags = NativeRowFlags(1 << 2);
 
-    #[cfg(test)]
     pub(crate) const fn contains(self, bit: NativeRowFlags) -> bool {
         self.0 & bit.0 != 0
     }
+}
+
+/// ADR-0019 E4b design decision 4: is a `(owner, name)` row actually reachable
+/// by the pure `native_method_{0,1,2}arg` cascade for one specific call --
+/// not just "does some row exist", but "does it exist at the call's own
+/// arity, on a cascade path a `Native` resolver candidate may stand for".
+/// `SPECIAL` and `MUTATES_RECEIVER` rows never qualify (both bypass the pure
+/// arity cascade, matching how [`super::super::runtime::receiver_class`]'s
+/// `record_native_row_coverage` treats them as unmodeled/mutator paths, not
+/// as "the plain cascade would serve this"); an indefinite (type-object)
+/// receiver additionally needs `TYPE_OBJECT_OK`. `owner` is retried through
+/// [`super::builtin_type_methods::canonical_builtin_owner`]'s folding
+/// (`Buf`/`Blob`/... -> `Blob`, `Sub`/`Method`/... -> `Code`, etc.) the same
+/// way `record_native_row_coverage` does, since the row catalog is generated
+/// keyed by the folded owner and a plain lookup at the unfolded name would
+/// otherwise never find it.
+pub(crate) fn native_row_servable(
+    owner: &'static str,
+    name: &'static str,
+    call_arity: NativeArityMask,
+    definite: bool,
+) -> bool {
+    let reachable = |owner: &'static str| {
+        let (arity, flags) = native_method_row(owner, name);
+        arity.contains(call_arity)
+            && !flags.contains(NativeRowFlags::SPECIAL)
+            && !flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+            && (definite || flags.contains(NativeRowFlags::TYPE_OBJECT_OK))
+    };
+    if reachable(owner) {
+        return true;
+    }
+    let folded = super::builtin_type_methods::canonical_builtin_owner(owner);
+    !folded.is_empty() && folded != owner && reachable(folded)
 }
 
 /// One canonical native (owner, method) recognition entry -- see the module
@@ -224,6 +257,102 @@ mod tests {
         for sample in [&str_sample, &int_sample] {
             assert!(native_method_arities(sample, "DEFINITE") & 1 != 0);
         }
+    }
+
+    /// `Str.chars` is `TYPE_OBJECT_OK` -- servable at arity 0 whether or not
+    /// the receiver is definite.
+    #[test]
+    fn native_row_servable_allows_type_object_ok_row_when_indefinite() {
+        assert!(native_row_servable(
+            "Str",
+            "chars",
+            NativeArityMask::A0,
+            true
+        ));
+        assert!(native_row_servable(
+            "Str",
+            "chars",
+            NativeArityMask::A0,
+            false
+        ));
+    }
+
+    /// `Str.ends-with` has no `TYPE_OBJECT_OK` flag -- servable at its arity
+    /// for a definite receiver, but not for an indefinite (type-object) one.
+    #[test]
+    fn native_row_servable_rejects_indefinite_receiver_without_type_object_ok() {
+        assert!(native_row_servable(
+            "Str",
+            "ends-with",
+            NativeArityMask::A1,
+            true
+        ));
+        assert!(!native_row_servable(
+            "Str",
+            "ends-with",
+            NativeArityMask::A1,
+            false
+        ));
+    }
+
+    /// `Str.match` is `SPECIAL` -- never reachable through the pure arity
+    /// cascade, at any arity.
+    #[test]
+    fn native_row_servable_rejects_special_row() {
+        for arity in [
+            NativeArityMask::A0,
+            NativeArityMask::A1,
+            NativeArityMask::A2,
+        ] {
+            assert!(!native_row_servable("Str", "match", arity, true));
+        }
+    }
+
+    /// A call at the wrong arity for the row's mask is not servable even
+    /// though the row itself is otherwise unremarkable.
+    #[test]
+    fn native_row_servable_rejects_mismatched_arity() {
+        assert!(!native_row_servable(
+            "Str",
+            "ends-with",
+            NativeArityMask::A0,
+            true
+        ));
+    }
+
+    /// An owner with no row at all (or a name the catalog does not
+    /// recognize) conservatively reports `(N, SPECIAL)` -- never servable.
+    #[test]
+    fn native_row_servable_rejects_unmodelled_pair() {
+        assert!(!native_row_servable(
+            "NoSuchOwner",
+            "no-such-method",
+            NativeArityMask::A0,
+            true
+        ));
+    }
+
+    /// The `Buf`/`Blob` family is catalogued under the folded owner `Blob`
+    /// (`canonical_builtin_owner`); a lookup at the unfolded owner name must
+    /// still find it, mirroring `record_native_row_coverage`'s own fold.
+    #[test]
+    fn native_row_servable_follows_the_canonical_owner_fold() {
+        assert_eq!(
+            crate::builtins::builtin_type_methods::canonical_builtin_owner("Buf"),
+            "Blob"
+        );
+        let (blob_arity, blob_flags) = native_method_row("Blob", "elems");
+        assert!(
+            blob_arity.contains(NativeArityMask::A0)
+                && !blob_flags.contains(NativeRowFlags::SPECIAL),
+            "test assumes Blob.elems is a plain A0 row; update the fixture if the table changes"
+        );
+        assert!(native_row_servable(
+            "Buf",
+            "elems",
+            NativeArityMask::A0,
+            true
+        ));
     }
 
     #[test]

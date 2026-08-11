@@ -224,3 +224,25 @@ the four candidate kinds design decision 4 lists — plan a dedicated slice for
 it (signature change to `resolve_sequence` + its callers, a new
 production-safe row-existence predicate, then the usual shadow-verify sweep)
 rather than expecting it to be a small mechanical follow-on to step 3.
+
+**Update (step 9, 2026-08-11, landed):** the `Native` candidate is in
+(`ResolvedCandidate::Native { owner }`, `resolution_sequence.rs`), smaller
+than this note anticipated. `NativeCallShape { arity, definite }` is the
+E4b-local subset threaded through `resolve_sequence`'s signature (point 1
+above) rather than the full E3 `CallShape`. Point 3's "new row-existence
+predicate distinguishing absent from genuinely-SPECIAL" turned out
+unnecessary: `native_row_servable` (`native_method_row.rs`) only needs "is
+this call's arity servable, non-`SPECIAL`, non-`MUTATES_RECEIVER`, and
+`TYPE_OBJECT_OK` if indefinite" — both "no row" and "row classified special"
+correctly answer "not servable" for that question, so only
+`TYPE_OBJECT_OK`/`MUTATES_RECEIVER`/`NativeRowFlags::contains` needed
+un-gating from `#[cfg(test)]`, not a new predicate or the `NativeMethodRow`
+struct. Shadow-verified without a t/-wide sweep: a new
+`shadow_check_native_row_candidate` compares the candidate's presence
+against `native_result.is_some()` — the real cascade result
+`call_method_with_values` already computes, not a second invocation, so no
+double-invocation side-effect risk. See the ADR's step-9 progress note for
+the full verification record. Still open: actually consuming `User`/
+`NativeCallBinding`/`Native` together to replace `should_bypass_native_fastpath`
+at its one call site — that is the authoritative switch itself, not attempted
+here.

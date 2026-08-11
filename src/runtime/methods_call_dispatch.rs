@@ -2788,7 +2788,12 @@ impl Interpreter {
             skip_pseudo,
             is_pseudo_method,
         );
-        self.shadow_check_bypass_user_method_categories(&target, method, is_pseudo_method);
+        self.shadow_check_bypass_user_method_categories(
+            &target,
+            method,
+            is_pseudo_method,
+            args.len(),
+        );
         let method_sym = crate::symbol::Symbol::intern(method);
         let native_result = if bypass_native_fastpath {
             None
@@ -2806,6 +2811,15 @@ impl Interpreter {
                 &target,
                 method_sym.as_str(),
                 args.len(),
+            );
+        }
+        if !bypass_native_fastpath {
+            self.shadow_check_native_row_candidate(
+                &target,
+                method,
+                method_sym,
+                args.len(),
+                native_result.is_some(),
             );
         }
         // `.Capture` on targets that must call user methods or drain a live source
