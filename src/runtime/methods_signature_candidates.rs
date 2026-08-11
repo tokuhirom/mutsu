@@ -307,7 +307,7 @@ impl Interpreter {
         } else {
             None
         };
-        make_signature_value_with_owner(info, sub_key)
+        make_signature_value_with_owner(info, sub_key, Some(self))
     }
 
     pub(super) fn signature_required_positional_count(

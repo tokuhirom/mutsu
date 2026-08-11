@@ -156,7 +156,7 @@ impl Interpreter {
                         .collect()
                 };
                 let info = param_defs_to_sig_info(&defs, None);
-                return Some(Ok(make_signature_value(info)));
+                return Some(Ok(make_signature_value(info, Some(&*self))));
             }
             if candidates.len() == 1 {
                 return Some(self.call_method_with_values(
@@ -236,7 +236,7 @@ impl Interpreter {
                         .collect()
                 };
                 let info = param_defs_to_sig_info(&defs, None);
-                let sig = make_signature_value(info);
+                let sig = make_signature_value(info, Some(&*self));
                 if let ValueView::Instance { attributes, .. } = sig.view() {
                     attributes
                         .as_map()

@@ -113,10 +113,14 @@ impl Interpreter {
             self.env.remove("_");
         }
         if !ok {
-            return Err(Self::parameter_binding_error(format!(
-                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                pd.name
-            )));
+            return Err(Self::parameter_binding_error(
+                format!(
+                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                    pd.name
+                ),
+                pd,
+                Some(&*self),
+            ));
         }
         Ok(())
     }
@@ -146,24 +150,38 @@ impl Interpreter {
         keys
     }
 
-    fn parameter_binding_error(message: String) -> RuntimeError {
+    /// Build an `X::TypeCheck::Binding::Parameter` for a `where`-constraint
+    /// binding failure, carrying a real `Parameter` object in `.parameter`
+    /// (not just the bare name) — consumers like Cro::HTTP::Router's
+    /// bind-failure classifier call `.parameter.named`/`.parameter.type` on
+    /// whatever this exception's `.parameter` returns.
+    fn parameter_binding_error(
+        message: String,
+        pd: &ParamDef,
+        interp: Option<&Interpreter>,
+    ) -> RuntimeError {
         let mut err = RuntimeError::new(message);
         let mut ex_attrs = std::collections::HashMap::new();
         ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
         let exception =
             Value::make_instance(Symbol::intern("X::TypeCheck::Binding::Parameter"), ex_attrs);
         err.exception = Some(Box::new(exception));
-        err
+        err.with_parameter_object(pd, interp)
     }
 
-    fn normalize_coercion_binding_error(err: RuntimeError) -> RuntimeError {
+    fn normalize_coercion_binding_error(
+        err: RuntimeError,
+        pd: &ParamDef,
+        interp: Option<&Interpreter>,
+    ) -> RuntimeError {
         if matches!(
             err.exception.as_deref().map(Value::view),
             Some(ValueView::Instance { class_name, .. }) if class_name.resolve() == "X::Coerce::Impossible"
         ) {
             err
         } else {
-            Self::parameter_binding_error(err.message)
+            let message = err.message.clone();
+            Self::parameter_binding_error(message, pd, interp)
         }
     }
 
@@ -690,10 +708,14 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                         if !ok {
-                            return Err(Self::parameter_binding_error(format!(
-                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                pd.name
-                            )));
+                            return Err(Self::parameter_binding_error(
+                                format!(
+                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                    pd.name
+                                ),
+                                pd,
+                                Some(&*self),
+                            ));
                         }
                     }
                 } else if is_hash_slurpy {
@@ -932,18 +954,14 @@ impl Interpreter {
                             self.env.remove("_");
                         }
                         if !ok {
-                            let mut err = RuntimeError::new(format!(
-                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                pd.name
+                            return Err(Self::parameter_binding_error(
+                                format!(
+                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                    pd.name
+                                ),
+                                pd,
+                                Some(&*self),
                             ));
-                            let mut ex_attrs = std::collections::HashMap::new();
-                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
-                            let exception = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                ex_attrs,
-                            );
-                            err.exception = Some(Box::new(exception));
-                            return Err(err);
                         }
                     }
                     // Unpack sub-signature from the slurpy array (e.g., *[$a, $b, $c])
@@ -1643,7 +1661,9 @@ impl Interpreter {
                             let original = value.clone();
                             value = self
                                 .try_coerce_value_for_constraint(&resolved_constraint, value)
-                                .map_err(Self::normalize_coercion_binding_error)?;
+                                .map_err(|e| {
+                                    Self::normalize_coercion_binding_error(e, pd, Some(&*self))
+                                })?;
                             // A Failure from coercion is passed through as-is
                             // (it will throw when sunk or used). Only check
                             // type match for non-Failure results.
@@ -1753,7 +1773,7 @@ impl Interpreter {
                                         crate::runtime::utils::gist_value(&value)
                                     )),
                                 )
-                                .with_parameter_object(pd));
+                                .with_parameter_object(pd, Some(&*self)));
                             }
                             return Err(RuntimeError::typecheck_binding_parameter(
                                 &display_name,
@@ -1764,11 +1784,13 @@ impl Interpreter {
                                     type_error_kind, display_name, resolved_constraint, got
                                 )),
                             )
-                            .with_parameter_object(pd));
+                            .with_parameter_object(pd, Some(&*self)));
                         } else {
                             value = self
                                 .try_coerce_value_for_constraint(&resolved_constraint, value)
-                                .map_err(Self::normalize_coercion_binding_error)?;
+                                .map_err(|e| {
+                                    Self::normalize_coercion_binding_error(e, pd, Some(&*self))
+                                })?;
                         }
                         if (resolved_constraint.starts_with("Associative[")
                             || resolved_constraint.starts_with("Hash["))
@@ -1977,18 +1999,14 @@ impl Interpreter {
                             }
                         }
                         if !ok {
-                            let mut err = RuntimeError::new(format!(
-                                "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
-                                pd.name
+                            return Err(Self::parameter_binding_error(
+                                format!(
+                                    "X::TypeCheck::Binding::Parameter: where constraint failed for parameter '{}'",
+                                    pd.name
+                                ),
+                                pd,
+                                Some(&*self),
                             ));
-                            let mut ex_attrs = std::collections::HashMap::new();
-                            ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
-                            let exception = Value::make_instance(
-                                Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                ex_attrs,
-                            );
-                            err.exception = Some(Box::new(exception));
-                            return Err(err);
                         }
                     }
                     // Resolve type capture prefixes (e.g., `::T` → `Int`) so
