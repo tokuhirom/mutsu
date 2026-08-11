@@ -29,6 +29,10 @@ impl Interpreter {
         if let ValueView::ContainerRef(cell) = target.view() {
             let inner = cell.lock().unwrap_or_else(|e| e.into_inner()).clone();
             if matches!(inner.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "container-ref-cell",
+                );
                 let cell = cell.clone();
                 let result = self.call_method_mut_with_values(target_var, inner, method, args)?;
                 if let Some(updated) = self.env.get(target_var).cloned()
@@ -59,12 +63,20 @@ impl Interpreter {
                 "push" | "append" | "pop" | "shift" | "unshift" | "prepend" | "splice"
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "immutable-list-reject",
+            );
             return Err(make_x_immutable_error(method, "List"));
         }
         if scalar_like_target
             && args.is_empty()
             && matches!(method, "postfix:<++>" | "postfix:<-->")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "incdec",
+            );
             self.check_readonly_for_increment(target_var)?;
             let current = self.env.get(target_var).cloned().unwrap_or(target);
             let current = Self::normalize_incdec_source_for_mut(current);
@@ -84,6 +96,10 @@ impl Interpreter {
                 ValueView::Mix(_, _) | ValueView::Set(_, _) | ValueView::Bag(_, _)
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "keyof",
+            );
             if let Some(constraint) = self.var_type_constraint(target_var)
                 && let Some(bracket_pos) = constraint.find('[')
             {
@@ -93,6 +109,10 @@ impl Interpreter {
             return Ok(Value::package(Symbol::intern("Mu")));
         }
         if method == "VAR" && args.is_empty() {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "var-reflect",
+            );
             // Proxy (including subclasses): .VAR returns the proxy wrapped as a
             // ProxyObject so that subsequent method calls don't auto-FETCH.
             if matches!(target.view(), ValueView::Proxy { .. }) {
@@ -208,6 +228,7 @@ impl Interpreter {
             && args.is_empty()
             && (target_var.starts_with('@') || target_var.starts_with('%'))
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmutwithvalues", "of");
             // An `@`/`%` param bound to a parametric TYPE OBJECT
             // (`sub g(@x) { @x.of }` called with `Positional[Dog]` — the
             // JSON::Unmarshal attribute-type shape) reads the element type
@@ -243,6 +264,10 @@ impl Interpreter {
         if method == "set"
             && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "collation-set",
+            );
             let result = self.dispatch_collation_method(target, method, &args)?;
             // Update the variable in the environment to reflect the mutation
             self.env.insert(target_var.to_string(), result.clone());
@@ -254,6 +279,10 @@ impl Interpreter {
         if matches!(method, "set" | "unset")
             && let ValueView::Set(data, true) = target.view()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "sethash-set-unset",
+            );
             let mut elements = data.elements.clone();
             // Preserve the recorded element objects of untouched keys.
             let mut originals = data.original_keys.clone().unwrap_or_default();
@@ -295,6 +324,10 @@ impl Interpreter {
             let bytes = buf_raw_bytes_or_empty(&attributes);
 
             if (method == "read-ubits" || method == "read-bits") && args.len() == 2 {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-read-bits",
+                );
                 let Some(from) = Self::value_to_non_negative_i64(&args[0]) else {
                     return Err(RuntimeError::new("read-ubits/read-bits expects Int offset"));
                 };
@@ -312,6 +345,10 @@ impl Interpreter {
             }
 
             if (method == "write-ubits" || method == "write-bits") && args.len() == 3 {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-write-bits",
+                );
                 if class_name == "Blob" {
                     return Err(RuntimeError::new(
                         "Cannot modify immutable Blob with write-bits/write-ubits",
@@ -348,6 +385,10 @@ impl Interpreter {
             } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "buf-write-num-mut",
+            );
             let cn = class_name.resolve();
             if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
                 return Err(RuntimeError::new(format!(
@@ -396,6 +437,10 @@ impl Interpreter {
         {
             let cn = name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-write-num-fresh",
+                );
                 if args.len() < 2 || args.len() > 3 {
                     return Err(RuntimeError::new(format!(
                         "{} expects 2 or 3 arguments, got {}",
@@ -439,6 +484,10 @@ impl Interpreter {
             } = target.view()
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "buf-write-int-mut",
+            );
             let cn = class_name.resolve();
             if cn == "Blob" || cn.starts_with("Blob[") || cn.starts_with("blob") {
                 return Err(RuntimeError::new(format!(
@@ -487,6 +536,10 @@ impl Interpreter {
         {
             let cn = name.resolve();
             if crate::runtime::utils::is_buf_or_blob_class(&cn) {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-write-int-fresh",
+                );
                 if args.len() < 2 || args.len() > 3 {
                     return Err(RuntimeError::new(format!(
                         "{} expects 2 or 3 arguments, got {}",
@@ -528,11 +581,23 @@ impl Interpreter {
         ) && Self::is_buf_like_value(&target)
         {
             if method == "reallocate" {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-reallocate",
+                );
                 return self.buf_reallocate(target_var, target, &args);
             }
             if method == "pop" || method == "shift" || method == "splice" {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-pop-shift-splice",
+                );
                 return self.buf_pop_shift_splice(target_var, target, method, args);
             }
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "buf-mutate-append",
+            );
             return self.buf_mutate_method(target_var, target, method, args);
         }
 
@@ -601,6 +666,10 @@ impl Interpreter {
             };
             match method {
                 "push" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-push",
+                    );
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
                     let normalized_args = nil_to_elem_default(self, normalized_args);
@@ -609,6 +678,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "append" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-append",
+                    );
                     // Raku's append uses the "one-arg rule": if exactly one
                     // non-itemized Array/List argument is passed, its elements
                     // are flattened. With multiple arguments, each is appended
@@ -639,6 +712,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "unshift" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-unshift",
+                    );
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
                     let normalized_args = nil_to_elem_default(self, normalized_args);
@@ -668,6 +745,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "prepend" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-prepend",
+                    );
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
                     let result = if let Some(slot) = self.env.get_mut(&key)
@@ -696,6 +777,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "pop" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-pop",
+                    );
                     if !args.is_empty() {
                         return Err(RuntimeError::new(format!(
                             "Too many positionals passed; expected 1 argument but got {}",
@@ -746,6 +831,10 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "shift" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-shift",
+                    );
                     if !args.is_empty() {
                         return Err(RuntimeError::new(format!(
                             "Too many positionals passed; expected 1 argument but got {}",
@@ -785,6 +874,10 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "splice" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-splice",
+                    );
                     // Resolve a splice position argument to a usize.
                     // Whatever => array length, Callable => call with length, etc.
                     /// Resolve a splice position to a signed integer for validation.
@@ -1145,6 +1238,10 @@ impl Interpreter {
                     return Ok(removed_arr);
                 }
                 "squish" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "array-squish",
+                    );
                     let current = self.env.get(&key).cloned().unwrap_or(target.clone());
                     let squished = self.dispatch_squish(current, &args)?;
                     if self.in_lvalue_assignment {
@@ -1166,6 +1263,10 @@ impl Interpreter {
             let key = target_var.to_string();
             match method {
                 "push" | "append" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "hash-push-append",
+                    );
                     let is_push = method == "push";
 
                     // Typed / object hashes (`my Int %h{Rat}`) must type-check both
@@ -1377,6 +1478,10 @@ impl Interpreter {
             };
             match method {
                 "push" | "append" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "sigilless-push-append",
+                    );
                     let normalized_args = if method == "push" {
                         Self::normalize_push_unshift_args(args)
                     } else {
@@ -1459,6 +1564,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "pop" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "sigilless-pop",
+                    );
                     if !args.is_empty() {
                         return Err(RuntimeError::new(format!(
                             "Too many positionals passed; expected 1 argument but got {}",
@@ -1516,6 +1625,10 @@ impl Interpreter {
                     return Ok(out);
                 }
                 "unshift" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "sigilless-unshift",
+                    );
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
@@ -1552,6 +1665,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "prepend" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "sigilless-prepend",
+                    );
                     let flat_values = flatten_append_args(args);
                     if let Some(slot) = self.env.get_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
@@ -1591,6 +1708,10 @@ impl Interpreter {
                     return Ok(result);
                 }
                 "shift" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "sigilless-shift",
+                    );
                     if !args.is_empty() {
                         return Err(RuntimeError::new(format!(
                             "Too many positionals passed; expected 1 argument but got {}",
@@ -1655,6 +1776,10 @@ impl Interpreter {
             && target_var.starts_with('@')
             && !matches!(target.view(), ValueView::LazyList(ll) if ll.is_infinite_spec())
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "map-rw-writeback",
+            );
             let is_shaped = crate::runtime::utils::is_shaped_array(&target);
             let mut items = if is_shaped {
                 crate::runtime::utils::shaped_array_leaves(&target)
@@ -1696,6 +1821,10 @@ impl Interpreter {
         if matches!(target.view(), ValueView::Set(_, true))
             && matches!(method, "grab" | "grabpairs")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "sethash-grab",
+            );
             // Resolve Callable args: call with .elems to get count
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
@@ -1783,6 +1912,10 @@ impl Interpreter {
         if matches!(target.view(), ValueView::Bag(_, true))
             && matches!(method, "grab" | "grabpairs")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "baghash-grab",
+            );
             // Resolve Callable args: call with .total (grab) or .elems (grabpairs)
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
@@ -1909,6 +2042,10 @@ impl Interpreter {
 
         // MixHash.grabpairs: remove random pairs and return them, mutating the Mix
         if matches!(target.view(), ValueView::Mix(_, _)) && matches!(method, "grabpairs" | "grab") {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "mixhash-grab",
+            );
             // Resolve Callable args
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
@@ -1997,6 +2134,10 @@ impl Interpreter {
 
         // SharedPromise/SharedChannel are internally mutable — delegate to immutable dispatch
         if matches!(target.view(), ValueView::Promise(_) | ValueView::Channel(_)) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethodmutwithvalues",
+                "promise-channel-delegate",
+            );
             return self.call_method_with_values(target, method, args);
         }
 
@@ -2018,12 +2159,20 @@ impl Interpreter {
                 && (Self::is_metamodel_how(&class_name)
                     || self.is_metamodel_how_class(&class_name.resolve()))
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "classhow",
+                );
                 return self.dispatch_classhow_method(method, args.to_vec());
             }
             if crate::runtime::utils::is_buf_like_class(&class_name.resolve())
                 && matches!(method, "write-ubits" | "write-bits")
                 && args.len() == 3
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "buf-bits-instance-fallback",
+                );
                 let from = super::to_int(&args[0]);
                 let bits = super::to_int(&args[1]);
                 if from < 0 || bits < 0 {
@@ -2041,6 +2190,10 @@ impl Interpreter {
             }
 
             if class_name == "Iterator" {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "iterator-protocol",
+                );
                 // A detached working copy of the attribute map; written back into
                 // the instance's live shared cell at the end.
                 let mut updated = attributes.to_map();
@@ -2355,6 +2508,10 @@ impl Interpreter {
             if let Some(method_def) = self.resolve_method(&class_name.resolve(), method, &args)
                 && method_def.delegation.is_some()
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethodmutwithvalues",
+                    "delegation",
+                );
                 // Clear skip_pseudo_method_native so the inner delegate dispatch
                 // does not inherit the outer call's bypass flag (which was set
                 // for the delegator's own method name).
@@ -2437,6 +2594,10 @@ impl Interpreter {
                         .resolve_method(&class_name.resolve(), method, &[])
                         .is_some_and(|m| m.is_rw);
                     if !has_rw_method {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome(
+                            "callmethodmutwithvalues",
+                            "accessor",
+                        );
                         let mut updated = attributes.to_map();
                         let assigned = args[0].clone();
                         updated.insert(method.to_string(), assigned.clone());
@@ -2447,6 +2608,10 @@ impl Interpreter {
                         return Ok(assigned);
                     }
                     // Signal to assign_method_lvalue to handle via Proxy
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmutwithvalues",
+                        "rw-proxy-signal",
+                    );
                     return Err(super::methods_signature_errors::make_multi_no_match_error(
                         method,
                     ));
@@ -2457,6 +2622,10 @@ impl Interpreter {
                         .is_some_and(|m| m.is_rw);
                     if has_rw_method {
                         // Signal to assign_method_lvalue to handle via Proxy
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmutwithvalues",
+                            "rw-proxy-signal",
+                        );
                         return Err(super::methods_signature_errors::make_multi_no_match_error(
                             method,
                         ));
@@ -2468,6 +2637,10 @@ impl Interpreter {
                         class_attrs.iter().any(|a| a.is_public && a.name == method)
                     };
                     if is_public_accessor {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethodmutwithvalues",
+                            "rw-readonly-reject",
+                        );
                         let current = attributes
                             .as_map()
                             .get(method)
@@ -2482,6 +2655,10 @@ impl Interpreter {
             }
 
             if self.is_native_method(&class_name.resolve(), method) {
+                crate::vm::vm_stats::record_dispatch_entry_outcome(
+                    "callmethodmutwithvalues",
+                    "native",
+                );
                 // Lazy `IO::CatHandle.lines` (no `$limit`/`:close`) / `.handles`
                 // return a lazy list backed by the live cat (sharing its cell),
                 // so mid-iteration `.chomp`/`.nl-in`/`.encoding` changes apply and
@@ -2533,6 +2710,10 @@ impl Interpreter {
             if self.has_user_method(&class_name.resolve(), method)
                 && (!is_pseudo_method || skip_pseudo)
             {
+                crate::vm::vm_stats::record_dispatch_entry_outcome(
+                    "callmethodmutwithvalues",
+                    "user",
+                );
                 let (result, updated) = self.run_instance_method(
                     &class_name.resolve(),
                     attributes.to_map(),
@@ -2561,6 +2742,7 @@ impl Interpreter {
                 return Ok(result);
             }
         }
+        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmutwithvalues", "user");
         self.call_method_with_values(target, method, args)
     }
 }
