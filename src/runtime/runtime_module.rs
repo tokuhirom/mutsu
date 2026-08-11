@@ -257,6 +257,10 @@ impl Interpreter {
                     entry.entry(short).or_insert(qualified);
                 }
             }
+            // A module with a `sub EXPORT` runs it on every import — its map
+            // may depend on the `use` arguments (the Slangify pattern) — even
+            // though the module body itself is not re-run.
+            self.rerun_module_export(module)?;
             return match self.import_module(module, tags) {
                 Ok(()) => Ok(()),
                 Err(err) if err.message.starts_with("No exports found for module:") => Ok(()),

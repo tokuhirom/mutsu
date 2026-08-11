@@ -7,6 +7,18 @@
 use super::*;
 use crate::value::ValueView;
 
+/// A module's EXPORT, remembered across the first load so a re-`use` of the
+/// already-loaded module can run it again with the new import's arguments
+/// (Raku runs `sub EXPORT` on every import, not once per process).
+#[derive(Clone)]
+pub(crate) enum ModuleExportDef {
+    /// The module's own `sub EXPORT`.
+    Sub(Arc<FunctionDef>),
+    /// An `&EXPORT` the module imported from another module's EXPORT map
+    /// (the Slangify pattern).
+    Value(Value),
+}
+
 impl Interpreter {
     /// If the just-loaded module defined `sub EXPORT`, call it with the `use`
     /// arguments and install the symbols from its returned `Map`(s) into the
@@ -16,9 +28,33 @@ impl Interpreter {
         &mut self,
         export_args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
+        // An `&EXPORT` this module imported from another module's EXPORT map
+        // (the Slangify pattern) becomes this module's own EXPORT. Consume the
+        // record either way so it cannot go stale; the module's own
+        // `sub EXPORT` wins when both exist.
+        let inherited = self
+            .module_load_stack
+            .last()
+            .cloned()
+            .and_then(|m| self.pending_inner_export_subs.remove(&m));
+        // This module's exports go to the importer *below* it on the load
+        // stack (None when a user script is the importer).
+        let importer = self.module_load_stack.iter().rev().nth(1).cloned();
         // The module body runs under GLOBAL, so `sub EXPORT` registers as
         // `GLOBAL::EXPORT`. Only participate when it is actually present.
         let Some(def) = self.resolve_function("EXPORT") else {
+            if let Some(export_sub) = inherited {
+                // Same env discipline as the compiled path below: the imported
+                // EXPORT's effects are its return value, not caller-env writes.
+                let saved_env = self.env.clone();
+                let result = self.call_sub_value(export_sub.clone(), export_args, false)?;
+                self.env = saved_env;
+                self.install_export_map(&result, importer.as_deref());
+                if let Some(m) = self.module_load_stack.last().cloned() {
+                    self.module_export_defs
+                        .insert(m, ModuleExportDef::Value(export_sub));
+                }
+            }
             return Ok(());
         };
         // Run EXPORT through the compiled call path (not the tree-walk
@@ -42,7 +78,32 @@ impl Interpreter {
         // `EXPORT` must not itself become a callable in (or leak from) the
         // module; drop every registered `EXPORT` routine now that it has run.
         self.remove_export_routine();
-        self.install_export_map(&result);
+        self.install_export_map(&result, importer.as_deref());
+        if let Some(m) = self.module_load_stack.last().cloned() {
+            self.module_export_defs.insert(m, ModuleExportDef::Sub(def));
+        }
+        Ok(())
+    }
+
+    /// Re-run an already-loaded module's remembered EXPORT for a new import
+    /// (its returned map may depend on the `use` arguments). No-op for modules
+    /// without one.
+    pub(super) fn rerun_module_export(&mut self, module: &str) -> Result<(), RuntimeError> {
+        let Some(def) = self.module_export_defs.get(module).cloned() else {
+            return Ok(());
+        };
+        let export_args = self.pending_use_export_args.take().unwrap_or_default();
+        let saved_env = self.env.clone();
+        let result = match def {
+            ModuleExportDef::Sub(d) => {
+                let empty_fns = crate::opcode::CompiledFns::default();
+                self.compile_and_call_function_def(&d, export_args, &empty_fns)?
+            }
+            ModuleExportDef::Value(v) => self.call_sub_value(v, export_args, false)?,
+        };
+        self.env = saved_env;
+        let importer = self.module_load_stack.last().cloned();
+        self.install_export_map(&result, importer.as_deref());
         Ok(())
     }
 
@@ -62,19 +123,19 @@ impl Interpreter {
     /// `Map`/`Hash` (`'&name' => sub {...}`, `'$name' => value`) or a list of
     /// them (recursing), matching `sub EXPORT { Map.new: ... }` and the
     /// multi-tag `%(...)` form.
-    fn install_export_map(&mut self, val: &Value) {
+    fn install_export_map(&mut self, val: &Value, inner_export_importer: Option<&str>) {
         match val.view() {
             ValueView::Hash(gc) => {
                 let pairs: Vec<(String, Value)> =
                     gc.map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
                 for (key, value) in pairs {
-                    self.install_export_symbol(key, value);
+                    self.install_export_symbol(key, value, inner_export_importer);
                 }
             }
             ValueView::Array(items, ..) => {
                 let items: Vec<Value> = items.iter().cloned().collect();
                 for item in items {
-                    self.install_export_map(&item);
+                    self.install_export_map(&item, inner_export_importer);
                 }
             }
             _ => {}
@@ -85,7 +146,22 @@ impl Interpreter {
     /// `@bar`, `%baz`) into the current (caller's) scope. An exported operator
     /// sub is also registered with the parser so runtime-parsed code (EVAL)
     /// recognizes the new operator symbol.
-    fn install_export_symbol(&mut self, key: String, value: Value) {
+    fn install_export_symbol(
+        &mut self,
+        key: String,
+        value: Value,
+        inner_export_importer: Option<&str>,
+    ) {
+        // An exported `&EXPORT` imported *by a module being loaded* becomes
+        // that module's own EXPORT for its importers (the Slangify pattern),
+        // not an env-visible callable — EXPORT is special and never leaks.
+        if key == "&EXPORT"
+            && let Some(importer) = inner_export_importer
+        {
+            self.pending_inner_export_subs
+                .insert(importer.to_string(), value);
+            return;
+        }
         let sigil = key.chars().next();
         if let Some('&') = sigil {
             let op = &key[1..];
