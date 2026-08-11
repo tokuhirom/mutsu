@@ -1732,3 +1732,66 @@ independent, general dispatch-order bug affecting any augmented builtin collecti
 correctly for multi-level builtin ancestry. **All of E6b (steps 1-2) is now closed.** Next: E6c
 (the two dynamic gaps -- inventory corrections 3/4 -- fixed by routing through the same decision)
 or E6d (`ArrayPush`'s `array_dispatch_pristine` bit).
+
+## E6d: `ArrayPush`'s augmented-Array divergence (V2) -- raku-verified moot, `array_dispatch_pristine` not built
+
+V2 asked for a raku baseline of `augment class Array { method push(...) }` + `@a.push($x)` vs
+`@a.push($x,$y)`, with the design doc's fix being a generation-refreshed `array_dispatch_pristine`
+bit that would fall the `ArrayPush` opcode back to full dispatch whenever any user/wrap row exists
+under `Array`/`List`. Ran the actual raku baseline first, per this campaign's standing rule
+(measure before naming the fix; see `[[feedback-measure-before-naming-the-fix]]`):
+
+```raku
+use MONKEY-TYPING;
+augment class Array { method push($x) { say "USER-PUSH: $x"; self } }
+my @a = (1, 2, 3);
+@a.push(4);
+# raku: ===SORRY!=== Error while compiling -e
+#       Package 'Array' already has a method 'push' (did you mean to declare a multi method?)
+
+augment class Array { multi method push($x) { say "USER-PUSH: $x"; self } }
+# raku: Died with X::Multi::Ambiguous
+```
+
+Both forms are illegal in raku, on both `Array` and `List` (the parent also already declares its
+own `push`) -- **exactly the same "illegal program" shape E5b step 2 already found for
+`augment class Str { method uc {...} }`** and explicitly declined to fix, because raku itself
+rejects it before the dispatch-ordering question can even arise. Confirmed the parity: mutsu
+silently accepts the same illegal augment (no redeclaration/multi-ambiguity detection, a
+pre-existing, general, *compile-time* gap unrelated to E6d) and `ArrayPush` bypasses it --
+identical root cause and identical "not a legitimate program shape worth a dedicated ticket by
+itself" conclusion, not a new E6d-specific finding.
+
+**The one legal mechanism for overriding `.push` on an array value -- a `does`-mixin -- already
+works correctly, with no code change needed, for the same structural reason E5b step 2 found for
+`"hello" but Loud`:**
+
+```raku
+role Loud { method push($x) { say "ROLE-PUSH: $x"; self } }
+my @a = (1, 2, 3);
+@a does Loud;
+@a.push(4);   # raku: ROLE-PUSH: 4 / [1 2 3] -- mutsu: identical, byte-for-byte
+```
+
+`exec_array_push_op`'s own `is_simple_array` gate (`self.env().get(target_name).is_some_and(|v|
+matches!(v.view(), ValueView::Array(..)))`) already excludes a mixed-in value -- `@a does Loud`
+rebinds `@a` to a `ValueView::Mixin`, not a plain `ValueView::Array`, so the fast path never even
+attempts to run and the call falls through to the always-correct `call_method_with_values`. This
+is the *same* "the shape check already is the safety net" pattern E5b step 2 established for
+`mixin_role_has_method`, now confirmed a third time (after `CallMethod`'s native probe and `.uc`)
+at a completely different opcode (`ArrayPush`, which has no native-probe cascade at all -- it is a
+single hardcoded shape check, simpler than either prior case). `Method.wrap` on a `.^lookup`-ed
+builtin method (the mechanism raku itself uses to legally intercept `Array.push` without an
+illegal redeclaration -- `Array.^lookup("push").wrap: -> |c {...}`) is not attempted here: mutsu
+does not implement `.wrap` on a retrieved `Method` object at all (`No such method 'wrap' for
+invocant of type 'Method'`), a separate, unrelated, larger missing-feature gap (the MOP `Method`
+object protocol), not an `ArrayPush` dispatch-ordering question.
+
+**Conclusion: E6d closes with no code change.** The `array_dispatch_pristine` generation-refreshed
+guard the design doc proposed would have added a permanent per-push registry-generation check to
+defend against a divergence that, per actual raku verification, does not exist for any legal
+program -- building it would be solving a problem this step's own verification item shows is
+already moot, the same outcome E5c parts 1 and 2 reached for their own entries. **E6a, E6b, and
+E6d are now closed; E6c (the two dynamic gaps) is the only remaining open box in E6.** Next: E6c,
+or move on to E7 (metaobject/qualified/re-entrant calls) if E6c is judged low-value after its own
+raku-verification step (V1).
