@@ -567,6 +567,10 @@ impl Interpreter {
         // `$obj.attr.VAR.^name` is "Scalar", not the inner value's type).
         let target = if matches!(target.view(), ValueView::ContainerRef(_)) && method != "VAR" {
             if args.is_empty() && matches!(method, "^name" | "WHAT") {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethod",
+                    "containerref-scalar-meta",
+                );
                 self.stack.push(if method == "^name" {
                     Value::str("Scalar".to_string())
                 } else {
@@ -584,6 +588,7 @@ impl Interpreter {
         // and dispatched without reaching the resolver's native hook.
         if let Some(result) = loan_env!(self, try_native_method_on_receiver(&target, method, &args))
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "nativecall");
             self.stack.push(result?);
             return Ok(());
         }
@@ -603,6 +608,7 @@ impl Interpreter {
                 ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "hash-on-list");
             let items: Vec<Value> = match target.view() {
                 ValueView::Array(items, _) => items.iter().cloned().collect(),
                 ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
@@ -622,12 +628,14 @@ impl Interpreter {
                 ValueView::Pair(..) | ValueView::ValuePair(..)
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "pair-freeze");
             let frozen = self.pair_freeze(&target, "");
             self.stack.push(frozen);
             return Ok(());
         }
         // `proto method` body dispatch (see try_proto_method_body).
         if let Some(result) = self.try_proto_method_body(&target, method, &args) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "proto");
             let v = result?;
             // Drain captured-outer writeback recorded by the dispatched multi
             // candidate body (e.g. `multi method l(%t,*@l){ $r ~= '%'; ... }`
@@ -644,12 +652,17 @@ impl Interpreter {
         // `message` is a user *method* rather than an attribute. See
         // `try_exception_str_via_user_message`.
         if let Some(out) = self.try_exception_str_via_user_message(&target, method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "exception-str-message",
+            );
             self.stack.push(out);
             return Ok(());
         }
         // .return method: triggers a return from the enclosing sub with the invocant
         // as the return value. Does NOT auto-thread over junctions.
         if method == "return" && args.is_empty() {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "return");
             let mut err = RuntimeError::new("return");
             err.return_value = Some(target);
             return Err(err);
@@ -699,6 +712,10 @@ impl Interpreter {
         // invocant. Calling one on an Exception *type object* (e.g. `X::NYI.throw`)
         // is X::Parameter::InvalidConcreteness, not "no such method".
         if let Some(err) = self.exception_concreteness_error(method, &args, &target) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "exception-concreteness",
+            );
             return Err(err);
         }
         // Autovivify a typed array element when a mutating array method is called
@@ -710,6 +727,10 @@ impl Interpreter {
             && matches!(method, "push" | "append" | "unshift" | "prepend")
             && let Some(result) = self.autoviv_typed_array_push(&type_name.resolve(), &args)?
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "autoviv-typed-array",
+            );
             self.stack.push(result);
             return Ok(());
         }
@@ -723,6 +744,7 @@ impl Interpreter {
                 ValueView::Instance { class_name, .. } if class_name == "Supplier"
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "emit");
             if let Some(buf) = self.supply_emit_buffer.last_mut() {
                 buf.push(target);
                 self.stack.push(Value::NIL);
@@ -747,6 +769,7 @@ impl Interpreter {
             // Pure attribute read: touches no env (see comment above), so it does
             // not dirty the caller's locals (Slice 6.3 — removes the per-accessor
             // env->locals pull that dominated method-heavy code like bench-class).
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "accessor");
             self.stack.push(val);
             return Ok(());
         }
@@ -763,6 +786,10 @@ impl Interpreter {
             if let Some(cn) = user_bool_owner
                 && loan_env!(self, resolve_method_with_owner(&cn, "Bool", &[])).is_some()
             {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethod",
+                    "so-not-user-bool",
+                );
                 let t = self.eval_truthy(&target);
                 self.stack
                     .push(Value::truth(if method == "not" { !t } else { t }));
@@ -792,6 +819,7 @@ impl Interpreter {
                     | "note"
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "junction-invocant");
             let mut results = Vec::new();
             // Accumulate EVERY eigenstate's by-name caller write (see the matching
             // CallMethodMut junction path for the full rationale).
@@ -830,6 +858,7 @@ impl Interpreter {
         // Junction auto-threading for method arguments:
         // If any method arg is a Junction, auto-thread over it.
         if let Some(result) = self.maybe_autothread_method_args(&target, method, &args)? {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "junction-args");
             self.stack.push(result);
             return Ok(());
         }
@@ -838,6 +867,10 @@ impl Interpreter {
         if method == "report"
             && matches!(target.view(), ValueView::Package(name) if name.resolve() == "Deprecation")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "deprecation-report",
+            );
             let result = match crate::runtime::deprecation::take_report() {
                 Some(report) => Value::str(report),
                 None => Value::NIL,
@@ -863,6 +896,10 @@ impl Interpreter {
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
             if is_lock_type_object || is_lock_instance_bad_arg {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethod",
+                    "lock-protect-nomatch",
+                );
                 return Err(
                     crate::runtime::methods_signature_errors::make_multi_no_match_error("protect"),
                 );
@@ -878,6 +915,7 @@ impl Interpreter {
             } = target.view()
             && (class_name.resolve() == "Lock::Async" || class_name.resolve() == "Lock")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
                 Some(ValueView::Int(id)) if id > 0 => id as u64,
                 _ => {
@@ -1033,6 +1071,7 @@ impl Interpreter {
             && matches!(method, "gist" | "Str" | "raku" | "perl")
             && ll.renders_lazy_placeholder()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-placeholder");
             self.stack
                 .push(Value::str(crate::value::lazy_list_placeholder(
                     method,
@@ -1053,6 +1092,7 @@ impl Interpreter {
             && method == "first"
             && let Some(result) = self.try_lazy_gather_first(&ll, &args)
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-first");
             self.stack.push(result?);
             return Ok(());
         }
@@ -1065,6 +1105,7 @@ impl Interpreter {
             && args.is_empty()
             && matches!(method, "kv" | "pairs" | "antipairs")
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-index-pipe");
             let transform = match method {
                 "pairs" => crate::value::IndexTransform::Pairs,
                 "antipairs" => crate::value::IndexTransform::AntiPairs,
@@ -1085,6 +1126,7 @@ impl Interpreter {
             && method == "cache"
             && ll.is_genuinely_lazy()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-cache");
             self.stack.push(Value::lazy_list(crate::gc::Gc::new(
                 ll.with_cached_no_sink(),
             )));
@@ -1148,6 +1190,7 @@ impl Interpreter {
         };
         // .hyper/.race with named arguments (batch, degree): validate and wrap
         if matches!(method, "hyper" | "race") && !args.is_empty() {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "hyper-race-config");
             // Extract named args (batch, degree) and validate
             let mut batch: Option<i64> = None;
             let mut degree: Option<i64> = None;
@@ -1220,6 +1263,10 @@ impl Interpreter {
                         ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-hyper",
+                    );
                     self.stack.push(Value::hyper_seq_arc(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
@@ -1229,16 +1276,28 @@ impl Interpreter {
                         ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-race",
+                    );
                     self.stack.push(Value::race_seq_arc(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "is-lazy" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-is-lazy",
+                    );
                     self.stack.push(Value::FALSE);
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
                 "configuration" if args.is_empty() => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-configuration",
+                    );
                     // `HyperSeq.configuration` — expose the `.batch`/`.degree` the
                     // sequence was hyperized with (defaults otherwise). Used by the
                     // `hyperize` dist.
@@ -1254,6 +1313,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 "^name" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-name",
+                    );
                     let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
                         "HyperSeq"
                     } else {
@@ -1264,6 +1327,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 "WHAT" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-what",
+                    );
                     let name = if matches!(target.view(), ValueView::HyperSeq(_)) {
                         "HyperSeq"
                     } else {
@@ -1274,6 +1341,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 "isa" | "does" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-isa",
+                    );
                     let type_name = if !args.is_empty() {
                         match args[0].view() {
                             ValueView::Package(name) => name.resolve(),
@@ -1290,6 +1361,10 @@ impl Interpreter {
                     return Ok(());
                 }
                 "defined" => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-defined",
+                    );
                     self.stack.push(Value::TRUE);
                     // Pure reflection (no env write): no env_dirty mark needed.
                     return Ok(());
@@ -1318,6 +1393,10 @@ impl Interpreter {
                         } else {
                             Value::race_seq_arc(Arc::new(result))
                         };
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "hyperseq-map-grep",
+                        );
                         self.stack.push(wrapped);
                         return Ok(());
                     }
@@ -1325,6 +1404,10 @@ impl Interpreter {
                     Some(matches!(target.view(), ValueView::HyperSeq(_)))
                 }
                 "iterator" if args.is_empty() => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "hyperseq-iterator",
+                    );
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
                     // a second `.iterator` throws X::Seq::Consumed. The consumed-state
                     // is tracked on the inner Arc via the shared Seq registry.
@@ -1374,6 +1457,7 @@ impl Interpreter {
                     | ValueView::Routine { is_regex: true, .. }
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "regex-bool-topic");
             let topic = self.env().get("_").cloned().unwrap_or(Value::NIL);
             let matched = self.vm_smart_match(&topic, &target);
             self.stack.push(Value::truth(matched));
@@ -1385,6 +1469,10 @@ impl Interpreter {
             && args.is_empty()
             && matches!(target.view(), ValueView::Package(name) if Self::is_pseudo_package_bare(&name.resolve()))
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "who-pseudo-package",
+            );
             if let ValueView::Package(pkg_name) = target.view() {
                 let stash = self.build_pseudo_stash(code, &pkg_name.resolve());
                 self.stack.push(stash);
@@ -1405,6 +1493,10 @@ impl Interpreter {
             && class_name.resolve() == "Failure"
             && !target.is_failure_handled()
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "failure-print-nomatch",
+            );
             return Err(Self::print_routine_no_match_error(method, &target, &args));
         }
         // Unhandled Failure explosion: calling a non-Failure method on an unhandled
@@ -1438,6 +1530,7 @@ impl Interpreter {
             )
             && let Some(err) = self.failure_to_runtime_error_if_unhandled(&target)
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "failure-explode");
             return Err(err);
         }
         // Pseudo-methods (WHAT, WHICH, etc.) cannot be used with .* or .+
@@ -1447,6 +1540,10 @@ impl Interpreter {
                 "WHAT" | "WHICH" | "WHERE" | "HOW" | "WHY" | "WHO" | "DEFINITE" | "VAR"
             )
         {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "modifier-pseudo-error",
+            );
             return Err(RuntimeError::new(format!(
                 "Cannot use .{} on a non-identifier method call",
                 modifier.unwrap()
@@ -1456,11 +1553,13 @@ impl Interpreter {
         // directly to the all-methods-in-MRO path to avoid double execution.
         match modifier {
             Some("+") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "modifier-plus");
                 let vals =
                     self.call_method_all_with_fallback(&target, method, &args, skip_native)?;
                 self.stack.push(Value::array(vals));
             }
             Some("*") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "modifier-star");
                 match self.call_method_all_with_fallback(&target, method, &args, skip_native) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
@@ -1500,6 +1599,10 @@ impl Interpreter {
                         {
                             // Native method on the by-value backing storage is
                             // env-pure: no env_dirty mark needed.
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "native",
+                            );
                             self.stack.push(native_result?);
                             return Ok(());
                         }
@@ -1509,6 +1612,10 @@ impl Interpreter {
                             args.clone(),
                         );
                         if let Ok(val) = result {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "user",
+                            );
                             self.stack.push(val);
                             return Ok(());
                         }
@@ -1529,6 +1636,10 @@ impl Interpreter {
                     // named-receiver opcode (`exec_call_method_mut_op_impl`)
                     // so `my $v := Nil; $v.Int` reaches the same verdict.
                     if let Some(err) = nil_predispatch_error(method, args.is_empty()) {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "nil-predispatch",
+                        );
                         return Err(err);
                     }
                     match method {
@@ -1560,6 +1671,10 @@ impl Interpreter {
                                 "unshift" => args.to_vec(),
                                 _ => args,
                             };
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethod",
+                                "nil-autoviv",
+                            );
                             self.stack.push(Value::real_array(arr));
                             return Ok(());
                         }
@@ -1594,6 +1709,10 @@ impl Interpreter {
                         }
                         _ => {
                             // Nil-absorbing method returns Nil and touches no env.
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethod",
+                                "nil-absorb",
+                            );
                             self.stack.push(Value::NIL);
                             return Ok(());
                         }
@@ -1623,6 +1742,10 @@ impl Interpreter {
                         "unshift" => args.to_vec(),
                         _ => args,
                     };
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "any-autoviv",
+                    );
                     self.stack.push(Value::real_array(arr));
                     return Ok(());
                 }
@@ -1635,6 +1758,10 @@ impl Interpreter {
                 ) && matches!(target.view(), ValueView::Array(..))
                     && let Some((attrs_ref, attr_name)) = self.pending_proxy_subclass_attr.take()
                 {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "proxy-subclass-mutate",
+                    );
                     let result =
                         self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args)?;
                     self.stack.push(result);
@@ -1660,6 +1787,7 @@ impl Interpreter {
                     // Native array node mutation on a by-value target: env-pure
                     // (no named binding is written).
                     self.method_dispatch_pure = true;
+                    crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "shift-pop");
                     if let ValueView::Array(_, kind) = target.view()
                         && kind.is_lazy()
                     {
@@ -1692,6 +1820,10 @@ impl Interpreter {
                         if let Some(native_result) =
                             self.try_native_method(&resolved, method_sym, &args)
                         {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "native",
+                            );
                             let result = native_result;
                             // Native method on a by-value resolved hash is env-pure
                             // (see the sibling native-method branches below that set
@@ -1730,14 +1862,26 @@ impl Interpreter {
                                 .collect();
                             // Pure array transform: env-pure.
                             self.method_dispatch_pure = true;
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethod",
+                                "slip-default",
+                            );
                             Ok(Value::slip(converted))
                         } else if let Some(native_result) =
                             self.try_native_method(&target, method_sym, &args)
                         {
                             // Native method on a by-value (read) target: env-pure.
                             self.method_dispatch_pure = true;
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "native",
+                            );
                             native_result
                         } else {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "user",
+                            );
                             self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                         }
                     } else if let Some(native_result) =
@@ -1745,11 +1889,14 @@ impl Interpreter {
                     {
                         // Native method on a by-value (read) target: env-pure.
                         self.method_dispatch_pure = true;
+                        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
                         native_result
                     } else {
+                        crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "user");
                         self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                     }
                 } else {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "user");
                     self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                 };
                 // Slice 6.3: mark env dirty only when the dispatch was not a
@@ -1762,12 +1909,24 @@ impl Interpreter {
                             if mark_dirty {}
                         }
                         Err(e) if Self::is_method_not_found_error(&e) => {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "notfound",
+                            );
                             self.stack.push(Value::NIL);
                             if mark_dirty {}
                         }
                         Err(e) => return Err(e),
                     },
                     _ => {
+                        if let Err(e) = &call_result
+                            && Self::is_method_not_found_error(e)
+                        {
+                            crate::vm::vm_stats::record_dispatch_entry_outcome(
+                                "callmethod",
+                                "notfound",
+                            );
+                        }
                         self.stack.push(call_result?);
                         if mark_dirty {}
                     }
