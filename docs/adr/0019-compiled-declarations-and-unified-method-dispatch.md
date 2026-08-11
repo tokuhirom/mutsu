@@ -2748,6 +2748,42 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     plumbing work left to do, rather than treating the ADR bullet's original
     "should_bypass_native_fastpath deleted" phrasing as still literally the
     target shape.
+    **Scope renegotiation (step 13, 2026-08-11, docs-only):** checked the
+    step-12 open question directly against E5/E6/E7's own design doc
+    (`todo/deep/adr0019-e5-e7-entry-routing.md`) rather than leaving it for a
+    future session. **Answer: `Native` is not for `should_bypass_native_fastpath`
+    at all — it is for E5/E6/E7's VM opcode entries**, which is a *different*,
+    currently-separate dispatch mechanism (`CallMethod`/`CallMethodMut`/etc.,
+    `vm_call_method_ops.rs` and friends) with its own hand-ordered probe
+    cascades (`skip_native`, `has_user_method` gates, `try_native_method`),
+    not `call_method_with_values`'s slow path. The E5 design's decision
+    API (`resolve_dispatch(&receiver, method_sym, shape)`, design decision 1)
+    is exactly where a `Native` candidate answers "which probe wins" for
+    those entries — `should_bypass_native_fastpath` already gets the
+    equivalent answer today via a direct, cheaper `native_method_{0,1,2}arg`
+    call that self-guards by returning `None` on no match, so gating it with
+    a `Native` candidate lookup first would only add the cost of building a
+    sequence to predict an answer the subsequent direct call computes anyway
+    (step 9 already proved `native_row_shadow_mismatches=0`, i.e. `Native`'s
+    presence and the cascade's `is_some()` always agree — a `Native` gate
+    would never change which branch is taken here, only add work).
+    **Conclusion: E4b's own call site (`call_method_with_values`'s
+    `should_bypass_native_fastpath`) has no further profitable consolidation
+    against the resolver** — categories 1/2/3/4 are each at their locally
+    optimal shape (guard function / direct call / resolver call / explicit
+    check, per steps 8/12/12/11 respectively), and the ADR bullet's literal
+    "should_bypass_native_fastpath deleted" text describes E5-E7's *separate*
+    dispatch mechanism reaching the same resolver-based decisions at its own
+    entries, not a deletion of this specific function. Treat E4b as
+    **functionally complete** for its own call site; the bullet is kept open
+    (not checked off) only because E5-E7 have not yet landed to confirm the
+    resolver fully replaces the VM-opcode-side probe cascades this function
+    was modeling groundwork for. No code changed this step. Next concrete
+    work in the Phase E sequence is E5's mandated measurement slice (design
+    decision 3 in the E5-E7 doc): `MUTSU_VM_STATS`-gated per-entry,
+    per-outcome counters plus an interceptor taxonomy table, starting with
+    `CallMethod` (the highest-traffic opcode entry) — not another
+    `should_bypass_native_fastpath` slice.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
