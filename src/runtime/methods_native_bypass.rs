@@ -182,8 +182,14 @@ impl Interpreter {
                     if self.exception_render_needs_interpreter(target, &class_name.resolve())))
             || matches!(target.view(), ValueView::Instance { class_name, .. }
                 if self.is_native_method(&class_name.resolve(), method))
-            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
-                && matches!(method, "chomp" | "encoding" | "opened" | "DESTROY"))
+            // No explicit `IO::Handle` `chomp`/`encoding`/`opened`/`DESTROY` gate
+            // here: `chomp`'s own cascade arm (`dispatch_core_str.rs:216-221`)
+            // already returns `None` for `IO::Handle`, and `encoding`/`opened`/
+            // `DESTROY` have no arm anywhere in the native fast-path cascade
+            // (`native_method_{0,1,2}arg`) — confirmed by exhaustive grep,
+            // ADR-0019 E4b step 7 — so the whole group was redundant
+            // belt-and-suspenders, the same shape as the `Supplier.Supply` case
+            // step 5 removed.
             || (matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
@@ -202,8 +208,15 @@ impl Interpreter {
             // step 5 already removed.
             || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
                 && method == "Supply")
-            || (matches!(method, "AT-KEY" | "keys" | "values")
-                && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash"))
+            // No explicit `Stash` `AT-KEY` gate here: it has no arm anywhere in
+            // the native fast-path cascade, so a row-miss falls through to the
+            // runtime method identically — confirmed by exhaustive grep,
+            // ADR-0019 E4b step 7. `keys`/`values` stay gated: their cascade
+            // arms (`methods_0arg/collection.rs`) have a generic catch-all
+            // (`value_to_list(target)`) that would wrongly serve an Instance
+            // receiver, unlike `AT-KEY`.
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash")
+                && matches!(method, "keys" | "values"))
             || (method == "keys"
                 && args.is_empty()
                 && (matches!(target.view(), ValueView::Hash(_))
