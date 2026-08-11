@@ -59,6 +59,11 @@ gaps with general interpreter fixes.
       value: [python-stdlib-comparison.md](docs/batteries/python-stdlib-comparison.md).
 - [ ] **Web-framework slot: make Cro run** — the campaign that fills the last hole in that criterion.
       Target, rationale, and gate order: [docs/batteries/web-framework.md](docs/batteries/web-framework.md).
+- [ ] **CSV slot: slang activation campaign ([ADR-0026](docs/adr/0026-slang-activation-architecture.md), Accepted 2026-08-11)** —
+      bundle Slangify + Slang::Tuxic verbatim and grow the interpreter (compile-time `use` →
+      `$*LANG`/`define_slang` mapping recognized rule overrides onto parser modes) until
+      `use Text::CSV` parses; then measure its 33-file suite. Survey and status:
+      [docs/batteries/csv.md](docs/batteries/csv.md) (CSV::Table already 10/10 as the fallback).
 - [ ] **Documentation per battery** — a usage document (no install needed, API, examples) for each
       bundled library. "Well-documented" is an explicit goal requirement, so this is mandatory when
       adding a module.
