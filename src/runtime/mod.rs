@@ -2073,6 +2073,12 @@ pub struct Interpreter {
     pub(crate) jit_error: Option<RuntimeError>,
     pub(crate) bind_context: bool,
     pub(crate) scalar_bind_context: bool,
+    /// Set by `MarkParamRawBindContext` just before the SetLocal/SetGlobal of
+    /// an assignment whose target is a sigilless binding (`-> \v` loop-param
+    /// bind statements, writes through a sigilless alias). Its ONLY effect is
+    /// to skip scalar-store itemization — a sigilless name is a non-container
+    /// alias, so the stored value must stay bare. No other bind semantics.
+    pub(crate) param_raw_bind_context: bool,
     pub(crate) bound_decont_active: bool,
     pub(crate) rebind_context: bool,
     /// Set by `MarkAccessorRefContext` immediately before a CallMethod(Mut)

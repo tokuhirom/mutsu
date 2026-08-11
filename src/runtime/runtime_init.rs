@@ -2343,6 +2343,7 @@ impl Interpreter {
             jit_error: None,
             bind_context: false,
             scalar_bind_context: false,
+            param_raw_bind_context: false,
             bound_decont_active: false,
             rebind_context: false,
             accessor_ref_pending: false,

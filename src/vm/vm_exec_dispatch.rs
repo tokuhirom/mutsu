@@ -807,6 +807,10 @@ impl Interpreter {
                 // value-bind and mark it readonly.
                 let was_scalar_bind = self.scalar_bind_context;
                 self.scalar_bind_context = false;
+                // A sigilless-target bind (`-> \v` loop-param bind stmts):
+                // skip itemization only, no other bind semantics.
+                let was_param_raw_bind = self.param_raw_bind_context;
+                self.param_raw_bind_context = false;
                 // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
                 // not SetLocal/AssignExpr. Consume the array-share flag here (the
                 // global copies for now — reference sharing for globals is Slice 2d)
@@ -1139,6 +1143,7 @@ impl Interpreter {
                 } else if !is_bind_ctx
                     && !is_rebind
                     && !was_scalar_bind
+                    && !was_param_raw_bind
                     && bind_source.is_none()
                     && !is_internal_temp
                 {
@@ -1976,6 +1981,10 @@ impl Interpreter {
             }
             OpCode::MarkBindContext => {
                 self.bind_context = true;
+                *ip += 1;
+            }
+            OpCode::MarkParamRawBindContext => {
+                self.param_raw_bind_context = true;
                 *ip += 1;
             }
             OpCode::MarkScalarBindContext => {

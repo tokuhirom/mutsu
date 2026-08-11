@@ -402,11 +402,40 @@ impl Compiler {
                     .for_single_array_source_local(&Self::for_single_array_source(iterable)),
                 body_declares_routines: Self::stmts_declare_routines(&loop_body),
             })));
+        // Register sigilless for-params while compiling the (merged) body so
+        // their bind statements skip scalar-store itemization — mirrors the
+        // statement-form registration in `stmt.rs`.
+        let sigilless_param_names: Vec<String> = if has_sigilless {
+            let single_sigilless = param_def.as_ref().is_some_and(|def| def.sigilless);
+            param
+                .as_ref()
+                .filter(|_| single_sigilless)
+                .into_iter()
+                .map(|p| p.strip_prefix('\\').unwrap_or(p).to_string())
+                .chain(
+                    params
+                        .iter()
+                        .zip(params_def.iter())
+                        .filter(|(_, def)| def.sigilless)
+                        .map(|(p, _)| p.strip_prefix('\\').unwrap_or(p).to_string()),
+                )
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let newly_registered: Vec<String> = sigilless_param_names
+            .iter()
+            .filter(|n| self.sigilless_locals.insert((*n).clone()))
+            .cloned()
+            .collect();
         self.hoist_sub_decls(&loop_body, true);
         // A `for` body is its own Raku call frame (see `callframe_block_depth`).
         self.callframe_block_depth += 1;
         self.compile_collected_loop_body(&loop_body);
         self.callframe_block_depth -= 1;
+        for n in &newly_registered {
+            self.sigilless_locals.remove(n);
+        }
         self.code.patch_loop_end(loop_idx);
         // Balance the ForLoop opcode's deferred param-restore push (see the
         // Stmt::For compile path). Required even though this collected form has

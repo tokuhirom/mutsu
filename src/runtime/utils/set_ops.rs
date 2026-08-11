@@ -164,7 +164,7 @@ fn coerce_to_bag(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
         }
         _ => {
             // Count occurrences for list-like values
-            let items = value_to_list(val);
+            let items = quanthash_operand_list(val);
             let mut result = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);
@@ -194,7 +194,7 @@ fn coerce_to_mix(val: &Value, originals: &mut HashMap<String, Value>) -> HashMap
         }
         _ => {
             // Count occurrences for list-like values
-            let items = value_to_list(val);
+            let items = quanthash_operand_list(val);
             let mut result = HashMap::new();
             for item in &items {
                 let (key, elem) = quanthash_elem_entry(item);

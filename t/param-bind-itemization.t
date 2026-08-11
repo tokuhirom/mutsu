@@ -6,7 +6,7 @@ use Test;
 # shows the leading `$`. Sigilless (`\v`), `is raw`, and implicit-topic
 # bindings stay raw. Verified against raku 2025.06 (see PR).
 
-plan 21;
+plan 24;
 
 # --- for-loop parameter binding ---
 {
@@ -111,6 +111,24 @@ plan 21;
 {
     our $g = [1,2];
     is $g.raku, '$[1, 2]', 'our $x = [...] itemizes like a my scalar';
+}
+
+# --- sigilless multi-params bind raw (roast S03-sequence/exhaustive.t shape) ---
+{
+    my @t = "d1", (1,3), "d2", (2,4);
+    my @got;
+    for @t -> \desc, \seed { @got.push(seed ~~ Array); @got.push(seed.elems) }
+    is-deeply @got, [False, 2, False, 2],
+        'sigilless multi-params bind the bare value (no itemize)';
+}
+
+# --- quanthash coercion deconts an itemized list operand ---
+{
+    my $r = <a b c d>;
+    is (bag(<a b c e>) (-) $r).raku, '("e"=>1).Bag',
+        'bag (-) itemized list subtracts the ELEMENTS';
+    is ($r (-) bag(<a b c e>)).raku, '("d"=>1).Bag',
+        'itemized list (-) bag contributes its elements';
 }
 
 done-testing;

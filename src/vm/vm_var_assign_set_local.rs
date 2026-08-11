@@ -333,9 +333,11 @@ impl Interpreter {
         let is_vardecl = self.vardecl_context;
         let is_shaped_decl = self.shaped_decl_context;
         let scalar_bind = self.scalar_bind_context;
+        let param_raw_bind = self.param_raw_bind_context;
         let array_share = self.array_share_context;
         self.bind_context = false;
         self.scalar_bind_context = false;
+        self.param_raw_bind_context = false;
         self.rebind_context = false;
         self.constant_context = false;
         self.array_share_context = false;
@@ -1071,6 +1073,7 @@ impl Interpreter {
             // (`:=`), rebinds, and `constant` install the value itself.
             if is_bind
                 || scalar_bind
+                || param_raw_bind
                 || is_rebind
                 || is_constant
                 || Self::is_identity_scalar_restore(&self.locals[idx], &v)
