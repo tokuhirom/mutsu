@@ -1027,3 +1027,111 @@ automatically covered under JIT with zero shim-side change needed -- confirmed b
 just assumed. **E5d is closed, docs-only, no code change. All of E5 (steps 1-4, E5b, E5c parts
 1-2, E5d) is now closed.** Next up per design decision 4's slicing is E6 (mutation-aware and
 container calls).
+
+## Measurement slice results — CallMethodMut (E6a)
+
+Landed 2026-08-11: instrumented `exec_call_method_mut_op_impl` (`src/vm/vm_call_method_mut_ops.rs`,
+~line 498-2480), the `CallMethodMut` opcode handler and mutation-aware twin of `CallMethod`'s
+`exec_call_method_op_impl` that E5 step 1 instrumented. Reused the same generic counter functions
+E5 introduced (`record_dispatch_entry_outcome`/`record_dispatch_entry_intercept`, entry key
+`"callmethodmut"`) — no new counter functions. Pure insertions, 233 lines added / 0 deleted, zero
+behavior change (verified by inspection: every insertion sits alongside an existing `return`/push
+completion, none alters a condition or control-flow branch).
+
+Per design decision 4's E6a scope ("measurement + taxonomy for `CallMethodMut`,
+`CallMethodDynamicMut`, `call_method_mut_with_values`, and the Tier-A helpers"), **this slice
+covers `CallMethodMut` only** — mirroring how E5 step 1 measured just `CallMethod` and left
+`CallMethodDynamic`/hyper/`call_method_all_with_fallback` to steps 2-4. `CallMethodDynamicMut`,
+`call_method_mut_with_values` (the second slow path, `runtime/methods_mut_dispatch.rs`), and the
+Tier-A helpers are still to do as later E6a sub-slices.
+
+Outcome/arm vocabulary matches E5's: `intercept`/`native`/`user`/`accessor` are disjoint,
+`notfound` is an overlay subset of `user` (recorded additionally at the two visible not-found
+completions, same convention E5 step 1 established). 33 named intercept arms were added, several
+sharing a name with `CallMethod`'s own arms (`pair-freeze`, `proto`, `nativecall`,
+`exception-str-message`, `exception-concreteness`, `junction-invocant`, `junction-args`,
+`lock-protect`, `lock-protect-nomatch`, `who-pseudo-package` [not fired, see below],
+`lazy-first`/`lazy-cache`/`lazy-placeholder`/`lazy-index-pipe`, `modifier-plus`/`modifier-star`,
+`hyperseq-*`, `hyper-race-config`) — this function is structurally the mutation-aware twin of the
+same interceptor cascade `CallMethod` runs, confirming the design doc's inventory framing. A
+distinct sub-family exists only here, tied to writeback: `at-key`/`assign-key`/`delete-key`/
+`bind-key`/`bind-pos` (index/attribute mutation ops with no read-only equivalent at `CallMethod`)
+and `shared-array-push-atomic`/`shared-array-push-legacy`/`shared-array-pop-shift`/
+`shared-array-splice`/`subst-mutate`/`match-make`/`lazy-array-mutate-reject`/`undeclared-type-new`/
+`so-not-user-bool`.
+
+### Verification: per-file `sum(disjoint outcomes) == CallMethodMut` in the opcode histogram
+
+The full-sweep aggregate opcode histogram (`opcode_histogram()`, dumped as "opcodes executed
+total... (top 30)") is NOT usable for a global cross-check here: with ~340 opcode kinds and only
+the top 30 shown per process, `CallMethodMut` silently drops out of many single-file dumps whose
+top-30 profile is dominated by other opcodes, undercounting an aggregate sum (observed: naive
+aggregate `CallMethodMut=71812` vs `dispatch-entry outcomes` disjoint total `89902` — a 20%
+mismatch purely from top-30 truncation, not a counting bug). The dispatch-entry outcome/intercept
+dumps do NOT have this problem: total distinct keys stayed at or under 8 for outcomes (cap 25) and
+5 for intercept arms (cap 40) in every single-process line observed across the full sweep — no
+truncation, so the whole-suite aggregate sums below are exact.
+
+Following E5 step 1's actual per-file verification method instead, five representative files were
+run individually (not via the aggregated `-j8` sweep) and cross-checked:
+
+| File | `callmethodmut` disjoint sum | opcode histogram `CallMethodMut` | Match |
+|---|---|---|---|
+| `t/array-mutate.t` | `native=5` → 5 | 5 | 5 == 5 |
+| `t/interp-hash-method-and-typeobject-str.t` | `native=2` → 2 | 2 | 2 == 2 |
+| `t/shared-array-mutate-keeps-container-cell.t` | `user=31+native=6+intercept=1` → 38 | 38 | 38 == 38 |
+| `t/dot-assign-accessor.t` | `user=22+accessor=16+native=9` → 47 | 47 | 47 == 47 |
+| `t/class-is-rw.t` | `accessor=9+user=4` → 13 | 13 | 13 == 13 |
+
+All five exact matches, 0 mismatches — the counting semantics (each executed `CallMethodMut`
+records exactly one of `intercept`/`native`/`user`/`accessor`) hold at this entry the same way they
+did at `CallMethod`.
+
+### Sweep results (2026-08-11, debug build, full `t/` 3023 files, `prove -j8`, 68 wallclock secs)
+
+Note: 6 files (`say-env-roundtrip.t`, `slip-listop-args.t`, `sink-warning.t`,
+`undeclared-routine-compile-time.t`, `weird-errors-parse-forms.t`,
+`vendored-real-test-module.t`) report subtest failures under `MUTSU_VM_STATS=1` — confirmed
+**pre-existing on `main` before this PR** (they assert on exact stderr content, and the vm-stats
+dump itself writes to stderr at process exit; unrelated to this slice's instrumentation). Not a
+regression; the counts below are unaffected since the dump still fires on every process exit
+regardless of the test's own pass/fail.
+
+Outcomes (disjoint): `callmethodmut:user=45097` (50.2%), `callmethodmut:native=38640` (43.0%),
+`callmethodmut:intercept=3830` (4.3%), `callmethodmut:accessor=2335` (2.6%); overlay
+`callmethodmut:notfound=28` (0.06% of user). Disjoint total 89902 — roughly 3.3x `CallMethod`'s
+26924 from E5 step 1's sweep, confirming the design doc's prediction that bareword/variable
+receivers (which compile to `CallMethodMut`, not `CallMethod`) carry the bulk of ordinary method
+traffic in `t/`.
+
+`user`/`native` again dominate roughly equally (93.2% combined) — same sub-slice-ordering
+consequence E5b step 1 drew for `CallMethod`: the eventual E6b cutover's decision match must get
+the user-candidate and native-row paths right first.
+
+Intercept arms by count (32 of 33 fired; `who-pseudo-package` is the lone zero, all of its `.WHO`
+traffic apparently reaching this entry as a Package receiver via `CallMethod` instead):
+`lock-protect=2072`, `shared-array-push-atomic=1445`, `at-key=68`, `assign-key=27`,
+`hyper-race-config=26`, `junction-args=25`, `lazy-placeholder=17`, `delete-key=15`,
+`hyperseq-iterator=15`, `proto=13`, `nil-predispatch=12`, `nativecall=11`, `subst-mutate=11`,
+`modifier-star=9`, `lazy-first=8`, `modifier-plus=7`, `exception-concreteness=7`,
+`shared-array-push-legacy=6`, `junction-invocant=5`, `pair-freeze=4`, `bind-pos=4`,
+`lazy-index-pipe=4`, `lazy-array-mutate-reject=3`, `bind-key=3`, `exception-str-message=2`,
+`match-make=2`, `lock-protect-nomatch=2`, `lazy-cache=2`, `hyperseq-defined=1`,
+`undeclared-type-new=1`, `hyperseq-name=1`, `hyperseq-is-lazy=1`, `hyperseq-what=1`.
+
+Two findings confirm predictions E5 step 1 made about arms that scored zero at `CallMethod`:
+`lock-protect` (2072, by far the largest single intercept arm — `$lock.protect`/
+`Lock::Async.protect` on a *variable* receiver, which E5 step 1 noted compiles to `CallMethodMut`
+not `CallMethod`, where it scored 0) and `exception-concreteness` (7 here vs 0 at `CallMethod`,
+same "bareword receiver compiles to `CallMethodMut`" explanation). `shared-array-push-atomic`
+(1445) is the second-largest arm and has no `CallMethod` twin at all — it belongs entirely to the
+mutation-only writeback sub-family this entry adds.
+
+`make test`-equivalent (`prove -e target/debug/mutsu t/*.t`, 3023 files) green other than the 6
+pre-existing MUTSU_VM_STATS stderr-content files noted above (confirmed unaffected by this diff by
+reproducing the same 6 failures on `main` with `MUTSU_VM_STATS=1` before this change).
+`cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+**E6a's `CallMethodMut` measurement is done. Still to do**: `CallMethodDynamicMut` and
+`call_method_mut_with_values` measurement slices (mirroring E5 steps 2/4), then the Tier-A helper
+survey, then the actual E6b/E6c/E6d cutover work.

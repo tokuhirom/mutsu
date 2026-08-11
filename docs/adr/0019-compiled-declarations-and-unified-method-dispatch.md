@@ -3055,6 +3055,40 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   the same decision), and `ArrayPush` — which keeps its container fast path behind a
   generation-refreshed `array_dispatch_pristine` bit (no user/wrap rows under `Array`/`List`),
   closing today's augmented-Array divergence with an O(1) check.
+  **Progress 2026-08-11** (E6a, measurement slice for `CallMethodMut`): instrumented
+  `exec_call_method_mut_op_impl` (`src/vm/vm_call_method_mut_ops.rs`) with the same
+  `record_dispatch_entry_outcome`/`record_dispatch_entry_intercept` counters E5 step 1 introduced,
+  entry key `"callmethodmut"` — no new counter functions, pure insertions (233 lines, 0
+  deletions), zero behavior change. This slice covers `CallMethodMut` only, per design decision
+  4's E6a scope, mirroring how E5 step 1 covered just `CallMethod`;
+  `CallMethodDynamicMut`/`call_method_mut_with_values`/the Tier-A helpers are still to do as later
+  E6a sub-slices. 33 named intercept arms added, structurally the mutation-aware twin of
+  `CallMethod`'s own cascade (many shared arm names: `pair-freeze`, `proto`, `lock-protect`,
+  `junction-invocant`/`junction-args`, the `lazy-*`/`hyperseq-*`/`modifier-*` families), plus a
+  writeback-only sub-family with no `CallMethod` equivalent (`at-key`/`assign-key`/`delete-key`/
+  `bind-key`/`bind-pos`, `shared-array-push-atomic`/`-legacy`/`-pop-shift`/`-splice`,
+  `subst-mutate`/`match-make`). Verified via 5 individually-run representative files (the
+  aggregate opcode histogram is unusable as a global cross-check here — its top-30-of-~340-opcode
+  cap silently drops `CallMethodMut` from many single-file dumps, a 20% aggregate undercount vs
+  the untruncated dispatch-entry sums), each an exact `sum(disjoint outcomes) ==
+  CallMethodMut`-opcode-histogram match (5==5, 2==2, 38==38, 47==47, 13==13). Full `t/` sweep
+  (3023 files, `prove -j8`, `MUTSU_VM_STATS=1`): disjoint total 89902 — `user=45097` (50.2%),
+  `native=38640` (43.0%), `intercept=3830` (4.3%), `accessor=2335` (2.6%), overlay
+  `notfound=28`; roughly 3.3x `CallMethod`'s E5-step-1 total, confirming bareword/variable
+  receivers (which compile to `CallMethodMut`) carry the bulk of `t/`'s method-call traffic. Two
+  arms confirm predictions E5 step 1 made for zero-count `CallMethod` arms explained by
+  "compiles to `CallMethodMut` instead": `lock-protect` (2072, the largest single arm — variable
+  `.protect` receivers) and `exception-concreteness` (7 vs 0). `shared-array-push-atomic` (1445,
+  second-largest) has no `CallMethod` twin — mutation-only. 6 files
+  (`say-env-roundtrip.t`/`slip-listop-args.t`/`sink-warning.t`/
+  `undeclared-routine-compile-time.t`/`weird-errors-parse-forms.t`/
+  `vendored-real-test-module.t`) fail under `MUTSU_VM_STATS=1` on exact-stderr assertions —
+  confirmed pre-existing on `main` (the vm-stats dump itself writes to stderr at exit),
+  reproduced identically before this change, not a regression. `make test`-equivalent
+  (`prove -e target/debug/mutsu t/*.t`, 3023 files) otherwise green; `cargo clippy -- -D warnings`
+  and `cargo fmt` clean. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md`
+  §"Measurement slice results — CallMethodMut (E6a)". Still to do: `CallMethodDynamicMut` and
+  `call_method_mut_with_values` measurement slices, the Tier-A helper survey, then E6b/E6c/E6d.
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
