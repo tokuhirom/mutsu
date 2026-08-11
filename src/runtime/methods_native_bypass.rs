@@ -31,6 +31,7 @@ impl Interpreter {
                 | "add_fallback"
                 | "add_parent"
                 | "compose"
+                | "mixin"
                 | "archetypes"
                 | "nominalize"
                 | "name"

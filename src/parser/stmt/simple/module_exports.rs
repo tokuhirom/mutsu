@@ -16,6 +16,11 @@ struct ModuleScanResult {
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
     declare_keywords: Vec<(String, String)>,
+    /// Whether the module's own source directly `use`s Slangify — the
+    /// ADR-0026 gate for parse-time slang activation: a `use` of such a
+    /// module must execute it at parse time so its slang registration can
+    /// switch parser modes for the rest of the importing unit.
+    uses_slangify: bool,
 }
 
 thread_local! {
@@ -433,12 +438,38 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     result.sort_by(|a, b| a.name.cmp(&b.name));
     let mut declare_keywords = Vec::new();
     collect_exporthow_declare(&stmts, &mut declare_keywords);
+    let uses_slangify = stmts.iter().any(|s| {
+        matches!(s, Stmt::Use { module, .. }
+            if module == "Slangify" || module.starts_with("Slangify:"))
+    });
     ModuleScanResult {
         exports: result,
         type_names,
         enum_values,
         declare_keywords,
+        uses_slangify,
     }
+}
+
+/// ADR-0026 gate: does `module`'s source directly `use` Slangify? Usually a
+/// scan-cache lookup (the `use` statement's own scan just ran) — but a scan
+/// truncated by a `use` cycle is deliberately NOT cached, so this must honor
+/// the same `LOADING_MODULES` recursion guard as `register_module_exports`
+/// or a cyclic `use A`/`use B` pair re-scans forever (stack overflow).
+pub(super) fn module_activates_slang(module: &str) -> bool {
+    let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
+    if already_loading {
+        note_scan_guard_skip();
+        return false;
+    }
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().insert(module.to_string());
+    });
+    let result = find_and_scan_module(module).is_some_and(|scan| scan.uses_slangify);
+    LOADING_MODULES.with(|m| {
+        m.borrow_mut().remove(module);
+    });
+    result
 }
 
 /// Collect `(keyword, HOW type name)` pairs from a scanned module's

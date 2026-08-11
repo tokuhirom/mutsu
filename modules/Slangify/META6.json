@@ -1,0 +1,26 @@
+{
+  "auth": "zef:lizmat",
+  "authors": [
+    "Elizabeth Mattijsen"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Provide an easy interface to activating slangs",
+  "license": "Artistic-2.0",
+  "name": "Slangify",
+  "perl": "6.d",
+  "provides": {
+    "Slangify": "lib/Slangify.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/lizmat/Slangify.git",
+  "tags": [
+    "SLANG"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.0.4"
+}

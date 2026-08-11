@@ -29,6 +29,10 @@ pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
     )
 }
 
+/// Slang activation surface for the runtime (ADR-0026): the runtime's
+/// `$*LANG.define_slang` maps overridden grammar-rule names onto these
+/// parser modes.
+pub(crate) use stmt::simple::{apply_slang_rule_override, slang_modes};
 pub use stmt::simple::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };

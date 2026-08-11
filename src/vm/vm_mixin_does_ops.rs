@@ -148,7 +148,7 @@ impl Interpreter {
 
     /// Apply a `but`-style mixin: wrap the left value with the right value
     /// keyed by its type name.
-    fn apply_but_mixin(left: Value, right: Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn apply_but_mixin(left: Value, right: Value) -> Result<Value, RuntimeError> {
         // Handle Array RHS: `True but [1, 2]` generates a single "Array" mixin
         if let ValueView::Array(_, kind) = right.view() {
             if kind.is_real_array() {

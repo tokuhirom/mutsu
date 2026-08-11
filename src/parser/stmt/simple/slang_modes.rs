@@ -69,9 +69,6 @@ pub(crate) fn slang_spaced_methodop() -> bool {
 /// the rule is not supported — the caller must raise a hard compile-time
 /// error naming the rule (an unknown override means the slang's semantics
 /// would be silently wrong), never ignore it.
-// Consumed by the `$*LANG.define_slang` plumbing (ADR-0026 §2.2) in the next
-// campaign slice; until then only tests exercise it.
-#[allow(dead_code)]
 pub(crate) fn apply_slang_rule_override(modes: &mut SlangModes, rule: &str) -> Option<()> {
     match rule {
         "term:sym<identifier>" => modes.spaced_call = true,

@@ -34,6 +34,7 @@ mod module_exports;
 mod pragma_preseed;
 mod registry;
 mod slang_modes;
+mod slang_use;
 mod user_ops;
 
 // `pub` re-exports.
@@ -46,7 +47,10 @@ pub(crate) use lib_paths::{parser_program_path, parser_source_file};
 pub(crate) use compile_consts::is_imported_function;
 pub(crate) use registry::{current_language_version, set_current_language_version};
 pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
-pub(crate) use slang_modes::{slang_spaced_call, slang_spaced_methodop};
+pub(crate) use slang_modes::{
+    apply_slang_rule_override, set_slang_modes, slang_modes, slang_spaced_call,
+    slang_spaced_methodop,
+};
 
 // `pub(super)` re-exports.
 pub(super) use control_stmts::{
@@ -63,7 +67,7 @@ pub(in crate::parser) use compile_consts::{
     register_compile_time_constant, suppress_worries, worries_suppressed,
 };
 pub(in crate::parser) use control_stmts::is_known_call;
-pub(in crate::parser) use lib_paths::try_add_parse_time_lib_path;
+pub(in crate::parser) use lib_paths::{parser_lib_paths, try_add_parse_time_lib_path};
 pub(in crate::parser) use module_exports::{
     import_inline_module_exports, register_inline_module_exports, register_module_exports,
     register_module_type_names,
@@ -83,6 +87,7 @@ pub(in crate::parser) use registry::{
     set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
+pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_user_declared_prefix_sub, is_user_declared_value_term,
     is_user_defined_infix, match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
