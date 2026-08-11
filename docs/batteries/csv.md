@@ -47,7 +47,7 @@ candidates.
 | Candidate | Version | Released | License | Runtime deps | Read+generate? | Native/C dep? | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | **`Text::CSV`** | 0.022 | 2023-10-30 | Artistic-2.0 | `Slang::Tuxic`, `File::Temp` | ✅ both, incl. from-scratch `csv(out=>…)` | none | 0 | **33/33** (22697 tests) | **0/33** — blocked at `use` by the slang dependency (heredoc fix does not touch this) |
-| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **0/10** — heredoc bug fixed, now blocked by a *different*, unrelated bug (see below) |
+| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **6/10** — three blockers fixed (see below), 4 files have real per-assertion failures |
 | `CSV::Parser` | 0.1.4 | 2023-06-06 | *(README only — see below)* | **0** | ❌ read-only — **disqualified** | none | 0 | **5/5** | **5/5** ✅ |
 | `CSV-AutoClass` | 0.2.0 | 2023-11-19 | Artistic-2.0 | `CSV::Parser`, `File::Find`, `Text::Utils` | ❌ codegen utility, not a reader/writer | none | 0 | **2/2** | **2/2** ✅ — was 0/2, unblocked by the heredoc fix |
 | `Duck::CSV` | 0.0.2 | 2026-05-30 | MIT | `Duckie` (→ system `libduckdb`) | not evaluated — disqualified below | **DuckDB (native)** | 0 | not measured² | not measured² |
@@ -115,11 +115,11 @@ modules this survey happened to probe with; other ecosystem modules using
 the same "`my` local, later heredoc, same sub" pattern were presumably
 affected too.
 
-### `CSV::Table` — two parse blockers fixed; now blocked on a `return-rw`/`AT-POS` write bug
+### `CSV::Table` — three blockers fixed; suite runs, but not yet fully green
 
 `CSV::Table`'s transitive dependency chain (`Text::Utils` → `Font::AFM` for
-PDF font-metrics text-width calculations, nothing to do with CSV) hit two
-parse bugs in sequence, both now fixed:
+PDF font-metrics text-width calculations, nothing to do with CSV) hit three
+bugs in sequence, all now fixed:
 
 1. A numbered match-capture array variable (`@0`) inside a `[...]` array
    literal (`my Array $bbox = [ @0».Int ];` at `Font::AFM.rakumod:436`) —
@@ -127,17 +127,19 @@ parse bugs in sequence, both now fixed:
 2. `method dispatch:<.?>(...)` (custom dynamic-dispatch method syntax,
    `Font::AFM.rakumod:594`) not being a recognized method-name category —
    see `news/2026-08/method-dispatch-colon-question-syntax.md`.
+3. A further transitive dependency (`Text::Utils` → `AlgorithmsIT`) assigned
+   through a user class's `return-rw AT-POS` via `$obj[$i] = v` (no
+   `ASSIGN-POS` declared), and mutsu silently dropped the write instead of
+   writing through the returned container — see
+   `news/2026-08/return-rw-at-pos-postcircumfix-assign.md`.
 
-With both fixed, `use CSV::Table` loads cleanly and 8/10 of its own test
-files run — but every file that actually constructs a `CSV::Table` object
-now hits a third, unrelated blocker: a further transitive dependency
-(`Text::Utils` → `AlgorithmsIT`) assigns through a user class's `return-rw
-AT-POS` via `$obj[$i] = v` (no `ASSIGN-POS` declared), and mutsu silently
-drops the write instead of writing through the returned container. Filed as
-`todo/tickets/custom-at-pos-return-rw-index-assign.md`, with the root cause
-already narrowed to `src/vm/vm_var_assign_index_named.rs`'s Instance-target
-assign path. `CSV::Table`'s own suite is still not fully green on mutsu
-because of it.
+With all three fixed, `use CSV::Table` loads cleanly and every one of its own
+test files runs and constructs `CSV::Table` objects — but the suite is not
+fully green: 6/10 files pass outright, 4 (`t/1-delimiters.t`,
+`t/2-commented.t`, `t/5-save.t`, `t/7-half-matrix.t`) have real per-assertion
+failures in delimiter/comment-handling, `save`, and "half matrix" row/column
+shaping — genuine feature gaps, not parse/crash blockers, and not yet root
+caused.
 
 ### `Text::CSV` also needs real slang support — a second, harder blocker
 
@@ -225,19 +227,17 @@ read-and-generate API), the field narrows to exactly two live candidates —
 compiler bug that blocked both is now fixed; each still has its own
 remaining blocker, and each blocker now has its own ticket:
 
-1. **`CSV::Table` needs the `return-rw`/`AT-POS` index-assign bug fixed
-   next** —
-   **[`todo/tickets/custom-at-pos-return-rw-index-assign.md`](../../todo/tickets/custom-at-pos-return-rw-index-assign.md)**.
-   Both prior blockers on this path (`@0` inside a `[...]` array literal;
-   `dispatch:<.?>` method-syntax parsing) are fixed
+1. **`CSV::Table` now runs; 4 of its own test files still fail for real
+   reasons.** All three parse/crash blockers on this path (`@0` inside a
+   `[...]` array literal; `dispatch:<.?>` method-syntax parsing; the
+   `return-rw`/`AT-POS` index-assign drop) are fixed
    (`news/2026-08/numbered-capture-array-var-in-array-literal.md`,
-   `news/2026-08/method-dispatch-colon-question-syntax.md`); this is the next
-   thing standing between mutsu and a working `CSV::Table`, surfaced via a
-   third transitive dependency (`Text::Utils` → `AlgorithmsIT`). The root
-   cause is already narrowed to `src/vm/vm_var_assign_index_named.rs`'s
-   Instance-target assign path — see the ticket. After the fix, re-measure
-   `CSV::Table`'s own suite; it may surface further blockers past that point,
-   or may come up clean.
+   `news/2026-08/method-dispatch-colon-question-syntax.md`,
+   `news/2026-08/return-rw-at-pos-postcircumfix-assign.md`). What remains is
+   `t/1-delimiters.t`, `t/2-commented.t`, `t/5-save.t`, `t/7-half-matrix.t`
+   failing per-assertion (delimiter/comment handling, `save`, "half matrix"
+   shaping) — not yet root caused; next step is diagnosing each against
+   `raku` the same way the earlier blockers were.
 2. **`Text::CSV` stays blocked on the harder problem** —
    **[`todo/deep/text-csv-needs-slang-tuxic-support.md`](../../todo/deep/text-csv-needs-slang-tuxic-support.md)**.
    `use Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real

@@ -450,8 +450,50 @@ impl Interpreter {
             // `$obj[0] = v` here with "Cannot modify an immutable ..."; that is
             // a separate gap — this path cannot tell the two apart.)
             if self.instance_is_plain_user_object(&cls) {
+                // Real Raku's default Positional/Associative behavior: absent an
+                // explicit ASSIGN-POS/ASSIGN-KEY, an AT-POS/AT-KEY whose body
+                // returns an indexed attribute element (`@!attr[$i]` /
+                // `return-rw @!attr[$i]`, or the %-sigil equivalent) still
+                // exposes a writable container — `is rw` is irrelevant for an
+                // @/%-sigil attribute element, same as the bare-attribute case
+                // (see `rw_method_attribute_target`'s doc comment). Route the
+                // write through that container the same way an explicit
+                // `.AT-POS(i) = v` call already does
+                // (`methods_mut_method_lvalue.rs`), instead of silently
+                // dropping it.
+                let at_method = if is_positional { "AT-POS" } else { "AT-KEY" };
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    _ => idx.clone(),
+                };
+                let rw_indexed = if self.has_user_method(&cls, at_method) {
+                    self.resolve_method_with_owner(&cls, at_method, std::slice::from_ref(&idx_arg))
+                        .and_then(|(_, def)| Self::rw_method_indexed_attr_target(&def.body))
+                } else {
+                    None
+                };
                 let raw_val = self.stack.pop().unwrap_or(Value::NIL);
                 let (val, _) = Self::unwrap_bind_index_value(raw_val);
+                if let Some((attr, _param, method_is_pos)) = rw_indexed
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        id: target_id,
+                    } = target.view()
+                {
+                    let result = self.assign_rw_indexed_attr(
+                        &attributes,
+                        class_name,
+                        target_id,
+                        Some(&var_name),
+                        &attr,
+                        idx_arg,
+                        method_is_pos,
+                        val,
+                    )?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 self.stack.push(val);
                 return Ok(());
             }
