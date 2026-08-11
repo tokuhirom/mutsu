@@ -3048,7 +3048,7 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   (steps 1-4, E5b, E5c parts 1-2, E5d) is closed.** Full detail in
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5d". Next: **E6** (mutation-aware and
   container calls).
-- [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
+- [x] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow
   path), the dynamic-mut and hyper-dynamic gate gaps (raku-verified, closed by routing through
@@ -3232,6 +3232,39 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E6d: ArrayPush's augmented-Array divergence (V2) --
   raku-verified moot, array_dispatch_pristine not built". **E6a, E6b, and E6d are now closed; E6c
   (the two dynamic gaps) is the only remaining open box in E6.**
+  **Progress 2026-08-12** (E6c, closing E6 outright): item 4 (`HyperMethodCallDynamic`'s missing
+  `skip_native` gate) was already downgraded to "redundant gate, no code change" by E5c part 2
+  before E6 began (`try_native_method_raw`'s own internal guards are the real safety net, not the
+  caller's outer gate). Item 3 (`CallMethodDynamicMut`'s missing native/compiled probe) raku-
+  verified real: `role Loud { method push($x) {...} }; @a does Loud; @a."push"(4)` silently ran
+  the native array push instead of the role method (`[4]` instead of raku's `[1 2 3]` +
+  `ROLE-PUSH: 4`). Root cause was one level deeper than the opcode handler, though: the shared mut
+  slow path both `CallMethodDynamicMut` and `CallMethodMut`'s own generic fork bottom out into —
+  `call_method_mut_with_values` (`runtime/methods_mut_dispatch.rs`) — special-cased
+  push/append/unshift/prepend/pop/shift/splice purely by sigil (`target_var.starts_with('@')` /
+  `('%')`), with no check that the value behind the sigil was still a plain `Array`/`Hash` and not
+  a `does`-mixed `Mixin` — unlike the `ArrayPush` fast opcode's own `is_simple_array` gate (E6d)
+  and the Tier-A `try_native_array_mut` helper (E6a), both of which already require
+  `ValueView::Array`. So the *opcode-level* item-3 gap and a *deeper, more general* slow-path gap
+  turned out to be the same bug wearing two faces: fixing the opcode probe alone would not have
+  helped, since the fallback it reaches has the identical hole. Confirmed the same divergence on
+  the **static** `CallMethodMut` path too, for any mutator without its own fast opcode (e.g.
+  `@a.unshift(4)` with `@a does Loud`) — `ArrayPush` is the only mutator with a dedicated opcode,
+  so `unshift`/`append`/`prepend`/`pop`/`shift`/`splice` always reach this same slow path even on
+  a static receiver. Fixed by gating both the array-mutator and the hash-mutator blocks with
+  `!self.mixin_role_has_method(&target, method)` (the exact guard `try_native_method_raw` already
+  uses at `vm_native_dispatch.rs:165`), falling through to the function's own generic
+  `call_method_with_values` tail on a hit — same "the shape check already is the safety net"
+  pattern E5b step 2 and E6d established. Verified raku-byte-identical for `push`/`unshift`/
+  `append` on both `Array`-mixin and `Hash`-mixin receivers, on both static and dynamic-name mut
+  call forms; pinned as `t/mixin-array-hash-mutator-override.t` (8 assertions). Full `t/` suite
+  (3034 files/28,400 tests) green; a 190-file roast slice (S14-roles, S32-array, S02-types,
+  S06-signature, S03-metaops, S12-attributes, S12-methods — chosen for role/mixin/array/hash
+  dispatch relevance) run against the release binary with `MUTSU_FUDGE=1`: the only two failures
+  (`S02-types/quanthash.t`, `S12-attributes/trusts.t`) reproduce identically with this change
+  reverted (confirmed by rebuilding from the pre-E6c commit), so both are pre-existing and
+  unrelated. `cargo clippy -- -D warnings` / `cargo fmt` clean. **E6c is closed; all of E6 (E6a,
+  E6b, E6c, E6d) is now closed.** Next: E7 (metaobject, qualified, and re-entrant calls).
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
