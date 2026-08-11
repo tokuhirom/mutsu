@@ -199,6 +199,14 @@ impl Interpreter {
         }
         let mut acc = 0usize;
         for token in &pattern.tokens {
+            // ADR-0022 Slice 5: a literal token born from a non-constant
+            // runtime variable's interpolation contributes nothing to
+            // litlen and ends the chain, same as any other non-literal
+            // construct ("everything else ends litlen" below) — it is not
+            // a compile-time-known character.
+            if token.from_runtime_interpolation {
+                return (acc, false);
+            }
             // Quantifiers (and their separators) always end the litlen chain,
             // even around otherwise-literal content (ADR-0022 §2 table).
             if !matches!(token.quant, RegexQuant::One) || token.separator.is_some() {

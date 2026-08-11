@@ -359,6 +359,27 @@ impl Interpreter {
         if declarators.is_empty() {
             return self.regex_match_with_captures_core(pattern, text);
         }
+        // ADR-0009 discipline: a declarative-prefix modifier (`:my`/`:let`/
+        // `:temp`/`:constant`/`:state`) evaluates its initializer as real
+        // code with a real, env-visible side effect — exactly what LTM
+        // measurement must never do (measurement "never executes user
+        // code"). This function can be reached from WITHIN a measurement —
+        // e.g. a subrule call nested under `declarative_prefix_match_len`/
+        // `ltm_prefix_len_at` (the "anchored single subrule" ranking path in
+        // `regex_match_with_captures` above calls
+        // `declarative_prefix_match_len` on a whole candidate pattern, which
+        // may itself start with `:let`). Running the initializer for real
+        // there permanently leaks its write: ADR-0022 Slice 5 exposed this
+        // by making a subsequent LTM termination inside the remaining
+        // pattern return a spurious zero-width "match", which made this
+        // function's own `matched` check below skip `:let`'s
+        // restore-on-fail. Skip applying the declarators entirely under
+        // measurement and measure only what follows — the declarators
+        // themselves are zero-width (they consume no input), so this does
+        // not change any measured prefix length.
+        if super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get) {
+            return self.regex_match_with_captures_core(&remaining_pattern, text);
+        }
 
         let mut restore_always: HashMap<String, Option<Value>> = HashMap::new();
         let mut restore_on_fail: HashMap<String, Option<Value>> = HashMap::new();

@@ -1906,6 +1906,27 @@ impl Interpreter {
                 self.write_self_attr_cell(&sv, val.clone());
             }
         }
+        // ADR-0022 Slice 5: a companion env marker recording that `name` is a
+        // `constant` — the runtime-visible twin of the compiler's
+        // `constant_vars_in_scope`, needed because `interpolate_regex_scalars`
+        // (regex `$name` interpolation) runs long after compilation, on a bare
+        // `&self` with no compiler access. Mirrors the established
+        // `__mutsu_sigilless_readonly::` companion-key convention (same env
+        // map, same overlay/tombstone scoping — a `my $x` that later shadows
+        // an outer `constant $x` correctly un-marks it here, exactly as that
+        // marker is cleared on shadowing). Only ever consulted by
+        // `Interpreter::is_compile_time_constant_scalar`; scalar names only
+        // (an `@`/`%`-sigiled `constant` never participates in `$name` regex
+        // interpolation).
+        if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
+            if is_constant {
+                self.env_mut()
+                    .insert(format!("__mutsu_constant_var::{name}"), Value::TRUE);
+            } else if is_vardecl && !is_bind {
+                self.env_mut()
+                    .remove(&format!("__mutsu_constant_var::{name}"));
+            }
+        }
         Ok(())
     }
 

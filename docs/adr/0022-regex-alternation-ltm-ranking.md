@@ -1,11 +1,14 @@
 # ADR-0022: `|` alternation ranks branches by declarative-prefix LTM, not by longest actual match
 
-- **Status**: Accepted (2026-08-09); Slices 1-3 implemented and merged 2026-08-11
-  (measurement infrastructure, litlen, and the ranking swap in all three consumer
-  arms — `roast/S05-metasyntax/longest-alternative.t` tests 28/54 and Cro::HTTP
-  `t/http-router.rakutest` test 61 now pass, pinned by `t/regex-ltm-alternation.t`
-  and `t/regex-ltm-declarative-prefix.t`). Slices 4 (ledger update) and 5 (non-constant
-  interpolation marking, needed for roast test 50) remain — see §5 and §2.
+- **Status**: Accepted (2026-08-09); **all five slices implemented and merged**.
+  Slices 1-3 merged 2026-08-11 (measurement infrastructure, litlen, and the ranking
+  swap in all three consumer arms — `roast/S05-metasyntax/longest-alternative.t`
+  tests 28/54 and Cro::HTTP `t/http-router.rakutest` test 61 now pass, pinned by
+  `t/regex-ltm-alternation.t` and `t/regex-ltm-declarative-prefix.t`). Slice 5
+  (non-constant `$var` interpolation marking, needed for roast test 50) merged
+  2026-08-11, closing the file's last failure — `longest-alternative.t` is now
+  fully green (62/62) and whitelisted; Slice 4 (this ledger update) landed in the
+  same PR. See `news/2026-08/adr0022-slice5-nonconstant-interpolation.md`.
 - **Context**: `todo/deep/regex-alternation-ltm-longest-literal-prefix.md`;
   `Cro::HTTP` `t/http-router.rakutest` test 61 (the file's last remaining failure);
   `roast/S05-metasyntax/longest-alternative.t` tests 28/50/54 (the file's only failures,
@@ -372,17 +375,31 @@ evaluates). No new global state; no cross-thread anything.
    whitelisted `S05-*` files, grammar-heavy roast (`S05-grammar/*`, `integration/*`),
    and the JSON/YAML batteries suites (`scripts/battery-testsuite.sh`) — CI covers all;
    fix forward.
-4. **Slice 4 — BLOCKERS.md + ledger update**: refresh the `longest-alternative.t` row
-   (currently stale), note remaining 50/461.
-5. **Slice 5 (optional, separate) — non-constant interpolation marking**: thread
-   interpolated-span info out of `interpolate_bound_regex_scalars`
-   (`regex_interpolate.rs:288` — today it returns only the substituted pattern String)
-   so the regex parser can flag tokens born from a runtime variable as non-declarative
-   (a `from_runtime_interpolation` bool on `RegexToken`), which `ltm_atom_mode` then
-   treats as Terminate. `constant`-declared values keep participating. Fixes roast
-   test 50; enables whitelisting `longest-alternative.t` (with 461 fudged upstream).
-   If span-threading proves too invasive, an acceptable interim is a per-pattern side
-   list of interpolated char ranges consulted at parse time — decide at implementation.
+4. **Slice 4 — BLOCKERS.md + ledger update** (done, merged with Slice 5): the
+   `longest-alternative.t` row is removed from `TODO_roast/BLOCKERS.md` (the file is fully
+   green and whitelisted); the file's remaining line-461 fudge is noted in
+   `roast-whitelist.txt`'s neighboring context only, not as a ledger row.
+5. **Slice 5 (done) — non-constant interpolation marking**: the actual general-case
+   `$name` substitution turned out to be `interpolate_regex_scalars`
+   (`regex_parse_modifier.rs`, called from `parse_regex_uncached`), not
+   `interpolate_bound_regex_scalars` (which handles a narrower, closure-capture case only).
+   Implemented via the ADR's own "acceptable interim": a reserved control-character
+   sentinel (`NON_DECLARATIVE_INTERP_MARK`) wraps a substituted span in the
+   interpolator's output when the source name is not a compile-time `constant` (tracked
+   via a new runtime-visible `__mutsu_constant_var::<name>` env marker, written by
+   `exec_set_local_op_inner`); the structural tokenizer in the same `parse_regex_uncached`
+   call toggles on the sentinel and sets the new `from_runtime_interpolation` bool on
+   `RegexToken`, which `walk_tokens` (`regex_match_core.rs`) and `ltm_litlen_walk`
+   (`regex_ltm_rank.rs`) treat as Terminate. `constant`-declared values keep
+   participating. Fixed roast test 50; `longest-alternative.t` is now fully whitelisted
+   (461 stays `#?rakudo todo`, matching rakudo). Exposed and fixed a latent ADR-0009
+   violation along the way: `regex_match_with_captures`'s `:let`/`:temp` prefix handling
+   ran its side effect even when reached from inside an LTM measurement — see
+   `news/2026-08/adr0022-slice5-nonconstant-interpolation.md` for the full story,
+   including a documented, narrower-scope limitation (`$var` interpolation *inside* a
+   double-quoted regex literal `"$var..."` does not yet get the non-declarative
+   treatment — the sentinel there is swallowed by the tokenizer's own quote-scanning
+   inner loop; a `// TODO:` marks the spot).
 
 Perf: iterate with the **debug** binary + `MUTSU_VM_STATS` where useful; wall-clock only
 on release; document nothing from local runs — after merge, read the bench CI

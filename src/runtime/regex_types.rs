@@ -353,6 +353,19 @@ pub(crate) struct RegexToken {
     /// separator is permitted). The separator's own captures are appended as
     /// positional/named captures after the main atom's, matching Raku semantics.
     pub(crate) separator: Option<Box<RegexSeparatorSpec>>,
+    /// ADR-0022 Slice 5: true when this token's `RegexAtom::Literal` char
+    /// came from interpolating a *non-constant* runtime variable's value
+    /// into the pattern text (`interpolate_regex_scalars`), as opposed to a
+    /// literal character written directly in the source or interpolated
+    /// from a `constant`-declared value (which Rakudo inlines at compile
+    /// time and so still participates in LTM ranking like a hand-written
+    /// literal — ADR-0022 §2's "non-constant `$var` interpolation" row).
+    /// `ltm_atom_mode`'s callers and `ltm_litlen_at` treat a token with this
+    /// set as a `Terminate` stopper: it neither extends the declarative
+    /// prefix nor contributes to litlen. Always `false` outside
+    /// `LTM_DECLARATIVE_MODE` measurement — it does not affect ordinary
+    /// matching at all.
+    pub(crate) from_runtime_interpolation: bool,
 }
 
 #[derive(Clone)]

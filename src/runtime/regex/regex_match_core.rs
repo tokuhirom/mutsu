@@ -470,6 +470,23 @@ impl Interpreter {
             return false;
         }
         let token = &ctx.pattern.tokens[idx];
+        // ADR-0022 Slice 5: a literal token born from interpolating a
+        // non-constant runtime variable (`from_runtime_interpolation`) is a
+        // declarative-prefix stopper, same treatment as a `** {code}`
+        // quantifier or a code atom — terminate WITHOUT dispatching into the
+        // atom matcher (which would otherwise happily compare the literal
+        // char and let it participate in prefix/litlen ranking). Checked
+        // here (not in `ltm_atom_mode`, which only sees the atom) because
+        // every top-level and nested (Group/Alternation/subrule) token walk
+        // funnels through this one function, so one check covers all of
+        // them regardless of nesting depth.
+        if token.from_runtime_interpolation
+            && super::regex_helpers::LTM_DECLARATIVE_MODE.with(std::cell::Cell::get)
+        {
+            super::regex_helpers::LTM_PREFIX_TERMINATED.with(|f| f.set(true));
+            matches.push((pos, store.snapshot()));
+            return true;
+        }
         let pos_base = store.caps().positional.len();
         // Separator quantifiers (`atom +% sep`, `atom **N..M %% sep`, ...):
         // match the atom with the separator interleaved between iterations,

@@ -544,6 +544,7 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
                 allow_trailing: s.allow_trailing,
             })
         }),
+        from_runtime_interpolation: false,
     }
 }
 
