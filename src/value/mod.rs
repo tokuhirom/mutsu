@@ -1453,6 +1453,12 @@ pub(in crate::value) enum ValueRepr {
         value: Box<Value>,
         /// Source-element index, for a reference into a slurpy's element.
         index: Option<u32>,
+        /// The local slot the variable occupied at the `WrapVarRef` site, when
+        /// it was a local of the emitting frame. Shadow slots give several
+        /// slots the same name, so a by-name slot search (`rposition`) can pick
+        /// a dead shadow's slot; this records the binding that was actually in
+        /// scope (see `capture_var_cell_inner`).
+        slot: Option<u32>,
     },
     /// Unicode normalization form types (NFC, NFD, NFKC, NFKD).
     /// `form` is one of "NFC", "NFD", "NFKC", "NFKD".

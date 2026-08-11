@@ -338,7 +338,10 @@ impl Compiler {
             // storing a fresh reference to this one.
             let tmp = format!("__mutsu_bind_index_ref_{}", self.code.constants.len());
             let name_idx = self.code.add_constant(Value::str(tmp));
-            self.code.emit(OpCode::WrapVarRef(name_idx));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
         } else if matches!(arg, Expr::Index { .. }) {
             let tmp = format!("__mutsu_index_rw_arg_{}", self.code.constants.len());
             let orig = format!("__mutsu_index_rw_orig_{}", self.code.constants.len());
@@ -358,10 +361,12 @@ impl Compiler {
             self.pending_index_rw_writebacks
                 .push((arg.clone(), tmp.clone(), orig.clone()));
             let name_idx = self.code.add_constant(Value::str(tmp));
-            self.code.emit(OpCode::WrapVarRef(name_idx));
+            self.code.emit(OpCode::WrapVarRef {
+                name_idx,
+                slot: u32::MAX,
+            });
         } else if let Some(name) = source_name {
-            let name_idx = self.code.add_constant(Value::str(name));
-            self.code.emit(OpCode::WrapVarRef(name_idx));
+            self.emit_wrap_var_ref(&name);
         } else if is_bind_target && matches!(arg, Expr::MethodCall { .. }) {
             // `:=` bind to a method-call RHS (`my $ref := $obj.attr`): flag the
             // dispatch so a public attribute accessor returns the attribute

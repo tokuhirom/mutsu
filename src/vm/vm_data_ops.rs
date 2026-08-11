@@ -20,7 +20,8 @@ impl Interpreter {
             {
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
-                elems.push(self.capture_var_cell_inner(code, &source_name, inner, true));
+                let slot_hint = val.varref_slot();
+                elems.push(self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint));
                 continue;
             }
             // Force lazy IO lines into eager arrays
@@ -199,8 +200,9 @@ impl Interpreter {
         code: &CompiledCode,
         name: &str,
         inner: Value,
+        slot_hint: Option<u32>,
     ) -> Value {
-        self.capture_var_cell_inner(code, name, inner, false)
+        self.capture_var_cell_inner(code, name, inner, false, slot_hint)
     }
 
     /// Like `capture_var_cell`, but when `box_type_objects` is set a plain type
@@ -215,6 +217,7 @@ impl Interpreter {
         name: &str,
         inner: Value,
         box_type_objects: bool,
+        slot_hint: Option<u32>,
     ) -> Value {
         if inner.is_container_ref() {
             return inner;
@@ -227,8 +230,30 @@ impl Interpreter {
         // share `b`'s cell regardless of construction order. Unbound names
         // resolve to themselves at the cost of one env lookup.
         let root = self.resolve_alias_root(name);
+        let use_hint = root == name;
         let name: &str = root.as_str();
-        let Some(idx) = code.locals.iter().rposition(|n| n == name) else {
+        // Prefer the compile-time-resolved slot from the `WrapVarRef` site:
+        // shadow slots give several `code.locals` entries the same name, and
+        // the by-name `rposition` fallback would pick the LAST one — an inner
+        // shadow's (possibly dead) slot — then poison env[name] with a cell
+        // holding that slot's stale value (the CSV::Table comment-strip
+        // state-sync bug, t/list-alias-shadowed-name.t). `Some(u32::MAX)`
+        // means the compiler proved the name is NOT a local of this frame
+        // (an env-based loop param, a captured outer) — do not guess a slot
+        // by name there either, for the same shadow-collision reason. The
+        // hint is dropped when `:=` aliasing redirected the name to a
+        // different root variable, and the legacy by-name search remains for
+        // VarRefs built without compiler slot info (`slot_hint: None`).
+        let idx = match slot_hint {
+            Some(hint)
+                if use_hint && code.locals.get(hint as usize).map(String::as_str) == Some(name) =>
+            {
+                Some(hint as usize)
+            }
+            Some(hint) if use_hint && hint == u32::MAX => None,
+            _ => code.locals.iter().rposition(|n| n == name),
+        };
+        let Some(idx) = idx else {
             // The named scalar is not a local of this frame (a captured/outer
             // variable read through the closure env), so there is no slot to box
             // into a shared cell. For List aliasing (`box_type_objects`) the
@@ -295,7 +320,8 @@ impl Interpreter {
             {
                 let source_name = source_name.resolve();
                 let inner = inner.clone();
-                positional.push(self.capture_var_cell(code, &source_name, inner));
+                let slot_hint = val.varref_slot();
+                positional.push(self.capture_var_cell(code, &source_name, inner, slot_hint));
                 continue;
             }
             match val.view() {
@@ -311,7 +337,8 @@ impl Interpreter {
                     {
                         let source_name = source_name.resolve();
                         let inner = inner.clone();
-                        let cell = self.capture_var_cell(code, &source_name, inner);
+                        let slot_hint = v.varref_slot();
+                        let cell = self.capture_var_cell(code, &source_name, inner, slot_hint);
                         named.insert(k.clone(), cell);
                     } else {
                         named.insert(k.clone(), v.clone());

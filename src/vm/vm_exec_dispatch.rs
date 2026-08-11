@@ -1954,8 +1954,8 @@ impl Interpreter {
                 self.exec_bool_coerce_op();
                 *ip += 1;
             }
-            OpCode::WrapVarRef(name_idx) => {
-                self.exec_wrap_var_ref_op(code, *name_idx);
+            OpCode::WrapVarRef { name_idx, slot } => {
+                self.exec_wrap_var_ref_op(code, *name_idx, *slot);
                 *ip += 1;
             }
             OpCode::MarkBindContext => {

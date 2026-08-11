@@ -546,8 +546,13 @@ impl Compiler {
         let mut nf_writes = cf.code.free_var_writes.clone();
         nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
         for pair in cf.code.ops.windows(2) {
-            let (OpCode::GetGlobal(name_idx), OpCode::WrapVarRef(wrapped_idx)) =
-                (&pair[0], &pair[1])
+            let (
+                OpCode::GetGlobal(name_idx),
+                OpCode::WrapVarRef {
+                    name_idx: wrapped_idx,
+                    ..
+                },
+            ) = (&pair[0], &pair[1])
             else {
                 continue;
             };

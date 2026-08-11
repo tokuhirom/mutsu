@@ -530,7 +530,8 @@ impl Interpreter {
         {
             let source_name = source_name.resolve();
             let inner = inner.clone();
-            right = self.capture_var_cell(code, &source_name, inner);
+            let slot_hint = right.varref_slot();
+            right = self.capture_var_cell(code, &source_name, inner, slot_hint);
         }
         (left, right)
     }

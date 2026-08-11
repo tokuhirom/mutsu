@@ -150,6 +150,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 name: r.name,
                 value: Box::new(r.value),
                 index: r.index,
+                slot: r.slot,
             }
         }
         Kind::Proxy => {
