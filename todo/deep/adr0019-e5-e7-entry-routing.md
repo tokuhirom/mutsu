@@ -777,3 +777,110 @@ conclusion about the `Native` candidate) each must stay a direct, self-guarding 
 the same reason the native probe does -- most of them already gate on `has_user_method`/
 `is_native_method` internally, which is exactly the per-shape-check pattern step 2 found
 irreplaceable for `Native`. That inventory and classification is the next E5b sub-slice.
+
+### E5b step 4: inventory and classification of the pre-lookup interceptor cascade -- nothing folds into a decision match, but the resolution block itself dedups to a direct `resolve_method_cached` call, closing the User-candidate cutover
+
+Closes step 3's open item: whether any of `try_compiled_method_or_interpret_inner`'s ~430-line
+pre-lookup cascade (Seq reification, the ten `.new`/`bless`/class-method native construction
+forks, the IO::Handle/IO::Path Instance chain, MOP pseudo-methods, private methods,
+`^`-metamethods) can fold into a `resolve_sequence`-style decision match.
+
+**Self-guarding inventory, the ten `.new`/`bless`/class-method forks (item numbering matches the
+file's top-to-bottom order):**
+
+| Fork | Call-site guard | Internal guard | Guard mechanism |
+|---|---|---|---|
+| Native default `new` | none visible | yes | `try_native_default_construct` -> `native_ctor_plan(..).eligible` -> `is_native_default_constructible` (`src/runtime/methods_object.rs:95-96`) checks `!class_def.methods.contains_key("new")` |
+| Native builtin `new` (Buf/Blob/Version/...) | yes | n/a | `vm_call_method_compiled_interpret.rs:99`: `!self.has_user_method(&class_name.resolve(), "new")` |
+| Native QuantHash `new` (Set/Bag/Mix/...) | yes | n/a | `vm_call_method_compiled_interpret.rs:113`: `!self.user_declared_classes.contains(..)` |
+| Native aggregate `new` (Array/List/Hash/Map) | yes | n/a | same `user_declared_classes` pattern, `vm_call_method_compiled_interpret.rs:126` |
+| Native IO::Path family `new` | none | none | `try_native_io_path_construct` (`methods_object_native_ctors_io.rs:6-38`) gates only on `is_io_path_lexical_class` -- a fixed-name-list match, no user-method check anywhere in the chain |
+| Native `Failure.new` | none (`class_name == "Failure"`) | none | `build_native_failure_value` (`methods_object_native_ctors_misc.rs:230`) reads only args/`$!`/MRO, no user-method check |
+| Native `Seq.new` | none (`class_name == "Seq"`) | none | `try_native_seq_construct` (`methods_object_native_ctors_misc.rs:168-228`) -- pure iterator registration, no user-method check |
+| Native `IO::Socket::INET.new` | none (`class_name == "IO::Socket::INET"`) | none | `dispatch_socket_inet_new` (`methods_collection_ops/socket_inet_proc.rs:10`) -- pure arg-parse + bind/connect, no user-method check |
+| Native `bless` | via `loan_env!` | yes | `try_native_bless` (`methods_dispatch_new.rs:600`): `if self.native_ctor_plan(class_name).has_custom_bless { return None; }` |
+| Native builtin class method | none | none | `try_native_builtin_class_method` (`methods_object_native_ctors_io.rs:487-501`) currently handles only `Instant.from-posix`, no user-method check |
+
+Five forks (IO::Path family, `Failure`, `Seq`, `IO::Socket::INET`, builtin class method) have no
+`has_user_method`/`user_declared_classes` guard anywhere in the chain -- guarded only by exact
+class-name equality. Checked whether that is a real gap, raku-first, then on mutsu
+(`cargo build`, `target/debug/mutsu`):
+
+```raku
+class MySeq is Seq { method new(*%a) { "USER-SUBCLASS-OVERRIDE" } }
+say MySeq.new;   # raku: USER-SUBCLASS-OVERRIDE, mutsu: USER-SUBCLASS-OVERRIDE (subclassing is fine)
+
+use MONKEY-TYPING;
+augment class Seq { method new(*%a) { "USER-OVERRIDE" } }
+# raku: ===SORRY!=== Package 'Seq' already has a method 'new' (did you mean to declare a multi method?)
+```
+
+Identical redeclaration error from raku for `IO::Path`, `Failure`, `Instant` (`from-posix`);
+`IO::Socket::INET` rejects `augment` outright (`is a builtin type, not an external module`). The
+`multi method new` dodge fails too, with `X::Multi::Ambiguous` at the call site. mutsu, however,
+silently accepts the illegal `augment` and the native fork still wins (verified for all five --
+e.g. `mutsu -e 'use MONKEY-TYPING; augment class Seq { method new(*%a) {"USER-OVERRIDE"} }; say
+Seq.new;'` prints `()`, not `USER-OVERRIDE`). **This is not a new E5b gap** -- it is the same
+pre-existing bug class step 2 already found for `Str.uc` and explicitly declined to file
+separately ("augmenting an already-declared core method without `multi` is not a legitimate
+program shape worth a dedicated ticket by itself"). The root cause is mutsu's missing
+compile-time redeclaration/multi-ambiguity detection for `augment`, not a dispatch-ordering
+defect in these five forks -- each is unreachable via any *legal* raku program that collides
+with it. If that redeclaration-detection gap is ever closed, all five forks become moot
+automatically (the illegal program becomes a compile error before reaching them), so no
+independent action is needed on the forks themselves. (Aside, unrelated to this finding:
+`class MyInstant is Instant {...}` itself fails in mutsu today -- `'MyInstant' cannot inherit
+from 'Instant' because it is unknown` -- a separate, narrower limitation that makes the builtin
+class method fork's gap moot for `Instant` specifically regardless of the augment question.)
+
+**Items 12-15 (IO::Handle/IO::Path Instance chain, MOP pseudo-methods, private methods,
+`^`-metamethods): all four must stay direct pre-checks, for four different reasons:**
+
+1. **IO::Handle/IO::Path Instance chain** (~10 stacked probes, `vm_call_method_compiled_interpret.rs:213-361`):
+   each is its own shape-specific self-guarding check. Folding them into the resolver would mean
+   reimplementing the same shape catalog inside `resolve_sequence` -- step 2's "two copies to
+   keep in sync instead of one" trap, applied to a second cascade.
+2. **MOP pseudo-methods** (`DEFINITE`/`WHAT`/`WHO`/`HOW`/`WHY`/`WHICH`/`WHERE`/`VAR`, lines
+   365-371): not a dispatch probe at all -- a class-(b) method-identity intercept per design
+   decision 2's taxonomy, matching on method name alone regardless of receiver. The design doc
+   already assigns class-(b) intercepts to stay put through E5/E6 (moving them is F-phase
+   cleanup).
+3. **Private methods** (lines 374-455): not part of `resolve_sequence`'s public-method walk at
+   all -- `resolve_private_method_for_vm` is a wholly separate visibility-scoped tier, and the
+   design doc's own E7 slicing already assigns private-method dispatch's fold-in to E7, not E5b.
+4. **`^`-metamethods** (lines 458-476): closest to foldable -- its guard
+   (`self.has_user_method(cn, method)`) is literally the same predicate a resolver "does a User
+   candidate exist" answer would give -- but the invocation shape (`how_args = [target, ...args]`,
+   threading `target` as an explicit leading positional) is metamethod-specific calling
+   convention the decision match's existing "user candidate -> compiled/interpret path" arm
+   cannot drive as-is.
+
+**Conclusion: none of the pre-lookup cascade folds into a decision match.** Every `.new`/`bless`
+fork is not a guard-then-dispatch pair but a self-contained construction routine with side
+effects beyond ordinary method dispatch (registry mutation, deferred-iterator table
+registration, real socket I/O, `$!`-env reads). Per step 2's reasoning, routing these through a
+resolver decision would mean either reimplementing each one's side-effecting body inside the
+resolver (a regression) or having the resolver answer only the guard question and still call the
+same direct function (no simpler than today). All items 2-15 stay direct, self-guarding
+pre-checks, exactly like the `Native` candidate at `CallMethod`.
+
+**But the actual resolution block this cascade guards *does* cut over.** Step 3 already showed
+this function's Instance/Package resolution block (`vm_call_method_compiled_interpret.rs:554-644`,
+pre-cutover) was an inlined duplicate of `resolve_method_cached`'s exact three-tier cache and its
+two `resolve_method_with_owner_invocant` calls, and shadow-verified it trustworthy (15,085 checks,
+0.166% mismatches, the single already-documented divergence class). Since both blocks read and
+write the same instance-level caches (`last_method_resolve`/`method_resolve_cache`/
+`multi_resolve_cache`), replacing the ~90-line duplicate with a direct
+`self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)` call is a pure
+dedup with no behavior change -- not a new decision match, but the concrete cutover step 2's
+open item 4 was asking about: "whether the `User` candidate can cleanly replace any part of
+`try_compiled_method_or_interpret_sym`'s own dispatch." It can, exactly at this one block. Landed
+together with this step's analysis (`adr0019-e5b-step4-callmethod-resolve-dedup` branch).
+Verified: `cargo test --lib` (779 tests), full local suite (`prove -e scripts/run-t-test.sh t/`,
+3022 files / 28,279 tests) green; `cargo clippy -- -D warnings` clean.
+
+**E5b is now closed at `CallMethod`'s own entry point.** The `Native` candidate stays a direct
+probe (step 2), the `User` candidate resolution is deduped onto the shared cached resolver (this
+step), and the surrounding interceptor cascade stays as direct self-guarding pre-checks (this
+step). What is left for E5c/E5d is the two `CallMethodDynamic`/hyper entries measured in E5 steps
+2-3, not further work on `CallMethod` itself.

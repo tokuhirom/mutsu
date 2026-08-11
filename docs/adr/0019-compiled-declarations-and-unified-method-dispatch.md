@@ -2992,6 +2992,31 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   on `has_user_method`/`is_native_method` internally, the same
   irreplaceable per-shape-check pattern step 2 found for `Native`. Full
   detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 3".
+  **Progress 2026-08-11** (E5b step 4, closing E5b at `CallMethod`): inventoried and
+  classified the ~430-line pre-lookup interceptor cascade step 3 left open (Seq
+  reification, ten `.new`/`bless`/class-method native construction forks, the
+  IO::Handle/IO::Path Instance chain, MOP pseudo-methods, private methods,
+  `^`-metamethods). None fold into a decision match -- each `.new`/`bless` fork is a
+  self-contained construction routine with side effects beyond ordinary dispatch
+  (registry mutation, deferred-iterator registration, real socket I/O), and the other
+  four items are foldable-shape catalogs, class-(b) method-identity intercepts,
+  a separate private-visibility tier (E7's job), or metamethod-specific invocation --
+  all stay direct, self-guarding pre-checks, generalizing step 2's `Native`-candidate
+  conclusion to this second cascade. Found and dispositioned a guard-completeness gap
+  shared by five forks (IO::Path family/`Failure`/`Seq`/`IO::Socket::INET`/builtin
+  class method: no `has_user_method` check, guarded only by exact class-name equality)
+  as the same pre-existing `augment`-redeclaration-detection gap step 2 already found
+  for `Str.uc` -- not a new ticket. **The resolution block itself did cut over**: since
+  step 3 shadow-verified it an exact duplicate of `resolve_method_cached` reading/
+  writing the same instance-level caches, replaced the ~90-line inlined duplicate with
+  a direct `self.resolve_method_cached(..)` call -- a pure dedup, zero behavior change,
+  closing step 2's open item 4 for the `User` candidate. `cargo test --lib` (779),
+  full local suite (3022 files / 28,279 tests), `cargo clippy -- -D warnings` all
+  green. **E5b is closed at `CallMethod`'s own entry point** -- native candidate stays
+  a direct probe, user candidate resolution is shared/deduped, cascade stays direct.
+  Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 4". Next:
+  E5c/E5d (`CallMethodDynamic` + the two hyper entries, already measured in E5 steps
+  2-3).
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

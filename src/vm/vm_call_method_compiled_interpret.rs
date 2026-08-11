@@ -551,98 +551,27 @@ impl Interpreter {
                 }
             }
 
-            if let Some((owner_class, method_def)) = {
-                // Monomorphic inline cache: single-entry check before HashMap.
-                if let Some((cc, cm, co, ref cd)) = self.last_method_resolve
-                    && cc == class_sym
-                    && cm == method_sym
-                    && !cd.is_multi
-                {
-                    Some((co, cd.clone()))
-                } else {
-                    let cached = self.method_resolve_cache.get(&cache_key).cloned();
-                    let result: Option<(
-                        crate::symbol::Symbol,
-                        std::sync::Arc<crate::runtime::MethodDef>,
-                    )> = if let Some(ref hit) = cached
-                        && let Some((_, def)) = hit
-                        && !def.is_multi
-                    {
-                        hit.clone()
-                    } else if let Some(arg_keys) = self.multi_arg_type_keys(&args)
-                        && self.multi_dispatch_type_cacheable(class_sym, method_sym, cn, method)
-                    {
-                        // Sound multi-method resolution cache (§B): a type+arity-
-                        // deterministic multi resolves as a function of (class,
-                        // method, positional arg types), so key it on those types
-                        // rather than re-running the MRO/specificity walk per call.
-                        let mkey = (class_sym, method_sym, arg_keys);
-                        if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
-                            hit.clone()
-                        } else {
-                            let resolved = loan_env!(
-                                self,
-                                resolve_method_with_owner_invocant(cn, method, &args, &target)
-                            );
-                            // ADR-0019 E5b step 3 shadow probe (zero behavior
-                            // change): E4a's `resolve_sequence`/
-                            // `pick_method_winner` was shadow-verified only at
-                            // `resolve_method_cached` (the Mut path); this is
-                            // the equivalent resolution point on the hotter
-                            // non-mut `CallMethod` path, previously unchecked.
-                            // See `todo/deep/adr0019-e5-e7-entry-routing.md`
-                            // §"E5b step 3".
-                            self.shadow_check_resolver(
-                                "try_compiled_method_or_interpret:multi",
-                                cn,
-                                method,
-                                method_sym,
-                                &args,
-                                &target,
-                                resolved.as_ref(),
-                            );
-                            let resolved_arc =
-                                resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
-                            // Never cache an ambiguous multi resolution — it must
-                            // re-raise X::Multi::Ambiguous on every call.
-                            if !self.dispatch_ambiguous {
-                                self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
-                            }
-                            resolved_arc
-                        }
-                    } else {
-                        let resolved = loan_env!(
-                            self,
-                            resolve_method_with_owner_invocant(cn, method, &args, &target)
-                        );
-                        // ADR-0019 E5b step 3 shadow probe (zero behavior
-                        // change): see the note above.
-                        self.shadow_check_resolver(
-                            "try_compiled_method_or_interpret:fresh",
-                            cn,
-                            method,
-                            method_sym,
-                            &args,
-                            &target,
-                            resolved.as_ref(),
-                        );
-                        let resolved_arc =
-                            resolved.map(|(owner, def)| (owner, std::sync::Arc::new(def)));
-                        if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
-                            self.method_resolve_cache
-                                .insert(cache_key, resolved_arc.clone());
-                        }
-                        resolved_arc
-                    };
-                    if let Some((owner, ref def)) = result
-                        && !def.is_multi
-                    {
-                        self.last_method_resolve =
-                            Some((class_sym, method_sym, owner, def.clone()));
-                    }
-                    result
-                }
-            } {
+            // ADR-0019 E5b step 4 cutover: this used to be an inlined duplicate
+            // of `resolve_method_cached`'s exact three-tier cache (monomorphic
+            // inline cache -> non-multi `HashMap` -> sound multi-resolution
+            // cache -> fresh resolve), reached only from this higher-traffic
+            // non-mut `CallMethod` opcode path (the Mut path already called
+            // `resolve_method_cached` directly). E5b step 3 added the same
+            // `shadow_check_resolver` probe here that `resolve_method_cached`
+            // already carries at its own two resolve points, and swept it
+            // clean (15,085 checks, 0.166% mismatches, all the single
+            // already-documented divergence class) -- confirming the two
+            // blocks are behaviorally identical, not just structurally
+            // similar. Calling the shared function directly removes the
+            // duplicate (and its now-redundant shadow probe) with zero
+            // behavior change: both call sites share the same instance-level
+            // caches (`last_method_resolve`/`method_resolve_cache`/
+            // `multi_resolve_cache`), so this is a pure dedup, not a
+            // caching-behavior change. See
+            // `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 4".
+            if let Some((owner_class, method_def)) =
+                self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)
+            {
                 // A public attribute accessor can win over the method that
                 // resolution picked: a child class's accessor shadows a
                 // parent's explicit method (the accessor is a method at the
