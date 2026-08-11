@@ -1875,6 +1875,17 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 
+    // A bare `return` in EXPRESSION position (`$err and return;`) transfers
+    // control with Nil: compile it as the zero-arg `return` call (which raises
+    // the return control exception), not an inert BareWord — that resolved to
+    // the `&return` routine object and fell through, so Text::CSV's
+    // `$error and return;` guard kept executing the rest of the sub. A
+    // user-declared `\return` term never reaches this fallback (term_literals
+    // resolves it first).
+    if name == "return" {
+        return Ok((rest, make_call_expr(name, input, vec![])));
+    }
+
     // Perl 5 unary functions used bare (no argument). `ord`/`chr`/`lc`/`uc`/`abs`
     // defaulted to `$_` in Perl 5 but require an explicit argument/invocant in
     // Raku, so a bare use — end of statement or immediately a `.method` (i.e. no
