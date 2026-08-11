@@ -243,10 +243,29 @@ impl Interpreter {
                         }
                     }
                     // Record the scalar names this declaration introduces so a
-                    // later bare `$name` is preserved for match-time interpolation
-                    // (only `:my`/`:let` introduce a fresh regex-local lexical;
-                    // `:our`/`:constant`/`:temp` refer to existing storage).
-                    if rest.starts_with("my ") || rest.starts_with("let ") {
+                    // later bare `$name` is preserved for match-time interpolation.
+                    // `:my`/`:let` introduce a fresh regex-local lexical outright.
+                    // `:our` looks like it refers to "existing storage" the same
+                    // way `:temp`/`:constant` do, but it does not: its assigned
+                    // value lives only in the match's `regex_vars` (written by the
+                    // `VarDecl` atom at match time — see
+                    // `regex_match_atom_with_capture_in_pkg`), never in `env`.
+                    // Before ADR-0022 Slice 5 this went unnoticed because the
+                    // LTM-measurement pass ran `:our`'s initializer for real (an
+                    // ADR-0009 violation Slice 5 fixed), which happened to leave a
+                    // real `env` entry behind for this fallback to find. Fixing
+                    // that leak exposed this: without it, a later bare `$our`
+                    // resolved against `env`, found nothing, and got replaced with
+                    // the always-fails atom `<!>` (`roast/S05-modifier/my.t` test
+                    // 12, `Grammar.parse` on `token TOP { :our $our = …; … $our }`).
+                    // `:temp`/`:constant` keep the "existing storage" treatment —
+                    // both genuinely write somewhere `env` can see (a real outer
+                    // lexical for `:temp`, the `__mutsu_constant_var::` marker plus
+                    // the constant's own value for `:constant`).
+                    if rest.starts_with("my ")
+                        || rest.starts_with("let ")
+                        || rest.starts_with("our ")
+                    {
                         let decl: String = chars[decl_start..i].iter().collect();
                         for name in super::regex_parse_core::scalar_names_in_decl(&decl) {
                             declared_my_vars.insert(name);
