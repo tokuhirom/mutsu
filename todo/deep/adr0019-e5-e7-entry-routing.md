@@ -726,3 +726,54 @@ worth a dedicated ticket by itself).
    Scoping how much of *that* is safe to fold into a decision match is real,
    unstarted work for the cutover PR itself, separate from the native-ordering
    question this step closes.
+
+### E5b step 3: shadow-verifying the `User` candidate at `try_compiled_method_or_interpret`'s own resolution point -- confirms E4a's trust extends to the hottest, previously-unchecked call site
+
+Closes part of step 2's item 4 (the "`User` candidate" half, not the interceptor-cascade
+half, which is still open). Inspection of `vm_call_method_compiled_interpret.rs`'s
+Instance/Package resolution block (the code the ADR's step-2 note calls "the actual
+compiled/interpreted method lookup") shows it duplicates `resolve_method_cached`'s exact
+three-tier cache (monomorphic inline cache -> non-multi `HashMap` -> sound multi-resolution
+cache) and its two `resolve_method_with_owner_invocant` calls almost verbatim -- but as an
+inlined copy, not a shared call. **`resolve_method_cached` already carries E4a's
+`shadow_check_resolver` probe at both of its own resolve call sites; this inlined duplicate,
+reached from `CallMethod` -- the higher-traffic non-mut opcode `resolve_method_cached`'s own
+caller (`vm_call_method_compiled_mut.rs`, the Mut path) does not serve -- carried no shadow
+probe at all.** So E4a's "resolver is trustworthy" conclusion, to date, had only ever been
+measured on the Mut path; the busier non-mut path was untested by construction.
+
+**Change (zero behavior change, pure instrumentation):** added the same
+`self.shadow_check_resolver(...)` call `resolve_method_cached` already makes, at the
+equivalent two points inside `try_compiled_method_or_interpret_inner`'s resolution block
+(`vm_call_method_compiled_interpret.rs`) -- the multi-resolve-cache-miss branch (site
+`try_compiled_method_or_interpret:multi`) and the fresh-resolve branch (site
+`try_compiled_method_or_interpret:fresh`). Both pass the `Option<(Symbol, MethodDef)>`
+already computed by the existing `resolve_method_with_owner_invocant` call, before it is
+Arc-wrapped and cached -- identical shape to the two call sites in `resolve_method_cached`.
+
+**Sweep (debug build, `MUTSU_VM_STATS=1`, full `t/*.t`, 3022 files, `-P8`):** 15,085 total
+`resolver_shadow_checks` across both `resolve_method_cached`'s and this box's two new sites,
+25 mismatches (0.166%) -- same order of magnitude as E4a's original near-zero baseline. Every
+mismatch decomposed by the existing per-site breakdown (`resolver-shadow mismatches by site`)
+to the **single already-documented, already-accepted divergence class** from the
+`resolution_sequence` module doc: a non-multi candidate whose own signature does not match the
+call (e.g. `method assign-rw($a is rw)` invoked with a literal argument) -- the real resolver
+returns that sole visible candidate anyway (Raku resolves a non-multi method by name alone,
+raising the signature-bind error only after resolution), while the E4a shadow winner correctly
+answers `None` since it only ranks candidates that already passed
+`method_args_match_for_invocant`. All 25 mismatches showed `shadow=None` opposite a `real=Some(...)`
+non-multi candidate; none were the reverse direction, and none touched a new method/class pattern
+not already named in the module doc. `make test`-equivalent local suite (`prove -j8 t/*.t`, 3022
+files / 28,279 tests) green, unchanged.
+
+**Conclusion:** E4a's resolver is now empirically confirmed trustworthy at the actual
+highest-traffic non-mut call site, not just inferred by construction from the Mut-path sweep --
+closing the "`User` candidate" half of step 2's open item 4. **Still open, unstarted:** whether
+any of the pre-lookup interceptor cascade (`try_compiled_method_or_interpret_inner`'s ~430
+lines before this resolution block -- Seq reification, the seven `.new`/`bless` native
+construction forks, the IO::Handle/IO::Path native-method chain, MOP pseudo-methods, private
+methods, `^`-metamethods) can be folded into a decision match, or whether (per step 2's general
+conclusion about the `Native` candidate) each must stay a direct, self-guarding pre-check for
+the same reason the native probe does -- most of them already gate on `has_user_method`/
+`is_native_method` internally, which is exactly the per-shape-check pattern step 2 found
+irreplaceable for `Native`. That inventory and classification is the next E5b sub-slice.
