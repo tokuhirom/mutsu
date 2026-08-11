@@ -48,12 +48,17 @@ notok 3 → **0**; `http2-response-serializer.rakutest` 3 → 1;
    gate — decl-site cells for every vouch-refused captured scalar) and
    slice 3 follow-ups: design and gates are in the ADR; implementation
    pending.
-4. **Session acceptance blocked**: `http-session-inmemory/persistent`
-   currently crash rc=139 at test 2 ON MAIN (pre-existing, unrelated —
-   `todo/tickets/http-session-tests-crash-rc139-on-main.md`). Re-check
-   "Session expires appropriately" once that regression is fixed; the
-   staleness mechanism it depends on is the one slice 1 fixed
-   (pinned by `t/closure-capture-instance-cell.t` tests 3-4).
+4. **Session acceptance criterion: RESOLVED (2026-08-11).** The rc=139
+   crash was an unrelated pre-existing bug (`supply_promise_on_demand`'s
+   drive thread used the default ~2 MiB stack instead of the 256 MiB
+   user-code stack, overflowing on deep grammar/regex recursion —
+   `news/2026-08/supply-promise-ondemand-whenever-drive-thread-stack-size.md`).
+   With it fixed, `http-session-inmemory.rakutest` runs to a full 13/13,
+   confirming the staleness mechanism slice 1 fixed (pinned by
+   `t/closure-capture-instance-cell.t` tests 3-4) also covers "Session
+   expires appropriately". `http-session-persistent.rakutest` no longer
+   crashes either, but still fails its own test 13
+   (`X::Cro::HTTP::Error::Client`) — a separate, undiagnosed issue.
 
 Related (third direction, separate compiler bug, root cause now verified —
 see its ticket):
