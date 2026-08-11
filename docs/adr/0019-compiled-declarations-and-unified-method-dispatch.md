@@ -2533,6 +2533,52 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     a genuine no-op: `cargo test --lib` (769 tests), the full local `prove -j4
     t/` suite (3011 files / 28230 tests), and a full `make roast` run (1435
     files / 218774 tests, `Result: PASS`, zero new failures) all green.
+    **Progress 2026-08-11** (step 9, design decision 4's `Native` candidate):
+    landed the row-catalog candidate kind the step-4 scoping note
+    (`todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`)
+    flagged as needing a dedicated slice, in a smaller shape than that note
+    anticipated. `NativeCallShape { arity, definite }` (`resolution_sequence.rs`)
+    is the E4b-local subset of the design doc's future E3 `CallShape` the note
+    called for — just the two facts a row needs, not the full future cache-key
+    shape — threaded through `resolve_sequence`'s signature to both of its
+    production callers (`shadow_check_resolver`: arity from `arg_values.len()`,
+    definedness via a new `value_is_definite` helper; `shadow_check_bypass_user_method_categories`:
+    now takes `arg_count` from its caller). `ResolvedCandidate::Native { owner }`
+    is populated by a new production predicate, `native_row_servable`
+    (`native_method_row.rs`): a row is reachable for a call iff its arity mask
+    contains the call's arity, it is not `SPECIAL`/`MUTATES_RECEIVER` (both
+    bypass the pure cascade), and an indefinite receiver additionally needs
+    `TYPE_OBJECT_OK` — retried through `canonical_builtin_owner`'s fold
+    (`Buf`/`Blob`/...) the same way `record_native_row_coverage` already does.
+    This turned out to make the note's finding 3 (a new row-*existence*
+    predicate distinguishing "absent" from "genuinely SPECIAL") unnecessary:
+    both cases correctly answer "not servable" for `native_row_servable`'s
+    purpose, so no new absent-vs-classified distinction was needed after all
+    — only `TYPE_OBJECT_OK`/`MUTATES_RECEIVER`/`NativeRowFlags::contains` needed
+    un-gating from `#[cfg(test)]`, not the larger `NativeMethodRow` struct.
+    Shadow-verified with a genuinely new technique rather than the usual
+    t/-wide sweep: a new `shadow_check_native_row_candidate` compares the
+    `Native` candidate's presence against `native_result.is_some()` —
+    the real, already-computed arity-cascade result `call_method_with_values`
+    obtains right after (only called when `!bypass_native_fastpath`, i.e. the
+    cascade was actually consulted) — instead of re-invoking the cascade as a
+    probe, so there is no double-invocation side-effect risk even for a
+    mutating row. New `MUTSU_VM_STATS` counters `native_row_shadow_checks`/
+    `_mismatches` (`vm_stats.rs`). Verified: `cargo test --lib` (785 tests,
+    including new `native_row_servable` and `resolve_sequence` Native-row
+    unit tests), `cargo clippy -- -D warnings` clean, the full local `prove -j4
+    t/` suite (3011 files / 28230 tests, no `MUTSU_VM_STATS`) green, a targeted
+    `MUTSU_VM_STATS=1` spot-check (single files and `-e` snippets exercising
+    class methods, string/array native methods) showing
+    `native_row_shadow_checks>0 native_row_shadow_mismatches=0`, and a roast
+    smoke subset (`S02-types/`, `S12-methods/`, `S32-str/`, 151 files / 38791
+    tests via the proper `scripts/run-roast-test.sh` runner) with no failures
+    outside the pre-existing non-whitelisted `S02-types/quanthash.t`. Shadow
+    only: nothing reads `Native` to make a dispatch decision yet. What remains
+    before the authoritative switch: consuming `User`/`NativeCallBinding`/
+    `Native` together to make the actual bypass/dispatch decision at
+    `call_method_with_values`'s one call site, replacing
+    `should_bypass_native_fastpath` outright — not yet attempted.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is

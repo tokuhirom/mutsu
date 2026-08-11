@@ -273,6 +273,7 @@ impl Interpreter {
         target: &Value,
         method: &str,
         is_pseudo_method: bool,
+        arg_count: usize,
     ) {
         if !crate::vm::vm_stats::enabled() {
             return;
@@ -297,10 +298,12 @@ impl Interpreter {
         };
         let native_binding_owner = if is_instance {
             let chain = self.dispatch_mro(target);
-            let seq = self.resolve_sequence(&chain, Symbol::intern(method));
+            let native_shape =
+                super::resolution_sequence::NativeCallShape::new(arg_count, is_instance);
+            let seq = self.resolve_sequence(&chain, Symbol::intern(method), native_shape);
             seq.candidates.iter().find_map(|c| match c {
                 ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
-                ResolvedCandidate::User { .. } => None,
+                ResolvedCandidate::User { .. } | ResolvedCandidate::Native { .. } => None,
             })
         } else {
             None

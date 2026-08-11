@@ -35,11 +35,37 @@
 //! so this exact rule becomes representable in the sequence itself).
 
 use super::*;
+use crate::builtins::native_method_row::{NativeArityMask, native_row_servable};
 use crate::type_id::TypeId;
 use std::sync::Arc;
 
-/// One candidate in a [`ResolvedSequence`]. E4a only ever constructs `User`; the
-/// accessor bit and native rows join in E4b (design decision 4).
+/// The E4b-local subset of call-shape facts design decision 4's `Native`
+/// candidate needs to decide whether a native row is actually reachable for
+/// one specific call: the call's own arity, and whether the receiver is a
+/// concrete value (`DEFINITE`) rather than a bare type object. This is
+/// deliberately smaller than the design doc's future E3 cache-key `CallShape`
+/// (`{ arity_bucket, has_named }`, `todo/deep/adr0019-e2-e4-resolver-core.md`)
+/// — see the step-4 scoping note in
+/// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md` for
+/// why the full shape is not needed here.
+#[derive(Clone, Copy)]
+pub(crate) struct NativeCallShape {
+    pub(crate) arity: NativeArityMask,
+    pub(crate) definite: bool,
+}
+
+impl NativeCallShape {
+    pub(crate) fn new(arg_count: usize, definite: bool) -> Self {
+        Self {
+            arity: NativeArityMask::for_arity(arg_count),
+            definite,
+        }
+    }
+}
+
+/// One candidate in a [`ResolvedSequence`]. E4a only ever constructed `User`;
+/// E4b adds the NativeCall-binding and native-row-catalog kinds (design
+/// decision 4).
 #[derive(Clone)]
 pub(crate) enum ResolvedCandidate {
     /// A user-declared method, at its MRO level, in the class's stored
@@ -50,12 +76,20 @@ pub(crate) enum ResolvedCandidate {
     /// implemented by dedicated `native_io_*` dispatch helpers
     /// (`Interpreter::hardcoded_native_method`). This is the E4b decomposition
     /// note's "category 2": a third candidate kind, distinct from both `User`
-    /// and design decision 4's `Native` row-catalog variant (not yet added) —
-    /// see `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
+    /// and `Native` below — see
+    /// `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`.
     /// At most one appears per sequence: `is_native_method` is a boolean "does
     /// any MRO level bind this name", not a per-level fact, so the sequence
     /// records only the first (most-derived) owner that has it.
     NativeCallBinding { owner: TypeId },
+    /// A `native_method_{0,1,2}arg` catalog row (E2's `native_method_row`
+    /// table) that is actually reachable for the call's shape — design
+    /// decision 4's `Native` variant. At most one appears per sequence: rows
+    /// are name-based (not per-level user overloads), so the first MRO level
+    /// (including its `canonical_builtin_owner` fold) with a servable row
+    /// wins, mirroring how the arity cascades themselves are name-dispatched
+    /// rather than per-level.
+    Native { owner: TypeId },
 }
 
 /// The shape-independent ordered candidate universe for one `(receiver chain,
@@ -70,6 +104,18 @@ pub(crate) struct ResolvedSequence {
     pub(crate) candidates: Vec<ResolvedCandidate>,
 }
 
+/// Whether `value` is a concrete instance rather than a bare type object —
+/// the same "DEFINITE" primitive `dispatch_core_coerce.rs`'s `.DEFINITE` arm
+/// implements, needed here to decide whether a `Native` candidate's row
+/// requires [`crate::builtins::native_method_row::NativeRowFlags::TYPE_OBJECT_OK`].
+fn value_is_definite(value: &Value) -> bool {
+    match value.view() {
+        ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
+        ValueView::Slip(items) if items.is_empty() => false,
+        _ => true,
+    }
+}
+
 impl Interpreter {
     /// Build the ordered user-candidate sequence for `chain` (an E1 TypeId MRO,
     /// most-derived first) and `name`: every non-private, non-submethod-shadowed
@@ -77,10 +123,16 @@ impl Interpreter {
     /// membership rules `resolve_method_with_owner_impl` applies per candidate
     /// (`is_private` skip; `is_my` skip when the level is an ancestor) but not its
     /// early-stopping MRO-walk control flow — see the module doc.
-    pub(crate) fn resolve_sequence(&mut self, chain: &[TypeId], name: Symbol) -> ResolvedSequence {
+    pub(crate) fn resolve_sequence(
+        &mut self,
+        chain: &[TypeId],
+        name: Symbol,
+        native_shape: NativeCallShape,
+    ) -> ResolvedSequence {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
         let mut native_binding_found = false;
+        let mut native_row_found = false;
         for (level, owner) in chain.iter().enumerate() {
             let is_ancestor = level > 0;
             let owner_str = owner.as_str();
@@ -113,6 +165,21 @@ impl Interpreter {
                     candidates.push(ResolvedCandidate::NativeCallBinding { owner: *owner });
                     native_binding_found = true;
                 }
+            }
+            // Rows are name-based, not per-level user overloads: the arity
+            // cascades dispatch by name alone, so the first MRO level whose
+            // (possibly folded) owner has a servable row wins, same as
+            // `NativeCallBinding` above.
+            if !native_row_found
+                && native_row_servable(
+                    owner_str,
+                    name.as_str(),
+                    native_shape.arity,
+                    native_shape.definite,
+                )
+            {
+                candidates.push(ResolvedCandidate::Native { owner: *owner });
+                native_row_found = true;
             }
         }
         ResolvedSequence {
@@ -157,7 +224,8 @@ impl Interpreter {
         }
         let saved_ambiguous = self.dispatch_ambiguous;
         let chain = self.dispatch_mro(invocant);
-        let seq = self.resolve_sequence(&chain, method_sym);
+        let native_shape = NativeCallShape::new(arg_values.len(), value_is_definite(invocant));
+        let seq = self.resolve_sequence(&chain, method_sym, native_shape);
         let has_where_candidate = seq.candidates.iter().any(|c| {
             let ResolvedCandidate::User { def, .. } = c else {
                 return false;
@@ -200,6 +268,41 @@ impl Interpreter {
             )
         });
     }
+
+    /// ADR-0019 E4b step 4/9 shadow probe (`MUTSU_VM_STATS`-gated, a no-op
+    /// otherwise): does `resolve_sequence`'s new `Native` candidate agree
+    /// with whether the pure arity cascade actually served this call?
+    /// `real_served` must be a result the caller already computed by
+    /// actually invoking `native_method_{0,1,2}arg` (`call_method_with_values`
+    /// only calls this when `!bypass_native_fastpath`, i.e. the cascade was
+    /// genuinely consulted) — this function never invokes the cascade
+    /// itself, so it carries no double-invocation side-effect risk even for
+    /// a mutating row.
+    pub(crate) fn shadow_check_native_row_candidate(
+        &mut self,
+        target: &Value,
+        method: &str,
+        method_sym: Symbol,
+        arg_count: usize,
+        real_served: bool,
+    ) {
+        if !crate::vm::vm_stats::enabled() {
+            return;
+        }
+        let chain = self.dispatch_mro(target);
+        let native_shape = NativeCallShape::new(arg_count, value_is_definite(target));
+        let seq = self.resolve_sequence(&chain, method_sym, native_shape);
+        let native_row_owner = seq.candidates.iter().find_map(|c| match c {
+            ResolvedCandidate::Native { owner } => Some(owner.as_str()),
+            ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding { .. } => None,
+        });
+        let shadow_served = native_row_owner.is_some();
+        crate::vm::vm_stats::record_native_row_shadow_check(real_served == shadow_served, || {
+            format!(
+                "method={method} arity={arg_count} real={real_served} shadow={shadow_served} native_row_owner={native_row_owner:?}"
+            )
+        });
+    }
 }
 
 #[cfg(test)]
@@ -216,15 +319,16 @@ mod tests {
         i.run("class Base { method greet { 'base' } }\nclass Child is Base { method greet { 'child' } }")
             .unwrap();
         let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("greet"));
-        let owners: Vec<&str> = seq
-            .candidates
-            .iter()
-            .filter_map(|c| match c {
-                ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
-                ResolvedCandidate::NativeCallBinding { .. } => None,
-            })
-            .collect();
+        let seq = i.resolve_sequence(&chain, Symbol::intern("greet"), default_shape());
+        let owners: Vec<&str> =
+            seq.candidates
+                .iter()
+                .filter_map(|c| match c {
+                    ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
+                    ResolvedCandidate::NativeCallBinding { .. }
+                    | ResolvedCandidate::Native { .. } => None,
+                })
+                .collect();
         assert_eq!(owners, vec!["Child", "Base"]);
     }
 
@@ -234,7 +338,7 @@ mod tests {
         i.run("class Base { submethod only-base { } }\nclass Child is Base { }")
             .unwrap();
         let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"));
+        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"), default_shape());
         assert!(
             seq.candidates.is_empty(),
             "a submethod on an ancestor level must not appear in a descendant's sequence"
@@ -247,7 +351,7 @@ mod tests {
         i.run("class Base { submethod only-base { } }\nclass Child is Base { }")
             .unwrap();
         let chain = vec![TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"));
+        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"), default_shape());
         assert_eq!(seq.candidates.len(), 1);
     }
 
@@ -256,7 +360,7 @@ mod tests {
         let mut i = interp();
         i.run("class Base { }").unwrap();
         let chain = vec![TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("nope"));
+        let seq = i.resolve_sequence(&chain, Symbol::intern("nope"), default_shape());
         assert!(seq.candidates.is_empty());
     }
 
@@ -269,13 +373,51 @@ mod tests {
         let mut i = interp();
         assert!(i.is_native_method("Supply", "tap"));
         let chain = vec![TypeId::intern("Supply")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("tap"));
+        let seq = i.resolve_sequence(&chain, Symbol::intern("tap"), default_shape());
         assert!(
             seq.candidates.iter().any(
                 |c| matches!(c, ResolvedCandidate::NativeCallBinding { owner }
                     if owner.as_str() == "Supply")
             ),
             "expected a NativeCallBinding candidate for Supply.tap"
+        );
+    }
+
+    /// ADR-0019 E4b step 4/9: design decision 4's `Native` variant -- a
+    /// catalog row that is actually reachable for the call's shape.
+    /// `Str.chars` is a plain `A0`/`TYPE_OBJECT_OK` row.
+    #[test]
+    fn resolve_sequence_finds_a_servable_native_row() {
+        let mut i = interp();
+        let chain = vec![TypeId::intern("Str")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("chars"),
+            NativeCallShape::new(0, true),
+        );
+        assert!(
+            seq.candidates.iter().any(
+                |c| matches!(c, ResolvedCandidate::Native { owner } if owner.as_str() == "Str")
+            ),
+            "expected a Native candidate for Str.chars at arity 0"
+        );
+    }
+
+    /// The same row is not offered at an arity the call doesn't have.
+    #[test]
+    fn resolve_sequence_omits_a_native_row_at_the_wrong_arity() {
+        let mut i = interp();
+        let chain = vec![TypeId::intern("Str")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("chars"),
+            NativeCallShape::new(1, true),
+        );
+        assert!(
+            !seq.candidates
+                .iter()
+                .any(|c| matches!(c, ResolvedCandidate::Native { .. })),
+            "Str.chars is an A0 row and must not surface for a 1-arg call"
         );
     }
 
@@ -287,10 +429,14 @@ mod tests {
         let mut i = interp();
         assert!(i.is_native_method("IO::Handle", "chomp"));
         let chain = vec![TypeId::intern("Base"), TypeId::intern("IO::Handle")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("chomp"));
+        let seq = i.resolve_sequence(&chain, Symbol::intern("chomp"), default_shape());
         assert!(
             seq.candidates.is_empty(),
             "hardcoded native-method names must not apply to an ancestor level"
         );
+    }
+
+    fn default_shape() -> NativeCallShape {
+        NativeCallShape::new(0, true)
     }
 }
