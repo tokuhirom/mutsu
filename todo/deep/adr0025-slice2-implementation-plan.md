@@ -19,10 +19,22 @@ or replaces the cell during cross-thread dispatch. So:
 
 ### Step 0 (independent, highest value): find and fix the stale-plain-over-cell lane
 
-1. Repro: `tmp/h2rs-probe.raku` run via
-   `bash -c 'INC=$(cat tmp/cro-work/inc-paths.txt); target/debug/mutsu $INC tmp/h2rs-probe.raku'`
-   — deterministic. The `$pre`/`$probe` closures print `Encoder|<new>` from
-   mainline and `Encoder|<old>` from the tap thread.
+**2026-08-11 correction: the check-4 failure is a RACE, not deterministic
+(~50% fail rate over 8 runs of the pristine binary, unchanged code) — see
+the parent ticket's item 1 addendum for the full evidence, including a
+Heisenbug trap (debug instrumentation on the hot closure-merge path
+suppressed the repro entirely by shifting thread timing). Read that
+addendum before touching this again: printf/gdb-breakpoint bisection on
+this specific symptom is unreliable, and any candidate fix or "does not
+repro" claim must be checked over 8+ runs of the PRISTINE binary, not one.**
+
+1. Repro: `tmp/h2rs-probe.raku` (or `tmp/h2rs-probe-nofix.raku`, the same
+   file with the accidental "any-spawn-fixes-it" workaround lines removed —
+   this is the one that actually shows the failure) run via
+   `bash -c 'INC=$(cat tmp/cro-work/inc-paths.txt); target/debug/mutsu $INC tmp/h2rs-probe-nofix.raku'`
+   — FLAKY (~50%), not deterministic. The `$pre`/`$probe` closures print
+   `Encoder|<new>` from mainline and `Encoder|<old>` from the tap thread on
+   a losing run.
 2. Use `rust-gdb -batch` (per CLAUDE.md; do NOT eprintln-rebuild): break on
    the closure-dispatch captured-env merge (`vm_closure_dispatch.rs`,
    `entry_or_insert_sym` / the overwrite branch for `ContainerRef` and
