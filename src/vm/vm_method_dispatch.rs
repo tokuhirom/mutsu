@@ -637,7 +637,6 @@ impl Interpreter {
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
         // full rationale). Reset for the body; restore the caller's value below.
         let saved_when_matched = self.when_matched();
-        self.set_when_matched(false);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -845,6 +844,25 @@ impl Interpreter {
             }
 
             for (source_name, val) in &rw_writeback {
+                // A named `:$scalar` param bound from an `@`/`%` SOURCE THAT IS
+                // ITSELF AN ATTRIBUTE EXPRESSION (`:%!plugin-config`, `:$.foo`)
+                // encodes that attribute's twigil form as `source_name` --
+                // e.g. `RouteHandler.copy-adding(..., :%!plugin-config, ...)`
+                // (Cro::HTTP::Router) makes `source_name` == "%!plugin-config",
+                // RouteSet's OWN attribute-twigil key, not a lexical belonging
+                // to `copy-adding`'s caller. Writing it into the caller's env
+                // verbatim plants a pseudo-key `reconcile_attrs`' candidate scan
+                // (in an UNRELATED later method call sharing that env, e.g. an
+                // `Instance` of a different class with the same bare attribute
+                // name) can mistake for a `:=` binding and adopt as its own
+                // attribute override. The shared `ContainerRef` cell this
+                // writeback exists for already keeps content mutations visible
+                // without this insert (see `named_scalar_container_share_eligible`
+                // in `bind_function_args_values`); skip it for attribute-shaped
+                // sources.
+                if is_attr_twigil_shaped(source_name) {
+                    continue;
+                }
                 merged_env.insert(source_name.clone(), val.clone());
             }
             // Slice F: record the caller-source names this `is rw` method writeback
@@ -1092,12 +1110,37 @@ impl Interpreter {
     }
 
     /// Read the current value of `name` from the method's local slot if present,
-    /// else from env.
+    /// else from this frame's env overlay. Deliberately overlay-only (not the
+    /// full env chain): a `:=` bind executed by THIS method writes into its own
+    /// locals/overlay, so legitimate recoveries still see it; a caller frame's
+    /// materialized value of the same name (reachable only through the parent
+    /// chain) is invisible, matching frame_has_container_ref's stated contract.
+    ///
+    /// Overlay-only alone is not enough when this method's compiled code
+    /// declares inner closures: the caller then skips installing a fresh
+    /// scoped overlay for the call (docs/vm-dual-store.md Slice 6, gated on
+    /// `closure_compiled_codes.is_empty()`), so this frame's "overlay" is the
+    /// very same map the caller was already writing into -- a caller's
+    /// materialized ContainerRef under this name lands in what overlay_get
+    /// sees as "this frame's own" entries. Guard that case against the
+    /// call's entry snapshot (`call_frames.last().saved_env`): a candidate
+    /// that was already a ContainerRef before this call started predates it
+    /// and must not be adopted, even though it now reads as overlay-owned.
     fn attr_env_or_local(&self, code: &CompiledCode, name: &str) -> Option<Value> {
         if let Some(slot) = code.locals.iter().position(|n| n == name) {
             return Some(self.locals[slot].clone());
         }
-        self.env().get(name).cloned()
+        let val = self.env().overlay_get(name)?.clone();
+        if !code.closure_compiled_codes.is_empty()
+            && let Some(frame) = self.call_frames.last()
+            && matches!(
+                frame.saved_env.get(name).map(|v| v.view()),
+                Some(ValueView::ContainerRef(_))
+            )
+        {
+            return None;
+        }
+        Some(val)
     }
 
     /// Phase 3 Stage 2c (i): mirror attributive parameters (`$!x`/`@!a`/`%!h`)
@@ -1542,7 +1585,6 @@ impl Interpreter {
         // `when_matched` must not leak to an enclosing given/with (see the slow
         // path above / vm_call_light.rs for the full rationale).
         let saved_when_matched = self.when_matched();
-        self.set_when_matched(false);
         let mut ip = 0;
         let mut result = Ok(());
         let mut explicit_return: Option<Value> = None;
@@ -1878,6 +1920,20 @@ fn attr_alias_local(attributes: &AttrMap, s: &str) -> bool {
                     actual == s || matches!(v.view(), ValueView::Str(alias) if alias.as_str() == s)
                 })
     })
+}
+
+/// True if `s` has the SHAPE of an attribute-twigil env key (`!x` / `.x` /
+/// `@!x` / `@.x` / `%!x` / `%.x`), regardless of which instance -- unlike
+/// `attr_twigil_local`, this does not check any particular attribute map. A
+/// caller-side named-arg source encoded this way (e.g. `:%!plugin-config`,
+/// where the argument expression IS an attribute read) is never a genuine
+/// caller lexical the exit-time `rw_writeback` merge is entitled to rebind;
+/// see the `rw_writeback` loop below.
+fn is_attr_twigil_shaped(s: &str) -> bool {
+    matches!(
+        s.as_bytes(),
+        [b'@' | b'%', b'!' | b'.', ..] | [b'!' | b'.', ..]
+    )
 }
 
 /// Merge the callee method frame's caller-visible overlay writes back into the
