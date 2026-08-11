@@ -1890,9 +1890,28 @@ impl Interpreter {
                         // Native method on a by-value (read) target: env-pure.
                         self.method_dispatch_pure = true;
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
+                        // ADR-0019 E5b step 1: shadow-verify design decision
+                        // 4's `Native` candidate (already zero-mismatch at
+                        // `call_method_with_values`, E4b step 9) against
+                        // CallMethod's own separate native-probe call site,
+                        // observational only.
+                        self.shadow_check_native_row_candidate(
+                            &target,
+                            method,
+                            method_sym,
+                            args.len(),
+                            true,
+                        );
                         native_result
                     } else {
                         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "user");
+                        self.shadow_check_native_row_candidate(
+                            &target,
+                            method,
+                            method_sym,
+                            args.len(),
+                            false,
+                        );
                         self.try_compiled_method_or_interpret_sym(target, method_sym, args)
                     }
                 } else {
