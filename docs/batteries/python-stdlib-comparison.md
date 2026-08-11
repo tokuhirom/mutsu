@@ -127,7 +127,7 @@ module).
 
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
-| `csv` | — | Ecosystem (not bundled) | Surveyed 2026-08-11: [csv.md](csv.md). Under a no-native-dependency + read-and-generate criterion, `Text::CSV` and `CSV::Table` are the only live candidates (both healthy under raku — 33/33 and 10/10 files — but blocked on mutsu by one shared, general compiler bug, `todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`); read-only `CSV::Parser` is disqualified despite already working today. |
+| `csv` | — | Ecosystem (not bundled) | Surveyed 2026-08-11: [csv.md](csv.md). Under a no-native-dependency + read-and-generate criterion, `Text::CSV` and `CSV::Table` are the only live candidates (both healthy under raku — 33/33 and 10/10 files); the shared heredoc-in-sub-body compiler bug that originally blocked both is fixed (`news/2026-08/heredoc-scope-check-false-positive-on-sub-body.md`), unblocking `CSV-AutoClass` and surfacing a new, unrelated blocker for `CSV::Table`. `Text::CSV` still needs slang support. Read-only `CSV::Parser` is disqualified despite already working today. |
 | `configparser` | — | Ecosystem (not bundled) | INI-style config modules exist on the ecosystem; none bundled. |
 | `tomllib` | — | Gap | No bundled TOML parser (mutsu's own `META6.json` handling is JSON, not TOML, so this hasn't been needed internally). |
 | `netrc` / `plistlib` | — | Gap | Niche. |
@@ -290,9 +290,10 @@ most worth a battery survey next (methodology:
    bundled; the single biggest hole against the project's own "small web blog"
    yardstick. See [web-framework.md](web-framework.md).
 2. **CSV** (`Text::CSV` / `CSV::Table` / `CSV::Parser`) — extremely common in
-   scripting; surveyed 2026-08-11, see [csv.md](csv.md). Blocked on a general
-   compiler bug rather than a weak field — the two strongest candidates are
-   healthy under raku.
+   scripting; surveyed 2026-08-11, see [csv.md](csv.md). Not a weak field —
+   both strong candidates are healthy under raku; the shared compiler bug
+   that blocked both is now fixed, and each has its own smaller remaining
+   blocker (a parser gap for `CSV::Table`, slang support for `Text::CSV`).
 3. **XML parsing** (`XML`) — common for config/data interchange; no survey yet.
 4. **Compression/archiving** (`zlib`/`gzip`/`tarfile`/`zipfile` equivalents) — no
    bundled story at all today.

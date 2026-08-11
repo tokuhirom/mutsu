@@ -531,10 +531,19 @@ impl Compiler {
         block_locals: &std::collections::HashSet<String>,
     ) -> Option<String> {
         match expr {
-            Expr::HeredocInterpolation(content) => {
+            // Only a heredoc whose marker line itself closes an enclosing
+            // block (a `}` remained on that line — see the
+            // `HeredocInterpolation` doc comment) can have a `my` local of
+            // that block go out of scope before Raku resolves the heredoc
+            // body. A heredoc used as an ordinary statement (the marker's
+            // line ends in `;`/nothing) leaves every enclosing block open for
+            // its whole body, so a `my` declared earlier in that same block
+            // is visible via plain lexical scoping — not an error.
+            Expr::HeredocInterpolation(content, true) => {
                 let resolved = crate::parser::interpolate_heredoc_content(content);
                 Self::find_undeclared_heredoc_var(&resolved, block_locals, &self.local_map)
             }
+            Expr::HeredocInterpolation(_, false) => None,
             // Recurse into subexpressions that might contain a heredoc
             Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
                 for arg in args {

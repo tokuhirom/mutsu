@@ -396,7 +396,16 @@ pub(crate) enum Expr {
     /// at compile time in the scope where the AST node appears, not where
     /// the qq:to declaration was parsed. This is needed because Raku resolves
     /// heredoc body variables in the scope of the terminator, not the declaration.
-    HeredocInterpolation(String),
+    ///
+    /// The second field is true when the source text remaining on the heredoc
+    /// marker's own physical line (before its terminator's body is spliced in)
+    /// contains a `}` — i.e. an enclosing block closes on that same line, before
+    /// the heredoc's own terminator is reached. Only then can a `my` local
+    /// declared inside that block be out of scope by the time Raku resolves the
+    /// heredoc body (see `check_heredoc_scope_errors`); a heredoc whose marker
+    /// line has no closing brace leaves every enclosing block open through the
+    /// whole heredoc, so ordinary lexical scoping applies.
+    HeredocInterpolation(String, bool),
     Var(String),
     CaptureVar(String),
     ArrayVar(String),

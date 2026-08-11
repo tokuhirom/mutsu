@@ -16,12 +16,15 @@ record what would have to happen before any of them can be bundled.
 **Headline finding: nothing in the field is bundle-ready today, but not for
 the reason usually seen in these surveys.** The two credible RFC4180-style
 candidates are *healthy under raku* (Text::CSV 33/33 files, CSV::Table
-10/10). What blocks them on mutsu is **one shared, general, false-positive
-compiler bug** (`todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`,
-filed by this survey) that misfires on the ordinary pattern "`my $x = ...;`
-followed later by a `qq:to/…/` heredoc referencing `$x`, inside the same
-`sub`" — nothing CSV-specific about it. Fixing that one compiler bug is
-likely the highest-leverage next step for this slot, not picking a winner.
+10/10). What originally blocked both on mutsu was **one shared, general,
+false-positive compiler bug** that misfired on the ordinary pattern "`my $x
+= ...;` followed later by a `qq:to/…/` heredoc referencing `$x`, inside the
+same `sub`" — nothing CSV-specific about it. **That bug is now fixed** (see
+[news/2026-08/heredoc-scope-check-false-positive-on-sub-body.md](../../news/2026-08/heredoc-scope-check-false-positive-on-sub-body.md)),
+which fully unblocks `CSV-AutoClass` (2/2, was 0/2) and gets `CSV::Table`
+past `use` into a *separate, unrelated* new blocker — see "What blocks mutsu
+today" below. `Text::CSV` remains blocked by its slang dependency, which the
+heredoc fix does not touch.
 
 **Selection criteria for this slot (user decision, 2026-08-11):** no
 external native/C-library dependency (rules out `Text::CSV::LibCSV`'s
@@ -43,10 +46,10 @@ candidates.
 
 | Candidate | Version | Released | License | Runtime deps | Read+generate? | Native/C dep? | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`Text::CSV`** | 0.022 | 2023-10-30 | Artistic-2.0 | `Slang::Tuxic`, `File::Temp` | ✅ both, incl. from-scratch `csv(out=>…)` | none | 0 | **33/33** (22697 tests) | **0/33** — blocked at `use` |
-| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **0/10** — blocked at `use` |
+| **`Text::CSV`** | 0.022 | 2023-10-30 | Artistic-2.0 | `Slang::Tuxic`, `File::Temp` | ✅ both, incl. from-scratch `csv(out=>…)` | none | 0 | **33/33** (22697 tests) | **0/33** — blocked at `use` by the slang dependency (heredoc fix does not touch this) |
+| **`CSV::Table`** | 0.0.2 | 2025-05-31 | Artistic-2.0 | `YAMLish`, `JSON::Fast`, `File::Temp`, `Text::Utils` | ✅ both, but write needs an existing file to load first | none | 0 | **10/10** (184 tests) | **0/10** — heredoc bug fixed, now blocked by a *different*, unrelated bug (see below) |
 | `CSV::Parser` | 0.1.4 | 2023-06-06 | *(README only — see below)* | **0** | ❌ read-only — **disqualified** | none | 0 | **5/5** | **5/5** ✅ |
-| `CSV-AutoClass` | 0.2.0 | 2023-11-19 | Artistic-2.0 | `CSV::Parser`, `File::Find`, `Text::Utils` | ❌ codegen utility, not a reader/writer | none | 0 | 0/2 (missing test fixture on this checkout) | 0/2 — blocked at `use` |
+| `CSV-AutoClass` | 0.2.0 | 2023-11-19 | Artistic-2.0 | `CSV::Parser`, `File::Find`, `Text::Utils` | ❌ codegen utility, not a reader/writer | none | 0 | **2/2** | **2/2** ✅ — was 0/2, unblocked by the heredoc fix |
 | `Duck::CSV` | 0.0.2 | 2026-05-30 | MIT | `Duckie` (→ system `libduckdb`) | not evaluated — disqualified below | **DuckDB (native)** | 0 | not measured² | not measured² |
 | `Text::CSV::LibCSV` | 0.0.3 | 2022-09-09 | **none declared anywhere** | native `libcsv` (build-time C compile) | not evaluated — disqualified below | **libcsv (native)** | 0 | 0/5 — missing test fixtures | not measured³ |
 | `JSON-CSV` | 0.0.1 | 2022-07-11 | Artistic-2.0 | `Text::CSV`, `JSON::Fast`, `JSON::Stream` | conversion scripts, not a library API | none | 0 | not measured | not measured |
@@ -61,18 +64,25 @@ library.
 installed for this survey — see "Ruled out" below.
 ³ Ruled out on the license gate before a mutsu run was worth doing.
 
-### Reading the raku column for `CSV-AutoClass` and `Text::CSV::LibCSV`
+### Reading the raku column for `Text::CSV::LibCSV`
 
-Both suites reference test data files (a CSV fixture, a `bin/` script) that
+Its suite references test data files (a CSV fixture, a `bin/` script) that
 were not present in the REA archive tarball fetched for this survey — a
-packaging gap in the *upstream dist*, not a raku behavior problem. Neither
-was worth chasing further given the license/dependency issues below already
-rule them out; noted so a future re-survey doesn't mistake it for a raku
-regression.
+packaging gap in the *upstream dist*, not a raku behavior problem. Not worth
+chasing further given the license/dependency issues below already rule it
+out; noted so a future re-survey doesn't mistake it for a raku regression.
+
+(`CSV-AutoClass` was originally measured the same way and showed the same
+symptom, "0/2 — missing test fixture"; that turned out to be this survey's
+own `-I` paths missing two of its dependencies, `File::Find` and
+`CSV::Parser`, not a packaging gap. Re-run with the correct paths it is
+2/2 under both raku and mutsu — see the table above.)
 
 ## What blocks mutsu today
 
-### `Text::CSV` and `CSV::Table` — one shared compiler bug
+### Fixed: the shared heredoc-in-sub-body compiler bug
+
+Originally, neither `Text::CSV` nor `CSV::Table` got past `use` on mutsu:
 
 ```
 $ mutsu -e 'sub foo() { my $x = "hi"; print qq:to/HERE/;
@@ -83,34 +93,50 @@ foo();'
 Variable '$x' is not declared. Perhaps you forgot a 'sub' if this was intended to be part of a signature?
 ```
 
-Neither module gets past `use` on mutsu. `Text::CSV.rakumod` hits it via its
-own `my $opt`-style locals interpolated into `qq:to/` diagnostics;
-`CSV::Table`'s dependency `Text::Utils::Subs.rakumod:157` hits the identical
-shape (`my $opt-used = …; … qq:to/HERE/ … {$opt-used} … HERE`). Bisected down
-to: **any `sub` body that declares a `my` local and later references it from
-a heredoc gets a false "not declared" compile error** — confirmed independent
-of hyphens in the name, ternaries, or heredoc indentation; a top-level
-(non-sub) heredoc referencing a top-level `my` works fine, which is why this
-had not surfaced before.
+`Text::CSV.rakumod` hit it via its own `my $opt`-style locals interpolated
+into `qq:to/` diagnostics; `CSV::Table`'s dependency
+`Text::Utils::Subs.rakumod:157` hit the identical shape (`my $opt-used = …;
+… qq:to/HERE/ … {$opt-used} … HERE`). This is now **fixed** — see
+[news/2026-08/heredoc-scope-check-false-positive-on-sub-body.md](../../news/2026-08/heredoc-scope-check-false-positive-on-sub-body.md)
+for the root cause and the fix (`Expr::HeredocInterpolation` now carries
+whether the heredoc marker's own source line closes an enclosing block,
+which is the actual condition under which Raku takes a `my` local out of
+scope — verified against `roast/S02-literals/heredocs.t`'s own error cases,
+all 42 subtests still pass). This directly unblocked `CSV-AutoClass` (now
+2/2) and got `CSV::Table` past `use` into a new, unrelated blocker (next
+section); it did not fully unblock `Text::CSV`, which has a second, separate
+blocker (below).
 
-Root cause (see the filed ticket for the full trace): `check_heredoc_scope_errors`
-(`src/compiler/helpers_block_inline.rs:477`) is meant to catch a real, narrower
-gotcha — a heredoc that is physically outside the block that declared a
-variable it references. But `compile_sub_body_with_deprecation`
-(`src/compiler/helpers_sub_body.rs:196`) invokes it on the **sub's own
-top-level body**, where "the declaring scope" and "the heredoc's enclosing
-scope" are the same statement list — there is no leak to catch there, so it
-false-positives on an extremely ordinary pattern. Filed as
-`todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`.
+This was a general false positive, not a CSV-specific gap — the kind of "one
+interpreter bug blocks N ecosystem modules" lever the template survey found
+with `Template::Mustache` (see [templates.md](templates.md)). `Text::CSV`
+(33 files) and `CSV::Table`/`CSV-AutoClass` (10 + 2 files) were only the
+modules this survey happened to probe with; other ecosystem modules using
+the same "`my` local, later heredoc, same sub" pattern were presumably
+affected too.
 
-This is worth fixing independent of the CSV slot decision: it is a general
-false positive, not a CSV-specific gap, and it is the kind of "one interpreter
-bug blocks N ecosystem modules" lever the template survey found with
-`Template::Mustache` (see [templates.md](templates.md)) — `Text::CSV`
-(33 files) and `CSV::Table` (10 files) are only the two modules this survey
-happened to probe with; grep for `qq:to`/`Q:to`/`q:to` heredocs following a
-`my` inside a `sub` elsewhere in the batteries corpus before assuming this is
-the only place it bites.
+### `CSV::Table` — new blocker: `@0` inside a `[...]` array literal
+
+With the heredoc bug fixed, `CSV::Table` now gets past its own `use` and
+`Text::Utils`'s, but its dependency `Text::Utils` unconditionally `use`s
+`Font::AFM` (PDF font-metrics, for text-width calculations — nothing to do
+with CSV), which fails to parse on mutsu:
+
+```
+$ mutsu -e '"abc" ~~ / (\d+) /; my $x = [ @0 ]; say $x'
+Parse error: Confused: Two terms in a row
+```
+
+Reduced from `Font::AFM.rakumod:436` (`my Array $bbox = [ @0».Int ];`): a
+bare numbered match-capture array variable (`@0`, the array-context view of
+`$0`/`$1`/... captures) parses fine standalone, and `@0».Int` parses fine
+standalone, but the SAME expression fails specifically when it appears as an
+element inside a `[...]` array literal (`[ @foo ]` with an ordinary named
+array works; `[ @0 ]` does not). Filed as
+`todo/tickets/numbered-capture-array-var-in-array-literal.md`; not
+investigated further in this survey — it is unrelated to CSV or to the
+heredoc fix, just the next thing standing between mutsu and a working
+`CSV::Table`. `CSV::Table`'s own suite is still 0/10 on mutsu because of it.
 
 ### `Text::CSV` also needs real slang support — a second, harder blocker
 
@@ -194,44 +220,40 @@ completeness, not as a candidate to bundle.
 
 Under the stated criteria (no native/C-library dependency, real
 read-and-generate API), the field narrows to exactly two live candidates —
-`Text::CSV` and `CSV::Table` — both pure Raku, both blocked purely by mutsu
-bugs rather than by anything wrong with the module itself:
+`Text::CSV` and `CSV::Table` — both pure Raku. The heredoc-in-sub-body
+compiler bug that blocked both is now fixed; each still has its own
+remaining blocker:
 
-1. **Fix the heredoc-in-sub-body false positive first**
-   (`todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`). It is a
-   general compiler bug, not a CSV-specific one, and it is the **only**
-   blocker standing between mutsu and `CSV::Table` (10/10 under raku, 0/10
-   today), and one of two blockers for `Text::CSV`. Plausibly cheap, on the
-   same "one bug unblocks a healthy module" shape the template slot found
-   with `Template::Mustache`.
-2. **Re-measure both `Text::CSV` and `CSV::Table` after that fix lands.**
-   - `Text::CSV` has the fuller generation story: `combine`/`print`/`say` for
-     line-at-a-time composition plus a top-level `csv(in => @data, out =>
-     $file)` functional form that builds a CSV file directly from an
-     in-memory data structure — no pre-existing file needed. It is also the
-     deeper-tested candidate by far (22697 vs 184 assertions) and the most
-     CPAN-familiar API (`Text::CSV_XS`-alike). But it **stays blocked on a
-     second, harder problem** even after the heredoc fix: `use
-     Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real
-     slang-switching support, a standing architectural gap (see "What blocks
-     mutsu today" above) — not something to build just for this slot.
-   - `CSV::Table` clears with the heredoc fix **alone**, making it the
-     nearer-term option. Its write side is real (`.save`, cell mutation,
-     `save($stem)` to a new path) but structurally anchored: the class
-     constructor requires an *existing* `:csv($file)` to load
-     (`has $.csv; #is required;`, `lib/CSV/Table.rakumod:7`) — there is no
-     from-scratch "build a CSV out of `@data-structure` alone" entry point
-     the way `Text::CSV`'s functional `csv()` sub has. In practice this means
-     "generate a new CSV" with `CSV::Table` means starting from a (possibly
-     header-only or otherwise minimal) template file, not calling a
-     constructor with just Raku data. Worth confirming this is acceptable
-     for the actual use cases this slot is meant to serve before treating it
-     as equivalent to `Text::CSV`'s generation story.
-3. **No stopgap is recommended before the heredoc fix lands.** `CSV::Parser`
-   would have been the "unblock something today" pick, but it is read-only
-   and therefore disqualified by this slot's own criteria — bundling it now
-   would mean re-surveying and likely replacing it shortly after, which is
-   worse than simply waiting for the shared compiler fix.
+1. **`CSV::Table` needs the `@0`-in-array-literal parse bug fixed next**
+   (`todo/tickets/numbered-capture-array-var-in-array-literal.md`) — a small,
+   reduced, unrelated-to-CSV parser gap in a transitive dependency
+   (`Text::Utils` → `Font::AFM`). Re-measure `CSV::Table`'s own suite after
+   that fix; it may surface further blockers past that point, or may come up
+   clean (its own suite doesn't touch `Font::AFM` directly).
+2. **`Text::CSV` stays blocked on the harder problem** — `use Slang::Tuxic;`
+   at the top of `Text::CSV.rakumod` itself needs real slang-switching
+   support, a standing architectural gap (see "What blocks mutsu today"
+   above), not something to build just for this slot. It remains the
+   fuller-featured candidate on paper: `combine`/`print`/`say` for
+   line-at-a-time composition plus a top-level `csv(in => @data, out =>
+   $file)` functional form that builds a CSV file directly from an in-memory
+   data structure (no pre-existing file needed), and by far the
+   deeper-tested candidate (22697 vs 184 assertions).
+3. **`CSV::Table`'s write API has a real limitation worth flagging either
+   way**: the class constructor requires an *existing* `:csv($file)` to load
+   (`has $.csv; #is required;`, `lib/CSV/Table.rakumod:7`) — there is no
+   from-scratch "build a CSV out of `@data-structure` alone" entry point the
+   way `Text::CSV`'s functional `csv()` sub has. In practice "generate a new
+   CSV" with `CSV::Table` means starting from a (possibly header-only or
+   otherwise minimal) template file, not calling a constructor with just
+   Raku data. Worth confirming this is acceptable for the actual use cases
+   this slot is meant to serve before treating it as equivalent to
+   `Text::CSV`'s generation story.
+4. **No stopgap is recommended.** `CSV::Parser` would have been the "unblock
+   something today" pick, but it is read-only and therefore disqualified by
+   this slot's own criteria — bundling it now would mean re-surveying and
+   likely replacing it shortly after, which is worse than continuing to
+   unblock the two real candidates.
 
 No candidate is bundled as of this writing; this document exists to make the
 next pass at the slot start from measurements instead of guesswork.
