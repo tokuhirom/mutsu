@@ -2793,6 +2793,27 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `MUTSU_VM_STATS` counters + an interceptor-taxonomy table per entry) precedes and orders the
   cutovers, C6d-style. JIT shims are asserted tail-identical, not rewritten. The interpreter
   slow paths shrink by attrition (one probe section at a time), never by a one-PR rewrite.
+  **Progress 2026-08-11** (E5 step 1, measurement slice for `CallMethod`): the design
+  doc's decision-3 counters landed — generic `dispatch_entry_outcome_by_key` /
+  `dispatch_entry_intercept_by_arm` histograms in `vm_stats.rs` (keyed
+  `"<entry>:<outcome>"` / `"<entry>:<arm>"` so later E5/E6 entries reuse them), and
+  `exec_call_method_op_impl` instrumented at every completion point: 45 intercept arm
+  names, plus `native`/`user`/`accessor`/`notfound` outcome records at the probe
+  section. Pure insertions (0 deletions), zero behavior change; per-file cross-check
+  `sum(disjoint outcomes) == opcode-histogram CallMethod` holds (`notfound` is a
+  documented overlay subset of `user`). The taxonomy table (decision 2's classes a-d,
+  one row per arm, with the uninstrumentable gaps noted) and the sweep results live in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results — CallMethod".
+  Headline sweep numbers (full `t/` + roast S12/S14 subset, 3075 files): disjoint total
+  26924 — `user=13258` (49.2%), `native=11794` (43.8%), `intercept=968` (3.6%),
+  `accessor=904` (3.4%), overlay `notfound=52`; top intercept arm `nil-absorb=675`;
+  18 of 45 arms scored zero, most explained by the same receiver shapes compiling to
+  `CallMethodMut` (bareword/variable receivers) — NOT dead code until the E6a mut-twin
+  sweep says so. Consequence for slicing: E5b's decision match must nail the user- and
+  native-candidate paths first; the intercept gauntlet is an order of magnitude
+  smaller. This is ONE slice — the box stays open: the remaining E5 measurement
+  entries (`CallMethodDynamic`, hyper non-mut paths, `call_method_all_with_fallback`)
+  and all cutover sub-slices (E5b/E5c/E5d) are still to do.
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

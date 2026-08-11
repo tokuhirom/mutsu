@@ -178,3 +178,121 @@ cutover changes one entry and ships with its taxonomy table and sweep evidence, 
 tails and interceptors do not move, and (iv) local `make roast` before every cutover PR
 (semantics-adjacent). Perf: each cutover PR cites the bench-CI rows for its main-merge commit;
 a regression on fib/bench-tak blocks the next slice until explained.
+
+## Measurement slice results — CallMethod (E5 step 1)
+
+Landed 2026-08-11: `MUTSU_VM_STATS`-gated counters per design decision 3 —
+`record_dispatch_entry_outcome(entry, outcome)` (histogram keyed
+`"<entry>:<outcome>"`, outcomes `intercept`/`native`/`user`/`accessor`/`notfound`) and
+`record_dispatch_entry_intercept(entry, arm)` (bumps `intercept` AND a per-arm histogram
+keyed `"<entry>:<arm>"`), both in `src/vm/vm_stats.rs` and generic so every later E5/E6
+entry reuses them. This slice instruments exactly one entry: `CallMethod`
+(`exec_call_method_op_impl`, `src/vm/vm_call_method_ops.rs`). Pure insertions only — the
+diff is 0 deletions; no branch, condition, or return value changed.
+
+Counting semantics: each executed `CallMethod` records exactly one of
+`intercept`/`native`/`user`/`accessor` (verified per-file:
+`sum(disjoint outcomes) == CallMethod` in the opcode histogram, e.g.
+`roast/S12-methods/instance.t`: 11 == 11). `notfound` is a deliberate **overlay subset of
+`user`**: `user` is recorded when the compiled/interpret fallthrough is *entered* (the only
+pure-insertion point), and `notfound` is recorded additionally at the two visible
+not-found completions (the `.?` Nil absorb and the propagated-`Err` peek before
+`call_result?`) — X::Method::NotFound originates inside
+`try_compiled_method_or_interpret_sym`, so there is no disjoint not-found tail at this
+entry without restructuring. Disjoint total = `intercept + native + accessor + user`.
+Note `METHOD_TOTAL` (`record_method_dispatch`) fires for all four `CallMethod*` opcodes,
+so it does NOT equal the `callmethod:*` sum; cross-check against the opcode histogram's
+`CallMethod` row instead.
+
+Taxonomy table (line numbers as of this PR's revision of `vm_call_method_ops.rs`; the
+anchor for each instrumented row is its `record_dispatch_entry_*` call):
+
+| Line range | Class | Arm name / description | Counter key | Notes |
+|---|---|---|---|---|
+| ~500-550 | — | entry bookkeeping (arg decode, slip flatten, stack pops) | (none) | stack-underflow errors uninstrumented: internal errors, not dispatch outcomes |
+| ~551-566 | a | LazyIoLines force | (none) | |
+| ~567-586 | a+b | ContainerRef deref; `.^name`/`.WHAT`-on-cell Scalar-meta early return | `callmethod:containerref-scalar-meta` | the deref itself is (a); only the Scalar-meta return counts |
+| ~589-597 | b | `is native(...)` NativeCall-bound method | `callmethod:nativecall` | |
+| ~600-625 | b | `.hash`/`.Hash` on bare positional list | `callmethod:hash-on-list` | |
+| ~627-641 | b | `Pair.freeze` on non-variable receiver | `callmethod:pair-freeze` | |
+| ~636-652 | b | `proto method` body dispatch | `callmethod:proto` | includes its own `apply_pending_rw_writeback` tail (stays put) |
+| ~653-662 | b | Exception `.Str`/`.gist` via user `message` method | `callmethod:exception-str-message` | |
+| ~663-670 | b | `.return` control flow | `callmethod:return` | |
+| ~672-711 | a | `.throw`/`.rethrow` backtrace attach | (none) | rebuilds target only; no completion |
+| ~713-721 | b | `fail`/`die`/`throw`/... on Exception type object | `callmethod:exception-concreteness` | 0 in sweep — bareword receivers (`X::NYI.throw`) compile to CallMethodMut |
+| ~722-737 | b | typed-array autoviv `push`/... on type object | `callmethod:autoviv-typed-array` | |
+| ~738-757 | b | `.emit` supply-buffer / CX::Emit | `callmethod:emit` | one arm name for both completions |
+| ~759-778 | c | fast 0-arg public-accessor read | `callmethod:accessor` | dispatch-probe outcome, not an intercept |
+| ~780-797 | b | `.so`/`.not` via user-defined `Bool` | `callmethod:so-not-user-bool` | |
+| ~798-799 | a | `flatten_scoped_env` | (none) | |
+| ~800-857 | b | junction-invocant auto-threading | `callmethod:junction-invocant` | one count per call, not per eigenstate; inner per-eigenstate native/user probes deliberately uninstrumented |
+| ~859-866 | b | junction-argument auto-threading | `callmethod:junction-args` | |
+| ~867-882 | b | `Deprecation.report` | `callmethod:deprecation-report` | |
+| ~884-905 | b | `Lock.protect` X::Multi::NoMatch guard | `callmethod:lock-protect-nomatch` | |
+| ~906-947 | b | `Lock`/`Lock::Async.protect` inline fast path | `callmethod:lock-protect` | 0 in sweep — `$lock.protect` on a variable compiles to CallMethodMut |
+| ~949-1043 | c | `skip_native` gate computation | (none) | pure gate, no completion; becomes resolver input at cutover |
+| ~1044-1067 | a | Proxy auto-FETCH | (none) | |
+| ~1069-1084 | b | lazy-list `gist`/`Str` placeholder | `callmethod:lazy-placeholder` | |
+| ~1086-1100 | b | lazy gather `.first` incremental pull | `callmethod:lazy-first` | |
+| ~1102-1121 | b | lazy `.pairs`/`.antipairs`/`.kv` index pipe | `callmethod:lazy-index-pipe` | |
+| ~1123-1135 | b | lazy `.cache` identity | `callmethod:lazy-cache` | |
+| ~1136-1190 | a | lazy-list forcing | (none) | the mid-normalization `X::Cannot::Lazy` return is an uninstrumented gap (error inside normalization, not a probe outcome) |
+| ~1192-1255 | b | `.hyper`/`.race` with `batch`/`degree` | `callmethod:hyper-race-config` | branch-entry record also covers the two X::Invalid::Value completions |
+| ~1257-1450 | b | HyperSeq/RaceSeq delegation (10 arms) | `callmethod:hyperseq-{hyper,race,is-lazy,configuration,name,what,isa,defined,map-grep,iterator}` | `map-grep` counted only at the <1000-item inline completion; larger lists fall through to the general probes (sets `hyper_race_wrap`) |
+| ~1451-1457 | a | HyperSeq/RaceSeq → List conversion | (none) | |
+| ~1458-1470 | b | Regex `.Bool`/`.so` topic smartmatch | `callmethod:regex-bool-topic` | 0 in sweep — variable receivers compile to CallMethodMut |
+| ~1471-1484 | b | `.WHO` on pseudo-package | `callmethod:who-pseudo-package` | |
+| ~1486-1501 | b | Failure `.print`/`.say`/... positional X::Multi::NoMatch | `callmethod:failure-print-nomatch` | |
+| ~1503-1537 | b | unhandled-Failure explosion | `callmethod:failure-explode` | |
+| ~1539-1551 | b | `.*`/`.+` on pseudo-method error | `callmethod:modifier-pseudo-error` | |
+| ~1554-1560 | b | `.+` all-methods dispatch | `callmethod:modifier-plus` | delegates to `call_method_all_with_fallback` (its own E5 measurement entry, later slice) |
+| ~1561-1576 | b | `.*` all-methods dispatch | `callmethod:modifier-star` | its not-found→empty-list completion is covered by this arm, not `notfound` |
+| ~1578-1626 | c | Array-subclass `__mutsu_array_storage` delegation | `callmethod:native` / `callmethod:user` | a failed compiled delegation falls through to normal dispatch *uncounted* (recording at entry would double-count); gap noted |
+| ~1630-1723 | b | Nil pre-dispatch block | `callmethod:nil-predispatch` / `callmethod:nil-autoviv` / `callmethod:nil-absorb` | the fall-through names (`defined`, `grep`, `say`, ...) reach the general probes and count there |
+| ~1725-1751 | b | Any/Mu autoviv `push`/... | `callmethod:any-autoviv` | |
+| ~1753-1768 | b | Proxy-subclass array mutate | `callmethod:proxy-subclass-mutate` | |
+| ~1780-1817 | b | `shift`/`pop` value fast path | `callmethod:shift-pop` | method-identity arm inside the probe section |
+| ~1818-1846 | c | hash-sentinel resolve + native probe | `callmethod:native` | |
+| ~1847-1886 | b+c | `.Slip` `is default` fill / native / fallthrough | `callmethod:slip-default` / `callmethod:native` / `callmethod:user` | |
+| ~1887-1901 | c | plain native probe + compiled/interpret fallthrough (incl. `skip_native` route) | `callmethod:native` / `callmethod:user` | `user` includes calls that later fail with X::Method::NotFound (see overlay note) |
+| ~1903-1937 | c | not-found completions (`.?` Nil absorb; propagated-Err peek) | `callmethod:notfound` | overlay subset of `user` |
+| ~1938-1976 | d | writeback tails (`drain_and_reconcile_after_cached_call`, hyper rewrap) | (none) | untouched per design decision 2 |
+
+Summary: 45 distinct intercept arm names over ~40 class-(b) arms (the HyperSeq family
+alone is 10), 6 class-(a) normalization regions, the class-(c) probe section with 4
+outcome kinds, 1 class-(d) tail region. No surprises in kind, one surprise in *shape*:
+several arms that look CallMethod-owned are in practice unreachable from this entry
+because their receiver shapes (bareword type names, plain variables) compile to
+`CallMethodMut` — the sweep confirms this (see below), which means the E6a measurement
+for `CallMethodMut` is where those twins' real traffic will show up. Zero counts here
+must NOT be read as dead code until the E6a sweep of the mut twin lands.
+
+### Sweep results (2026-08-11, debug build, full `t/` 3014 files + roast S12-attributes/S12-methods/S14-roles, 3075 processes, 0 timeouts)
+
+Outcomes (disjoint): `callmethod:user=13258` (49.2%), `callmethod:native=11794`
+(43.8%), `callmethod:intercept=968` (3.6%), `callmethod:accessor=904` (3.4%);
+overlay `callmethod:notfound=52` (0.4% of user). Disjoint total 26924.
+
+Sub-slice ordering consequence (decision 3(i)): the `user` and `native` outcomes
+dominate roughly equally — the E5b cutover's decision match must get the
+user-candidate and native-row paths right first; accessor and the intercept gauntlet
+are an order of magnitude smaller.
+
+Intercept arms by count (27 of 45 fired): `nil-absorb=675`, `lazy-first=92`,
+`hyperseq-map-grep=38`, `nil-predispatch=33`, `hash-on-list=32`, `proto=27`,
+`junction-invocant=10`, `lazy-index-pipe=9`, `who-pseudo-package=6`,
+`modifier-star=5`, `lazy-placeholder=5`, `modifier-plus=4`,
+`hyperseq-configuration=4`, `hyper-race-config=4`, `junction-args=3`, `emit=3`,
+`failure-print-nomatch=3`, `containerref-scalar-meta=2`, `hyperseq-iterator=2`,
+`shift-pop=2`, `failure-explode=2`, `so-not-user-bool=2`, `lock-protect-nomatch=1`,
+`lazy-cache=1`, `pair-freeze=1`, `return=1`, `modifier-pseudo-error=1`.
+
+Zero-count arms (18): `nativecall`, `exception-str-message`,
+`exception-concreteness`, `autoviv-typed-array`, `deprecation-report`,
+`lock-protect`, `hyperseq-{hyper,race,is-lazy,name,what,isa,defined}`,
+`regex-bool-topic`, `nil-autoviv`, `any-autoviv`, `proxy-subclass-mutate`,
+`slip-default`. These are *deletion candidates for a later sweep, not deletions now*
+(decision 3(ii)) — and most are explained rather than dead: bareword/variable
+receivers route the same shapes through `CallMethodMut`, and this sweep covered
+`t/` plus only three roast directories, not the whole whitelist. Re-run the sweep
+over whitelisted roast (CI-scale) before proposing any arm removal.

@@ -536,6 +536,62 @@ pub(crate) fn record_mainline_lexical_hit() {
     }
 }
 
+// ADR-0019 Phase E box E5 (measurement slice, design decision 3 in
+// `todo/deep/adr0019-e5-e7-entry-routing.md`): per-entry, per-outcome dispatch
+// counters for the VM call entries (`CallMethod`, and in later slices
+// `CallMethodMut`, `CallMethodDynamic`, the hyper entries, ...). Each entry
+// records exactly one outcome per executed dispatch — `intercept` (a
+// method-identity special-case arm fully handled the call before the general
+// probes), `native` (the `try_native_method` cascade served it), `user` (the
+// compiled/interpreted user-method fallthrough ran), `accessor` (the fast
+// 0-arg public-attribute read served it), or `notfound` (an explicitly
+// observed X::Method::NotFound completion; see the taxonomy table in the E5-E7
+// doc for the one documented overlap with `user`). The by-key histogram is
+// keyed `"<entry>:<outcome>"` so every future E5/E6 entry reuses this family
+// instead of growing bespoke statics; the by-arm histogram is keyed
+// `"<entry>:<arm-name>"` and is what lets the sweep identify dead/near-dead
+// intercepts (design decision 3(ii): deletion candidates rather than porting
+// targets). The sweep over full `t/` + whitelisted roast decides sub-slice
+// order (3(i)) and the parity corpus for each cutover (3(iii)). Nothing reads
+// these counters to make a dispatch decision: measurement-only, zero behavior
+// change.
+fn dispatch_entry_outcome_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn dispatch_entry_intercept_by_arm() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_ARM: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_ARM.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one dispatch outcome for VM call entry `entry` (e.g. `"callmethod"`)
+/// with `outcome` one of `intercept`/`native`/`user`/`accessor`/`notfound`.
+#[inline]
+pub(crate) fn record_dispatch_entry_outcome(entry: &str, outcome: &str) {
+    if !enabled() {
+        return;
+    }
+    if let Ok(mut map) = dispatch_entry_outcome_by_key().lock() {
+        *map.entry(format!("{entry}:{outcome}")).or_insert(0) += 1;
+    }
+}
+
+/// Record one method-identity intercept at VM call entry `entry`: bumps the
+/// `intercept` outcome via [`record_dispatch_entry_outcome`] AND the per-arm
+/// histogram under `"<entry>:<arm>"` (short stable arm names, e.g.
+/// `"callmethod:pair-freeze"`).
+#[inline]
+pub(crate) fn record_dispatch_entry_intercept(entry: &str, arm: &str) {
+    if !enabled() {
+        return;
+    }
+    record_dispatch_entry_outcome(entry, "intercept");
+    if let Ok(mut map) = dispatch_entry_intercept_by_arm().lock() {
+        *map.entry(format!("{entry}:{arm}")).or_insert(0) += 1;
+    }
+}
+
 /// Whether instrumentation is active. Resolved once from the environment so the
 /// hot path is a single cached boolean load when the feature is off.
 #[inline]
@@ -911,6 +967,42 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e4b native-row-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = dispatch_entry_outcome_by_key().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e5 dispatch-entry outcomes total={} (top {}): {}",
+            total,
+            top.len(),
+            top.join(" ")
+        );
+    }
+    if let Ok(map) = dispatch_entry_intercept_by_arm().lock()
+        && !map.is_empty()
+    {
+        let total: u64 = map.values().sum();
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(40)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e5 intercept arms total={} (top {}): {}",
+            total,
             top.len(),
             top.join(" ")
         );
