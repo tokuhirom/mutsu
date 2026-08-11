@@ -950,7 +950,6 @@ impl Interpreter {
                         | ValueView::Array(..)
                         | ValueView::Hash(..)
                         | ValueView::Sub(..)
-                        | ValueView::Instance { .. }
                         | ValueView::Proxy { .. }
                 )
             {

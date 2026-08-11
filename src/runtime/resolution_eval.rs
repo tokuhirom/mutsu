@@ -539,7 +539,18 @@ impl Interpreter {
             let (compiled, compiled_fns, _captured_bindings, _writeback_bindings, captured_names) =
                 self.get_or_compile_protect_block_with_slots(&data);
             self.sync_shared_vars_for_names(captured_names.iter().map(|name| name.as_str()));
-            self.run_compiled_block(&compiled, compiled_fns.as_ref())
+            // Install THIS block's captured upvalue array for the duration:
+            // `run_compiled_block` bypasses closure dispatch, so without this a
+            // `GetUpvalue` in the block body indexes the ENCLOSING closure's
+            // array — index collision hands it an unrelated capture (the
+            // `$l.protect({ $r += $i })` block read the enclosing frame's
+            // upvalue 0, the Lock cell, as `$i`). Latent while upvalue arrays
+            // held `Some` only for rare cells; exposed when ADR-0025 made
+            // Instance-holding captures boxable.
+            let saved_upvalues = std::mem::replace(&mut self.upvalues, data.upvalues.clone());
+            let result = self.run_compiled_block(&compiled, compiled_fns.as_ref());
+            self.upvalues = saved_upvalues;
+            result
         } else {
             self.call_sub_value(code.clone(), Vec::new(), true)
         }

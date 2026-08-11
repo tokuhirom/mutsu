@@ -177,7 +177,21 @@ impl Interpreter {
             self.set_env_with_main_alias("self", s.clone());
         }
 
-        // Execute the block's opcodes inline
+        // Execute the block's opcodes inline. Install the BLOCK's own captured
+        // upvalue array for the duration: this inline path bypasses closure
+        // dispatch, so without the swap a `GetUpvalue` in the block body
+        // indexes the ENCLOSING closure's array — an index collision hands it
+        // an unrelated capture (`$l.protect({ $r += $i })` read the enclosing
+        // frame's upvalue 0, the Lock cell, as `$i`). Latent while upvalue
+        // arrays held `Some` only for rare cells; exposed when ADR-0025 made
+        // Instance-holding captures boxable.
+        let saved_upvalues = std::mem::replace(
+            &mut self.upvalues,
+            sub_data
+                .as_ref()
+                .map(|d| d.upvalues.clone())
+                .unwrap_or_default(),
+        );
         let mut sub_ip = 0;
         let mut exec_err = None;
         while sub_ip < block_cc.ops.len() {
@@ -186,6 +200,7 @@ impl Interpreter {
                 break;
             }
         }
+        self.upvalues = saved_upvalues;
 
         // The block runs inline in the current env, so a free variable it
         // assigns (`$x = 99` where `$x` is a captured outer lexical) is written

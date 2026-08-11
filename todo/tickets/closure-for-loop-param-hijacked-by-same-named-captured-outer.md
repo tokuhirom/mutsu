@@ -57,18 +57,46 @@ shadow-lib trace confirmed: `S2S fn-parts=[1]` at build, `GEN loop i=2` at
 call; `fn-parts=[1, 3]` at build, `i=3, i=3` at call — exactly the outer
 counter's final values.
 
+## Root cause — VERIFIED 2026-08-11 (gdb, ADR-0025 diagnosis session)
+
+The ticket's original "resolving by NAME through the merged captured env"
+guess was close but the mechanism is sharper: **the closure body's `$i`
+reads are `GetUpvalue` ops that bypass the frame env AND the loop binding
+entirely.** Chain:
+
+1. A for-loop parameter only gets a local slot if the name ALREADY has one
+   (`compiler/stmt.rs`, the `param_local = self.local_map.get(...)` lookup
+   — it never allocates). In the repro's closure, "i" has no prior slot, so
+   the param is an env-only binding and the name is absent from the
+   compiled body's `own` set.
+2. `compute_free_vars` therefore classifies the body's `$i` reads as FREE
+   variable reads, and the loop-binding writes happen inside the ForLoop
+   opcode exec (no name-write op), so "i" also looks read-only.
+3. `compute_upvalues` rewrites the pure reads to `GetUpvalue` — verified
+   with `rust-gdb -batch -ex 'break src/vm/vm_exec_dispatch.rs:204'` (the
+   GetUpvalue arm): it fires for each `i=` print in the repro. The read
+   resolves against the closure's captured env/upvalue array (the outer
+   `$i` counter cell), never seeing the ForLoop's per-iteration binding.
+
+Fix direction (compiler-side): a for-loop parameter must be an OWN binding
+of the compiled code that contains the loop — either allocate a local slot
+for slotless loop params (making body reads GetLocal and restoring
+`param_local` sync), or at minimum exclude loop-param names from
+`free_var_syms`/upvalue eligibility for the enclosing body (the
+`expr_declared_syms`/`my_declared_enum_sym` precedent in
+`compute_free_vars`). The slot route is the sound one — exclusion alone
+still leaves the body reading a name the merge may have installed.
+
 ## Relationship to other open findings
 
-Same family as `todo/deep/closure-read-only-capture-loses-to-caller-env-same-name.md`
-(closure-call captured-env merge vs. same-named bindings), but the opposite
-direction: there a captured value LOSES to the caller env; here a captured
-value WINS over the closure's own inner loop-parameter binding. A fix for
-either should be checked against the other's repro. Also adjacent to
-ADR-0023 (for-loop params as fresh per-iteration bindings) — the loop
-param's read inside the closure body is apparently resolving by NAME
-through the merged captured env (`cap_overrides` / `owned_captures` /
-per-instance state installed at closure entry) instead of through the loop
-binding.
+Same family symptom-wise as
+`todo/deep/closure-read-only-capture-loses-to-caller-env-same-name.md`
+(ADR-0025), but mechanically independent: that one is about the captured-env
+merge / cell boxing; this one is a compiler scoping bug. ADR-0025 slices
+widen cell prevalence, so this repro must be re-run when its slices land
+(a captured cell installed under "i" makes the GetUpvalue read a live cell
+— still wrong, and a ForLoop binding that wrote through such a cell would
+corrupt the outer counter).
 
 ## Verification (once fixed)
 
