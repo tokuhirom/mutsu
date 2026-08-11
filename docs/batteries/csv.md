@@ -115,20 +115,29 @@ modules this survey happened to probe with; other ecosystem modules using
 the same "`my` local, later heredoc, same sub" pattern were presumably
 affected too.
 
-### `CSV::Table` — the `@0`-in-array-literal blocker is fixed; a new one is next
+### `CSV::Table` — two parse blockers fixed; now blocked on a `return-rw`/`AT-POS` write bug
 
-With the heredoc bug fixed, `CSV::Table` got past its own `use` and
-`Text::Utils`'s, but its dependency `Text::Utils` unconditionally `use`s
-`Font::AFM` (PDF font-metrics, for text-width calculations — nothing to do
-with CSV), which failed to parse on mutsu (`my Array $bbox = [ @0».Int ];` at
-`Font::AFM.rakumod:436` — a numbered match-capture array variable inside a
-`[...]` array literal). That parse bug is now fixed — see
-`news/2026-08/numbered-capture-array-var-in-array-literal.md` — but
-`Font::AFM` hits a further, unrelated blocker past it:
-`method dispatch:<.?>(...)` (custom dynamic-dispatch method syntax,
-`Font::AFM.rakumod:594`) is not a recognized method-name category. Filed as
-`todo/tickets/method-dispatch-colon-question-syntax.md`. `CSV::Table`'s own
-suite is still 0/10 on mutsu because of it.
+`CSV::Table`'s transitive dependency chain (`Text::Utils` → `Font::AFM` for
+PDF font-metrics text-width calculations, nothing to do with CSV) hit two
+parse bugs in sequence, both now fixed:
+
+1. A numbered match-capture array variable (`@0`) inside a `[...]` array
+   literal (`my Array $bbox = [ @0».Int ];` at `Font::AFM.rakumod:436`) —
+   see `news/2026-08/numbered-capture-array-var-in-array-literal.md`.
+2. `method dispatch:<.?>(...)` (custom dynamic-dispatch method syntax,
+   `Font::AFM.rakumod:594`) not being a recognized method-name category —
+   see `news/2026-08/method-dispatch-colon-question-syntax.md`.
+
+With both fixed, `use CSV::Table` loads cleanly and 8/10 of its own test
+files run — but every file that actually constructs a `CSV::Table` object
+now hits a third, unrelated blocker: a further transitive dependency
+(`Text::Utils` → `AlgorithmsIT`) assigns through a user class's `return-rw
+AT-POS` via `$obj[$i] = v` (no `ASSIGN-POS` declared), and mutsu silently
+drops the write instead of writing through the returned container. Filed as
+`todo/tickets/custom-at-pos-return-rw-index-assign.md`, with the root cause
+already narrowed to `src/vm/vm_var_assign_index_named.rs`'s Instance-target
+assign path. `CSV::Table`'s own suite is still not fully green on mutsu
+because of it.
 
 ### `Text::CSV` also needs real slang support — a second, harder blocker
 
@@ -216,17 +225,19 @@ read-and-generate API), the field narrows to exactly two live candidates —
 compiler bug that blocked both is now fixed; each still has its own
 remaining blocker, and each blocker now has its own ticket:
 
-1. **`CSV::Table` needs the `dispatch:<.?>` method-syntax parse bug fixed
+1. **`CSV::Table` needs the `return-rw`/`AT-POS` index-assign bug fixed
    next** —
-   **[`todo/tickets/method-dispatch-colon-question-syntax.md`](../../todo/tickets/method-dispatch-colon-question-syntax.md)**.
-   The prior blocker on this path (`@0` inside a `[...]` array literal) is
-   fixed (`news/2026-08/numbered-capture-array-var-in-array-literal.md`);
-   this is the next thing standing between mutsu and a working `CSV::Table`,
-   surfaced via the same transitive dependency (`Text::Utils` → `Font::AFM`).
-   After the fix, re-measure `CSV::Table`'s own suite; it may surface further
-   blockers past that point (only the *first* parse failure in `Font::AFM`
-   was reduced each time, not the whole file), or may come up clean since its
-   own suite doesn't touch `Font::AFM` directly.
+   **[`todo/tickets/custom-at-pos-return-rw-index-assign.md`](../../todo/tickets/custom-at-pos-return-rw-index-assign.md)**.
+   Both prior blockers on this path (`@0` inside a `[...]` array literal;
+   `dispatch:<.?>` method-syntax parsing) are fixed
+   (`news/2026-08/numbered-capture-array-var-in-array-literal.md`,
+   `news/2026-08/method-dispatch-colon-question-syntax.md`); this is the next
+   thing standing between mutsu and a working `CSV::Table`, surfaced via a
+   third transitive dependency (`Text::Utils` → `AlgorithmsIT`). The root
+   cause is already narrowed to `src/vm/vm_var_assign_index_named.rs`'s
+   Instance-target assign path — see the ticket. After the fix, re-measure
+   `CSV::Table`'s own suite; it may surface further blockers past that point,
+   or may come up clean.
 2. **`Text::CSV` stays blocked on the harder problem** —
    **[`todo/deep/text-csv-needs-slang-tuxic-support.md`](../../todo/deep/text-csv-needs-slang-tuxic-support.md)**.
    `use Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real

@@ -4,11 +4,30 @@ use crate::parser::stmt::class::sym_adverb_inner;
 /// Parse a sub name, which can be a regular identifier or an operator-style name
 /// like `infix:<+>`, `prefix:<->`, `postfix:<++>`, `circumfix:<[ ]>`.
 pub(crate) fn parse_sub_name(input: &str) -> PResult<'_, String> {
-    let (rest, name) = parse_sub_name_inner(input)?;
+    let (rest, name) = parse_sub_name_inner(input, false)?;
     if let Some(err) = null_operator_error(&name) {
         return Err(err);
     }
-    if let Some(err) = operator_name_extension_error(&name, rest) {
+    if let Some(err) = operator_name_extension_error(&name, rest, false) {
+        return Err(err);
+    }
+    Ok((rest, name))
+}
+
+/// Like [`parse_sub_name`], but also accepts `dispatch:<...>` (e.g.
+/// `dispatch:<.?>`, a custom-dispatch override invoked in place of the
+/// ordinary `.?method` fallback). Verified against rakudo: `sub
+/// dispatch:<.?> {}` raises the same "Cannot add tokens of category
+/// 'dispatch'" error `parse_sub_name` raises for every other unknown
+/// category, but `method`/`submethod dispatch:<.?>` compiles — `dispatch` is
+/// a category valid only on a method-like declaration. Use this from
+/// `method`/`submethod` parsing only.
+pub(crate) fn parse_method_sub_name(input: &str) -> PResult<'_, String> {
+    let (rest, name) = parse_sub_name_inner(input, true)?;
+    if let Some(err) = null_operator_error(&name) {
+        return Err(err);
+    }
+    if let Some(err) = operator_name_extension_error(&name, rest, true) {
         return Err(err);
     }
     Ok((rest, name))
@@ -35,7 +54,11 @@ pub(crate) fn parse_sub_name(input: &str) -> PResult<'_, String> {
 /// (the adverb loop consumes it, so `rest` no longer starts with a colon pair),
 /// and `sub infix:["@"]` / `constant sym = "@"; sub infix:[sym]` are consumed by
 /// `parse_bracket_op_name`.
-pub(crate) fn operator_name_extension_error(name: &str, rest: &str) -> Option<PError> {
+pub(crate) fn operator_name_extension_error(
+    name: &str,
+    rest: &str,
+    allow_dispatch: bool,
+) -> Option<PError> {
     if let Some(after) = rest.strip_prefix(":[") {
         // `parse_bracket_op_name` already declined this bracket (otherwise it
         // would have been consumed), so whatever is inside cannot spell a name.
@@ -54,7 +77,7 @@ pub(crate) fn operator_name_extension_error(name: &str, rest: &str) -> Option<PE
     // symbol — so reaching this point means the category itself is unknown.
     // `trait_auxiliary` is deliberately in mutsu's accepted set even though
     // rakudo rejects it; see `is_operator_category`.
-    if is_operator_category(name) {
+    if is_operator_category(name) || (allow_dispatch && name == "dispatch") {
         return None;
     }
     let message = format!("Cannot add tokens of category '{name}'");
@@ -104,6 +127,7 @@ fn null_operator_detect(name: &str) -> Option<bool> {
         "postcircumfix",
         "trait_mod",
         "trait_auxiliary",
+        "dispatch",
     ];
     let colon = name.find(':')?;
     let cat = &name[..colon];
@@ -172,7 +196,7 @@ pub(crate) fn null_operator_group_error(name: &str, pre: &str, post: &str) -> Op
     Some(PError::fatal_with_exception(message, Box::new(group)))
 }
 
-pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
+pub(crate) fn parse_sub_name_inner(input: &str, allow_dispatch: bool) -> PResult<'_, String> {
     let (rest, base) = if let Ok((rest, base)) = ident(input) {
         (rest, base)
     } else {
@@ -256,7 +280,7 @@ pub(crate) fn parse_sub_name_inner(input: &str) -> PResult<'_, String> {
         (rest, name)
     };
     // Check for operator category names followed by :<...>
-    let is_op_category = is_operator_category(&base);
+    let is_op_category = is_operator_category(&base) || (allow_dispatch && base == "dispatch");
     if is_op_category && rest.starts_with(":<") {
         // Check for :<<...>> (French-quotes / double-angle-bracket) delimiter
         // In Raku, <<>> is an alternate quoting form; the content is the operator symbol.

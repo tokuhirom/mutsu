@@ -131,7 +131,7 @@ pub(crate) fn sub_decl_body(
         // Parse the name without the built-in null-operator check so we can
         // build a richer X::Comp::Group (with pre/post source spans and the
         // `<>`-means-empty-list worry) using the surrounding source text.
-        let (rest, name) = parse_sub_name_inner(input)?;
+        let (rest, name) = parse_sub_name_inner(input, false)?;
         if let Some(err) = null_operator_group_error(
             &name,
             &format!("sub {}", &input[..input.len() - rest.len()]),
@@ -142,7 +142,7 @@ pub(crate) fn sub_decl_body(
         // A `:[…]`/`:<…>` colon pair still sitting in `rest` means the name meant
         // to declare an operator and the parser could not read it; say what is
         // wrong with it rather than backtracking to "Missing block".
-        if let Some(err) = super::sub_name::operator_name_extension_error(&name, rest) {
+        if let Some(err) = super::sub_name::operator_name_extension_error(&name, rest, false) {
             return Err(err);
         }
         // Validate circumfix/postcircumfix operator part count

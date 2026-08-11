@@ -79,7 +79,7 @@ fn method_decl_body_with_my(
         let name = if is_meta { format!("^{}", name) } else { name };
         (rest, name, Some(expr))
     } else {
-        let (rest, name) = super::super::sub::parse_sub_name(rest)?;
+        let (rest, name) = super::super::sub::parse_method_sub_name(rest)?;
         let name = if is_meta { format!("^{}", name) } else { name };
         (rest, name, None)
     };
