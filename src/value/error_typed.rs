@@ -587,13 +587,17 @@ impl RuntimeError {
     /// answers 400 vs 401 vs 404 from `$param.named` and `$param.type`, and
     /// matches the parameter against the mixin type its `is auth` trait
     /// composed, which only a materialized `Parameter` carries.
-    pub(crate) fn with_parameter_object(self, pd: &crate::ast::ParamDef) -> Self {
+    pub(crate) fn with_parameter_object(
+        self,
+        pd: &crate::ast::ParamDef,
+        interp: Option<&crate::runtime::Interpreter>,
+    ) -> Self {
         if let Some(ValueView::Instance { attributes, .. }) =
             self.exception.as_deref().map(Value::view)
         {
             attributes.insert(
                 "parameter",
-                crate::value::signature::make_parameter_value_from_param_def(pd),
+                crate::value::signature::make_parameter_value_from_param_def(pd, interp),
             );
         }
         self

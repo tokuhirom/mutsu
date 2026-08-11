@@ -48,6 +48,7 @@ impl Interpreter {
                                 &def.param_defs,
                                 def.return_type.clone(),
                             ),
+                            Some(self),
                         )
                         .to_string_value()
                     })

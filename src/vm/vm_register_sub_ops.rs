@@ -31,7 +31,8 @@ impl Interpreter {
                 // Hand the candidate a real Parameter, the way raku does. A
                 // dispatch failure means no candidate accepts this trait name,
                 // which is raku's compile-time "unknown trait" error.
-                let param_val = crate::value::signature::make_parameter_value_from_param_def(p);
+                let param_val =
+                    crate::value::signature::make_parameter_value_from_param_def(p, Some(&*self));
                 let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
                 loan_env!(
                     self,

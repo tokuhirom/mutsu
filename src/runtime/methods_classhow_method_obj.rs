@@ -238,7 +238,7 @@ impl Interpreter {
             crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
         attrs.insert(
             "signature".to_string(),
-            crate::value::signature::make_signature_value(sig_info),
+            crate::value::signature::make_signature_value(sig_info, Some(self)),
         );
 
         // Return type

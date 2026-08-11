@@ -115,7 +115,10 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
             && let Ok((r3, _)) = parse_char(r3, ')')
         {
             let sig_info = param_defs_to_sig_info(&param_defs, return_type);
-            return Ok((r3, Expr::Literal(make_signature_value(sig_info))));
+            // No interpreter is available at parse time, so a user-declared
+            // subset parameter type in a bare `:(...)` signature literal is
+            // left unresolved (see resolve_subset_base in value/signature.rs).
+            return Ok((r3, Expr::Literal(make_signature_value(sig_info, None))));
         }
 
         // Fallback path: permissive parsing for legacy forms like :(:$a = True)
