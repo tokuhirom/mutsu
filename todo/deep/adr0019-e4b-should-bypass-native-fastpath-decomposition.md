@@ -262,3 +262,21 @@ category-2 term only ever checks it for `is_instance`. Whoever writes the
 authoritative switch must gate `NativeCallBinding` (like `Native` already
 gates on `definite`/`TYPE_OBJECT_OK`) by `is_instance`/`NativeCallShape::definite`
 at the point it drives a real decision, not trust bare candidate presence.
+
+**Update (step 12, 2026-08-11, landed):** the Instance branch's category-3
+cutover from step 1's finding is live: `has_user_method(..) ||
+has_public_accessor(..)` collapsed into one `resolve_user_method_or_accessor(..).is_some()`
+call, with the function restructured into a `match target.view()` (one arm
+per receiver kind) instead of the old flat OR-chain. Also decided,
+explicitly, NOT to route category 2 (`is_native_method`) through
+`resolve_sequence`'s `NativeCallBinding` candidate at this call site: both
+compute the exact same MRO walk, so swapping in the resolver here would only
+add the cost of building a full sequence (plus unused `User`/`Native`
+candidates) for zero correctness gain — `NativeCallBinding` is for a future
+multi-candidate consumer, not a drop-in replacement for a single boolean
+fact already answered by a direct, cheaper call. See the ADR's step-12
+progress note for the full verification record (`cargo test --lib`, `prove
+t/`, a roast smoke subset). Still open: whether `Native` (the row-catalog
+candidate) is ever worth consuming to replace the `native_method_{0,1,2}arg`
+dispatch decision itself, given the same tradeoff likely applies there too —
+check that before assuming there is more plumbing work before E4b is done.

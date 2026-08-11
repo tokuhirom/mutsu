@@ -2701,6 +2701,53 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     No dispatch code changed; two new tests pin both gaps.
     Verified: `cargo build`, `cargo test --lib` (779 tests), `cargo clippy
     -- -D warnings`, `cargo fmt --check` all clean.
+    **Progress 2026-08-11** (step 12, category 3 landed live): implemented
+    the Instance-branch half of step 11's "eventual switch" shape —
+    `should_bypass_native_fastpath`'s two separate
+    `has_user_method(class_name, method) || has_public_accessor(class_name,
+    method)` calls collapse into one `resolve_user_method_or_accessor(class_name,
+    method).is_some()` call, exactly the substitution step 1 already
+    shadow-verified safe (2/36992 unrelated mismatches). The function was
+    restructured around a `match target.view()` with one arm per receiver
+    kind rather than the original flat OR-chain of `matches!` guards, so the
+    Instance and Package branches are now visibly separate blocks instead of
+    interleaved arms — making step 11's finding ("Package needs its own
+    narrower check, not a derivation of the Instance branch's helper")
+    structural rather than a comment to remember. `is_native_method`
+    (category 2) deliberately stays a direct call rather than routing
+    through `resolve_sequence`'s `NativeCallBinding` candidate: both compute
+    the identical MRO walk (`resolve_sequence`'s own detection mirrors
+    `is_native_method`, per its doc comment), so building a full sequence
+    here would add cost — one MRO walk plus wasted `User`/`Native` candidate
+    construction — for zero correctness gain over the existing single-fact
+    call; `NativeCallBinding` earns its keep at a future multi-candidate
+    consumer (E5-E7), not this one-boolean check. The class-level-attr arm
+    (category 4) and the Package branch's bare `has_user_method` stay
+    explicit, unchanged, per step 11. Verified: `cargo build`, `cargo test
+    --lib` (779 tests, including the three category-1-decomposition/step-11
+    pinning tests), `cargo clippy -- -D warnings`, `cargo fmt --check`, the
+    full local `prove -j4 t/` suite (3012 files / 28237 tests) all green;
+    a release-build roast smoke subset (`S12-attributes/`, `S17-supply/`,
+    `S17-procasync/`, `S32-io/`, 127 files / 3395 tests) has exactly one
+    failure, `S12-attributes/trusts.t`, confirmed pre-existing and unrelated
+    (reproduces identically against the unmodified `main` binary — a
+    `B trusts A` unresolved-attribute-visibility bug, not in
+    `roast-whitelist.txt`, out of scope here). **What remains before E4b can
+    be marked done:** this is one slice of the switch, not the whole box —
+    the Instance branch's `NativeCallBinding`-from-`resolve_sequence`
+    question above is now closed (deliberately not adopted, with a reason),
+    but nothing yet reads `resolve_sequence`'s `Native` candidate (design
+    decision 4's row-catalog kind, landed shadow-only in step 9) to replace
+    the native-cascade dispatch decision itself — `should_bypass_native_fastpath`
+    still gates a separate `native_method_{0,1,2}arg` call at its one call
+    site rather than the resolver deciding which candidate wins outright.
+    Whether that final consumption is worth doing given `Native`'s
+    candidate-vs-direct-cascade-call tradeoff mirrors the same "no gain over
+    a direct call" question step 12 answered for `NativeCallBinding` — the
+    next session should check that before assuming there is more E4b
+    plumbing work left to do, rather than treating the ADR bullet's original
+    "should_bypass_native_fastpath deleted" phrasing as still literally the
+    target shape.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
