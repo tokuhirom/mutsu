@@ -296,18 +296,24 @@ impl Interpreter {
                     || (self.has_class_level_attr(&class_name, method)
                         && !self.has_public_accessor(&class_name, method)))
         };
-        let native_binding_owner = if is_instance {
-            let chain = self.dispatch_mro(target);
-            let native_shape =
-                super::resolution_sequence::NativeCallShape::new(arg_count, is_instance);
-            let seq = self.resolve_sequence(&chain, Symbol::intern(method), native_shape);
-            seq.candidates.iter().find_map(|c| match c {
-                ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
-                ResolvedCandidate::User { .. } | ResolvedCandidate::Native { .. } => None,
-            })
-        } else {
-            None
-        };
+        // ADR-0019 E4b step 10 scoping: built for BOTH receiver kinds, not just
+        // Instance. `is_native_method` (`real`'s category-2 term above) is
+        // deliberately never checked for a Package receiver -- calling an `is
+        // native(&sym)` binding through the bare type object rather than an
+        // instance is not a case the real bypass logic accounts for. Widening
+        // this shadow-only check to Package too (rather than short-circuiting
+        // to `None`) answers, empirically, whether `resolve_sequence`'s
+        // presence-only `NativeCallBinding` walk (which does not distinguish
+        // receiver kind) ever actually disagrees with that omission --
+        // load-bearing before the eventual authoritative switch can safely
+        // consume `resolve_sequence` uniformly for both receiver kinds.
+        let chain = self.dispatch_mro(target);
+        let native_shape = super::resolution_sequence::NativeCallShape::new(arg_count, is_instance);
+        let seq = self.resolve_sequence(&chain, Symbol::intern(method), native_shape);
+        let native_binding_owner = seq.candidates.iter().find_map(|c| match c {
+            ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
+            ResolvedCandidate::User { .. } | ResolvedCandidate::Native { .. } => None,
+        });
         let shadow = native_binding_owner.is_some()
             || self
                 .resolve_user_method_or_accessor(&class_name, method)

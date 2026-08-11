@@ -246,3 +246,19 @@ the full verification record. Still open: actually consuming `User`/
 `NativeCallBinding`/`Native` together to replace `should_bypass_native_fastpath`
 at its one call site — that is the authoritative switch itself, not attempted
 here.
+
+**Update (step 10, 2026-08-11, scoping finding — read before attempting the
+authoritative switch):** `NativeCallBinding` does NOT generalize across
+receiver kind the way `Native` already does. A widened shadow sweep (see the
+ADR's step-10 note) found `resolve_sequence`'s presence-only
+`NativeCallBinding` walk disagreeing with the real bypass decision 143 times
+out of 20634 checks, always for a `Package` (type-object) receiver:
+`ClassDef::native_methods` conflates instance-method names with class-level
+factory-method names under one flag (`Supply.interval`/`Compiler.id`, answered
+by a hardcoded special case in `methods_instance_ops.rs`, never reaching
+`should_bypass_native_fastpath` at all), so `is_native_method`'s true answer
+is irrelevant at a `Package` receiver — which is exactly why the real
+category-2 term only ever checks it for `is_instance`. Whoever writes the
+authoritative switch must gate `NativeCallBinding` (like `Native` already
+gates on `definite`/`TYPE_OBJECT_OK`) by `is_instance`/`NativeCallShape::definite`
+at the point it drives a real decision, not trust bare candidate presence.
