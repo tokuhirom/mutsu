@@ -72,6 +72,12 @@ impl Interpreter {
         let saved_env = self.clone_env();
         let saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);
+        // See the matching comment in `force_lazy_list_vm_inner`: this inline
+        // exec bypasses closure dispatch, and `LazyList` has no upvalue array
+        // of its own, so reset to empty for the duration (the fallback
+        // by-name env read is always correct here, since the gather body's
+        // captures are reachable through the scoped/resumed env below).
+        let saved_upvalues = std::mem::take(&mut self.upvalues);
 
         // Each gather instance is its own state-variable scope (a fresh block
         // clone per `gather` evaluation): install its id so `state`
@@ -281,6 +287,7 @@ impl Interpreter {
         self.state_scope_id = saved_state_scope;
         self.locals = saved_locals;
         self.stack = saved_stack;
+        self.upvalues = saved_upvalues;
 
         run_result?;
 

@@ -155,6 +155,14 @@ impl Interpreter {
         let mut out = Vec::with_capacity(n);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_locals = std::mem::take(&mut self.locals);
+        // `run_reuse` executes the thunk's compiled ops directly on `self`
+        // without resetting `self.upvalues` (unlike `with_nested_registers`,
+        // which the map/grep eager loops go through) -- so a `GetUpvalue` in
+        // the thunk body would otherwise index whatever array the ENCLOSING
+        // frame installed, silently reading an unrelated capture on an index
+        // collision. Install the thunk's own upvalues for the duration. See
+        // todo/tickets/inline-closure-exec-sites-skip-upvalue-array-install.md.
+        let saved_upvalues = std::mem::replace(&mut self.upvalues, data.upvalues.clone());
 
         for _ in 0..n {
             match self.run_reuse(&code, &compiled_fns) {
@@ -172,6 +180,7 @@ impl Interpreter {
                 Err(e) => {
                     self.stack = saved_stack;
                     self.locals = saved_locals;
+                    self.upvalues = saved_upvalues;
                     // Restore env
                     for (k, orig) in saved {
                         match orig {
@@ -190,6 +199,7 @@ impl Interpreter {
 
         self.stack = saved_stack;
         self.locals = saved_locals;
+        self.upvalues = saved_upvalues;
         // Restore env, but keep mutations to arrays (e.g. shift/pop
         // inside the thunk should persist).
         for (k, orig) in saved {

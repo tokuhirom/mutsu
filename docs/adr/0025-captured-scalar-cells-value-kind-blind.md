@@ -135,14 +135,26 @@ the block body indexes the ENCLOSING closure's array. The protect block's
 newly-boxed `$l` Lock cell; `$r += $i` became `$r += Lock` and accumulated
 nothing. Latent until now because `capture_upvalues` freezes `Some` only
 for `ContainerRef` cells — rare pre-slice-1. Both protect sites now swap
-the block's array in around the exec (restored after); the remaining
-inline-exec sites (eager map/grep `run_reuse`, one arith site) are
-enumerated for the same treatment in
-`todo/tickets/inline-closure-exec-sites-skip-upvalue-array-install.md` —
-finish that audit BEFORE or WITH slice 2, since more cells widen exposure.
-This is the expected shape of slice-1 fallout: cells entering paths that
-never saw them, each surfacing as a deterministic test failure (the safety
-net working, per CLAUDE.md's risk definitions).
+the block's array in around the exec (restored after).
+
+**Update: the follow-up audit is complete** (see
+`news/2026-08/upvalue-array-inline-exec-audit.md`). Every other
+"exec a Sub's compiled code inline, outside closure dispatch" site was
+checked: the eager map/grep `run_reuse` loops (and every `run_nested`/
+`run_compiled_block` caller) already run inside `with_nested_registers`,
+which resets `self.upvalues` to empty on entry — safe by construction, since
+an out-of-range `GetUpvalue` index always falls back to a by-name env read.
+The one genuinely unguarded arith site (`vm_xx_repeat_thunk`, `EXPR xx N`)
+and two VM-native `gather`/`take` forcing paths
+(`force_lazy_list_vm_inner`, `force_lazy_list_vm_n_inner` — a `LazyList` has
+no upvalue array of its own, so these reset to empty rather than installing
+a substitute) now get the same swap-or-reset treatment. The proposed
+structural fix (an RAII guard making "`self.upvalues` belongs to the
+currently-executing cc" a property enforced once, not per-site) remains a
+candidate for slice 2 proper, now that the site inventory is complete. This
+is the expected shape of slice-1 fallout: cells entering paths that never
+saw them, each surfacing as a deterministic test failure (the safety net
+working, per CLAUDE.md's risk definitions).
 
 CI's full roast then caught a second member of the same fallout class
 (deterministic across all three jobs):
