@@ -592,7 +592,7 @@ impl Compiler {
                 self.code.emit(OpCode::HyperSlice(*adverb as u8));
             }
             // Deferred heredoc interpolation
-            Expr::HeredocInterpolation(content) => {
+            Expr::HeredocInterpolation(content, _) => {
                 let resolved = crate::parser::interpolate_heredoc_content(content);
                 self.compile_expr(&resolved);
             }

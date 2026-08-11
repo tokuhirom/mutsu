@@ -136,8 +136,16 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
             .unwrap_or(after_terminator);
 
         // Process content based on flags
+        //
+        // A `}` remaining on the heredoc marker's own line (before the body/
+        // terminator, spliced in below via `combined`) means an enclosing
+        // block closes on that same line, ahead of this heredoc's terminator —
+        // the one shape where a `my` local declared in that block can be out
+        // of scope by the time Raku resolves the heredoc body. See the
+        // `HeredocInterpolation` doc comment and `check_heredoc_scope_errors`.
+        let closes_block_same_line = rest_of_line.contains('}');
         let expr = if interpolate {
-            Expr::HeredocInterpolation(content)
+            Expr::HeredocInterpolation(content, closes_block_same_line)
         } else if flags.has_interpolation() || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
             process_content_with_flags(&content, flags)
