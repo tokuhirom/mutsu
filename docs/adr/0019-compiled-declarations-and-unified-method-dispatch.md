@@ -2579,6 +2579,62 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `Native` together to make the actual bypass/dispatch decision at
     `call_method_with_values`'s one call site, replacing
     `should_bypass_native_fastpath` outright — not yet attempted.
+    **Progress 2026-08-11** (step 10, scoping finding, docs + shadow-widening
+    only): before attempting the authoritative switch, checked whether
+    `resolve_sequence`'s presence-only `NativeCallBinding` walk — which does
+    not distinguish receiver kind — safely generalizes to a `Package`
+    (type-object) receiver, since `should_bypass_native_fastpath`'s real
+    category-2 term (`is_native_method`) is deliberately checked *only* for
+    `is_instance` (`methods_native_bypass.rs` line ~287; the `!is_instance`
+    branch never calls it). `shadow_check_bypass_user_method_categories`
+    already built `native_binding_owner` behind an `if is_instance` guard
+    (step 3) — widening it to run unconditionally (still shadow-only,
+    `record_bypass_shadow_check` unchanged) let the existing
+    `bypass_shadow_checks`/`_mismatches` counters answer the question with
+    real data instead of a guess. **Answer: no, it does not generalize** — a
+    fixed per-process-file `MUTSU_VM_STATS` sweep (3011 `t/` files, `-P 8`,
+    same torn-output fix step 3 used) went from the already-landed baseline
+    34/20634 mismatches to **177/20634**, a real +143 increase, all
+    `real=false shadow=true` (the widened check now sees a `NativeCallBinding`
+    candidate for a call the real decision says is NOT bypassed). Root cause,
+    confirmed by reading both sides: `ClassDef::native_methods` for
+    `"Supply"` (`runtime_init.rs`) conflates two unrelated vocabularies under
+    one flag — genuine instance methods (`emit`/`tap`/`act`/...) AND
+    class-level factory-method names (`interval`/`delayed`/`merge`/`Channel`/
+    `Promise`/`collate`/`categorize`/..., called on the bare `Supply` type
+    object, e.g. `Supply.interval(1)`) — and `is_native_method` cannot tell
+    them apart from the flag alone. The factory names are answered by a
+    completely different mechanism, a hardcoded class-method special case in
+    `methods_instance_ops.rs` (`Supply.interval`/`Compiler.id`, alongside the
+    pre-existing `Instant.from_posix`) that never reaches
+    `call_method_with_values`/`should_bypass_native_fastpath` for these names
+    at all — so `is_native_method`'s true answer is simply irrelevant to the
+    real decision at a `Package` receiver, and category 2's `is_instance`
+    restriction was already the correct, deliberate fix for exactly this
+    conflation, not an oversight. 88% of the +143 (126) is `Supply.interval`
+    alone (one hot loop in the sweep corpus calling it repeatedly); the tail
+    is `Thread.is-initial-thread` (2, hardcoded-table, not registry, same
+    receiver-kind issue), `Supply.{schedule-on,Promise,collate,categorize}`
+    (4, same conflated-registry cause), `Encoding::Registry.find` (9), and
+    `Compiler.id` (2, the same special-cased-elsewhere shape as
+    `Supply.interval`). **Consequence for the authoritative switch:** a
+    `NativeCallBinding` candidate must stay gated by `is_instance` /
+    `NativeCallShape::definite` wherever it drives a real decision — mirroring
+    how `Native` (step 9) already gates on `definite`/`TYPE_OBJECT_OK` for the
+    exact same reason (a name meaning different things at different
+    definedness). `resolve_sequence` itself was NOT changed (still
+    unconditionally emits `NativeCallBinding` regardless of definedness,
+    since it is a shape-independent candidate universe by design — decision 4
+    says nothing should be filtered out at build time); the gating belongs at
+    the *consumer*, same as `Native`'s own filtering already lives in
+    `native_row_servable` rather than in candidate construction. Left as a
+    documented, empirically-grounded ledger entry (matching E1a's
+    accepted-mismatch precedent) rather than a code change beyond the
+    shadow-check widening itself, which stays landed since it is a strictly
+    more informative probe than the `is_instance`-gated version it replaces.
+    Verified: `cargo build`, `cargo test --lib`, `cargo clippy -- -D
+    warnings`, `cargo fmt --check` all clean; the widening is shadow-only
+    (`MUTSU_VM_STATS`-gated), zero real-dispatch behavior change.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
