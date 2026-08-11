@@ -1135,3 +1135,38 @@ reproducing the same 6 failures on `main` with `MUTSU_VM_STATS=1` before this ch
 **E6a's `CallMethodMut` measurement is done. Still to do**: `CallMethodDynamicMut` and
 `call_method_mut_with_values` measurement slices (mirroring E5 steps 2/4), then the Tier-A helper
 survey, then the actual E6b/E6c/E6d cutover work.
+
+## Measurement slice results — CallMethodDynamicMut (E6a, second slice)
+
+Landed 2026-08-11: instrumented `exec_call_method_dynamic_mut_op`
+(`src/vm/vm_call_method_mut_ops.rs:347-433`), a much smaller function than `CallMethodMut`'s
+~87 lines vs ~2300. Same counter functions, entry key `"callmethoddynamicmut"`, pure insertions
+(14 lines), zero behavior change.
+
+The function has exactly four completion shapes: the `.+`/`.*` modifiers (`modifier-plus`/
+`modifier-star` intercepts, delegating to `call_method_all_with_fallback`, its own already-measured
+entry), a `$obj.$coderef(...)` call-sub-value form (`call-sub-value` intercept), a narrow native fast
+path for dynamic-name Buf mutating writes (`try_native_buf_mut`, outcome `native`), and the generic
+fallback to `vm_call_method_mut_with_values` (outcome `user`, the interpreter slow path — marked
+`// TODO: compile to bytecode` in the source already). No accessor probe, no distinct not-found
+completion (the error just propagates via `?`), matching the design doc's inventory-correction
+observation that this entry "reaches the interpreter with no [compiled-method] probe at all" — the
+`try_native_buf_mut` fast path is narrow (Buf-only) rather than a general native probe.
+
+Verified via 5 individually-run files (the same file set E5 step 2 used for `CallMethodDynamic`,
+since this is its Mut twin): `buf-write-native.t` (`native=1` == opcode `CallMethodDynamicMut=1`),
+`format-class.t` (`user=4` == 4), `indirect-method-call-lvalue.t` (`user=1` == 1),
+`self-in-nested-sub-coherence.t` (`user=1` == 1), `array-value-path-mutation.t` (0 in both — the
+entry simply isn't exercised by that file). 5/5 exact matches.
+
+Full `t/` sweep (3023 files, same 6 pre-existing `MUTSU_VM_STATS`-stderr files noted in the
+`CallMethodMut` section above, unrelated): `user=29`, `call-sub-value=11` (== `intercept=11`),
+`native=1`. Disjoint total 41 — a low-traffic entry, consistent with E5 step 2's finding that
+`CallMethodDynamic` itself (this entry's non-mut twin) was "far lower-traffic" than `CallMethod`.
+No `modifier-plus`/`modifier-star` traffic in `t/` (0 — matches `CallMethodDynamic`'s own 0 for
+the same modifiers in E5 step 2's sweep). `make test` (3023 files/28293 tests) green; `cargo
+clippy -- -D warnings` and `cargo fmt` clean.
+
+**E6a's `CallMethodDynamicMut` measurement is done. Still to do**: `call_method_mut_with_values`
+measurement slice (the second slow path, `runtime/methods_mut_dispatch.rs`), the Tier-A helper
+survey, then E6b/E6c/E6d cutover.
