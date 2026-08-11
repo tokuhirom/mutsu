@@ -501,13 +501,98 @@ impl Interpreter {
             }
         }
 
-        // If we get here (element is not Nil or no type constraint),
-        // fall through to do the actual nested assignment on the current element.
-        // For now, just return the value (the assignment silently does nothing
-        // if the intermediate value is not a container).
-        // TODO: implement proper nested assignment for non-Nil elements.
-        let _ = value;
-        Ok(Value::NIL)
+        // The accessor returned a plain Array/Hash container (e.g. `has @.cell`
+        // — `.cell` exposes the shared attribute array). mutsu's containers are
+        // copy-on-write (no interior mutability for element cells), so writing
+        // `$t.cell[0][1] = v` requires rebuilding both the inner and outer
+        // container and writing the outer one back through the accessor's
+        // setter — the same COW + write-back shape as the single-level
+        // `builtin_index_assign_method_lvalue` above, applied twice.
+        let var_name = args.get(5).map(|v| v.to_string_value()).unwrap_or_default();
+        let old_array_arc = match container.view() {
+            ValueView::Array(arc, ..) => Some(arc.clone()),
+            _ => None,
+        };
+        let old_hash_arc = match container.view() {
+            ValueView::Hash(arc) => Some(arc.clone()),
+            _ => None,
+        };
+        let updated = match container.view() {
+            ValueView::Array(items, kind) => {
+                let idx = crate::runtime::to_int(&inner_index) as usize;
+                let Some(inner) = items.get(idx).cloned() else {
+                    return Ok(Value::NIL);
+                };
+                let new_inner = Self::assign_indexed_element(&inner, &_outer_index, &value)?;
+                let mut new_items = (**items).clone();
+                new_items[idx] = new_inner;
+                Value::array_with_kind(crate::gc::Gc::new(new_items), kind)
+            }
+            ValueView::Hash(h) => {
+                let key = inner_index.to_string_value();
+                let Some(inner) = h.get(&key).cloned() else {
+                    return Ok(Value::NIL);
+                };
+                let new_inner = Self::assign_indexed_element(&inner, &_outer_index, &value)?;
+                let mut new_hash = (**h).clone();
+                new_hash.insert(key, new_inner);
+                Value::hash(new_hash)
+            }
+            _ => return Ok(Value::NIL),
+        };
+
+        if let Some(old_arc) = &old_array_arc {
+            self.propagate_shared_array_in_instances(old_arc, &updated);
+            self.overwrite_array_bindings_by_identity(old_arc, updated.clone());
+        }
+        if let Some(old_arc) = &old_hash_arc {
+            self.propagate_shared_hash_in_instances(old_arc, &updated);
+            self.overwrite_hash_bindings_by_identity(old_arc, updated.clone());
+        }
+
+        self.assign_method_lvalue_with_values(
+            if var_name.is_empty() {
+                None
+            } else {
+                Some(var_name.as_str())
+            },
+            target,
+            &method,
+            Vec::new(),
+            updated,
+            true,
+        )?;
+        Ok(value)
+    }
+
+    /// Rebuild `container` (an Array or Hash) with `value` assigned at `index`,
+    /// copy-on-write. Shared by the nested method-accessor index-assign above.
+    fn assign_indexed_element(
+        container: &Value,
+        index: &Value,
+        value: &Value,
+    ) -> Result<Value, RuntimeError> {
+        match container.view() {
+            ValueView::Array(items, kind) => {
+                let idx = crate::runtime::to_int(index) as usize;
+                let mut new_items = (**items).clone();
+                if idx >= new_items.len() {
+                    new_items.resize(
+                        idx + 1,
+                        Value::package(crate::symbol::Symbol::intern("Any")),
+                    );
+                }
+                new_items[idx] = value.clone();
+                Ok(Value::array_with_kind(crate::gc::Gc::new(new_items), kind))
+            }
+            ValueView::Hash(h) => {
+                let key = index.to_string_value();
+                let mut new_hash = (**h).clone();
+                new_hash.insert(key, value.clone());
+                Ok(Value::hash(new_hash))
+            }
+            _ => Ok(container.clone()),
+        }
     }
 
     /// Assign a value into a nested multi-dimensional array structure.
