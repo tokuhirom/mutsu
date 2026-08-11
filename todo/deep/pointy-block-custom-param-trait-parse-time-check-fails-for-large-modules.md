@@ -155,8 +155,11 @@ most plausible explanation and this ticket as watch-only.
 
 ## 2026-08-11: the flip recurred — memo theory now REFUTED per the protocol above
 
-While investigating an unrelated hang
-(`todo/tickets/http-router-named-urls-rc124-timeout.md`), a plain `cargo
+While investigating an unrelated hang (since resolved as a real bug --
+`news/2026-08/parameter-slurpy-positional-introspection-fix.md` -- and
+confirmed independent of this ticket: the same binary that failed
+`http-router.rakutest` with "unknown trait" passed
+`http-router-named-urls.t` 39/39 cleanly), a plain `cargo
 build` from this session's starting commit (no functional source changes,
 just an unrelated one-line addition to `state_supplier.rs` later reverted)
 flipped `http-router.rakutest` back to **0/83** — first-route "unknown trait

@@ -351,10 +351,14 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     attrs.insert("type".to_string(), type_val);
     attrs.insert("type_captures".to_string(), Value::array(type_captures));
 
+    // Any slurpy variant (*@a, **@a, +a) reports true here — `slurpy` and
+    // `onearg`/`double_slurpy` are tracked as separate flags internally,
+    // but Raku's `Parameter.slurpy` is true for all three.
+    let is_slurpy_any = p.slurpy || p.double_slurpy || p.onearg;
     // Slurpy hash (*%named) is considered named in Raku
     let is_named = p.named || (p.slurpy && p.sigil == '%');
     attrs.insert("named".to_string(), Value::Bool(is_named));
-    attrs.insert("slurpy".to_string(), Value::Bool(p.slurpy));
+    attrs.insert("slurpy".to_string(), Value::Bool(is_slurpy_any));
     attrs.insert("sigil".to_string(), Value::str(p.sigil.to_string()));
     attrs.insert("multi-invocant".to_string(), Value::Bool(p.multi_invocant));
 
@@ -374,10 +378,10 @@ fn build_parameter_attrs(p: &SigParam) -> HashMap<String, Value> {
     // invocant
     attrs.insert("invocant".to_string(), Value::Bool(p.is_invocant));
 
-    // positional: not named and not capture
+    // positional: not named, not capture, and not any slurpy variant
     attrs.insert(
         "positional".to_string(),
-        Value::Bool(!p.named && !p.is_capture),
+        Value::Bool(!p.named && !p.is_capture && !is_slurpy_any),
     );
 
     // capture

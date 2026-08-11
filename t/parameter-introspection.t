@@ -1,6 +1,6 @@
 use Test;
 
-plan 45;
+plan 51;
 
 sub j(*@i) {
     @i.map({ $_ ?? '1' !! '0' }).join(' ');
@@ -100,6 +100,24 @@ sub j(*@i) {
     my @l = &f.signature.params;
     is @l[0].positional, True,  '$x is positional';
     is @l[1].positional, False, ':$y is not positional';
+}
+
+# Slurpy variants: .slurpy is True and .positional is False for all of
+# *@a, **@a, and the sigilless +a (single-arg-rule) slurpy -- Cro::HTTP::
+# Router's link generator relies on this to detect a slurpy positional
+# param when building a URL from extra positional args.
+{
+    sub g1(*@a) { };
+    is &g1.signature.params[0].slurpy,     True,  '*@a .slurpy is True';
+    is &g1.signature.params[0].positional, False, '*@a .positional is False';
+
+    sub g2(**@a) { };
+    is &g2.signature.params[0].slurpy,     True,  '**@a .slurpy is True';
+    is &g2.signature.params[0].positional, False, '**@a .positional is False';
+
+    sub g3(+a) { };
+    is &g3.signature.params[0].slurpy,     True,  '+a .slurpy is True';
+    is &g3.signature.params[0].positional, False, '+a .positional is False';
 }
 
 # constraint_list: the underlying List behind the .constraints junction
