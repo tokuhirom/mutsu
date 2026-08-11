@@ -3129,6 +3129,36 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
   call_method_mut_with_values (E6a, third slice)". **All three E6a sub-slices are now measured.**
   Still to do: the Tier-A helper survey, then E6b/E6c/E6d.
+  **Progress 2026-08-11** (E6a, Tier-A helper survey, closing E6a): docs-only, no dispatch behavior
+  changed. Cross-checked `native_method_row.rs`'s `MUTATES_RECEIVER` flag (generated once by E2a's
+  2026-08-10 probe) against the ~74 named intercept arms in the two instrumented files plus the 4
+  unnamed Tier-A helpers (`try_native_array_mut`/`try_native_array_splice`/
+  `try_native_hash_mut_bound`/`try_native_buf_mut`, `vm_call_method_mut_ops.rs`). All 41 current
+  `MUTATES_RECEIVER` rows (`Str.subst-mutate`; `List`/`Array` `map`/`grep`/`rotate`/`push`/`pop`/
+  `shift`/`unshift`/`splice`/`append`/`prepend`/`classify`/`categorize`/`rotor`/`produce`/`reduce`;
+  `Hash.push`/`.append`; `Blob.new`/`push`/`pop`/`shift`/`unshift`/`append`/`prepend`/`splice`)
+  also carry arity `N`, so the flag is currently redundant with the arity encoding for its one
+  production reader (`native_row_servable`) — arity `N` alone already excludes them. Clean matches:
+  `Str.subst-mutate`, `Hash.push`/`.append`, `List`/`Array` `push`/`pop`/`shift`/`unshift`/
+  `append`/`prepend`/`splice`/`map`, `Blob` `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/
+  `splice` (plus `Hash.AT-KEY` and `List`/`Array.squish` confirmed correctly *un*flagged). Real
+  gaps found: no row at all for `Pair.freeze`, `Match.make`, `ASSIGN-KEY`/`DELETE-KEY`/`BIND-KEY`/
+  `BIND-POS`, `SetHash.set`/`.unset`/`.grab`/`.grabpairs`, `Collation.set`, the `Blob`
+  `write-bits`/`write-num*`/`write-int*`/`read-*` family, and several owners E2a never probed at
+  all (`Lock`, `Promise`, `Channel`, `LazyList`, `HyperSeq`, `RaceSeq`, `Proxy`, `Iterator`).
+  `BagHash`/`MixHash.grab` are genuinely Tier-A-mutating but flagged `SPECIAL` not
+  `MUTATES_RECEIVER` — traced to the probe only ever grepping `vm_call_method_mut_ops.rs`, never
+  `runtime/methods_mut_dispatch.rs`, where `grab` actually lives. Conversely, `List`/`Array`'s
+  `grep`/`rotate`/`classify`/`categorize`/`rotor`/`produce`/`reduce` rows over-claim
+  `MUTATES_RECEIVER`: all eight names (map included) co-occur only in the `is_array_method`
+  allow-list of the Array-subclass Instance-delegation branch, which routes them through
+  non-mutating helpers — `map` alone turned out to have a *separate*, genuinely-mutating arm
+  (`map-rw-writeback`) elsewhere. No `native_method_row_table.rs` edits landed (both candidate
+  corrections recorded as open findings, not confidently resolvable without re-running the E2a
+  probe methodology). None of this blocks E6b: `native_row_servable` is not consulted by real
+  dispatch today, and E5b's "Native candidate is hint-only, never routing" conclusion already
+  generalizes here. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"Tier-A helper
+  survey (E6a, final sub-slice)". **All of E6a is now closed.** Next: E6b.
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
