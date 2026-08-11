@@ -35,6 +35,22 @@ thread_local! {
     /// an importer outside the cycle would otherwise be pinned to the
     /// truncated view forever.
     static SCAN_GUARD_SKIPS: Cell<u64> = const { Cell::new(0) };
+    /// The outcome of the `use` statement scan that just ran: module name →
+    /// does it activate a slang. Written by `register_module_exports` on
+    /// every path (including the ones that deliberately do NOT scan), read
+    /// once by the parse-time slang hook. The hook must never trigger a scan
+    /// of its own: modules the register step skips (native Test/JSON,
+    /// pragmas, unresolvable names) would otherwise be file-scanned on every
+    /// `use` — Test.rakumod on every test process, ~200ms of debug-build
+    /// parsing each, which 5x'd the CI TAP suite before this record existed.
+    static LAST_USE_SCAN_ACTIVATES_SLANG: RefCell<Option<(String, bool)>> =
+        const { RefCell::new(None) };
+}
+
+fn record_use_scan_outcome(module: &str, activates: bool) {
+    LAST_USE_SCAN_ACTIVATES_SLANG.with(|c| {
+        *c.borrow_mut() = Some((module.to_string(), activates));
+    });
 }
 
 fn note_scan_guard_skip() {
@@ -47,6 +63,7 @@ fn note_scan_guard_skip() {
 /// For `Test`, uses a hardcoded list (Test functions are implemented natively in Rust).
 /// For all other modules, dynamically scans the module file to extract `is export` subs.
 pub(crate) fn register_module_exports(module: &str) {
+    record_use_scan_outcome(module, false);
     if module == "Test" {
         let exports: Vec<InlineModuleExport> = TEST_EXPORTS
             .iter()
@@ -95,6 +112,7 @@ pub(crate) fn register_module_exports(module: &str) {
         m.borrow_mut().remove(module);
     });
     if let Some(scan) = scan {
+        record_use_scan_outcome(module, scan.uses_slangify);
         apply_scan_types(&scan);
         apply_module_exports(&scan.exports);
         for (keyword, how_type) in &scan.declare_keywords {
@@ -451,25 +469,18 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     }
 }
 
-/// ADR-0026 gate: does `module`'s source directly `use` Slangify? Usually a
-/// scan-cache lookup (the `use` statement's own scan just ran) — but a scan
-/// truncated by a `use` cycle is deliberately NOT cached, so this must honor
-/// the same `LOADING_MODULES` recursion guard as `register_module_exports`
-/// or a cyclic `use A`/`use B` pair re-scans forever (stack overflow).
+/// ADR-0026 gate: does `module`'s source directly `use` Slangify? A pure
+/// lookup of the outcome `register_module_exports` just recorded for this
+/// `use` statement — this must NOT trigger a scan of its own (see
+/// `LAST_USE_SCAN_ACTIVATES_SLANG`), so modules the register step skips
+/// (native providers, pragmas, cycle-guarded or unresolvable names) are
+/// simply not slang-activating.
 pub(super) fn module_activates_slang(module: &str) -> bool {
-    let already_loading = LOADING_MODULES.with(|m| m.borrow().contains(module));
-    if already_loading {
-        note_scan_guard_skip();
-        return false;
-    }
-    LOADING_MODULES.with(|m| {
-        m.borrow_mut().insert(module.to_string());
-    });
-    let result = find_and_scan_module(module).is_some_and(|scan| scan.uses_slangify);
-    LOADING_MODULES.with(|m| {
-        m.borrow_mut().remove(module);
-    });
-    result
+    LAST_USE_SCAN_ACTIVATES_SLANG.with(|c| {
+        c.borrow()
+            .as_ref()
+            .is_some_and(|(m, activates)| m == module && *activates)
+    })
 }
 
 /// Collect `(keyword, HOW type name)` pairs from a scanned module's
