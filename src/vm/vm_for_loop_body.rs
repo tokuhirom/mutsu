@@ -266,6 +266,37 @@ impl Interpreter {
                 (name.clone(), val, was_readonly, sigilless_ro, saved_local)
             })
             .collect();
+        // A multi-param loop variable is a FRESH per-iteration binding
+        // (ADR-0023 provenance), but `build_for_bind_stmts` binds it via a
+        // plain `Stmt::Assign`, whose exec writes THROUGH a `ContainerRef`
+        // when the shadowed outer name is a boxed cell — corrupting the outer
+        // binding for every alias of the cell. roast
+        // integration/advent2013-day14.t's `config_combiner`: the captured
+        // vow `$v` is a cell (Instance boxing, ADR-0025 slice 1), and
+        // `for %kvs.kv -> $k, $v` wrote each config Str into that cell, so
+        // `$v.keep(%result)` after the loop called .keep on a Str and the
+        // returned promise never resolved. Sever a scalar cell binding up
+        // front: the save above keeps the cell itself for the post-loop
+        // restore, so only the loop-duration binding becomes a plain fresh
+        // value. `@`/`%`/`&` keep their container-cell aliasing (see the
+        // slot-restore comment below).
+        for (i, name) in spec.multi_param_names.iter().enumerate() {
+            if name.is_empty() || name.starts_with(['@', '%', '&']) {
+                continue;
+            }
+            if matches!(
+                self.env().get(name).map(Value::view),
+                Some(ValueView::ContainerRef(_))
+            ) {
+                self.env_mut().remove(name);
+            }
+            if let Some(slot) = spec.multi_param_locals.get(i).copied().flatten() {
+                let slot = slot as usize;
+                if self.locals[slot].is_container_ref() {
+                    self.locals[slot] = Value::NIL;
+                }
+            }
+        }
         // A multi-parameter loop (`-> $k, $v`) binds its parameters with plain
         // assignments emitted into the body prefix (`build_for_bind_stmts`), and
         // `SetLocal` type-checks an assignment against the *name-keyed* constraint
