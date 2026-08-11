@@ -127,7 +127,7 @@ module).
 
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
-| `csv` | — | Ecosystem (not bundled) | `Text::CSV` is the well-known ecosystem module; not vendored. A high-value gap — CSV is extremely common in scripting use cases. |
+| `csv` | — | Ecosystem (not bundled) | Surveyed 2026-08-11: [csv.md](csv.md). `Text::CSV` (33/33 raku) and `CSV::Table` (10/10 raku) are both healthy under raku but currently blocked on mutsu by one shared, general compiler bug (`todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`); `CSV::Parser` (5/5) already works today as a thinner stopgap. |
 | `configparser` | — | Ecosystem (not bundled) | INI-style config modules exist on the ecosystem; none bundled. |
 | `tomllib` | — | Gap | No bundled TOML parser (mutsu's own `META6.json` handling is JSON, not TOML, so this hasn't been needed internally). |
 | `netrc` / `plistlib` | — | Gap | Niche. |
@@ -289,7 +289,10 @@ most worth a battery survey next (methodology:
 1. **A web framework** (`Cro::HTTP`) — already surveyed and selected, not yet
    bundled; the single biggest hole against the project's own "small web blog"
    yardstick. See [web-framework.md](web-framework.md).
-2. **CSV** (`Text::CSV`) — extremely common in scripting; no survey yet.
+2. **CSV** (`Text::CSV` / `CSV::Table` / `CSV::Parser`) — extremely common in
+   scripting; surveyed 2026-08-11, see [csv.md](csv.md). Blocked on a general
+   compiler bug rather than a weak field — the two strongest candidates are
+   healthy under raku.
 3. **XML parsing** (`XML`) — common for config/data interchange; no survey yet.
 4. **Compression/archiving** (`zlib`/`gzip`/`tarfile`/`zipfile` equivalents) — no
    bundled story at all today.
