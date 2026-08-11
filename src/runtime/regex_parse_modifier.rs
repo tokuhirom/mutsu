@@ -704,7 +704,13 @@ impl Interpreter {
                         | '|'
                         | ':'
                         | '#'
+                        // Both quote chars: an unescaped `"` (or `'`) in the
+                        // spliced pattern reads as a quoted-literal opener and
+                        // swallows the rest of the source — `my $q = '"';
+                        // / $q | x /` lost the alternation split entirely
+                        // (Text::CSV's combine/string quoting).
                         | '\''
+                        | '"'
                         // `%` (and `%%`) is the separator-quantifier infix and `&`
                         // is the conjunction infix; an interpolated scalar matches
                         // *literally* (raku does not re-parse it as regex source),

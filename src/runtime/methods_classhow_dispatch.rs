@@ -648,6 +648,34 @@ impl Interpreter {
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };
+                // `^find_method` on a *multi* method family returns its first
+                // candidate as a carrier Sub tagged with `__mutsu_lookup_class`
+                // / `__mutsu_lookup_method` and no candidate index. Registering
+                // just that carrier would freeze the alias to one signature
+                // (Text::CSV's BEGIN-time `alias` helper maps `column-names`
+                // onto the four-candidate `column_names` multi). Clone the
+                // whole candidate family for the new name instead.
+                let multi_family: Option<Vec<MethodDef>> = (|| {
+                    if sub_data.env.get("__mutsu_lookup_candidate_idx").is_some() {
+                        return None;
+                    }
+                    let ValueView::Str(src_class) =
+                        sub_data.env.get("__mutsu_lookup_class").map(Value::view)?
+                    else {
+                        return None;
+                    };
+                    let ValueView::Str(src_method) =
+                        sub_data.env.get("__mutsu_lookup_method").map(Value::view)?
+                    else {
+                        return None;
+                    };
+                    self.registry()
+                        .classes
+                        .get(src_class.as_ref())
+                        .and_then(|cd| cd.methods.get(src_method.as_ref()))
+                        .filter(|defs| defs.iter().any(|d| d.is_multi))
+                        .cloned()
+                })();
                 // Filter out invocant params from param_defs since MethodDef
                 // stores only the user-visible parameters (the invocant is
                 // added implicitly during dispatch).
@@ -759,7 +787,9 @@ impl Interpreter {
                     );
                 }
                 if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                    class_def.methods.insert(method_name, vec![def]);
+                    class_def
+                        .methods
+                        .insert(method_name, multi_family.unwrap_or_else(|| vec![def]));
                 }
                 self.registry_mut().sync_user_method_entries(&class_name);
                 // Class shape changed (an added BUILD/TWEAK/new flips ctor
