@@ -493,3 +493,52 @@ the `CallMethod`/`CallMethodDynamic` entries — already visible as zero-detail
 intercept arms `modifier-plus`/`modifier-star` in steps 1/2's own tables).
 Once that lands, all four E5 measurement sub-slices are done and E5b
 (`CallMethod` cutover) can start.
+
+### Measurement slice results — call_method_all_with_fallback (E5 step 4)
+
+Landed 2026-08-11: instruments `call_method_all_with_fallback`
+(`src/vm/vm_call_helpers.rs:309-331`, entry name `callmethodallfallback`),
+the last of the four E5 measurement entries named in design decision 4. Pure
+insertion — one `record_dispatch_entry_outcome` call before the native early
+return, one before the `call_method_all_with_values` fallback; no branch,
+condition, or return value changed. `make test` (full `t/`, 3018 files,
+28265 subtests) passes unchanged.
+
+Unlike the opcode entries in steps 1-3, this is a single **shared helper
+function**, not an opcode handler — it has no opcode histogram to check
+disjoint-sum completeness against, and no receiver-normalization/intercept
+gauntlet of its own (its whole body is the two-arm `native`/`user` probe
+already shown above). Its taxonomy is therefore trivial (2 outcomes, 0
+intercept arms) but its *callers* are not: grep confirms 6 call sites
+across 5 files — `CallMethod`'s own `modifier-plus`/`modifier-star`
+intercept arms (measured at the caller in step 1, already known
+zero-detail there), `CallMethodMut` (2 call sites,
+`vm_call_method_mut_ops.rs:76/85`), `CallMethodDynamicMut`
+(`vm_call_method_mut_ops.rs:381/386`), and three call sites unrelated to
+the `.+`/`.*` modifiers entirely: `vm_exec_dispatch.rs:2616` (a `.cache`
+coercion), `vm_var_assign_coerce.rs:341` (a `.Map` coercion), and
+`vm_var_assign_set_local.rs:828` (a cached scalar-accessor probe). The E6
+measurement slice for `CallMethodMut`/`CallMethodDynamicMut` (E6a) will
+re-encounter this same helper as their own `.+`/`.*` outcome source — this
+slice measures the helper itself once, not per-caller, since it is exactly
+the entry the design doc's own inventory names standalone.
+
+Full `t/` sweep (3018 files): 7 files recorded any outcome —
+`callmethodallfallback:user=22`, `callmethodallfallback:native=3`. All 7
+hits were confirmed by inspection to be genuine `.+`/`.*` MRO-walk tests on
+*variable* receivers (`$b.*tag`, `$obj.+m`, `.VAR.+name`) — i.e. they
+compile to `CallMethodMut`/`CallMethodDynamicMut`, not `CallMethod`,
+matching the "bareword/variable receiver picks the Mut opcode" pattern
+steps 1/2 already documented. `t/builtin-mro-all-candidates.t` is the only
+file with `native` traffic (3 of 4 hits): a `.*`/`.+` walk over a built-in
+type, exercising the `builtin_mro_method_candidate_count` multiplication
+path. `user` dominates overall (22 vs 3) but the sample is small (25 total
+hits) — not enough to draw a sub-slice-ordering conclusion on its own; this
+helper's real traffic profile will be clearer once E6a's `CallMethodMut`
+sweep runs (its own `.+`/`.*` arms are the majority caller of this helper,
+per the call-site count above).
+
+**All four E5 measurement sub-slices are now done** (steps 1-4: `CallMethod`,
+`CallMethodDynamic`, the two hyper non-mut opcodes, and this shared helper).
+Per design decision 4's slicing, E5b (`CallMethod` probe-section cutover to
+the E4 resolver decision) can start next.
