@@ -178,6 +178,37 @@ pub(crate) fn array_var(input: &str) -> PResult<'_, Expr> {
     } else {
         (input, "")
     };
+    // Numbered positional-capture array (`@0`, `@1`, ...). Raku defines `@N`
+    // as `$N.list`, so lift to a `Var` + `.list` call and reuse the already-
+    // correct `$N` resolution — mirrors the `@$<name>` handling just below.
+    // Without this, a digit doesn't count as an identifier start, so `@0`
+    // fell through to the bare-`@` (anonymous array) case, silently leaving
+    // the `0` unconsumed as a stray following token.
+    if twigil.is_empty()
+        && let Some(first) = rest.chars().next()
+        && first.is_ascii_digit()
+    {
+        let digits_end = rest
+            .find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(rest.len());
+        let digits = &rest[..digits_end];
+        let trimmed = digits.trim_start_matches('0');
+        let name = if trimmed.is_empty() {
+            "0".to_string()
+        } else {
+            trimmed.to_string()
+        };
+        return Ok((
+            &rest[digits_end..],
+            Expr::MethodCall {
+                target: Box::new(Expr::Var(name)),
+                name: crate::symbol::Symbol::intern("list"),
+                args: vec![],
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // Contextualized scalar specials (e.g., @$/, @$_): parse `$...` then lift
     // to an array variable targeting the same underlying name.
     if twigil.is_empty() && rest.starts_with('$') {
