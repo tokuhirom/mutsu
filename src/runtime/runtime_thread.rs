@@ -145,6 +145,21 @@ impl Interpreter {
         &mut self,
         captured_scalars: &std::collections::HashSet<String>,
     ) -> Self {
+        // A thread spawned BEFORE the first test call must still share the TAP
+        // counter: the first `ok` of the whole program can run on the spawned
+        // thread (e.g. supply-tap check closures in Cro's HTTP/2 serializer
+        // tests, where every assertion of the first `test()` call fires inside
+        // the tap). Without a pre-created `TestState`,
+        // `TapState::clone_for_thread` has nothing to share; the child then
+        // lazily creates a private state whose increments never reach the
+        // parent, and the parent restarts numbering at 1 — "Tests out of
+        // sequence" under prove. Gate on the Test module being loaded: an
+        // empty `TestState` flips `test_mode_active`, which would otherwise
+        // change bare-word resolution for non-Test programs that spawn threads.
+        if self.test_module_loaded() && !self.tap.active() {
+            // `clone_for_thread` below shares the counter of an EXISTING state.
+            self.tap.ensure_state();
+        }
         // Collapse a scoped (multi-tier overlay) env to a flat one first: the
         // shared-var seeding and the child's env clone below iterate the env
         // overlay-only, which would miss parent-chain lexicals on a scoped env.
