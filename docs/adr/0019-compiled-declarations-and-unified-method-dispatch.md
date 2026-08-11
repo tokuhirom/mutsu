@@ -2814,6 +2814,37 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   smaller. This is ONE slice — the box stays open: the remaining E5 measurement
   entries (`CallMethodDynamic`, hyper non-mut paths, `call_method_all_with_fallback`)
   and all cutover sub-slices (E5b/E5c/E5d) are still to do.
+  **Progress 2026-08-11** (E5 step 2, measurement slice for `CallMethodDynamic`):
+  instrumented `exec_call_method_dynamic_op`
+  (`src/vm/vm_call_method_mut_ops.rs:30-345`) with the same two step-1 counter
+  functions, `entry = "callmethoddynamic"` — no new counter functions added.
+  15 intercept arm names (`modifier-plus`/`modifier-star`, `call-sub-value`
+  for `$obj.$coderef(...)`, `return`, `hyper-race-config`, 9 HyperSeq/RaceSeq
+  delegate arms), plus `native`/`user` at the plain probe and `notfound` as the
+  same documented overlay-of-`user` pattern step 1 used. No `accessor` outcome
+  exists at this entry (no fast 0-arg accessor probe here). Pure insertions (70
+  insertions / 1 rewrap of an unchanged single-statement match arm, 0 behavior
+  change). Re-checked the design doc's inventory-correction item 3 ("no native
+  probe and no compiled-method probe gap") against current code: that item is
+  actually about the *Mut* twin (`exec_call_method_dynamic_mut_op`,
+  `CallMethodDynamicMut`, an E6 entry) — `exec_call_method_dynamic_op` itself
+  has both probes, so the design doc's framing for this entry was correct,
+  nothing stale. Verification used 5 targeted `t/` files (of 161 candidates
+  matching dynamic-call syntax or filename) rather than a full sweep — this
+  entry is far lower-traffic than `CallMethod`, so a handful of files sufficed
+  for a clean disjoint-and-complete proof: `array-value-path-mutation.t`
+  (`user=8` of 8), `buf-write-native.t` (`native=5` of 5),
+  `dynamic-method-type-object.t` (`native=3`+`user=1` of 4, overlay
+  `notfound=1`), `format-class.t` (`user=11` of 11), `topic-quoted-method-call.t`
+  (`native=1` of 1) — all five `sum(disjoint outcomes) == CallMethodDynamic`
+  opcode-histogram count, 0 mismatches. No intercept-arm traffic was observed in
+  this targeted set; a full `t/` + whitelisted-roast sweep (CI-scale, as step 1
+  ran) is deferred as out of proportion for this smaller entry. Full taxonomy
+  table and verification detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
+  CallMethodDynamic (E5 step 2)". Still to do: the hyper non-mut paths and
+  `call_method_all_with_fallback` measurement slices, and all cutover
+  sub-slices (E5b/E5c/E5d).
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow
