@@ -2513,6 +2513,26 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     `roast/S32-io/{tell,io-path,lock,open,io-handle,slurp,io-cathandle,spurt}.t`
     subset (8 files, 239 tests) all green. All four "likely reduces"/"mixed"
     category-1 groups from step 2's audit are now resolved.
+    **Progress 2026-08-11** (step 8, category 1): extracted every confirmed
+    category-1 check (steps 2/5/6/7's findings, plus the pre-existing `elems`/
+    exception-render/Real-Numeric-bridge/`Hash.keys` guards) into one
+    dedicated function, `native_fastpath_receiver_state_guard`
+    (`methods_native_bypass.rs`) — a pure reorganization, zero behavior
+    change, directly implementing design decision 3's "receiver-state facts
+    become resolver guards" bucket as the single list E4b's eventual
+    authoritative switch will consult, mirroring how categories 2
+    (`is_native_method`) and 3 (`resolve_user_method_or_accessor`) already
+    have their own dedicated functions well before their resolver-candidate
+    wiring landed. Categories 2/3 (`is_native_method`, `has_user_method`/
+    `has_public_accessor`/`has_class_level_attr`/`mixin_role_has_method`) are
+    deliberately NOT folded in — they stay separate per the three-way split.
+    The lazy-Match branch keeps its own small inline subset rather than
+    calling the new function, since it must avoid `target.view()` (would
+    materialize the lazy value) and only the `squish`/`elems`/exception-render
+    checks can ever apply to a Match receiver anyway. Verified empirically as
+    a genuine no-op: `cargo test --lib` (769 tests), the full local `prove -j4
+    t/` suite (3011 files / 28230 tests), and a full `make roast` run (1435
+    files / 218774 tests, `Result: PASS`, zero new failures) all green.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
