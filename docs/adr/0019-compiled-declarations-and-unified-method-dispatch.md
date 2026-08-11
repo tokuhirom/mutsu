@@ -3089,6 +3089,23 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   and `cargo fmt` clean. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md`
   §"Measurement slice results — CallMethodMut (E6a)". Still to do: `CallMethodDynamicMut` and
   `call_method_mut_with_values` measurement slices, the Tier-A helper survey, then E6b/E6c/E6d.
+  **Progress 2026-08-11** (E6a, second slice, measurement for `CallMethodDynamicMut`):
+  instrumented `exec_call_method_dynamic_mut_op` (`src/vm/vm_call_method_mut_ops.rs:347-433`, a
+  small ~87-line function) with the same counters, entry key `"callmethoddynamicmut"` — 14 lines
+  inserted, zero behavior change. Only four completion shapes exist: `.+`/`.*` modifiers
+  (delegate to the already-measured `call_method_all_with_fallback`), a `$obj.$coderef(...)`
+  call-sub-value form, a narrow `try_native_buf_mut` fast path (dynamic-name Buf mutating
+  writes only), and the generic `vm_call_method_mut_with_values` interpreter fallback — no
+  accessor probe, no distinct not-found completion, confirming the design doc's inventory
+  correction that this entry has no general native/compiled probe. Verified via 5
+  individually-run files (the same set E5 step 2 used for `CallMethodDynamic`), all exact
+  `sum(disjoint outcomes) == CallMethodDynamicMut`-opcode-histogram matches. Full `t/` sweep:
+  `user=29`, `call-sub-value=11` (== `intercept=11`), `native=1`, disjoint total 41 — low
+  traffic, consistent with `CallMethodDynamic`'s own low-traffic finding in E5 step 2.
+  `make test` (3023 files/28293 tests) green; clippy/fmt clean. Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results — CallMethodDynamicMut
+  (E6a, second slice)". Still to do: `call_method_mut_with_values` measurement, the Tier-A
+  helper survey, then E6b/E6c/E6d.
 - [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`

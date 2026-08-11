@@ -378,11 +378,19 @@ impl Interpreter {
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethoddynamicmut",
+                    "modifier-plus",
+                );
                 let vals = self.call_method_all_with_fallback(&target, &method, &args, false)?;
                 self.stack.push(Value::array(vals));
                 return Ok(());
             }
             Some("*") => {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "callmethoddynamicmut",
+                    "modifier-star",
+                );
                 match self.call_method_all_with_fallback(&target, &method, &args, false) {
                     Ok(vals) => self.stack.push(Value::array(vals)),
                     Err(e) if Self::is_method_not_found_error(&e) => {
@@ -404,6 +412,10 @@ impl Interpreter {
             name_val.view(),
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
         ) {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethoddynamicmut",
+                "call-sub-value",
+            );
             let mut call_args = Vec::with_capacity(args.len() + 1);
             call_args.push(Self::invocant_as_positional(target));
             call_args.extend(args);
@@ -416,9 +428,11 @@ impl Interpreter {
             // (`$buf."$write"(...)`) on a mutable Buf instance — mirror the static
             // CallMethodMut path (ledger §D(b)). Type-object / non-Buf receivers and
             // bad arity fall through to the generic fork unchanged.
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamicmut", "native");
             result
         } else {
             // TODO: compile to bytecode — generic mut method fork (ledger §1).
+            crate::vm::vm_stats::record_dispatch_entry_outcome("callmethoddynamicmut", "user");
             self.vm_call_method_mut_with_values(&target_name, target, &method, args)
         };
         match saved_self {
