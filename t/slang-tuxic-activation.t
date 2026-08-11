@@ -8,7 +8,7 @@ use Slang::Tuxic;
 # overrides flip the parser's spaced-call / spaced-methodop modes for the
 # rest of this compilation unit — and only this unit.
 
-plan 8;
+plan 9;
 
 sub foo($a, $b) { $a * $b }
 is foo (3, 5), 15, 'spaced call passes the paren contents as an arg list';
@@ -31,3 +31,12 @@ dies-ok { EVAL q[42.fmt ('-%d-')] },
 # The exclusion list: control keywords stay control flow under Tuxic mode.
 my $kw = do if (1) { 'kw' } else { 'no' };
 is $kw, 'kw', 'if (…) stays an if under Tuxic mode';
+
+# The methodop override covers the `!` dotty too: `self!method (args)` is a
+# private method call with the parenthesized args (Text::CSV's
+# `self!ready (0, $cf)` — its last parse blocker).
+class WithPrivate {
+    method !mul ($a, $b) { $a * $b }
+    method pub () { self!mul (6, 7) }
+    }
+is WithPrivate.new.pub, 42, 'spaced private methodop (self!m (args))';

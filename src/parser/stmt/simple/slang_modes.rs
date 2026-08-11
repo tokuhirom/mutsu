@@ -165,6 +165,35 @@ mod tests {
     }
 
     #[test]
+    fn spaced_private_methodop_mode_parses_bang_ws_paren_as_call() {
+        let stmts = parse_with_modes(TUXIC, "self!ready (0, 2);").unwrap();
+        match first_expr(&stmts) {
+            Expr::MethodCall {
+                name,
+                args,
+                modifier,
+                ..
+            } => {
+                assert_eq!(name.as_str(), "ready");
+                assert_eq!(args.len(), 2);
+                assert_eq!(*modifier, Some('!'));
+            }
+            other => panic!("expected private MethodCall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn spaced_private_methodop_off_unchanged() {
+        // Stock grammar: `self!ready` is a no-arg private call; the
+        // parenthesized list does not attach to it as arguments.
+        if let Ok(stmts) = parse_with_modes(SlangModes::default(), "self!ready (0, 2);") {
+            if let Expr::MethodCall { args, .. } = first_expr(&stmts) {
+                assert!(args.len() < 2, "stock parse must not bind the spaced args");
+            }
+        }
+    }
+
+    #[test]
     fn spaced_call_mode_excludes_control_keywords() {
         let stmts = parse_with_modes(TUXIC, "if (1) { 2 }").unwrap();
         assert!(

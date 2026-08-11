@@ -1318,6 +1318,23 @@ fn postfix_expr_loop_from(
             let after_bang = &rest[1..];
             if let Some((r, name)) = parse_private_method_name(after_bang) {
                 let name = Symbol::intern(&name);
+                // Slang spaced-methodop mode (ADR-0026 §2.3): `self!method (args)`
+                // is a private method call with the parenthesized args — Tuxic's
+                // methodop override covers the `!` dotty too (Text::CSV's
+                // `self!ready (0, $cf)`).
+                let r = if !r.starts_with('(')
+                    && (r.starts_with(' ') || r.starts_with('\t'))
+                    && crate::parser::stmt::simple::slang_spaced_methodop()
+                {
+                    let after_ws = r.trim_start_matches([' ', '\t']);
+                    if after_ws.starts_with('(') {
+                        after_ws
+                    } else {
+                        r
+                    }
+                } else {
+                    r
+                };
                 if r.starts_with('(') {
                     let (r, _) = parse_char(r, '(')?;
                     let (r, _) = ws(r)?;
