@@ -127,7 +127,7 @@ module).
 
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
-| `csv` | — | Ecosystem (not bundled) | Surveyed 2026-08-11: [csv.md](csv.md). `Text::CSV` (33/33 raku) and `CSV::Table` (10/10 raku) are both healthy under raku but currently blocked on mutsu by one shared, general compiler bug (`todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`); `CSV::Parser` (5/5) already works today as a thinner stopgap. |
+| `csv` | — | Ecosystem (not bundled) | Surveyed 2026-08-11: [csv.md](csv.md). Under a no-native-dependency + read-and-generate criterion, `Text::CSV` and `CSV::Table` are the only live candidates (both healthy under raku — 33/33 and 10/10 files — but blocked on mutsu by one shared, general compiler bug, `todo/tickets/heredoc-scope-check-false-positive-on-sub-body.md`); read-only `CSV::Parser` is disqualified despite already working today. |
 | `configparser` | — | Ecosystem (not bundled) | INI-style config modules exist on the ecosystem; none bundled. |
 | `tomllib` | — | Gap | No bundled TOML parser (mutsu's own `META6.json` handling is JSON, not TOML, so this hasn't been needed internally). |
 | `netrc` / `plistlib` | — | Gap | Niche. |
