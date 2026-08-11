@@ -1561,3 +1561,68 @@ a data-quality backlog for whoever eventually wants `native_row_servable` to bec
 for mutation-adjacent methods (relevant to a later Phase F cleanup, not to E6b's cutover shape).
 
 **All of E6a is now closed.** Next: E6b.
+
+## E6b step 1: shadow-verifying the Native candidate at CallMethodMut itself
+
+Mirrors E5b step 1's protocol exactly, applied to `CallMethodMut`'s own native-probe completion
+shapes instead of `CallMethod`'s. Reused `shadow_check_native_row_candidate`
+(`src/runtime/resolution_sequence.rs:281`, unmodified, no new counter) at every
+`record_dispatch_entry_outcome("callmethodmut", "native"/"user")` call site inside
+`exec_call_method_mut_op_impl` (`src/vm/vm_call_method_mut_ops.rs`, ~10 sites: the five Tier-A
+helper completions — `try_native_array_mut`, `try_native_hash_mut_bound`,
+`try_native_array_splice`, `try_native_buf_mut`, `try_native_iterator` — the `__mutsu_array_storage`
+delegation block's native/user pair, and the generic-fork native/user pair) — pure insertion, 106
+lines, 0 deletions, zero behavior change. One site was deliberately **not** instrumented: the
+`skip_native` branch (user-defined override / pseudo-method / Stash `AT-KEY` / junction `.gist`),
+because that path never consults the arity cascade at all — there is no "did the cascade serve
+this call" outcome to compare the `Native` candidate against there, unlike the genuine
+native/user completions.
+
+Full `t/` sweep (3026 files, `prove -j8`, `MUTSU_VM_STATS=1`): 118117 shadow checks, 5756
+mismatches (4.88% — about double `CallMethod`'s E5b step 1 rate of ~2.4%). The 20 files that fail
+under `MUTSU_VM_STATS=1` are exactly the pre-existing exact-stderr-assertion list E6a's third slice
+already catalogued (`cli-lines-regressions.t`, `command-line-negation.t`,
+`constant-hash-coerce-once.t`, `dd-instance.t`, `exit-skips-main-dispatch.t`, `get-out.t`,
+`io-handle-lock.t`, `io-handle-stdout-stderr-native.t`, `io-pipe-slurp-rest.t`, `is-run.t`,
+`note-with-parens.t`, `precomp-warm-cache-parity.t`, `proc-async.t`, `quietly.t`,
+`say-env-roundtrip.t`, `sink-warning.t`, `slip-listop-args.t`, `undeclared-routine-compile-time.t`,
+`vendored-real-test-module.t`, `weird-errors-parse-forms.t`) — no new failures, confirming zero
+behavior change. `cargo build`, `cargo clippy -- -D warnings`, `cargo fmt --check` clean.
+
+The mismatch breakdown splits into three classes, one of them new to E6b and not present in E5b's
+`CallMethod` data at all:
+
+1. **Tier-A structural exclusion (2074, 36% of mismatches) — real=true/shadow=false, all
+   `native_row_owner=None`, method in `push`(1459)/`shift`(422)/`splice`(65)/`append`(53)/
+   `unshift`(36)/`pop`(30)/`prepend`(7)/`classify`(1)/`categorize`(1).** This is **by design, not
+   a bug**: `native_row_servable` (`src/builtins/native_method_row.rs:110-128`) explicitly excludes
+   any row flagged `MUTATES_RECEIVER` (line 120), and the Tier-A helper survey above already found
+   every current `MUTATES_RECEIVER` row is arity-`N` — so `resolve_sequence`'s `Native` candidate
+   can *never* represent a call a Tier-A helper actually serves, by construction. `CallMethod` has
+   no Tier-A completions at all, so this class has no analog in E5b step 1's data; it alone
+   explains why `CallMethodMut`'s overall mismatch rate is roughly double `CallMethod`'s.
+2. **Missing rows / shape-blind predicate (2934, 51%) — real=true/shadow=false, other methods.**
+   The same two root causes E5b step 1 already identified for `CallMethod`, reproducing here:
+   0-arity `DEFINITE`/`defined` calls the cascade genuinely serves but that have no row in the
+   table at all (`DEFINITE` alone is 2066, 36% of all mismatches — the single largest arm by far,
+   same gap E5b step 1 flagged); and concrete-value-shape exceptions the generic owner-name lookup
+   is blind to (`gist`=144, `raku`=102, `FatRat`=88, `pull-one`=50, `^name`=28, `hash`=17,
+   `elems`=15 — bespoke rendering/coercion paths that decline the generic `Any`/`Cool` row).
+3. **Predicate over-claims (748, 13%) — real=false/shadow=true.** The mirror-image class E5b step
+   1 also found: the row claims servability by `(owner, name, arity)` alone, but the concrete
+   receiver's shape declines it in favor of a user override or bespoke path — `raku`(70, owner
+   `Any`)/`join`(46, `Array`)/`Int`(44)/`sprintf`(40, `Str`)/`gist`(38+32+20, `Any`/`Array`/`List`)/
+   `comb`(34, `Str`) dominate, all pre-existing `try_native_method_raw` shape-specific `return
+   None` guards the predicate cannot see.
+
+**Consequence for E6b step 2+**: classes 2 and 3 confirm E5b step 2's generalization holds at
+`CallMethodMut` too — the `Native` candidate stays measurement/hint-only, `try_native_method`
+(and the five Tier-A helper calls) remain direct, self-guarding pre-checks, never replaced by a
+decision match. Class 1 sharpens *why* for the mutation-aware entries specifically: even a
+hypothetically shape-complete `native_row_servable` could not route Tier-A traffic, since
+`MUTATES_RECEIVER` rows are structurally excluded from it — routing Tier-A dispatch order off any
+future resolver candidate would need a distinct "TierA" candidate kind (not attempted here, out of
+scope for this step). What's still open, mirroring E5b step 2/3: does `try_compiled_method_mut_or_interpret_sym`'s
+`User`-candidate resolution duplicate `resolve_method_cached`'s three-tier cache the way
+`try_compiled_method_or_interpret_sym` did for `CallMethod` (E5b step 4's actual dedup)? That
+inspection is E6b step 2, not yet done.
