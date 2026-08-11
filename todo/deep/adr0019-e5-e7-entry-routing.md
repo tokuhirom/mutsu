@@ -1307,3 +1307,257 @@ class of failure entirely, since it never sets the env var.
 **E6a's `call_method_mut_with_values` measurement is done — all three E6a sub-slices
 (`CallMethodMut`/`CallMethodDynamicMut`/`call_method_mut_with_values`) are now measured. Still to
 do**: the Tier-A helper survey, then the actual E6b/E6c/E6d cutover work.
+
+## Tier-A helper survey (E6a, final sub-slice)
+
+Docs-only investigation, no dispatch behavior changed. Closes the last item design decision 4
+names for E6a: "measurement + taxonomy for `CallMethodMut`, `CallMethodDynamicMut`,
+`call_method_mut_with_values`, and the Tier-A helpers." The first three are the three measurement
+slices above; this slice cross-checks `native_method_row.rs`'s `MUTATES_RECEIVER` flag (see its
+doc comment, `src/builtins/native_method_row.rs:81-85`) — generated once by E2a's 2026-08-10
+probe — against what the two instrumented files (`vm/vm_call_method_mut_ops.rs`,
+`runtime/methods_mut_dispatch.rs`) actually do, the same way E2b did for the ordinary native rows.
+
+### Method: enumerate every named intercept arm, then trace each to its owner/method guard
+
+Every `record_dispatch_entry_intercept("callmethodmut", ...)` call in
+`vm/vm_call_method_mut_ops.rs` and every `record_dispatch_entry_intercept("callmethodmutwithvalues",
+...)` call in `runtime/methods_mut_dispatch.rs` was located by grep and read in place (the guarding
+`if`/`match` immediately above each counter call), plus the four *unnamed* Tier-A helper functions
+that record only the generic `native` outcome rather than a per-arm name
+(`try_native_array_mut`/`try_native_array_splice`/`try_native_hash_mut_bound`/`try_native_buf_mut`,
+`vm_call_method_mut_ops.rs:2566/2867/2541/2982`) — these are exactly the "Tier-A mutable-method
+dispatch" the flag's doc comment names, so they belong in the survey even without an arm label.
+Then each arm's (owner, method) pair(s) were looked up in `native_method_row_table.rs`'s `RAW_ROWS`
+(grepped by owner and by method-name literal) to classify per the task's three outcomes, plus two
+outcomes the strict three did not anticipate but the data forced (see "Additional findings" below).
+
+`RAW_ROWS` currently has exactly 41 `MUTATES_RECEIVER` rows (grep `', [0-9]+, 2),$'`, verified no
+row combines the flag with `SPECIAL`/`TYPE_OBJECT_OK`, i.e. every hit is flags-value `2` exactly),
+all under four owners: `Str.subst-mutate` (1); `List`/`Array` each with the identical 15-name set
+`map, grep, rotate, push, pop, shift, unshift, splice, append, prepend, classify, categorize,
+rotor, produce, reduce` (30); `Hash.push`/`Hash.append` (2); `Blob.new, push, pop, shift, unshift,
+append, prepend, splice` (8). Every one of these 41 rows also carries arity `8` (`N` — "not served
+by any pure `native_method_{0,1,2}arg` cascade"), with no exception.
+
+### Taxonomy — `CallMethodMut` (`vm/vm_call_method_mut_ops.rs`)
+
+Named intercept arms (line numbers current as of this PR). "Owner/method" is `N/A (cross-cutting)`
+for arms that are method-identity intercepts independent of a `builtin_type_methods` owner (e.g.
+`.return`-style control flow, junction threading) — those were never candidates for a `RAW_ROWS`
+row in the first place, so they are listed for completeness but excluded from the cross-check
+counts below.
+
+| Arm | Line | Owner / method served | RAW_ROWS status |
+|---|---|---|---|
+| `exception-concreteness` | ~612 | Exception type-object `.throw`/`.fail`/... (any `X::*` subclass name) | N/A (cross-cutting, not a fixed owner) |
+| `nativecall` | ~653 | `is native(...)`-bound methods (any owner) | N/A (cross-cutting) |
+| `lazy-array-mutate-reject` | ~687 | `LazyList` push/pop/append (error path) | owner `LazyList` never probed by E2a — no row |
+| `pair-freeze` | ~714 | `Pair.freeze` | **no row at all** (`Pair` has 33 other rows, none named `freeze`) — case (c) |
+| `proto` | ~721 | `proto method` body dispatch (any owner) | N/A (cross-cutting) |
+| `exception-str-message` | ~733 | Exception `.Str`/`.gist` via user `message` | N/A (cross-cutting) |
+| `lazy-placeholder` | ~748 | `LazyList` `.gist`/`.Str`/`.raku`/`.perl` | owner never probed — no row |
+| `lazy-first` | ~766 | `LazyList.first` | owner never probed — no row |
+| `lazy-index-pipe` | ~784 | `LazyList` `.kv`/`.pairs`/`.antipairs` | owner never probed — no row |
+| `lazy-cache` | ~800 | `LazyList.cache` | owner never probed — no row |
+| `so-not-user-bool` | ~883 | `.so`/`.not` via user `Bool` (any owner) | N/A (cross-cutting) |
+| `undeclared-type-new` | ~913 | error path, not a real owner | N/A |
+| `junction-invocant` | ~943 | junction auto-threading (any owner) | N/A (cross-cutting) |
+| `junction-args` | ~997 | junction auto-threading, args (any owner) | N/A (cross-cutting) |
+| `who-pseudo-package` | ~1008 | `.WHO` pseudo-method (any owner) | N/A (pseudo-method) |
+| `lock-protect-nomatch` | ~1034 | `Lock`/`Lock::Async`/`Lock::Soft.protect` (bad-arg error) | owner `Lock`/`Lock::Async` never probed — no row |
+| `lock-protect` | ~1053 | `Lock`/`Lock::Async.protect` (fast path) | owner never probed — no row |
+| `shared-array-push-atomic` | ~1121 | `Array`/`List` `push`/`unshift`/`append`/`prepend` (shared `@`-var) | **row exists, `MUTATES_RECEIVER`** — case (a) |
+| `shared-array-push-legacy` | ~1139 | `Array`/`List` `push`/`unshift` (shared, legacy fallback) | case (a), same rows |
+| `shared-array-pop-shift` | ~1166 | `Array`/`List` `pop`/`shift` (shared) | case (a), same rows |
+| `shared-array-splice` | ~1190 | `Array`/`List.splice` (shared) | case (a), same rows |
+| `match-make` | ~1299 | `Match.make` | **no row at all** (`Match` has ~70 other rows, none named `make`) — case (c) |
+| `subst-mutate` | ~1316 | `Str.subst-mutate` | **row exists, `MUTATES_RECEIVER`** — case (a), clean |
+| `hyper-race-config` | ~1351 | `.hyper`/`.race` with named args (any Iterable) | N/A (cross-cutting) |
+| `hyperseq-{hyper,race,is-lazy,defined,name,what}` | ~1458 (one call site, 6 string outcomes) | `HyperSeq`/`RaceSeq` identity methods | owners never probed — no rows |
+| `hyperseq-map-grep` | ~1491 | `HyperSeq`/`RaceSeq` `.map`/`.grep` delegate | owners never probed — no rows |
+| `hyperseq-iterator` | ~1499 | `HyperSeq`/`RaceSeq.iterator` | owners never probed — no rows |
+| `at-key` | ~1555 | `Hash`/`Set`/`Bag`/`Mix` `AT-KEY` (**read**, not a mutation) | `Hash.AT-KEY` row exists, flags `0` (correctly *not* `MUTATES_RECEIVER` — this arm never writes) — case (a) |
+| `assign-key` | multiple, ~1592-1711 | `Hash`/`Set`/`Bag`/`Mix` `ASSIGN-KEY` (genuine write) | **no row for `ASSIGN-KEY` on any owner** — case (c) |
+| `delete-key` | multiple, ~1719-1866 | `Hash`/`Set`/`Bag`/`Mix` `DELETE-KEY` (genuine write) | **no row at all** — case (c) |
+| `bind-key` | multiple, ~1930-1998 | `Hash`/`Set`/`Bag`/`Mix` `BIND-KEY` (genuine write) | **no row at all** — case (c) |
+| `bind-pos` | ~2085 | `Array.BIND-POS` (genuine write) | **no row at all** — case (c) |
+| `modifier-plus`/`modifier-star` | ~2133/2142 | `.+`/`.*` MRO-walk modifiers (any owner) | N/A (cross-cutting; delegates to `call_method_all_with_fallback`, its own E5 entry) |
+| `nil-predispatch` | ~2107 | `Nil` pre-dispatch errors | N/A (not a `builtin_type_methods` owner) |
+
+Plus the four unnamed Tier-A helpers (record only the generic `native` outcome, no per-arm name):
+
+| Helper | Line | Owner / method served | RAW_ROWS status |
+|---|---|---|---|
+| `try_native_array_mut` | 2566 | `Array` (plain `@`-array, `ArrayKind::Array`) `push`/`append`/`prepend`/`unshift`/`pop`/`shift` | **rows exist, `MUTATES_RECEIVER`**, both under `Array` and `List` — case (a) for `Array`; `List` shares the identical row set even though this helper only ever sees an `ArrayKind::Array` receiver in practice (List-kind values route to the interpreter fallback) — harmless over-coverage, not a mismatch |
+| `try_native_array_splice` | 2867 | `Array.splice` (plain `@`-array, simple non-erroring forms) | case (a), same rows |
+| `try_native_hash_mut_bound` | 2541 | `Hash.push`/`Hash.append` (bound-cell variant) | case (a), same `Hash` rows |
+| `try_native_buf_mut` | 2982 | `Blob`/`Buf` family `write-bits`/`write-ubits`/`write-num*`/`write-int*` | **no row at all** for any `write-*` name on `Blob` — case (c); distinct from the `Blob.new/push/pop/shift/unshift/append/prepend/splice` rows, which this helper does NOT serve (those are served by the `buf-mutate-append`/`buf-pop-shift-splice`/`buf-reallocate` arms in `methods_mut_dispatch.rs` below) |
+
+Also present in this file but not a `record_dispatch_entry_intercept` arm at all: the
+Array-subclass Instance-delegation block (`vm_call_method_mut_ops.rs:2219-2407`, reached via the
+generic `native`/`user` outcome, not a named arm) contains an `is_array_method` allow-list that
+literally includes the strings `map`, `grep`, `rotate`, `classify`, `categorize`, `rotor`,
+`produce`, `reduce` (`vm_call_method_mut_ops.rs:2244-2276`) alongside `push`/`pop`/`shift`/
+`unshift`/`append`/`prepend`/`splice`. This allow-list is the direct explanation for the
+`List`/`Array` `MUTATES_RECEIVER` rows on those eight non-mutator names — see "Additional
+findings" below; it is the single most consequential thing this survey found.
+
+### Taxonomy — `call_method_mut_with_values` (`runtime/methods_mut_dispatch.rs`)
+
+| Arm | Owner / method served | RAW_ROWS status |
+|---|---|---|
+| `container-ref-cell` | dispatch wrapper, any owner | N/A |
+| `immutable-list-reject` | `List` (non-real-array) push/append/pop/shift/unshift/prepend/splice — error path | N/A (error path, not a servable dispatch) |
+| `incdec` | `postfix:<++>`/`postfix:<-->` operators (any owner) | N/A (operator, not a method name) |
+| `keyof` | `Mix`/`Set`/`Bag.keyof` | no row for `keyof` on any of these owners — case (c) |
+| `var-reflect` | `.VAR` pseudo-method (any owner) | N/A (pseudo-method) |
+| `of` | `.of` on `@`/`%` containers | N/A (container reflection, not a `builtin_type_methods` owner) |
+| `collation-set` | `Collation.set` | owner `Collation` never probed — no row |
+| `sethash-set-unset` | `SetHash.set`/`SetHash.unset` | **no row for `set`/`unset` on `SetHash`** — case (c) |
+| `array-push`/`array-append`/`array-unshift`/`array-prepend`/`array-pop`/`array-shift`/`array-splice` | `Array`/`List` (`@`-sigil variable) | **rows exist, `MUTATES_RECEIVER`** — case (a), same rows the Tier-A helpers above serve |
+| `array-squish` | `Array`/`List.squish` | row exists, flags `0` (**not** `MUTATES_RECEIVER`) — consistent: this arm only writes back conditionally (`if self.in_lvalue_assignment`), and `.squish` alone never needs the mut path — case (a), correctly unflagged |
+| `hash-push-append` | `Hash.push`/`Hash.append` | case (a), same `Hash` rows as `try_native_hash_mut_bound` |
+| `sigilless-push-append`/`-pop`/`-unshift`/`-prepend`/`-shift` | `Array`/`List` (sigilless-bound variable form of the same methods) | case (a), same rows — no distinct owner, just a different variable-shape gate |
+| `buf-read-bits` | `Blob`/`Buf` `read-bits`/`read-ubits` (**read**, not a mutation) | no row for `read-*` on `Blob` — case (c), but consistent (this arm never mutates) |
+| `buf-write-bits` | `Blob`/`Buf` `write-bits`/`write-ubits` | **no row at all** — case (c) |
+| `buf-write-num-mut`/`buf-write-num-fresh` | `Blob`/`Buf` `write-num8`/`16`/`32`/`64` family | **no row at all** — case (c) |
+| `buf-write-int-mut`/`buf-write-int-fresh` | `Blob`/`Buf` `write-int*`/`write-uint*` family | **no row at all** — case (c) |
+| `buf-reallocate` | `Blob`/`Buf.reallocate` | **no row at all** — case (c) (note: `Blob.new` DOES have a row, but `reallocate` is a distinct method with none) |
+| `buf-pop-shift-splice` | `Blob`/`Buf` `pop`/`shift`/`splice` | **rows exist, `MUTATES_RECEIVER`** — case (a) |
+| `buf-mutate-append` | `Blob`/`Buf` `push`/`append`/`prepend`/`unshift` | case (a), same rows |
+| `buf-bits-instance-fallback` | `Blob`/`Buf` bits fallback | covered by the same no-row family as `buf-write-bits` |
+| `map-rw-writeback` | `Array`/`List.map` (rw `$_` writeback) | **row exists, `MUTATES_RECEIVER`** — case (a), the ONE genuinely-mutating name among the eight `is_array_method`-only names (see next section) |
+| `sethash-grab` | `SetHash.grab`/`.grabpairs` | owner has no `grab`/`grabpairs` row at all — case (c) |
+| `baghash-grab` | `BagHash.grab`/`.grabpairs` | **row exists but flagged `SPECIAL`, not `MUTATES_RECEIVER`**, despite the arm doing a genuine `self.env.insert` mutation — see "Additional findings" |
+| `mixhash-grab` | `MixHash.grab`/`.grabpairs` | same as `baghash-grab`: row flagged `SPECIAL`, not `MUTATES_RECEIVER` |
+| `promise-channel-delegate` | `Promise`/`Channel` (pure pass-through to the non-mut sibling, no mutation here itself) | owners never probed — no rows; consistent, since this arm does not mutate |
+| `classhow` | `.HOW`-adjacent class reflection, any owner | N/A |
+| `iterator-protocol` | `Iterator` (`pull-one` etc.) | owner `Iterator` never probed — no rows |
+| `delegation` | generic instance delegation fallback, any owner | N/A |
+| `rw-proxy-signal` | `Proxy` accessor-write signal | owner `Proxy` never probed — no row |
+| `rw-readonly-reject` | readonly-attribute-write rejection (error path) | N/A (error path) |
+
+### Additional findings (beyond the task's three anticipated outcomes)
+
+1. **The `MUTATES_RECEIVER` probe only ever grepped `vm/vm_call_method_mut_ops.rs`, never
+   `runtime/methods_mut_dispatch.rs`.** The flag's own doc comment says so explicitly ("the name
+   also appears in the Tier-A mutable-method dispatch, `vm/vm_call_method_mut_ops.rs`") and the
+   data confirms it: `"grab"` appears nowhere in `vm_call_method_mut_ops.rs` (`grep -c` = 0) but
+   is a fully-formed, genuinely-mutating named arm (`baghash-grab`/`mixhash-grab`/`sethash-grab`)
+   in `methods_mut_dispatch.rs`. Since `methods_mut_dispatch.rs` is an equally-sized second
+   Tier-A surface (~2750 lines vs. `vm_call_method_mut_ops.rs`'s ~3070) with its own 30-odd named
+   mutating arms, this is the single biggest systematic source of the case-(c)/case-(b) gaps
+   above — every genuinely-mutating name whose *only* textual occurrence is in
+   `methods_mut_dispatch.rs` (not also present as a literal string somewhere in
+   `vm_call_method_mut_ops.rs`) was structurally unreachable by the original probe's
+   `MUTATES_RECEIVER` refinement, regardless of how real its Tier-A mutation is. `keyof`,
+   `sethash-set-unset`, `collation-set`, the whole `buf-write-*`/`buf-read-*` family, and the
+   `*-grab` arms are all examples.
+
+2. **`List`/`Array`'s `map`/`grep`/`rotate`/`classify`/`categorize`/`rotor`/`produce`/`reduce`
+   rows over-claim `MUTATES_RECEIVER`.** All eight names appear together in one place only:
+   the `is_array_method` allow-list inside the Array-subclass Instance-delegation branch
+   (`vm_call_method_mut_ops.rs:2219-2407`) — a narrow path for `class Foo is Array {...}`
+   instances, unrelated to plain `@`-array dispatch. Within that branch, all eight are routed
+   through explicitly non-mutating helpers (`try_native_array_map`/`try_native_first`/
+   `try_native_minmax`, or the whitelist-gated `try_native_method` call at
+   `is_array_storage_native_safe`) that borrow the backing storage immutably and return a fresh
+   value — never mutating the instance. Cross-checked all eight against both files end-to-end:
+   only `map` has a *separate*, genuinely-mutating arm anywhere (`map-rw-writeback` in
+   `methods_mut_dispatch.rs`, which writes back `$_`-mutated elements — real Raku `rw` semantics
+   for `.map`). `grep` conspicuously has no equivalent writeback arm despite also `rw`-binding
+   `$_` per the Raku spec — a possible separate correctness gap, out of scope here, not filed
+   separately since confirming it needs its own raku-baseline comparison. `rotate`/`classify`/
+   `categorize`/`rotor`/`produce`/`reduce` have no mutating arm at all in either file. So the
+   `MUTATES_RECEIVER` flag on these seven (of the eight) rows is best read as "this literal string
+   co-occurs with a real Tier-A mutator's name inside the same allow-list," not "this name is
+   genuinely receiver-mutating" — a probe-methodology artifact, not a hand error.
+
+3. **`BagHash.grab`/`MixHash.grab` are genuinely Tier-A-mutating (`self.env.insert` on the
+   receiver variable, confirmed by direct read) but are flagged `SPECIAL`, not
+   `MUTATES_RECEIVER`.** This is explained by finding 1 (the probe never saw `methods_mut_dispatch.rs`
+   at all) rather than being a one-off mistake. Practically inert today: `native_row_servable`'s
+   `reachable()` excludes a row if it has *either* `SPECIAL` *or* `MUTATES_RECEIVER`
+   (`native_method_row.rs:119-120`), so both flags currently produce the identical answer for
+   these two rows. Recording this as a finding rather than fixing it: the "correct" flag value
+   depends on how a future regeneration wants to distinguish "handled by a named interceptor
+   ahead of the cascade" from "handled by a Tier-A mutable-method helper" — both are literally
+   true here, and I am not confident which the maintainers intend as authoritative without
+   re-running the full E2a-style probe (out of scope for a docs-only survey).
+
+4. **Every current `MUTATES_RECEIVER` row also carries arity `N` (`8`), making the flag
+   currently redundant with the arity encoding.** `native_row_servable`'s arity check
+   (`arity.contains(call_arity)`) already returns `false` for an `N`-only row at any real call
+   arity (0/1/2), independent of the `MUTATES_RECEIVER`/`SPECIAL` flags. So for the 41 rows that
+   exist today, the flag has zero *additional* effect on the one production reader
+   (`native_row_servable`) beyond what `arity = N` alone already achieves — it is documentary,
+   not load-bearing, until a future row combines `MUTATES_RECEIVER` with a non-`N` arity (a
+   combination that does not exist in the table today).
+
+5. **Whole owners were never probed by E2a at all**, so they have zero rows regardless of
+   mutation status: `Lock`, `Lock::Async`, `Lock::Soft`, `Collation`, `Promise`, `Channel`,
+   `LazyList`, `HyperSeq`, `RaceSeq`, `Proxy`, `Iterator`. This is a pre-existing E2a coverage
+   gap (not new to this survey), but it explains most of the "no row at all" verdicts above that
+   are not really about the `MUTATES_RECEIVER` flag specifically — there was never any row to
+   flag correctly or incorrectly.
+
+### Why no `native_method_row_table.rs` edits landed with this survey
+
+Per the task's own guidance, a correction is only made when confident it is right; recording is
+the fallback. Two candidate corrections were identified (findings 2 and 3), and both were left
+unmade:
+
+- **Finding 2** (removing `MUTATES_RECEIVER` from `List`/`Array`'s `grep`/`rotate`/`classify`/
+  `categorize`/`rotor`/`produce`/`reduce` rows) is not obviously safe: these names still need
+  `&mut self` to invoke a user block/comparator (per `CLAUDE.md`'s own description of the slow
+  path), even though they never mutate the *receiver*. Whether `MUTATES_RECEIVER` was meant to
+  capture "receiver is mutated" specifically or the broader "not servable by the plain `&self`
+  arity cascade at all" is not settled by the doc comment alone, and guessing wrong would make
+  the table *less* accurate, not more.
+- **Finding 3** (changing `BagHash.grab`/`MixHash.grab` from `SPECIAL` to `MUTATES_RECEIVER`, or
+  to both) is currently behaviorally inert (see finding 4), so there is no urgency, and the
+  "right" combined value depends on the same unsettled question as finding 2.
+
+Both are recorded here as open findings for whoever next regenerates or hand-extends `RAW_ROWS`
+(most likely as part of E6b, which needs a definitive answer to "what does `Native` mean for a
+mutation-adjacent method" to build its decision match) rather than guessed at in a docs-only PR.
+
+### Summary and what this means for E6b
+
+- **~74 named intercept arms surveyed** across the two files (33-40 in `CallMethodMut` depending
+  on whether the 6-string `hyperseq-*` call site is counted once or six times — see the taxonomy
+  table; ~41-42 in `call_method_mut_with_values`), plus the 4 unnamed Tier-A helper functions in
+  `vm_call_method_mut_ops.rs`.
+- **Clean matches (case a):** `Str.subst-mutate`; `Hash.push`/`.append`; `List`/`Array`
+  `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/`splice`/`map` (the one non-mutator-family
+  name that turned out genuinely mutating); `Blob`/`Buf` `push`/`pop`/`shift`/`unshift`/
+  `append`/`prepend`/`splice`. `Hash.AT-KEY` and `List`/`Array.squish` are confirmed correctly
+  **un**flagged (they never mutate).
+- **Missing rows (case c):** `Pair.freeze`, `Match.make`, `ASSIGN-KEY`/`DELETE-KEY`/`BIND-KEY`/
+  `BIND-POS` on every owner that has them, `SetHash.set`/`.unset`/`.grab`/`.grabpairs`,
+  `Collation.set`, the whole `Blob`/`Buf` `write-bits`/`write-num*`/`write-int*`/`read-*`
+  family, `Mix`/`Set`/`Bag.keyof` — plus several owners (`Lock`, `Promise`, `Channel`,
+  `LazyList`, `HyperSeq`, `RaceSeq`, `Proxy`, `Iterator`, `Collation`) with zero rows at all.
+- **Mislabeled rows (case b, found in both directions):** `BagHash`/`MixHash.grab` are `SPECIAL`
+  but should arguably also/instead be `MUTATES_RECEIVER`; `List`/`Array`'s `grep`/`rotate`/
+  `classify`/`categorize`/`rotor`/`produce`/`reduce` are `MUTATES_RECEIVER` but have no
+  genuinely-mutating arm in either file (an over-claim, traced to the `is_array_method`
+  allow-list's coarse text-co-occurrence origin, finding 2 above).
+- **No RAW_ROWS edits landed** — both candidate corrections were left as recorded findings
+  rather than guessed at (see above).
+
+**None of this blocks E6b.** Design decision 1 already settled (in the E5b steps above, which
+generalize past `CallMethod`) that the `Native` candidate is *hint-only* — the real
+`try_native_method`/`try_native_method_raw` call is always self-guarding and stays a direct probe
+at every entry, never replaced by a resolver decision. Since `native_row_servable` (the only
+production reader of `MUTATES_RECEIVER`) is not consulted by any real dispatch path today, and
+since every current `MUTATES_RECEIVER` row is arity-`N` (finding 4, already excluded from
+`native_row_servable`'s "reachable" answer on arity grounds alone), none of this survey's findings
+change what E6b needs to build: the mutation-aware decision match still routes on the `User`
+candidate (already trustworthy, per E5b step 3) with `try_native_method` staying a direct,
+self-guarding pre-check exactly as E5b concluded for the non-mut entries. The gaps found here are
+a data-quality backlog for whoever eventually wants `native_row_servable` to become authoritative
+for mutation-adjacent methods (relevant to a later Phase F cleanup, not to E6b's cutover shape).
+
+**All of E6a is now closed.** Next: E6b.
