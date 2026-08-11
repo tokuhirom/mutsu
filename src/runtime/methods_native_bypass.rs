@@ -187,28 +187,21 @@ impl Interpreter {
             || (matches!(target.view(), ValueView::Instance { .. })
                 && (target.does_check("Real") || target.does_check("Numeric")))
             || matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
+            // Only `.Supply` needs an explicit gate: the coercion cascade's
+            // generic `"Supply"` arm (`methods_0arg/coercion.rs`) does not
+            // special-case `Proc::Async` the way it does `Supplier`, so a
+            // bare row-miss fallback would wrap the `Proc::Async` instance
+            // itself in a bogus values-Supply. The other sixteen names
+            // (`start`/`kill`/`write`/`close-stdin`/`bind-stdin`/
+            // `bind-stdout`/`bind-stderr`/`ready`/`print`/`put`/`say`/
+            // `command`/`started`/`w`/`pid`/`stdout`/`stderr`) have no arm
+            // anywhere in the native fast-path cascade
+            // (`native_method_{0,1,2}arg`) — confirmed by exhaustive grep,
+            // ADR-0019 E4b step 6 — so gating them here was redundant
+            // belt-and-suspenders identical to the `Supplier.Supply` case
+            // step 5 already removed.
             || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
-                && matches!(
-                    method,
-                    "start"
-                        | "kill"
-                        | "write"
-                        | "close-stdin"
-                        | "bind-stdin"
-                        | "bind-stdout"
-                        | "bind-stderr"
-                        | "ready"
-                        | "print"
-                        | "put"
-                        | "say"
-                        | "command"
-                        | "started"
-                        | "w"
-                        | "pid"
-                        | "stdout"
-                        | "stderr"
-                        | "Supply"
-                ))
+                && method == "Supply")
             || (matches!(method, "AT-KEY" | "keys" | "values")
                 && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Stash"))
             || (method == "keys"

@@ -2465,6 +2465,33 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     "likely reduces" groups (`Proc::Async`'s method family, `Stash`'s
     `AT-KEY`/`keys`/`values`) and the "mixed" `IO::Handle` `encoding`/`opened`/
     `DESTROY` group remain open — same audit methodology applies.
+    **Progress 2026-08-11** (step 6, category 1): audited `Proc::Async`'s method
+    family (17 names) the same way, and found it splits rather than reduces
+    wholesale. Sixteen names (`start`/`kill`/`write`/`close-stdin`/
+    `bind-stdin`/`bind-stdout`/`bind-stderr`/`ready`/`print`/`put`/`say`/
+    `command`/`started`/`w`/`pid`/`stdout`/`stderr`) have no matching arm
+    anywhere in the native fast-path cascade (`native_method_{0,1,2}arg` —
+    exhaustive per-name grep across `builtins/methods_0arg/` and
+    `builtins/methods_narg.rs`), so gating them was redundant belt-and-suspenders
+    identical to step 5's `Supplier.Supply` finding. `Supply` is the exception
+    and does NOT reduce: the coercion cascade's generic `"Supply"` arm
+    (`methods_0arg/coercion.rs:655-701`) special-cases `Supplier`/
+    `Supplier::Preserving` (returns `None`, the step-5 finding) and `Supply`
+    itself (no-op passthrough) but has no such case for `Proc::Async` — an
+    Instance falls through to its catch-all `_ => vec![target.clone()]`,
+    which would wrap the live `Proc::Async` object itself as the sole element
+    of a bogus values-Supply instead of reaching the runtime's live-stream
+    `.Supply`. Landed as a genuine reduction of the guard's method list down to
+    `method == "Supply"` alone (not a deletion of the whole arm). Verified
+    empirically: `cargo test --lib` (769 tests), the full local Proc::Async
+    suite (`t/composite-promise-replays-proc-taps.t`,
+    `t/concurrency-threading.t`, `t/io-socket-async-real-connect.t`,
+    `t/multi-no-match-builtins.t`, `t/native-proc-async-ctor.t`,
+    `t/proc-async.t`, `t/proc-start-cwd-env.t`,
+    `t/shared-var-nil-redeclared-mask.t`, 78 tests), and the full
+    `roast/S17-procasync/` subset (10 files, 155 tests) all green.
+    `Stash`'s `AT-KEY`/`keys`/`values` and the mixed `IO::Handle`
+    `encoding`/`opened`/`DESTROY` group remain open.
 - [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
