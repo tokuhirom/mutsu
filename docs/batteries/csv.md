@@ -115,28 +115,20 @@ modules this survey happened to probe with; other ecosystem modules using
 the same "`my` local, later heredoc, same sub" pattern were presumably
 affected too.
 
-### `CSV::Table` — new blocker: `@0` inside a `[...]` array literal
+### `CSV::Table` — the `@0`-in-array-literal blocker is fixed; a new one is next
 
-With the heredoc bug fixed, `CSV::Table` now gets past its own `use` and
+With the heredoc bug fixed, `CSV::Table` got past its own `use` and
 `Text::Utils`'s, but its dependency `Text::Utils` unconditionally `use`s
 `Font::AFM` (PDF font-metrics, for text-width calculations — nothing to do
-with CSV), which fails to parse on mutsu:
-
-```
-$ mutsu -e '"abc" ~~ / (\d+) /; my $x = [ @0 ]; say $x'
-Parse error: Confused: Two terms in a row
-```
-
-Reduced from `Font::AFM.rakumod:436` (`my Array $bbox = [ @0».Int ];`): a
-bare numbered match-capture array variable (`@0`, the array-context view of
-`$0`/`$1`/... captures) parses fine standalone, and `@0».Int` parses fine
-standalone, but the SAME expression fails specifically when it appears as an
-element inside a `[...]` array literal (`[ @foo ]` with an ordinary named
-array works; `[ @0 ]` does not). Filed as
-`todo/tickets/numbered-capture-array-var-in-array-literal.md`; not
-investigated further in this survey — it is unrelated to CSV or to the
-heredoc fix, just the next thing standing between mutsu and a working
-`CSV::Table`. `CSV::Table`'s own suite is still 0/10 on mutsu because of it.
+with CSV), which failed to parse on mutsu (`my Array $bbox = [ @0».Int ];` at
+`Font::AFM.rakumod:436` — a numbered match-capture array variable inside a
+`[...]` array literal). That parse bug is now fixed — see
+`news/2026-08/numbered-capture-array-var-in-array-literal.md` — but
+`Font::AFM` hits a further, unrelated blocker past it:
+`method dispatch:<.?>(...)` (custom dynamic-dispatch method syntax,
+`Font::AFM.rakumod:594`) is not a recognized method-name category. Filed as
+`todo/tickets/method-dispatch-colon-question-syntax.md`. `CSV::Table`'s own
+suite is still 0/10 on mutsu because of it.
 
 ### `Text::CSV` also needs real slang support — a second, harder blocker
 
@@ -224,15 +216,17 @@ read-and-generate API), the field narrows to exactly two live candidates —
 compiler bug that blocked both is now fixed; each still has its own
 remaining blocker, and each blocker now has its own ticket:
 
-1. **`CSV::Table` needs the `@0`-in-array-literal parse bug fixed next** —
-   **[`todo/tickets/numbered-capture-array-var-in-array-literal.md`](../../todo/tickets/numbered-capture-array-var-in-array-literal.md)**.
-   Small, self-contained, reduced to a two-line repro, unrelated to CSV
-   (surfaced via a transitive dependency, `Text::Utils` → `Font::AFM`). This
-   is the shorter path to a working candidate — pick this up first. After the
-   fix, re-measure `CSV::Table`'s own suite; it may surface further blockers
-   past that point (only the *first* parse failure in `Font::AFM` was
-   reduced, not the whole file), or may come up clean since its own suite
-   doesn't touch `Font::AFM` directly.
+1. **`CSV::Table` needs the `dispatch:<.?>` method-syntax parse bug fixed
+   next** —
+   **[`todo/tickets/method-dispatch-colon-question-syntax.md`](../../todo/tickets/method-dispatch-colon-question-syntax.md)**.
+   The prior blocker on this path (`@0` inside a `[...]` array literal) is
+   fixed (`news/2026-08/numbered-capture-array-var-in-array-literal.md`);
+   this is the next thing standing between mutsu and a working `CSV::Table`,
+   surfaced via the same transitive dependency (`Text::Utils` → `Font::AFM`).
+   After the fix, re-measure `CSV::Table`'s own suite; it may surface further
+   blockers past that point (only the *first* parse failure in `Font::AFM`
+   was reduced each time, not the whole file), or may come up clean since its
+   own suite doesn't touch `Font::AFM` directly.
 2. **`Text::CSV` stays blocked on the harder problem** —
    **[`todo/deep/text-csv-needs-slang-tuxic-support.md`](../../todo/deep/text-csv-needs-slang-tuxic-support.md)**.
    `use Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real
