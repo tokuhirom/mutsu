@@ -492,6 +492,21 @@ impl Interpreter {
             if param_name.is_none() {
                 self.set_loop_topic(topic_local, item.clone());
             }
+            // A plain `$`-sigiled loop parameter is an item binding: the bound
+            // element behaves as ONE value in list context (a row Array fed to
+            // a sprintf slurpy stays one argument; `.raku` shows `$[...]`),
+            // matching Raku's `-> $v` signature binding. Sigilless (`\v`) and
+            // `<->` rw params bind raw; `@`/`%`/`&` params bind the container
+            // itself; the implicit topic (param_name None) also stays raw.
+            // Itemizing keeps the SAME backing Gc (only the kind flips), so
+            // `loop_var_unchanged`'s ptr_eq still sees in-place mutations and
+            // the source-element writeback stays a no-op for read-only loops.
+            let item = match param_name.as_deref() {
+                Some(name) if !name.starts_with(['@', '%', '&', '\\']) && !spec.do_writeback => {
+                    Self::itemize_scalar_store(name, item)
+                }
+                _ => item,
+            };
             if let Some(ref name) = param_name {
                 self.env_mut().insert(name.clone(), item.clone());
                 // Create non-twigil alias for placeholder params: $^a → $a

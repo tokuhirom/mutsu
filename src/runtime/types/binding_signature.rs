@@ -432,6 +432,15 @@ impl Interpreter {
                             None,
                         ));
                     }
+                    // Legacy-path plain `$` params (pointy blocks whose defs
+                    // did not survive, placeholders `$^a`) are item bindings
+                    // too; aggregate/callable/sigilless params bind raw. The
+                    // topic name "_" is excluded inside the helper.
+                    let value = if !param.starts_with(['@', '%', '&', '\\']) {
+                        Self::itemize_scalar_store(param, value)
+                    } else {
+                        value
+                    };
                     self.bind_param_value(param, value);
                     positional_idx += 1;
                 } else if param.starts_with('^')
@@ -1109,6 +1118,10 @@ impl Interpreter {
                         if let Some(sub_params) = &pd.sub_signature {
                             bind_named_rename_sub_signature(self, sub_params, val)?;
                         } else {
+                            // Named `$` params are item bindings too (raku:
+                            // `f(v => [1,2])` binds `$v` as `$[1, 2]`); rw
+                            // cells pass through untouched.
+                            let bound_value = Self::itemize_plain_scalar_param(pd, bound_value);
                             self.bind_param_value(&pd.name, bound_value);
                             self.bind_param_type_constraint(&pd.name, pd.type_constraint.clone());
                         }
@@ -2070,6 +2083,11 @@ impl Interpreter {
                                 }
                             };
                         }
+                        // Plain `$` params are item bindings (raku: `f([1,2])`
+                        // binds `$v` as `$[1, 2]`); rw/raw cells and sigilless
+                        // params pass through untouched (a ContainerRef has no
+                        // Array view, so the itemize helper is a no-op on it).
+                        let value = Self::itemize_plain_scalar_param(pd, value);
                         self.bind_param_value(&pd.name, value);
                         self.bind_param_type_constraint(&pd.name, bound_type_constraint.clone());
                     }

@@ -61,8 +61,15 @@ pub(crate) fn native_function_2arg(
     match name {
         "combinations" => {
             // combinations($n_or_iterable, $k_or_range)
-            // If first arg is an iterable, use its elements; otherwise treat as numeric n
+            // If first arg is an iterable, use its elements; otherwise treat as
+            // numeric n. An itemized Iterable (`combinations($n, $k)` with `$n`
+            // bound from a `$` param) still iterates its ELEMENTS — the spec
+            // pins `&combinations(Iterable, k)` to the method form
+            // (S32-list/combinations.t subtest 33).
             let items = match arg1.view() {
+                ValueView::Array(elems, kind) if kind.is_itemized() => runtime::value_to_list(
+                    &Value::array_with_kind(elems.clone(), kind.decontainerize()),
+                ),
                 ValueView::Array(..)
                 | ValueView::Seq(..)
                 | ValueView::Slip(..)

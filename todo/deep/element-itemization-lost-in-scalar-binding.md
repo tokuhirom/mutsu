@@ -1,68 +1,60 @@
-# Array/Hash elements lose itemization when bound to a `$` scalar (loop params, element reads)
+# Array/Hash elements are stored bare — element reads lack itemization (store-side residue)
 
-## Symptom
+## Status
 
-`CSV::Table`'s `t/5-save.t` dies in `save`:
+The **bind-side half of this ticket is fixed** (2026-08-11,
+`news/2026-08/param-bind-itemization.md`): a value bound to a plain
+`$`-sigiled parameter — for-loop params (single and multi), sub/closure
+positional and named params, map/grep block params, placeholders — is now
+itemized, matching raku's signature binder. That fixed the original symptom
+(`CSV::Table` `t/5-save.t`'s sprintf explosion; the suite is 10/10) and the
+`for @c -> $v { $v.raku }` divergence. Pinned by
+`t/param-bind-itemization.t`.
 
-```
-Your printf-style directives specify 3 arguments, but 4 arguments were
-supplied to format '%-*.*s'.
-```
-
-The module does `for @!cell.kv -> $i, $v { sprintf "%-*.*s", $w, $w, $v }`
-where each `$v` is a row (an Array). In raku, `$v` is an *item* (an element
-container bound to a `$` parameter), so sprintf receives it as ONE argument
-and stringifies it. In mutsu the Array arrives bare and the sprintf slurpy
-flatten (`flatten_into_slurpy`, which correctly respects itemization when it
-is present) explodes it into its elements — wrong arg count.
-
-## Minimal repro
+What REMAINS is the store-side half: raku's model is that array/hash
+*elements are Scalar containers*, so an element read is itemized even with no
+parameter binding involved. mutsu stores elements bare:
 
 ```
-$ target/debug/mutsu -e 'my @c = [<a b>], [<c d>]; for @c.kv -> $i, $v { say sprintf "%-*.*s", 5, 5, $v }'
-Your printf-style directives specify 3 arguments, but 4 arguments were supplied ...
-$ raku -e 'my @c = [<a b>], [<c d>]; for @c.kv -> $i, $v { say sprintf "%-*.*s", 5, 5, $v }'
-a b
-c d
+$ target/debug/mutsu -e 'my @c = [<a b>],[<c d>]; my @d = @c; say @d[0].raku; for @c { say .raku }'
+["a", "b"]        # raku: $["a", "b"]
+["a", "b"] ...    # raku: $["a", "b"] (implicit topic binds the element CONTAINER)
 ```
 
-The underlying divergence is visible without sprintf:
-
-```
-$ target/debug/mutsu -e 'my @c = [<a b>],[<c d>]; for @c -> $v { say $v.raku }; my @d = @c; say @d[0].raku'
-["a", "b"] / ["c", "d"] / ["a", "b"]
-$ raku -e '...'
-$["a", "b"] / $["c", "d"] / $["a", "b"]
-```
-
-i.e. mutsu's element values are not itemized anywhere: not in the `for`/`.kv`
-`$`-param binding, and not on `@d[0]` reads. `my $v = [1,2]` DOES itemize
-(scalar assignment goes through `itemize_scalar_store`), so the gap is
-specifically *element* reads / `$`-param *binding*, not scalar assignment.
+(`my $v = @c[0]` DOES itemize — scalar assignment goes through
+`itemize_scalar_store` — so the gap is direct element reads: `@d[0].raku`,
+slices `@c[0,1]`, implicit-topic iteration, `.head`/`.tail`/`.first`/
+`.sort`/`.reverse` results, hash-value reads `%h<a>`.)
 
 ## Why this is deep, not a ticket
 
-Raku's model is that array/hash **elements are Scalar containers**; anything
-read out of one and bound to a `$` name is an item. mutsu stores elements as
-bare values, so itemization would have to be (re)applied at every element
-read / param-bind boundary — or elements become real containers, which is
-exactly ADR-0001's Track B ("element `ContainerRef` cells", §2.1), explicitly
-fused with the GC campaign and NOT to be started standalone. A shallow
-alternative — itemizing at `$`-sigil param binding (`for ... -> $v`, `.kv`,
-`.map`) and at `Index` reads feeding scalar contexts — would fix `.raku`
-output and the sprintf flatten, but it touches every loop/param path and
-needs a survey of tests that (incorrectly or not) rely on the current bare
-values flattening; do it as its own measured campaign, not as a drive-by.
+Fixing it read-side would mean touching every element-read site (indexing,
+slices, dozens of list methods, iterators) — each must know its source is a
+real Array/Hash, which `.kv`-through-Seq loses. Fixing it store-side (itemize
+at element *storage*: list-assign into `@`, push/unshift/splice, element
+assign, `[...]` construction) is the raku-faithful single model but changes
+what is IN every array — a survey-sized campaign with its own fallout class
+(the bind-side campaign hit two consumers: `.cache` identity-return and
+`&combinations`; store-side will hit more). Alternatively, elements become
+real containers — exactly ADR-0001's Track B ("element `ContainerRef` cells",
+§2.1), explicitly fused with the GC campaign and NOT to be started
+standalone.
+
+Do the shallow store-side campaign as its own measured effort, or fold it
+into Track B when the GC campaign starts — do not drive it as a drive-by.
 
 ## Affected
 
-- `CSV::Table` `t/5-save.t` (last remaining failure in that suite; 9/10 files
-  pass as of the `WrapVarRef` shadow-slot fix, see
-  `news/2026-08/csv-table-comment-strip-loop-var-state-sync.md`).
-- Every `.raku`/`.gist` of arrays-of-arrays read back element-wise
-  (`$[...]` vs `[...]` — the `.raku` residues family, PLAN §8 QA).
+- `.raku`/`.gist` of arrays-of-arrays read back element-wise (`$[...]` vs
+  `[...]` — the `.raku` residues family, PLAN §8 QA).
+- Implicit-topic iteration over `@`-arrays whose body relies on the element
+  being ONE item in list context (the sprintf shape, now only reachable via
+  `for @c { ... $_ ... }` — the `-> $v` form is fixed).
 
 ## Verification once fixed
 
-`cd ~/.zef/store/CSV-Table-0.0.2/*/ && prove -e '<mutsu> -I lib -I <Font-AFM>/lib -I <Text-Utils>/lib -I <AlgorithmsIT>/lib' t/`
-should reach 10/10, and the two one-liners above should match raku.
+```
+$ mutsu -e 'my @c = [<a b>],[<c d>]; my @d = @c; say @d[0].raku'   # $["a", "b"]
+$ mutsu -e 'my @c = [<a b>],; for @c { say .raku }'                # $["a", "b"]
+$ mutsu -e 'my %h = a => [1,2]; say %h<a>.raku'                    # $[1, 2]
+```

@@ -108,6 +108,14 @@ impl Interpreter {
             };
             idx += arity;
 
+            // Item binding for a plain `$` loop param — see the matching
+            // itemization in `vm_for_loop_body.rs` (the eager loop).
+            let item = match param_name.as_deref() {
+                Some(name) if !name.starts_with(['@', '%', '&', '\\']) && !spec.do_writeback => {
+                    Self::itemize_scalar_store(name, item)
+                }
+                _ => item,
+            };
             self.topic_source_var = None;
             if param_name.is_none() {
                 self.set_loop_topic(topic_local, item.clone());
@@ -351,6 +359,14 @@ impl Interpreter {
                 line_val
             };
 
+            // Item binding for a plain `$` loop param — see the matching
+            // itemization in `vm_for_loop_body.rs` (the eager loop).
+            let item = match param_name.as_deref() {
+                Some(name) if !name.starts_with(['@', '%', '&', '\\']) && !spec.do_writeback => {
+                    Self::itemize_scalar_store(name, item)
+                }
+                _ => item,
+            };
             // Set up parameters
             if param_name.is_none() {
                 self.set_loop_topic(topic_local, item.clone());

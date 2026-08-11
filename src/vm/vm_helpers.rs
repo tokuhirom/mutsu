@@ -23,6 +23,25 @@ impl Interpreter {
         }
     }
 
+    /// Itemize an argument bound to a plain `$`-sigiled parameter. Raku's
+    /// signature binder puts the value in a Scalar container, so `f([1,2])`
+    /// binds `$v` as `$[1, 2]` — ONE element in list context, `.raku` shows
+    /// the `$`. Sigilless (`\v`), `is raw`, and `is rw` parameters bind the
+    /// raw value; `@`/`%`/`&` parameters bind the container itself. The
+    /// backing Gc is shared — only the container kind flips — so in-place
+    /// mutation through the param still reaches the caller's data.
+    #[inline]
+    pub(crate) fn itemize_plain_scalar_param(pd: &crate::ast::ParamDef, val: Value) -> Value {
+        if !pd.sigilless
+            && !pd.name.starts_with(['@', '%', '&'])
+            && !pd.traits.iter().any(|t| t == "raw" || t == "rw")
+        {
+            Self::itemize_scalar_store(&pd.name, val)
+        } else {
+            val
+        }
+    }
+
     /// Snapshot the lexical pragma state (`use fatal`, `use strict`,
     /// `use newline`, `use MONKEY-TYPING`) before entering a function body.
     /// Must be paired with `restore_pragma_state` on every exit path to prevent

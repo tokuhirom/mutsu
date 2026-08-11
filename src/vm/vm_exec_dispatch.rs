@@ -805,6 +805,7 @@ impl Interpreter {
                 // without this the flag leaks into the NEXT SetLocal (e.g. a
                 // following `my $a = 0`), which would spuriously treat it as a
                 // value-bind and mark it readonly.
+                let was_scalar_bind = self.scalar_bind_context;
                 self.scalar_bind_context = false;
                 // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
                 // not SetLocal/AssignExpr. Consume the array-share flag here (the
@@ -1135,6 +1136,21 @@ impl Interpreter {
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }
+                } else if !is_bind_ctx
+                    && !is_rebind
+                    && !was_scalar_bind
+                    && bind_source.is_none()
+                    && !is_internal_temp
+                {
+                    // A plain `=` into a `$` scalar reached by name (for-loop
+                    // multi-param binds, `our $x`, closure-captured scalars)
+                    // installs a Scalar container, exactly like the SetLocal
+                    // path: itemize the stored aggregate so `.raku` shows
+                    // `$[...]` and list context sees ONE element. Binds (`:=`),
+                    // rebinds, and internal `__*` temporaries (for-loop element
+                    // sources, `with` topic temps) keep the raw value — an
+                    // itemized loop source would iterate as a single item.
+                    Self::itemize_scalar_store(&name, raw_val)
                 } else {
                     raw_val
                 };

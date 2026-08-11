@@ -211,6 +211,7 @@ impl Interpreter {
                             bind_err = Some(RuntimeError::typed("X::TypeCheck::Argument", attrs));
                             break 'bind;
                         }
+                        let val = Self::itemize_plain_scalar_param(&cf.param_defs[i], val);
                         bind_value!(ppb.slot, ppb.needs_env, val);
                     } else if ppb.required {
                         let got = args
@@ -301,7 +302,7 @@ impl Interpreter {
                 bind_value!(npb.slot, true, seed);
                 continue;
             };
-            let v = v.clone();
+            let v = Self::itemize_plain_scalar_param(&cf.param_defs[i], v.clone());
             // A sub_signature rename (`:color(:$colour)`) binds every inner
             // name to the value as well.
             for (alias_name, alias_slot) in &npb.alias_binds {

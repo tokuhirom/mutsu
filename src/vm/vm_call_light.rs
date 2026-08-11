@@ -191,6 +191,7 @@ impl Interpreter {
                         return Err(RuntimeError::typed("X::TypeCheck::Argument", attrs));
                     }
                 }
+                let val = Self::itemize_plain_scalar_param(&cf.param_defs[param_idx], val);
                 let param_name = &cf.param_defs[param_idx].name;
                 self.locals[*slot] = val.clone();
                 let needs_env = write_all_params

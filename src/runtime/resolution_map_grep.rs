@@ -439,13 +439,32 @@ impl Interpreter {
                         if arity == 1 {
                             let item = list_items[i].clone();
                             if let Some(p) = data.params.get(assumed_count) {
-                                vm.env_mut().insert(p.clone(), item.clone());
+                                // A `-> $v` map param is an item binding — see
+                                // `itemize_plain_scalar_param`. The topic bind
+                                // below stays raw (implicit `$_` does not
+                                // itemize in raku).
+                                let bound = match data.param_defs.get(assumed_count) {
+                                    Some(pd) => Self::itemize_plain_scalar_param(pd, item.clone()),
+                                    None if !p.starts_with(['@', '%', '&', '\\']) => {
+                                        Self::itemize_scalar_store(p, item.clone())
+                                    }
+                                    None => item.clone(),
+                                };
+                                vm.env_mut().insert(p.clone(), bound);
                             }
                             bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
                         } else {
                             for (idx, p) in data.params.iter().skip(assumed_count).enumerate() {
                                 if i + idx < list_items.len() {
-                                    vm.env_mut().insert(p.clone(), list_items[i + idx].clone());
+                                    let item = list_items[i + idx].clone();
+                                    let bound = match data.param_defs.get(assumed_count + idx) {
+                                        Some(pd) => Self::itemize_plain_scalar_param(pd, item),
+                                        None if !p.starts_with(['@', '%', '&', '\\']) => {
+                                            Self::itemize_scalar_store(p, item)
+                                        }
+                                        None => item,
+                                    };
+                                    vm.env_mut().insert(p.clone(), bound);
                                 }
                             }
                             bind_loop_topic(
@@ -716,7 +735,15 @@ impl Interpreter {
                 let call_item = crate::runtime::utils::pair_as_positional(item);
                 'body_redo: loop {
                     if let Some(p) = data.params.first() {
-                        vm.env_mut().insert(p.clone(), call_item.clone());
+                        // `-> $v` grep/first param: item binding, like map.
+                        let bound = match data.param_defs.first() {
+                            Some(pd) => Self::itemize_plain_scalar_param(pd, call_item.clone()),
+                            None if !p.starts_with(['@', '%', '&', '\\']) => {
+                                Self::itemize_scalar_store(p, call_item.clone())
+                            }
+                            None => call_item.clone(),
+                        };
+                        vm.env_mut().insert(p.clone(), bound);
                     }
                     bind_loop_topic(vm.env_mut(), &call_item, keeps_outer_topic, &outer_topic);
                     let saved_when_matched = vm.when_matched();
