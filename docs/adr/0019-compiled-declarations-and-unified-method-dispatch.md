@@ -3017,6 +3017,37 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 4". Next:
   E5c/E5d (`CallMethodDynamic` + the two hyper entries, already measured in E5 steps
   2-3).
+  **Progress 2026-08-11** (E5c, both parts, closing E5c): classified
+  `CallMethodDynamic`'s 14 named intercept arms and confirmed its general-case
+  fallthrough already calls the shared `try_native_method`/`try_compiled_method_or_interpret`
+  pair directly, with no inline cache or inlined resolution logic anywhere in the file
+  -- unlike `CallMethod`, this entry never had a duplicate to converge, so it inherited
+  E5b's closure automatically: no code change. For the hyper entries' per-element probe
+  (part 2), raku-verified the gap E5 step 3 flagged (`HyperMethodCallDynamic` has no
+  `skip_native`/`has_user_method` gate, unlike its static twin) against six collision
+  attempts (Instance overrides + a `but`-mixin) -- zero divergence found, generalizing
+  step 2's "the real safety net lives inside `try_native_method_raw` itself, not the
+  caller's outer gate" conclusion to a second entry; downgrades that gap from "must
+  fix" to "redundant defense-in-depth", no code change needed. The raku-verification
+  pass did surface two real, unrelated bugs, both filed rather than fixed here: `.WHICH`/
+  `.WHY` user overrides are silently ignored except via a compile-time-literal quoted
+  call (two independent "skip native pseudo dispatch" mechanisms, neither aware these
+  two of the eight MOP pseudo-methods are genuinely overridable --
+  `todo/deep/pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form.md`),
+  and unquoted `.$name` accepts a bare-string name where raku requires Callable/`CALL-ME`
+  (`todo/tickets/dollar-dot-dynamic-method-name-should-require-callable.md`). Full detail
+  in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5c, part 1"/"part 2". **E5c is closed.**
+  Next: **E5d** (JIT-shim parity check, no code change expected).
+  **Progress 2026-08-11** (E5d, closing all of E5): confirmed by inspection, not
+  assumption -- of the two JIT shims in E5/E6's scope (`vm_jit_helpers.rs:314/367`),
+  only `call_method` (`OpCode::CallMethod`) is E5's; it re-enters `exec_call_method_op`
+  itself (the same entry point the non-JIT dispatch arm calls) with a byte-identical
+  post-call tail, so every E5b/E5c change inside that function is covered under JIT
+  automatically, no shim-side change needed. `CallMethodDynamic` and the two hyper
+  opcodes have no JIT shim at all, so the check does not apply to them. **All of E5
+  (steps 1-4, E5b, E5c parts 1-2, E5d) is closed.** Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5d". Next: **E6** (mutation-aware and
+  container calls).
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

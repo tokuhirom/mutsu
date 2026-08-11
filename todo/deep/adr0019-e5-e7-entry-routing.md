@@ -884,3 +884,146 @@ probe (step 2), the `User` candidate resolution is deduped onto the shared cache
 step), and the surrounding interceptor cascade stays as direct self-guarding pre-checks (this
 step). What is left for E5c/E5d is the two `CallMethodDynamic`/hyper entries measured in E5 steps
 2-3, not further work on `CallMethod` itself.
+
+### E5c, part 1: `CallMethodDynamic` -- already closed by inheritance from E5b, no code change
+
+Per design decision 4's slicing, E5c covers `CallMethodDynamic` plus the two hyper entries' per-
+element probe. This is part 1 (the `CallMethodDynamic` opcode itself); the hyper entries are a
+separate part (below).
+
+`exec_call_method_dynamic_op` (`src/vm/vm_call_method_mut_ops.rs:30-345`) was already fully
+taxonomized by E5 step 2's measurement slice (see that section's table above) -- this pass turned
+that table into the per-arm numbered classification design decision 2 asks for, and checked
+whether the general-case fallthrough is genuinely already in target end-state shape rather than
+assuming it from the table alone.
+
+**Every one of the 14 named intercept arms is class (a) or (b)**: LazyIoLines force (a); `.+`/`.*`
+modifiers, `$obj.$coderef(...)` (unique to this entry -- the name-value is itself a `Sub`/
+`WeakSub`/`Routine`, bypassing method lookup via `vm_call_on_value` entirely), `.return`,
+`.hyper`/`.race` config, and the 9 HyperSeq/RaceSeq delegate arms (all (b) -- method-identity
+intercepts, receiver-shape-independent for the 7 pure ones, wrapping their own inner (c) probe
+pair for `map`/`grep`/the catch-all, matching `CallMethod`'s own established convention for
+identically-shaped wrapped arms). No arm needed reclassification against the E5 step 2 table.
+
+**The general-case fallthrough (`:310-318` current revision) is the target decision-match shape
+already, not a duplicate to converge**:
+
+```rust
+if let Some(native_result) =
+    self.try_native_method(&target, Symbol::intern(&method), &args)
+{
+    /* native */
+} else {
+    /* user */
+    self.try_compiled_method_or_interpret(target, &method, args)
+}
+```
+
+`grep -n "cache\|resolve_method" src/vm/vm_call_method_mut_ops.rs` confirms there is no inline
+cache and no inlined resolution logic anywhere in this file between the native probe and this
+call -- unlike `CallMethod`'s own entry point (E5b step 3/4's find), this entry never inlined a
+duplicate of `resolve_method_cached`'s three-tier cache; it always called the shared
+`try_compiled_method_or_interpret` function directly. Since that function is the exact one E5b
+step 3 shadow-verified and step 4 deduped onto `resolve_method_cached`, `CallMethodDynamic`'s
+`User` candidate inherited E5b's closure for free -- there was never a second implementation here
+to shadow-check or dedup. The same 2-line idiom repeats identically inside the two HyperSeq
+delegate arms (`hyperseq-map-grep`/the catch-all) against an `array_target` receiver -- also
+already end-state shape, not a duplicate.
+
+**No dedup opportunity found**, and this is a structurally different situation from E5b step 4:
+that step's find was two *independent implementations* of the same cache (one inlined, one
+shared) that had to be shadow-verified before converging. Nothing like that exists here -- every
+dispatch-probe call site in this entry already calls the same shared `try_native_method`/
+`try_compiled_method_or_interpret` pair directly, so there is no second implementation to
+converge onto the first. (The 2-line idiom's 3x textual repetition inside one function is a
+DRY/line-count nit at best -- all three sites already call the identical functions in the
+identical order, so there is nothing to drift; not treated as blocking closure.)
+
+**`CallMethodDynamicMut` (E6-scoped) reconfirmed unchanged**: still reaches the interpreter with
+no native-method probe and no compiled-method probe at all (`vm_call_method_mut_ops.rs:347-433`)
+-- after `.+`/`.*` handling and the `call-sub-value` branch, the only native-ish check is
+`try_native_buf_mut` (Buf write-method fast path only), and everything else falls straight
+through to `vm_call_method_mut_with_values` behind a pre-existing
+`// TODO: compile to bytecode -- generic mut method fork (ledger §1).` comment. Matches the design
+doc's inventory correction 3 exactly; correctly out of scope for E5c (it is E6's job).
+
+**Real finding, out of scope for this campaign**: raku-verifying representative dynamic-call
+shapes turned up a genuine, pre-existing correctness gap unrelated to native-vs-user dispatch
+ordering -- `.$name` (unquoted) should require `$name` to be Callable/type-object/`CALL-ME`-able
+(raku: `No such method 'CALL-ME' for string 'uc'` for a bare-string `$name`), but mutsu's
+`dynamic_method_name` (`vm_call_method_mut_ops.rs:23-28`) accepts any value via
+`.to_string_value()`, so `.$m()` and `."$m"()` compile to the identical AST and behave
+identically. Filed as `todo/tickets/dollar-dot-dynamic-method-name-should-require-callable.md`,
+not fixed here.
+
+**Conclusion: E5c part 1 (`CallMethodDynamic`) is closed, docs-only, no code change.** The `Native`
+candidate is a direct self-guarding probe at every dispatch point in this entry (generalizing E5b
+step 2's rule), and the `User` candidate already routes through the exact function E5b closed --
+this entry inherited that closure automatically, with nothing local to shadow-check or dedup.
+
+### E5c, part 2: the hyper entries' per-element probe -- raku-verified, no live divergence found; downgrades inventory correction 4 from "must fix" to "redundant gate", but surfaces an unrelated real bug
+
+E5 step 3's measurement slice already flagged (its "real finding" note, reproduced from the
+design doc's own inventory correction 4) that `exec_hyper_method_call_dynamic_op`
+(`HyperMethodCallDynamic`) has **no `skip_native`/`has_user_method` gate anywhere** in its
+per-element probe, unlike its static twin `exec_hyper_method_call_op` (`HyperMethodCall`), which
+computes a per-element `skip_native` from `has_user_method(class_name, method)`
+(`vm_hyper_method_ops.rs:643-670`) before its four modifier-keyed native/user probe arms. That
+note left it explicitly unverified: "V1 in the doc's Verification items still needs to
+raku-verify it before the E6/E5c cutover fixes it by construction."
+
+Raku-verified now, with three targeted collision attempts (Instance method override colliding
+with a name `try_native_method` could plausibly intercept, a `but`-mixin role override, per E5b
+step 2's own precedent for finding this class of gap): a user Instance overriding `.reverse`,
+`.gist`, `.Str`, `.raku`, `.perl`, and a `but Loud { method uc {...} }` string mixin, all
+dispatched via `@a»."name"()` (the dynamic per-element probe's plain string-dispatch branch) --
+**every one matched raku exactly**, no divergence found. This means, per the same generalization
+step 2 already established for `CallMethod`'s top-level `skip_native` gate: `try_native_method`/
+`try_native_method_raw`'s own internal self-guards (the `mixin_role_has_method` bypass, the
+`render_overridden` check for `gist`/`Str`/`Stringy`/`raku`/`perl`, the `is_native_method`
+Instance check, ...) already provide the real safety net *inside the shared function itself*,
+independent of whether the caller computes an outer `skip_native` gate first. `HyperMethodCall`'s
+own outer gate is therefore a fast-path bypass (skip the `try_native_method_raw` call entirely
+for the common case), not a distinct correctness mechanism -- exactly what step 2 concluded, now
+confirmed at a second entry. **Inventory correction 4 downgrades from "a live ordering bug" to
+"an redundant defense-in-depth gate `HyperMethodCallDynamic` happens not to have" -- no code
+change needed to close it.**
+
+**But the raku-verification pass did find a real, different divergence**: `@a»."WHICH"()`/a plain
+`.WHICH`/`.WHY` override is silently ignored (native answer wins) in every call form except a
+compile-time-literal quoted method call (`.'WHICH'()`). This is *not* a native-vs-user dispatch-
+ordering bug in the ADR-0019 sense -- it traces to a narrower, pre-existing gap specific to
+`WHICH`/`WHY` (the two MOP pseudo-methods that are genuinely user-overridable in raku, unlike the
+other six) across two independent "skip native pseudo dispatch" mechanisms (one VM-opcode-level,
+one interpreter-level). Root-caused and filed as
+`todo/deep/pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form.md` -- out
+of scope for this campaign, not fixed here.
+
+**Conclusion: E5c part 2 (hyper per-element probes) is closed, docs-only, no code change.**
+`HyperMethodCall`'s existing outer gate and `HyperMethodCallDynamic`'s absent one both resolve to
+the same safety net inside `try_native_method_raw`, matching step 2's generalized finding. **E5c
+is now fully closed** (both parts); **E5d** (JIT-shim parity check, no code change expected) is
+the only remaining E5 item.
+
+### E5d: JIT-shim parity check -- confirmed, no code change
+
+Per design decision 4, E5d is "assert the shims still just re-enter the rewritten ops." Of the
+two JIT shims named in the corrected entry inventory (`vm_jit_helpers.rs:314/367`), only
+`call_method` (`OpCode::CallMethod`, :314-362) is in E5's scope -- `call_method_mut`
+(`OpCode::CallMethodMut`, :367+) is E6's `CallMethodMut`, not an E5 entry. `CallMethodDynamic` and
+the two hyper opcodes have **no JIT shim at all** (`grep -n 'extern "C" fn' vm_jit_helpers.rs`
+lists no dynamic/hyper method-call shim), so they are not JIT-compiled and this check does not
+apply to them.
+
+Read `call_method` (:314-362) directly: it reads the `OpCode::CallMethod` payload in place, calls
+`interp.sync_source_line(...)` then `interp.exec_call_method_op(code, *name_idx, *arity,
+*modifier_idx, *quoted, *arg_sources_idx)` -- the exact same entry point `vm_exec_dispatch.rs`'s
+own `CallMethod` arm calls -- and its post-call tail (`apply_pending_rw_writeback`,
+`drain_pending_local_updates_after_call`, resume-point recording on error) is byte-identical to
+the non-JIT dispatch arm's tail, unchanged by E5b/E5c. Since the shim re-enters
+`exec_call_method_op` itself rather than duplicating any of its logic, every change E5b/E5c made
+inside that function (the `resolve_method_cached` dedup, the cascade classification) is
+automatically covered under JIT with zero shim-side change needed -- confirmed by inspection, not
+just assumed. **E5d is closed, docs-only, no code change. All of E5 (steps 1-4, E5b, E5c parts
+1-2, E5d) is now closed.** Next up per design decision 4's slicing is E6 (mutation-aware and
+container calls).
