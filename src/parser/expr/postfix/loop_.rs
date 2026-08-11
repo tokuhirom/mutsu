@@ -1028,6 +1028,7 @@ fn postfix_expr_loop_from(
                     (r, Symbol::intern(&method_name))
                 };
                 // Detect illegal space between method name and parens
+                let mut r = r;
                 if (r.starts_with(' ') || r.starts_with('\t')) && !r.starts_with('\\') {
                     let after_ws = r.trim_start_matches([' ', '\t']);
                     // A `(...)`-delimited set/baggy infix operator after a method
@@ -1040,10 +1041,17 @@ fn postfix_expr_loop_from(
                     ];
                     let is_set_infix_op = SET_INFIX_OPS.iter().any(|op| after_ws.starts_with(op));
                     if after_ws.starts_with('(') && !is_set_infix_op {
-                        return Err(PError::expected_at(
-                            "Confused. no space allowed between method name and the left parenthesis",
-                            r,
-                        ));
+                        // Slang spaced-methodop mode (ADR-0026 §2.3,
+                        // Slang::Tuxic's `methodop` override): `.method (args)`
+                        // is a method call with the parenthesized arguments.
+                        if crate::parser::stmt::simple::slang_spaced_methodop() {
+                            r = after_ws;
+                        } else {
+                            return Err(PError::expected_at(
+                                "Confused. no space allowed between method name and the left parenthesis",
+                                r,
+                            ));
+                        }
                     }
                 }
                 // Handle unspace between method name and parens: .method\ (args)

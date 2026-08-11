@@ -185,6 +185,7 @@ pub(crate) fn reset_user_subs() {
         }
     });
     DECLARE_KEYWORDS.with(|m| m.borrow_mut().clear());
+    super::slang_modes::reset_slang_modes();
 }
 
 /// Seed the language version an EVAL's nested parse starts at. `None` restores
