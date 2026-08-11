@@ -231,22 +231,49 @@ impl Interpreter {
                         || (self.has_class_level_attr("Match", method)
                             && !self.has_public_accessor("Match", method))));
         }
-        skip_pseudo
-            || self.native_fastpath_receiver_state_guard(target, method, args)
-            || matches!(target.view(), ValueView::Instance { class_name, .. }
-                if self.is_native_method(&class_name.resolve(), method))
-            || matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), "Bridge"))
-            || (!is_pseudo_method
-                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_user_method(&class_name.resolve(), method)))
-            || (!is_pseudo_method
-                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_public_accessor(&class_name.resolve(), method)))
-            || (!is_pseudo_method
-                && matches!(target.view(), ValueView::Package(class_name) if self.has_user_method(&class_name.resolve(), method)))
-            || (!is_pseudo_method
-                && matches!(target.view(), ValueView::Package(class_name) if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
-            || (!is_pseudo_method
-                && matches!(target.view(), ValueView::Instance { class_name, .. } if self.has_class_level_attr(&class_name.resolve(), method) && !self.has_public_accessor(&class_name.resolve(), method)))
-            || (!is_pseudo_method && self.mixin_role_has_method(target, method))
+        if skip_pseudo || self.native_fastpath_receiver_state_guard(target, method, args) {
+            return true;
+        }
+        // ADR-0019 E4b step 12 (authoritative switch, category 3): the
+        // Instance branch's `has_user_method(..) || has_public_accessor(..)`
+        // pair collapses into one `resolve_user_method_or_accessor` call --
+        // shadow-verified equivalent in step 1 (`t/`-wide sweep, only 2/36992
+        // unrelated mismatches). The Package branch stays its own narrower
+        // `has_user_method` check with no accessor lookup (step 11: folding
+        // in `resolve_user_method_or_accessor` there would be a real behavior
+        // change, since an instance attribute's accessor is meaningless on
+        // the bare type object). `is_native_method` (category 2) stays a
+        // direct call rather than routing through `resolve_sequence`'s
+        // `NativeCallBinding` candidate: both compute the exact same MRO walk
+        // (`resolve_sequence`'s detection deliberately mirrors
+        // `is_native_method`), so building a full sequence here would only
+        // add cost, not correctness -- `NativeCallBinding` earns its keep at
+        // future multi-candidate consumers (E5-E7), not this single-fact
+        // check. The class-level-attr arm (category 4, `has_class_level_attr
+        // && !has_public_accessor`) is invisible to every resolver helper
+        // (step 11) and stays an explicit check on both branches.
+        let receiver_bypass = match target.view() {
+            ValueView::Instance { class_name, .. } => {
+                let class_name = class_name.resolve();
+                self.is_native_method(&class_name, method)
+                    || self.has_user_method(&class_name, "Bridge")
+                    || (!is_pseudo_method
+                        && (self
+                            .resolve_user_method_or_accessor(&class_name, method)
+                            .is_some()
+                            || (self.has_class_level_attr(&class_name, method)
+                                && !self.has_public_accessor(&class_name, method))))
+            }
+            ValueView::Package(class_name) => {
+                let class_name = class_name.resolve();
+                !is_pseudo_method
+                    && (self.has_user_method(&class_name, method)
+                        || (self.has_class_level_attr(&class_name, method)
+                            && !self.has_public_accessor(&class_name, method)))
+            }
+            _ => false,
+        };
+        receiver_bypass || (!is_pseudo_method && self.mixin_role_has_method(target, method))
     }
 
     /// ADR-0019 E4b shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
