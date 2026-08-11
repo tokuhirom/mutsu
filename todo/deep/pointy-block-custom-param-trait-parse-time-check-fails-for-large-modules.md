@@ -153,6 +153,51 @@ the "full CLI parse path divergence" investigation below (the side where ~15
 synthetic repro attempts failed). Until then, treat the memo collision as the
 most plausible explanation and this ticket as watch-only.
 
+## 2026-08-11: the flip recurred — memo theory now REFUTED per the protocol above
+
+While investigating an unrelated hang
+(`todo/tickets/http-router-named-urls-rc124-timeout.md`), a plain `cargo
+build` from this session's starting commit (no functional source changes,
+just an unrelated one-line addition to `state_supplier.rs` later reverted)
+flipped `http-router.rakutest` back to **0/83** — first-route "unknown trait
+'is' -> 'query'" — and simultaneously made `http-router-named-urls.t` (a
+different file, no custom traits of its own, but same `-I` module set) fail
+identically with **"unknown trait 'is' -> 'cookie'"** before any subtest
+runs. Followed the decision protocol exactly:
+
+- Reproduced 5/5 on this one binary (fully deterministic *for this binary*,
+  consistent with prior observations).
+- **`MUTSU_PARSE_MEMO=0` did NOT fix it** — same "unknown trait" error, 3/3.
+  Per the protocol above, **this refutes the ParseMemo collision theory** as
+  the explanation for this occurrence (the generation-key fix from
+  2026-08-09 is doing its job; whatever is happening now is a different
+  mechanism, or the "genuine miss" / scan-truncation path the ticket already
+  flags as the alternative).
+- Rebuilding again (touching only `src/main.rs`, reverted after) did **not**
+  un-flip it — stayed broken across 2 more rebuilds in this session. This
+  session did not find a rebuild that returned to the "lucky" 64/83 state
+  once it had flipped, unlike the 2026-08-09 note's four-rebuild streak that
+  stayed "lucky." (Not enough rebuild attempts were made to know whether
+  "stuck on the unlucky side" is now the more common state or this session
+  was just unlucky — worth tracking.)
+- Confirmed the flip is **not scoped to `is query`/`http-router.rakutest`
+  specifically** — `http-router-named-urls.t`'s `is cookie`/`is header` (same
+  `Cro::HTTP::Router` module, different call site) fails the same way on the
+  same binary, and (per the "What has been ruled out" note in the
+  named-urls-hang ticket) even a *content-free* rebuild with zero source
+  changes at all reproduced the same "unknown trait" failure — so this is
+  not caused by any specific edit, just binary-layout non-determinism that
+  is apparently still present post-memo-fix.
+
+**Practical impact restated:** `http-router.rakutest`'s pass count (and by
+extension any Cro::HTTP suite file sharing this large `-I` module set) is
+*still* not a stable number to cite from a single build. Per the protocol,
+the next investigator should pick up the "genuine miss" path (suggested
+step 3 below: does `parse_program_partial`'s scan of `Router.rakumod`
+actually reach and return from the whole `module Cro::HTTP::Router { ... }`
+block on an "unlucky" binary, or silently truncate?) rather than revisiting
+the memo theory, which is now refuted for this occurrence.
+
 ## Suggested next steps
 
 1. Instrument `main.rs`'s actual parse call (not a substitute unit test) with a
