@@ -92,6 +92,49 @@ notok 3 → **0**; `http2-response-serializer.rakutest` 3 → 1;
    collapses the overlay. Start the gdb session by checking
    `self.env.is_scoped()` at the block-3 closure creations and at the
    tap-dispatch merge.
+
+   **2026-08-11 correction (this is a genuine cross-thread RACE, not a
+   deterministic bug — re-scope any fix accordingly):** confirmed by
+   running the pristine (un-instrumented) `target/debug/mutsu` against
+   `tmp/h2rs-probe-nofix.raku` (= `tmp/h2rs-probe.raku` with the
+   "any-spawn-fixes-it" workaround lines removed — see below) 8 times in
+   a row: **check 4 FAILED 4/8 runs and PASSED 4/8**, no code changes in
+   between. The single failing run reported earlier (and the
+   `http2-response-serializer.rakutest` prove result generally) was one
+   sample from this distribution, not a deterministic outcome — so any
+   fix attempt MUST re-run several times (a single green run proves
+   nothing) and the eventual pin must itself tolerate or force the race
+   window (e.g. loop N times in the test, or find a way to pin the
+   losing interleaving deterministically) rather than assert on one run.
+   **Trap for the next debugger:** adding `MUTSU_DEBUG_ENCODER`-gated
+   `eprintln!`/backtrace instrumentation (even fully inert — an
+   `std::env::var(...).is_ok()` check on every entry of the
+   closure-dispatch merge loop, `capture_closure_env`, and
+   `set_env_with_main_alias_sym`, with the env var left UNSET) made the
+   failure stop reproducing across 5+ runs — the added per-call overhead
+   on those hot paths shifted thread scheduling enough to close the race
+   window, a classic Heisenbug. **Do not trust a print-based
+   before/after comparison on this bug** — always re-verify a fix (or a
+   "no repro" claim) against the PRISTINE binary, 8-10 runs, and report
+   the fail count, not a single boolean. This also means the earlier
+   "FINAL datum" above (mainline `start{}` insertion makes it pass) is
+   itself suspect as *proof of mechanism* — inserting a spawn+await is
+   ALSO extra synchronization/delay on the same hot path, so it may only
+   be narrowing the race window rather than fixing a specific tier-flush
+   code path. Re-verify that datum itself over 8+ runs before trusting it
+   as a smoking gun.
+   Given it is racy, the productive next step is probably NOT more
+   printf/gdb-breakpoint bisection (both perturb timing and produce
+   misleading "fixed" readings) but either (a) reasoning from first
+   principles about what happens-before relationship SHOULD exist between
+   "mainline write-through into the `encoder` cell" and "tap-thread reads
+   `encoder` while dispatching a closure whose capture predates that
+   write" and auditing the relevant code for a missing synchronization
+   point, or (b) a stress-loop repro (run the check hundreds of times
+   in a tight loop, or introduce a deliberate tiny random sleep on one
+   side) to get a much higher, more statistically stable failure rate
+   before instrumenting, so a few stray prints don't swing the ratio to
+   zero.
 2. **`http2-request-parser.rakutest` test 49** ("check 4" of
    'Header1 + Header2 + Data1 + Data2'): root-caused 2026-08-11 — NOT a
    capture bug and NOT expected to be fixed by slice 2. A nested
