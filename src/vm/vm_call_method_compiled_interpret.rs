@@ -656,31 +656,38 @@ impl Interpreter {
                 }
             }
         }
+        // Guard for the whole "lever A" native block below: a plain
+        // Array/List/Hash/Str/... receiver has no Instance-branch user-method
+        // check of its own, so an augmented native class must be checked here
+        // once (see `native_lever_a_user_override`'s doc comment).
+        let lever_a_blocked = self.native_lever_a_user_override(&target, method);
         // Native `.map` / `.grep` over a concrete array with a simple block: run
         // the iteration loop in the Interpreter instead of the interpreter (lever A). No
         // `target_name` here (the receiver is a value, not a mutable variable),
         // so `$_`-mutating blocks fall back to the interpreter.
-        if let Some(result) = self.try_native_array_map(None, &target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_array_map(None, &target, method, &args)
+        {
             return result;
         }
         // Native `.subst` over a Str with a simple pattern/replacement (lever A).
-        if let Some(result) = self.try_native_subst(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_subst(&target, method, &args) {
             return result;
         }
         // Native `.sort` over a plain array with no/simple comparator (lever A).
-        if let Some(result) = self.try_native_sort(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_sort(&target, method, &args) {
             return result;
         }
         // Native `.min` / `.max` over a plain list, including `:by` blocks.
-        if let Some(result) = self.try_native_extrema(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_extrema(&target, method, &args) {
             return result;
         }
         // Native `.minmax` over a plain list, including `:by` blocks.
-        if let Some(result) = self.try_native_minmax(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_minmax(&target, method, &args) {
             return result;
         }
         // Native `.first` over a plain list (no-adverb forms), including blocks.
-        if let Some(result) = self.try_native_first(&target, method, &args) {
+        if !lever_a_blocked && let Some(result) = self.try_native_first(&target, method, &args) {
             return result;
         }
         // Native QuantHash coercion `.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/
@@ -692,7 +699,8 @@ impl Interpreter {
         // value since #2952), so it is a pure value op like the others. A scalar
         // (`42.Set`) becomes a single-element collection. Instance/Package/Junction
         // receivers fall through.
-        if args.is_empty()
+        if !lever_a_blocked
+            && args.is_empty()
             && let Some(result) = Self::try_native_quanthash_coerce(&target, method)
         {
             return result;
@@ -701,7 +709,8 @@ impl Interpreter {
         // Cool scalar (pure value op; the `Map` declared-type is embedded in the
         // Hash Arc). A scalar (`42.Hash`) raises the same odd-number error as the
         // interpreter. Instance/Package/Junction fall through.
-        if args.is_empty()
+        if !lever_a_blocked
+            && args.is_empty()
             && let Some(result) = Self::try_native_map_hash_coerce(&target, method)
         {
             return result;
@@ -709,7 +718,8 @@ impl Interpreter {
         // Native `.Seq` coercion over a structural receiver (Seq/Array/Slip/
         // Range/bare scalar). Supply/LazyList/Instance need state and fall
         // through to the interpreter.
-        if args.is_empty()
+        if !lever_a_blocked
+            && args.is_empty()
             && method == "Seq"
             && let Some(result) = crate::builtins::seq_coerce::to_seq_structural(&target)
         {
@@ -720,7 +730,8 @@ impl Interpreter {
         // `builtins::iterator_construct` impl the interpreter also uses. `Seq`
         // (consumed-state + `squish` env mutation) and an already-built Iterator
         // fall through to the interpreter.
-        if args.is_empty()
+        if !lever_a_blocked
+            && args.is_empty()
             && let Some(result) = Self::try_native_iterator_construct(&target, method)
         {
             return Ok(result);
@@ -728,13 +739,17 @@ impl Interpreter {
         // Native `.IO` coercion over a Cool scalar (`"path".IO`, `42.IO`) — builds
         // an IO::Path via the shared `make_io_path_instance` (ledger §D). Instance /
         // non-IO Package / aggregate receivers fall through.
-        if let Some(result) = self.try_native_io_coercion(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_io_coercion(&target, method, &args)
+        {
             return result;
         }
         // Native `.encode` (Cool scalar -> Buf) / `.decode` (Buf/Blob -> Str) —
         // pure transformation via the VM-owned encoding registry, no `io_handles`
         // (ledger §D). Single impl shared with the interpreter catch-all.
-        if let Some(result) = self.try_native_encode_decode(&target, method, &args) {
+        if !lever_a_blocked
+            && let Some(result) = self.try_native_encode_decode(&target, method, &args)
+        {
             return result;
         }
         // TODO: compile to bytecode — native/Buf/Failure method fork (ledger §1).

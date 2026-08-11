@@ -1626,3 +1626,109 @@ scope for this step). What's still open, mirroring E5b step 2/3: does `try_compi
 `User`-candidate resolution duplicate `resolve_method_cached`'s three-tier cache the way
 `try_compiled_method_or_interpret_sym` did for `CallMethod` (E5b step 4's actual dedup)? That
 inspection is E6b step 2, not yet done.
+
+## E6b step 2: the `User`-candidate resolution was already deduped -- no code change needed; classifying the surrounding cascade surfaced a real, unrelated dispatch-order bug instead
+
+Answers step 1's open question by inspection plus git archaeology (`git log -p --follow --
+src/vm/vm_call_method_compiled_mut.rs`), mirroring E5b step 3/4's protocol.
+
+**`try_compiled_method_mut_or_interpret_sym`'s resolution block already calls
+`resolve_method_cached` directly** (`vm_call_method_compiled_mut.rs`, the `if let Some(cn) =
+class_name && ... self.resolve_method_cached(cn, method, class_sym, method_sym, &args, &target)`
+block) -- not an inlined duplicate of its three-tier cache, unlike `CallMethod`'s pre-E5b-step-4
+state. Git history confirms this is not a recent fix: `resolve_method_cached` itself was
+*introduced for this exact call site* by `73539eaa1` ("perf: store the resolved method owner as a
+Symbol in the resolve caches", pre-dating ADR-0019 entirely) -- the Mut path has called the shared,
+cached, `shadow_check_resolver`-instrumented resolver since before this campaign started. E5b step
+4 (`ae7d92e8e`) later deduped `CallMethod`'s *own* inlined copy onto this same pre-existing
+function; it did not touch the Mut path because there was nothing to dedup there. **Conclusion:
+E6b step 2 closes with zero code change**, exactly like E5d -- the `User` candidate at
+`CallMethodMut` has been sound and shadow-checked (via `resolve_method_cached`'s own two
+`shadow_check_resolver` call sites, unconditionally exercised by every caller including this one)
+for as long as E4a's shadow probe has existed.
+
+**Classifying the surrounding interceptor cascade** (mirroring E5b step 4's table, for the ~15
+`.new`/`bless`/IO::Handle/MOP/private-method/metamethod pre-checks before the resolution block, and
+the ~11 "lever A" pure-value native probes after it): every pre-resolution item is structurally
+identical to its non-mut twin -- the source comments in `vm_call_method_compiled_mut.rs` already
+say so explicitly ("mut path twin of the above") for every one of the ten `.new`/`bless` forks, so
+E5b step 4's classification (none fold into a decision match; each stays a self-guarding
+pre-check) transfers without re-deriving it. The genuinely new item was the *post*-resolution lever-A
+block (`try_native_array_map`/`try_native_subst`/`try_native_sort`/`try_native_extrema`/
+`try_native_minmax`/`try_native_first`/the QuantHash/Map-Hash/Seq/IO/encode-decode coercions) --
+these run for a receiver whose `ValueView` is not `Instance`/`Package` (a plain `Array`/`List`/
+`Hash`/`Str`/...), so `class_name` is `None` and the resolution block's `resolve_method_cached`
+call never even executes for them.
+
+**That gap is real, not hypothetical.** Raku-verified:
+
+```raku
+use MONKEY-TYPING;
+augment class Array { method sort { "USER-SORT-OVERRIDE" } }
+my @a = (3, 1, 2);
+say @a.sort;   # raku: USER-SORT-OVERRIDE (legal -- Array does not declare its own `sort`,
+               #       so no X::Redeclaration, unlike the already-known `augment class Str
+               #       { method uc {...} }` case E5b step 2 found and declined to fix)
+```
+
+mutsu printed `(1 2 3)` (native, ignoring the override) before this step, on **three independent,
+previously-unguarded tiers**, not just the lever-A block: (1) the arity-keyed Tier-1 native
+dispatch (`try_native_method_raw`, reached even earlier, before `try_compiled_method_mut_or_interpret_sym`
+is ever called, via the `CallMethodMut`/`CallMethod` opcodes' own `skip_native` gate — which, like
+the gate E5b step 2 already documented, only extracts a class name for `Instance`/`Package`
+receivers); (2) the lever-A block itself; (3) `call_method_with_values`/`call_method_mut_with_values`'s
+own internal by-name dispatch (`dispatch_method_by_name_2`'s `"sort"` arm and siblings), reached as
+the final interpreter fallback. All three needed the same fix, so a single shared predicate
+(`Interpreter::native_lever_a_user_override(target, method)`, `vm_call_method_compiled_cache.rs`)
+was added and consulted at all three tiers (`vm_native_dispatch.rs`'s `try_native_method_raw`,
+both lever-A blocks, and the top of both `call_method_with_values`/`call_method_mut_with_values`) —
+non-`Instance`/`Package` receivers now check `has_user_method(value_type_name(target), method)`
+before taking any native path, and dispatch through `run_instance_method` (threading the receiver
+value itself as `self`, not a synthesized type object) when it answers true.
+
+**That predicate exposed a second, independent, pre-existing bug**: `has_user_method`/`class_mro`
+answered `false` for a bare unregistered builtin collection name (`"Array"`, `"List"`, ...) even
+though `Array.^mro` (a *different* code path) correctly reports `(Array) (List) (Cool) (Any) (Mu)`.
+Root cause: `class_mro_readonly`'s "not a registered class" branch only ever consulted the small
+hardcoded `builtin_mro_table` (Match/Capture/IO::Spec/Distribution/CompUnit — an unrelated, older
+set) and, for a *bracketed* parametrized name only, `builtin_type_catalog::builtin_type_info`; a
+bare name like `"Array"` matched neither and fell to `compute_class_mro`, which has no `ClassDef`
+to read parents from and returns the class name alone. That made `has_user_method("Array",
+"first")` blind to `augment class List { method first {...} }` (List, not Array, still legal raku
+since `@a.first` dispatches through `List` in its MRO either way) even after the predicate itself
+was fixed. Fixed by teaching `class_mro_readonly` and `compute_class_mro` to consult
+`builtin_type_catalog::builtin_type_info` for a bare name too (the catalog already carries every
+builtin leaf type's full ancestor chain, previously read only for the bracketed-parametrized case)
+-- both for an unregistered class name directly, and as the immediate parent when a *previously
+unregistered* builtin type becomes registered via `augment` with no explicit `is` clause of its own
+(default-to-`Any` was too coarse there, dropping `List`/`Cool` for a direct `augment class Array`).
+
+**A real regression surfaced and was fixed before landing**: the first version of the
+`class_mro_readonly` fix matched a *bracketed* parametrized name too (e.g. `"Blob[uint8]"`) against
+the bare-name catalog lookup, short-circuiting the existing (correct) bracketed-handling branch
+below it -- which synthesizes `[Blob[uint8], Blob, Any, Mu]` (base class included) -- with the
+catalog row's own `mro` field for `"Blob[uint8]"`, `[Blob[uint8], Any, Mu]` (base class *excluded*
+-- parametrized rows track their base via `roles`, not `mro`). That silently dropped `Blob` from a
+`Blob[uint8]`/`buf8` receiver's MRO, breaking placeholder-parameter (`@^b`) "Positional" signature
+binding for any sub taking a sized buffer argument (caught by `t/digest-battery.t`'s SHA3
+implementation, `roast/packages/.../Digest/lib/Digest/SHA3.rakumod`'s `load64`, and by
+`t/sized-buffer-dispatch-narrowness.t`). Fixed by ordering the bare-name catalog check strictly
+*after* the existing bracketed branch, so it only ever answers for names that were never bracketed
+to begin with.
+
+**Verification**: new regression test `t/augment-native-lever-a-methods.t` (4 assertions, raku-
+verified byte-identical output) pins `augment class Array { method sort/map {...} }` and `augment
+class List { method first {...} }` overriding their native fast paths on both mut and non-mut
+receivers. Full local `t/` suite (3032 files / 28,384 tests, `-j8`) green. A relevant 192-file
+roast slice (S12-methods, S12-attributes, S14-roles, S02-types, S06-signature, S32-array,
+S03-metaops -- chosen for MRO/method-dispatch/class-hierarchy relevance) run against the release
+binary with `MUTSU_FUDGE=1`: 19,320 tests, all green. `cargo clippy -- -D warnings` / `cargo fmt`
+clean.
+
+**Conclusion: E6b step 2 is closed.** No code change was needed for the question it actually asked
+(the `User`-candidate dedup); the classification work that answers it surfaced and fixed a real,
+independent, general dispatch-order bug affecting any augmented builtin collection/Cool type's
+"lever A" methods, plus the `class_mro` gap that made the fix's own user-override predicate work
+correctly for multi-level builtin ancestry. **All of E6b (steps 1-2) is now closed.** Next: E6c
+(the two dynamic gaps -- inventory corrections 3/4 -- fixed by routing through the same decision)
+or E6d (`ArrayPush`'s `array_dispatch_pristine` bit).

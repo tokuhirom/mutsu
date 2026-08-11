@@ -165,6 +165,21 @@ impl Interpreter {
         if self.mixin_role_has_method(target, &method_name) {
             return None;
         }
+        // Augmented native-type bypass: a plain Array/List/Hash/Str/Range/Set/
+        // Bag/Mix/... receiver is not `Instance`/`Package`, so it carries no
+        // per-call user-method check of its own here -- the callers' own
+        // `skip_native` gates only extract a class name for those two shapes.
+        // Without this, `augment class Array { method sort {...} }` (legal raku:
+        // `Array` does not declare its own `sort`, so no redeclaration error --
+        // unlike `augment class Str { method uc {...} }`) was silently shadowed
+        // by the native fast path below. See `t/augment-native-lever-a-methods.t`.
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) && self.native_lever_a_user_override(target, &method_name)
+        {
+            return None;
+        }
         // Lazy Match: class is statically "Match" — mirror the Instance
         // bypasses below without materializing. (A Match never matches
         // Real/Numeric, and the Supply/Supplier arms cannot apply.)

@@ -54,6 +54,28 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
+        // Set/Bag/Mix/... receiver is not `Instance`/`Package`, so none of this
+        // function's by-name native dispatch below (`dispatch_method_by_name_*`,
+        // the Tier-1/lever-A callers upstream) ever checks it for a
+        // user-declared/augmented override — route straight to the ordinary
+        // instance-method machinery when one exists, threading the receiver
+        // itself as `self` (not a synthesized type object). See
+        // `native_lever_a_user_override`'s doc comment.
+        if !matches!(
+            target.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) && self.native_lever_a_user_override(&target, method)
+        {
+            let (result, _) = self.run_instance_method(
+                crate::runtime::utils::value_type_name(&target),
+                AttrMap::new(),
+                method,
+                args,
+                Some(target),
+            )?;
+            return Ok(result);
+        }
         // `HyperConfiguration.batch`/`.degree` — read the stored attribute. The
         // instance is minted by `HyperSeq.configuration` (used by the `hyperize`
         // dist); it has no user-defined accessors, so answer them directly.
