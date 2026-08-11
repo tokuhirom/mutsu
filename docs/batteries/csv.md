@@ -222,23 +222,31 @@ Under the stated criteria (no native/C-library dependency, real
 read-and-generate API), the field narrows to exactly two live candidates —
 `Text::CSV` and `CSV::Table` — both pure Raku. The heredoc-in-sub-body
 compiler bug that blocked both is now fixed; each still has its own
-remaining blocker:
+remaining blocker, and each blocker now has its own ticket:
 
-1. **`CSV::Table` needs the `@0`-in-array-literal parse bug fixed next**
-   (`todo/tickets/numbered-capture-array-var-in-array-literal.md`) — a small,
-   reduced, unrelated-to-CSV parser gap in a transitive dependency
-   (`Text::Utils` → `Font::AFM`). Re-measure `CSV::Table`'s own suite after
-   that fix; it may surface further blockers past that point, or may come up
-   clean (its own suite doesn't touch `Font::AFM` directly).
-2. **`Text::CSV` stays blocked on the harder problem** — `use Slang::Tuxic;`
-   at the top of `Text::CSV.rakumod` itself needs real slang-switching
-   support, a standing architectural gap (see "What blocks mutsu today"
-   above), not something to build just for this slot. It remains the
-   fuller-featured candidate on paper: `combine`/`print`/`say` for
-   line-at-a-time composition plus a top-level `csv(in => @data, out =>
-   $file)` functional form that builds a CSV file directly from an in-memory
-   data structure (no pre-existing file needed), and by far the
-   deeper-tested candidate (22697 vs 184 assertions).
+1. **`CSV::Table` needs the `@0`-in-array-literal parse bug fixed next** —
+   **[`todo/tickets/numbered-capture-array-var-in-array-literal.md`](../../todo/tickets/numbered-capture-array-var-in-array-literal.md)**.
+   Small, self-contained, reduced to a two-line repro, unrelated to CSV
+   (surfaced via a transitive dependency, `Text::Utils` → `Font::AFM`). This
+   is the shorter path to a working candidate — pick this up first. After the
+   fix, re-measure `CSV::Table`'s own suite; it may surface further blockers
+   past that point (only the *first* parse failure in `Font::AFM` was
+   reduced, not the whole file), or may come up clean since its own suite
+   doesn't touch `Font::AFM` directly.
+2. **`Text::CSV` stays blocked on the harder problem** —
+   **[`todo/deep/text-csv-needs-slang-tuxic-support.md`](../../todo/deep/text-csv-needs-slang-tuxic-support.md)**.
+   `use Slang::Tuxic;` at the top of `Text::CSV.rakumod` itself needs real
+   slang-switching support, a standing architectural gap (mutsu's parser has
+   no notion of a pluggable grammar at all — see the ticket for the concrete
+   options and why none is a quick pick). Do not start this without reading
+   that ticket first; it lays out a design fork (build general
+   slang-switching infra vs. a narrow leniency hack vs. deprioritize
+   `Text::CSV`) that needs a decision, not just an implementation. It remains
+   the fuller-featured candidate on paper if it ever clears: `combine`/
+   `print`/`say` for line-at-a-time composition plus a top-level
+   `csv(in => @data, out => $file)` functional form that builds a CSV file
+   directly from an in-memory data structure (no pre-existing file needed),
+   and by far the deeper-tested candidate (22697 vs 184 assertions).
 3. **`CSV::Table`'s write API has a real limitation worth flagging either
    way**: the class constructor requires an *existing* `:csv($file)` to load
    (`has $.csv; #is required;`, `lib/CSV/Table.rakumod:7`) — there is no
