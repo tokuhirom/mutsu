@@ -35,13 +35,17 @@ at element *storage*: list-assign into `@`, push/unshift/splice, element
 assign, `[...]` construction) is the raku-faithful single model but changes
 what is IN every array — a survey-sized campaign with its own fallout class
 (the bind-side campaign hit two consumers: `.cache` identity-return and
-`&combinations`; store-side will hit more). Alternatively, elements become
-real containers — exactly ADR-0001's Track B ("element `ContainerRef` cells",
-§2.1), explicitly fused with the GC campaign and NOT to be started
-standalone.
+`&combinations`; store-side will hit more).
 
-Do the shallow store-side campaign as its own measured effort, or fold it
-into Track B when the GC campaign starts — do not drive it as a drive-by.
+Note on Track B: ADR-0001's "element `ContainerRef` cells fused with the GC
+campaign" framing is HISTORY, not a live constraint — the GC (layer 3a
+cycle collector), NaN-boxing (3b), and JIT (layer 4) all shipped and are
+default on (ADR-0001 §7, 2026-08-02), and the "do not start Track B
+standalone" rule was superseded by ADR-0013 §7 (the `GcBox`/`UnsafeCell`
+interior-mutability refinement made the `gc_contents_mut` sites sound
+without Value-layer element cells). So there is no pending campaign to fold
+this into: run the store-side itemization as its own measured campaign —
+just not as a drive-by.
 
 ## Affected
 
