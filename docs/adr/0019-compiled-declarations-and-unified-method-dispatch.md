@@ -2899,6 +2899,39 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"Measurement slice results —
   call_method_all_with_fallback (E5 step 4)". Next: E5b, the `CallMethod`
   probe-section cutover to the E4 resolver decision.
+  **Progress 2026-08-11** (E5b step 1, shadow-verify the `Native` candidate
+  at `CallMethod` itself — **blocker finding, resolver decision NOT yet
+  safe to build on it**): reused the existing E4b step 9 shadow-check
+  function (`shadow_check_native_row_candidate`, unmodified, no new counter)
+  at `CallMethod`'s own highest-traffic plain-probe arm, passing the
+  already-computed `native_result.is_some()` — pure insertion, zero behavior
+  change, `make test`-equivalent local suite green. Full `t/` sweep: 39558
+  checks, ~965 mismatches (~2.4%), across 253 files, both directions
+  (`real=false/shadow=true` ~545, `real=true/shadow=false` ~409), no single
+  method dominant (`gist`/`raku` largest, but `join`/`sprintf`/`comb`/
+  `DEFINITE`/`head`/`Int`/`substr`/... all contribute). **This contradicts
+  E4b step 9's "essentially zero mismatches" only because that check ran at
+  a low-traffic site (`call_method_with_values`, the interpreter slow path)
+  — a sampling artifact, not evidence the underlying `native_row_servable`
+  predicate is sound.** Two root causes identified by inspection: (1) the
+  predicate checks only `(owner, method, arity, definite)`, blind to
+  concrete-value-shape exceptions (`Sub.gist`/`.raku` decline the generic
+  `"Any"`-owner row and use bespoke rendering instead — the same class of
+  gap E4b step 2 already named for `should_bypass_native_fastpath`'s
+  category-1 gates); (2) some methods the cascade genuinely serves
+  (`DEFINITE` at 0 arity) have no row in `native_method_row_table.rs` at
+  all. **Consequence: E5b must NOT build its "native or user" branch purely
+  from the `Native` candidate** — either refine the predicate per-shape
+  first, or keep the actual invocation as a direct, self-guarding
+  `try_native_method` call (matching how `NativeCallBinding` was already
+  found "no gain over a direct call" at E4b step 12) rather than a resolver
+  decision that skips calling it. Open next question: does `CallMethod`'s
+  pre-existing `skip_native`/`has_user_method` gate already make this moot
+  for `CallMethod` specifically (by construction preventing `Native` from
+  ever needing to outrank a matching `User` candidate at this arm)? Full
+  detail, mismatch examples, and the two-option resolution in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 1: shadow-verifying
+  the Native candidate at CallMethod itself".
 - [ ] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow

@@ -542,3 +542,90 @@ per the call-site count above).
 `CallMethodDynamic`, the two hyper non-mut opcodes, and this shared helper).
 Per design decision 4's slicing, E5b (`CallMethod` probe-section cutover to
 the E4 resolver decision) can start next.
+
+### E5b step 1: shadow-verifying the `Native` candidate at CallMethod itself — a real divergence found, NOT safe to consume yet
+
+Design decision 1's cutover shape needs `resolve_dispatch(&receiver, method_sym,
+shape)` to answer "native row or user candidate?" for `CallMethod`'s own
+highest-traffic arm (the plain probe at the end of its cascade, `native=43.8%`/
+`user=49.2%` per step 1's sweep). Before writing that function, this step
+reused the *existing*, already-landed E4b step 9 machinery
+(`Interpreter::shadow_check_native_row_candidate`, `src/runtime/resolution_sequence.rs`)
+and called it — unmodified, no new counter function — from `CallMethod`'s own
+plain-probe arm (`vm_call_method_ops.rs`, both the `native`-outcome and
+`user`-outcome branches), passing the already-computed `native_result.is_some()`
+as `real_served` so the cascade is never invoked twice. Pure insertion, zero
+behavior change (`cargo build`, `cargo clippy -- -D warnings`, `cargo fmt`, and
+the full local `prove -j4 t/` suite — 3018 files, 28265 subtests — all green,
+identical to before the insertion).
+
+**Finding: the `Native` candidate does NOT reliably predict `try_native_method`'s
+real outcome at this call site.** Full `t/` sweep (3018 files, `MUTSU_VM_STATS=1`):
+39558 shadow checks, ~965 mismatches (~2.4%), spread across 253 distinct files —
+both directions occur in comparable volume (row says servable but the cascade
+declined: ~545; cascade served but no row exists: ~409), and no single method
+dominates (`gist`/`raku` are the largest single buckets at roughly 120-190
+combined mismatches each, but `join`/`sprintf`/`comb`/`DEFINITE`/`head`/`Int`/
+`List`/`substr`/`Str`/`split`/`contains`/`AT-KEY`/`EXISTS-POS`/`EXISTS-KEY`/
+`throw`/... all contribute tens of hits each). This is qualitatively different
+from E4b step 9's own report of the *same* shadow-check function at its
+original call site (`call_method_with_values`), which found essentially zero
+mismatches — that site is the interpreter's slow-path fallback, reached far
+less often and with a narrower receiver/method mix than `CallMethod`'s own
+hot-path probe, so its clean result was a **sampling artifact of where it was
+placed**, not evidence the underlying `native_row_servable` predicate
+(`native_method_row_table.rs` + arity/definite gating) is actually sound
+across the full traffic `CallMethod` sees. The two concrete mismatch shapes,
+by direct inspection:
+
+- **`real=false shadow=true`** (row claims servable, cascade declined): e.g.
+  `t/anon-sub-name-gist.t`'s `anon sub foo {...}.gist`/`.raku` — a `Sub` value
+  whose `gist`/`raku` rendering the row table's generic `"Any"`-owner row
+  predicts as servable, but `try_native_method`'s actual dispatch for a `Sub`
+  receiver declines (returns `None`) so the call falls through to the
+  interpreted/compiled path instead, which has its own bespoke Sub-rendering
+  logic not modeled by the row catalog at all. `native_row_servable` checks
+  only `(owner, method, arity, definite)` — it has no notion of "this
+  receiver's *concrete value shape* makes the generic row inapplicable",
+  the same class of gap E4b step 2 already named for
+  `should_bypass_native_fastpath`'s category-1 gates ("row presence/absence
+  is the wrong axis... what matters is whether the cascade itself would
+  misbehave if reached").
+- **`real=true shadow=false`** (cascade served, no row at all): e.g. `DEFINITE`
+  at 0 arity (the very first mismatch found, `t/hyper-nodality.t`) — a
+  pseudo-method handled directly inside `try_native_method`'s own dispatch
+  (or a pre/post step around the row cascade) without ever being registered
+  as a `native_method_row_table.rs` entry, so `native_row_servable` can never
+  see it regardless of receiver shape.
+
+**Consequence for E5b's real cutover: do not build `resolve_dispatch`'s
+"native or user" branch purely from `native_row_servable`/the `Native`
+candidate — it will silently mis-route ~2.4% of `CallMethod`'s highest-traffic
+arm.** This is a genuine blocker finding, not a design-doc typo: design
+decision 4's `Native` candidate needs either (a) a per-method-shape refinement
+so it stops over/under-claiming for cases like `Sub.gist`/`DEFINITE`, mirroring
+the E4b category-1 audit's granularity, or (b) E5b's decision match keeping a
+"try the real cascade, and only consult the `Native` candidate as a routing
+*hint*, never as ground truth" shape — i.e. the actual invocation stays
+`try_native_method` itself (self-guarding, returns `None` on no match) rather
+than a resolver decision that skips calling it. Option (b) is cheaper and
+matches how `is_native_method`/`NativeCallBinding` was already found not worth
+routing through the resolver at the E4b step 12 call site ("no gain over a
+direct call") — the same reasoning likely applies here too, but has NOT been
+verified for the User-vs-Native ordering question this finding is really about
+(does `Native` ever need to *outrank* a matching `User` candidate, or does
+`CallMethod`'s pre-existing `skip_native`/`has_user_method` gate already
+settle that before the plain-probe arm is reached? — open, next step).
+
+No code was fixed here (this is a measurement/shadow-verify slice per the
+project's own established methodology, same as E4a/E4b); the mismatch
+buckets are the review artifact, not a to-do list to clear item-by-item.
+**Next E5b step**: before writing any real `resolve_dispatch` consumption,
+decide between options (a)/(b) above — likely by checking whether
+`CallMethod`'s existing `skip_native` gate (computed earlier in the function,
+the class-c "skip_native gate computation" row in step 1's own taxonomy
+table) already prevents `Native` from ever needing to outrank a `User`
+candidate at this specific arm, which would make option (b) sufficient and
+this whole `Native`-candidate refinement moot for `CallMethod` specifically
+(though not for other E5/E6 entries that reach this arm's twin without an
+equivalent gate).
