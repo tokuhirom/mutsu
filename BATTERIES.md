@@ -10,6 +10,9 @@ alternatives were, and its license.
 
 Related: [`PLAN.md` §1 (Batteries)](PLAN.md) is the task ledger; this file is the
 standing policy those tasks implement.
+[`docs/batteries/python-stdlib-comparison.md`](docs/batteries/python-stdlib-comparison.md)
+is a module-by-module gap analysis against Python's standard library — the
+concrete "what's covered, what's missing" reference for picking the next slot.
 
 ## 1. Adoption policy — community-first, adopt-as-is
 
