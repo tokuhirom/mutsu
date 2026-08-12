@@ -1,5 +1,19 @@
 # `Supply.schedule-on($scheduler)` does not actually defer tap delivery — it is a near no-op for a plain `ThreadPoolScheduler`
 
+## Design (2026-08-12)
+
+Design complete: `docs/adr/0028-supply-schedule-on-deferred-tap-delivery.md`
+(Status: Proposed). Wraps `tap_cb`/`done_cb`/`quit_cb` at the single
+`"tap" | "act"` registration chokepoint (`native_supply_mut_methods.rs`)
+rather than any of the ~33 emit call sites, with a scheduler-kind fork
+(`CurrentThreadScheduler` stays synchronous; `ThreadPoolScheduler` gets a
+serialized per-tap drain on the existing worker pool via
+`supply_event_channel`/`run_supply_act_loop`, ADR-0008/ADR-0020 primitives;
+any other `Scheduler` routes through its own `.cue`). Three implementation
+slices (chokepoint wrap; audit of paths that bypass the tap arm; Cro
+verification) plus acceptance criteria and risks are in the ADR — read it
+before implementing, not just this summary.
+
 ## Symptom (superseded diagnosis of `preserved-tap-chain-loses-body-when-terminated-by-connection-close.md`)
 
 That ticket recorded two `http-response-parser.rakutest` failures ("Response
