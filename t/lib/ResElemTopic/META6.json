@@ -1,0 +1,15 @@
+{
+  "name": "ResElemTopic",
+  "description": "Fixture distribution whose module subscripts %?RESOURCES under with/given",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResElemTopic": "lib/ResElemTopic.rakumod"
+  },
+  "resources": [
+    "greeting.txt"
+  ],
+  "depends": [],
+  "license": "Artistic-2.0"
+}

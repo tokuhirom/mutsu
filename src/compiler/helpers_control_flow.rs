@@ -358,8 +358,19 @@ impl Compiler {
     /// mutated `$_` can be written back. Returns `%name` for a hash variable,
     /// `@name` for an array variable, and the bare name for a scalar variable
     /// (holding a container). `None` for any other (non-simple-var) target.
+    ///
+    /// `%?RESOURCES` is excluded even though it parses as a `HashVar`: it is a
+    /// synthesized pseudo-hash (`build_resources_for_package`, rebuilt fresh on
+    /// every plain read via `GetGlobal`) rather than a real container stored in
+    /// locals/env, so the element-source writeback optimization's by-name
+    /// locals-store lookup (`TagElementSource`) finds nothing and binds the
+    /// topic to Nil — exactly the class of bug the attribute-container filter
+    /// above this function's call sites already guards against. Returning
+    /// `None` falls through to evaluating the element value directly
+    /// (read-only, but correct — `%?RESOURCES` is never assigned to anyway).
     pub(super) fn container_var_name(target: &Expr) -> Option<String> {
         match target {
+            Expr::HashVar(name) if name == "?RESOURCES" => None,
             Expr::HashVar(name) => Some(format!("%{}", name)),
             Expr::ArrayVar(name) => Some(format!("@{}", name)),
             Expr::Var(name) => Some(name.clone()),
