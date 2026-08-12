@@ -197,8 +197,32 @@ impl Compiler {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         let tc_idx = self.code.add_constant(Value::str(pre_tc));
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    } else if type_constraint.is_none() && !name.contains("__ANON") {
+                        // An UNTYPED expression-position declaration must clear a
+                        // stale constraint the bare-name-keyed registry holds from
+                        // an unrelated earlier lexical (a module sub's
+                        // `my Int @r` made the test script's `(my @r = ...)`
+                        // reject its rows — Text::CSV t/79_callbacks.t). The
+                        // statement-position decl clears via SetVarDynamic, which
+                        // this path never emits; an empty constraint means CLEAR.
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        let tc_idx = self.code.add_constant(Value::str(String::new()));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
                     self.compile_expr(expr);
+                    // Re-clear AFTER the initializer: evaluating the RHS can call
+                    // into code that declares its own typed same-named lexical
+                    // (Text::CSV's `my Int @r = @!crange` runs inside
+                    // `getline_all`), re-registering the bare-name constraint the
+                    // pre-clear just removed — the SetGlobal below must not see it.
+                    if type_constraint.is_none()
+                        && !name.contains("__ANON")
+                        && Self::expr_decl_settable_constraint(name, type_constraint).is_none()
+                    {
+                        let name_idx = self.code.add_constant(Value::str(name.clone()));
+                        let tc_idx = self.code.add_constant(Value::str(String::new()));
+                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    }
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
                     // Mark a fresh declaration so SetGlobal creates a NEW container
                     // (not an in-place reuse of the previous evaluation's), keeping

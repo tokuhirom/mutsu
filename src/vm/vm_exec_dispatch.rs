@@ -1717,6 +1717,14 @@ impl Interpreter {
             OpCode::SetVarType { name_idx, tc_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 let raw_constraint = Self::const_str(code, *tc_idx).to_string();
+                // Empty constraint = CLEAR: an untyped expression-position
+                // declaration dropping a stale same-named constraint (the
+                // compiler never emits an empty string for a real type).
+                if raw_constraint.is_empty() {
+                    self.vm_set_var_type_constraint(&name, None);
+                    *ip += 1;
+                    return Ok(());
+                }
                 // Resolve type capture variables (e.g., `T` → `Int` when `::T`
                 // was captured earlier in the signature).
                 let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
