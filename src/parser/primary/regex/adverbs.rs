@@ -341,49 +341,22 @@ pub(super) fn parse_compact_match_adverbs<'a>(
     input: &'a str,
     adverbs: &mut MatchAdverbs,
 ) -> &'a str {
-    let mut rest = input;
-    loop {
-        if let Some(r) = rest.strip_prefix("p5") {
-            adverbs.perl5 = true;
-            rest = r;
-            continue;
-        }
-        if let Some(ch) = rest.chars().next() {
-            let consumed = match ch {
-                's' => {
-                    adverbs.sigspace = true;
-                    true
-                }
-                'i' => {
-                    adverbs.ignore_case = true;
-                    true
-                }
-                'g' => {
-                    adverbs.global = true;
-                    true
-                }
-                'm' => {
-                    adverbs.ignore_mark = true;
-                    true
-                }
-                'p' => {
-                    adverbs.pos = true;
-                    true
-                }
-                'c' => {
-                    adverbs.continue_ = true;
-                    true
-                }
-                _ => false,
-            };
-            if consumed {
-                rest = &rest[ch.len_utf8()..];
-                continue;
-            }
-        }
-        break;
+    // The ONLY colonless compact match adverb Raku recognizes is a single
+    // `s` directly after `m` (`ms/pattern/`, shorthand for `m:s/pattern/`,
+    // per roast/S05-modifier/sigspace.t). Every other letter combination —
+    // `mg`, `mi`, `mp5`, `mss`, etc. — is NOT valid Raku (`raku -e 'mi/x/'`
+    // dies "Missing required term after infix"); a real routine call or
+    // bareword can start with `m` followed by any of those letters (e.g. a
+    // `whenever`-bound sigilless `\msg` used as `msg.gist`), so consuming
+    // more than this one specific case here mis-parses an ordinary
+    // identifier as a bogus regex literal (see
+    // news/2026-08/compact-match-adverb-overreach-mis-parses-bareword.md).
+    if let Some(rest) = input.strip_prefix('s') {
+        adverbs.sigspace = true;
+        rest
+    } else {
+        input
     }
-    rest
 }
 
 pub(super) fn apply_inline_match_adverbs(mut pattern: String, adverbs: &MatchAdverbs) -> String {
