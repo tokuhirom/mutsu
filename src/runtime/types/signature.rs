@@ -427,6 +427,7 @@ pub(in crate::runtime) fn sub_signature_matches_value(
     sub_params: &[ParamDef],
     value: &Value,
 ) -> bool {
+    let value = &interpreter.coerce_via_user_capture(value);
     let positional = positional_values_from_unpack_target(value);
     let mut positional_idx = 0usize;
     for pd in sub_params {
@@ -714,6 +715,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
     sub_params: &[ParamDef],
     value: &Value,
 ) -> Result<(), RuntimeError> {
+    let value = &interpreter.coerce_via_user_capture(value);
     let positional = positional_values_from_unpack_target(value);
     let mut nested_positional_idx = 0usize;
     // Keys consumed by the non-slurpy named sub-params (outer name plus any
