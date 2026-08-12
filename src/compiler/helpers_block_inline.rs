@@ -72,9 +72,18 @@ impl Compiler {
             // this the fallback compiles the assignment as a sink and the block
             // yields Nil (surfaced by a two-phase `pull-one { with $!k {...} else
             // { $!k := ... } }` iterator whose `else` value was dropped).
-            Stmt::Assign { name, expr, .. } => {
+            Stmt::Assign { name, expr, op } => {
                 self.compile_expr(expr);
                 self.code.emit(OpCode::Dup);
+                // Mirror the readonly check the general `Stmt::Assign` compile
+                // arm emits: without it, a tail-position assignment in a
+                // `given`/`when`/`with` block (e.g. a scalar pointy param
+                // without `is rw`) silently skipped the check that a
+                // non-tail-position assignment to the same variable enforces.
+                if matches!(op, AssignOp::Assign) && name != "__ANON_STATE__" {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::CheckReadOnly(name_idx));
+                }
                 self.emit_set_named_var(name);
                 true
             }
