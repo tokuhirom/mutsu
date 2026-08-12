@@ -930,7 +930,17 @@ impl Interpreter {
                 attributes.commit_attrs(updated);
                 return Ok(result);
             }
-            if self.is_native_method(&class_name.resolve(), method) {
+            // A user-defined method shadows an inherited native one: for a user
+            // subclass of a builtin (`class S is IO::Handle { method Str {...} }`),
+            // `is_native_method` finds the base class's native `Str` via the MRO,
+            // but the subclass's own method is more derived and must win — it is
+            // dispatched by the `has_user_method` block further down. Without
+            // this gate, `~$fh` on a Text::IO::String stringified through the
+            // native IO::Handle `Str` ("IO::Handle()") instead of the user
+            // `method Str` (Text::CSV 46_eol_si).
+            if self.is_native_method(&class_name.resolve(), method)
+                && !self.has_user_method(&class_name.resolve(), method)
+            {
                 return self.call_native_instance_method(
                     &class_name.resolve(),
                     &(attributes).as_map(),

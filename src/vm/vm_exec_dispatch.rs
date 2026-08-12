@@ -1742,7 +1742,7 @@ impl Interpreter {
                 if name.starts_with('@') && constraint == "atomicint" {
                     self.clear_atomic_array_state(&name);
                 }
-                self.vm_set_var_type_constraint(&name, Some(constraint.clone()));
+                self.vm_set_var_type_constraint_decl(&name, Some(constraint.clone()));
                 // For scalar variables, if the current value is Nil, set it to the type object.
                 // Exception: if the constraint is "Nil", keep the value as Nil
                 // (the Nil type object is Nil itself, not the Package "Nil").
