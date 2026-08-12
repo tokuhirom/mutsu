@@ -1637,6 +1637,10 @@ impl Interpreter {
                     && let Some(ref source_var) = self.topic_source_var
                     && !source_var.starts_with('@')
                     && !source_var.starts_with('%')
+                    // A sigiled "$h" tag is the deref'd-container source
+                    // (`for @$h`): the per-element loop writeback owns it; the
+                    // whole-topic scalar write would pollute a "$h" env key.
+                    && !source_var.starts_with('$')
                 {
                     let source_name = source_var.clone();
                     self.set_env_with_main_alias(&source_name, val.clone());
