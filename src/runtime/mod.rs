@@ -373,6 +373,7 @@ pub(crate) mod registration_sub;
 mod registry;
 pub(crate) mod resolution;
 mod resolution_call_sub;
+mod resolution_deferral;
 mod resolution_eval;
 mod resolution_lazy;
 pub(crate) mod resolution_map_grep;

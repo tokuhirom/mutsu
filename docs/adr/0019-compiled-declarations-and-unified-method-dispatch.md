@@ -3873,6 +3873,17 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   That prerequisite was fixed the same day (the Int/Rat→Num "numeric widening" removed from the
   shared matcher and binder — `news/2026-08/multi-num-param-strictness.md`), so E9a's remaining
   blocker is only the cursor sequence-builder work itself.
+  **Progress 2026-08-12 (same day) — E9a sequence-builder landed for the both-levels-multi-order
+  shape.** `src/runtime/resolution_deferral.rs`'s `resolve_deferral_expansion` replaces
+  `resolve_all_methods_with_owner` as the ordering source at both "remaining"-building call
+  sites; both design-doc probes are now exact hits against Rakudo v2026.06 (not just
+  predictions), pinned by `t/defer-multi-cross-level-proto-block.t`. Deliberately narrower than
+  the full box: the winner-removal mechanism and `MethodDispatchFrame`'s `Vec`-based storage are
+  unchanged (the `DispatchCursor{seq, next, invocant, args}` index-based rewrite is orthogonal
+  perf/cleanliness work, left for a follow-up slice), and the role-shadow/explicit-proto-isolation
+  divergence tickets remain open (distinct fixes, not implied by decision 2's redraw — see the
+  design doc's 2026-08-12 progress note for detail). E9b (wrap-prefix) and E9c (proto `{*}`
+  rewrite, `samewith`) are unstarted.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

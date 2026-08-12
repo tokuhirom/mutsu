@@ -289,7 +289,24 @@ impl Interpreter {
             if skip_remaining {
                 return Vec::new();
             }
-            let all = this.resolve_all_methods_with_owner(receiver_class_name, method_name, &args);
+            // ADR-0019 E9a: the flat deferral expansion (`resolution_deferral.rs`) replaces
+            // `resolve_all_methods_with_owner` as the ordering source — see its module doc.
+            // The expansion is structural (unfiltered); apply the same per-call, invocant-blind
+            // argument match `resolve_all_methods_with_owner` used to apply internally.
+            let role_bindings = this.registry().get_role_param_bindings(receiver_class_name);
+            let expansion = this.resolve_deferral_expansion(receiver_class_name, method_name);
+            let mut all: Vec<(Symbol, MethodDef)> = Vec::new();
+            for (owner, def) in expansion {
+                if this.method_args_match_for_invocant(
+                    receiver_class_name,
+                    &def,
+                    &args,
+                    role_bindings.as_ref(),
+                    None,
+                ) {
+                    all.push((owner, def));
+                }
+            }
             let chosen_fp = this.method_def_fingerprint(method_def);
             let mut remaining = Vec::new();
             let mut skipped = false;
