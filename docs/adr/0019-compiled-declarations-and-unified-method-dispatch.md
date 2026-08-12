@@ -3303,6 +3303,43 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   **This consumer family needs no further work** (a shadow-only zero-mismatch result is itself
   the box's answer for this family — there is no ad-hoc-vs-resolver divergence to route around).
   Next E7 sub-slice: qualified dispatch / private-as-sequence-query, per the design's ordering.
+  **Progress 2026-08-12** (second consumer family, qualified dispatch, shadow-measurement only):
+  `dispatch_qualified_instance_method`'s (`runtime/methods_qualified.rs`) sole generic fallback —
+  `self.resolve_method_with_owner(qualifier, actual_method, &args)`, reached for `self.Owner::method(...)`
+  calls after the read-attribute/role-concretization/metamodel/qualified-`new`/native-ancestor
+  special cases all miss — is now shadow-checked. Unlike E7 step 1, this callsite has no receiver
+  *value* of the resolution target's type to derive an MRO chain from (the walk is rooted at the
+  qualifier class NAME, not the instance), so `shadow_check_resolver` (E4a) was split: it is now a
+  thin wrapper that derives `chain = self.dispatch_mro(invocant)` and delegates to a new
+  `shadow_check_resolver_chain(site, class_name, method, method_sym, arg_values, invocant:
+  Option<&Value>, chain: &[TypeId], real)` — the existing three callers (the two
+  `resolve_method_cached` boundaries plus E7 step 1's `run_instance_method_celled`) are unchanged
+  by the split. The new call site builds its own chain via
+  `self.dispatch_mro(&Value::package(Symbol::intern(qualifier)))` and passes `invocant: None`
+  (matching how `resolve_method_with_owner` itself calls `resolve_method_with_owner_impl(...,
+  invocant: None)` for this exact case), recording outcomes under a new `"qualifieddispatch"`
+  entry key (arm = the called method name). `dispatch_qualified_instance_method` has exactly one
+  caller, so the probe is gated inline with `crate::vm::vm_stats::enabled()` rather than threaded
+  through a `site` parameter — there is no second call site to tag differently yet.
+  **Sweep**: full local `t/` (3047 files) plus the same 10-file roast slice used for the search
+  (`S12-class/inheritance.t`, `S12-construction/new.t`, `S12-methods/{delegation,qualified,
+  accessors,submethods}.t`, `S14-roles/{basic,conflicts,lexical,submethods-6e}.t`, all already
+  whitelisted, found by grepping roast for `self.Owner::method`/`$obj.Owner::method` patterns).
+  Unlike step 1, this consumer family sees real traffic: the new site fired 113 times across 13
+  `t/` files and 40 times across 8 of the 10 roast files — **zero shadow mismatches at
+  `qualifieddispatch` in either sweep**. The sweep's 10 total `resolver_shadow_mismatches` (all in
+  the `t/` portion; the roast slice alone was 247 checks / 0 mismatches) are every one tagged
+  `resolve_method_cached:fresh` in the mismatch detail, the same pre-existing E4a "non-multi method
+  resolves by name independent of argument bind" bucket step 1 already root-caused and confirmed
+  reproduces on the pre-E7 baseline — not a new finding, and not this box's site.
+  `cargo clippy -- -D warnings` / `cargo fmt` clean; full `t/` (3047 files/28,481 tests) green; the
+  10-file roast slice green (203 tests). Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 2: qualified dispatch — clean shadow-check,
+  no cutover needed". **This consumer family also needs no further work.** `dispatch_qualified_mixin_method`
+  and `dispatch_qualified_non_instance_method` in the same file share the identical
+  `resolve_method_with_owner` fallback shape but are deliberately left untagged for a later E7
+  sub-slice (one consumer family per sub-PR). Next E7 sub-slice: private-as-sequence-query, per
+  `todo/deep/adr0019-e5-e7-entry-routing.md`'s consumer list.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):

@@ -1932,3 +1932,83 @@ result is itself the box's answer here (unlike E6c, which found and fixed a real
 `cargo clippy -- -D warnings` / `cargo fmt` clean; full `t/` (3040 files/28,437 tests) green.
 Next E7 sub-slice: qualified dispatch / private-as-sequence-query, per the design's consumer
 ordering above.
+
+## E7 step 2: qualified dispatch — clean shadow-check, no cutover needed
+
+`dispatch_qualified_instance_method` (`runtime/methods_qualified.rs`) handles
+`self.Owner::method(...)`-style qualified calls (`self.Mu::Str`, `$obj.SomeRole::method`, ...). It
+runs several special-cased branches first (public-attribute read, single-concretization role
+dispatch, metamodel `Metamodel::ClassHOW::*` dispatch, qualified `new` on an existing instance,
+native-ancestor fallback) before reaching its one *generic* fallback: `self.resolve_method_with_owner
+(qualifier, actual_method, &args)`, an ad-hoc registry-only MRO walk rooted at the qualifier class
+name (`resolve_method_with_owner_impl(..., invocant: None)`, `runtime/resolution_method.rs`). This
+step measures only that one generic fallback in that one function — `dispatch_qualified_mixin_method`
+and `dispatch_qualified_non_instance_method` in the same file share an identical-shaped
+`resolve_method_with_owner` fallback (for a run-time `Mixin` receiver and a non-Instance receiver,
+respectively) but stay untagged for a later sub-slice, per the "one consumer family per sub-PR" rule.
+
+**The chain-rooting problem this step had to solve.** E4a's existing `shadow_check_resolver`
+(`runtime/resolution_sequence.rs`) was written for E7 step 1 and the two `resolve_method_cached`
+boundaries, all of which shadow-check a call against the *receiver's own* MRO chain, derived via
+`self.dispatch_mro(invocant)` from a concrete `Value`. A qualified call has no such value: the
+resolution target is the qualifier CLASS NAME, not the receiver's own type — `self.Mu::Str` must
+resolve against `Mu`'s chain (`[Mu]`), not the receiver's full chain, even though the receiver is
+some deeply-derived class. So `shadow_check_resolver` was split into a thin wrapper (unchanged
+behavior, unchanged signature, unchanged three existing callers) over a new
+`shadow_check_resolver_chain(site, class_name, method, method_sym, arg_values, invocant:
+Option<&Value>, chain: &[TypeId], real)`, which takes the chain and an `Option<&Value>` invocant
+directly instead of deriving both from a single `&Value`. The qualified-dispatch call site builds
+its own chain the same way this file's own code already builds a package value elsewhere
+(`Value::package(Symbol::intern(qualifier))`, line ~465): `self.dispatch_mro(&Value::package
+(Symbol::intern(qualifier)))`, which `dispatch_mro`'s `ValueView::Package(name) => self.class_chain
+(name.as_str())` arm resolves to exactly the E1 catalog-spliced chain for that class name — the
+correct analogue of what `resolve_method_with_owner`'s own `self.class_mro(class_name)` walk
+consults. `invocant: None` is passed through unchanged to `method_args_match_for_invocant` (which
+already treats a `None` invocant as "skip the invocant type-constraint check", exactly matching
+`resolve_method_with_owner_impl`'s own `invocant: None` call) and to `NativeCallShape::new`'s
+`definite` flag (`invocant.map(value_is_definite).unwrap_or(false)` — a `None` invocant is treated
+as "not DEFINITE", the same as a bare type object/`Package` value would be).
+
+**Mechanism**: `dispatch_qualified_instance_method` has exactly one caller in the whole codebase
+(`methods_call_dispatch.rs`), confirmed by grep, so — unlike E7 step 1's `run_instance_method_at`
+— there is no second call site to tag differently yet, and the probe is gated inline with
+`if crate::vm::vm_stats::enabled() { ... }` around the whole block (skipping the chain/arg work
+entirely when unmeasured) rather than threaded through a `site` parameter. The gated block calls
+`resolve_method_with_owner` first (the real, unmodified call, unconditionally — this cannot be
+skipped even when unmeasured), then, only under the stats gate, calls
+`shadow_check_resolver_chain("qualifieddispatch", qualifier, actual_method, method_sym, &args,
+None, &qualifier_chain, resolved.as_ref())` and records
+`record_dispatch_entry_intercept`/`_outcome` under the new `"qualifieddispatch"` entry key (arm =
+the called method name) — the same E5/E6 generic dispatch-entry counters E7 step 1 reused. Pure
+insertion, zero behavior change: `resolved` (the real dispatch decision) is computed identically
+to before, and the whole probe block is a no-op unless `MUTSU_VM_STATS` is set.
+
+**Sweep**: full local `t/` (3047 files, debug binary) plus a targeted 10-file roast slice, found
+by grepping roast for both `self\.[A-Z][A-Za-z0-9:]*::[a-zA-Z_]` and
+`\$[a-zA-Z_]\w*\.[A-Z][A-Za-z0-9:]*::[a-zA-Z_]` (qualified calls on `self` and on a plain
+variable): `S12-class/inheritance.t`, `S12-construction/new.t`, `S12-methods/delegation.t`,
+`S12-methods/qualified.t`, `S12-methods/accessors.t`, `S12-methods/submethods.t`,
+`S14-roles/basic.t`, `S14-roles/conflicts.t`, `S14-roles/lexical.t`,
+`S14-roles/submethods-6e.t` — all ten already on `roast-whitelist.txt`. Unlike step 1 (whose two
+VM carrier sites saw zero roast traffic), this consumer family fires constantly: 113 times across
+13 `t/` files and 40 times across 8 of the 10 roast files, split roughly 40% `notfound` / 60%
+`intercept` by outcome. **Zero shadow mismatches tagged `qualifieddispatch` in either sweep** — the
+roast slice alone recorded 247 `resolver_shadow_checks` / 0 `resolver_shadow_mismatches` across all
+sites, and the wider `t/` sweep's 10 total mismatches are every one tagged
+`resolve_method_cached:fresh` in the per-mismatch detail string (e.g. `class=Holder method=set
+real=Some("Holder") shadow=None`) — the exact E4a "non-multi method resolves by name independent of
+whether the call's arguments actually bind it" bucket step 1 already root-caused, confirmed
+reproduces on the pre-E7 baseline, and is tracked under E4a/E8. None of the 10 are tagged
+`qualifieddispatch`.
+
+**Conclusion**: this consumer family also needs no cutover fix — the ad-hoc
+`resolve_method_with_owner` walk already agrees with the E4 resolver's `resolve_sequence` for
+every observed qualified-dispatch call, in both `t/` and the roast slice, despite (unlike step 1)
+seeing substantial real traffic. `cargo clippy -- -D warnings` / `cargo fmt` clean; full `t/`
+(3047 files/28,481 tests) green; the 10-file roast slice green (203 tests, `MUTSU_FUDGE=1`).
+`shadow_check_resolver_chain`'s extraction is itself reusable infrastructure for future E7
+sub-slices that also lack a receiver value (e.g. `.^lookup`/`.^can`/`.^methods` querying a type
+name directly). Next E7 sub-slice: private-as-sequence-query, per the design's consumer ordering
+above (`dispatch_qualified_mixin_method`/`dispatch_qualified_non_instance_method`'s own
+`resolve_method_with_owner` fallbacks remain untagged, available for a later qualified-dispatch
+sub-slice too).

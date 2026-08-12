@@ -222,10 +222,58 @@ impl Interpreter {
         if !crate::vm::vm_stats::enabled() {
             return;
         }
-        let saved_ambiguous = self.dispatch_ambiguous;
         let chain = self.dispatch_mro(invocant);
-        let native_shape = NativeCallShape::new(arg_values.len(), value_is_definite(invocant));
-        let seq = self.resolve_sequence(&chain, method_sym, native_shape);
+        self.shadow_check_resolver_chain(
+            site,
+            class_name,
+            method,
+            method_sym,
+            arg_values,
+            Some(invocant),
+            &chain,
+            real,
+        );
+    }
+
+    /// The `chain`/`invocant`-parametrized core of [`Self::shadow_check_resolver`]
+    /// (ADR-0019 Phase E box E7, second consumer family — qualified dispatch,
+    /// `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"). Extracted so a
+    /// caller with no receiver *value* of the resolution target's type — e.g.
+    /// `self.Owner::method(...)`, where the chain must be rooted at the
+    /// qualifier class NAME rather than derived from an instance — can still
+    /// reuse the exact same shadow-ranking logic by passing a chain it built
+    /// itself (typically via `self.dispatch_mro(&Value::package(...))`) and
+    /// `invocant: None`. [`Self::shadow_check_resolver`] remains a thin
+    /// wrapper over this for its own receiver-chain callers, so their
+    /// behavior is unchanged by this split.
+    ///
+    /// A `None` invocant is treated as "not DEFINITE" for the native-row
+    /// shape (mirroring [`value_is_definite`]'s treatment of a bare type
+    /// object/`Package`) and skips the invocant type-constraint check inside
+    /// `method_args_match_for_invocant` entirely (that function already
+    /// handles `Option<&Value>` this way) — both match how
+    /// `resolve_method_with_owner`'s registry-only walk itself calls
+    /// `resolve_method_with_owner_impl(..., invocant: None)` for the case
+    /// this is shadowing.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shadow_check_resolver_chain(
+        &mut self,
+        site: &'static str,
+        class_name: &str,
+        method: &str,
+        method_sym: Symbol,
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        chain: &[TypeId],
+        real: Option<&(Symbol, MethodDef)>,
+    ) {
+        if !crate::vm::vm_stats::enabled() {
+            return;
+        }
+        let saved_ambiguous = self.dispatch_ambiguous;
+        let definite = invocant.map(value_is_definite).unwrap_or(false);
+        let native_shape = NativeCallShape::new(arg_values.len(), definite);
+        let seq = self.resolve_sequence(chain, method_sym, native_shape);
         let has_where_candidate = seq.candidates.iter().any(|c| {
             let ResolvedCandidate::User { def, .. } = c else {
                 return false;
@@ -248,12 +296,12 @@ impl Interpreter {
                 def,
                 arg_values,
                 role_bindings.as_ref(),
-                Some(invocant),
+                invocant,
             ) {
                 matched.push((owner.symbol(), (**def).clone()));
             }
         }
-        let shadow = self.pick_method_winner(&mro, arg_values, Some(invocant), matched);
+        let shadow = self.pick_method_winner(&mro, arg_values, invocant, matched);
         self.dispatch_ambiguous = saved_ambiguous;
         let matched_ok = match (real, shadow.as_ref()) {
             (None, None) => true,
