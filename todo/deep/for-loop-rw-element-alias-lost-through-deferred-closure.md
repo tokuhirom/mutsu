@@ -85,16 +85,26 @@ ticket — see "Where this connects" below before starting design.
   also applies here (same `GcBox`/`UnsafeCell` interior-mutability layer),
   worth checking when scoping a fix design.
 - `todo/tickets/native-pointy-param-is-rw-writeback-missing.md` (filed the
-  same session) is a sibling symptom — a `given`/`with`-pointy-param `is rw`
-  writeback gap for native types — but per that ticket's own repro it may be
-  a narrower, native-type-specific issue rather than this same element-alias
-  gap; verify independently before assuming a shared fix.
+  same session) was a sibling symptom — a `given`/`with`-pointy-param `is rw`
+  writeback gap for native types — but it turned out to be an unrelated,
+  narrower bug (a compiler detection gap: the native-typed pointy-param
+  branch never populated `Given`'s `pointy_param_idx`, so `exec_given_op`
+  never knew a pointy param existed at all). Fixed in PR #6334 with a local
+  compiler-marker fix; **confirms** this ticket's element-alias gap is a
+  genuinely separate, deeper issue, not the same fix in disguise.
 - PR #6304 (`given`/`with` pointy-scalar writeback, session 107) fixed a
   *different* instance of "pointy param mutation lost on scope exit" using a
   compile-time-slot-based capture/restore around `BlockLocalScope`'s Nil
   reset — that mechanism does NOT apply here, because the loss here is not a
   scope-exit Nil reset, it is a **snapshot-vs-live-alias representation gap**
   at the array-element level.
+- `docs/adr/0027-loop-frozen-value-capture-cascade.md` (loop-var closure
+  capture freezing, unrelated bug but adjacent architecture) independently
+  arrives at the same "a genuine per-binding `ContainerRef` cell is the
+  clean end state" conclusion in its Slice 3 retirement-path note and
+  Alternative 4 — for closure-CAPTURE cell identity there, for array-ELEMENT
+  aliasing here. Different surface, possibly a shared underlying primitive;
+  read both before scoping a "fresh cell per binding" campaign.
 
 ## Suggested next steps
 
