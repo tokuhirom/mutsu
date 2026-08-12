@@ -66,8 +66,39 @@ impl Interpreter {
                 self.push_native_method_objects(&names, &mut result);
             }
         } else {
+            // Runtime-mixed-in role methods sit ahead of the base class in the
+            // MRO (raku puts the anonymous composite pun class first: `(5 but
+            // R).^mro` is `((Int+{R}) (Int) (Cool) (Any) (Mu))`), so collect
+            // them before the base `class_name`'s own MRO walk below --
+            // mirroring the `:local` branch above, which already did this for
+            // its own (narrower) enumeration but this default (non-`:local`)
+            // branch never did. Confirmed missing against real `raku`:
+            // `(5 but R).zork` was callable but absent from `(5 but
+            // R).^methods` (no `:local`) before this fix; see
+            // `t/classhow-methods-mixin-role.t`.
+            for role_name in &mixin_role_names {
+                self.collect_role_methods(role_name, private, &mut result);
+            }
+
             // Walk MRO (already includes the class itself)
             let mro = self.class_mro(&class_name);
+
+            // ADR-0019 Phase E box E7 step 6 (`.^methods`, `todo/deep/
+            // adr0019-e5-e7-entry-routing.md` "E7 step 6"): shadow-check the
+            // chain this walk actually enumerates (`class_mro(class_name)`,
+            // the registry MRO primitive) against the E4 resolver's own
+            // canonical chain for the same receiver (`dispatch_owner_chain`,
+            // TypeId-based). `MUTSU_VM_STATS`-gated, zero behavior change:
+            // `mro` alone still drives the enumeration below.
+            if crate::vm::vm_stats::enabled() {
+                let real_names: Vec<&str> = mro.iter().map(|s| s.as_str()).collect();
+                let shadow_chain = self.dispatch_owner_chain(invocant);
+                let shadow_names: Vec<&str> = shadow_chain.iter().map(|t| t.as_str()).collect();
+                let matched = real_names == shadow_names;
+                crate::vm::vm_stats::record_methods_shadow_check(matched, || {
+                    format!("class={class_name} real={real_names:?} shadow={shadow_names:?}")
+                });
+            }
 
             for cn in mro.iter().map(|s| s.as_str()) {
                 if !all && (cn == "Any" || cn == "Mu") {
