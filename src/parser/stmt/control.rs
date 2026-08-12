@@ -148,7 +148,7 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         // Native-typed lexicals cannot participate in `:=` binding. A native
         // pointy parameter receives a checked/unboxed value in its own lexical
         // container, matching ordinary native routine parameters.
-        Stmt::VarDecl {
+        let decl = Stmt::VarDecl {
             name: pd.name.clone(),
             expr: topic,
             type_constraint: pd.type_constraint.clone(),
@@ -159,6 +159,11 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             export_tags: Vec::new(),
             custom_traits: vec![("__has_initializer".to_string(), None)],
             where_constraint: None,
+        };
+        if pd.traits.iter().any(|t| t == "rw") {
+            decl
+        } else {
+            Stmt::SyntheticBlock(vec![decl, Stmt::MarkReadonly(pd.name.clone())])
         }
     } else if pd.name.starts_with('&') {
         // A `&`-sigil parameter (`given $code -> &to-run { … }`) declares a
@@ -183,7 +188,7 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         // enclosing same-named lexical. Use the same MarkBind + VarDecl form as
         // `my $x := EXPR`; this both preserves aliasing and lets block-scope
         // tracking restore the outer binding when the given body exits.
-        Stmt::SyntheticBlock(vec![
+        let mut stmts = vec![
             Stmt::MarkBind,
             Stmt::VarDecl {
                 name: pd.name.clone(),
@@ -197,7 +202,21 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
                 custom_traits: vec![("__has_initializer".to_string(), None)],
                 where_constraint: None,
             },
-        ])
+        ];
+        // A `@`/`%` pointy param is always a fully-writable alias regardless of
+        // any trait (verified against raku: `given @a -> @p { @p[0] = 99 }`
+        // mutates `@a` with no `is rw` needed). Only a plain scalar (`$`,
+        // stored here WITHOUT a sigil prefix — see `parse_pointy_param`'s
+        // `param_name` construction) pointy param defaults to readonly,
+        // lifted with `is rw`. Sigilless (`\a`) bindings are excluded too.
+        if !pd.name.starts_with('@')
+            && !pd.name.starts_with('%')
+            && !pd.sigilless
+            && !pd.traits.iter().any(|t| t == "rw")
+        {
+            stmts.push(Stmt::MarkReadonly(pd.name.clone()));
+        }
+        Stmt::SyntheticBlock(stmts)
     }
 }
 

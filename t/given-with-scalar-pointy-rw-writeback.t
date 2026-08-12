@@ -9,10 +9,9 @@ use Test;
 # had a chance to read the final value (see
 # todo/deep/pointy-scalar-param-final-value-untracked-by-writeback.md).
 #
-# A pointy scalar WITHOUT `is rw` should die on assignment ("Cannot assign to
-# a readonly variable") per raku — mutsu does not enforce that (a separate,
-# pre-existing gap noted in the ticket above, not fixed here) — so that case
-# is intentionally not pinned in this file.
+# A pointy scalar WITHOUT `is rw` dies on assignment ("Cannot assign to a
+# readonly variable") per raku — see
+# t/given-with-pointy-scalar-readonly-enforcement.t for that pin.
 
 plan 8;
 
@@ -51,8 +50,9 @@ plan 8;
     # not corrupt the outer binding once the block exits (regression check
     # for the fix's by-slot, not by-name, capture).
     my $x = 1;
-    given 5 -> $x { $x += 100 }
-    is $x, 1, 'given 5 -> $x (same name as outer): outer $x is untouched';
+    my $tmp = 5;
+    given $tmp -> $x is rw { $x += 100 }
+    is $x, 1, 'given $tmp -> $x is rw (same name as outer): outer $x is untouched';
 }
 
 {
