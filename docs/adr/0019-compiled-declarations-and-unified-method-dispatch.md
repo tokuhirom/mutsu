@@ -3847,6 +3847,20 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   sequence tail entries; proto `{*}` re-ranks the cursor's sequence instead of re-entering by
   name. **A mandatory raku verification campaign (E9-pre, 13 chain-order scenarios) lands as
   `t/` pins before any cursor cutover** — this is the highest-semantic-risk box of the phase.
+  **Progress 2026-08-12 — E9-pre landed (docs + pins only, no cursor code).** Every scenario
+  probed against Rakudo v2026.06 first; 12 new `t/` pins (38 assertions) each verified green
+  under BOTH `prove -e raku` and mutsu, so the pins encode raku's answer; 8 divergences filed
+  as tickets, none encoded into design. **Headline: the campaign falsified a design-2
+  assumption** — when multi candidates span MRO levels, raku defers along the
+  specificity-RANKED merged candidate list (implicit proto clones the nearest MRO proto;
+  plain middle methods are later outer-chain entries that re-enter lower protos on deferral),
+  not mutsu's `(level, decl-order)` walk. The cursor's sequence layout must be re-drawn
+  against `todo/deep/defer-chain-ranked-multi-order.md` (design task) **before E9a starts**.
+  Other divergence tickets: role-shadowed method wrongly in the chain, explicit child proto
+  wrongly assuming parent candidates, `is Array` native-push fallback not pushing, method-wrap
+  `unwrap`/`restore` no-op, `lastcall`-in-wrapper killing the dispatcher scope, callsame to
+  native Mu methods (gist/Str/raku/new) yielding Nil/Any, and a cosmetic Signature.gist
+  invocant format. Full scenario table in the E8-E11 design doc's E9-pre section.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

@@ -87,6 +87,17 @@ sequence structure and shadow-comparing it — not changing what any real call r
 therefore left this as a **documented, accepted shadow-check divergence** (mirroring E4a's own
 accepted-divergence bucket for the winner probe) rather than fixing it inline.
 
+## Update 2026-08-12: E9-pre ground truth complicates "real walker is authoritative"
+
+The ADR-0019 E9-pre raku verification campaign found that for the class-overridden shape (a
+`does`-composed role method that the composing class overrides with its own same-name method),
+**raku EXCLUDES the role's method from the nextsame/callsame chain** — i.e. the sequence side's
+omission matches raku there and the real walker's inclusion is the bug
+(`todo/tickets/role-shadowed-method-in-defer-chain.md`). Do not resolve this ticket by simply
+populating role entries so the sequence matches the real walker: the E8a mismatch ledger must be
+re-audited per-shape against raku first (qualified `self.R::m()` calls and conflict-resolution
+shapes may still legitimately need the role's own entry; the shadowed-by-class shape must not).
+
 ## Suggested fix, for whoever picks this up
 
 - Add a role branch to `sync_user_method_entries` mirroring the class branch (`self.roles.get(class_name)`
