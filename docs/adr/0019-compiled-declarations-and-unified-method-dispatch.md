@@ -3271,6 +3271,38 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   carrier sites, qualified, private-as-sequence-query, `.^lookup`/`.^can`/`.^methods` reading
   the call-path sequence, WALK, re-entrant carriers). The `.^can` dummy-`Value::NIL` probe is
   replaced by an E2 row lookup — a correctness fix as well as a routing change.
+  **Progress 2026-08-12** (first consumer family, `run_instance_method` carrier sites, shadow-
+  measurement only): `run_instance_method`/`run_instance_method_celled`
+  (`runtime/class_dispatch.rs`) gained an optional `site: &'static str` tag, threaded through
+  every one of their ~16 call sites as `""` (a no-op) except `vm_core_helpers::vm_run_instance_method`
+  — the carrier's **only** two live callers, `CallDefined`'s user `.defined` and `SinkPop`'s user
+  `.sink` in `vm_exec_dispatch.rs` — which now passes `"run_instance_method:vm-carrier"`. When
+  tagged, `run_instance_method_celled` reuses E4a's `Interpreter::shadow_check_resolver` (the
+  same probe already wired at `resolve_method_cached`'s two boundaries) to compare its own
+  ad-hoc `resolve_method_with_owner_invocant` MRO walk against the E4 resolver's
+  `resolve_sequence`, plus the E5/E6 generic `record_dispatch_entry_outcome`/`_intercept`
+  counters under a new `"runinstancemethod"` entry key (arm name = the called method name, since
+  this carrier's only two shapes are `.defined`/`.sink`). Pure insertion, zero behavior change
+  (every added branch is `MUTSU_VM_STATS`-gated). Swept full `t/` (3040 files) plus a 124-file
+  roast slice (`S12-methods`, `S12-attributes`, `S14-roles`, `S02-types` — chosen for
+  metaobject/instance-dispatch relevance): the new site fired 102 times across 4 `t/` files
+  (0 in the roast slice — those directories don't happen to exercise `.defined`/`.sink` on a
+  user-overridable receiver) with **zero shadow mismatches at this site in either sweep** — this
+  consumer family's ad-hoc resolution already agrees with the E4 resolver for all its actual
+  traffic, so (unlike E6c) there is no gap to fix here. The sweep did surface 10 (`t/`) + 1
+  (roast slice) mismatches overall, but every one is tagged `resolve_method_cached:fresh` — the
+  pre-existing, unrelated E4a boundary, not this box's new site — confirmed byte-identical
+  (same class/method/real/shadow detail strings) against the pre-E7 commit (10ecbd371) with this
+  change reverted. All belong to E4a's already-documented explained bucket (the E8-deferred
+  early-stopping rule: a non-multi method resolves by name in the real ad-hoc walk even when its
+  typed signature does not bind the call, e.g. `method set(Int $x)` called via `$h.set("x")`) —
+  this wider sweep just found more instances (10 vs. E4a's original 3) of the same bucket, not a
+  new finding; out of scope for E7. `cargo clippy -- -D warnings` / `cargo fmt` clean; full `t/`
+  (3040 files/28,437 tests) green. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md`
+  §"E7 step 1: `run_instance_method` carrier sites — clean shadow-check, no cutover needed".
+  **This consumer family needs no further work** (a shadow-only zero-mismatch result is itself
+  the box's answer for this family — there is no ad-hoc-vs-resolver divergence to route around).
+  Next E7 sub-slice: qualified dispatch / private-as-sequence-query, per the design's ordering.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):

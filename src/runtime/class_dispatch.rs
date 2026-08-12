@@ -57,6 +57,39 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
+        self.run_instance_method_at(
+            "",
+            receiver_class_name,
+            attributes,
+            method_name,
+            args,
+            invocant,
+        )
+    }
+
+    /// Same as [`Self::run_instance_method`], but tags the call with an ADR-0019
+    /// Phase E box E7 dispatch-resolver measurement `site` so
+    /// [`Self::run_instance_method_celled`] shadow-checks its ad-hoc
+    /// `resolve_method_with_owner_invocant` MRO walk against the E4 resolver
+    /// (`resolution_sequence::resolve_sequence`) for that call specifically.
+    /// An empty `site` -- what [`Self::run_instance_method`] passes -- disables
+    /// the probe entirely, so this is a genuine no-op for every caller except
+    /// the one tagged by E7's first sub-slice
+    /// (`vm_core_helpers::vm_run_instance_method`, reached only from the two VM
+    /// call sites in `vm_exec_dispatch.rs`: `CallDefined`'s user `.defined` and
+    /// `SinkPop`'s user `.sink`). Per Phase E's "one consumer family per
+    /// sub-PR" rule, the ~14 other `run_instance_method` callers (`new`,
+    /// qualified dispatch, `handles`, coercion, ...) stay unmeasured until
+    /// their own E7 sub-slice tags them with a distinct site name.
+    pub(crate) fn run_instance_method_at(
+        &mut self,
+        site: &'static str,
+        receiver_class_name: &str,
+        attributes: AttrMap,
+        method_name: &str,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+    ) -> Result<(Value, AttrMap), RuntimeError> {
         let cell = invocant.as_ref().and_then(Self::self_instance_attrs);
         let fallback = if cell.is_none() {
             Some(attributes.clone())
@@ -64,6 +97,7 @@ impl Interpreter {
             None
         };
         let (v, reconciled) = self.run_instance_method_celled(
+            site,
             receiver_class_name,
             &attributes,
             method_name,
@@ -89,6 +123,7 @@ impl Interpreter {
     /// so both this slow path and the VM fast path are covered.)
     pub(crate) fn run_instance_method_celled(
         &mut self,
+        site: &'static str,
         receiver_class_name: &str,
         attributes: &AttrMap,
         method_name: &str,
@@ -106,12 +141,45 @@ impl Interpreter {
                 attributes.clone(),
             )
         };
-        let Some((owner_class, method_def)) = self.resolve_method_with_owner_invocant(
+        let resolved = self.resolve_method_with_owner_invocant(
             receiver_class_name,
             method_name,
             &args,
             &inv_value,
-        ) else {
+        );
+        // ADR-0019 Phase E box E7 (first consumer family, see
+        // `Self::run_instance_method_at`'s doc comment): shadow-check this
+        // carrier's ad-hoc MRO walk against the E4 resolver's
+        // `resolve_sequence`, reusing the exact `shadow_check_resolver` probe
+        // E4a wired at `resolve_method_cached`'s two boundaries
+        // (`vm_call_method_compiled_cache.rs`). `record_dispatch_entry_intercept`/
+        // `_outcome` reuse the generic E5/E6 dispatch-entry counters under a new
+        // entry key ("runinstancemethod") -- the per-arm histogram (arm = method
+        // name) is the traffic-shape breakdown; `notfound` is the sole other
+        // outcome, since this carrier has no native/accessor fast path of its
+        // own to record. A no-op unless `site` is non-empty AND `MUTSU_VM_STATS`
+        // is set: zero behavior change.
+        if !site.is_empty() {
+            let method_sym = Symbol::intern(method_name);
+            self.shadow_check_resolver(
+                site,
+                receiver_class_name,
+                method_name,
+                method_sym,
+                &args,
+                &inv_value,
+                resolved.as_ref(),
+            );
+            if resolved.is_some() {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "runinstancemethod",
+                    method_name,
+                );
+            } else {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("runinstancemethod", "notfound");
+            }
+        }
+        let Some((owner_class, method_def)) = resolved else {
             // Distinguish X::Multi::NoMatch (method exists but no candidate
             // matched) from X::Method::NotFound (method does not exist at all,
             // e.g. submethod on ancestor only).
