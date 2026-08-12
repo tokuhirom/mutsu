@@ -245,6 +245,10 @@ impl Interpreter {
         }
         if name.starts_with('@') || name.starts_with('%') {
             val = self.coerce_typed_container_assignment(name, val, false)?;
+            // An attribute twigil's element type lives in the class registry,
+            // which the name-keyed coercion above cannot see.
+            let name = name.clone();
+            val = self.apply_attr_container_element_type(&name, val)?;
         }
         // Expression-context counterpart of the `SetLocal` attribute check: a
         // scalar attribute's declared type comes from the class registry, not

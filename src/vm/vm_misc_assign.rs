@@ -1,6 +1,57 @@
 use super::*;
 
 impl Interpreter {
+    /// `@!attr = ...` / `@.attr = ...` (and the `%` twins): the declared
+    /// element type lives in the class registry, not `var_type_constraints`,
+    /// so the plain container-assign paths produce an untyped Array/Hash.
+    /// Check the elements and re-embed the `Array[T]`/`Hash[T]` metadata so
+    /// the stored container keeps its type identity (`has Str @!cnames;` +
+    /// `@!cnames = @c.map(*.Str)` must still satisfy a `--> Array[Str]`
+    /// return check — Text::CSV's `column_names`). Non-attribute names and
+    /// unconstrained attributes pass through unchanged.
+    pub(super) fn apply_attr_container_element_type(
+        &mut self,
+        name: &str,
+        mut val: Value,
+    ) -> Result<Value, RuntimeError> {
+        if !(name.starts_with('@') || name.starts_with('%')) {
+            return Ok(val);
+        }
+        let Some((bare, _)) = crate::value::attr_twigil_base(name) else {
+            return Ok(val);
+        };
+        let Some(tc) = self.self_attr_type_constraint(bare) else {
+            return Ok(val);
+        };
+        if matches!(tc.as_str(), "Mu" | "Any") {
+            return Ok(val);
+        }
+        let elems: Option<Vec<Value>> = match val.view() {
+            ValueView::Array(items, _) => Some(items.iter().cloned().collect()),
+            ValueView::Hash(map) => Some(map.values().cloned().collect()),
+            _ => None,
+        };
+        let Some(elems) = elems else {
+            return Ok(val);
+        };
+        for item in &elems {
+            if !item.is_nil() && !self.type_matches_value(&tc, item) {
+                return Err(runtime::utils::type_check_element_typed_error(
+                    name, &tc, item,
+                ));
+            }
+        }
+        val = self.tag_container_metadata(
+            val,
+            crate::runtime::ContainerTypeInfo {
+                value_type: tc,
+                key_type: None,
+                declared_type: None,
+            },
+        );
+        Ok(val)
+    }
+
     pub(super) fn exec_assign_expr_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -233,6 +284,7 @@ impl Interpreter {
         } else {
             Self::itemize_scalar_store(&name, Self::normalize_scalar_assignment_value(raw_val))
         };
+        val = self.apply_attr_container_element_type(&name, val)?;
         if val.is_nil()
             && let Some(def) = self.var_default(&name)
         {
