@@ -2244,7 +2244,7 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   sites that today bypass the generation refresh gain it. `fast_method_cache` survives as the
   monomorphic IC in front until F5 — retiring it inside Phase E would be an unmeasured perf
   cliff. Bench-CI parity evidence is part of this box's exit (G3's dispatch clause).
-- [ ] **E4 — Resolve native and user candidates in one MRO walk.** Preserve user shadowing,
+- [x] **E4 — Resolve native and user candidates in one MRO walk.** Preserve user shadowing,
   visibility, invocant definedness, arity/signature ordering, and native fallback in one result.
   **Design 2026-08-10** (same doc): `resolve_sequence(chain, name, shape, definedness)` returns
   a `ResolvedSequence` — the shape-independent ordered candidate universe (user candidates in
@@ -2784,7 +2784,25 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     per-outcome counters plus an interceptor taxonomy table, starting with
     `CallMethod` (the highest-traffic opcode entry) — not another
     `should_bypass_native_fastpath` slice.
-- [ ] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
+  **Progress 2026-08-12 (closing E4, checkbox correction):** re-checked step 13's own stated
+  precondition for checking off this box — "E5-E7 have not yet landed to confirm the resolver
+  fully replaces the VM-opcode-side probe cascades" — against current state: E5 (steps 1-4, E5b,
+  E5c parts 1-2, E5d), E6 (E6a-E6d), and E7 (all eight sub-slices) have since all landed and
+  closed (E6/E7 already carry `[x]`; E5's own closing note below was a checkbox oversight, also
+  corrected here). Their collective, empirically-verified answer to the precondition is "no, by
+  design" — `Native`/`NativeCallBinding` are measurement/hint-only at every E5/E6/E7 entry
+  (E5b steps 1-2's finding, generalized in E5b step 2's own text: "this generalizes past
+  `CallMethod`... at every E5/E6/E7 entry, not a routing decision"), because the real safety net
+  for native dispatch lives inside `try_native_method_raw`'s ~22 scattered per-shape `return None`
+  checks, not in a single candidate-presence fact a resolver could safely gate on without
+  reimplementing all of them. This is a real, confirmed answer to the open question, not a stall —
+  E4's own box text ("resolve native and user candidates in one MRO walk... in one result") is
+  satisfied by `ResolvedSequence`/`ResolvedCandidate` (`User`/`NativeCallBinding`/`Native`,
+  `resolution_sequence.rs`) existing and being shadow-verified at its call sites; the box does not
+  additionally require the VM opcode entries to *dispatch on* the `Native` candidate, since E5-E7
+  independently and deliberately decided against that for the reason above. No code changed this
+  step (docs-only bookkeeping); **E4 is marked done.**
+- [x] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design 2026-08-10** (`todo/deep/adr0019-e5-e7-entry-routing.md`): the cutover shape is
   "resolver decides, existing arms execute" — each entry's dispatch-probe section becomes a
@@ -3048,6 +3066,10 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   (steps 1-4, E5b, E5c parts 1-2, E5d) is closed.** Full detail in
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5d". Next: **E6** (mutation-aware and
   container calls).
+  **Checkbox note (2026-08-12):** this box's own text above already declared full closure
+  the day it landed; the top-level checkbox was left `[ ]` by oversight while work moved
+  straight on to E6 (which did get its checkbox flipped at closure, as did E7 later).
+  Corrected here to `[x]` — no new content, matching the already-recorded closure.
 - [x] **E6 — Route mutation-aware and container calls through the resolver.** Cover celled,
   lvalue/rw, Proxy, index/attribute writeback, and mutable aggregate entry points.
   **Design 2026-08-10** (same doc): includes `call_method_mut_with_values` (the second slow
