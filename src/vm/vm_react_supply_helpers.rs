@@ -60,7 +60,7 @@ impl Interpreter {
     /// Returns `None` when `sub_val` is not an on-demand registration (the
     /// caller falls back to `replay_inner_static_subscription`), or
     /// `Some(early_done)` once the stage is wired up.
-    pub(super) fn register_nested_on_demand_source(
+    pub(crate) fn register_nested_on_demand_source(
         &mut self,
         sub_val: &Value,
         react_subs: &mut Vec<ReactSubscription>,
@@ -140,10 +140,22 @@ impl Interpreter {
         // The StreamConsumer stays registered for the life of the react (the
         // outer loop truncates it), so values arriving later on this stage's own
         // upstream still flow through it.
+        let react_subs_before = react_subs.len();
         for v in emitted {
             if crate::runtime::Interpreter::is_supply_subscription_registration(&v) {
                 if let Some(mut rsub) = self.value_to_react_subscription(&v) {
                     rsub.on_demand_done = Some(done_promise.clone());
+                    // This is the live subscription that carries this
+                    // stage's own upstream: its normal completion (not just
+                    // a die) IS this stage's own completion. Tag it so
+                    // `SinkEvent::Done`'s `supplier_done(sid)` call resolves
+                    // `done_promise`, letting the shadow subscription pushed
+                    // below (which alone polls `on_demand_done`) fire this
+                    // stage's LAST callbacks. Without this, `done_promise`
+                    // never resolved and a `whenever <derived-supply> { ...;
+                    // LAST {...} }` LAST phaser never fired (see
+                    // todo/deep/last-phaser-loses-outer-var-mutations-when-whenever-source-is-a-nested-supply.md).
+                    rsub.emitter_supplier_id = Some(emitter_supplier_id);
                     react_subs.push(rsub);
                 } else if let Some(early) =
                     self.register_nested_on_demand_source(&v, react_subs, depth + 1)?
@@ -162,6 +174,18 @@ impl Interpreter {
                     }
                 }
             }
+        }
+        // No live subscription was registered above (every emitted item was
+        // either a plain value or fully replayed inline): this stage's body
+        // already ran to completion synchronously, with nothing async left
+        // to wait on. Resolve `done_promise` now, or a shadow subscription
+        // pushed below (for a purely-synchronous nested source such as a
+        // `supply { emit ...; emit ...; }` with no `whenever` of its own —
+        // `t/supply-promise-ondemand-whenever.t`) would wait on it forever,
+        // since nothing else would ever call `supplier_done` on this stage's
+        // emitter.
+        if react_subs.len() == react_subs_before {
+            crate::runtime::native_methods::supplier_done(emitter_supplier_id);
         }
         let close_cbs = Self::extract_supply_on_close_callbacks(&attrs);
         if !close_cbs.is_empty() || !last_callbacks.is_empty() {

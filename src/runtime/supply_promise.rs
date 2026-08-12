@@ -426,6 +426,15 @@ impl Interpreter {
         // with the last emitted value even when the whenever never iterates.
         let mut react_subs: Vec<crate::runtime::subtest::ReactSubscription> = Vec::new();
         let mut static_last_value: Option<Value> = None;
+        // `register_nested_on_demand_source` below may register entries in
+        // `self.supply_stream_consumers` (so a nested stage's `emit` streams
+        // live into its consuming `whenever`'s callback instead of being
+        // buffered). Those entries must move to `thread_interp` before the
+        // background drive spawns — see the `stream_consumers_base` split
+        // below — because the drive loop that actually observes the async
+        // events runs on a *cloned* interpreter with its own (freshly empty)
+        // `supply_stream_consumers`, not on `self`.
+        let stream_consumers_base = self.supply_stream_consumers.len();
         for sub_val in &subscriptions {
             if let ValueView::Array(items, ..) = sub_val.view()
                 && items.len() >= 2
@@ -511,6 +520,32 @@ impl Interpreter {
                         });
                         continue;
                     }
+                    // A nested `supply { ... }` source (an on-demand supply
+                    // that is not itself directly backed by a channel or a
+                    // live `Supplier`): wire it as a live streaming stage the
+                    // same way the react loop's `build_react_subscriptions`
+                    // does via `register_nested_on_demand_source`, instead of
+                    // falling through to the static/finite replay below.
+                    // `replay_static_whenever_promise` materializes the
+                    // source through `supply_get_values`, which intentionally
+                    // *drops* a still-live nested subscription rather than
+                    // replaying it — so a `whenever <derived-supply>` inside
+                    // this `Promise(supply {...})` body would silently lose
+                    // every value the derived supply emits asynchronously
+                    // after this point (see
+                    // todo/deep/last-phaser-loses-outer-var-mutations-when-whenever-source-is-a-nested-supply.md).
+                    if let Some(early_done) =
+                        self.register_nested_on_demand_source(sub_val, &mut react_subs, 0)?
+                    {
+                        if early_done {
+                            // No background drive will run: nothing will ever
+                            // consume the stream consumer(s) this call (or
+                            // its own recursion) may have left registered.
+                            self.supply_stream_consumers.truncate(stream_consumers_base);
+                            return Ok(());
+                        }
+                        continue;
+                    }
                     // No live channel: a static/finite source. Replay it now.
                     let mut lv = static_last_value.take().unwrap_or(Value::NIL);
                     self.replay_static_whenever_promise(
@@ -527,6 +562,7 @@ impl Interpreter {
         if react_subs.is_empty() {
             // No live channels: resolve with the last value emitted by the
             // static sources (or any plain synchronously-emitted value).
+            self.supply_stream_consumers.truncate(stream_consumers_base);
             let result = static_last_value
                 .or_else(|| plain_values.last().cloned())
                 .unwrap_or(Value::NIL);
@@ -576,6 +612,17 @@ impl Interpreter {
             emitter_supplier_id: Some(emitter_supplier_id),
         };
         let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
+        // Hand any stream consumer(s) `register_nested_on_demand_source`
+        // registered above (on `self`, the calling thread) over to the
+        // interpreter that will actually observe the async events —
+        // `clone_for_thread_for_block` starts `thread_interp` with an empty
+        // `supply_stream_consumers`, so a nested stage's live-forwarding
+        // wiring would otherwise vanish and its `emit`s would never reach
+        // the consuming `whenever`'s callback.
+        thread_interp.supply_stream_consumers.extend(
+            self.supply_stream_consumers
+                .split_off(stream_consumers_base),
+        );
         crate::runtime::builtins_system::spawn_user_thread(move || {
             // The drive loop keeps/breaks `promise` directly as it runs (see
             // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
