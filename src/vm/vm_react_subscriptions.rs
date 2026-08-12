@@ -541,8 +541,16 @@ impl Interpreter {
                     // must instead wait for its `on_demand_done` promise to
                     // actually resolve — marking it done here would let the
                     // react conclude before that promise's Kept/Broken status
-                    // (checked just above) is ever observed.
-                    if react_subs[si].quit_callbacks.is_empty() {
+                    // (checked just above) is ever observed. The same is true
+                    // of one carrying `last_callbacks` with no source of its
+                    // own (`register_nested_on_demand_source`'s shadow
+                    // subscription for a nested `whenever <derived-supply> {
+                    // ...; LAST {...} }`): marking it done here — before
+                    // `on_demand_done` resolves — would orphan its LAST
+                    // phasers, which only the check above ever fires.
+                    let awaiting_on_demand_done = react_subs[si].on_demand_done.is_some()
+                        && !react_subs[si].last_callbacks.is_empty();
+                    if react_subs[si].quit_callbacks.is_empty() && !awaiting_on_demand_done {
                         react_subs[si].done = true;
                     }
                     continue;
