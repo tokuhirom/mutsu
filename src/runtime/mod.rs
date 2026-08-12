@@ -2316,6 +2316,41 @@ pub struct Interpreter {
     /// reads them.
     pub(crate) user_declared_classes: std::collections::HashSet<String>,
     pub(crate) block_declared_vars: Vec<NameSet>,
+    /// Local-frame slot indices of `given`/`with` pointy-topic parameters
+    /// (`given EXPR -> $v {...}`) currently mid-writeback: the enclosing
+    /// `Given`/`With` op still needs the slot's final value after its body
+    /// finishes. The pointy param's own `VarDecl` makes
+    /// `exec_block_local_scope_op` treat it as an ordinary vanishing
+    /// block-local `my`, Nil-ing its slot on block exit (and, when the name
+    /// shadows an outer variable, `pop_loop_local_scope` may instead
+    /// overwrite the slot with the outer binding's restored value) — both of
+    /// which run BEFORE the enclosing op's writeback can read it, and a
+    /// scalar pointy param's live value has NO other home by then (a plain
+    /// scalar lexical skips its env mirror under the `(B)` per-store
+    /// env-write gate, see `docs/lexical-scope-slot-campaign.md`). So
+    /// `exec_block_local_scope_op` captures each protected slot's live value
+    /// into `given_pointy_captured` unconditionally, right after body
+    /// execution finishes and before either of those two exit paths can
+    /// touch it.
+    ///
+    /// Keyed by exact SLOT index, not by name/symbol: two nested `given`s can
+    /// bind the SAME name (`given $a -> $v { given $b -> $v {...} }`), each
+    /// getting its own distinct compiled slot under shadow slots, and a
+    /// pointy param can also shadow an outer variable of the same name
+    /// (`given 5 -> $x {...}` inside `my $x = 1`) — slot identity is the only
+    /// thing that disambiguates either case; name-based matching captured
+    /// from (or reset) the wrong declaration's slot in both. `exec_given_op`
+    /// determines its own pointy param's slot by peeking the compiled body
+    /// for the first `SetLocalDecl`, which is always that param's own
+    /// synthetic declaration (`pointy_topic_bind` always inserts it as the
+    /// body's first statement) — found before any nested construct's own
+    /// declarations, so it is unambiguous even under same-name nesting.
+    pub(crate) given_pointy_capture_slots: Vec<usize>,
+    /// Parallel stack to `given_pointy_capture_slots`: the captured final value for
+    /// each active `given`/`with` pointy param's slot, filled in by
+    /// `exec_block_local_scope_op` (`None` until then) and consumed by
+    /// `exec_given_op`'s writeback.
+    pub(crate) given_pointy_captured: Vec<Option<Value>>,
     pub(crate) loop_local_vars: Vec<NameSet>,
     /// Names currently bound as for-loop parameters in this frame chain, one
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching

@@ -12,11 +12,20 @@ impl Interpreter {
         source: &Option<String>,
         source_slot: Option<u32>,
         pointy_param: &Option<String>,
+        captured_pointy_value: Option<Value>,
     ) {
         let Some(source) = source else {
             return;
         };
-        if !source.starts_with('@') && !source.starts_with('%') {
+        // A whole-container (`@`/`%`) topic without a pointy param writes back
+        // through this function; a plain scalar topic (`given $x {...}`)
+        // instead writes back live at each `$_` assignment via
+        // `topic_source_var` (see the opcode that assigns `$_`), so this
+        // function is a no-op for it. A scalar POINTY param (`given $x -> $v
+        // {...}`) is different: `$v` is a distinct lexical, not literally
+        // `$_`, so it never goes through that live path and genuinely needs
+        // this deferred writeback — do not gate it out by sigil.
+        if !source.starts_with('@') && !source.starts_with('%') && pointy_param.is_none() {
             return;
         }
         // §1.4: with shadow slots active, target the compile-time-baked slot —
@@ -28,9 +37,15 @@ impl Interpreter {
             None
         };
         // For a pointy block, write back the bound parameter's final value
-        // (`@p` after `@p.push`); otherwise the topic `$_`.
+        // (`@p` after `@p.push`, `$v` after `$v += 10`); otherwise the topic
+        // `$_`. The pointy param's value is `captured_pointy_value`, taken by
+        // `exec_given_op`'s caller from `given_pointy_captured` — its slot is
+        // read exactly once, by `exec_block_local_scope_op`, right before
+        // that scope Nil-resets it (see `given_pointy_capture_slots`'s doc
+        // comment); `env` is consulted only as a fallback for the (should not
+        // happen in practice) case where no capture was recorded.
         let current = match pointy_param {
-            Some(p) => self.get_env_with_main_alias(p),
+            Some(p) => captured_pointy_value.or_else(|| self.get_env_with_main_alias(p)),
             None => self.env().get("_").cloned(),
         };
         let Some(current) = current else {
@@ -56,12 +71,15 @@ impl Interpreter {
         src: &(String, Value, bool),
         pointy_param: &Option<String>,
         orig: Option<&Value>,
+        captured_pointy_value: Option<Value>,
     ) {
         let (container, index, _positional) = src;
         // For a pointy block, write back the bound parameter's final value;
-        // otherwise the topic `$_`.
+        // otherwise the topic `$_`. See `write_back_given_topic`'s matching
+        // comment: `captured_pointy_value` is the slot's value, read exactly
+        // once right before `exec_block_local_scope_op` Nil-resets it.
         let current = match pointy_param {
-            Some(p) => self.get_env_with_main_alias(p),
+            Some(p) => captured_pointy_value.or_else(|| self.get_env_with_main_alias(p)),
             None => self.env().get("_").cloned(),
         };
         let Some(current) = current else {

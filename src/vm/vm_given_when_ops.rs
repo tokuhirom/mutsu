@@ -26,6 +26,26 @@ impl Interpreter {
         let end = body_end as usize;
         let stack_base = self.stack.len();
 
+        // Arm capture of the pointy param's final value: its own `VarDecl`
+        // makes `exec_block_local_scope_op` treat it as an ordinary vanishing
+        // `my`, so that pass captures the slot's live value right before
+        // Nil-resetting it, for this op's writeback below to read. Found by
+        // peeking the compiled body for the first `SetLocalDecl` — always
+        // this param's own synthetic declaration, since `pointy_topic_bind`
+        // inserts it as the body's very first statement, ahead of any nested
+        // construct's own declarations. See `given_pointy_capture_slots`'s doc
+        // comment for why slot identity (not name) is what disambiguates.
+        let pointy_capture_slot = pointy_param.as_ref().and_then(|_| {
+            code.ops[body_start..end].iter().find_map(|op| match op {
+                OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                _ => None,
+            })
+        });
+        if let Some(slot) = pointy_capture_slot {
+            self.given_pointy_capture_slots.push(slot);
+            self.given_pointy_captured.push(None);
+        }
+
         let saved_topic = self.env().get("_").cloned();
         let saved_when = self.when_matched();
         let saved_topic_source = self.topic_source_var.take();
@@ -102,6 +122,18 @@ impl Interpreter {
         // `topic_source_var` to the given's own topic before the writeback reads it.
         let saved_pointy_depth = self.topic_source_save_stack.len();
         let restore = move |this: &mut Self, write_back: bool| {
+            // Body execution (including any nested `BlockLocalScope`) has
+            // finished, so both stacks are safe to pop — pushed above in
+            // strict LIFO order with body execution, so this always matches
+            // that push. `captured` is the pointy param's final value,
+            // filled in by `exec_block_local_scope_op` right before it
+            // Nil-reset the param's own slot.
+            let captured = if pointy_capture_slot.is_some() {
+                this.given_pointy_capture_slots.pop();
+                this.given_pointy_captured.pop().flatten()
+            } else {
+                None
+            };
             while this.topic_source_save_stack.len() > saved_pointy_depth {
                 let (saved_topic, saved_source) = this.topic_source_save_stack.pop().unwrap();
                 this.env_mut().insert("_".to_string(), saved_topic);
@@ -112,13 +144,20 @@ impl Interpreter {
             }
             if write_back {
                 if let Some(src) = &element_source {
-                    this.write_back_element_source(code, src, &pointy_param, element_orig.as_ref());
+                    this.write_back_element_source(
+                        code,
+                        src,
+                        &pointy_param,
+                        element_orig.as_ref(),
+                        captured.clone(),
+                    );
                 } else {
                     this.write_back_given_topic(
                         code,
                         &container_binding,
                         container_source_slot,
                         &pointy_param,
+                        captured.clone(),
                     );
                 }
             }
@@ -156,7 +195,12 @@ impl Interpreter {
                 // slot and, under whole-container in-place reassignment (§3),
                 // clobber that unrelated source. Clearing the value (the alias
                 // markers alone are not enough) keeps the next reuse clean. Done
-                // after the writeback above, which already read `@p`'s final value.
+                // after the writeback above, which already read `@p`'s final
+                // value. A scalar pointy param needs no such reset here: its
+                // exact-slot Nil-reset already happened inside
+                // `exec_block_local_scope_op` (see `given_pointy_capture_slots`'s doc
+                // comment) — repeating it here by name would risk hitting a
+                // same-named outer variable the pointy param shadows instead.
                 if p.starts_with('@') || p.starts_with('%') {
                     this.env_mut().remove(p.as_str());
                     this.update_local_if_exists(code, p, &Value::NIL);
@@ -302,7 +346,7 @@ impl Interpreter {
         }
 
         if let Some(src) = &element_source {
-            self.write_back_element_source(code, src, &None, element_orig.as_ref());
+            self.write_back_element_source(code, src, &None, element_orig.as_ref(), None);
         }
         loan_env!(self, set_when_matched(saved_when));
         if let Some(v) = saved_topic {
