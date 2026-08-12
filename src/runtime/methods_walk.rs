@@ -15,6 +15,12 @@
 //! - `:method` / `:submethod` — currently both are looked up via the same
 //!   per-class method table; this is enough for what roast tests exercise.
 //!
+//! A runtime mixin (`$obj but Role`) is also a valid receiver: the mixed-in
+//! role's own methods are visited FIRST, ahead of the base class chain (real
+//! raku puts the mixin's anonymous pun class first in `.^mro`), regardless of
+//! whether `:roles` was passed -- `:roles` only controls whether *statically
+//! composed* (`class C does Role {}`) roles are additionally walked.
+//!
 //! The implementation pre-evaluates each method call eagerly when WALK is
 //! invoked, then returns a no-arg `Sub` whose body returns the resulting
 //! list literal. This keeps the result trivially callable as `WALK(...)()`
@@ -33,13 +39,29 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Result<Option<Value>, RuntimeError> {
-        // Only handle WALK on instances or type objects backed by a class def.
-        let receiver_class_name = match target.view() {
-            ValueView::Instance { class_name, .. } => class_name.resolve(),
-            ValueView::Package(name) => name.resolve(),
+        // Handle WALK on instances, type objects backed by a class def, or a
+        // runtime mixin (`but`) layered on either. `mixin_role_names` collects
+        // the role(s) mixed onto `target`: real raku puts a mixin's own pun
+        // class FIRST in `.^mro` (`(Sub.new but R1).^mro` is `(Sub+{R1}) Sub
+        // ... Any Mu`), so those roles' own candidates must be visited before
+        // the base class chain below -- the same fix ADR-0019 E7 step 6 made
+        // for `.^methods()`. See `todo/deep/adr0019-e5-e7-entry-routing.md`
+        // "E7 step 7".
+        let (receiver_class_name, mixin_role_names): (String, Vec<String>) = match target.view() {
+            ValueView::Instance { class_name, .. } => (class_name.resolve(), Vec::new()),
+            ValueView::Package(name) => (name.resolve(), Vec::new()),
+            ValueView::Mixin(_, mixins) => {
+                let roles: Vec<String> = mixins
+                    .keys()
+                    .filter_map(|k| k.strip_prefix("__mutsu_role__").map(String::from))
+                    .collect();
+                (self.mop_receiver_owner(target), roles)
+            }
             _ => return Ok(None),
         };
-        if !self.registry().classes.contains_key(&receiver_class_name) {
+        if mixin_role_names.is_empty()
+            && !self.registry().classes.contains_key(&receiver_class_name)
+        {
             // A built-in type (e.g. `Grammar`) has no user `class_def`, but WALK
             // must still find its native methods. Resolve the method name from a
             // small table of WALKable built-in methods and return a single
@@ -88,9 +110,43 @@ impl Interpreter {
             return Ok(None);
         };
 
-        // Build the walk order over the class hierarchy in the requested order,
-        // optionally including composed roles.
-        let walk_targets = self.build_walk_targets(&receiver_class_name, order, want_roles);
+        // Build the walk order: any runtime-mixed-in roles' OWN candidates come
+        // first, UNCONDITIONALLY -- `:roles` only affects statically-composed
+        // roles' submethods further down (they are visited via the class
+        // chain already; see `build_walk_targets`'s own doc). A mixin role is
+        // never composed into any class's method table, so its regular
+        // methods are only reachable here. Then the class hierarchy, in the
+        // requested order, optionally including composed roles.
+        let mut walk_targets: Vec<(WalkKind, String)> = mixin_role_names
+            .iter()
+            .map(|r| (WalkKind::MixinRole, r.clone()))
+            .collect();
+        walk_targets.extend(self.build_walk_targets(&receiver_class_name, order, want_roles));
+
+        // ADR-0019 Phase E box E7 step 7: shadow-check the CLASS-kind portion
+        // of the default (`:canonical`) chain above (`build_walk_targets` /
+        // ultimately `class_mro_readonly`) against the E4 resolver's own
+        // canonical chain for the same receiver (`dispatch_owner_chain`,
+        // TypeId-based). Scoped to `:canonical` only -- WALK's other
+        // orderings are legitimate non-MRO traversals, not restatements of
+        // MRO. `MUTSU_VM_STATS`-gated, zero behavior change.
+        if matches!(order, WalkOrder::Canonical) && crate::vm::vm_stats::enabled() {
+            let real_names: Vec<&str> = walk_targets
+                .iter()
+                .filter(|(k, _)| matches!(k, WalkKind::Class))
+                .map(|(_, o)| o.as_str())
+                .collect();
+            let shadow_chain = self.dispatch_owner_chain(target);
+            let shadow_names: Vec<&str> = shadow_chain
+                .iter()
+                .map(|t| t.as_str())
+                .filter(|n| !matches!(*n, "Any" | "Mu" | "Cool"))
+                .collect();
+            let matched = real_names == shadow_names;
+            crate::vm::vm_stats::record_walk_shadow_check(matched, || {
+                format!("class={receiver_class_name} real={real_names:?} shadow={shadow_names:?}")
+            });
+        }
 
         // For each (kind, owner-name) that has an "own" candidate for the named
         // method, build a candidate closure `-> $inst, *@a { $inst.OWNER::name(|@a) }`.
@@ -230,6 +286,7 @@ impl Interpreter {
                 let tag = match kind {
                     WalkKind::Class => "C",
                     WalkKind::Role => "R",
+                    WalkKind::MixinRole => "M",
                 };
                 Value::str(format!("{tag}|{owner}"))
             })
@@ -297,10 +354,14 @@ impl Interpreter {
                 quiet,
             )
         };
-        let attributes_map = match invocant.view() {
-            ValueView::Instance { attributes, .. } => attributes.to_map(),
-            _ => AttrMap::new(),
-        };
+        // Unwrap a `Mixin` invocant (`Sub.new but R1`) to the inner instance's
+        // shared attribute cell, matching the general `does`-mixin unwrap
+        // (`Self::self_instance_attrs`, `vm_var_assign_computed_attr.rs`) --
+        // without it, a mixin's OWN (base-class) method candidates ran with an
+        // empty attribute map.
+        let attributes_map = Self::self_instance_attrs(&invocant)
+            .map(|a| a.to_map())
+            .unwrap_or_default();
         let mut order: Vec<String> = targets;
         if reversed {
             order.reverse();
@@ -355,6 +416,7 @@ impl Interpreter {
             let (kind, owner) = match tag.split_once('|') {
                 Some(("C", o)) => (WalkKind::Class, o.to_string()),
                 Some(("R", o)) => (WalkKind::Role, o.to_string()),
+                Some(("M", o)) => (WalkKind::MixinRole, o.to_string()),
                 _ => continue,
             };
             let Some(method_def) =
@@ -637,6 +699,17 @@ impl Interpreter {
                     })
                     .cloned()
             }
+            WalkKind::MixinRole => {
+                // A role mixed onto the receiver at runtime (`but`/`does`) is
+                // never composed into any class's method table -- unlike
+                // `WalkKind::Role` above, its own REGULAR methods (not just
+                // submethods) are only reachable through the role's own
+                // table, so any non-private "own" candidate counts.
+                let registry = self.registry();
+                let role_def = registry.roles.get(owner)?;
+                let overloads = role_def.methods.get(method_name)?;
+                overloads.iter().find(|m| !m.is_private).cloned()
+            }
         }
     }
 }
@@ -682,7 +755,14 @@ fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WalkKind {
     Class,
+    /// A statically-composed role's own SUBMETHOD (regular methods of a
+    /// composed role are already visited via the class chain).
     Role,
+    /// A role mixed onto the receiver at runtime (`but`/`does`). Unlike a
+    /// composed role, none of its methods are copied into any class's method
+    /// table, so every one of its own (non-private) methods -- not just
+    /// submethods -- is visited here.
+    MixinRole,
 }
 
 /// Traversal ordering for `WALK`. `:preorder` is an alias for `:ascendant`.

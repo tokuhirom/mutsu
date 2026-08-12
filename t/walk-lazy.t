@@ -1,6 +1,6 @@
 use Test;
 
-plan 5;
+plan 7;
 
 # `WALK(method)()` invokes the MRO-level candidates LAZILY — one method call per
 # pulled element (Rakudo). `for $obj.WALK("foo")() { ... }` calls exactly one
@@ -36,3 +36,16 @@ my class B is A { method m { 2 } }
 my @r = B.new.WALK("m")();
 is @r.elems, 2, 'WALK result reifies to an array eagerly';
 is-deeply @r, [2, 1], 'eager WALK collects all candidate results';
+
+# ADR-0019 E7 step 7 (`todo/deep/adr0019-e5-e7-entry-routing.md`): a WALK
+# result must also force correctly under `.gist`/`.Str` (say/print), not just
+# `for`-iteration and array coercion above. Those two contexts go through the
+# VM's own opcode-level lazy-list forcing (`force_lazy_list_vm`), which
+# already knew about `walk_pending`; `.gist`/`.Str` route through
+# method-dispatch-triggered forcing (`Interpreter::force_lazy_list`, used by
+# `render_gist_value`), which did not check `walk_pending` at all and read
+# the still-empty initial cache before ever pulling a candidate --
+# `$obj.WALK("m")().gist` printed `()` instead of the candidate results.
+my $g = B.new.WALK("m")();
+is $g.gist, '(2 1)', 'WALK result forces correctly under .gist (say)';
+is $g.Str, '2 1', 'WALK result forces correctly under .Str';

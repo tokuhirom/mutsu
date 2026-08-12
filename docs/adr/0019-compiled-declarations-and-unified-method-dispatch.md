@@ -3558,6 +3558,62 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   above is that check. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 6:
   `.^methods` — a real mixin-enumeration fix, plus a clean chain shadow-check". Next E7 sub-slice:
   WALK and the EVAL/`subtest` re-entrant carriers, per the design's consumer ordering.
+  **Progress 2026-08-12** (seventh consumer family, `.WALK`, two real bugs plus a clean chain
+  shadow-check — not a "just add a shadow check" box like steps 1/2): scoping
+  (`src/runtime/methods_walk.rs`) found `try_walk_method` never recognized a runtime mixin
+  (`ValueView::Mixin`) as a valid receiver at all — `(5 but R1).WALK("zork")` raised
+  `X::Method::NotFound` where real `raku` returns `(R1::zork)`, confirmed by direct comparison
+  during scoping the same way steps 5/6 found their gaps. **Fix 1**: `try_walk_method` now extracts
+  `mixin_role_names` from a `Mixin` receiver (mirroring step 6's `dispatch_classhow_methods` fix)
+  and prepends a new `WalkKind::MixinRole` target per role — unlike a statically-`does`-composed
+  role (`WalkKind::Role`, submethods only, since regular methods are already composed into the
+  consuming class's own method table), a *runtime* mixin's role is never composed anywhere, so its
+  own regular (non-private) methods are the only place to find them; `lookup_own_walk_method` grew
+  a matching arm. Investigating the fix surfaced a second, independent bug: `walk_list_invoke_direct`
+  read a Mixin invocant's attributes via a direct `ValueView::Instance` match, which is `None` for a
+  `Mixin`-wrapped instance — any WALK candidate on the *base* class of a mixin ran with an empty
+  attribute map. **Fix 2**: reuse the existing general Mixin-unwrap helper
+  (`Interpreter::self_instance_attrs`, already used by ordinary method dispatch for the same purpose)
+  instead of the ad hoc match. Testing fix 1 surfaced a third, unrelated bug while checking `say`
+  output: `$obj.WALK(...)().gist`/`.Str` printed `()`/empty on an otherwise-correct, already-working
+  (pre-mixin, plain-class) WALK result. Root cause: `Interpreter::force_lazy_list`
+  (`runtime/resolution_lazy.rs`), the forcer that `.gist`/`.Str`/`say` route through (via
+  `call_method_with_values`'s "force LazyList and re-dispatch as Seq" branch), had a `cat_pull`
+  branch but no `walk_pending` branch — and a WALK-produced `LazyList` starts with a **non-empty**
+  `Some(Vec::new())` cache (`LazyList::new_cached`), so the function's cache short-circuit
+  (`if let Some(cached) = list.cache... { return Ok(cached) }`) returned the still-empty initial
+  cache before ever pulling a candidate, exactly the failure mode the existing `cat_pull` comment
+  already warned about for its own case ("cache always starts non-empty, so this must run before the
+  cache short-circuit"). **Fix 3**: added the missing `walk_pending` branch in the same position,
+  delegating to the existing `force_walk_pending` (already used correctly by the VM's own opcode-level
+  forcer, `force_lazy_list_vm` in `vm_helpers_lazy.rs`, which is why `for`-iteration and array
+  coercion — a separate, already-correct forcing path — never showed this bug). **Shadow-check**
+  added too, matching step 6's "the check is the other half of the fix" pattern: a new
+  `MUTSU_VM_STATS`-gated `WALK_SHADOW_*` pair (`vm_stats.rs`) compares the CLASS-kind portion of the
+  chain WALK's default (`:canonical`) ordering walks (`build_walk_targets`, ultimately
+  `class_mro_readonly`) against the E4 resolver's own canonical chain for the same receiver
+  (`dispatch_owner_chain`) — deliberately scoped to `:canonical` only, since WALK's other orderings
+  (`:super`/`:breadth`/`:ascendant`/`:descendant`) are legitimate alternate traversals documented by
+  raku's own WALK spec, not MRO restatements, so comparing them against the resolver's MRO chain
+  would be a guaranteed, meaningless mismatch. Swept the existing `t/walk-lazy.t`/`t/walk-orderings.t`
+  suite plus a hand-built mixin/two-role/ordering probe: 12 + 5 checks, 0 mismatches, once a
+  same-name-as-a-builtin-type test class (`Sub`, colliding with the builtin `Sub`/`Routine` type) was
+  renamed out of the probe — that collision is the SAME already-tracked owner-name-collision gap the
+  E1a ledger already records (`multi_arg_type_keys`), not a new finding. New `t/walk-mixin-role.t` (11
+  assertions: mixin-onto-builtin, mixin-onto-instance base-chain-still-walkable,
+  mixin-role-method-found, absent-method-empty, two-stacked-mixin-roles, mixin-overriding-base,
+  attribute-access-through-a-mixin-wrapped-candidate, plain-builtin-type-receiver-regression-guard)
+  plus two new assertions appended to `t/walk-lazy.t` (`.gist`/`.Str` forcing). `cargo build`/`cargo
+  clippy -- -D warnings`/`cargo fmt` clean; full local `make test` green. Since fixes 1-3 change real
+  `.WALK` answers (not just a shadow-only probe), this counts as CLAUDE.md's "touched name/type
+  resolution" case: `roast/S12-introspection/walk.t` and `roast/S14-roles/attributes-6e.t` (the two
+  whitelisted files that call `.WALK(`) both green locally with `MUTSU_FUDGE=1`. `git grep -n "WALK"
+  src/runtime/ src/vm/` confirmed WALK has no other internal caller in mutsu (no TWEAK/BUILDALL
+  construction-phaser use, unlike the ADR's general phrasing might suggest) — the blast radius is
+  exactly the `.WALK(...)`/`WalkList` dispatch sites this box touched, nothing wider. Full detail in
+  `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 7: `.WALK` — two real bugs (mixin receivers,
+  lazy-forcing gap) plus a clean chain shadow-check". **Next (and last) E7 sub-slice: the EVAL/
+  `subtest` re-entrant carriers** — after that, E7 as a whole is closed and E8 is next.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):
