@@ -2504,3 +2504,149 @@ not in an MRO-walk primitive. The shadow-check half added alongside it is clean 
 matching steps 1/2's zero-gap result for the chain-construction question specifically. Next E7
 sub-slice: WALK and the EVAL/`subtest` re-entrant carriers, per the design's consumer ordering — the
 last two items in the box's original consumer list.
+
+## E7 step 7: `.WALK` — two real bugs (mixin receivers, lazy-forcing gap) plus a clean chain shadow-check
+
+**Scoping**: the ADR's own framing for this box (`src/runtime/methods_walk.rs`'s module doc: "walks
+the receiver's class hierarchy... looking up *own* candidates of the named method on each level...
+returns a callable") flagged `WalkOrder`/`build_walk_targets` as "meaningfully more complex than any
+single-name lookup the previous E7 steps handled" and warned not to assume a quick fix. Reading the
+whole file first (per the assignment) rather than jumping straight to a shadow check paid off: the
+receiver-resolution match at the top of `try_walk_method`,
+
+```rust
+let receiver_class_name = match target.view() {
+    ValueView::Instance { class_name, .. } => class_name.resolve(),
+    ValueView::Package(name) => name.resolve(),
+    _ => return Ok(None),
+};
+```
+
+has no arm for `ValueView::Mixin` at all — falling to `_ => return Ok(None)`, which the method-call
+dispatch site (`methods_call_dispatch.rs`) turns into `X::Method::NotFound`. Confirmed directly:
+
+```raku
+role R1 { method zork { "R1::zork" } }
+my $x = 5 but R1;
+say $x.WALK("zork")();   # raku: (R1::zork)
+```
+
+`mutsu` raised `No such method 'WALK' for invocant of type 'Int'` on the identical script (before this
+fix) — a full-stop rejection, not a wrong answer, on ANY receiver `but`-mixed with a role: WALK simply
+never worked on a mixin at all. This is the same shape of gap step 6 found for `.^methods()` (a mixin
+receiver silently loses its role's own methods), one E7 step later in the ADR's consumer list, and the
+fix follows the exact same template step 6 established.
+
+**Fix 1 (the mixin receiver gap)**: `try_walk_method` now matches `ValueView::Mixin(_, mixins)` too,
+extracting `mixin_role_names` from the `__mutsu_role__`-prefixed keys (identical extraction to step
+6's `dispatch_classhow_methods` fix) and resolving the base class name via
+`self.mop_receiver_owner(target)` — which internally calls `dispatch_owner_chain`, whose documented
+Mixin-specific skip (`receiver_class.rs`) already strips the role prefix and returns the INNER value's
+own chain, exactly the base name WALK's existing class-chain logic needs (`"Sub"` for `Sub.new but
+R1`, `"Int"` for `5 but R1`). A new `WalkKind::MixinRole` variant is prepended to `walk_targets`
+UNCONDITIONALLY (not gated on `:roles`, which the module doc already scopes to STATICALLY composed
+roles only): a runtime mixin's role is never copied into any class's method table the way a
+`does`-composed role's methods are, so its own (non-private) methods — not just its submethods, unlike
+the existing `WalkKind::Role` arm — are only reachable by looking directly at the role's own method
+table. `lookup_own_walk_method` grew the matching arm: `registry().roles.get(owner)?.methods.get(name)?`,
+first non-private overload. Confirmed against real `raku` that this is also the right ORDER (mixin
+role first, base chain after) via `.^mro`: `(WSub.new but R1).^mro` is `(WSub+{R1}) WSub WBase Any Mu`
+— the anonymous pun class holding the mixed-in role's methods sits first, matching where the new
+`WalkKind::MixinRole` entries are prepended.
+
+**Fix 2 (attribute access through a mixin, found while testing fix 1)**: `walk_list_invoke_direct`
+computed the attribute map to run each matched candidate against with a direct match:
+
+```rust
+let attributes_map = match invocant.view() {
+    ValueView::Instance { attributes, .. } => attributes.to_map(),
+    _ => AttrMap::new(),
+};
+```
+
+For a `Mixin`-wrapped instance this is `_` — an empty map — so any WALK candidate that resolves to the
+*base class's own* method (e.g. `WSub::foo` reached via `WSub.new but R1`) ran against a blank
+attribute snapshot instead of the live instance. Fixed by reusing the general-purpose helper the rest
+of the interpreter already uses for exactly this unwrap
+(`Interpreter::self_instance_attrs`, `vm_var_assign_computed_attr.rs` — its own doc comment already
+documents the Mixin-unwrap case), rather than inventing a second, narrower one. Pinned in
+`t/walk-mixin-role.t` (a `has $.n` attribute read through a `WAttr.new but R1` candidate).
+
+**Fix 3 (lazy-forcing gap, found while writing tests for fix 1 — NOT a mixin bug)**: testing fix 1
+with `say` surfaced a THIRD, unrelated pre-existing bug: `$obj.WALK("m")().gist` (and `.Str`) printed
+`()`/empty even for an already-correct, non-mixin, plain-class WALK result that `for`-iteration and
+`my @r = ...()` (the two contexts `t/walk-lazy.t` already exercised) handled correctly. Root cause,
+found by reading `should_force_lazy_list`'s "gist" entry through to where it forces
+(`methods_call_dispatch.rs`'s "Force LazyList and re-dispatch as Seq" branch calls
+`force_lazy_list_bridge` -> `Interpreter::force_lazy_list`, `runtime/resolution_lazy.rs`):
+`force_lazy_list` has a `cat_pull` branch and a general cache-short-circuit
+(`if let Some(cached) = list.cache.lock().unwrap().clone() { return Ok(cached); }`) but NO
+`walk_pending` branch. A WALK-produced `LazyList` starts with a **non-empty-`Option`** cache
+(`LazyList::new_cached(Vec::new())` — `Some(vec![])`, not `None`), so the cache short-circuit fired
+immediately and returned the still-unpulled empty vec, before `force_walk_pending` (the function that
+actually invokes candidates) ever ran. This is precisely the failure mode the adjacent `cat_pull`
+comment already calls out for its own case ("cache always starts non-empty, so this must run before
+the cache short-circuit below") — `walk_pending` needed the identical positioning and never got it.
+**Why the two other forcing paths never hit this**: `t/walk-lazy.t`'s existing `for
+$obj.WALK("foo")() {...}` and `my @r = $obj.WALK("m")();` both go through the VM's OWN opcode-level
+forcer, `force_lazy_list_vm` (`vm/vm_helpers_lazy.rs`), which already has an explicit
+`walk_pending`-aware branch (`if let Some(ref wp) = list.walk_pending { ... return
+self.force_walk_pending(list, total); }`) — a second, independent forcing implementation that got the
+`walk_pending` case right from the start. `force_lazy_list` (the method-dispatch-triggered one) is a
+different function entirely and simply never learned about `walk_pending`. **Fix**: added the missing
+branch, in the same position as `cat_pull`, delegating to the SAME `force_walk_pending` the VM-side
+forcer already calls (`self.force_walk_pending(list, usize::MAX)` pulls every remaining candidate,
+mirroring `force_cat_pull(list, usize::MAX)` two lines above it) — no new mechanism, just reaching the
+existing one from the second call site that needed it. Pinned as two new assertions appended to
+`t/walk-lazy.t` (`.gist`/`.Str` on an existing, non-mixin, already-passing WALK scenario).
+
+**The shadow-check half of this box** (matching steps 1/2/4/6's "reading the call-path sequence"
+framing — a `MUTSU_VM_STATS`-gated comparison against the E4 resolver, zero behavior change): unlike
+step 6's `.^methods()`, WALK has MULTIPLE orderings (`:canonical`/`:super`/`:breadth`/`:ascendant`/
+`:descendant`), and only `:canonical` is actually an MRO restatement — the others are alternate,
+raku-spec-documented traversals (declared-parents-only, BFS, DFS-preorder, DFS-postorder) that are
+SUPPOSED to disagree with the resolver's canonical MRO chain, so comparing them would only ever
+produce a guaranteed, uninformative mismatch. The check is therefore scoped to `order ==
+WalkOrder::Canonical` only, comparing the `WalkKind::Class`-only names in `walk_targets` (i.e.
+excluding the new `WalkKind::MixinRole`/pre-existing `WalkKind::Role` entries, which have no resolver-
+chain analogue) against `self.dispatch_owner_chain(target)`'s names (`Any`/`Mu`/`Cool` stripped from
+both sides, matching `build_walk_targets`'s own filter). A new dedicated `WALK_SHADOW_*` counter pair
+(`vm_stats.rs`), not the shared `RESOLVER_SHADOW_*` family — same "whole chain, not a single
+dispatch-winner pick" reasoning as `CAN_SHADOW_*`/`METHODS_SHADOW_*`. Swept the existing
+`t/walk-lazy.t` + `t/walk-orderings.t` suite (12 checks) and a hand-built mixin/two-role/multi-ordering
+probe (5 checks): 17 checks total, 0 mismatches — but only after renaming a probe class from `Sub` to
+`WSub`: naming a test class `Sub` (colliding with the builtin `Sub`/`Routine` type) made
+`dispatch_owner_chain` answer the BUILTIN `Sub` type's chain (`Sub Routine Block Code ...`) instead of
+the user class's, a mismatch every time. This is not a new finding — it is the same class of
+owner-name-collision gap the E1a ledger already tracks as `multi_arg_type_keys`
+(`todo/tickets/multi-arg-type-keys-package-collision.md`) — so it was worked around in the probe
+(renamed the class) rather than re-investigated here.
+
+**Verification**: `cargo build`/`cargo clippy -- -D warnings`/`cargo fmt` clean. New
+`t/walk-mixin-role.t` (11 assertions, every one independently checked against real `raku` first): role
+mixed onto a builtin (`5 but R1`), base class chain still walkable through a mixin, the mixed-in role's
+own method found, an absent method name still yields nothing, two roles stacked on the same value each
+answering independently, a mixin overriding a same-named base method (ordinary dispatch sanity-checked
+alongside WALK's own answer for the identical case), attribute access through a mixin-wrapped
+candidate (fix 2's pin), and a plain non-mixin builtin-type receiver (`Grammar`) as a regression guard
+for the branch this fix narrowed with `mixin_role_names.is_empty()`. Two new assertions appended to
+`t/walk-lazy.t` for fix 3. Full local `make test` green. `git grep -n "WALK" src/runtime/ src/vm/
+src/builtins/` (excluding the files this box touched) confirmed WALK has exactly one internal call
+site in mutsu — the `.WALK`/`WalkList` dispatch arms in `methods_call_dispatch.rs` — with no
+TWEAK/BUILDALL construction-phaser use, so the blast radius is exactly what this box touched, nothing
+wider. Since fixes 1-3 change real `.WALK` answers (not just a shadow-only probe), this counts as
+CLAUDE.md's "touched name/type resolution" case: the two whitelisted roast files calling `.WALK(`
+(`roast/S12-introspection/walk.t`, `roast/S14-roles/attributes-6e.t`, found by grepping roast for
+`\.WALK\(`) both green locally under `MUTSU_FUDGE=1`.
+
+**Conclusion**: unlike steps 1/2/4 (clean shadow-checks) but like steps 5/6, this sub-slice found and
+fixed real, confirmed `raku`-vs-`mutsu` behavioral gaps through direct comparison — three of them here,
+not one, all found by following the assignment's own instruction not to assume a quick fix and to
+verify against real `raku` rather than trust the module doc's "Supported options for now" list at face
+value. Two (mixin receivers, mixin attribute access) are genuinely WALK-specific; the third (lazy-
+forcing gap) is a pre-existing bug in a shared forcing primitive that this box's own testing happened
+to surface, not something introduced by fix 1. The shadow-check half is clean (0/17), matching steps
+1/2/6's zero-gap result for the chain-construction question specifically, once scoped to the one
+ordering (`:canonical`) that is actually an MRO restatement. **Next (and last) E7 sub-slice: the EVAL/
+`subtest` re-entrant carriers** — the final item in the box's original consumer list; once that lands,
+E7 as a whole closes and E8 (multi/proto/submethod candidate-sequence ordering) is next.

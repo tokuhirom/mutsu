@@ -574,6 +574,44 @@ pub(crate) fn record_methods_shadow_check(matched: bool, detail: impl FnOnce() -
     }
 }
 
+// ADR-0019 Phase E box E7 step 7 (`.WALK`, `todo/deep/adr0019-e5-e7-entry-
+// routing.md` "E7 step 7"): shadow comparison between the CLASS-kind portion
+// of the chain `try_walk_method`'s default (`:canonical`) ordering walks
+// (`Interpreter::class_mro_readonly`, via `build_walk_targets`) and the E4
+// resolver's own canonical chain (`Interpreter::dispatch_owner_chain`) for
+// the same receiver. Scoped to `:canonical`-order-only, unlike E7 step 6's
+// `.^methods` check: WALK's OTHER orderings (`:super`/`:breadth`/`:ascendant`/
+// `:descendant`) are legitimate alternate traversals documented by raku's own
+// WALK spec, not MRO restatements, so comparing them against the resolver's
+// MRO chain would be a guaranteed, meaningless mismatch. A dedicated counter
+// pair for the same "whole MRO CHAIN, not a single dispatch-winner pick"
+// reason as `CAN_SHADOW_*`/`METHODS_SHADOW_*`. Shadow-only, zero behavior
+// change: `class_mro_readonly` alone still drives WALK's own chain.
+static WALK_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static WALK_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn walk_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one E7 step-7 `.WALK` (`:canonical` order only) chain-shadow
+/// comparison. `detail` is only evaluated on a mismatch, mirroring
+/// [`record_methods_shadow_check`].
+#[inline]
+pub(crate) fn record_walk_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    WALK_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        WALK_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = walk_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1079,6 +1117,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e7 methods-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let walk_shadow_checks = WALK_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let walk_shadow_mismatches = WALK_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-e7: walk_shadow_checks={walk_shadow_checks} walk_shadow_mismatches={walk_shadow_mismatches}"
+    );
+    if let Ok(map) = walk_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e7 walk-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );

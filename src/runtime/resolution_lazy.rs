@@ -28,6 +28,17 @@ impl Interpreter {
         if list.cat_pull.is_some() {
             return self.force_cat_pull(list, usize::MAX);
         }
+        // A lazy `WALK(method)()` candidate-invocation list (ADR-0019 E7 step
+        // 7, `todo/deep/adr0019-e5-e7-entry-routing.md`): pull every remaining
+        // MRO-level candidate. Its cache starts non-empty too
+        // (`LazyList::new_cached(Vec::new())`), so this must run before the
+        // cache short-circuit below for the same reason as `cat_pull` above --
+        // without it, `.gist`/`.Str`/`say`/list-coercion on a fresh
+        // `$x.WALK(...)()` (before anything else has pulled it) read the
+        // still-empty initial cache and silently printed/produced `()`.
+        if list.walk_pending.is_some() {
+            return self.force_walk_pending(list, usize::MAX);
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }
