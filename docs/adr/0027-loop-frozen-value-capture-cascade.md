@@ -1,6 +1,6 @@
 # ADR-0027: Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind
 
-- Status: Accepted (Slice 1 implemented; Slices 2-3 planned)
+- Status: Accepted (Slice 1 implemented; Slice 2 audited, no gaps found; Slice 3 planned)
 - Date: 2026-08-12
 - Related: ADR-0018 (slot-addressed lexical capture), ADR-0023 (binding
   provenance for spawn capture), ADR-0025 (value-kind-blind cell boxing),
@@ -35,9 +35,55 @@ vendored Cro::HTTP suite currently hits an unrelated pre-existing parse-time
 failure before reaching it — but the isolated repro this ADR was written
 against now matches `raku` exactly.
 
-Slices 2 (parity audit of secondary execution paths) and 3 (retirement-path
-documentation) remain open, tracked as follow-up work rather than blocking
-this slice.
+Slice 3 (retirement-path documentation) remains open, tracked as follow-up
+work rather than blocking this slice.
+
+## Outcome (Slice 2, 2026-08-12)
+
+Audited all three sites listed in the Slice 2 plan below against `raku` with
+targeted repros, per the plan's "probe before change, do not widen blind"
+instruction. **No gap confirmed in any of the three; no code change made.**
+
+- `pending_whenever_inherited_owned` (`resolution_call_sub.rs`, consumed in
+  `resolution_eval.rs`): despite the name, this field genuinely only ever
+  needs to carry `authoritative_captures` — it is a *different* "owned"
+  concept (which lexical a `whenever` callback's dispatch should resolve a
+  name to, `CompiledCode::inherited_owned_lexicals` /
+  `exec_whenever_scope_op`'s `owned_lexicals`) from ADR-0027's loop-freeze
+  `owned_captures`/`frame_owned`. The actual freeze cascade for a closure
+  created inside a `whenever` body already works, because the *interpreter*
+  call path (`resolution_call_sub.rs`, the same function this field lives
+  in) separately seeds `self.frame_owned = data.owned_captures.clone()`
+  before `eval_block_value` recompiles and runs the body — that seed alone
+  is sufficient; `pending_whenever_inherited_owned` does not need to also
+  carry it. Verified with a loop creating a `supply { whenever Promise.in(0)
+  { @callbacks.push(-> { "$v" }) } }` per iteration (both single- and
+  doubly-nested `whenever`): mutsu output matches `raku` exactly (`10`,
+  `20`) in both shapes.
+- `eval_block_value` re-entrant carrier (regex `<?{ ... }>` code assertions,
+  the other realistic route into this function from inside a loop body):
+  verified with a loop pushing a closure from inside a regex code assertion
+  (`"x" ~~ / x <?{ @callbacks.push(-> { "$v" }); True }> /`) — matches
+  `raku` exactly. `frame_owned` is an interpreter field consulted by value at
+  closure-creation time, not reset by `eval_block_value`'s own call machinery
+  (only real call boundaries take/restore it — `vm_call_light.rs` etc.), so
+  it survives into this carrier automatically.
+- The writeback filter at `vm_closure_dispatch.rs` (excludes
+  `authoritative_captures` names from the return-time caller-writeback scan):
+  probed whether an `owned_captures`-cascaded (loop-frozen) closure could
+  write a stale frozen value back into an unrelated caller lexical of the
+  same name on return. Two repros — an IIFE-nested closure called from a
+  sub with its own unrelated same-named `$v`, and the same shape with an
+  inner mutation of the loop var — both match `raku` exactly (the sub's own
+  `$v` is untouched either way).
+
+One genuine divergence surfaced while constructing these repros (a `for
+@list -> $v is rw { ... }` element aliased through a closure the loop pushes
+and calls later): confirmed via a worktree build at the commit immediately
+before this ADR's Slice 1 merged that it is **pre-existing and unrelated**
+to the loop-freeze cascade — filed separately as
+`todo/tickets/for-loop-rw-element-alias-lost-through-deferred-closure.md`,
+not pursued under this ADR.
 
 ## Context
 
@@ -342,7 +388,7 @@ Acceptance for the slice: the pins, `t/http-router.rakutest` test 437
 times (release build) before pushing; a deterministic failure there is a
 gate bug, not flake.
 
-### Slice 2 — parity audit of secondary execution paths
+### Slice 2 — parity audit of secondary execution paths (done, see Outcome above)
 
 Sites that carry `authoritative_captures` inheritance but not (yet) owned
 inheritance, each to be probed against `raku` with a small repro before
