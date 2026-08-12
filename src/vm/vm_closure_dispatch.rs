@@ -1280,6 +1280,29 @@ impl Interpreter {
                     if captured_names.contains(k) && !restored_env.contains_key_sym(*k) {
                         continue;
                     }
+                    // A captured name the body never references (not a free var)
+                    // that still holds its capture-time value is not a mutation —
+                    // it is the closure's own captured binding, force-installed at
+                    // entry (the `ContainerRef` box-on-capture branch of the merge
+                    // above overwrites even a caller entry). The caller merely
+                    // sharing the NAME does not make it the same lexical: a module
+                    // method's own `my $x` must not receive the mainline's
+                    // closure-captured `$x` because the method called a mainline
+                    // closure (Text::CSV `$io-in`, t/closure-captured-name-leak.t).
+                    // A nested call that genuinely rebinds the name in this frame
+                    // leaves a value differing from the capture and is still
+                    // written back. Identity comparison (`values_identical`), not
+                    // deep `==`: "unchanged" means the env entry is still the very
+                    // value installed at entry, and a deep eq diverges on cyclic
+                    // instances (a captured `Text::CSV.new` object).
+                    if captured_names.contains(k)
+                        && !cc.free_var_syms.contains(k)
+                        && data.env.get_sym(*k).is_some_and(|captured| {
+                            crate::runtime::utils::values_identical(captured, v)
+                        })
+                    {
+                        continue;
+                    }
                     // A genuine caller lexical whose value changed across the call:
                     // queue its slot for a precise refresh.
                     if restored_env.contains_key_sym(*k)

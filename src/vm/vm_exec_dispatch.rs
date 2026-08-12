@@ -1505,6 +1505,13 @@ impl Interpreter {
                     // backing `Gc`. Detaching a shared source (`my @o = @b`) also
                     // preserves copy independence.
                     val = Self::detach_shared_container(val);
+                    // Container-descriptor naming: the declaration names its
+                    // fresh container (`@kh.VAR.name` reports "@kh" through any
+                    // later pass-by-binding chain). Safe to stamp: the detach
+                    // above guarantees an unshared node.
+                    if !name.contains("__ANON") {
+                        val.stamp_descriptor_name(&name);
+                    }
                 }
                 if !is_bind_ctx
                     && !is_rebind

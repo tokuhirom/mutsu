@@ -235,6 +235,30 @@ impl Value {
         data.descriptor_name = Some("element".into());
         Value::hash(data)
     }
+    /// Stamp `name` as this container's descriptor name (rakudo: a `my @x`
+    /// declaration names the fresh container "@x", and `.VAR.name` then
+    /// reports it through any pass-by-binding chain — a slurpy re-flatten, a
+    /// named-arg forward). No-op for non-container values. Overwrites: a
+    /// declaration's container is fresh (Raku `=` copy semantics), so any
+    /// name it carries is inherited COW state from the assignment source.
+    pub(crate) fn stamp_descriptor_name(&mut self, name: &str) {
+        if self
+            .with_array_mut(|gc, _| {
+                let data = crate::value::gc_data_mut(gc);
+                if data.descriptor_name.as_deref() != Some(name) {
+                    data.descriptor_name = Some(name.into());
+                }
+            })
+            .is_none()
+        {
+            self.with_hash_mut(|gc| {
+                let data = crate::value::gc_data_mut(gc);
+                if data.descriptor_name.as_deref() != Some(name) {
+                    data.descriptor_name = Some(name.into());
+                }
+            });
+        }
+    }
     /// Create a true Array value with a single explicitly-assigned index
     /// recorded in the embedded `initialized` set (used when autovivifying a
     /// missing variable via `@a[i] = …`, so the autovivification gaps below `i`
