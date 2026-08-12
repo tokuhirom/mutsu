@@ -3,6 +3,28 @@ use crate::symbol::Symbol;
 
 impl Interpreter {
     pub(super) fn classhow_lookup(&mut self, invocant: &Value, method_name: &str) -> Option<Value> {
+        self.classhow_lookup_impl(invocant, method_name, true)
+    }
+
+    /// Shared implementation for `.^lookup` (`include_ancestor_submethods =
+    /// true`) and `classhow_find_method`'s fallback -- which backs
+    /// `.^find_method` directly, and `.can` on a Package receiver indirectly
+    /// -- (`include_ancestor_submethods = false`).
+    ///
+    /// Real Raku's `.^lookup` walks the whole MRO unconditionally, including
+    /// finding an ancestor's submethod (confirmed: `class M{submethod
+    /// boot{}}; class N is M{}; N.^lookup("boot").defined` is `True`), while
+    /// `.^find_method`/`.can` do NOT surface an ancestor's submethod
+    /// (`N.^find_method("boot").defined` and `N.can("boot").elems` are both
+    /// false/0; only the DECLARING class finds it via either). Rather than
+    /// duplicating the whole per-level `Value::make_sub` construction twice,
+    /// `classhow_find_method` calls this with `false` instead.
+    fn classhow_lookup_impl(
+        &mut self,
+        invocant: &Value,
+        method_name: &str,
+        include_ancestor_submethods: bool,
+    ) -> Option<Value> {
         let (class_name, class_name_str) = match invocant.view() {
             ValueView::Package(name) => (name, name.resolve()),
             // An instance of a user class carries its class name; `value_type_name` would
@@ -15,19 +37,45 @@ impl Interpreter {
                 (Symbol::intern(&type_name), type_name)
             }
         };
-        // Check user-defined class methods first
-        if let Some(class_def) = self.registry().classes.get(&class_name_str)
-            && let Some(defs) = class_def.methods.get(method_name)
-            && let Some(def) = defs.first()
-        {
-            let has_multi = defs.iter().any(|d| d.is_multi);
+        // Check user-defined class methods first, walking the receiver's full
+        // MRO rather than only its own class — `B.^lookup('foo')` must find a
+        // `foo` declared only on an ancestor `A` (`class B is A {}`), exactly
+        // as real Raku does. The per-level construction logic below
+        // (has_multi/is_submethod/return type/...) is unchanged from before
+        // this fix; only the search now spans the whole chain instead of
+        // stopping at the receiver's own class. Matches the `owner`-not-
+        // `class_name` convention `classhow_lookup_all_candidates` below
+        // already uses for an inherited method's declaring class.
+        let mro = self.class_mro(&class_name_str);
+        for owner_sym in mro.iter() {
+            let owner_str = owner_sym.as_str();
+            let (defs_first, has_multi) = {
+                let registry = self.registry();
+                let Some(class_def) = registry.classes.get(owner_str) else {
+                    continue;
+                };
+                let Some(defs) = class_def.methods.get(method_name) else {
+                    continue;
+                };
+                let Some(def) = defs.first() else {
+                    continue;
+                };
+                // A submethod (`is_my`) is visible only at its own declaring
+                // level for `.^find_method`/`.can` (`include_ancestor_
+                // submethods = false`) -- `.^lookup` has no such restriction.
+                if def.is_my && owner_str != class_name_str && !include_ancestor_submethods {
+                    continue;
+                }
+                (def.clone(), defs.iter().any(|d| d.is_multi))
+            };
+            let def = &defs_first;
             let has_explicit_invocant = def
                 .param_defs
                 .iter()
                 .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
             let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
             if !has_explicit_invocant {
-                full_param_defs.push(Self::make_invocant_param(&class_name_str));
+                full_param_defs.push(Self::make_invocant_param(owner_str));
             }
             full_param_defs.extend(def.param_defs.iter().cloned());
             let mut env = crate::env::Env::new();
@@ -48,7 +96,7 @@ impl Interpreter {
             }
             env.insert(
                 "__mutsu_lookup_class".to_string(),
-                Value::str(class_name_str.clone()),
+                Value::str(owner_str.to_string()),
             );
             env.insert(
                 "__mutsu_lookup_method".to_string(),
@@ -62,7 +110,7 @@ impl Interpreter {
                 env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
             }
             return Some(Value::make_sub(
-                class_name,
+                *owner_sym,
                 Symbol::intern(method_name),
                 def.params.clone(),
                 full_param_defs,
@@ -347,7 +395,10 @@ impl Interpreter {
         ) {
             return Some(Value::str(method_name.to_string()));
         }
-        if let Some(value) = self.classhow_lookup(invocant, method_name) {
+        // `false`: `.^find_method` (and `.can` on a Package receiver, which
+        // routes through this function) is stricter than `.^lookup` about
+        // ancestor submethods -- see `classhow_lookup_impl`'s doc comment.
+        if let Some(value) = self.classhow_lookup_impl(invocant, method_name, false) {
             return Some(value);
         }
         // CREATE is a built-in method on all types
