@@ -312,8 +312,7 @@ impl Interpreter {
             rw_tail_expr: None,
         };
         self.registry_mut()
-            .proto_methods
-            .insert((cx.name.to_string(), method_name), fdef);
+            .set_proto_method(cx.name, &method_name, fdef);
         Ok(())
     }
 
