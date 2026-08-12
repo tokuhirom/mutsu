@@ -252,6 +252,25 @@ impl Interpreter {
         } else {
             target
         };
+        // A QuantHash target (Set/Bag/Mix and their mutable *Hash twins): the
+        // slice adverbs behave as on the equivalent `key => weight` hash, with
+        // unreached keys absent (Text::CSV's separator detection is exactly
+        // `$hdr.comb.Bag{$sep-set.list}:kv`). Project through `.hash` — which
+        // decodes the internal WHICH-encoded keys — and let the Hash arm below
+        // own the key/value logic.
+        // TODO: `:delete` on a mutable SetHash/BagHash/MixHash should write
+        // back through the original container; the projection makes the delete
+        // a no-op on the source (previously the whole slice returned empty).
+        let target = if target.with_deref(|v| {
+            matches!(
+                v.view(),
+                ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
+            )
+        }) {
+            self.call_method_with_values(target.deref_container(), "hash", vec![])?
+        } else {
+            target
+        };
         let index = args[1].clone();
         let mode = args[2].to_string_value();
         let var_name = args

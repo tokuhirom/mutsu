@@ -1799,8 +1799,14 @@ impl Compiler {
                     }
                     return;
                 }
-                // `self` is immutable — reject assignments at compile time
-                if name == "self" {
+                // The invocant `self` is immutable — reject assignments at
+                // compile time, but only inside a method body, where a bare
+                // `self` names the invocant (roast S12-class/basic.t pins
+                // `method f { self = 5 }` throwing). Outside a method the name
+                // can only be an ordinary user variable (`my $self;
+                // $self = $csv.header($fh)` — Text::CSV's 85_util.t), since
+                // scalars are stored sigil-less and would otherwise collide.
+                if name == "self" && self.lexically_in_method {
                     self.code.emit(OpCode::AssignReadOnly);
                     return;
                 }

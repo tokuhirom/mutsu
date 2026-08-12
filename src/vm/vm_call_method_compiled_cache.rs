@@ -114,6 +114,15 @@ impl Interpreter {
                         value_dependent = true;
                         break 'outer;
                     }
+                    // An `is rw` candidate matches only a writable-lvalue
+                    // argument — a property of the call site, not of the arg's
+                    // type — so `m($var)` and `m("lit")` need different winners
+                    // under one type key (Text::IO::String's `new (Str $s! is
+                    // rw)` / `new (Str $s!)` pair).
+                    if pd.traits.iter().any(|t| t == "rw") {
+                        value_dependent = true;
+                        break 'outer;
+                    }
                     if let Some(tc) = &pd.type_constraint {
                         // `:D`/`:U`/`:_` smiley or `Int(Str)` coercion => value/identity
                         // dependent; a subset type carries an implicit `where`.

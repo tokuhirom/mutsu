@@ -214,9 +214,12 @@ pub(super) fn dispatch(
             )))))
         }
         "chomp" => {
-            // IO::Handle.chomp is an attribute accessor, not the Str method
-            if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
-            {
+            // IO::Handle.chomp (and any IO::Handle-derived class, e.g.
+            // Text::IO::String) is an attribute accessor, not the Str method.
+            // This layer cannot see the MRO, so route EVERY instance to the
+            // slow path — it dispatches user/parent methods and still reaches
+            // the native Str chomp for Str-derived instances.
+            if matches!(target.view(), ValueView::Instance { .. }) {
                 return Some(None);
             }
             Some(Some(Ok(Value::str(crate::builtins::chomp_one(

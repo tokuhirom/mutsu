@@ -91,6 +91,36 @@ impl Interpreter {
         {
             return Ok(v.clone());
         }
+        // IO::Handle's `$.chomp is rw` attribute, inherited by a pure-Raku
+        // subclass (`class Text::IO::String is IO::Handle`): a blessed instance
+        // carries no native handle state and no "chomp" attribute, so nothing
+        // else answers the read. Return the stored attribute when a setter has
+        // written one, else the IO::Handle default (True). Exact `IO::Handle`
+        // instances keep their native-state path, and a user-declared `chomp`
+        // method/attribute outranks this.
+        if method == "chomp"
+            && args.is_empty()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name != "IO::Handle"
+        {
+            let cls = class_name.resolve();
+            if !self.class_has_user_method(&cls, "chomp")
+                && self
+                    .class_mro(&cls)
+                    .iter()
+                    .any(|c| c.as_str() == "IO::Handle")
+            {
+                return Ok(attributes
+                    .as_map()
+                    .get("chomp")
+                    .cloned()
+                    .unwrap_or(Value::truth(true)));
+            }
+        }
         // `.REPR` / `.WHERE` on a NativeCall handle. Both need the class
         // registry to tell a `nativecast`ed CStruct/CUnion/CArray from an
         // ordinary instance, so they cannot be answered on the pure native fast
