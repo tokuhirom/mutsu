@@ -475,3 +475,75 @@ of E8's own closing scope.
 `nextsame`/`callsame`/`nextwith` cursor semantics (design decision 3 above), flagged as the
 highest-semantic-risk box of the whole phase (拙速厳禁). It needs its own dedicated session —
 not a tail slice bolted onto E8c — and must land before any E9a/b/c cursor-cutover work starts.
+
+## E9-pre: the raku ground-truth campaign ran — 12 pins, 8 divergence findings, and design decision 2 is AMENDED
+
+Landed 2026-08-12 as its own dedicated session, exactly per decision 3's mandate: every scenario
+was probed against real raku (Rakudo v2026.06) FIRST, matching behaviors were pinned as `t/`
+tests (each pin verified to pass under BOTH `prove -e raku` and `prove -e target/debug/mutsu` —
+so the pins provably encode raku's answer, not mutsu's), and every divergence became a ticket —
+no divergence was encoded into cursor semantics, and no cursor code was written.
+
+### Scenario table (a-m from decision 3, plus bonus probes)
+
+| # | scenario | verdict | artifact |
+|---|----------|---------|----------|
+| a | nextsame/callsame through multi candidates in one class; no-next → Nil; post-nextsame code unreachable | MATCH | `t/defer-multi-single-class.t` |
+| b | callsame/nextsame through inherited plain methods (3 levels); top-of-chain → Nil | MATCH | `t/defer-inherited-chain.t` |
+| c | `does`-composed role method overridden by the class: raku EXCLUDES it from the chain (plain and same-sig multi both get Nil); mutsu walks the role's raw copy | DIVERGE | `todo/tickets/role-shadowed-method-in-defer-chain.md` |
+| d | `is Array` subclass `push` override → nextsame/callsame to native push: raku appends + returns self; mutsu appends nothing, callsame returns Any | DIVERGE | `todo/tickets/native-array-push-defer-fallback-broken.md` |
+| e | Grammar `.parse` override: callsame/nextsame reach the real parse, Match flows back | MATCH | `t/grammar-parse-override-defer.t` |
+| f | callsame in a method wrapper; double wrap = newest outermost | MATCH | `t/method-wrap-callsame-order.t` |
+| f' | …but method-wrap REMOVAL: `$handle.restore` silently no-ops, `.unwrap($h)` throws | DIVERGE | `todo/tickets/method-wrap-unwrap-restore-noop.md` |
+| g | wrap on ONE multi candidate (`.candidates[0].wrap`) scopes to that candidate; declaration-order candidate list | MATCH | `t/wrap-multi-candidate-scope.t` |
+| h | mid-MRO wrap: child's callsame enters the parent's wrapper first; wrap-on-child composes wrapper → child body → parent | MATCH | `t/wrap-mid-mro-callsame.t` |
+| i | `lastcall` inside a wrapper then callsame: raku → Nil (original never runs); mutsu dies "callsame is not in the dynamic scope of a dispatcher" | DIVERGE | `todo/tickets/lastcall-in-wrapper-callsame-dies.md` |
+| i' | `lastcall` then nextsame in a plain multi → Nil, nothing else runs | MATCH | `t/lastcall-then-nextsame.t` |
+| j | samewith restarts from the top with new args, incl. from a nextsame-reached candidate | MATCH | `t/samewith-restart-from-top.t` |
+| k | callwith/nextwith keep `is rw` containers live through re-binding; callwith advances (not restarts) | MATCH | `t/callwith-rw-passthrough.t` |
+| l | EXPLICIT proto in a child: `{*}` does NOT assume parent candidates (raku: X::Multi::NoMatch; mutsu: resolves the parent's) | DIVERGE | `todo/tickets/explicit-child-proto-assumes-parent-candidates.md` |
+| l' | proto in the PARENT governs child-added candidates; nextsame under an explicit proto | MATCH | `t/proto-star-cross-mro-candidates.t` |
+| m | BUILDALL parent-first; callsame inside a BUILD submethod → Nil | MATCH | `t/build-callsame-nil.t` |
+| + | multi child ↔ plain parent cross-level deferral (both directions) | MATCH | `t/defer-multi-plain-cross-level.t` |
+| + | **multi candidates at BOTH levels: chain order** (see below) | **DIVERGE** | `todo/deep/defer-chain-ranked-multi-order.md` |
+| + | callsame from overrides of built-in Mu methods (gist/Str/raku/new) → raku reaches the native impl; mutsu gets Nil/Any | DIVERGE | `todo/tickets/callsame-to-native-mu-methods-nil.md` |
+| + | Signature.gist invocant rendering `(C $:: ...)` vs `(C:, ...)` (cosmetic) | DIVERGE | `todo/tickets/signature-gist-invocant-format.md` |
+
+12 pin files, 38 assertions, all green under raku AND mutsu; `runtime mixin (but R)` was also
+spot-checked (match; already covered by `t/nextsame-role-mixin.t`).
+
+### THE headline finding — design decision 2 is amended
+
+Decision 2 above says the cursor should advance "applying the per-call signature filter as they
+go (matching today's 'remaining = signature-matching candidates in MRO order' semantics)".
+**That target is wrong: today's mutsu order itself diverges from raku whenever multi candidates
+span MRO levels.** raku's model (full derivation and probes in
+`todo/deep/defer-chain-ranked-multi-order.md`) is two-level:
+
+- The outer chain is per-class entries along the MRO (plain method or proto).
+- An IMPLICIT proto clones the nearest MRO proto and merges parent candidates into one
+  **specificity-ranked** list (MRO breaks ties); nextsame/callsame walk that ranked list first
+  and fall to the outer chain's next per-class entry only when it is exhausted. A plain method
+  in a middle MRO level is NOT part of the ranked list — it is a later outer-chain entry, and
+  deferring from it re-enters protos below it (so a parent multi candidate can legitimately run
+  twice in one call).
+- An EXPLICIT proto declared in a child does NOT assume parent candidates (finding l).
+
+Consequences for E9a/b/c: the `DispatchCursor`'s sequence for the multi portion must be the
+ranked merged list plus outer-chain fall-through (not the E4 `ResolvedSequence`'s flat
+`(level, stored_idx)` order), and `samewith`'s "re-run the ranker over the same sequence" in
+decision 2 stays correct as written. **E9a must not start until the cursor design is re-drawn
+against `defer-chain-ranked-multi-order.md`** — that re-draw is a design task (amend decision 2
+in this doc with the concrete sequence layout), not an implementation detail to discover
+mid-cutover.
+
+### Interaction with the E8a accepted divergence
+
+E8a's 58 accepted deferral-shadow mismatches were attributed to `method_entries` missing
+un-punned role owners, treating the REAL walker (`resolve_all_methods_with_owner`, which reads
+`registry().roles` directly) as authoritative. Finding (c) shows that for the
+class-overridden-role shape, raku agrees with the SEQUENCE side (role method absent), not the
+real walker. The reconciliation note is in `todo/tickets/role-shadowed-method-in-defer-chain.md`
+and cross-linked from `todo/deep/method-entries-never-covers-unpunned-roles.md`'s fix plan: that
+sweep's mismatch ledger must be re-audited against raku per-shape, not resolved wholesale toward
+the real walker.
