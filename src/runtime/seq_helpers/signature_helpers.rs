@@ -223,6 +223,28 @@ impl Interpreter {
         true
     }
 
+    /// A class may override the default `Mu.Capture` (e.g. Cro's
+    /// `Cro::HTTP::Body::MultiPartFormData does Associative` with a custom
+    /// `method Capture()`) to control how it destructures against a
+    /// sub-signature. `signature_capture_like` is a pure `Value -> ...`
+    /// function with no interpreter access, so it can only reflect an
+    /// instance's raw attributes (the correct behavior for the *default*
+    /// `Capture`); this runs the user override first when one exists, and
+    /// falls back to the original value otherwise.
+    pub(in crate::runtime) fn coerce_via_user_capture(&mut self, value: &Value) -> Value {
+        let unwrapped = value.unwrap_varref();
+        if let ValueView::Instance { class_name, .. } = unwrapped.view() {
+            let class_name = class_name.resolve();
+            if self.class_has_user_method(&class_name, "Capture")
+                && let Ok(captured) =
+                    self.call_method_with_values(unwrapped.clone(), "Capture", Vec::new())
+            {
+                return captured;
+            }
+        }
+        unwrapped.clone()
+    }
+
     /// `Signature.ACCEPTS(Capture)` / `Capture ~~ Signature`. A `where`
     /// clause on one param may reference a *sibling* param by name (e.g. a
     /// destructured `-> (:$x, :$y where $y > $x) {...}` block — the whole
@@ -236,7 +258,8 @@ impl Interpreter {
         left: &Value,
         signature: &SigInfo,
     ) -> bool {
-        let Some((positional, named)) = Self::signature_capture_like(left) else {
+        let capture_source = self.coerce_via_user_capture(left);
+        let Some((positional, named)) = Self::signature_capture_like(&capture_source) else {
             return false;
         };
 
