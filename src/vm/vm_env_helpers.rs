@@ -355,6 +355,32 @@ impl Interpreter {
             .cloned()
     }
 
+    /// Outer-lexical fallback for auto-qualified `@`/`%` reads, mirroring the
+    /// bare-component fallback in `GetGlobal`. Each class-body statement
+    /// compiles as its own chunk under the class package, so a read of a `my`
+    /// declared by an EARLIER body statement is compiled package-qualified
+    /// (`%C::predef`) while the declaration flushed to env under the bare
+    /// sigiled name (`%predef`). When the qualifier is exactly the current
+    /// package (i.e. the compiler added it, not the user), retry env with the
+    /// bare sigiled name. An explicitly written foreign qualifier
+    /// (`%Other::h`) never matches `current_package`, so `my` lexicals stay
+    /// invisible across packages.
+    pub(super) fn auto_qualified_bare_env_read(&self, name: &str) -> Option<Value> {
+        let cur = self.current_package();
+        if cur.is_empty() || cur == "GLOBAL" {
+            return None;
+        }
+        let (sigil, rest) = match name.as_bytes().first() {
+            Some(b @ (b'@' | b'%')) => (*b as char, &name[1..]),
+            _ => return None,
+        };
+        let (pkg, bare) = rest.rsplit_once("::")?;
+        if bare.is_empty() || pkg != cur {
+            return None;
+        }
+        self.get_env_with_main_alias(&format!("{sigil}{bare}"))
+    }
+
     /// Read a file-scope `my` lexical of the compunit the running routine belongs
     /// to (see [`Interpreter::unit_lexicals`]). Consulted BEFORE `env`, because the
     /// whole point of the store is that the loading scope's same-named `my` — which

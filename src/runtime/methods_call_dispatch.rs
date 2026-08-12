@@ -260,6 +260,28 @@ impl Interpreter {
                 .unwrap_or_else(|| Value::array(vec![]));
             return self.call_method_with_values(frames, method, args);
         }
+        // A user class that `does Iterable` and defines its own `iterator`
+        // method is list-like for Any's ITERATION methods: `.first`/`.map`/...
+        // operate on the iterator's elements (as `for $obj` already does via
+        // `try_iterable_instance_items`), not on the instance as one opaque
+        // item. The method set is exactly what Rakudo routes through
+        // `self.iterator` — measured 2026-08-12 on such an instance:
+        // first/map/grep/sort/head/tail/flat iterate, while join/reverse/
+        // list/List/elems/kv/pairs/values/Array/cache/eager all treat the
+        // instance as a single item (even non-itemized), so those must NOT
+        // be routed. Only methods the class itself does not provide qualify.
+        if matches!(
+            method,
+            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
+        ) && let ValueView::Instance { class_name, .. } = target.view()
+        {
+            let cn = class_name.as_str().to_string();
+            if !self.has_user_method(&cn, method)
+                && let Some(items) = self.try_iterable_instance_items(&target)?
+            {
+                return self.call_method_with_values(Value::array(items), method, args);
+            }
+        }
         // Scalar containers are transparent for method dispatch (except .item,
         // .VAR, and .raku/.perl). `.raku`/`.perl` must see the `Scalar` wrapper
         // so an itemized aggregate shows its `$` sigil (`${a=>1}.raku` →

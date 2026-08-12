@@ -627,6 +627,8 @@ impl Interpreter {
                     // A file-scope `my @a` of the running routine's own module
                     // (see `module_scope_lexicals`; keys keep the `@` sigil).
                     .or_else(|| self.module_scope_lexical(name).cloned())
+                    // Class-body outer-lexical fallback — see the GetHashVar twin.
+                    .or_else(|| self.auto_qualified_bare_env_read(name))
                     .unwrap_or_else(|| {
                         // An undeclared `@`-sigil variable defaults to an empty
                         // Array (raku auto-declares it as Array under `no strict`):
@@ -733,7 +735,14 @@ impl Interpreter {
                     // belongs to (see `module_scope_lexicals`; the table keys
                     // keep the `%` sigil). Last resort, after every live store —
                     // mirrors the scalar fallback in `GetGlobal`.
-                    .or_else(|| self.module_scope_lexical(name).cloned());
+                    .or_else(|| self.module_scope_lexical(name).cloned())
+                    // Outer-lexical fallback, mirroring GetGlobal: each class-body
+                    // statement compiles as its own chunk, so a read of a `my`
+                    // declared by an earlier body statement was auto-qualified
+                    // (`%C::predef`) while the declaration flushed to env under the
+                    // bare sigiled name (`%predef`). Strip the qualifier and retry
+                    // when it names the current package.
+                    .or_else(|| self.auto_qualified_bare_env_read(name));
                 match val {
                     // Decontainerize a top-level `ContainerRef` cell from a
                     // whole-container `:=` bind (`my %h2 := %h`); the read
