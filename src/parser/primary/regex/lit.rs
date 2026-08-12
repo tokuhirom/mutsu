@@ -9,7 +9,7 @@
 //! decomposable at a function boundary without semantic change.
 
 use crate::ast::Expr;
-use crate::parser::expr::expression;
+use crate::parser::expr::{expression, expression_no_word_logical};
 use crate::parser::helpers::{
     consume_unspace, delim_is_identifier_continuation, split_angle_words, ws,
 };
@@ -540,7 +540,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         try_strip_subst_compound_assign(after_pat_ws)
                     {
                         let (after_eq_ws, _) = ws(after_op_eq)?;
-                        let (rest, rhs_expr) = expression(after_eq_ws)?;
+                        // Item-assignment precedence: stop before `and`/`or`/...
+                        let (rest, rhs_expr) = expression_no_word_logical(after_eq_ws)?;
                         let pattern_str = if adverbs.perl5 {
                             pattern.to_string()
                         } else {
@@ -592,7 +593,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             ));
                         }
                         let (after_eq_ws, _) = ws(after_eq)?;
-                        let (rest, replacement_expr) = expression(after_eq_ws)?;
+                        // Item-assignment precedence: `s{p} = "" and f()` assigns
+                        // only `""`; `and f()` belongs to the enclosing statement.
+                        let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
                         // Perl5 substitutions keep the legacy `$_ = $_.subst(...)`
                         // lowering: the `.subst` closure path binds Perl5 captures
                         // (`$1`, `$0`, ...) correctly per match, which the generic
@@ -765,8 +768,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                             ));
                         }
                         // Expression-based replacement (e.g. S[(o)] = $0.uc).
+                        // Item-assignment precedence: stop before `and`/`or`/...
                         let (after_eq_ws, _) = ws(after_eq)?;
-                        let (rest, replacement_expr) = expression(after_eq_ws)?;
+                        let (rest, replacement_expr) = expression_no_word_logical(after_eq_ws)?;
                         // Perl5 substitutions keep the legacy `.subst` closure
                         // lowering, which binds Perl5 captures (`$1`, `$0`, ...)
                         // per match; the generic interpolator cannot reproduce it.

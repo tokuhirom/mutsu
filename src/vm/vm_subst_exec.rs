@@ -276,7 +276,14 @@ impl Interpreter {
         // EVAL/carrier dropping its blanket net still reconciles the slot.
         self.update_local_if_exists(code, "_", &result);
         self.note_caller_env_write("_");
-        if let Some(source_var) = self.topic_source_var.clone()
+        // Inside a smartmatch RHS (`$frag ~~ s///`) the topic is temporarily the
+        // smartmatch LHS, not the enclosing `given`/`for` source — mirroring
+        // there would clobber the source scalar with the substitution result
+        // (`given $in { $frag ~~ s/^"row="//; }` must not touch `$in`). The
+        // smartmatch handler owns every writeback in that case, including
+        // `$_ ~~ s///` via its own topic-source mirror.
+        if !self.in_smartmatch_rhs
+            && let Some(source_var) = self.topic_source_var.clone()
             && !source_var.starts_with('@')
             && !source_var.starts_with('%')
         {
