@@ -280,3 +280,36 @@ t/`, a roast smoke subset). Still open: whether `Native` (the row-catalog
 candidate) is ever worth consuming to replace the `native_method_{0,1,2}arg`
 dispatch decision itself, given the same tradeoff likely applies there too —
 check that before assuming there is more plumbing work before E4b is done.
+
+**Update (step 13, 2026-08-11, scope renegotiation, landed):** answered step
+12's open item directly against E5/E6/E7's own design doc
+(`todo/deep/adr0019-e5-e7-entry-routing.md`) instead of leaving it open.
+`Native` is not for `should_bypass_native_fastpath` at all — it is for
+E5/E6/E7's VM opcode entries (`CallMethod`/`CallMethodMut`/etc.), a
+different, separate dispatch mechanism with its own hand-ordered probe
+cascades. `should_bypass_native_fastpath` already gets the equivalent answer
+today via a direct, cheaper `native_method_{0,1,2}arg` call that self-guards
+by returning `None` on no match — gating it with a `Native` candidate lookup
+first would only add the cost of building a sequence to predict an answer
+the subsequent direct call computes anyway (step 9 already proved
+`native_row_shadow_mismatches=0`). **Conclusion: E4b's own call site has no
+further profitable consolidation against the resolver** — categories 1/2/3/4
+are each at their locally optimal shape (guard function / direct call /
+resolver call / explicit check). Categories 1/2/3/4 (steps 8/12/12/11
+respectively). E4b treated as **functionally complete** at its own call
+site; the ADR bullet's literal "`should_bypass_native_fastpath` deleted"
+text turned out to describe E5-E7's separate dispatch mechanism reaching the
+same resolver-based decisions at its own entries, not a deletion of this
+specific function.
+
+**Update (2026-08-12, closing):** E5, E6, and E7 have since all landed and
+closed (`adr0019-e5-e7-entry-routing.md`), and their own conclusion
+(E5b steps 1-2, generalized across every E5/E6/E7 entry) is that `Native`/
+`NativeCallBinding` stay measurement/hint-only everywhere — the same answer
+step 13 predicted, now empirically confirmed rather than merely argued. This
+resolves the ADR's own stated precondition for checking off box E4 as a
+whole ("kept open only because E5-E7 have not yet landed to confirm..."), so
+the ADR's top-level E4 checkbox is now marked done. E4b itself required no
+further code changes to reach this state — every category (1-4) had already
+reached its locally optimal, shadow-verified shape by step 13. This file's
+open findings are exhausted; nothing further to do here.
