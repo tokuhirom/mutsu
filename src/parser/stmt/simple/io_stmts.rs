@@ -136,8 +136,19 @@ pub(crate) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
         if let Ok((rest3, stmt)) = parse_io_colon_invocant_stmt(rest2, "note") {
             return parse_statement_modifier(rest3, stmt);
         }
-        if let Ok((rest3, args)) = parse_io_expr_list(rest2) {
-            return parse_statement_modifier(rest3, Stmt::Note(args));
+        match parse_io_expr_list(rest2) {
+            Ok((rest3, args)) => return parse_statement_modifier(rest3, Stmt::Note(args)),
+            // A trailing word-logical bails the whole statement to the general
+            // listop-call parser (`note 0 or die` must not become bare `note`).
+            Err(err)
+                if err
+                    .messages
+                    .iter()
+                    .any(|m| m.contains("io listop followed by word logical")) =>
+            {
+                return Err(err);
+            }
+            Err(_) => {}
         }
     }
     // Bare `note` with no args
@@ -145,8 +156,13 @@ pub(crate) fn note_stmt(input: &str) -> PResult<'_, Stmt> {
 }
 
 /// Parse a comma-separated expression list.
+///
+/// Items parse at list-prefix precedence: the loose word-logicals
+/// (`and`/`or`/`andthen`/`orelse`/`xor`) are looser than an IO listop's
+/// argument list, so they terminate it (`say 0 or die` is `(say 0) or die`,
+/// not `say(0 or die)`).
 pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
-    let (input, first) = expression(input)?;
+    let (input, first) = crate::parser::expr::listop_arg_expr_list_infix(input)?;
     let mut items = vec![first];
     let mut rest = input;
     loop {
@@ -159,6 +175,7 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
                 && !r.starts_with('}')
                 && !r.starts_with(')')
                 && !is_stmt_modifier_keyword(r)
+                && crate::parser::expr::parse_word_logical_op(r).is_none()
                 && r.chars()
                     .next()
                     .is_some_and(crate::parser::helpers::is_raku_identifier_start)
@@ -177,7 +194,7 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         if is_stmt_modifier_keyword(r) {
             return Ok((r, items));
         }
-        let (r, next) = expression(r)?;
+        let (r, next) = crate::parser::expr::listop_arg_expr_list_infix(r)?;
         items.push(next);
         rest = r;
     }
@@ -192,6 +209,13 @@ fn parse_io_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         return Ok((rest, vec![seq]));
     }
     match parse_expr_list(input) {
+        // A trailing loose word-logical (`say 0 or die`) is looser than the
+        // whole listop statement: bail out (non-fatal) so statement dispatch
+        // falls through to the general listop-call parser, which parses the
+        // call as an expression and leaves the operator to the statement level.
+        Ok((rest, _)) if crate::parser::expr::parse_word_logical_op(rest).is_some() => {
+            Err(PError::expected("io listop followed by word logical"))
+        }
         // A top-level list-infix meta-op (`Z`/`X`) or `minmax` is looser than the
         // comma separating arguments, so `say 100, 200 Z+ 42, 23` is
         // `say((100,200) Z+ (42,23))` — the whole comma level is one operand. Lift

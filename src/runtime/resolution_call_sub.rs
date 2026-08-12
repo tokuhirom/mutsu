@@ -116,6 +116,29 @@ impl Interpreter {
         Ok(Some(result))
     }
 
+    /// A `^lookup`/`^find_method`/`.can` result for a *multi* method is a
+    /// dispatcher-shaped Sub: its env carries `__mutsu_lookup_class` /
+    /// `__mutsu_lookup_method` but no `__mutsu_lookup_candidate_idx` (a
+    /// single resolved candidate carries the idx). The Sub's params/body are
+    /// only the first candidate's, so invoking it as a value must not bind
+    /// that signature — Raku re-dispatches among the whole candidate family
+    /// with the first argument as the invocant. Returns the method name when
+    /// `data` has that dispatcher shape.
+    pub(crate) fn sub_multi_method_dispatcher_name(data: &crate::value::SubData) -> Option<String> {
+        if data.env.get("__mutsu_lookup_candidate_idx").is_some() {
+            return None;
+        }
+        match data.env.get("__mutsu_callable_type").map(Value::view) {
+            Some(ValueView::Str(t)) if t.as_str() == "Method" || t.as_str() == "Submethod" => {}
+            _ => return None,
+        }
+        data.env.get("__mutsu_lookup_class")?;
+        match data.env.get("__mutsu_lookup_method").map(Value::view) {
+            Some(ValueView::Str(m)) => Some(m.to_string()),
+            _ => None,
+        }
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
@@ -189,6 +212,16 @@ impl Interpreter {
             return Ok(Value::junction(kind, results));
         }
         if let ValueView::Sub(data) = func.view() {
+            // Multi-method dispatcher Sub (`^find_method`/`.can` on a multi):
+            // re-dispatch with args[0] as invocant instead of binding the
+            // first candidate's signature (see sub_multi_method_dispatcher_name).
+            if !args.is_empty()
+                && let Some(meth) = Self::sub_multi_method_dispatcher_name(&data)
+            {
+                let mut args = args;
+                let invocant = args.remove(0);
+                return self.call_method_with_values(invocant, &meth, args);
+            }
             // Check for wrap chain — if wrappers exist, dispatch through them.
             // A callsame/callwith invocation of the original (or an inner
             // wrapper) sets `wrap_skip_once` so exactly that call runs the sub

@@ -160,6 +160,30 @@ impl CompoundBaseOp {
     }
 }
 
+/// LHS writeback target of `OpCode::SmartMatchExpr`, boxed to keep the opcode
+/// at 48 bytes. A destructive RHS (`s///` / `tr///`) mutates the topic alias,
+/// and the modified topic must flow back into the LHS lvalue.
+#[derive(Debug, Clone)]
+pub(crate) enum SmartMatchLhs {
+    /// `$x ~~ s///` — write the modified topic back into the named variable.
+    /// `slot` is the compile-time-resolved local slot when the name is a
+    /// current-scope local (§1.5: bakes the scope-correct slot so the
+    /// writeback does not re-resolve the name at run time — see
+    /// docs/lexical-scope-slot-campaign.md); `None` keeps the env-by-name path.
+    Var { name: String, slot: Option<u32> },
+    /// `$obj.meth ~~ s///` — the LHS is a zero-arg method call on a variable
+    /// (an `is rw` accessor in Raku, whose returned container the substitution
+    /// writes through). mutsu's method calls return plain values, so the VM
+    /// re-invokes the accessor as an lvalue (`$obj.meth = <modified topic>`)
+    /// after a destructive RHS actually modified the topic (Text::CSV's
+    /// `$f.text ~~ s{ <[\ \t]>+ $ } = ""` allow_whitespace trimming).
+    Method {
+        obj: String,
+        obj_slot: Option<u32>,
+        method: String,
+    },
+}
+
 /// Payload of `OpCode::ForLoop`, boxed to keep `size_of::<OpCode>()` small.
 /// This is by far the widest instruction (it used to carry three `Vec<String>`s
 /// plus two `Option<String>`s inline, padding EVERY opcode in every
@@ -833,14 +857,9 @@ pub(crate) enum OpCode {
     SmartMatchExpr {
         rhs_end: u32,
         negate: bool,
-        /// Variable name for LHS (to write back after s/// substitution)
-        lhs_var: Option<String>,
-        /// Compile-time-resolved local slot for `lhs_var`, when it names a
-        /// current-scope local (§1.5: bakes the scope-correct slot so the
-        /// modified-topic writeback does not re-resolve the name at run time —
-        /// see docs/lexical-scope-slot-campaign.md). `None` for a global / not-a-
-        /// local LHS, where the writeback stays env-by-name.
-        lhs_slot: Option<u32>,
+        /// LHS writeback target (boxed to keep `OpCode` at 48 bytes). `None`
+        /// when the LHS is not a writable-through-name/-accessor expression.
+        lhs: Option<Box<SmartMatchLhs>>,
         /// True when RHS was originally `m//` (MatchRegex), which affects
         /// failure return value: `m//` failure returns False, bare `//` returns Nil.
         rhs_is_match_regex: bool,

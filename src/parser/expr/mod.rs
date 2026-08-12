@@ -1,4 +1,5 @@
 mod operators;
+pub(in crate::parser) use operators::parse_word_logical_op;
 mod postfix;
 pub(crate) mod precedence;
 mod precedence_meta_ops;
@@ -308,13 +309,39 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
     Ok((rest, expr))
 }
 
+/// The composition/WhateverCode wrapping `expression` applies to a finished
+/// expression, shared with the listop-argument path: bare `*` stays Whatever,
+/// a Whatever-curried expression becomes a lambda, and an invoked curried
+/// chain (`*.split("-").("a-b-c").List`) wraps only the callable part so the
+/// invocation still runs (`try_wrap_whatevercode_call_chain`).
+fn wrap_finished_expr(expr: Expr) -> Expr {
+    let expr = wrap_composition_operands(expr);
+    if !should_wrap_whatevercode(&expr) {
+        return expr;
+    }
+    match expr {
+        Expr::CallOn { target, args }
+            if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
+        {
+            Expr::CallOn {
+                target: Box::new(wrap_whatevercode(&target)),
+                args,
+            }
+        }
+        ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
+            try_wrap_whatevercode_call_chain(&expr).unwrap()
+        }
+        other => wrap_whatevercode(&other),
+    }
+}
+
 /// Parse a listop argument expression: full expression excluding sequence (...),
 /// feed (==>/<==), and comma operators. This matches Raku's "list prefix" precedence
 /// where `grep $_ == 1, 1, 2, 3` parses as `grep(($_ == 1), 1, 2, 3)` and
 /// `@a ==> grep {...} ==> @b` keeps the feed operators outside of grep's arguments.
 #[allow(dead_code)]
 pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
-    let (rest, mut expr) = precedence::ternary_mode(input, operators::ExprMode::ListopArg)?;
+    let (rest, expr) = precedence::ternary_mode(input, operators::ExprMode::ListopArg)?;
     let (r, _) = ws(rest)?;
     if r.starts_with("=>") && !r.starts_with("==>") {
         let r = &r[2..];
@@ -344,21 +371,7 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
         let result = fat_arrow_result(is_bareword, pair);
         return Ok((r, result));
     }
-    expr = wrap_composition_operands(expr);
-    if should_wrap_whatevercode(&expr) {
-        expr = match expr {
-            Expr::CallOn { target, args }
-                if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
-            {
-                Expr::CallOn {
-                    target: Box::new(wrap_whatevercode(&target)),
-                    args,
-                }
-            }
-            other => wrap_whatevercode(&other),
-        };
-    }
-    Ok((rest, expr))
+    Ok((rest, wrap_finished_expr(expr)))
 }
 
 /// Parse one colon-method argument (`$obj.meth: HERE, ...`) at listop
@@ -371,7 +384,12 @@ pub(in crate::parser) fn listop_arg_expr(input: &str) -> PResult<'_, Expr> {
 /// (it made Digest::SHA1 return its initial hash constants unchanged).
 pub(in crate::parser) fn listop_arg_expr_list_infix(input: &str) -> PResult<'_, Expr> {
     let (rest, expr) = listop_arg_expr(input)?;
-    extend_listop_arg_list_infix(rest, input, expr)
+    let (rest, expr) = extend_listop_arg_list_infix(rest, input, expr)?;
+    // The list-infix loop can build a NEW Whatever-curried expression around an
+    // unwrapped bare `*` (`isa-ok * quack 5, Code` — `quack` is consumed by the
+    // infix-func loop, not by `listop_arg_expr`), so the finished-expression
+    // wrap must run again after the extension.
+    Ok((rest, wrap_finished_expr(expr)))
 }
 
 /// Extend an already-parsed listop argument with the list-infix operators

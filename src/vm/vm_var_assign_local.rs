@@ -350,6 +350,39 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // Container identity + Raku `=` copy semantics, mirroring the
+        // statement-form SetLocal: when the slot already holds a same-kind
+        // container, copy the new contents into the EXISTING backing `Gc` so
+        // aliases observe the reassignment; otherwise the var must own a
+        // DISTINCT container, so detach from the RHS's backing `Gc`. Without
+        // this, an expression-position `@ch = @!ahead` adopted the RHS `Gc`
+        // and a later `@ch.append` leaked into the attribute (Text::CSV
+        // `@!ahead` corruption after a skip_empty_rows recursion).
+        if name.starts_with('@') || name.starts_with('%') {
+            let old = self.locals[idx].clone();
+            let replacement = match (old.view(), val.view()) {
+                (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind)) => {
+                    if crate::gc::Gc::ptr_eq(&old_gc, &new_gc) {
+                        None
+                    } else {
+                        let (old_gc, new_gc) = (old_gc.clone(), new_gc.clone());
+                        Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
+                    }
+                }
+                (ValueView::Hash(old_gc), ValueView::Hash(new_gc)) => {
+                    if crate::gc::Gc::ptr_eq(&old_gc, &new_gc) {
+                        None
+                    } else {
+                        let (old_gc, new_gc) = (old_gc.clone(), new_gc.clone());
+                        Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
+                    }
+                }
+                _ => Some(Self::detach_shared_container(val.clone())),
+            };
+            if let Some(v) = replacement {
+                val = v;
+            }
+        }
         self.locals[idx] = val.clone();
         self.set_env_with_main_alias(name, val.clone());
         if crate::env::closure_meta_keys_possible()
