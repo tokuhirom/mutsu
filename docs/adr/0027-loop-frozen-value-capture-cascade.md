@@ -1,6 +1,6 @@
 # ADR-0027: Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind
 
-- Status: Accepted (Slice 1 implemented; Slice 2 audited, no gaps found; Slice 3 planned)
+- Status: Accepted (Slice 1 implemented; Slice 2 audited, no gaps found; Slice 3 documented)
 - Date: 2026-08-12
 - Related: ADR-0018 (slot-addressed lexical capture), ADR-0023 (binding
   provenance for spawn capture), ADR-0025 (value-kind-blind cell boxing),
@@ -82,8 +82,27 @@ One genuine divergence surfaced while constructing these repros (a `for
 and calls later): confirmed via a worktree build at the commit immediately
 before this ADR's Slice 1 merged that it is **pre-existing and unrelated**
 to the loop-freeze cascade — filed separately as
-`todo/tickets/for-loop-rw-element-alias-lost-through-deferred-closure.md`,
-not pursued under this ADR.
+`todo/deep/for-loop-rw-element-alias-lost-through-deferred-closure.md`
+(moved to `todo/deep/` after root-causing it to the same class of
+element-level `ContainerRef` gap Alternative 4 below describes, not
+pursued under this ADR).
+
+## Outcome (Slice 3, 2026-08-12)
+
+Documentation-only, as scoped: the retirement path was already written into
+this ADR at authoring time (see "Slice 3 — retirement path" and Alternative
+4 below) rather than deferred to a follow-up edit, so there is no separate
+content to add. This outcome note exists to close the Status line and
+record one forward link found since: `todo/deep/for-loop-rw-element-alias-lost-through-deferred-closure.md`
+(the Slice-2 divergence above) independently root-caused its bug to the
+*same* missing primitive this ADR's retirement path is written against — a
+genuine per-binding `ContainerRef` cell, there for an array *element*
+rather than a loop *capture*. Neither ticket should be read as blocking or
+subsuming the other (an element-store share-vs-bind distinction is a
+different piece of surface than closure-capture cell identity), but a
+future "per-iteration/per-binding fresh cells" campaign scoping pass should
+read both before committing to a shape, since a single underlying
+`ContainerRef`-lifecycle primitive may end up serving both call sites.
 
 ## Context
 
