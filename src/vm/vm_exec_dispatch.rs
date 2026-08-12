@@ -1201,6 +1201,10 @@ impl Interpreter {
                         val = self.tag_container_metadata(val, info);
                     }
                 }
+                // An attribute twigil (`@!c = ...` as a statement lands on
+                // SetGlobal): the element type lives in the class registry,
+                // which none of the name-keyed lookups above can see.
+                val = self.apply_attr_container_element_type(&name, val)?;
                 if let Some(constraint) = loan_env!(self, var_type_constraint(&name))
                     && !name.starts_with('%')
                     && !name.starts_with('@')

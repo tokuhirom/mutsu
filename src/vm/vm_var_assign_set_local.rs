@@ -1121,6 +1121,11 @@ impl Interpreter {
         // and the coercion above already produced the final value.
         if !is_bind && !is_constant && (name.starts_with('@') || name.starts_with('%')) {
             val = self.coerce_typed_container_assignment(name, val, has_explicit_initializer)?;
+            // An attribute twigil's element type lives in the class registry,
+            // which the name-keyed coercion above cannot see (`has Str @!c;
+            // @!c = @x` as a statement lands here).
+            let name = name.to_string();
+            val = self.apply_attr_container_element_type(&name, val)?;
         }
         // Raku `@array = ...` / `%hash = ...` assigns INTO the existing container,
         // so its `is default(...)` element default survives the reassignment
