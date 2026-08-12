@@ -218,67 +218,24 @@ impl Interpreter {
 
     /// Look up a `proto method` body for `method_name` in `class_name`'s MRO.
     /// Returns the nearest (owner_class, proto `FunctionDef`). Cheap no-op when
-    /// no proto methods are declared anywhere.
+    /// no proto methods are declared anywhere (ADR-0019 E8c: reads
+    /// `MethodEntry.proto` via `Registry::method_entry_proto`, one probe per
+    /// MRO level, guarded by the whole-program `Registry::has_proto_methods`
+    /// flag).
     pub(crate) fn lookup_proto_method(
         &mut self,
         class_name: &str,
         method_name: &str,
     ) -> Option<(String, FunctionDef)> {
-        if self.registry().proto_methods.is_empty() {
+        if !self.registry().has_proto_methods {
             return None;
         }
         let mro = self.class_mro(class_name);
-        let result = mro.iter().map(|s| s.resolve()).find_map(|cn| {
-            self.registry()
-                .proto_methods
-                .get(&(cn.clone(), method_name.to_string()))
-                .cloned()
-                .map(|f| (cn, f))
-        });
-        if crate::vm::vm_stats::enabled() {
-            self.shadow_check_proto_method(&mro, method_name, result.as_ref());
-        }
-        result
-    }
-
-    /// ADR-0019 E8b shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
-    /// does the same MRO walk, read against the new `MethodEntry.proto`
-    /// column (`Registry::method_entry_proto`) instead of the legacy
-    /// standalone `proto_methods` table, find the same nearest proto body as
-    /// [`Self::lookup_proto_method`]'s real walk? Both tables are written
-    /// together by the single `Registry::set_proto_method` call site, so this
-    /// is expected to be a zero-mismatch measurement before `proto_methods`
-    /// is retired and `lookup_proto_method` is cut over to read
-    /// `method_entries` directly — see `todo/deep/
-    /// adr0019-e8-e11-candidate-sequence-semantics.md`'s E8b note. Compares
-    /// by owner name and body fingerprint (mirrors every other Phase E
-    /// winner-shadow probe, e.g. `Interpreter::shadow_check_resolver_chain`),
-    /// not `Option` equality — `FunctionDef` has no `PartialEq`.
-    fn shadow_check_proto_method(
-        &mut self,
-        mro: &[Symbol],
-        method_name: &str,
-        real: Option<&(String, FunctionDef)>,
-    ) {
-        let shadow = mro.iter().map(|s| s.resolve()).find_map(|cn| {
+        mro.iter().map(|s| s.resolve()).find_map(|cn| {
             self.registry()
                 .method_entry_proto(&cn, method_name)
                 .map(|f| (cn, f))
-        });
-        let matched = match (real, shadow.as_ref()) {
-            (None, None) => true,
-            (Some((ro, rf)), Some((so, sf))) => {
-                ro == so && rf.body_fingerprint() == sf.body_fingerprint()
-            }
-            _ => false,
-        };
-        crate::vm::vm_stats::record_proto_method_shadow_check(matched, || {
-            format!(
-                "method={method_name} real={:?} shadow={:?}",
-                real.map(|(o, _)| o.as_str()),
-                shadow.as_ref().map(|(o, _)| o.as_str()),
-            )
-        });
+        })
     }
 
     /// Run a `proto method` body, with `{*}` dispatching to the matching multi
