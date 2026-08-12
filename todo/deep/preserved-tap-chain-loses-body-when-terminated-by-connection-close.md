@@ -1,5 +1,16 @@
 # `Cro::HTTP::ResponseParser` loses a body terminated by connection close (via `.tap()`/`Supplier::Preserving`, not `Promise()`)
 
+## Superseded (2026-08-12)
+
+Both hypotheses below (`Supplier::Preserving` itself, and
+`ResponseParser.transformer`'s own body shape) were minimized and refuted.
+The actual root cause is `Supply.schedule-on()` not actually deferring tap
+dispatch — see
+`todo/deep/supply-schedule-on-does-not-defer-tap-dispatch.md` for the
+confirmed root cause, refutation trail, and suggested fix direction. This
+file is kept for the original symptom/investigation-log context but is no
+longer the active ticket for this failure.
+
 ## Symptom
 
 `tmp/cro-work/C_RO_CRO_HTTP_*/t/http-response-parser.rakutest` has two
