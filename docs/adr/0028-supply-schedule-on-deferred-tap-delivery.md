@@ -1,13 +1,15 @@
 # ADR-0028: `Supply.schedule-on` genuinely defers tap delivery — callback shims at the tap-registration chokepoint, with a serialized per-tap drain
 
-- Status: Proposed
+- Status: Accepted (Slice 1 implemented and Cro-verified 2026-08-13; Slice 2
+  bypass-path audit remaining)
 - Date: 2026-08-12
 - Related: [ADR-0020](0020-shared-worker-pool.md) (the worker pool the drain
   runs on; supply-lifetime pumps are a sanctioned slice-3 shape there),
   [ADR-0008](0008-push-based-supply-event-delivery.md) (the waker-aware
   `SupplyEvent` channel this design reuses), ADR-0010 (spawn-lineage lexical
   sharing — the drain worker's `clone_for_thread` contract)
-- Addresses: `todo/deep/supply-schedule-on-does-not-defer-tap-dispatch.md`
+- Addresses: `news/2026-08/supply-schedule-on-genuine-tap-deferral.md`
+  (Slice 1; the deep ticket resolved into this news entry)
 
 ## Context
 
@@ -369,9 +371,57 @@ stand-in.
 6. No `make test` regressions locally; full `make roast` delegated to CI
    (this touches Supply tap dispatch — a local subset is not sufficient).
    `S17-*` failures on CI get the flaky-triage protocol, not a shrug.
-7. On completion, `git mv` the deep ticket to
-   `news/2026-08/supply-schedule-on-does-not-defer-tap-dispatch.md` and
+7. On completion, `git mv` the deep ticket to a `news/2026-08/` entry and
    rewrite it as an accomplishment, per `todo/README.md`.
+
+## Outcome (Slice 1, 2026-08-13)
+
+Implemented as designed, with two adjustments discovered only by running the
+mechanism against real dispatch (both one-line-scope fixes, not design
+changes):
+
+- **The dispatch gate is two-layered.** `call_native_instance_method[_mut]`'s
+  `class_name` allowlist in `native_methods/mod.rs` is necessary but not
+  sufficient — the generic method-call resolver first checks
+  `Interpreter::is_native_method(class_name, method)` against a per-class
+  `ClassDef.native_methods` set (`runtime_init.rs`) before it ever reaches
+  that dispatcher; an unlisted method there fails with "No such method" even
+  though the native arm itself was wired correctly. `__ScheduledTapPump`
+  needed its own `ClassDef` entry (mirroring `Tap`'s) listing its four
+  methods, the same way `Supplier` lists `__mutsu_interval_tick`.
+- **A scheduler used as a bare, undefined type object (`CurrentThreadScheduler`
+  written directly rather than `.new`-ed) is a `ValueView::Package`, not a
+  `ValueView::Instance`.** Real Raku dispatches `.cue` on it as a class
+  method regardless of definedness; the scheduler-kind classification had to
+  read `class_name` off both `ValueView::Instance` and `ValueView::Package`,
+  or an undefined `CurrentThreadScheduler` silently fell into the §3
+  any-other-scheduler fork and failed with "No such method 'cue'" the first
+  time delivery actually needed to run.
+
+Every acceptance criterion above was verified against real `raku` before
+being pinned (`t/supply-schedule-on-defer.t`, 5 cases, all cross-checked
+against `raku` output first per the deep ticket's own warning that
+plausible-looking simplifications don't always reproduce). `make test`
+(3095 files / 28783 tests) and the full `roast/S17-supply` +
+`S17-lowlevel`/`S17-promise`/`S17-procasync` whitelists are green on a
+release build, several runs each.
+
+**Slice 3 (Cro verification) done as part of this same change**, ahead of
+schedule: re-running `t/http-response-parser.rakutest` from the vendored Cro
+checkout went from a mid-file hang/timeout to 155/156 completing — both of
+the deep ticket's originally-reported failures ("Response with body
+terminated by close of connection", "Connection close with incomplete body
+throws") are now `ok`. The single remaining `not ok` (a `.body-text` call
+under `Content-length: 1000` with a connection close after far fewer bytes,
+expected to throw `X::Cro::HTTP::RawBodyParser::ContentLength::TooShort`) is
+a different, narrower bug filed separately:
+`todo/tickets/http-response-parser-content-length-too-short-not-thrown.md`.
+Cro::HTTP suite: 34/35 fully-green (up from 33/35), remaining gap being that
+file plus the unrelated pre-existing `http2-request-parser.rakutest`
+concurrent-stream ticket. Cro::Core stays 9/9.
+
+**Slice 2 (bypass-path audit) is NOT done** — still open, tracked by this
+ADR's own Slice 2 section above, not a separate ticket.
 
 ## Risks
 

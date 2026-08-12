@@ -3,6 +3,7 @@ mod concurrency;
 mod encoding;
 pub(crate) mod interval_timer;
 mod proc;
+mod scheduled_tap_pump;
 mod scheduler;
 mod socket_async;
 mod socket_async_conn;
@@ -10,6 +11,7 @@ mod socket_helpers;
 mod socket_inet;
 pub(crate) mod state;
 pub(crate) mod state_lock;
+pub(crate) mod state_scheduled_pump;
 pub(crate) mod state_scheduler;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
@@ -46,6 +48,7 @@ pub(crate) use state::{
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;
+pub(in crate::runtime) use state_scheduled_pump::register_scheduled_pump;
 pub(in crate::runtime) use state_scheduler::{fake_scheduler_init, next_fake_scheduler_id};
 pub(in crate::runtime) use state_supplier::{
     SupplierEmitAction, TransformMode, ZipAction, acquire_supply_serialize,
@@ -354,6 +357,7 @@ impl Interpreter {
                 | "Supply"
                 | "Supplier"
                 | "Tap"
+                | "__ScheduledTapPump"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -394,6 +398,7 @@ impl Interpreter {
                             | "Supply"
                             | "Supplier"
                             | "Tap"
+                            | "__ScheduledTapPump"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -444,6 +449,7 @@ impl Interpreter {
             "Supply" => self.native_supply(attributes, method, args),
             "Supplier" | "Supplier::Preserving" => self.native_supplier(attributes, method, args),
             "Tap" => self.native_tap(attributes, method),
+            "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
