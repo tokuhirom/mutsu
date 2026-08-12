@@ -551,6 +551,12 @@ impl Interpreter {
         // by an unrelated later writeback of the same name in this frame.
         let arg_source_slots = std::mem::take(&mut self.pending_call_arg_source_slots);
         let mut rw_bindings = Vec::new();
+        // `@`/`%` params whose argument came from a named caller container but
+        // which take no `rw_bindings` entry (supplied *named* container params
+        // don't register an exit writeback) — recorded solely so the
+        // container-descriptor `.name` pass at the end can report the caller's
+        // name instead of "element".
+        let mut container_param_sources: Vec<(String, String)> = Vec::new();
         let mut raw_nonlvalue_params: Vec<String> = Vec::new();
         if let Some(invocant_value) = self
             .env
@@ -1273,6 +1279,25 @@ impl Interpreter {
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
                         let mut bound_value = val.clone();
+                        // Supplied `@`/`%` named param bound from a caller
+                        // container variable: record the source for the
+                        // container-descriptor `.name` pass at the end.
+                        if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                            && !pd.name[1..].starts_with(['!', '.'])
+                            && let Some(source_name) = arg_sources
+                                .as_ref()
+                                .and_then(|names| names.get(arg_idx))
+                                .and_then(|n| n.as_ref())
+                                .and_then(|encoded| {
+                                    encoded.split_once('=').map(|(_, s)| s.to_string())
+                                })
+                                .or_else(|| {
+                                    varref_from_value(val).map(|(name, _)| name.to_string())
+                                })
+                                .filter(|s| s.starts_with('@') || s.starts_with('%'))
+                        {
+                            container_param_sources.push((pd.name.clone(), source_name));
+                        }
                         // A named param's declared type constraint (built-in,
                         // user class, or user `subset`) must be enforced here
                         // too — this used to be positional-only (see
@@ -2309,6 +2334,39 @@ impl Interpreter {
                     self.unmark_readonly(&pd.name);
                 }
             }
+        }
+        // Rakudo's container-descriptor `.name` for `@`/`%` parameters
+        // (`@kh.VAR.name`): a param aliasing a caller's named container reports
+        // the CALLER's sigiled name; every other binding (unsupplied default,
+        // literal argument, slurpy, `is copy` — all fresh containers) reports
+        // "element". Text::CSV's `method CSV` gates its whole out/headers
+        // defaulting on `@kh.VAR.name ne "element"` (its rakudo#2483
+        // workaround), so answering the param's own syntactic name here
+        // silently rewrote csv()'s output mode into AoH. Recorded as frame env
+        // metadata; the `.VAR` reflector prefers it over the syntactic name.
+        for pd in param_defs {
+            if !(pd.name.starts_with('@') || pd.name.starts_with('%'))
+                || pd.name[1..].starts_with(['!', '.'])
+            {
+                continue;
+            }
+            let is_copy = pd.traits.iter().any(|t| t == "copy");
+            let source = (!is_copy)
+                .then(|| {
+                    rw_bindings
+                        .iter()
+                        .chain(container_param_sources.iter())
+                        .find_map(|(name, src)| {
+                            (name == &pd.name && (src.starts_with('@') || src.starts_with('%')))
+                                .then(|| src.clone())
+                        })
+                })
+                .flatten()
+                .unwrap_or_else(|| "element".to_string());
+            self.env.insert(
+                format!("__mutsu_var_source_name::{}", pd.name),
+                Value::str(source),
+            );
         }
         self.fold_rw_writeback_slots(&rw_bindings, &arg_source_slots);
         Ok(rw_bindings)

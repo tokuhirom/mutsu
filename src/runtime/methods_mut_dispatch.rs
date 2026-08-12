@@ -147,8 +147,55 @@ impl Interpreter {
             ) {
                 return Ok(target);
             }
+            // A `@`/`%` parameter's container descriptor carries its BINDING
+            // source name, not the param's syntactic name: "element" for the
+            // fresh anonymous container an unsupplied param binds (tagged in
+            // its own data by `missing_optional_param_value`, so it survives
+            // every bind path), or the caller's variable recorded by the slow
+            // binder as `__mutsu_var_source_name::` env metadata. Text::CSV's
+            // `method CSV` gates on `@kh.VAR.name ne "element"`.
+            let container_source_name = (target_var.starts_with('@')
+                || target_var.starts_with('%'))
+            .then(|| {
+                target
+                    .with_deref(|v| match v.view() {
+                        ValueView::Array(data, _) => {
+                            data.descriptor_name.as_ref().map(|s| s.to_string())
+                        }
+                        ValueView::Hash(data) => {
+                            data.descriptor_name.as_ref().map(|s| s.to_string())
+                        }
+                        _ => None,
+                    })
+                    .or_else(|| {
+                        self.env
+                            .get(&format!("__mutsu_var_source_name::{}", target_var))
+                            .map(Value::to_string_value)
+                    })
+            })
+            .flatten();
             if let Some(existing) = self.var_meta_value(target_var) {
-                return Ok(existing);
+                // The cached meta instance goes stale when the SAME param name
+                // is re-bound differently on a later call of the sub (call 1
+                // unsupplied -> "element", call 2 supplied -> the param /
+                // caller name): only reuse it when its recorded name matches
+                // the current binding's descriptor name.
+                let expected = container_source_name
+                    .clone()
+                    .unwrap_or_else(|| target_var.to_string());
+                let cached_name = match existing.view() {
+                    ValueView::Instance { attributes, .. } => attributes
+                        .as_map()
+                        .get("name")
+                        .map(Value::to_string_value)
+                        .unwrap_or_default(),
+                    _ => expected.clone(),
+                };
+                if !(target_var.starts_with('@') || target_var.starts_with('%'))
+                    || cached_name == expected
+                {
+                    return Ok(existing);
+                }
             }
             let readonly_key = format!("__mutsu_sigilless_readonly::{}", target_var);
             let alias_key = format!("__mutsu_sigilless_alias::{}", target_var);
@@ -193,7 +240,9 @@ impl Interpreter {
             } else {
                 "Scalar"
             };
-            let display_name = if target_var.starts_with('$')
+            let display_name = if let Some(src) = container_source_name {
+                src
+            } else if target_var.starts_with('$')
                 || target_var.starts_with('@')
                 || target_var.starts_with('%')
                 || target_var.starts_with('&')

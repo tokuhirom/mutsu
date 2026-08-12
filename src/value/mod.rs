@@ -1177,6 +1177,13 @@ pub struct HashData {
     /// table broke whenever the backing `Arc` was rebuilt. Mirrors the array
     /// `ArrayData::default` field.
     pub default: Option<Box<Value>>,
+    /// Rakudo container-descriptor name override for `.VAR.name`. `Some` only
+    /// on the fresh anonymous container an unsupplied `%`-param binds
+    /// ("element"), so `%o.VAR.name` distinguishes it from a supplied one
+    /// (Text::CSV's `@kh.VAR.name ne "element"` guard). `None` keeps the
+    /// reflector's syntactic-name fallback. Mirrors
+    /// `ArrayData::descriptor_name`.
+    pub descriptor_name: Option<Box<str>>,
 }
 
 /// Backing data for `Value::Array`: the element vector plus embedded
@@ -1225,6 +1232,12 @@ pub struct ArrayData {
     /// filled from inside a method/closure (e.g. HTTP::Status's `method sink`
     /// populating `@codes`) reported every gap as existing.
     pub initialized: Option<std::collections::HashSet<usize>>,
+    /// Rakudo container-descriptor name override for `.VAR.name`. `Some` only
+    /// on the fresh anonymous container an unsupplied `@`-param binds
+    /// ("element"), so `@kh.VAR.name` distinguishes it from a supplied one
+    /// (Text::CSV's `@kh.VAR.name ne "element"` guard — its rakudo#2483
+    /// workaround). `None` keeps the reflector's syntactic-name fallback.
+    pub descriptor_name: Option<Box<str>>,
 }
 
 /// Value stored in an enum variant: an integer, a string, or an arbitrary Value.

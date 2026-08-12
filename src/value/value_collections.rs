@@ -49,6 +49,7 @@ impl HashData {
             declared_type: None,
             original_keys: None,
             default: None,
+            descriptor_name: None,
         }
     }
 
@@ -162,6 +163,7 @@ impl ArrayData {
             default: None,
             shape: None,
             initialized: None,
+            descriptor_name: None,
         }
     }
 
