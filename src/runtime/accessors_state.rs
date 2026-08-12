@@ -823,6 +823,16 @@ impl Interpreter {
             }
             remaining.push((owner.resolve(), def));
         }
+        // ADR-0019 E8a shadow probe (zero behavior change): see
+        // `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`.
+        self.shadow_check_deferral_sequence(
+            receiver_class,
+            method_name,
+            args,
+            &invocant,
+            chosen_fp,
+            &remaining,
+        );
         let pushed = !remaining.is_empty() || native_base_override;
         if pushed {
             let rw_params = chosen

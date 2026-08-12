@@ -3679,6 +3679,71 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   submethod visibility and `drop_flattened_role_duplicates` apply at build time.
   `Registry::proto_methods` folds into `MethodEntry`. Unifying the method-vs-sub ranking
   ladders is explicitly out of scope.
+  **Progress 2026-08-12** (E8a, sequence structural fields + shadow comparison): landed the
+  slice plan's E8a exactly as scoped. `ResolvedCandidate::User` gained `level: u16`/
+  `stored_idx: u16` (its position in the chain / within that level's stored declaration order —
+  `resolution_sequence.rs`), set from `resolve_sequence`'s existing per-level, per-overload
+  loop, so the sequence's own construction order already IS `(level, stored_idx)`-ascending
+  with no extra sort needed. `drop_flattened_role_duplicate_candidates` (the build-time twin of
+  `resolution_method.rs`'s post-match `drop_flattened_role_duplicates`) now runs inside
+  `resolve_sequence` itself, before any per-call filtering — behavior-preserving, since the
+  dedup removes candidates purely by owner identity and the flattened copy it keeps has the
+  same signature as the raw one it drops. The "ranker extracted to consume a candidate slice"
+  part of the slice plan became `Interpreter::match_sequence_candidates`, pulling the
+  signature-match loop out of `shadow_check_resolver_chain` (E4a's winner probe) so a second
+  probe could reuse it verbatim instead of copying the loop. That second probe,
+  `Interpreter::shadow_check_deferral_sequence`, hooks the single real call site that builds
+  the `nextsame`/`callsame` deferral list — `Interpreter::push_method_dispatch_frame`
+  (`accessors_state.rs`) — and compares the sequence's own `(level, stored_idx)`-ordered,
+  per-call-filtered, winner-fingerprint-removed candidate list against the real "remaining"
+  list `resolve_all_methods_with_owner` + fingerprint dedup already computes there, under a new
+  `DEFERRAL_SHADOW_CHECKS`/`_MISMATCHES` counter pair (list equality by fingerprint, exactly as
+  the slice plan specifies) — a dedicated pair, not the shared `RESOLVER_SHADOW_*` infra, same
+  reasoning as E7 steps 4/6/7's own dedicated pairs (comparing an ordered LIST, not a single
+  winner pick). The winner side of "shadow-compare winner AND deferral list" needed no new
+  code: per design decision 1 the winner ranking ladder is unchanged by `level`/`stored_idx`
+  (deferral-order-only facts), so E4a's existing `shadow_check_resolver`/`_chain` at the
+  `resolve_method_cached` boundaries already covers it, now exercising the enriched candidate
+  shape for free. Two real findings surfaced building this, both fixed or bucketed honestly
+  rather than force-fit to zero:
+  1. **A real bug in the new probe itself, fixed**: the first version passed the call's
+     invocant to the per-candidate signature match, but the REAL target
+     (`resolve_all_methods_with_owner`) always calls `method_args_match_for_invocant` with
+     `invocant: None` — the deferral list is invocant-BLIND (it never checks `:U:`/`:D:`
+     smileys), matching raku's own `nextsame`/`callsame` walk. An invocant-aware shadow probe
+     is stricter than its own target, not a shadow of it; every `::?ROLE:U:`/`::?ROLE:D:` multi
+     pair in the sweep (`t/role-ud-multi-dispatch.t`, `t/multi-method-invocant-definedness.t`,
+     `t/qualified-mu-coercion.t`) mismatched until the probe's `match_sequence_candidates` call
+     switched to `invocant: None` to match.
+  2. **A pre-existing, accepted divergence, documented not fixed**: `resolve_sequence`'s
+     per-level lookup (`Registry::user_method_overloads`) silently returns nothing for a role
+     owner that has never been *punned* — `Registry::method_entries` (the E1/E2 canonical
+     table) is only ever populated from `self.classes`, and a role is not a key there unless a
+     `RoleName.new` pun briefly registered (and later withdrew) a synthetic `ClassDef` for it.
+     `resolve_all_methods_with_owner` has no such gap (it reads `self.registry().roles`
+     directly), so it still finds a role's own un-flattened method the deferral probe misses.
+     Root-caused and written up in full, including why this is not fixed inside E8a (it also
+     feeds several REAL production dispatch paths — winner selection included — so populating
+     it is a real-behavior change outside a shadow-only box's scope) and a suggested fix, in
+     `todo/deep/method-entries-never-covers-unpunned-roles.md`.
+  A `MUTSU_VM_STATS=1` sweep of the full local `t/` suite (3070 files) found 160 deferral-shadow
+  checks across 46 files, 58 mismatches — every single one the shape `real_len` exactly one
+  candidate ahead of `shadow_len`, confirmed by hand on every mismatching file
+  (`t/anon-class-does-imported-role.t`, `t/builtin-distribution-role.t`,
+  `t/callsame-punned-role-and-hyper-infix-sub.t`, `t/multi-udismiley-ambiguity-leak.t`,
+  `t/qualified-method-call.t`, `t/role-conflict.t`, `t/role-required-method-name-based.t`,
+  `t/role-required-universal-method.t`, `t/supply-nested-whenever-emitter.t`,
+  `t/yaml-battery.t`) to be finding 2's gap, not a new bug. A roast slice touching multi/role/
+  submethod/wrap dispatch (`S06-advanced/{callsame,dispatching,wrap}`, `S06-multi/{redispatch,
+  type-based,syntax}`, `S12-methods/{defer-call,defer-next,lastcall,multi,parallel-dispatch}`,
+  `S12-class/{mro-6c,inheritance,basic}`, `S14-roles/mixin-6c`, 16 files) found 37 checks, 0
+  mismatches. Two new unit tests (`resolve_sequence_assigns_level_and_stored_idx`,
+  `resolve_sequence_drops_a_flattened_role_duplicate_at_build_time`). `cargo build`/`cargo
+  clippy -- -D warnings`/`cargo fmt --check` clean; `cargo test --lib` (812 tests) and full
+  local `make test` (3070 files / 28652 tests) green. Zero real-behavior change: `resolve_
+  all_methods_with_owner`, `push_method_dispatch_frame`'s own logic, and every real dispatch
+  decision are untouched by this slice. **Next E8 sub-slice: E8b — proto methods into
+  `MethodEntry`**, per the slice plan.
 - [ ] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
   the resolved sequence instead of re-entering name-based resolution.
   **Design 2026-08-10** (same doc): one `DispatchCursor {seq, next, invocant, args}` replaces

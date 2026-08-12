@@ -208,3 +208,128 @@ Hence the mandatory pre-campaign and per-slice `make roast`. E10's registry move
 thread-fork COW path (`runtime_thread.rs`) — wraps created in a child must not leak to the
 parent (today's interpreter-owned maps get that isolation for free; the registry COW gives the
 same, but add a test). E11 is mechanical once E5-E7 land; do not start it earlier.
+
+## E8a: sequence structural fields land; deferral-list shadow check finds one real bug (fixed) and one pre-existing gap (documented, not fixed)
+
+Landed 2026-08-12, exactly as scoped by the slice plan above. Full detail also in the ADR's E8
+progress note (`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`); this
+section is the design doc's own record of the same slice.
+
+**Structural fields.** `ResolvedCandidate::User` (`resolution_sequence.rs`) gained `level: u16`
+(position in the chain, 0 = receiver's own class) and `stored_idx: u16` (position within that
+level's `user_method_overloads`, i.e. declaration order), set in `resolve_sequence`'s existing
+per-level loop via `overloads.into_iter().enumerate()`. No separate sort was needed: the
+sequence's own `Vec<ResolvedCandidate>` construction order (outer loop over MRO levels, inner
+loop over each level's stored overloads) already IS `(level, stored_idx)`-ascending by
+construction — the fields exist as the queryable structural facts a future consumer (E9's
+cursor) needs, not because today's code needs to re-derive the order from them.
+
+**Build-time dedup.** `drop_flattened_role_duplicate_candidates`, a new private helper called at
+the end of `resolve_sequence` (before the `ResolvedSequence` is returned), mirrors
+`resolution_method.rs`'s `drop_flattened_role_duplicates` — dropping a composed role's own raw
+MRO-level candidate once a class level already carries the role-flattened copy — but runs it
+at sequence *build* time instead of the original's post-match-filter time. This is
+behavior-preserving: the dedup removes by owner identity only, and the flattened copy that
+survives has the same signature as the raw copy it replaces, so filtering before or after a
+`method_args_match_for_invocant` pass yields the same final matched set either way.
+
+**Ranker extraction.** `Interpreter::match_sequence_candidates` pulls the "filter a sequence's
+`User` candidates by per-call signature match, producing `Vec<(Symbol, MethodDef)>`" loop out of
+`shadow_check_resolver_chain` (E4a's own winner probe), so [`Interpreter::shadow_check_deferral_sequence`]
+below can reuse it instead of carrying a second copy of the same loop. Ranking itself is
+untouched — [`Interpreter::pick_method_winner`] is still the only ranker, called separately, and
+by design decision 1 `level`/`stored_idx` do not feed it (they are deferral-order-only facts).
+
+**The deferral-list shadow check.** `Interpreter::shadow_check_deferral_sequence`
+(`resolution_sequence.rs`), gated behind `MUTSU_VM_STATS` like every prior Phase E probe, hooks
+`Interpreter::push_method_dispatch_frame` (`accessors_state.rs`) — the single real call site
+that builds the `nextsame`/`callsame` "remaining" deferral list, via `resolve_all_methods_with_
+owner` + fingerprint-based winner removal, consumed by all six `push_method_dispatch_frame(...)`
+call sites in `vm/vm_call_method_compiled*.rs`. The shadow computation: build the sequence for
+`receiver_class`'s MRO, run it through `match_sequence_candidates` (invocant-BLIND — see finding
+1 below), remove the caller's own already-computed winner fingerprint (mirroring
+`push_method_dispatch_frame`'s exact loop shape: fingerprint-compare against the winner FIRST,
+THEN the `should_skip_defer_method_candidate` hidden-parent filter, so a candidate that is both
+the winner and nominally hidden is dropped for the winner reason only), and compare the
+resulting `Vec<u64>` fingerprint list — order-sensitive, since deferral ORDER is user-observable
+through repeated `nextsame` — against the real `remaining` list's own fingerprints, under a new
+`DEFERRAL_SHADOW_CHECKS`/`_MISMATCHES` counter pair (`vm_stats.rs`), dedicated rather than
+shared with `RESOLVER_SHADOW_*` for the same "comparing an ordered LIST, not a single winner
+pick" reason E7 steps 4/6/7 already established for their own dedicated pairs. Same `where`-
+clause care point as every prior probe: any candidate carrying a `where` clause anywhere in the
+sequence skips the whole check, since re-running `method_args_match_for_invocant` a second time
+would duplicate that clause's dynamic-variable side effects.
+
+**"Shadow-compare winner AND deferral list" — the winner half needed no new code.** Per design
+decision 1, `level`/`stored_idx` do not change winner ranking at all, so E4a's existing
+`shadow_check_resolver`/`shadow_check_resolver_chain` at the two `resolve_method_cached`
+boundaries already IS the winner-side shadow check the slice plan calls for; it now simply
+exercises the enriched `ResolvedCandidate::User` shape (with `level`/`stored_idx` present but
+unread by the winner ranker) for free. No new winner-probing call sites were added.
+
+**Finding 1 (real bug in the new probe, fixed before landing): invocant-blind matching.** The
+first version of `shadow_check_deferral_sequence` passed `Some(invocant)` to
+`match_sequence_candidates`, reasoning that the real invocant should narrow the match. But the
+REAL target it shadows — `resolve_all_methods_with_owner` — always calls
+`method_args_match_for_invocant(..., invocant: None)` (a pre-existing property of that function,
+unrelated to this box), so the deferral list is invocant-BLIND: it never checks `:U:`/`:D:`
+smiley constraints, only the non-invocant argument shape. This mirrors raku's own semantics —
+`nextsame`/`callsame` inside a `:U:`/`:D:` multi pair CAN walk to the sibling smiley candidate,
+since the deferral list is not re-filtered by the invocant a second time. An invocant-aware
+shadow probe is therefore *stricter* than the thing it is supposed to shadow, which produced
+mismatches on every `::?ROLE:U:`/`::?ROLE:D:`-shaped test in the sweep
+(`t/role-ud-multi-dispatch.t`: 6/6 mismatched → 0/6 after the fix;
+`t/multi-method-invocant-definedness.t`: 6/6 → 0/6; `t/qualified-mu-coercion.t`: 4/4 → 0/4).
+Switching the `match_sequence_candidates` call to `invocant: None` fixed all of them, dropping
+the sweep's total mismatch count from 73 to 58 (see below). Documented at length in the
+function's own doc comment so a future reader does not re-introduce the "more accurate must be
+better" mistake.
+
+**Finding 2 (pre-existing, accepted divergence — documented, not fixed): `method_entries`
+never covers an un-punned role.** After fix 1, every remaining mismatch traced to one root
+cause, confirmed by hand on all ten mismatching files: `resolve_sequence`'s per-level lookup
+(`Registry::user_method_overloads`, reading the E1/E2 canonical `method_entries` table) silently
+returns `None` for a role owner that has never been *punned* (`RoleName.new`, which briefly
+registers — then, on withdrawal, un-registers — a synthetic `ClassDef` for the pun; see
+`Registry::sync_user_method_entries`, which only ever reads `self.classes`). The real deferral
+walker, `resolve_all_methods_with_owner`, has no such gap: it reads `self.registry().roles`
+directly, bypassing `method_entries` entirely. So a role's own un-flattened method — reachable
+whenever the class overrides the role's method with its own (`t/supply-nested-whenever-
+emitter.t`, `t/multi-udismiley-ambiguity-leak.t`), when two role methods conflict and the class
+resolves the conflict itself (`t/role-conflict.t`), or via a role-qualified call
+`self.R::name()` (`t/qualified-method-call.t`) — is invisible to `resolve_sequence` but visible
+to the real walker. Every one of the 58 remaining mismatches (46 files with checks, 160 total
+checks) had the exact shape `real_len` one candidate ahead of `shadow_len`, confirmed on all ten
+mismatching files (`t/anon-class-does-imported-role.t` 4/4, `t/builtin-distribution-role.t` 1/1,
+`t/callsame-punned-role-and-hyper-infix-sub.t` 2/2, `t/multi-udismiley-ambiguity-leak.t` 18/12,
+`t/qualified-method-call.t` 1/1, `t/role-conflict.t` 1/1, `t/role-required-method-name-based.t`
+1/1, `t/role-required-universal-method.t` 3/3, `t/supply-nested-whenever-emitter.t` 1/1,
+`t/yaml-battery.t` 39/32). **Not fixed inside E8a**: `get_method_overloads` (the same table) also
+feeds several REAL production dispatch paths — `resolve_method_with_owner_impl` (winner
+selection itself), `ctor_phase_plan.rs`, `vm_call_method_compiled_cache.rs`, and all three
+`resolution_private_method.rs` call sites — so populating role entries there is a real
+dispatch-behavior change (most likely a latent bugfix, masked for winner selection today by
+early-stopping short-circuiting before reaching an un-punned role's MRO level in the common
+case, but unverified for every call site), outside a shadow-only box's "zero real behavior
+change" mandate. Root-caused, documented, and left with a suggested fix and verification plan in
+`todo/deep/method-entries-never-covers-unpunned-roles.md` — a new, standalone finding, not
+something that evaporates once E8a merges.
+
+**Verification.** A `MUTSU_VM_STATS=1` sweep of the full local `t/` suite (3070 files) found 160
+deferral-shadow checks across 46 files with any nextsame/callsame-shaped candidate, 58
+mismatches, all attributed to finding 2 above (confirmed by hand on every mismatching file, not
+inferred from the aggregate shape alone). A roast slice touching multi/role/submethod/wrap
+dispatch — `roast/S06-advanced/{callsame,dispatching,wrap}.t`,
+`roast/S06-multi/{redispatch,type-based,syntax}.t`,
+`roast/S12-methods/{defer-call,defer-next,lastcall,multi,parallel-dispatch}.t`,
+`roast/6.c/S12-class/mro-6c.t`, `roast/S12-class/{inheritance,basic}.t`,
+`roast/6.c/S14-roles/mixin-6c.t` (16 files) — found 37 checks, 0 mismatches (the roast
+whitelist's own corpus does not happen to exercise an un-punned role's nextsame/callsame
+deferral path the way the hand-written `t/` regression tests do). Two new unit tests:
+`resolve_sequence_assigns_level_and_stored_idx`,
+`resolve_sequence_drops_a_flattened_role_duplicate_at_build_time`. `cargo build`/`cargo clippy
+-- -D warnings`/`cargo fmt --check` clean; `cargo test --lib` (812 tests) and the full local
+`make test` (3070 files / 28652 tests) green. `resolve_all_methods_with_owner`,
+`push_method_dispatch_frame`'s own logic, and every real dispatch decision are untouched.
+
+**Next E8 sub-slice: E8b — proto methods into `MethodEntry`**, per the slice plan above.
