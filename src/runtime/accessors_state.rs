@@ -793,7 +793,26 @@ impl Interpreter {
         {
             return false;
         }
-        let all_candidates = self.resolve_all_methods_with_owner(receiver_class, method_name, args);
+        // ADR-0019 E9a: the flat deferral expansion (`resolution_deferral.rs`) replaces
+        // `resolve_all_methods_with_owner` as the ordering source — see its module doc for why
+        // a raw MRO walk in declaration order does not reproduce raku's own deferral order once
+        // a `multi method` spans MRO levels. The expansion is structural (unfiltered); apply the
+        // same per-call, invocant-blind argument match `resolve_all_methods_with_owner` used to
+        // apply internally.
+        let role_bindings = self.registry().get_role_param_bindings(receiver_class);
+        let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
+        let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
+        for (owner, def) in expansion {
+            if self.method_args_match_for_invocant(
+                receiver_class,
+                &def,
+                args,
+                role_bindings.as_ref(),
+                None,
+            ) {
+                all_candidates.push((owner, def));
+            }
+        }
         // Fast path: with zero or one candidate there is nothing to defer to, so no
         // dispatch frame is ever pushed (the single candidate is the chosen one and
         // gets skipped, leaving `remaining` empty). Returning early here avoids the

@@ -456,7 +456,7 @@ impl Interpreter {
         total
     }
 
-    fn constraint_base_for_distance(constraint: &str) -> &str {
+    pub(crate) fn constraint_base_for_distance(constraint: &str) -> &str {
         let s = if constraint.ends_with(":D") || constraint.ends_with(":U") {
             &constraint[..constraint.len() - 2]
         } else {
@@ -629,7 +629,7 @@ impl Interpreter {
     /// `nextsame`/`callsame` chain. (Rakudo does not keep the role in the MRO at
     /// all, which is why it never sees the duplicate.) Drop the role's own copy
     /// whenever a class level already carries the flattened one.
-    fn drop_flattened_role_duplicates(matches: &mut Vec<(Symbol, MethodDef)>) {
+    pub(crate) fn drop_flattened_role_duplicates(matches: &mut Vec<(Symbol, MethodDef)>) {
         let flattened: HashSet<&str> = matches
             .iter()
             .filter_map(|(_, def)| def.role_origin.as_deref())

@@ -629,3 +629,34 @@ exclusion, explicit-proto isolation, probes 1/2 above) written with raku's expec
 the same PR, and (iii) a local `make roast` per the house rule for dispatch-semantics changes.
 The matcher-strictness ticket is a prerequisite or co-requisite: without it the stricter
 advance filter cannot be expressed.
+
+**Progress 2026-08-12 (same day) — E9a landed for the both-levels-multi-order shape only; the
+DispatchCursor struct itself is deferred.** `src/runtime/resolution_deferral.rs` adds
+`Interpreter::resolve_deferral_expansion`, a new ordering source that replaces
+`resolve_all_methods_with_owner` at the two "remaining"-building call sites
+(`accessors_state.rs::push_method_dispatch_frame`, `class_dispatch.rs`'s `build_remaining`
+closure): it builds the flat per-MRO-class expansion described above (implicit-clone-merge
+ranked by nominal narrowness/MRO-depth/decl-order, explicit-proto isolation) instead of a bare
+per-level declaration-order walk. Both probes 1 and 2 above are exact hits against Rakudo
+v2026.06 (verified with `raku` directly, not just predicted) and pinned in
+`t/defer-multi-cross-level-proto-block.t`; all 12 E9-pre pins plus the full `multi`/`nextsame`/
+`callsame`/`wrap`/`proto`/`defer`/`samewith` corner of `t/` (148 files) stay green.
+
+Two scope decisions, both deliberate:
+- **The winner-removal mechanism (fingerprint-compare-and-skip) is UNCHANGED** — only its input
+  ordering changed, from `resolve_all_methods_with_owner`'s output to
+  `resolve_deferral_expansion`'s. This is a smaller, lower-risk slice than decision 2's full
+  `DispatchCursor{seq, next, invocant, args}` (index-based, no re-walk) — that mechanical
+  refactor is orthogonal to the *ordering* fix that raku ground truth actually demands and is
+  left for a follow-up (`MethodDispatchFrame` still carries a re-derived `Vec`, not an `Arc`
+  sequence + cursor index). No observable behavior depends on which storage shape is used.
+- **`role-shadowed-method-in-defer-chain.md` and `explicit-child-proto-assumes-parent-
+  candidates.md` remain OPEN, not fixed by this slice.** The role-shadow ticket needs
+  `resolve_deferral_expansion` (or its shared `own_overloads_at_level` read) to also drop a
+  role's raw MRO entry when a class level shadows it with an independently-authored override —
+  a distinct fix from the ordering redraw, not implied by decision 2. The explicit-proto ticket
+  is about the `{*}` re-entry itself (`dispatch_proto_call.rs` re-entering
+  `call_method_with_values` by name, which still walks the OLD `resolve_method_with_owner_impl`
+  MRO walker for the *winner*, unaffected by this box) — that is E9c's job per decision 2's own
+  migration order. Filing new pins for either shape now would encode a still-open mutsu bug as
+  a passing test; both tickets stay as-is.
