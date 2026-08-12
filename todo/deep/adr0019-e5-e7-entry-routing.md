@@ -2229,3 +2229,168 @@ result the way steps 1/2 were") — but the right response to a non-clean result
 catalog incompleteness (not a real dispatch-path bug) is to defer the cutover, not force it through.
 Next E7 sub-slice: `.^lookup`/`.^methods` reading the call-path sequence, per the design's consumer
 ordering (WALK and the EVAL/re-entrant carriers come after those).
+
+## E7 step 5: `.^lookup` — a real MRO-walk bug, found and fixed (not a shadow-measurement box)
+
+Unlike steps 1-4, this sub-slice did not start from a shadow-check counter surfacing a gap — it
+started from a manual `raku`-vs-`mutsu` comparison during scoping, which found a confirmed,
+already-reproduced correctness bug before any code changed:
+
+```raku
+class A { method foo { "A::foo" } }
+class B is A {}
+say B.^lookup("foo").defined;   # raku: True
+```
+
+`target/debug/mutsu` answered `False` (`Nil`) for the identical script. `Interpreter::classhow_lookup`
+(`runtime/methods_classhow_lookup.rs`) — the sole implementation of `.^lookup`, reached from exactly
+one call site, the `"lookup"` arm of `methods_classhow_dispatch.rs`'s big `.^`-method match — only
+ever consulted `self.registry().classes.get(&class_name_str)` where `class_name_str` is the
+receiver's own exact class: no MRO walk at all. A method declared solely on a parent class was
+therefore invisible, even though real Raku's `.^lookup` walks the whole MRO.
+
+**Fix**: replace the single-class `Option`-chain lookup with a loop over `self.class_mro(&class_name_str)`
+(most-derived first — the plain registry MRO primitive `resolve_method_with_owner`/
+`resolve_private_method_any_owner` already use elsewhere in the codebase, not a new mechanism),
+taking the first class in the chain whose own `class_def.methods` has an entry for the name. The
+per-level `Value::make_sub` construction (callable-type tag, return-type tag, wrap-chain candidate
+index) is otherwise byte-identical to before this fix — only the search now spans the chain instead
+of stopping at the receiver's own class, and the constructed Sub's owner symbol is the actual owning
+class (`*owner_sym`) rather than always the receiver's own `class_name`.
+
+**Confirmed against real `raku` that `.^lookup` deliberately does NOT filter by visibility/shape at
+all** — three cases pinned in `t/classhow-lookup-mro.t`:
+- An ancestor's **submethod** is found (`class M{submethod boot{}}; class N is M{}; N.^lookup("boot")`
+  is defined) — even though submethods are not inherited by ordinary dispatch; `.^lookup` is a raw
+  MRO-level textual search, not a dispatch simulation.
+- An inherited **multi** method is found — this fix's per-level "first def wins" shape generalizes
+  unchanged to the inherited case (matching `raku`'s own answer for this shape); true multi/proto
+  candidate-SEQUENCE modeling across levels is explicitly E8's job (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`),
+  out of scope here.
+- A more-derived override still wins over an ancestor's same-named method (the MRO walk's
+  most-derived-first order already guarantees this — pinned as a sanity check, not a new mechanism).
+
+**A second bug surfaced mid-fix, found by running the full local `t/` suite, not by shadow-checking**:
+`Interpreter::classhow_find_method` (same file) implements `.^find_method`, and is also `.can`'s
+Package-receiver fallback (`methods_instance_ops.rs:1736-1749` calls it after `class_has_method`/
+`has_user_method` both answer true). Before this box, `classhow_find_method`'s own "does this
+arbitrary name exist" fallback tier delegated straight to `classhow_lookup` — harmless while
+`classhow_lookup` only checked the receiver's own class (so `.^find_method`/`.can` never saw an
+ancestor submethod either, by accident of the OLD bug rather than by design). Once `classhow_lookup`
+became MRO-walking, that same delegation started leaking `.^lookup`'s permissive ancestor-submethod
+visibility into `.^find_method`/`.can`, which real Raku keeps strict:
+
+```raku
+class M { submethod boot { "M boot" } }
+class N is M {}
+say N.^lookup("boot").defined;        # True  (raku's .^lookup: unfiltered)
+say N.^find_method("boot").defined;   # False (raku's .^find_method: strict)
+say N.can("boot").elems;              # 0     (raku's .can: strict, same as .^find_method)
+say M.^find_method("boot").defined;   # True  (the DECLARING class still finds it via either)
+say M.can("boot").elems;              # 1
+```
+
+Caught by the full local `t/` suite (not this box's own new test, and not a shadow-check counter):
+`t/can-does.t` test 15, "`.can` does not inherit submethods into subclasses", started failing
+deterministically (confirmed NOT a build-corruption artifact from an unrelated concurrent-build
+mishap earlier in this session — reproduced against a clean `cargo clean -p mutsu` rebuild, and
+confirmed absent on a fresh `main`-branch worktree build of the identical test file).
+
+**Fix, and two dead ends tried and reverted first** (recorded for anyone touching this area again):
+
+1. **First attempt: route `classhow_find_method`'s fallback through `collect_can_methods`
+   (`methods_classhow_method_obj.rs`) directly.** `collect_can_methods` already implements exactly
+   the right "own-class submethod visible, ancestor submethod hidden" filter
+   (`!def.is_my || cn == class_name`) for its OWN purpose (`.can`'s Instance-receiver path). But
+   `collect_can_methods`'s own native-method fallback tier (entered when no user-declared method
+   matches) itself calls `classhow_find_method` (to check a user class's registered `native_methods`
+   set) — so calling `collect_can_methods` FROM `classhow_find_method` is direct mutual recursion.
+   Confirmed by an actual stack overflow (`thread '<unknown>' has overflowed its stack`) the moment
+   a probed name resolved to neither a user method nor a role method nor an attribute accessor.
+2. **Second attempt: extract `collect_can_methods`'s non-recursive tiers (user-method MRO walk +
+   role-method tier + attribute-accessor tier — everything before the native-fallback tier that
+   causes the recursion) into a new shared helper, `collect_can_user_methods`, called by both
+   `collect_can_methods` and `classhow_find_method`.** This avoided the recursion, and
+   `t/can-does.t` passed — but broke a DIFFERENT test: `t/declarator-trailing-wherefore.t` test 6
+   (`Sheep.^find_method('roar').^name` reported the generic `"Sub"` instead of `"Method"`), because
+   `collect_can_user_methods`'s single-(non-multi)-def branch (unlike its multi branch, and unlike
+   `classhow_lookup`'s per-level construction) never set the `__mutsu_callable_type`/
+   `__mutsu_lookup_*` env tags `.^name` reads — that gap pre-existed in `collect_can_methods` itself
+   (harmless there, since `.can`'s own callers never inspected those tags) but became visible once
+   `.^find_method` started reusing the same code path. Adding the tagging back UNCONDITIONALLY (a
+   `tag_callable_type: bool` parameter, `true` from `classhow_find_method`, `false` from
+   `collect_can_methods`'s own call) fixed that regression but caused a THIRD, worse one: even
+   `false` alone (i.e. leaving `.can`'s own path completely unchanged from its pre-existing
+   behavior) reproduced cleanly, so the parameter itself was not the problem — but the FIRST
+   (uncustomized) version of this attempt, which set the tags unconditionally for both callers to
+   test the idea, broke `.wrap()` writeback for `.can`'s own OTHER, unrelated callers
+   (`t/method-wrap-writeback-only-mutations.t` test 3, `t/monitor-method-does-not-leak-topic-or-self.t`
+   test 6, `t/exporthow-grammar-how.t`'s custom-HOW grammar profiling all regressed) — apparently
+   some `.wrap()`-chain-registration path keys off the mere PRESENCE of `__mutsu_lookup_class`/
+   `__mutsu_lookup_method` on a Sub obtained via `.can`, not just via `.^lookup`/`.^find_method`.
+   Confirmed all four of those files pass cleanly on a fresh `main`-branch build of the identical
+   test files, ruling out pre-existing flakiness. This whole approach was abandoned rather than
+   chased further once it became clear `collect_can_user_methods` was a genuinely shared,
+   two-different-consumer-shape function whose "harmless-looking" tweaks for one consumer kept
+   surfacing as regressions in the other's unrelated tests.
+3. **Landed fix: keep `classhow_find_method` entirely OUT of `collect_can_methods`'s object graph**,
+   and instead parameterize `classhow_lookup` itself. `classhow_lookup_impl(invocant, method_name,
+   include_ancestor_submethods: bool)` is now the single per-level construction implementation;
+   `classhow_lookup` (`.^lookup`'s own entry point) calls it with `true` (unchanged behavior, byte-
+   identical to this box's own first (MRO-walk-only) fix); `classhow_find_method`'s fallback calls
+   it with `false`, which adds exactly one skip condition to the MRO loop: `if def.is_my &&
+   owner_str != class_name_str && !include_ancestor_submethods { continue; }` — do not accept an
+   ancestor level's submethod, keep walking. This is the smallest change that fixes the regression
+   without ever touching `methods_classhow_method_obj.rs` at all, so `.can`'s own construction path
+   (and everything the second attempt's `tag_callable_type`/wrap-chain investigation touched) is
+   completely unaffected by this PR — confirmed by re-running all four previously-regressed files
+   plus the full local `t/` suite clean.
+
+**Two follow-up findings filed as their own tickets, not folded into this PR** (per the "one bug per
+sub-PR" discipline every E7 step so far has followed):
+
+- `todo/tickets/classhow-lookup-all-candidates-non-multi-mro-gap.md` — the sibling
+  `classhow_lookup_all_candidates` (backing `.^find_method(name).candidates`, the function
+  immediately after `classhow_lookup` in the same file) has the IDENTICAL single-class-only bug, but
+  only in its non-multi branch (`owners: Vec<String> = if class_method_is_multi(...) { ...correct
+  MRO walk... } else { vec![class_name.to_string()] }` — the multi branch was already correct). Not
+  a literal one-line-shaped fix like `classhow_lookup`'s own MRO-walk change, so left for its own
+  slice rather than expanding this PR's scope, per the same reasoning that kept `classhow_lookup_impl`
+  a *targeted* filter rather than a rewrite.
+- `todo/tickets/classhow-lookup-surfaces-private-methods.md` — `.^lookup("secret")` finds a private
+  method (`method !secret {...}`) by its bare unqualified name; real Raku's `.^lookup` answers
+  `False`/undefined for the same probe. This is a pre-existing gap (the receiver's-own-class-only
+  lookup never filtered `is_private` either, before OR after this box's MRO-walk fix) — a visibility-
+  filtering bug, not an MRO-walk bug, so a different bug shape from what this slice targeted. Left
+  open with a suggested fix shape (skip a level's `defs.first()` when `is_private`, or reuse
+  `resolve_sequence`'s `MethodVisibility::Public` filter from E7 step 3 directly — the more unified
+  answer, consistent with E7's general direction).
+
+**Verification**: `cargo build` / `cargo clippy -- -D warnings` / `cargo fmt` clean. New
+`t/classhow-lookup-mro.t` (14 assertions): the confirmed repro plus own-class/2-levels-deep/role-
+composed/nonexistent/override-wins/inherited-multi/ancestor-submethod cases for `.^lookup` itself
+(10 assertions), plus 4 regression-pinning assertions for `.^find_method`/`.can`'s stricter
+ancestor-submethod exclusion (the exact shape of the bug found and fixed above). Full local `make
+test` green (3059 files/28,585 tests) — run twice: once after a full `cargo clean -p mutsu` rebuild,
+specifically to rule out stale-incremental-cache artifacts from an EARLIER, UNRELATED concurrent-
+build mishap in this same session (several overlapping `cargo build`/`cargo build --release`/`cargo
+test` invocations from a background agent's repeatedly-resumed "waiting for the build" non-report —
+see `feedback-background-agent-self-report-loop.md` in the assistant's memory system for that
+pattern — had left multiple stacked builds racing in this worktree's `target/` directory; killing
+them and rebuilding clean was necessary before any test failure here could be trusted as real rather
+than a corrupted-binary artifact). An 18-file roast slice, found by grepping roast for
+`\.\^lookup\(`/`HOW\.lookup` and intersecting with `roast-whitelist.txt`, green (898 tests,
+`MUTSU_FUDGE=1`) — `roast/S32-io/spurt.t`'s one failure on the first pass was the documented stale
+`temp-file-RT-126006-test` artifact `make roast` normally clears before starting (CLAUDE.md), not a
+regression; confirmed clean after removing the stale file. Since this changes real
+`classhow_lookup`/`classhow_find_method` answers (not a shadow-only probe), this counts as CLAUDE.md's
+"touched name/type resolution" case requiring a local roast check before opening the PR, not just
+CI's — the slice above is that check.
+
+**Conclusion**: this is the first E7 sub-slice that is a genuine, real-behavior-changing correctness
+fix rather than a shadow-measurement box (steps 1-2 were clean shadow-checks with no cutover needed;
+step 3 found and fixed a bug in its own shadow PROBE's chain construction, not in real dispatch;
+step 4 deferred a real cutover pending catalog coverage) — found by direct `raku`-vs-`mutsu`
+comparison during scoping, not by a shadow-check counter. Next E7 sub-slice: `.^methods` reading the
+call-path sequence (WALK and the EVAL/`subtest` re-entrant carriers come after, per the design's
+consumer ordering).
