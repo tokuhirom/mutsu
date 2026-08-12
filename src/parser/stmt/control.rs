@@ -147,7 +147,12 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
     {
         // Native-typed lexicals cannot participate in `:=` binding. A native
         // pointy parameter receives a checked/unboxed value in its own lexical
-        // container, matching ordinary native routine parameters.
+        // container, matching ordinary native routine parameters. It still
+        // needs `__pointy_native_param` so the compiler recognizes it as the
+        // given/with pointy parameter (see the matching detection in
+        // `compiler/stmt.rs`'s `pointy_param_name`) — without it, `is rw`
+        // writeback never fires because `Given`'s `pointy_param_idx` stays
+        // `None`, the same way the general branch below needs `MarkBind`.
         let decl = Stmt::VarDecl {
             name: pd.name.clone(),
             expr: topic,
@@ -157,7 +162,10 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             is_dynamic: false,
             is_export: false,
             export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
+            custom_traits: vec![
+                ("__has_initializer".to_string(), None),
+                ("__pointy_native_param".to_string(), None),
+            ],
             where_constraint: None,
         };
         if pd.traits.iter().any(|t| t == "rw") {
