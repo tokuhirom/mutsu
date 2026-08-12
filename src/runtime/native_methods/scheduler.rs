@@ -184,6 +184,13 @@ impl Interpreter {
                 ) {
                     close_supplier_tap(supplier_id as u64, tap_id as u64);
                 }
+                // ADR-0028: reclaim a `.schedule-on(ThreadPoolScheduler)` tap's
+                // pump — dropping the sender disconnects the channel, so the
+                // drain worker's blocking `recv()` observes end-of-stream and
+                // exits instead of parking forever.
+                if let Some(ValueView::Int(pump_id)) = attributes.get("pump_id").map(Value::view) {
+                    super::state_scheduled_pump::drop_scheduled_pump(pump_id as u64);
+                }
                 // Cascade upstream. In raku, closing a tap closes the supply
                 // block that produced it, which closes the `whenever`
                 // subscriptions inside it, which closes *their* sources — all

@@ -467,6 +467,33 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__ScheduledTapPump".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                methods: HashMap::new(),
+                // ADR-0028 Slice 1: the callback-shim target `Supply.
+                // schedule-on()` taps invoke instead of the real tap/done/
+                // quit callback — see `native_methods::scheduled_tap_pump`.
+                native_methods: [
+                    "__mutsu_scheduled_emit",
+                    "__mutsu_scheduled_done",
+                    "__mutsu_scheduled_quit",
+                    "__mutsu_scheduled_run_cue",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__ScheduledTapPump"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),
