@@ -2381,15 +2381,19 @@ impl Compiler {
         }
     }
 
-    /// Bake the local slot for a `for @a` live-array source (§1.5). Mirrors the
-    /// VM's runtime resolution order (bare name, then the `@`-sigiled name), which
-    /// — since `code.locals` is built from `local_map` — is exactly this lookup.
+    /// Bake the local slot for a `for @a` live-array source (§1.5). The source
+    /// is an `@`-variable by construction (`for_single_array_source` only
+    /// matches `Expr::ArrayVar`), so the `@`-sigiled local key is tried FIRST:
+    /// a bare-name-first lookup resolved `for @in` to a same-named scalar
+    /// param `$in` (scalar locals are stored sigil-less), making the VM's
+    /// live-array growth check read the wrong container and re-run the last
+    /// iteration (Text::CSV 90_csv.t emitted the final row twice).
     /// `None` when the source is not a local (keeps the VM's env fallback).
     fn for_single_array_source_local(&self, source: &Option<String>) -> Option<u32> {
         let name = source.as_ref()?;
         self.local_map
-            .get(name)
-            .or_else(|| self.local_map.get(&format!("@{name}")))
+            .get(&format!("@{name}"))
+            .or_else(|| self.local_map.get(name))
             .copied()
     }
 

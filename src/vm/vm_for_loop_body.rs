@@ -913,6 +913,31 @@ impl Interpreter {
                         {
                             self.unmark_readonly(name);
                         }
+                        // Restore the loop param's prior binding on abnormal exit
+                        // (`return`, an exception, an outer loop's `last`/`next`):
+                        // the normal path defers this to `RestoreForParam`, which
+                        // never runs when the frame unwinds past it. Leaving the
+                        // final iteration value bound leaked it out of the routine
+                        // via merge_method_env when the CALLER had a same-named
+                        // binding (`for @!ranges -> $r { ... and return True }`
+                        // inside a method clobbered the caller's `-> $r` param —
+                        // Text::CSV RangeSet.in vs method CSV's gather loop).
+                        if let Some((name, saved_val, colliding_slot)) = &saved_param {
+                            if let Some(slot) = colliding_slot
+                                && (*slot as usize) < self.locals.len()
+                            {
+                                self.locals[*slot as usize] =
+                                    saved_val.clone().unwrap_or(Value::NIL);
+                            }
+                            match saved_val {
+                                Some(v) => {
+                                    self.env_mut().insert(name.clone(), v.clone());
+                                }
+                                None => {
+                                    self.env_mut().remove(name);
+                                }
+                            }
+                        }
                         self.restore_loop_topic(saved_topic.clone(), saved_topic_local.clone());
                         self.pop_loop_local_scope(code);
                         self.unmask_for_multi_params(&masked_multi_params);

@@ -1968,6 +1968,12 @@ fn merge_method_env(
             // method call for a set consulted only against the few overlay keys).
             if k.with_str(|s| {
                 is_method_local(s)
+                    // A Callable argument bound to a frame param/local also gets
+                    // an `&name` alias in the frame env (`bind_param_value`), so
+                    // `$in()` can dispatch by name. The alias is frame-internal:
+                    // merging it would shadow the caller's same-named package sub
+                    // with the argument value (`sub in` vs `csv(in => ...)`).
+                    || s.strip_prefix('&').is_some_and(is_method_local)
                     // Per-call-site index-rw temps are frame-internal; merging a
                     // callee's same-named entries corrupts the caller's pending
                     // post-call writeback compare (see is_index_rw_call_temp).
