@@ -307,7 +307,16 @@ impl Interpreter {
         // wholesale into the scalar. `$_ .= uc for @$hdr` is Text::CSV's
         // header munge (91_csv_cb.t tests 20-23).
         if let Some(bare) = source.strip_prefix('$') {
-            let loop_var = param_name.as_deref().unwrap_or("_");
+            // Only the implicit-topic form writes back (`$_ .= uc for @$hdr`).
+            // A named param (`for $l.list -> $v { }`) keeps the pre-existing
+            // no-writeback behavior for this iterable shape: the bound value of
+            // a merely-FETCHed Proxy element differs from the element, and
+            // "different" here must not replace the Proxy with its fetched
+            // value (t/proxy-list-transparency.t).
+            if param_name.is_some() {
+                return;
+            }
+            let loop_var = "_";
             let Some(current_topic) = self.env().get(loop_var).cloned() else {
                 return;
             };
@@ -336,6 +345,10 @@ impl Interpreter {
             };
             if actual_idx >= items.len()
                 || Self::loop_var_unchanged(&current_topic, &items[actual_idx])
+                // A Proxy element mediates its own STORE; replacing it with the
+                // topic (its FETCHed value on a read-only pass) would destroy
+                // the Proxy.
+                || matches!(items[actual_idx].view(), ValueView::Proxy { .. })
             {
                 return;
             }
