@@ -3265,7 +3265,7 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   reverted (confirmed by rebuilding from the pre-E6c commit), so both are pre-existing and
   unrelated. `cargo clippy -- -D warnings` / `cargo fmt` clean. **E6c is closed; all of E6 (E6a,
   E6b, E6c, E6d) is now closed.** Next: E7 (metaobject, qualified, and re-entrant calls).
-- [ ] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
+- [x] **E7 — Route metaobject, qualified, and re-entrant calls through the resolver.** Cover HOW,
   `.^lookup`/`.^can`, qualified/private dispatch, EVAL carriers, and method objects.
   **Design 2026-08-10** (same doc): one consumer family per sub-PR (`run_instance_method`
   carrier sites, qualified, private-as-sequence-query, `.^lookup`/`.^can`/`.^methods` reading
@@ -3614,6 +3614,41 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 7: `.WALK` — two real bugs (mixin receivers,
   lazy-forcing gap) plus a clean chain shadow-check". **Next (and last) E7 sub-slice: the EVAL/
   `subtest` re-entrant carriers** — after that, E7 as a whole is closed and E8 is next.
+  **Progress 2026-08-12** (eighth and final consumer family, EVAL/`subtest` re-entrant carriers — no
+  distinct dispatch carrier exists, E7 closes): unlike steps 1-3 (each a standalone Rust function with
+  its own ad-hoc MRO/candidate walk) and steps 5-7 (confirmed real dispatch-answer bugs), this step's
+  finding is that EVAL/`subtest` do not have a distinct method-dispatch carrier at all. `subtest`
+  (`test_fn_subtest`, `runtime/test_functions/tap_subtest.rs:91`) runs its block via a plain
+  `self.call_sub_value(block, vec![], true)` — the same call path any ordinary Sub/Method value uses
+  everywhere else; a `.method(...)` call inside a subtest body compiles to the same `CallMethod*`
+  opcodes and dispatches through the same E1-E7-routed VM handlers as any other call. `EVAL`
+  (`builtin_eval` → `eval_eval_string` → `parse_and_eval_with_operators` →
+  `eval_block_value_opts(&stmts, true)`) genuinely re-parses and re-compiles a fresh AST, but does so
+  with the SAME `compiler::Compiler` used for every compilation unit and runs the result through the
+  SAME `run_nested`/`exec_one()` VM opcode loop as everything else — exactly what
+  `vm_call_dispatch.rs`'s own `is_interpreter_carrier_function` doc comment already states ("EVAL...
+  compile[s] source to bytecode and run[s] it on a sub-Interpreter... Neither tree-walks user code"),
+  explicitly classifying this as a state-ownership (lever B) concern, not a dispatch-fallback (lever
+  A) one. A method call inside `EVAL '...'` therefore hits an ordinary `CallMethod*` opcode with no
+  separate ad-hoc resolution walk analogous to steps 1-7's targets. Sampled the dispatch-adjacent-
+  looking subset of `eval_block_value`'s 141 non-`resolution_eval.rs` call sites (grammar `token`/
+  `rule` bodies, `proto` dispatch bodies, attribute defaults, subscript index expressions): every one
+  runs an ALREADY-SELECTED block/statement-list, never decides which method/candidate to call —
+  candidate *selection* for multi/proto is explicitly E8's job per this ADR's own box description, a
+  useful independent confirmation that E7's consumer list correctly excluded it. No code change, no
+  test addition: this box's own honest output is the finding itself, per the assignment's explicit
+  allowance that "checked, nothing to do, here's why" is as valuable as steps 1/2's clean shadow-
+  checks. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 8: the EVAL/`subtest`
+  re-entrant carriers — no distinct dispatch carrier exists; E7 closes" (includes the full per-step
+  outcome table). **E7 is now closed as a whole.** Across all eight sub-slices: three clean shadow-
+  checks with no gap (steps 1, 2, and this one, step 8 having no carrier at all to check); one
+  shadow-measured-but-deferred catalog gap (step 4, `.^can`); four confirmed-and-fixed real
+  `raku`-vs-`mutsu` behavioral bugs (steps 3, 5, 6, 7 — steps 6 and 7 in particular both independently
+  found the same shape of gap, a runtime `but`-mixin's own role methods missing from an
+  enumeration/walk that only ever traversed the registered class hierarchy, suggesting mixin receivers
+  were systematically under-tested against introspection/reflection call paths before this box, even
+  though ordinary method *invocation* on a mixin worked correctly throughout). **Next Phase E box: E8
+  — model multi/proto/submethod ordering in the candidate sequence**, per this ADR's own box ordering.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):

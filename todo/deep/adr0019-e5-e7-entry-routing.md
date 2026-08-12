@@ -2650,3 +2650,106 @@ to surface, not something introduced by fix 1. The shadow-check half is clean (0
 ordering (`:canonical`) that is actually an MRO restatement. **Next (and last) E7 sub-slice: the EVAL/
 `subtest` re-entrant carriers** — the final item in the box's original consumer list; once that lands,
 E7 as a whole closes and E8 (multi/proto/submethod candidate-sequence ordering) is next.
+
+## E7 step 8: the EVAL/`subtest` re-entrant carriers — no distinct dispatch carrier exists; E7 closes
+
+**Scoping**: unlike steps 1-3's carrier functions (each a standalone Rust function with its own
+hand-rolled MRO/candidate walk that needed a shadow-check against the E4 resolver) and steps 5-7's
+confirmed dispatch-answer bugs (`.^lookup`, `.^methods`, `.WALK`), this step started by asking
+whether EVAL/`subtest` even HAVE a distinct method-dispatch carrier to check. They do not.
+
+`subtest` (`test_fn_subtest`, `runtime/test_functions/tap_subtest.rs:91`) takes its callable
+block/Sub and runs it with a plain `self.call_sub_value(block, vec![], true)` — the exact same
+call path any ordinary `Sub`/`Method` value goes through everywhere else in the interpreter. It
+snapshots/restores declaration state (`SubtestDeclSnapshot`) and env around the call so the
+subtest's own `class`/`role`/`sub`/`use` declarations stay lexical to it, but that bookkeeping is
+orthogonal to method dispatch: any `.method(...)` call made from *inside* the subtest body compiles
+to the same `CallMethod`/`CallMethodMut`/`CallMethodDynamic*` opcodes as a call anywhere else and
+resolves through the same E1-E7-routed VM opcode handlers. `subtest` never implements its own
+method-resolution logic at all — there is nothing here for E7 to touch.
+
+`EVAL` (`builtin_eval`, `runtime/builtins_eval_misc.rs:252`) is the genuine re-entrant carrier
+`eval_block_value()`'s doc comment and `CLAUDE.md`'s architecture section both name, and it *does*
+run a freshly-parsed AST. But tracing the call chain end to end
+(`builtin_eval` → `eval_eval_string` → `parse_and_eval_with_operators`,
+`runtime/system.rs:72` → `eval_block_value_opts(&stmts, true)`, `runtime/resolution_eval.rs:180`)
+shows it does exactly what the carrier is documented to do: parse the string, compile it with the
+SAME `compiler::Compiler` used for every other compilation unit
+(`compile_block_value_opts`, `resolution_eval.rs:99`), and run the resulting bytecode via
+`run_compiled_block` → `run_nested` — the same VM opcode-execution loop, `exec_one()`'s dispatch
+match, that every other piece of compiled code runs through. `vm_call_dispatch.rs`'s own
+`is_interpreter_carrier_function` doc comment already states this precisely: "`EVAL`/`EVALFILE`
+compile their source to bytecode and run it on a sub-Interpreter
+(`eval_block_value` -> `run_compiled_block`)... Neither tree-walks user code" — and classifies
+this as a *state-ownership* (lever B) concern, explicitly NOT a dispatch-fallback (lever A)
+concern. A method call written inside `EVAL '...'` compiles to an ordinary `CallMethod*` opcode in
+the freshly-compiled unit and dispatches through the identical VM handler any other method call
+in the program uses — there is no separate ad-hoc resolution walk analogous to
+`run_instance_method`/`dispatch_qualified_instance_method`/`resolve_private_method_for_vm`/
+`collect_can_methods`/`classhow_lookup`/`dispatch_classhow_methods`/`try_walk_method` (steps 1-7's
+targets, all standalone Rust functions duplicating an MRO/candidate walk) for `EVAL` to route or
+shadow-check.
+
+`git grep -n "eval_block_value" src/` turns up 141 call sites across 55 files beyond
+`resolution_eval.rs` itself — `where`-clause bodies, attribute defaults, regex `{...}` code
+blocks, grammar `token`/`rule` bodies (`eval_token_def`, `dispatch.rs:247`), `proto` dispatch
+bodies (`dispatch_proto.rs:205`), type-matching predicates, subscript index expressions, and more.
+Sampling the ones with any plausible dispatch-adjacent framing (`dispatch.rs`, `dispatch_proto.rs`,
+`methods_grammar.rs`, `methods_classhow_attribute.rs`, `methods_mut_method_lvalue.rs`) confirms the
+same pattern every time: each is "run this already-selected block/statement-list through the
+compile+run pipeline", never "decide which method/candidate to call". `dispatch.rs:247`
+(`eval_token_def`) runs a grammar token's own body once LTM has already picked it; `dispatch_proto.rs:205`
+runs a `proto sub`/`proto method`'s `{*}` body once dispatch has already selected it — candidate
+*selection* for multi/proto is explicitly `E8`'s job per the ADR ("Model multi/proto/submethod
+ordering in the candidate sequence"), not E7's, which is a useful independent confirmation that E7's
+own consumer list correctly excluded it. None of the 141 sites implement a duplicate MRO/candidate
+walk the way steps 1-7's targets did — they are all just alternate ENTRY POINTS into the same
+compiled-bytecode/VM-opcode path, which is precisely the thing E1-E7's resolver unification already
+covers wherever a `CallMethod*` opcode executes, regardless of which entry point compiled and ran
+the surrounding code.
+
+**Conclusion**: this is a genuine "nothing to shadow-check, nothing to fix" finding, not a weaker
+version of steps 1/2/4's clean shadow-checks — those steps DID find a distinct ad-hoc resolver and
+confirmed it agrees with the E4 resolver; this step found there is no distinct resolver here at all
+to compare against. `EVAL`'s "carrier" role is about *bytecode re-entrancy* (a fresh compilation
+unit, run in-place via `run_nested`), not about *method dispatch resolution* — and E7 is specifically
+about the latter ("Route metaobject, qualified, and re-entrant calls through the resolver" — the
+"re-entrant calls" language originally suggested EVAL might bypass the resolver the way the other
+six consumer families did; scoping showed it does not, because EVAL was never a THIRD thing running
+user code — the tree-walking interpreter's elimination (CP-1/CP-2/CP-3) already collapsed EVAL onto
+the same compile+VM path as everything else, before ADR-0019 Phase E began). No code change, no test
+addition — this box's own honest output is the finding itself, matching the assignment's own
+explicit allowance ("an honest 'checked, nothing to do, here's why' is exactly as valuable as steps
+1/2's clean shadow-checks").
+
+**E7 as a whole is now closed.** Summary across all eight sub-slices:
+
+| Step | Consumer family | Outcome |
+|---|---|---|
+| 1 | `run_instance_method` carrier sites | Clean shadow-check, 0 mismatches, no cutover needed |
+| 2 | Qualified dispatch (`self.Owner::method(...)`) | Clean shadow-check, 0 mismatches, no cutover needed |
+| 3 | Private-as-sequence-query (`$obj!m(...)`) | 1 real chain-scoping bug found and fixed |
+| 4 | `.^can` | Shadow-measured; cutover deferred (E2 catalog coverage gap, not a dispatch-path bug) |
+| 5 | `.^lookup` | 2 real MRO-walk bugs found and fixed (no prior MRO walk at all; `.^find_method` visibility leak) |
+| 6 | `.^methods` | 1 real mixin-enumeration bug found and fixed, plus a clean chain shadow-check |
+| 7 | `.WALK` | 3 real bugs found and fixed (mixin receiver rejection, mixin attribute access, lazy-forcing gap), plus a clean chain shadow-check |
+| 8 | EVAL/`subtest` re-entrant carriers | No distinct dispatch carrier exists — nothing to route or shadow-check |
+
+Five of the eight sub-slices (3, 5, 6, 7, and arguably 4's deferred-but-real catalog gap) found and
+fixed genuine `raku`-vs-`mutsu` behavioral gaps, all through direct comparison against real `raku`
+rather than assumption. The two recurring bugs across steps 6 and 7 — a runtime `but`-mixin's own
+role methods silently missing from an enumeration/walk that only ever traversed the registered class
+hierarchy — suggest mixin receivers were systematically under-tested against introspection/reflection
+call paths (as opposed to ordinary method *invocation* on a mixin, which worked correctly throughout)
+before this box; each fix followed the same template once the first (step 6) established it. Steps 1,
+2, and 8 confirm the box's own predicted possibility that a named consumer family turns out to have no
+gap (or, in step 8's case, no distinct carrier at all) — the box's design doc explicitly anticipated
+this ("E7 is expected to subdivide per consumer once E5/E6 stabilize... scope each sub-PR to one
+consumer family", discovery-driven, not a guaranteed pre-existing bug in every family).
+
+**Next Phase E box: E8 — model multi/proto/submethod ordering in the candidate sequence**, per the
+ADR's own box ordering (`E1a → E1b → E2a → E4a → E2b → E4b → E3 → E5 → E6 → E7 → E8 → E9 → E10 →
+E11`). `dispatch_proto.rs`'s `eval_block_value` call this step examined in passing (running an
+already-selected proto body) is adjacent to, but out of scope for, E8's actual job: E8 is about
+*candidate selection/ordering* for multi dispatch and proto/submethod resolution, not about running
+a body once a candidate is already picked.
