@@ -72,6 +72,13 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
                 }
                 result
             }
+            // A single Range flattens to its elements (`@x.append: 1..3` /
+            // `"a".."c"`), same one-arg rule as an Array/List argument.
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => crate::runtime::utils::value_to_list(&args[0]),
             _ => args,
         }
     } else {
