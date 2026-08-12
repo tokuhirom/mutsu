@@ -3884,6 +3884,19 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   divergence tickets remain open (distinct fixes, not implied by decision 2's redraw — see the
   design doc's 2026-08-12 progress note for detail). E9b (wrap-prefix) and E9c (proto `{*}`
   rewrite, `samewith`) are unstarted.
+  **Progress 2026-08-13 — role-shadowed-method-in-defer-chain ticket fixed.** One of the two
+  divergence tickets left open by the sequence-builder slice is resolved:
+  `drop_flattened_role_duplicates` (`resolution_method.rs`) now also drops a `does`-composed
+  role's raw MRO entry when a class-owned method of matching signature shadows it (not just when
+  a flattened copy is present), so a role method the class overrides by name is fully excluded
+  from the `nextsame`/`callsame` chain, matching raku. Distinguished from a role used as a
+  *punned* class parent (`class Foo is R1`), which raku keeps as a genuine `.^mro` ancestor and
+  which therefore must NOT be shadowed — caught immediately by the existing
+  `t/callsame-punned-role-and-hyper-infix-sub.t` pin, which regressed on the first attempt before
+  the punned-vs-composed distinction was added. New pin:
+  `t/role-shadowed-method-in-defer-chain.t`. `explicit-child-proto-assumes-parent-candidates.md`
+  and `native-array-push-defer-fallback-broken.md` remain open, as does the separate
+  `method-entries-never-covers-unpunned-roles.md` production-dispatch gap.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

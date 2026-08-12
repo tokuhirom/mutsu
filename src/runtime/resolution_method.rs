@@ -618,7 +618,7 @@ impl Interpreter {
                 }
             }
         }
-        Self::drop_flattened_role_duplicates(&mut matches);
+        self.drop_flattened_role_duplicates(&mut matches);
         matches
     }
 
@@ -629,18 +629,59 @@ impl Interpreter {
     /// `nextsame`/`callsame` chain. (Rakudo does not keep the role in the MRO at
     /// all, which is why it never sees the duplicate.) Drop the role's own copy
     /// whenever a class level already carries the flattened one.
-    pub(crate) fn drop_flattened_role_duplicates(matches: &mut Vec<(Symbol, MethodDef)>) {
+    ///
+    /// A role's raw entry must ALSO be dropped when a class level shadows it
+    /// with an independently-authored override of the same name — not just a
+    /// flattened copy. `resolve_class_stub_requirements` (`registration.rs`)
+    /// already removes the flattened copy from `class_def.methods` whenever the
+    /// class provides its own same-signature method, so in that case `matches`
+    /// never carries a `role_origin`-tagged entry at all and the `flattened`-set
+    /// check above stays silent. Ground truth (raku, `t/role-shadowed-method-
+    /// in-defer-chain.t`): a `does`-composed role method is NEVER a
+    /// `nextsame`/`callsame` chain entry once a class overrides it by name and
+    /// matching signature — whether that override arrived via flattening or was
+    /// written directly in the class body. Compare by signature, not identity,
+    /// so a role candidate with a genuinely different (narrower) signature
+    /// keeps participating normally.
+    ///
+    /// This must NOT apply to a role used as a punned parent (`class Foo is
+    /// R1`, `t/callsame-punned-role-and-hyper-infix-sub.t`): raku's own
+    /// `.^mro` puts a punned role in the real ancestor chain as a genuine
+    /// class (`(C2) (R2) (Any) (Mu)`, verified against Rakudo v2026.06),
+    /// unlike a `does`-composed role, which never appears in `.^mro` at all
+    /// (`(C1) (Any) (Mu)`) — so overriding a punned role's method is ordinary
+    /// single-inheritance shadowing, and `nextsame` legitimately reaches the
+    /// parent. `install_role_puns` (`registration_class_compose_body.rs`)
+    /// gives a punned role a real (if method-empty) `registry().classes`
+    /// entry, which is exactly the fact `owner_is_unpunned_role` below reads
+    /// to tell the two shapes apart.
+    pub(crate) fn drop_flattened_role_duplicates(&self, matches: &mut Vec<(Symbol, MethodDef)>) {
         let flattened: HashSet<&str> = matches
             .iter()
             .filter_map(|(_, def)| def.role_origin.as_deref())
             .collect();
-        if flattened.is_empty() {
-            return;
-        }
+        let registry = self.registry();
+        let owner_is_unpunned_role = |owner: &str| {
+            registry.roles.contains_key(owner) && !registry.classes.contains_key(owner)
+        };
+        let class_owned: Vec<MethodDef> = matches
+            .iter()
+            .filter(|(owner, def)| {
+                def.role_origin.is_none() && !owner_is_unpunned_role(owner.as_str())
+            })
+            .map(|(_, def)| def.clone())
+            .collect();
         let doomed: Vec<Symbol> = matches
             .iter()
+            .filter(|(owner, def)| {
+                flattened.contains(owner.as_str())
+                    || (def.role_origin.is_none()
+                        && owner_is_unpunned_role(owner.as_str())
+                        && class_owned
+                            .iter()
+                            .any(|cm| Self::method_signatures_match(def, cm)))
+            })
             .map(|(owner, _)| *owner)
-            .filter(|owner| flattened.contains(owner.as_str()))
             .collect();
         if doomed.is_empty() {
             return;
@@ -700,7 +741,7 @@ impl Interpreter {
         if any_failed {
             return Vec::new();
         }
-        Self::drop_flattened_role_duplicates(&mut matches);
+        self.drop_flattened_role_duplicates(&mut matches);
         matches
     }
 }
