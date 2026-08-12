@@ -547,3 +547,82 @@ real walker. The reconciliation note is in `todo/tickets/role-shadowed-method-in
 and cross-linked from `todo/deep/method-entries-never-covers-unpunned-roles.md`'s fix plan: that
 sweep's mismatch ledger must be re-audited against raku per-shape, not resolved wholesale toward
 the real walker.
+
+## E9 design decision 2 — REDRAWN: the flat deferral expansion (confirmed by prediction)
+
+Immediately after the campaign PR (#6325) two follow-up probes CONFIRMED a concrete replacement
+for decision 2's sequence layout — each probe's chain order was predicted from the model BEFORE
+running raku, and both predictions were exact hits. This section supersedes the "matching
+today's 'remaining = signature-matching candidates in MRO order' semantics" clause of decision
+2 above; everything else in decision 2 (one cursor struct, wrap prefix entries, native tail
+entries, `samewith` = re-rank, `lastcall` = `next := len`, frame-by-frame E9a/b/c migration)
+stands as written.
+
+**The deferral expansion.** For a call of `name` on a receiver whose MRO is `K0, K1, ...`:
+
+```
+DeferralSequence(receiver, name) =
+  concat over MRO classes K that install an entry for `name`:
+    - plain method (or submethod, with the existing level-0 visibility rule): [ Method(K) ]
+    - proto (explicit or implicit): [ the proto's RANKED candidate block ]
+```
+
+- An IMPLICIT proto at K (a `multi method` declaration with no proto at K) clones the nearest
+  proto above K in the MRO and merges K's own candidates into it; the block is ranked by
+  narrowness, with MRO depth then declaration order breaking ties. An EXPLICIT proto's block
+  contains only its own class's candidates
+  (`todo/tickets/explicit-child-proto-assumes-parent-candidates.md`).
+- The SAME candidate may appear in several blocks (its own class's block plus every
+  descendant's merged block). This is CORRECT, not a dedup bug: deferral runs it once per
+  occurrence (probe 1 below shows a parent candidate legitimately running twice in one call).
+  A flat cursor index over this expansion reproduces raku exactly — the cursor mechanics of
+  decision 2 need no two-level structure; only the sequence BUILDER changes.
+- Winner selection = the existing ranker over the receiver's nearest entry; the cursor starts
+  immediately after the winner's occurrence in the expansion.
+- Advancement applies the per-call signature filter (invocant-blind, per E8a finding 1) with
+  the CURRENT args — original args for `callsame`/`nextsame`, replacement args for
+  `callwith`/`nextwith`. The filter must be raku-strict: mutsu's matcher currently admits Int
+  for a `Num $x` candidate and would call a candidate raku's dispatcher skips
+  (`todo/tickets/multi-matcher-admits-int-for-num.md`, found by probe 2 dying mid-chain).
+- Role composition: the class-level entry carries the flattened copies; a `does`-composed
+  role's own MRO appearance contributes NO entries when the class overrides the method
+  (`todo/tickets/role-shadowed-method-in-defer-chain.md`).
+
+**Confirming probes** (inlined because `tmp/` is gitignored; predictions made before running):
+
+Probe 1 — exhausting the merged block falls to the parent proto's OWN block, re-running its
+candidate:
+
+```raku
+class P { multi method m(Int $x) { say "P:Int"; nextsame; say "P:u" } }
+class C is P {
+    multi method m(Int $x) { say "C:Int"; nextsame; say "C:u" }
+    multi method m(Any $x) { say "C:Any"; nextsame; say "C:A-u" }
+}
+C.new.m(1)
+# expansion: C-block[C:Int, P:Int, C:Any], P-block[P:Int]
+# predicted & observed (raku): C:Int, P:Int, C:Any, P:Int, Nil
+# mutsu today:                 C:Int, C:Any, P:Int, Nil
+```
+
+Probe 2 — three-level implicit-clone chain, strict per-call filter during advance:
+
+```raku
+class A { multi method m(Int $x) { say "A:Int"; nextsame; say "A:u" } }
+class B is A { multi method m(Str $x) { say "B:Str"; nextsame; say "B:u" } }
+class C is B { multi method m(Num $x) { say "C:Num"; nextsame; say "C:u" } }
+C.new.m(1)
+# expansion for arg 1 (Str and Num candidates filtered out — 1 !~~ Num in raku):
+#   C-block[A:Int], B-block[A:Int], A-block[A:Int]
+# predicted & observed (raku): A:Int, A:Int, A:Int, Nil
+# mutsu today: A:Int, then DIES X::TypeCheck::Binding::Parameter calling the Num candidate
+```
+
+**E9a discipline inversion.** Unlike every earlier Phase E box, E9a cannot prove itself by
+shadow-comparing against the real walker: the real walker is WRONG wherever the E9-pre tickets
+point. E9a is therefore a deliberate behavior-CHANGING cutover justified by (i) the E9-pre pins
+staying green, (ii) NEW pins for the flipping shapes (both-levels-multi order, role-shadowed
+exclusion, explicit-proto isolation, probes 1/2 above) written with raku's expected values in
+the same PR, and (iii) a local `make roast` per the house rule for dispatch-semantics changes.
+The matcher-strictness ticket is a prerequisite or co-requisite: without it the stricter
+advance filter cannot be expressed.

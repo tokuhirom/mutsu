@@ -3861,6 +3861,15 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `unwrap`/`restore` no-op, `lastcall`-in-wrapper killing the dispatcher scope, callsame to
   native Mu methods (gist/Str/raku/new) yielding Nil/Any, and a cosmetic Signature.gist
   invocant format. Full scenario table in the E8-E11 design doc's E9-pre section.
+  **Progress 2026-08-12 (same day) — decision 2 redrawn; E9a design-unblocked.** The re-draw
+  landed in the same design doc ("E9 design decision 2 — REDRAWN"): the cursor sequence is a
+  FLAT deferral expansion — per-MRO-class entries, each a plain method or that class's proto's
+  specificity-ranked candidate block (implicit protos clone the nearest MRO proto and merge;
+  explicit protos stand alone), with duplicate candidate occurrences across blocks being
+  correct re-visit semantics. Confirmed by two exact-hit predictions against raku before any
+  implementation. E9a is now a deliberate behavior-changing cutover (the old walker is wrong
+  where the E9-pre tickets point) gated on new raku-valued pins + local `make roast`, with the
+  matcher-strictness ticket (`multi-matcher-admits-int-for-num`) as prerequisite/co-requisite.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every
