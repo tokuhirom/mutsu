@@ -293,6 +293,28 @@ impl Interpreter {
             other => other,
         };
         let block_declared = self.block_declared_vars.pop().unwrap_or_default();
+        // Capture any active `given`/`with` pointy-topic parameter's final
+        // value from its own owned slot, BEFORE any scope-exit restoration
+        // below can touch it — `pop_loop_local_scope` right below restores a
+        // SHADOWED outer binding's value into the very same slot when the
+        // pointy param's name collides with an outer variable, which would
+        // otherwise overwrite the value this reads. See
+        // `given_pointy_capture_slots`'s doc comment for why this is unconditional
+        // (not gated on `block_declared`/`env_had_before`/`state_slots`
+        // below, which decide RESET behavior, not whether a read is safe) and
+        // keyed by exact slot rather than by name.
+        if !self.given_pointy_capture_slots.is_empty() {
+            for &slot in &owned_slots {
+                if let Some(pos) = self
+                    .given_pointy_capture_slots
+                    .iter()
+                    .position(|&s| s == slot)
+                    && let Some(entry) = self.given_pointy_captured.get_mut(pos)
+                {
+                    *entry = Some(self.locals[slot].clone().into_deref());
+                }
+            }
+        }
         // Restore shadowed outer bindings on every exit path (including errors
         // such as `next`/`last`/`return`/exceptions) so the scope stays balanced.
         self.pop_loop_local_scope(code);

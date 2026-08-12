@@ -795,6 +795,8 @@ impl Interpreter {
             func_multi_type_cacheable: rustc_hash::FxHashMap::default(),
             user_declared_classes: self.user_declared_classes.clone(),
             block_declared_vars: Vec::new(),
+            given_pointy_capture_slots: Vec::new(),
+            given_pointy_captured: Vec::new(),
             loop_local_vars: Vec::new(),
             active_loop_param_names: Vec::new(),
             loop_local_saved_env: Vec::new(),
