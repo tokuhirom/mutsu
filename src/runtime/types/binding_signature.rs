@@ -1749,6 +1749,25 @@ impl Interpreter {
                             ValueView::Array(..) | ValueView::Hash(..)
                         );
                     let source_type_constraint = source_name.as_deref().and_then(|source_name| {
+                        // A container argument carries its element/key type
+                        // EMBEDDED in the value (tagged at its typed
+                        // declaration's assignment) — read it from there. The
+                        // name-keyed `var_type_constraints` store is scope-blind:
+                        // a module method's own `my CSV::Field @f` leaves a
+                        // global "@f" entry behind, and consulting it here
+                        // retyped an UNTYPED caller array that merely shared the
+                        // name (Text::CSV 46_eol_si: script `@f` rendered as
+                        // `Array[CSV::Field].new(...)` after one getline call).
+                        if source_name.starts_with('@') || source_name.starts_with('%') {
+                            let val = unwrap_varref_value(raw_arg.clone());
+                            return self
+                                .container_type_metadata(&val)
+                                .filter(|info| !info.value_type.is_empty())
+                                .map(|info| match info.key_type {
+                                    Some(kt) => format!("{}{{{}}}", info.value_type, kt),
+                                    None => info.value_type,
+                                });
+                        }
                         self.var_type_constraint(source_name).or_else(|| {
                             self.var_type_constraint(
                                 source_name.trim_start_matches(['$', '@', '%', '&']),

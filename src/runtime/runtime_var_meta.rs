@@ -69,6 +69,29 @@ impl Interpreter {
     }
 
     pub(crate) fn set_var_type_constraint(&mut self, name: &str, constraint: Option<String>) {
+        self.set_var_type_constraint_impl(name, constraint, true);
+    }
+
+    /// [`Self::set_var_type_constraint`] for DECLARATION position (`my Int
+    /// @a`): registers the name-keyed constraint but does NOT tag whatever
+    /// same-named value currently sits in `env` with container type metadata.
+    /// At declaration time the initializer has not run yet, so the env value —
+    /// when one exists at all — belongs to an OUTER scope or a previous loop
+    /// iteration (env frames are inherited): a module method's `my CSV::Field
+    /// @f` tagged the CALLER script's `@f` Arc, making its `.raku` render
+    /// `Array[CSV::Field].new(...)` (Text::CSV 46_eol_si). The declared
+    /// variable's own value is tagged by the assignment/default paths, which
+    /// consult the name-keyed constraint registered here.
+    pub(crate) fn set_var_type_constraint_decl(&mut self, name: &str, constraint: Option<String>) {
+        self.set_var_type_constraint_impl(name, constraint, false);
+    }
+
+    fn set_var_type_constraint_impl(
+        &mut self,
+        name: &str,
+        constraint: Option<String>,
+        tag_env_value: bool,
+    ) {
         if let Some(constraint) = constraint {
             let key = name.to_string();
             let meta_key = format!("__mutsu_type::{}", key);
@@ -95,7 +118,7 @@ impl Interpreter {
             // may share an `Arc` with a caller's container, and tagging that Arc
             // would corrupt the caller's container type metadata via Arc pointer
             // keying (and Arc pointer reuse after drop).
-            if name.starts_with('@') || name.starts_with('%') {
+            if tag_env_value && (name.starts_with('@') || name.starts_with('%')) {
                 self.register_var_container_type_metadata(&key, &info);
             }
         } else {
