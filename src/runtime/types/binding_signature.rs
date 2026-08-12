@@ -338,17 +338,6 @@ impl Interpreter {
                     err.exception = Some(Box::new(exception));
                     return Err(err);
                 }
-            } else if resolved_constraint == "Num"
-                && matches!(
-                    value.view(),
-                    ValueView::Int(_)
-                        | ValueView::Num(_)
-                        | ValueView::Rat(_, _)
-                        | ValueView::FatRat(_, _)
-                        | ValueView::BigRat(_, _)
-                )
-            {
-                // Binding accepts numeric widening into Num parameters.
             } else if !self.type_matches_value(&resolved_constraint, &value) {
                 // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
                 let (base_type, smiley) =

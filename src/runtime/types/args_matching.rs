@@ -369,17 +369,6 @@ impl Interpreter {
                         {
                             return false;
                         }
-                    } else if resolved_constraint == "Num"
-                        && matches!(
-                            dispatch_arg.view(),
-                            ValueView::Int(_)
-                                | ValueView::Num(_)
-                                | ValueView::Rat(..)
-                                | ValueView::FatRat(..)
-                                | ValueView::BigRat(..)
-                        )
-                    {
-                        // Multi-dispatch numeric widening: Int/Rat/FatRat can satisfy Num.
                     } else if is_coercion_constraint(&resolved_constraint) {
                         if self
                             .coercion_dispatch_value(&resolved_constraint, arg)
@@ -619,18 +608,6 @@ impl Interpreter {
                     && let Some(ref val) = arg_val
                 {
                     let resolved_constraint = self.resolved_type_capture_name(constraint);
-                    // Apply the same numeric widening for named params as for
-                    // positional params: Int/Rat/FatRat can satisfy a Num
-                    // constraint in multi dispatch.
-                    let is_num_widening = resolved_constraint == "Num"
-                        && matches!(
-                            val.view(),
-                            ValueView::Int(_)
-                                | ValueView::Num(_)
-                                | ValueView::Rat(..)
-                                | ValueView::FatRat(..)
-                                | ValueView::BigRat(..)
-                        );
                     if pd.name.starts_with('@') || pd.name.starts_with('%') {
                         // The constraint on a named aggregate param applies to
                         // the ELEMENTS (`Str:D :@alpha` binds an array of
@@ -647,9 +624,7 @@ impl Interpreter {
                         {
                             return false;
                         }
-                    } else if !is_num_widening
-                        && !self.type_matches_value(&resolved_constraint, val)
-                    {
+                    } else if !self.type_matches_value(&resolved_constraint, val) {
                         return false;
                     }
                 }

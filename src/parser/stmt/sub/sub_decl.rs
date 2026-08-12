@@ -156,7 +156,7 @@ pub(crate) fn sub_decl_body(
 
     // Parse params
     let has_explicit_signature = rest.starts_with('(');
-    let (rest, (params, param_defs, return_type)) = if has_explicit_signature {
+    let (rest, (params, mut param_defs, return_type)) = if has_explicit_signature {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
         let (r, (pd, rt)) = parse_param_list_with_return(r)?;
@@ -229,6 +229,23 @@ pub(crate) fn sub_decl_body(
                         "Multis with multiple signatures must have the same set of formal variable names".to_string(),
                         None,
                     ));
+                }
+            }
+            // Signature alternates (`| (...)`) are an S13-era feature rakudo
+            // never implemented; its only spec (S06-signature/
+            // multiple-signatures.t) uses `Num` in that era's sense of "any
+            // number" (today's `Numeric`) and expects Int/Rat arguments to
+            // bind. Translate the constraint at this feature boundary — in
+            // every slot, primary included — so the legacy meaning stays
+            // confined to the legacy syntax while modern multi dispatch is
+            // raku-strict about `Num` (t/multi-num-param-strictness.t).
+            for pd in param_defs.iter_mut().chain(
+                signature_alternates
+                    .iter_mut()
+                    .flat_map(|(_, d)| d.iter_mut()),
+            ) {
+                if pd.type_constraint.as_deref() == Some("Num") {
+                    pd.type_constraint = Some("Numeric".to_string());
                 }
             }
         }

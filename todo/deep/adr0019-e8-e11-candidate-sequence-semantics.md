@@ -581,9 +581,12 @@ DeferralSequence(receiver, name) =
   immediately after the winner's occurrence in the expansion.
 - Advancement applies the per-call signature filter (invocant-blind, per E8a finding 1) with
   the CURRENT args — original args for `callsame`/`nextsame`, replacement args for
-  `callwith`/`nextwith`. The filter must be raku-strict: mutsu's matcher currently admits Int
-  for a `Num $x` candidate and would call a candidate raku's dispatcher skips
-  (`todo/tickets/multi-matcher-admits-int-for-num.md`, found by probe 2 dying mid-chain).
+  `callwith`/`nextwith`. The filter must be raku-strict: mutsu's matcher used to admit Int
+  for a `Num $x` candidate and called a candidate raku's dispatcher skips (found by probe 2
+  dying mid-chain). **Fixed same day** — the Int/Rat→Num "numeric widening" was removed from
+  the shared matcher and binder (`news/2026-08/multi-num-param-strictness.md`, pinned by
+  `t/multi-num-param-strictness.t` including the deferral-skip shape), so this E9a
+  prerequisite is retired.
 - Role composition: the class-level entry carries the flattened copies; a `does`-composed
   role's own MRO appearance contributes NO entries when the class overrides the method
   (`todo/tickets/role-shadowed-method-in-defer-chain.md`).
