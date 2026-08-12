@@ -2851,9 +2851,20 @@ impl Compiler {
                 // the mutation back to the source. `is copy` carries a declaration
                 // marker instead, so it is not detected here and does not write
                 // back.
+                // A native-typed pointy param (`given $x -> int $v is rw {...}`)
+                // cannot use `:=` (see `pointy_topic_bind`'s native branch), so
+                // it carries `__pointy_native_param` instead of `MarkBind` —
+                // either bare (`is rw`) or wrapped in a `SyntheticBlock` with a
+                // trailing `MarkReadonly` (the default, readonly case).
+                let is_pointy_native_decl = |s: &Stmt| {
+                    matches!(s, Stmt::VarDecl { custom_traits, .. }
+                        if custom_traits.iter().any(|(t, _)| t == "__pointy_native_param"))
+                };
                 let pointy_param_name = match body.first() {
                     Some(Stmt::SyntheticBlock(inner))
-                        if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) =>
+                        if inner
+                            .iter()
+                            .any(|s| matches!(s, Stmt::MarkBind) || is_pointy_native_decl(s)) =>
                     {
                         inner.iter().find_map(|s| match s {
                             Stmt::VarDecl { name, .. }
@@ -2865,6 +2876,9 @@ impl Compiler {
                             }
                             _ => None,
                         })
+                    }
+                    Some(s @ Stmt::VarDecl { name, .. }) if is_pointy_native_decl(s) => {
+                        Some(name.clone())
                     }
                     _ => None,
                 };
