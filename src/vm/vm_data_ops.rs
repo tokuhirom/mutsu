@@ -1,7 +1,12 @@
 use super::*;
 
 impl Interpreter {
-    pub(super) fn exec_make_array_op(&mut self, code: &CompiledCode, n: u32, is_real_array: bool) {
+    pub(super) fn exec_make_array_op(
+        &mut self,
+        code: &CompiledCode,
+        n: u32,
+        is_real_array: bool,
+    ) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
@@ -88,7 +93,7 @@ impl Interpreter {
                     && let Some(lazy) = runtime::utils::infinite_int_range_to_lazy_array(&val) =>
                 {
                     self.stack.push(lazy);
-                    return;
+                    return Ok(());
                 }
                 // A single genuinely-*infinite* lazy list (an infinite `...`
                 // sequence like `[1,2,3...*]` / `[-Inf...Inf]`, or a lazy map/grep
@@ -105,13 +110,27 @@ impl Interpreter {
                     self.stack.push(Value::lazy_list(crate::gc::Gc::new(
                         ll.with_array_context(),
                     )));
-                    return;
+                    return Ok(());
                 }
                 // In bracket-array literals (`[...]`), a single element is in
                 // list context and should flatten one level (e.g. `[2..6]`,
                 // `[@a]`, `[(1,2,3)]`), while multi-element forms keep each
                 // element itemized (e.g. `[(1,2),(3,4)]`).
-                _ if is_real_array && n == 1 => elems.extend(runtime::value_to_list(&val)),
+                _ if is_real_array && n == 1 => {
+                    // A single user Iterable instance reifies through its own
+                    // `iterator` method, exactly like `my @a = $iterable`
+                    // (`[ $csv.error_diag ]` lists CSV::Diag's six fields —
+                    // Text::CSV t/80_diag.t). Multi-element forms keep the
+                    // instance whole, matching raku. (A Buf/Blob instance has
+                    // no user `iterator`, so it takes its dedicated arm above.)
+                    if matches!(val.view(), ValueView::Instance { .. })
+                        && let Some(items) = self.try_iterable_instance_items(&val)?
+                    {
+                        elems.extend(items);
+                    } else {
+                        elems.extend(runtime::value_to_list(&val));
+                    }
+                }
                 _ => elems.push(val),
             }
         }
@@ -120,6 +139,7 @@ impl Interpreter {
         } else {
             self.stack.push(Value::array(elems));
         }
+        Ok(())
     }
 
     /// Like `exec_make_array_op` with `is_real_array=true` but never flattens
