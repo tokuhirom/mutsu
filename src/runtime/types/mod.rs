@@ -549,11 +549,16 @@ impl Interpreter {
     }
 
     pub(crate) fn missing_optional_param_value(pd: &ParamDef) -> Value {
+        // An unsupplied `@`/`%` param binds a fresh anonymous container whose
+        // rakudo container-descriptor name is "element" — tag the value so
+        // `.VAR.name` reports it (Text::CSV's `@kh.VAR.name ne "element"`
+        // guard, its rakudo#2483 workaround). The tag travels with the value,
+        // so both the light and slow bind paths are covered here.
         if pd.name.starts_with('@') {
-            return Value::real_array(Vec::new());
+            return Value::element_descriptor_array();
         }
         if pd.name.starts_with('%') {
-            return Value::hash(std::collections::HashMap::new());
+            return Value::element_descriptor_hash();
         }
         if pd.name.starts_with('&') && pd.type_constraint.is_none() {
             // An unsupplied `&`-sigil param's implicit nominal type is

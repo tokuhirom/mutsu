@@ -311,7 +311,15 @@ impl Interpreter {
                 }
                 self.env_mut().insert(alias_name.clone(), v.clone());
             }
-            bind_value!(npb.slot, npb.needs_env, v);
+            // A supplied `@`/`%` named param must also refresh the env entry: a
+            // previous call of this sub may have left its UNSUPPLIED seed (the
+            // "element"-tagged fresh container) there via the miss arm's forced
+            // env write, and env-reading ops in the body (`.VAR` reflection,
+            // the CallMethodMut by-name re-read) would see that stale container
+            // while the slot holds the real argument.
+            let pn = &cf.param_defs[i].name;
+            let is_container_param = pn.starts_with('@') || pn.starts_with('%');
+            bind_value!(npb.slot, npb.needs_env || is_container_param, v);
         }
         // Surplus positional args are an arity error (mixed signatures only —
         // all-named signatures keep their historical lax behavior for a stray

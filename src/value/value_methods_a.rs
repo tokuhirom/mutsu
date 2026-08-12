@@ -220,6 +220,21 @@ impl Value {
     pub fn real_array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Array)
     }
+    /// Fresh empty Array tagged with the "element" container-descriptor name —
+    /// what an unsupplied `@`-param binds (rakudo: `@kh.VAR.name` is
+    /// "element" there, and Text::CSV's `method CSV` gates on it).
+    pub(crate) fn element_descriptor_array() -> Self {
+        let mut data = ArrayData::new(Vec::new());
+        data.descriptor_name = Some("element".into());
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
+    }
+    /// Fresh empty Hash tagged with the "element" container-descriptor name —
+    /// the `%`-param twin of [`Value::element_descriptor_array`].
+    pub(crate) fn element_descriptor_hash() -> Self {
+        let mut data = HashData::new(std::collections::HashMap::new());
+        data.descriptor_name = Some("element".into());
+        Value::hash(data)
+    }
     /// Create a true Array value with a single explicitly-assigned index
     /// recorded in the embedded `initialized` set (used when autovivifying a
     /// missing variable via `@a[i] = …`, so the autovivification gaps below `i`
@@ -281,6 +296,7 @@ impl Value {
             default: like.default.clone(),
             shape: like.shape.clone(),
             initialized: like.initialized.clone(),
+            descriptor_name: like.descriptor_name.clone(),
         })
     }
     /// Construct a `Value::Hash`. Accepts either a bare `HashMap` (fresh hash)
