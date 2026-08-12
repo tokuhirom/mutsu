@@ -365,12 +365,22 @@ impl Interpreter {
             }
             // Re-read the live source array. In the single-store model `@a` is
             // authoritative in its local slot (the env copy can be stale), so try
-            // the local slot first (the compiler-baked slot §1.5, else by name —
-            // bare and `@`-sigiled), then env.
-            let live = self
-                .resolve_local_slot(code, spec.single_array_source_local, name)
-                .or_else(|| self.find_local_slot(code, &format!("@{name}")))
+            // the local slot first (the compiler-baked slot §1.5, else by name),
+            // then env. The source is an `@`-variable, so the `@`-sigiled key is
+            // tried before the bare name at every tier — a bare-first lookup
+            // resolves to a same-named scalar (`$in` vs `@in`; scalar locals and
+            // env entries are stored sigil-less) and misreads its length as
+            // live-array growth.
+            let slot = match spec.single_array_source_local {
+                Some(s) if (s as usize) < self.locals.len() => Some(s as usize),
+                Some(_) => None,
+                None => self
+                    .find_local_slot(code, &format!("@{name}"))
+                    .or_else(|| self.find_local_slot(code, name)),
+            };
+            let live = slot
                 .map(|s| self.locals[s].clone())
+                .or_else(|| self.env().get(&format!("@{name}")).cloned())
                 .or_else(|| self.env().get(name).cloned());
             let grown = match live.as_ref().map(Value::view) {
                 Some(ValueView::Array(arc, _)) if arc.len() > all_items.len() => {
