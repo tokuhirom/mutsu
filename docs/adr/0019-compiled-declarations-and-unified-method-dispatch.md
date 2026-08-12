@@ -3510,6 +3510,54 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   name/type resolution" case CLAUDE.md's testing rule names — the roast slice above is that
   targeted local check. Next E7 sub-slice: `.^methods` reading the call-path sequence (WALK and the
   EVAL/re-entrant carriers come after, per the design's consumer ordering).
+  **Progress 2026-08-12** (sixth consumer family, `.^methods`, a real mixin-enumeration fix plus a
+  shadow-measurement, not a clean zero-mismatch result like steps 1/2): scoping started from the
+  hypothesis (per this design paragraph's own framing) that `dispatch_classhow_methods`'s
+  (`runtime/methods_classhow_builtin_methods.rs`) main (non-`:local`) branch was already
+  MRO-correct, since it already walks `self.class_mro(&class_name)` — unlike step 5's `.^lookup`,
+  which had never walked the MRO at all before that fix. Direct `raku`-vs-`mutsu` comparison during
+  scoping confirmed the MRO walk itself IS correct for plain inheritance (including submethods,
+  private methods, and multi-method-as-single-dispatcher-entry, all already exercised end-to-end by
+  the pinned `roast/S12-introspection/methods.t`, which passes cleanly both before and after this
+  box), but surfaced a different, genuine gap: `(5 but R1).^methods()` (no `:local`) never included
+  `R1`'s own mixed-in method (`zork`), even though `(5 but R1).zork` is directly callable and
+  `(5 but R1).^methods(:local)` (a sibling branch) already collected it correctly. Confirmed against
+  real `raku`: a `but`-mixin's `.^mro` puts an anonymous composite pun class FIRST — `(5 but
+  R1).^mro` is `((Int+{R1}) (Int) (Cool) (Any) (Mu))` — and that pun class's own methods are exactly
+  the mixed-in role's methods, so `zork` appears as the very first entry of `(5 but
+  R1).^methods.map(*.name)` on real `raku`. **Fix**: the non-`:local` branch now extracts
+  `mixin_role_names` (already computed once, above the `if local {...} else {...}` split, for the
+  `:local` branch's own existing handling) and calls `self.collect_role_methods(role_name, private,
+  &mut result)` for each BEFORE the base `class_name`'s own `class_mro` walk — mirroring the
+  `:local` branch's pre-existing pattern verbatim, not a new mechanism, and matching the pun-class-
+  first ordering confirmed against `raku` above. Two roles mixed onto the same value
+  (`5 but R1 but R2`) both contribute their methods, pinned alongside the base repro. **Shadow-check
+  added as well** (this box's other half, following the design paragraph's "reading the call-path
+  sequence" framing): a new `MUTSU_VM_STATS`-gated comparison, `record_methods_shadow_check`
+  (`vm/vm_stats.rs`, its own dedicated counter pair — not the shared `RESOLVER_SHADOW_*` family,
+  since this compares two whole MRO CHAINS rather than a single dispatch-winner pick, the same
+  reasoning step 4's `.^can` check already established for its own dedicated pair), comparing the
+  chain the walk actually enumerates (`class_mro(class_name)`, the registry MRO primitive) against
+  the E4 resolver's own canonical chain for the same receiver (`Interpreter::dispatch_owner_chain`,
+  TypeId-based). Pure insertion, zero behavior change: `mro` alone still drives the enumeration.
+  Swept a 10-case hand-built probe (plain classes, role composition, `but`-mixins, `List`/`Str`/
+  `Int` builtins, an instance and a type-object receiver): 10 checks, 0 mismatches — the two chain
+  computations already agree everywhere probed, once the mixin-methods fix above made the enumerated
+  RESULT match `raku` too (the shadow check compares the underlying CHAIN, not the final method set,
+  so it was unaffected by the mixin fix either way, but both are reported together as this sub-slice
+  since they were found and fixed in the same investigation). `cargo build`/`cargo clippy -- -D
+  warnings`/`cargo fmt` clean. New `t/classhow-methods-mixin-role.t` (9 assertions: the confirmed
+  repro, two-roles-mixed-in, base-type-methods-still-present, plain-inheritance regression guard,
+  and `:all` combined with a mixin). All 6 already-whitelisted roast files that call `.^methods(`
+  (found by grepping roast for `\.\^methods\(`), including the two role-mixin files
+  (`roast/6.c/S14-roles/mixin-6c.t`, `roast/S14-roles/mixin-6e.t`) and the dedicated introspection
+  spec (`roast/S12-introspection/methods.t`, 57 assertions covering `:local`/`:all`/`:tree`/
+  `:private`/multi-dispatcher-shape/attribute-order), green (`MUTSU_FUDGE=1`). Since this changes a
+  real `.^methods()` answer (not just a shadow-only probe), this counts as CLAUDE.md's "touched
+  name/type resolution" case requiring a local roast check before opening the PR — the 6-file sweep
+  above is that check. Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 6:
+  `.^methods` — a real mixin-enumeration fix, plus a clean chain shadow-check". Next E7 sub-slice:
+  WALK and the EVAL/`subtest` re-entrant carriers, per the design's consumer ordering.
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):
