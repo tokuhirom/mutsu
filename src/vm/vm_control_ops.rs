@@ -305,7 +305,10 @@ impl Interpreter {
         // keyed by exact slot rather than by name.
         if !self.given_pointy_capture_slots.is_empty() {
             for &slot in &owned_slots {
-                if let Some(pos) = self.given_pointy_capture_slots.iter().position(|&s| s == slot)
+                if let Some(pos) = self
+                    .given_pointy_capture_slots
+                    .iter()
+                    .position(|&s| s == slot)
                     && let Some(entry) = self.given_pointy_captured.get_mut(pos)
                 {
                     *entry = Some(self.locals[slot].clone().into_deref());
