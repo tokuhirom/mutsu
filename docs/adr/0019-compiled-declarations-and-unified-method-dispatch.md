@@ -3397,6 +3397,54 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   sub-slice: `.^lookup`/`.^can`/`.^methods` reading the call-path sequence, per the design's
   consumer ordering (the `.^can` dummy-`Value::NIL` probe replacement is called out specifically in
   the design paragraph above).
+  **Progress 2026-08-12** (fourth consumer family, `.^can`, shadow-measurement — cutover
+  DEFERRED): `Interpreter::collect_can_methods`'s (`runtime/methods_classhow_method_obj.rs`) last
+  fallback tier is exactly the dummy-`Value::NIL`-arg probe this design paragraph names
+  (`native_method_1arg(target, method_sym, &Value::NIL)`, invoking the real 1-arg cascade with a
+  fake arg just to see if `Some(_)` comes back — no 2-arg check exists at all). A new existence
+  predicate, `Interpreter::e2_native_method_exists` (`runtime/receiver_class.rs`), asks the E2
+  catalog directly instead: it walks the receiver's full `dispatch_owner_chain` (sharing a new
+  `chain_owner_probe` helper with `record_native_row_coverage`) and, at each level, checks a new
+  `native_method_row::native_method_row_exists(owner, name)` — table PRESENCE, not
+  `native_method_row`'s returned arity/flags, which cannot answer "does this method exist at all"
+  by itself (a missing key and a genuinely-probed "exists but only via a special/mutating path" row
+  like `List.push` share the identical `(N, ...)` bit pattern, confirmed by a unit test). Unlike
+  E4b's `native_row_servable` (which `resolve_sequence`'s `Native` candidate uses to ask "is this
+  row reachable for THIS call's shape"), this deliberately ignores `SPECIAL`/`MUTATES_RECEIVER`/
+  arity/definedness — `.can` asks "does Raku consider this a method at all", confirmed against real
+  Raku (`List.can("push")` is true on an indefinite type object). `collect_can_methods` computes
+  both answers under `MUTSU_VM_STATS` and records agreement via a NEW dedicated counter pair
+  (`record_can_shadow_check`, `vm/vm_stats.rs`) rather than the shared E4a/E4b/E7-steps-1-3
+  `RESOLVER_SHADOW_*`/`NATIVE_ROW_SHADOW_*` infra, since this compares two existence predicates and
+  never touches `resolve_sequence` — reusing the shared total would repeat the exact "false lead"
+  step 1's progress note above describes. Pure insertion, zero behavior change: the dummy-arg probe
+  alone still drives `.can`'s real answer. **Swept a 16-case hand-built probe script, all 16
+  already-whitelisted roast files that call `.can`/`.^can` (found by grepping roast for
+  `\.\^?can\(`), and the full local `t/` suite (3057 files/28,557 tests)**: 115 total
+  `can_shadow_checks`, 3 `can_shadow_mismatches`, every one `real=true shadow=false` (the E2 lookup
+  under-answers, never over-answers) — `IO::Path.can("e")` (`IO::Path` is one of the owners
+  `native_method_row.rs`'s own module doc already names as never probed by E2a/E2b at all),
+  `(1,2).^can('int8')` (`t/native-int-coerce-methods-are-cool-only.t:18` — `Cool` is an ABSTRACT
+  owner the row-*generation* probe skipped for lack of a sample value, even though
+  `builtin_type_method_names("Cool")` does list `int8`), and `$c.can("cancel")` on a scheduler
+  `Cancellation` handle (`t/scheduler-cue-times.t:18` — a class entirely outside the 14-owner
+  E2a/E2b campaign scope, answered by the dummy probe's separate `classhow_find_method` tier). Every
+  mismatch traces to a documented, already-known catalog-coverage gap, not a real dispatch-path bug
+  — so, per this box's own "if the catalog's incompleteness would make `.can` wrongly answer `false`
+  for something genuinely callable, do NOT cut over" guidance, **the cutover is deferred, not
+  landed**: `e2_native_method_exists` stays shadow-only, and `has_native`'s existing tiers keep
+  driving `.can`/`.^can` unchanged. `cargo build`/`cargo test --lib` (810 tests, 6 new: 2 pin the
+  `native_method_row_exists` table-presence-vs-return-value distinction, 4 exercise
+  `e2_native_method_exists`'s chain walk including a 2-arg-only-method case the dummy probe's
+  0/1-arg-only cascade calls cannot see) / `cargo clippy -- -D warnings` / `cargo fmt` clean; `make
+  test` green. Because `.can`/`.^can` is a public API surface, this step's local verification went
+  beyond the usual single-slice scope (full `t/`, every roast file that calls `.can` at all, not a
+  sample). Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 4: `.^can` —
+  shadow-measured, cutover DEFERRED (E2 catalog coverage gap)". **This is the first E7 sub-slice
+  that is not a clean zero-mismatch/zero-fix result — as this design paragraph itself predicted —
+  but the correct response to a catalog-coverage gap (not a dispatch-path bug) is to defer the
+  cutover, not force it.** Next E7 sub-slice: `.^lookup`/`.^methods` reading the call-path sequence
+  (WALK and the EVAL/re-entrant carriers come after those, per the design's consumer ordering).
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):

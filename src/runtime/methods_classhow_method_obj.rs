@@ -447,6 +447,23 @@ impl Interpreter {
                     let pkg = Value::package(Symbol::intern(&class_name));
                     self.classhow_find_method(&pkg, method_name).is_some()
                 };
+            // ADR-0019 Phase E box E7 step 4 (`todo/deep/adr0019-e5-e7-entry-
+            // routing.md` "E7 step 4"): shadow-check the dummy-`Value::NIL`-arg
+            // probe above against an E2 native-method-row catalog lookup
+            // (`Interpreter::e2_native_method_exists`) for the SAME question
+            // ("does target have a native method_name at all"). A dedicated
+            // counter pair (not the E4a/E7 `resolve_sequence`-winner shadow
+            // infra those steps reused) because this compares two EXISTENCE
+            // predicates, not two dispatch-winner picks. `MUTSU_VM_STATS`-gated,
+            // zero behavior change: `has_native` alone still drives `results`.
+            if crate::vm::vm_stats::enabled() {
+                let e2_says = self.e2_native_method_exists(target, method_sym.as_str());
+                crate::vm::vm_stats::record_can_shadow_check(has_native == e2_says, || {
+                    format!(
+                        "class={class_name} method={method_name} real={has_native} shadow={e2_says}"
+                    )
+                });
+            }
             if has_native {
                 results.push(Value::routine_parts(
                     Symbol::intern(&class_name),

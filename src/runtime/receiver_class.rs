@@ -431,20 +431,10 @@ impl Interpreter {
         }
         let chain = self.dispatch_owner_chain(target);
         let mask = crate::builtins::native_method_row::NativeArityMask::for_arity(arity);
-        let covered = chain.iter().any(|owner| {
-            let owner = owner.as_str();
-            if crate::builtins::native_method_row::native_method_row(owner, name)
+        let covered = chain_owner_probe(&chain, |owner| {
+            crate::builtins::native_method_row::native_method_row(owner, name)
                 .0
                 .contains(mask)
-            {
-                return true;
-            }
-            let folded = crate::builtins::builtin_type_methods::canonical_builtin_owner(owner);
-            !folded.is_empty()
-                && folded != owner
-                && crate::builtins::native_method_row::native_method_row(folded, name)
-                    .0
-                    .contains(mask)
         });
         let owner = chain
             .first()
@@ -452,6 +442,48 @@ impl Interpreter {
             .unwrap_or_else(|| crate::type_id::well_known_types().any.as_str());
         crate::vm::vm_stats::record_native_call_recognition(site, owner, name, covered);
     }
+
+    /// ADR-0019 Phase E box E7 step 4 (`.^can`,
+    /// `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 4"): does the E2
+    /// native-method-row catalog have an explicit recognition row for `name`
+    /// at ANY level of `target`'s dispatch chain -- the "does Raku consider
+    /// this name a method on this type at all" existence question `.^can`
+    /// asks. This is deliberately a DIFFERENT question from
+    /// [`crate::runtime::resolution_sequence::native_row_servable`]'s
+    /// call-shape-specific "is this row reachable for THIS call" (E4b's
+    /// `Native` resolver candidate): unlike that function, this does NOT
+    /// exclude `SPECIAL`/`MUTATES_RECEIVER` rows (a mutating method like
+    /// `List.push` still IS a method `.can` should find) and ignores
+    /// arity/definedness entirely (a method existing at any arity, or
+    /// requiring definedness, still means `.can` is true) -- confirmed
+    /// against real Raku behavior (`raku -e 'say List.can("push")'` is
+    /// `(&push)`, true, on an INDEFINITE type object). Shares the same
+    /// chain-walk-plus-`canonical_builtin_owner`-fold traversal as
+    /// [`Self::record_native_row_coverage`] via [`chain_owner_probe`].
+    pub(crate) fn e2_native_method_exists(&mut self, target: &Value, name: &'static str) -> bool {
+        let chain = self.dispatch_owner_chain(target);
+        chain_owner_probe(&chain, |owner| {
+            crate::builtins::native_method_row::native_method_row_exists(owner, name)
+        })
+    }
+}
+
+/// Shared chain-walk-plus-fold traversal for [`Interpreter::record_native_row_coverage`]
+/// and [`Interpreter::e2_native_method_exists`]: try `probe` at each level of
+/// `chain` (most-derived first), and, when it fails, retry through
+/// [`crate::builtins::builtin_type_methods::canonical_builtin_owner`]'s fold
+/// (`Buf`/`Blob`/... -> `Blob`, `Sub`/`Method`/... -> `Code`, etc.) -- the
+/// catalog is keyed by the folded owner, so a plain per-level lookup would
+/// otherwise never find a Buf/Blob-family (or Sub/Method/...-family) row.
+fn chain_owner_probe(chain: &[TypeId], mut probe: impl FnMut(&'static str) -> bool) -> bool {
+    chain.iter().any(|owner| {
+        let owner = owner.as_str();
+        if probe(owner) {
+            return true;
+        }
+        let folded = crate::builtins::builtin_type_methods::canonical_builtin_owner(owner);
+        !folded.is_empty() && folded != owner && probe(folded)
+    })
 }
 
 #[cfg(test)]
@@ -557,5 +589,43 @@ mod tests {
         let chain = i.dispatch_mro(&Value::hash(std::collections::HashMap::new()));
         let names: Vec<&str> = chain.iter().map(|t| t.as_str()).collect();
         assert_eq!(names, vec!["Hash", "Map", "Cool", "Any", "Mu"]);
+    }
+
+    /// ADR-0019 E7 step 4: a plain 1-arg-recognized row is found at the
+    /// receiver's own (most-derived) chain level.
+    #[test]
+    fn e2_native_method_exists_finds_own_level_row() {
+        let mut i = interp();
+        assert!(i.e2_native_method_exists(&Value::str_from("abc"), "chars"));
+    }
+
+    /// The dummy-`Value::NIL`-arg probe this box replaces only ever calls
+    /// `native_method_0arg`/`native_method_1arg` -- never a 2-arg cascade --
+    /// so a 2-arg-only method is invisible to it. `Str.substr-eq(pos, needle)`
+    /// is exactly such a row (`("Str", "substr-eq", NativeArityMask::A2, ...)`
+    /// in the generated table); the E2-row lookup finds it because it asks
+    /// about EXISTENCE, not about whether a 0/1-arg cascade call happens to
+    /// answer `Some`.
+    #[test]
+    fn e2_native_method_exists_finds_a_two_arg_only_method() {
+        let mut i = interp();
+        assert!(i.e2_native_method_exists(&Value::str_from("abc"), "substr-eq"));
+    }
+
+    /// A method that IS recognized, but only via a special/mutating path
+    /// outside the pure arity cascades (`List.push`), still exists.
+    #[test]
+    fn e2_native_method_exists_finds_a_mutating_only_method() {
+        let mut i = interp();
+        let arr = Value::array(vec![Value::int(1)]);
+        assert!(i.e2_native_method_exists(&arr, "push"));
+    }
+
+    /// A name the catalog never claims for this chain at all is correctly
+    /// reported absent.
+    #[test]
+    fn e2_native_method_exists_is_false_for_an_unknown_name() {
+        let mut i = interp();
+        assert!(!i.e2_native_method_exists(&Value::int(1), "no-such-method-at-all"));
     }
 }

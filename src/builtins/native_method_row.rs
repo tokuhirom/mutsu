@@ -181,6 +181,23 @@ pub(crate) fn native_method_row(
         .unwrap_or((NativeArityMask::N, NativeRowFlags::SPECIAL))
 }
 
+/// Whether the catalog has an EXPLICIT recognition row for `(owner, name)` --
+/// i.e. E2a/E2b's probe actually classified this pair as a real method on
+/// `owner`, at some arity, via some path. ADR-0019 Phase E box E7 step 4
+/// (`.^can`, `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 4") is the
+/// first production reader, and needs exactly this "does this method exist
+/// at all" question -- which [`native_method_row`]'s *return value* cannot
+/// answer by itself: a missing key falls back to the same `(N, SPECIAL)` bit
+/// pattern a genuinely-probed "exists, but only via a special/mutating path
+/// outside the pure arity cascades" row also carries (e.g. `Str.match`,
+/// `List.push` are both `(N, ...)` despite being real methods), so checking
+/// the returned mask can never distinguish "not a method" from "a method,
+/// just not reachable by `native_method_{0,1,2}arg`". Presence in the table
+/// is the only signal E2's data actually carries for that question.
+pub(crate) fn native_method_row_exists(owner: &'static str, name: &'static str) -> bool {
+    classification_table().contains_key(&(owner, name))
+}
+
 /// The full native-method-row catalog for one built-in owner, in `.^methods`
 /// catalog order -- the [`NativeMethodRow`] counterpart of
 /// [`builtin_method_entries`]. `#[cfg(test)]`: see [`NativeMethodRow`]'s doc.
@@ -224,6 +241,36 @@ mod tests {
         let (arity, flags) = native_method_row("NoSuchOwner", "no-such-method");
         assert_eq!(arity, NativeArityMask::N);
         assert!(flags.contains(NativeRowFlags::SPECIAL));
+    }
+
+    /// ADR-0019 E7 step 4: `native_method_row_exists` answers "is this a
+    /// real method at all", distinct from `native_method_row`'s
+    /// arity/flags -- which, as the two assertions below show, cannot be
+    /// used for that question on its own.
+    #[test]
+    fn row_exists_is_true_for_a_known_pair_and_false_for_an_unprobed_one() {
+        assert!(native_method_row_exists("Str", "chars"));
+        assert!(!native_method_row_exists("NoSuchOwner", "no-such-method"));
+    }
+
+    /// The exact ambiguity `native_method_row_exists`'s doc comment warns
+    /// about: `List.push` is a real method (E2a/E2b probed and confirmed
+    /// it), but its row is `(N, MUTATES_RECEIVER)` -- the identical bit
+    /// pattern `native_method_row` returns for a pair it never saw. Only
+    /// `native_method_row_exists` (table presence) tells the two apart;
+    /// `native_method_row`'s returned mask alone cannot, since both cases
+    /// share the same `NativeArityMask::N` value.
+    #[test]
+    fn row_exists_distinguishes_special_only_method_from_unprobed_miss() {
+        let (push_arity, push_flags) = native_method_row("List", "push");
+        assert_eq!(push_arity, NativeArityMask::N);
+        assert!(push_flags.contains(NativeRowFlags::MUTATES_RECEIVER));
+        assert!(native_method_row_exists("List", "push"));
+
+        let (miss_arity, miss_flags) = native_method_row("List", "no-such-method");
+        assert_eq!(miss_arity, NativeArityMask::N);
+        assert!(miss_flags.contains(NativeRowFlags::SPECIAL));
+        assert!(!native_method_row_exists("List", "no-such-method"));
     }
 
     /// ADR-0019 E2b: the hand-added `Any`/`Mu` universal rows (`so`, `not`,
