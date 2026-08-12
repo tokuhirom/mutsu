@@ -313,7 +313,53 @@ impl Interpreter {
             if let Some(class_def) = self.registry().classes.get(cn)
                 && let Some(defs) = class_def.methods.get(method_name)
             {
-                for def in defs.iter().filter(|def| !def.is_my || cn == &class_name) {
+                let visible: Vec<&MethodDef> = defs
+                    .iter()
+                    .filter(|def| !def.is_my || cn == &class_name)
+                    .collect();
+                // A multi method contributes ONE dispatcher entry per class
+                // (Raku's `.can` returns the dispatcher Method, not one entry
+                // per candidate). The dispatcher-shaped Sub re-dispatches on
+                // invocation (see sub_multi_method_dispatcher_name).
+                if visible.len() > 1 || visible.iter().any(|d| d.is_multi) {
+                    if let Some(def) = visible.first() {
+                        let mut full_param_defs = vec![Self::make_invocant_param(cn)];
+                        full_param_defs.extend(
+                            def.param_defs
+                                .iter()
+                                .filter(|p| p.name.as_str() != "self")
+                                .cloned(),
+                        );
+                        let mut env = crate::env::Env::new();
+                        env.insert(
+                            "__mutsu_callable_type".to_string(),
+                            Value::str_from(if def.is_submethod {
+                                "Submethod"
+                            } else {
+                                "Method"
+                            }),
+                        );
+                        env.insert(
+                            "__mutsu_lookup_class".to_string(),
+                            Value::str(cn.to_string()),
+                        );
+                        env.insert(
+                            "__mutsu_lookup_method".to_string(),
+                            Value::str(method_name.to_string()),
+                        );
+                        results.push(Value::make_sub(
+                            Symbol::intern(cn),
+                            Symbol::intern(method_name),
+                            def.params.clone(),
+                            full_param_defs,
+                            (*def.body).clone(),
+                            def.is_rw,
+                            env,
+                        ));
+                    }
+                    continue;
+                }
+                for def in visible {
                     // Prepend "self" to params so the method can be called
                     // as $meth($invocant) — the first argument binds as self.
                     let mut params = vec!["self".to_string()];

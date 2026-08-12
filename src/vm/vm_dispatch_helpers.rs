@@ -509,6 +509,18 @@ impl Interpreter {
             return self.call_sub_value(target, args, false);
         }
 
+        // Multi-method dispatcher Sub (`^find_method`/`.can` on a multi):
+        // re-dispatch with args[0] as invocant instead of binding the first
+        // candidate's signature (see sub_multi_method_dispatcher_name).
+        if let ValueView::Sub(data) = target.view()
+            && !args.is_empty()
+            && let Some(meth) = Self::sub_multi_method_dispatcher_name(&data)
+        {
+            let mut args = args;
+            let invocant = args.remove(0);
+            return self.call_method_with_values(invocant, &meth, args);
+        }
+
         // A declaration-time-expression thunk (ADR-0019 D2c-4's `.^attributes.build`
         // closure, marked by `is_decl_expr_thunk` — see its doc comment for
         // why `body.is_empty()` alone is NOT a safe signal here — an ordinary

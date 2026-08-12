@@ -544,6 +544,19 @@ impl Interpreter {
             self.stack
                 .push(Self::itemize_scalar_assign_result(&name, val));
             return Ok(());
+        } else if inplace_old_array.is_none()
+            && inplace_old_hash.is_none()
+            && (name.starts_with('@') || name.starts_with('%'))
+        {
+            // No reusable same-typed container found for the name (a fresh
+            // `my @ch;` whose slot the lookup above missed, or a slot that did
+            // not hold an array/hash): the `@`/`%` var must own a DISTINCT
+            // container per Raku `=` copy semantics — mirrors the SetLocal
+            // detach. Without this, `@ch = @!ahead` in expression position
+            // (`$!io and @ch = @!ahead`) adopted the RHS backing `Gc`, so a
+            // later `@ch.append` leaked into the attribute (Text::CSV
+            // `@!ahead` corruption after a skip_empty_rows recursion).
+            val = Self::detach_shared_container(val);
         }
         self.update_local_if_exists(code, &name, &val);
         // NB: when `name` is a file-scope `my` of the running routine's own

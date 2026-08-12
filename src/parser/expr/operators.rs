@@ -369,7 +369,7 @@ impl PostfixUpdateOp {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum LogicalOp {
+pub(in crate::parser) enum LogicalOp {
     Or,         // or (word)
     And,        // and (word)
     OrOr,       // ||
@@ -657,7 +657,7 @@ pub(super) fn parse_negated_logical_op(input: &str) -> Option<(LogicalOp, usize)
     None
 }
 
-pub(super) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
+pub(in crate::parser) fn parse_word_logical_op(input: &str) -> Option<(LogicalOp, usize)> {
     // Helper: check that the keyword is followed by a word boundary AND is not
     // immediately followed by `=` (which would make it a compound assignment
     // like `or=`, `and=`, `orelse=`, etc.).

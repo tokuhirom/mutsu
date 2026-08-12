@@ -312,9 +312,16 @@ fn is_bare_stmt_modifier(input: &str) -> bool {
 }
 
 /// Parse remaining comma-separated call args.
+///
+/// This is the NO-PAREN (listop) argument list: each positional argument
+/// parses at list-prefix precedence, so the loose word-logicals
+/// (`and`/`or`/`andthen`/`orelse`/`xor`) terminate the argument list instead
+/// of being swallowed into the last argument (`defined $f and $x = 1` is
+/// `(defined $f) and ($x = 1)`). Paren-call arguments (`parse_stmt_call_args`'
+/// `(`-branch) parse full expressions instead.
 pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>> {
     let mut args = Vec::new();
-    let (mut rest, first) = parse_single_call_arg(input).map_err(|err| PError {
+    let (mut rest, first) = parse_single_call_arg_listop(input).map_err(|err| PError {
         messages: merge_expected_messages("expected first call argument", &err.messages),
         remaining_len: err.remaining_len.or(Some(input.len())),
         exception: None,
@@ -349,7 +356,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         // Adjacent colonpairs without commas: foo :a :b :c or foo :a:b:c
         if r.starts_with(':')
             && !r.starts_with("::")
-            && let Ok((r3, arg)) = parse_single_call_arg(r)
+            && let Ok((r3, arg)) = parse_single_call_arg_listop(r)
         {
             args.extend(expand_call_arg(arg));
             rest = r3;
@@ -367,7 +374,7 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
         if is_stmt_modifier_keyword(r) {
             return Ok((r, args));
         }
-        let (r, arg) = parse_single_call_arg(r).map_err(|err| PError {
+        let (r, arg) = parse_single_call_arg_listop(r).map_err(|err| PError {
             messages: merge_expected_messages("expected call argument after ','", &err.messages),
             remaining_len: err.remaining_len.or(Some(r.len())),
             exception: None,
@@ -377,8 +384,19 @@ pub(super) fn parse_remaining_call_args(input: &str) -> PResult<'_, Vec<CallArg>
     }
 }
 
-/// Parse a single call argument (named or positional).
+/// Parse a single call argument (named or positional) in paren-call context:
+/// positionals are full expressions (word-logicals allowed inside).
 pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
+    parse_single_call_arg_mode(input, false)
+}
+
+/// Parse a single call argument in no-paren (listop) context: positionals
+/// stop before the loose word-logicals (see `parse_remaining_call_args`).
+fn parse_single_call_arg_listop(input: &str) -> PResult<'_, CallArg> {
+    parse_single_call_arg_mode(input, true)
+}
+
+fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg> {
     // Capture slip: |expr — flatten an expression into the argument list
     if input.starts_with('|') && !input.starts_with("||") {
         let after_pipe = &input[1..];
@@ -685,7 +703,14 @@ pub(super) fn parse_single_call_arg(input: &str) -> PResult<'_, CallArg> {
 
     // Positional argument — try assignment expression first ($x = expr).
     // But do not consume a prefix before a fat-arrow chain (e.g. `2 => "x" => {...}`).
-    let parsed_expr = expression(input).or_else(|_| reduction_call_style_expr(input));
+    // In listop (no-paren) context, parse at list-prefix precedence so the loose
+    // word-logicals terminate the argument instead of being swallowed into it.
+    let parsed_expr = if listop {
+        crate::parser::expr::listop_arg_expr_list_infix(input)
+            .or_else(|_| reduction_call_style_expr(input))
+    } else {
+        expression(input).or_else(|_| reduction_call_style_expr(input))
+    };
     if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
         let (rest_ws, _) = ws(rest)?;
         let assign_is_arg_boundary = rest_ws.is_empty()
