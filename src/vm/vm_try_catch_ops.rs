@@ -37,6 +37,18 @@ impl Interpreter {
                 None,
             );
         }
+        // A genuine `try` block implicitly turns on `use fatal` for its whole
+        // lexical scope (body and CATCH/CONTROL handlers alike) — an unhandled
+        // Failure sunk anywhere inside it throws immediately instead of staying
+        // a soft value, per raku-doc/doc/Language/exceptions.rakudoc's `try
+        // blocks` section. `traps` distinguishes a real `try` from the implicit
+        // TryCatch wrapper the compiler adds around any block that merely
+        // *contains* a CATCH/CONTROL phaser (that wrapper is not `try` itself
+        // and must not turn on fatal).
+        let saved_fatal_mode = self.fatal_mode;
+        if traps {
+            self.fatal_mode = true;
+        }
         let result = self.exec_try_catch_op_inner(
             code,
             catch_start,
@@ -48,6 +60,9 @@ impl Interpreter {
             ip,
             compiled_fns,
         );
+        if traps {
+            self.fatal_mode = saved_fatal_mode;
+        }
         if is_bare_block {
             self.truncate_routine_stack(routine_base);
         }
