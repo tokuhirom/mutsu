@@ -739,7 +739,6 @@ impl Compiler {
     }
 
     pub(super) fn compile_match_regex(&mut self, v: &Value) {
-        let lhs_var = Some("_".to_string());
         // Load $_ as the LHS
         let name_idx = self
             .code
@@ -750,14 +749,13 @@ impl Compiler {
         // gate (the runtime half — pending_local_updates / `$/`-as-local — is in
         // the smartmatch op).
         let rhs_pure_regex = matches!(v.view(), ValueView::Regex(_));
-        let lhs_slot = lhs_var
-            .as_ref()
-            .and_then(|name| self.local_map.get(name).copied());
         let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
             rhs_end: 0,
             negate: false,
-            lhs_var,
-            lhs_slot,
+            lhs: Some(Box::new(crate::opcode::SmartMatchLhs::Var {
+                name: "_".to_string(),
+                slot: self.local_map.get("_").copied(),
+            })),
             // Standalone m// (not in ~~ context) returns Nil on failure, not False.
             // Setting this to false makes smart_match_op return $/ (Nil) on failure.
             rhs_is_match_regex: false,

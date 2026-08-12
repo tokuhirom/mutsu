@@ -451,19 +451,6 @@ impl Compiler {
                 return;
             }
             TokenKind::SmartMatch | TokenKind::BangTilde => {
-                let lhs_var = match left {
-                    Expr::Var(name) => Some(name.clone()),
-                    _ => None,
-                };
-                // §1.5: bake the scope-correct local slot for the LHS variable now,
-                // while `local_map` reflects the current lexical scope, so the
-                // runtime topic writeback (`$x ~~ s///`) writes the exact slot
-                // instead of re-resolving the name against `code.locals` (which is
-                // ambiguous once shadow slots exist). See
-                // docs/lexical-scope-slot-campaign.md.
-                let lhs_slot = lhs_var
-                    .as_ref()
-                    .and_then(|name| self.local_map.get(name).copied());
                 let rhs_is_match_regex = matches!(right, Expr::MatchRegex(_));
                 // Only a *destructive* `s///` / `tr///` against a literal LHS is an
                 // X::Assignment::RO. Non-destructive `S///` / `TR///` return a copy
@@ -476,14 +463,75 @@ impl Compiler {
                             ..
                         }
                     );
+                // `@a[$i] ~~ s///` / `%h<k> ~~ s///`: an element LHS whose
+                // container Raku's substitution writes through. Desugared here
+                // into temp-local reads plus a value-change-gated element
+                // writeback — no VM support needed. Restricted to a simple
+                // variable target and a simple scalar index (no slices, no
+                // Whatever-closures), and to a destructive RHS.
+                if rhs_is_destructive
+                    && let Expr::Index {
+                        target,
+                        index,
+                        is_positional,
+                    } = left
+                    && matches!(
+                        target.as_ref(),
+                        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_)
+                    )
+                    && matches!(
+                        index.as_ref(),
+                        Expr::Literal(_) | Expr::Var(_) | Expr::Binary { .. }
+                    )
+                {
+                    self.compile_smartmatch_element_lhs(
+                        target,
+                        index,
+                        *is_positional,
+                        matches!(op, TokenKind::BangTilde),
+                        right,
+                    );
+                    return;
+                }
+                // §1.5: bake the scope-correct local slot for the LHS variable now,
+                // while `local_map` reflects the current lexical scope, so the
+                // runtime topic writeback (`$x ~~ s///`) writes the exact slot
+                // instead of re-resolving the name against `code.locals` (which is
+                // ambiguous once shadow slots exist). See
+                // docs/lexical-scope-slot-campaign.md.
+                let lhs = match left {
+                    Expr::Var(name) => Some(Box::new(crate::opcode::SmartMatchLhs::Var {
+                        name: name.clone(),
+                        slot: self.local_map.get(name.as_str()).copied(),
+                    })),
+                    // `$obj.meth ~~ s///`: an rw-accessor LHS whose returned
+                    // container Raku's substitution writes through. Only a
+                    // zero-arg plain method call on a variable qualifies, and
+                    // only for a destructive RHS (a predicate match never
+                    // writes back).
+                    Expr::MethodCall {
+                        target,
+                        name,
+                        args,
+                        modifier: None,
+                        ..
+                    } if rhs_is_destructive && args.is_empty() => match target.as_ref() {
+                        Expr::Var(obj) => Some(Box::new(crate::opcode::SmartMatchLhs::Method {
+                            obj: obj.clone(),
+                            obj_slot: self.local_map.get(obj.as_str()).copied(),
+                            method: name.to_string(),
+                        })),
+                        _ => None,
+                    },
+                    _ => None,
+                };
                 let lhs_is_literal = rhs_is_destructive && matches!(left, Expr::Literal(_));
                 let rhs_pure_regex = Self::rhs_is_plain_regex_literal(right);
                 self.compile_expr(left);
                 let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
                     rhs_end: 0,
                     negate: matches!(op, TokenKind::BangTilde),
-                    lhs_var,
-                    lhs_slot,
+                    lhs,
                     rhs_is_match_regex,
                     lhs_is_literal,
                     rhs_pure_regex,
@@ -740,6 +788,82 @@ impl Compiler {
             flags |= 2;
         }
         Some(flags)
+    }
+
+    /// `@a[$i] ~~ s///` / `%h<k> ~~ s///` — a destructive substitution /
+    /// transliteration against an element LHS. Raku topicalizes the element's
+    /// *container*, so the modified topic must land back in the element; mutsu's
+    /// indexing reads plain values, so desugar into:
+    ///
+    /// ```text
+    /// tmp_idx  = <index>                 # index evaluated exactly once
+    /// tmp_val  = <target>[tmp_idx]       # element value, also the LHS operand
+    /// tmp_orig = tmp_val
+    /// <SmartMatchExpr lhs=Var(tmp_val)>  # existing Var writeback updates tmp_val
+    /// tmp_val === tmp_orig ?? ()         # unchanged (no match) -> no store
+    ///                      !! <target>[tmp_idx] = tmp_val
+    /// ```
+    ///
+    /// The identity gate keeps a non-matching attempt store-free (a custom
+    /// ASSIGN-POS / immutable element must not observe it), matching Rakudo.
+    fn compile_smartmatch_element_lhs(
+        &mut self,
+        target: &Expr,
+        index: &Expr,
+        is_positional: bool,
+        negate: bool,
+        right: &Expr,
+    ) {
+        let n = self.code.locals.len();
+        let idx_name = format!("__mutsu_sm_idx_{n}");
+        let idx_slot = self.alloc_fresh_local(&idx_name);
+        let val_name = format!("__mutsu_sm_val_{n}");
+        let val_slot = self.alloc_fresh_local(&val_name);
+        let orig_name = format!("__mutsu_sm_orig_{n}");
+        let orig_slot = self.alloc_fresh_local(&orig_name);
+
+        self.compile_expr(index);
+        self.code.emit(OpCode::SetLocal(idx_slot));
+        self.compile_expr(&Expr::Index {
+            target: Box::new(target.clone()),
+            index: Box::new(Expr::Var(idx_name.clone())),
+            is_positional,
+        });
+        self.code.emit(OpCode::Dup);
+        self.code.emit(OpCode::SetLocal(orig_slot));
+        self.code.emit(OpCode::Dup);
+        self.code.emit(OpCode::SetLocal(val_slot));
+        // Stack: [element] — the smartmatch LHS operand.
+        let sm_idx = self.code.emit(OpCode::SmartMatchExpr {
+            rhs_end: 0,
+            negate,
+            lhs: Some(Box::new(crate::opcode::SmartMatchLhs::Var {
+                name: val_name.clone(),
+                slot: Some(val_slot),
+            })),
+            rhs_is_match_regex: false,
+            lhs_is_literal: false,
+            rhs_pure_regex: false,
+        });
+        self.compile_expr(right);
+        self.code.patch_smart_match_rhs_end(sm_idx);
+        // Stack: [result]. Store back only when the topic actually changed.
+        self.code.emit(OpCode::GetLocal(val_slot));
+        self.code.emit(OpCode::GetLocal(orig_slot));
+        self.code.emit(OpCode::StrictEq);
+        let jump_skip = self.code.emit(OpCode::JumpIfTrue(0));
+        self.code.emit(OpCode::Pop);
+        self.compile_expr(&Expr::IndexAssign {
+            target: Box::new(target.clone()),
+            index: Box::new(Expr::Var(idx_name)),
+            value: Box::new(Expr::Var(val_name)),
+            is_positional,
+        });
+        self.code.emit(OpCode::Pop);
+        let jump_end = self.code.emit(OpCode::Jump(0));
+        self.code.patch_jump(jump_skip);
+        self.code.emit(OpCode::Pop);
+        self.code.patch_jump(jump_end);
     }
 
     /// If `expr` is a variable reference with a native integer type

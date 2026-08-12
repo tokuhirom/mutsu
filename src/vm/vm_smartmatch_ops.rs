@@ -9,13 +9,21 @@ impl Interpreter {
         ip: &mut usize,
         rhs_end: u32,
         negate: bool,
-        lhs_var: &Option<String>,
-        lhs_slot: Option<u32>,
+        lhs: Option<&crate::opcode::SmartMatchLhs>,
         rhs_is_match_regex: bool,
         lhs_is_literal: bool,
         rhs_pure_regex: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        use crate::opcode::SmartMatchLhs;
+        let lhs_var: Option<&String> = match lhs {
+            Some(SmartMatchLhs::Var { name, .. }) => Some(name),
+            _ => None,
+        };
+        let lhs_slot: Option<u32> = match lhs {
+            Some(SmartMatchLhs::Var { slot, .. }) => *slot,
+            _ => None,
+        };
         // Smartmatching *reads* the left operand, and reading a `Proxy` means
         // FETCH: `cglobal(...) ~~ Pointer` asks about the value in the C global,
         // not about the Proxy standing in for it (`NativeLibs::Searcher` probes
@@ -40,8 +48,8 @@ impl Interpreter {
         // variable*'s mutability: mutable `my $x` allows the write, a readonly
         // param still blocks it. Save and override `_`'s readonly flag for the
         // duration when the LHS is an explicit variable other than the topic.
-        let topic_ro_override = match lhs_var {
-            Some(v) if v != "_" => {
+        let topic_ro_override = match lhs {
+            Some(SmartMatchLhs::Var { name: v, .. }) if v != "_" => {
                 let saved = self.is_readonly("_");
                 let bare = v.trim_start_matches(['$', '@', '%', '&']);
                 let target_ro = self.is_readonly(v) || self.is_readonly(bare);
@@ -50,6 +58,15 @@ impl Interpreter {
                 } else {
                     self.unmark_readonly("_");
                 }
+                Some(saved)
+            }
+            // An accessor LHS (`$obj.meth ~~ s///`) targets the accessor's
+            // container, not the surrounding topic — the enclosing scope's
+            // readonly `_` (e.g. a `for ^N { }` loop topic) must not block the
+            // substitution. A non-rw accessor still errors at writeback below.
+            Some(SmartMatchLhs::Method { .. }) => {
+                let saved = self.is_readonly("_");
+                self.unmark_readonly("_");
                 Some(saved)
             }
             _ => None,
@@ -97,7 +114,7 @@ impl Interpreter {
         // When the LHS alias *is* the topic itself (`$_ ~~ s///`), the
         // substitution-modified topic must persist — restoring `saved_topic`
         // below would clobber it. Skip the restore in that case.
-        let lhs_is_topic = lhs_var.as_deref() == Some("_");
+        let lhs_is_topic = lhs_var.map(String::as_str) == Some("_");
         // The LHS-variable writeback exists for a DESTRUCTIVE RHS (`$x ~~ s///`,
         // `tr///`, or a block that assigns the topic): only then has the topic
         // been modified and must flow back into the variable. A pure predicate
@@ -110,7 +127,7 @@ impl Interpreter {
         let topic_modified = was_substitution
             || was_transliterate
             || !crate::runtime::utils::values_identical(&topic_after, &left);
-        if let Some(var_name) = lhs_var.as_ref().filter(|_| topic_modified) {
+        if let Some(var_name) = lhs_var.filter(|_| topic_modified) {
             let modified_topic = topic_after.clone();
             self.env_mut()
                 .insert(var_name.clone(), modified_topic.clone());
@@ -153,6 +170,47 @@ impl Interpreter {
                 let sv = source_var.clone();
                 self.set_env_with_main_alias(&sv, modified_topic.clone());
                 self.update_local_if_exists(code, &sv, &modified_topic);
+            }
+        }
+        // An accessor LHS (`$f.text ~~ s///`): Raku's substitution writes
+        // through the container the rw accessor returns. mutsu's method calls
+        // return plain values, so re-invoke the accessor as an lvalue with the
+        // modified topic (`$f.text = <modified>`) — the same runtime path
+        // `$f.text = $v` compiles to (`__mutsu_assign_method_lvalue`). Only a
+        // destructive RHS that actually modified the topic writes back; a
+        // failed match is a no-op, and a non-rw accessor errors here exactly
+        // as a plain assignment to it would.
+        if let Some(SmartMatchLhs::Method {
+            obj,
+            obj_slot,
+            method,
+        }) = lhs
+            && (was_substitution || was_transliterate)
+            && topic_modified
+        {
+            let invocant = match obj_slot {
+                Some(slot) if (*slot as usize) < self.locals.len() => {
+                    Some(self.locals[*slot as usize].clone())
+                }
+                _ => self.env().get(obj.as_str()).cloned(),
+            };
+            if let Some(inv) = invocant
+                && let Err(e) = self.assign_method_lvalue_with_values(
+                    None,
+                    inv,
+                    method,
+                    vec![],
+                    topic_after.clone(),
+                    false,
+                )
+            {
+                // Restore the topic before propagating the error.
+                if let Some(v) = saved_topic.clone() {
+                    self.env_mut().insert("_".to_string(), v);
+                } else {
+                    self.env_mut().remove("_");
+                }
+                return Err(e);
             }
         }
         if !lhs_is_topic {
