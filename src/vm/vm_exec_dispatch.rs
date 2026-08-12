@@ -1011,8 +1011,21 @@ impl Interpreter {
                                 | ValueView::Bag(_, false)
                         )
                     );
+                // A store with `vardecl_context` set IS a declaration (an
+                // expression-position `my` — `if (my $str = ...)` — compiles to
+                // MarkVarDeclContext + SetGlobal): it creates a FRESH variable,
+                // so a readonly marker left by a same-named CALLER binding (a
+                // method's readonly parameter `$str`) must not reject it, and
+                // the new variable is writable — unmark (journaled, so the
+                // caller's mark is restored when this frame exits).
+                // (Text::IO::String's `print` declaring `my Str $str` while
+                // called from `new (Str $str!)`.)
                 if !raw_mode && !is_bind_ctx && !is_bound_container {
-                    self.check_readonly_for_modify(&name)?;
+                    if self.vardecl_context {
+                        self.unmark_readonly(&name);
+                    } else {
+                        self.check_readonly_for_modify(&name)?;
+                    }
                 } else if raw_mode {
                     // Clear any previous readonly marking so this constant
                     // redeclaration can proceed (e.g., `constant sym` followed
