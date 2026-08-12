@@ -648,40 +648,6 @@ pub(crate) fn record_deferral_shadow_check(matched: bool, detail: impl FnOnce() 
     }
 }
 
-// ADR-0019 Phase E box E8b (`todo/deep/adr0019-e8-e11-candidate-sequence-
-// semantics.md`): shadow comparison between `Interpreter::
-// lookup_proto_method`'s real MRO walk over the standalone `Registry::
-// proto_methods` table and the same walk read against the new `MethodEntry.
-// proto` column (`Registry::method_entry_proto`) both tables are written to
-// together by `Registry::set_proto_method`. A dedicated counter pair (not
-// `RESOLVER_SHADOW_*`) for the same reason every other Phase E probe family
-// gets its own pair: this measures one specific consolidation, not a general
-// resolver-winner comparison. Nothing reads these counters to make a
-// dispatch decision: shadow-only, zero behavior change.
-static PROTO_METHOD_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
-static PROTO_METHOD_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
-
-fn proto_method_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
-    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Record one E8b proto-method shadow comparison. `detail` is only
-/// evaluated on a mismatch, mirroring [`record_deferral_shadow_check`].
-#[inline]
-pub(crate) fn record_proto_method_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
-    if !enabled() {
-        return;
-    }
-    PROTO_METHOD_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
-    if !matched {
-        PROTO_METHOD_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut map) = proto_method_shadow_mismatch_by_key().lock() {
-            *map.entry(detail()).or_insert(0) += 1;
-        }
-    }
-}
-
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1229,27 +1195,6 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e8a deferral-shadow mismatches (top {}): {}",
-            top.len(),
-            top.join(" ")
-        );
-    }
-    let proto_method_shadow_checks = PROTO_METHOD_SHADOW_CHECKS.load(Ordering::Relaxed);
-    let proto_method_shadow_mismatches = PROTO_METHOD_SHADOW_MISMATCHES.load(Ordering::Relaxed);
-    eprintln!(
-        "[mutsu vm-stats] adr0019-e8b: proto_method_shadow_checks={proto_method_shadow_checks} proto_method_shadow_mismatches={proto_method_shadow_mismatches}"
-    );
-    if let Ok(map) = proto_method_shadow_mismatch_by_key().lock()
-        && !map.is_empty()
-    {
-        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-        let top: Vec<String> = entries
-            .iter()
-            .take(25)
-            .map(|(name, count)| format!("{name}={count}"))
-            .collect();
-        eprintln!(
-            "[mutsu vm-stats] adr0019-e8b proto-method-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );

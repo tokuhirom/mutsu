@@ -60,13 +60,10 @@ pub(crate) struct MethodEntry {
     /// this is synced from).
     pub(crate) accessor: Option<bool>,
     /// `proto method`/`proto submethod` body declared directly on this
-    /// `(owner, name)` (ADR-0019 E8b): the `MethodEntry` fold of the
-    /// formerly-standalone `Registry::proto_methods` table. Written by
-    /// [`Registry::set_proto_method`] alongside `proto_methods` — shadow
-    /// mode: `proto_methods` stays the sole table `Interpreter::
-    /// lookup_proto_method` reads for real dispatch, this field is compared
-    /// against it under `MUTSU_VM_STATS` (`Interpreter::
-    /// shadow_check_proto_method`) before any cutover.
+    /// `(owner, name)` (ADR-0019 E8, folded from the formerly-standalone
+    /// `Registry::proto_methods` table in E8b/E8c). Written by
+    /// [`Registry::set_proto_method`]; read by `Interpreter::
+    /// lookup_proto_method`'s MRO walk via [`Registry::method_entry_proto`].
     pub(crate) proto: Option<FunctionDef>,
 }
 
@@ -273,11 +270,16 @@ pub(crate) struct Registry {
     pub(crate) proto_subs: HashSet<String>,
     /// `proto token`/`proto rule` declaration markers (existence set).
     pub(crate) proto_tokens: HashSet<String>,
-    /// `proto method`/`proto submethod` bodies: (class_name, method_name) ->
-    /// proto `FunctionDef`. When a multi method is dispatched and its class (or
-    /// an ancestor in the MRO) has a proto body here, the body runs first and
-    /// its `{*}` dispatches to the matching multi candidate.
-    pub(crate) proto_methods: HashMap<(String, String), FunctionDef>,
+    /// Whether ANY `proto method`/`proto submethod` has been declared
+    /// anywhere in the program (ADR-0019 E8c). A monotonic flag — proto
+    /// bodies are never unregistered — set by [`Registry::set_proto_method`]
+    /// and consulted by `Interpreter::lookup_proto_method` as a cheap
+    /// whole-program fast path (skip the MRO walk entirely when no class has
+    /// ever declared a proto method), the same role the now-retired
+    /// `proto_methods.is_empty()` check on the standalone table used to
+    /// play. The actual proto bodies live in `MethodEntry::proto`
+    /// (`method_entries`), read per-owner via [`Registry::method_entry_proto`].
+    pub(crate) has_proto_methods: bool,
 }
 
 impl Registry {
@@ -441,10 +443,7 @@ impl Registry {
     }
 
     /// Register a `proto method`/`proto submethod` body for `(class_name,
-    /// method_name)` (ADR-0019 E8b). Writes to both the legacy `proto_methods`
-    /// table (still the only one `Interpreter::lookup_proto_method` actually
-    /// reads for dispatch) and the new `MethodEntry.proto` column, so the two
-    /// can be shadow-compared before any cutover. Single call site
+    /// method_name)` (ADR-0019 E8, authoritative since E8c). Single call site
     /// (`registration_class_body.rs`'s `class_body_proto_method_decl`).
     pub(crate) fn set_proto_method(
         &mut self,
@@ -452,10 +451,6 @@ impl Registry {
         method_name: &str,
         def: FunctionDef,
     ) {
-        self.proto_methods.insert(
-            (class_name.to_string(), method_name.to_string()),
-            def.clone(),
-        );
         self.method_entries
             .entry(MethodEntryKey {
                 owner: Symbol::intern(class_name),
@@ -463,14 +458,15 @@ impl Registry {
             })
             .or_default()
             .proto = Some(def);
+        self.has_proto_methods = true;
         self.bump_method_generation();
     }
 
     /// The `MethodEntry.proto` column at exactly `(class_name, method_name)`
     /// — no MRO walk (the caller supplies the chain, mirroring how
-    /// `user_method_overloads` is a per-level, not per-chain, probe).
-    /// ADR-0019 E8b shadow-check helper for [`Interpreter::
-    /// shadow_check_proto_method`]; not read by real dispatch yet.
+    /// `user_method_overloads` is a per-level, not per-chain, probe). The
+    /// single read site for `Interpreter::lookup_proto_method`'s MRO walk
+    /// (ADR-0019 E8c).
     pub(crate) fn method_entry_proto(
         &self,
         class_name: &str,
@@ -1201,23 +1197,19 @@ mod tests {
         }
     }
 
-    /// ADR-0019 E8b: `set_proto_method` writes both the legacy `proto_methods`
-    /// table and the new `MethodEntry.proto` column, and both agree.
+    /// ADR-0019 E8c: `set_proto_method` populates the `MethodEntry.proto`
+    /// column (the sole store since the E8c cutover) and flips the
+    /// whole-program `has_proto_methods` fast-path flag.
     #[test]
-    fn set_proto_method_populates_both_the_legacy_table_and_method_entries() {
+    fn set_proto_method_populates_method_entries_and_the_fast_path_flag() {
         let mut registry = Registry::default();
         let seeded_generation = registry.method_generation;
+        assert!(!registry.has_proto_methods);
         let def = dummy_proto_def("Foo", "bar");
         registry.set_proto_method("Foo", "bar", def.clone());
         assert!(registry.method_generation > seeded_generation);
+        assert!(registry.has_proto_methods);
 
-        assert_eq!(
-            registry
-                .proto_methods
-                .get(&("Foo".to_string(), "bar".to_string()))
-                .map(FunctionDef::body_fingerprint),
-            Some(def.body_fingerprint())
-        );
         assert_eq!(
             registry
                 .method_entry_proto("Foo", "bar")
@@ -1229,7 +1221,7 @@ mod tests {
     /// `method_entry_proto` is a per-name probe (no MRO walk): a class that
     /// never declared its own proto method reports `None` even if an
     /// ancestor did — the MRO walk is the caller's job
-    /// (`Interpreter::lookup_proto_method`/`shadow_check_proto_method`).
+    /// (`Interpreter::lookup_proto_method`).
     #[test]
     fn method_entry_proto_is_scoped_to_the_exact_owner() {
         let mut registry = Registry::default();

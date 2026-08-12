@@ -405,3 +405,73 @@ its own slice rather than folded into this one — matching E1a→E1b's two-step
 cutover changes what real dispatch reads even when the measurement backing it is clean. After
 E8c, the next Phase E box is **E9-pre**: the mandatory raku verification campaign for
 `samewith`/`nextsame`/`callsame`/`nextwith` cursor semantics (design decision 3 above) — 拙速厳禁.
+
+## E8c: proto-method cutover — `Registry::proto_methods` retired, `E8` closes
+
+Landed 2026-08-12, immediately after E8b. Recovers the slice plan's original E8b text ("proto
+methods into `MethodEntry`; `lookup_proto_method` deleted") now that E8b's shadow measurement
+(171+24 checks, 0 mismatches across both a `t/` sweep and a roast slice) made the cutover a
+same-answer swap rather than a guess, matching how E1b cashed in E1a's `TypeId` shadow column.
+
+**The cutover itself.** `Interpreter::lookup_proto_method`'s real MRO walk (`dispatch_proto.rs`)
+now calls `Registry::method_entry_proto` per MRO level directly — exactly the loop body E8b's
+`shadow_check_proto_method` was already running, just promoted from shadow to real. The
+standalone `proto_methods: HashMap<(String, String), FunctionDef>` field is deleted from
+`Registry` outright, not kept as a secondary/debug store: `git grep -n "proto_methods" src/`
+before the change showed exactly two readers (the real walk and its own shadow probe, both in
+`dispatch_proto.rs`, both now gone or rewritten) and one writer (`Registry::set_proto_method`).
+No `.^methods`/`.^lookup`/`.^find_method`/other MOP introspection call site ever read
+`proto_methods` — those all resolve through `method_entries`'s `user_candidates`/`builtin`
+columns for their own purposes and never needed a separate proto lookup — so there was no
+"something else still legitimately needs it" case to preserve; the table was genuinely dead
+once its two readers moved off it.
+
+**Fast-path replacement.** The old `proto_methods.is_empty()` check let
+`lookup_proto_method` skip the MRO walk entirely for the (common) case where no class in the
+whole program has ever declared a proto method. Since `method_entries` has no single cheap
+"any row has `.proto` set" query, this is replaced by a new field, `Registry::
+has_proto_methods: bool`, flipped to `true` once by `set_proto_method` and never reset — proto
+bodies are never unregistered in mutsu (no equivalent of removing a method from a class at
+runtime), so a monotonic flag is sound and cheaper than a counter or a second set.
+
+**Probe teardown.** `shadow_check_proto_method` and the `PROTO_METHOD_SHADOW_CHECKS`/
+`_MISMATCHES` counter pair (`vm_stats.rs`), including their `adr0019-e8b` stats-report lines,
+are deleted. This mirrors E1b's own teardown of E1a's probes at each site E1b cut over: once
+the shadow answer IS the real answer, comparing them is comparing a value to itself.
+
+**Tests.** Two `registry.rs` unit tests updated: `set_proto_method_populates_both_the_legacy_
+table_and_method_entries` renamed to `set_proto_method_populates_method_entries_and_the_fast_
+path_flag` and rewritten to assert against `method_entries`/`has_proto_methods` instead of the
+retired table (plus a new assertion that the flag starts `false` and flips `true`);
+`method_entry_proto_is_scoped_to_the_exact_owner` unchanged (it only ever read the new column).
+No new `t/` test: this is a same-answer read-path swap with nothing new to pin, and the existing
+proto-method suite already exercises plain-class, inherited, and role-composed proto shapes
+end to end (10 files, 72 assertions: `t/proto-method-body.t`, `t/proto-method-rw-redispatch.t`,
+`t/proto-cross-module-invocant.t`, `t/handles-proto-dispatch-mut-invocant.t`, `t/proto-multi-
+captured-writeback-coherence.t`, `t/proto-new-no-match.t`, `t/proto-multi-method-role-
+composition.t`, `t/multi-udismiley-ambiguity-leak.t`, `t/role-ud-multi-dispatch.t`, `t/qualified-
+mu-coercion.t`) and stayed green through the cutover.
+
+**Verification.** `cargo build`/`cargo clippy -- -D warnings`/`cargo fmt --check` clean; `cargo
+test --lib` (814 tests, same count as E8b — one rename, no net add/remove) and the full local
+`make test` (3074 files / 28683 tests) green. Per CLAUDE.md's "touched name/type resolution"
+rule — this changes a real dispatch read path even though the risk was already retired by
+measurement — a local roast slice (the same 16-file list E8a/E8b used:
+`S06-multi/{proto,type-based,syntax,redispatch}`, `S12-methods/{defer-next,defer-call,lastcall,
+multi,parallel-dispatch}`, `S06-advanced/{callsame,dispatching,wrap}`, `6.c/S12-class/mro-6c`,
+`S12-class/{inheritance,basic}`, `6.c/S14-roles/mixin-6c`) found 524 assertions, all green.
+
+**E8 closes.** E8a + E8b + E8c together deliver everything this box's own text scoped:
+candidates carry `level`/`stored_idx` so winner selection and deferral order both derive from
+one sequence (E8a); `Registry::proto_methods` has folded into `MethodEntry` and the standalone
+table is gone (E8b structural + E8c cutover); the method-vs-sub ranking ladders stayed
+deliberately unmerged, as designed from the start. The one item E8a's own sweep found but did
+NOT fix — `resolve_sequence`'s per-level lookup silently missing an un-punned role's own method
+(`todo/deep/method-entries-never-covers-unpunned-roles.md`) — remains open, but lives in a
+different lookup path (`user_method_overloads`) that neither E8b nor E8c touched; it is not part
+of E8's own closing scope.
+
+**Next Phase E box: E9-pre.** The mandatory raku verification campaign for `samewith`/
+`nextsame`/`callsame`/`nextwith` cursor semantics (design decision 3 above), flagged as the
+highest-semantic-risk box of the whole phase (拙速厳禁). It needs its own dedicated session —
+not a tail slice bolted onto E8c — and must land before any E9a/b/c cursor-cutover work starts.
