@@ -555,6 +555,7 @@ impl Compiler {
             && let Expr::Index {
                 target: index_target,
                 index: index_key,
+                is_positional: index_is_positional,
                 ..
             } = &args[0]
             && let Some(var_name) = Self::postfix_index_name(index_target)
@@ -590,9 +591,14 @@ impl Compiler {
 
             self.code.emit(OpCode::GetGlobal(tmp_target_idx));
             self.compile_expr(index_key);
+            // The element write-back must keep the subscript's own axis: an
+            // associative target (`$r<baz>.text = v` on a class with both
+            // ASSIGN-KEY and ASSIGN-POS) dispatches ASSIGN-KEY, not
+            // ASSIGN-POS("baz", ...) — Text::CSV's CSV::Row died on the int
+            // type check of its ASSIGN-POS (91_csv_cb.t test 16).
             self.code.emit(OpCode::IndexAssignExprNamed {
                 name_idx: var_name_idx,
-                is_positional: true,
+                is_positional: *index_is_positional,
                 target_slot,
             });
             self.code.emit(OpCode::Pop);
