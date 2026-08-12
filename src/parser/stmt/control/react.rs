@@ -59,8 +59,23 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         match var_name(r) {
             Ok((r, name)) => (r, Some(name)),
-            // Type-only pointy block (`-> Int { }`) binds no variable.
-            Err(_) => (r, None),
+            Err(_) => {
+                // Sigilless pointy param (`whenever $ch -> \row { }`,
+                // Text::CSV's Channel/Supply in-format loops): binds the raw
+                // value under the bare name — the same env key a sigil-less
+                // read resolves. Without this the whole statement failed to
+                // parse and fragmented into a bare `whenever` word plus a
+                // standalone pointy block, so the subscription never
+                // registered and the react saw zero events.
+                if let Some(stripped) = r.strip_prefix('\\')
+                    && let Ok((r2, name)) = crate::parser::stmt::idents::ident(stripped)
+                {
+                    (r2, Some(name))
+                } else {
+                    // Type-only pointy block (`-> Int { }`) binds no variable.
+                    (r, None)
+                }
+            }
         }
     } else {
         (rest, None)
