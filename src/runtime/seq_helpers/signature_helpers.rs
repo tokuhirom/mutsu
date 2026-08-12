@@ -223,6 +223,14 @@ impl Interpreter {
         true
     }
 
+    /// `Signature.ACCEPTS(Capture)` / `Capture ~~ Signature`. A `where`
+    /// clause on one param may reference a *sibling* param by name (e.g. a
+    /// destructured `-> (:$x, :$y where $y > $x) {...}` block — the whole
+    /// point of Cro::HTTP::Router's `request-body` Pair-signature dispatch),
+    /// so every param's resolved value is bound into `self.env` under its
+    /// bare name before any `where` clause runs (mirroring what real call
+    /// binding already does by binding params one by one into the same
+    /// env), and unwound afterward regardless of the match outcome.
     pub(in crate::runtime) fn signature_accepts_value(
         &mut self,
         left: &Value,
@@ -232,6 +240,46 @@ impl Interpreter {
             return false;
         };
 
+        let mut saved_env_entries: Vec<(String, Option<Value>)> = Vec::new();
+        let mut pos_idx_prebind = 0usize;
+        for param in &signature.params {
+            if param.is_capture || param.slurpy || param.name.is_empty() {
+                continue;
+            }
+            let is_named_space = param.named || param.sigil == '%';
+            let value = if is_named_space {
+                named.get(&param.name).cloned()
+            } else {
+                let v = positional.get(pos_idx_prebind).cloned();
+                pos_idx_prebind += 1;
+                v
+            };
+            if let Some(value) = value {
+                saved_env_entries.push((param.name.clone(), self.env.get(&param.name).cloned()));
+                self.env.insert(param.name.clone(), value);
+            }
+        }
+        let result = self.signature_accepts_value_checked(left, &positional, &named, signature);
+        for (name, saved) in saved_env_entries.into_iter().rev() {
+            match saved {
+                Some(value) => {
+                    self.env.insert(name, value);
+                }
+                None => {
+                    self.env.remove(&name);
+                }
+            }
+        }
+        result
+    }
+
+    fn signature_accepts_value_checked(
+        &mut self,
+        left: &Value,
+        positional: &[Value],
+        named: &HashMap<String, Value>,
+        signature: &SigInfo,
+    ) -> bool {
         let mut pos_idx = 0usize;
         let mut consumed_named: HashSet<String> = HashSet::new();
         let has_capture = signature.params.iter().any(|p| p.is_capture);
@@ -257,7 +305,7 @@ impl Interpreter {
             if is_named_space {
                 if param.slurpy {
                     if let Some(constraint) = &param.type_constraint {
-                        for (key, value) in &named {
+                        for (key, value) in named {
                             if consumed_named.contains(key) {
                                 continue;
                             }
