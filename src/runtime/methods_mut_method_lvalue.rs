@@ -413,6 +413,35 @@ impl Interpreter {
             }
             return Ok(value);
         }
+        // `$.chomp is rw` inherited by a pure-Raku IO::Handle subclass
+        // (`class Text::IO::String is IO::Handle`): no native handle state to
+        // update — store the instance attribute directly; the reader in
+        // `methods_call_dispatch` answers from it (default True).
+        if method == "chomp"
+            && method_args.is_empty()
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                id: inst_id,
+            } = target.view()
+            && class_name != "IO::Handle"
+            && !self.class_has_user_method(&class_name.resolve(), "chomp")
+            && self
+                .class_mro(&class_name.resolve())
+                .iter()
+                .any(|c| c.as_str() == "IO::Handle")
+        {
+            let mut new_attrs = attributes.to_map();
+            new_attrs.insert("chomp".to_string(), value.clone());
+            attributes.commit_attrs(new_attrs);
+            if let Some(var_name) = target_var {
+                self.env.insert_through(
+                    var_name.to_string(),
+                    Value::instance_sharing_cell(&attributes, class_name, inst_id),
+                );
+            }
+            return Ok(value);
+        }
         if method == "value"
             && let ValueView::Instance {
                 class_name,

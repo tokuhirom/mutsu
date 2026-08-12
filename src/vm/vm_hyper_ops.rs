@@ -480,7 +480,7 @@ impl Interpreter {
     /// Project a QuantHash to a plain `key => weight` Hash so the existing hash
     /// hyper logic applies. Set membership becomes `True`, Bag/Mix weights become
     /// Int/Num. Non-QuantHash values pass through unchanged (scalar broadcast).
-    pub(super) fn quanthash_to_hash(v: &Value) -> Value {
+    pub(crate) fn quanthash_to_hash(v: &Value) -> Value {
         let map: std::collections::HashMap<String, Value> = match v.view() {
             ValueView::Set(d, _) => d
                 .elements
