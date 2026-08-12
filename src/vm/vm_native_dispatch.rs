@@ -69,6 +69,32 @@ impl Interpreter {
             }
         }
         let method_name = method_sym.resolve();
+        // An Iterable user instance with its own `iterator` method routes the
+        // Any iteration methods through that iterator (the arm in
+        // `call_method_with_values`); a native impl (e.g. `flat`) would treat
+        // the instance as one opaque item instead, so decline it here.
+        if matches!(
+            method_name.as_str(),
+            "grep" | "map" | "first" | "sort" | "head" | "tail" | "flat"
+        ) {
+            let cn = match target.view() {
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                } if !attributes.contains_key("__mutsu_array_storage") => {
+                    Some(class_name.as_str().to_string())
+                }
+                _ => None,
+            };
+            if let Some(cn) = cn
+                && self.class_does_role(&cn, "Iterable")
+                && self.has_user_method(&cn, "iterator")
+                && !self.has_user_method(&cn, method_name.as_str())
+            {
+                return None;
+            }
+        }
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // The native impls below read that empty vec directly and would yield
         // nothing (`.List`/`.elems`/`.Array`/...). Defer such a Seq to the
