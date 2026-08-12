@@ -2323,6 +2323,7 @@ impl Interpreter {
             locals: Vec::new(),
             upvalues: Vec::new(),
             frame_authoritative: Vec::new(),
+            frame_owned: Vec::new(),
             in_smartmatch_rhs: false,
             transliterate_in_smartmatch: false,
             substitution_in_smartmatch: false,

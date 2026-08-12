@@ -52,4 +52,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0024](0024-mainline-lexicals-for-named-subs.md) | Mainline is a compunit — named subs resolve mainline free variables through unit-lexical cells | Accepted (implemented) |
 | [0025](0025-captured-scalar-cells-value-kind-blind.md) | Cell boxing of captured scalars must be value-kind-blind — retiring the Instance skip | Accepted (slice 1 implemented; slices 2-3 planned) |
 | [0026](0026-slang-activation-architecture.md) | Slang activation — bundle Slangify + Slang::Tuxic verbatim, map recognized grammar-mixin overrides onto parser modes | Accepted |
-| [0027](0027-loop-frozen-value-capture-cascade.md) | Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind | Proposed |
+| [0027](0027-loop-frozen-value-capture-cascade.md) | Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind | Accepted (Slice 1 implemented; Slices 2-3 planned) |

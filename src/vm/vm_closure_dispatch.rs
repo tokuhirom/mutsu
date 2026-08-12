@@ -677,6 +677,13 @@ impl Interpreter {
             cc,
             &data.authoritative_captures,
         );
+        // ADR-0027: record this closure's own owned (loop-frozen)
+        // captures — force-installed just above from `data.env` — so a
+        // closure created inside this frame's body can inherit the vouch,
+        // gated per-name on the live value kind (`compute_owned_captures`).
+        // (`push_call_frame` saved the caller's set; `pop_call_frame`
+        // restores it.)
+        self.frame_owned = data.owned_captures.clone();
         // Load persisted state variable values using scoped keys
         // (state_scope_id is set to data.id above, so scoped_state_key
         // will generate closure-instance-specific keys automatically).

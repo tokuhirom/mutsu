@@ -321,6 +321,13 @@ pub(crate) struct VmCallFrame {
     /// (overwrite) capture semantics (runtime transitive vouching). Saved here so
     /// a nested call restores it, mirroring `saved_upvalues`.
     pub saved_frame_authoritative: Vec<crate::symbol::Symbol>,
+    /// The caller frame's `frame_owned` set (ADR-0027) — the free-var names
+    /// this frame vouches for as loop-frozen, so a closure created inside it
+    /// inherits owned (force-overwrite) capture semantics for those names
+    /// whose currently captured value is plain (not a live shared cell).
+    /// Saved here so a nested call restores it, mirroring
+    /// `saved_frame_authoritative`.
+    pub saved_frame_owned: Vec<crate::symbol::Symbol>,
     /// The caller's active-for-loop-parameter-name stack (ADR-0023). A
     /// compiled-function body runs via its own `exec_one` mini-loop, not
     /// `run()`/`with_nested_registers` (which save these), so without

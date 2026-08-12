@@ -60,6 +60,7 @@ impl Interpreter {
             saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
             saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
+            saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
         };
         self.call_frames.push(frame);
@@ -85,6 +86,7 @@ impl Interpreter {
             saved_loop_local_saved_env: std::mem::take(&mut self.loop_local_saved_env),
             saved_block_declared_vars: std::mem::take(&mut self.block_declared_vars),
             saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
+            saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: std::mem::take(&mut self.active_loop_param_names),
         };
         self.call_frames.push(frame);
@@ -108,6 +110,7 @@ impl Interpreter {
         self.loop_local_saved_env = std::mem::take(&mut frame.saved_loop_local_saved_env);
         self.block_declared_vars = std::mem::take(&mut frame.saved_block_declared_vars);
         self.frame_authoritative = std::mem::take(&mut frame.saved_frame_authoritative);
+        self.frame_owned = std::mem::take(&mut frame.saved_frame_owned);
         self.active_loop_param_names = std::mem::take(&mut frame.saved_active_loop_param_names);
         self.exit_readonly_frame(frame.readonly_mark);
         frame

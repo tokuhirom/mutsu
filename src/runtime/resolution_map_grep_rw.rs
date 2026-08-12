@@ -203,6 +203,9 @@ impl Interpreter {
                     )
                 })
                 .unwrap_or_default();
+            // ADR-0027: see the matching comment in `eval_map_over_items`
+            // (`resolution_map_grep.rs`).
+            let block_owned = data.owned_captures.clone();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance — the body was
                 // re-compiled fresh, so two distinct blocks share compile-time
@@ -214,6 +217,7 @@ impl Interpreter {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
                     vm.frame_authoritative = block_authoritative.clone();
+                    vm.frame_owned = block_owned.clone();
                     // Set when `rw_param` is active: the transient cell this
                     // iteration's param is bound to, read back after the call
                     // instead of `topic_key` (which never mirrors a NAMED
@@ -473,6 +477,9 @@ impl Interpreter {
                     )
                 })
                 .unwrap_or_default();
+            // ADR-0027: see the matching comment in `eval_map_over_items`
+            // (`resolution_map_grep.rs`).
+            let block_owned = data.owned_captures.clone();
             let loop_result: Result<(), RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope `state` variables to the closure instance (see
                 // `eval_map_over_items`).
@@ -490,6 +497,7 @@ impl Interpreter {
                     };
                     'body_redo: loop {
                         vm.frame_authoritative = block_authoritative.clone();
+                        vm.frame_owned = block_owned.clone();
                         {
                             let assumed_count = data.assumed_positional.len();
                             for (idx, val) in data.assumed_positional.iter().enumerate() {

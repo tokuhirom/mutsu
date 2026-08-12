@@ -413,6 +413,10 @@ impl Interpreter {
                 .as_ref()
                 .map(|cc| frame_authoritative_set(cc, &data.authoritative_captures))
                 .unwrap_or_default();
+            // ADR-0027: this block's own loop-frozen owned captures, seeded
+            // per iteration alongside `block_authoritative` — see
+            // `Interpreter::frame_owned`.
+            let block_owned = data.owned_captures.clone();
             let loop_result: Result<Value, RuntimeError> = self.with_nested_registers(|vm| {
                 // Scope this block's `state` variables to the closure instance
                 // (`$n@<ip>#c{id}`): the body was re-compiled fresh above, so
@@ -428,6 +432,7 @@ impl Interpreter {
                         return Err(RuntimeError::new("Not enough elements for map block arity"));
                     }
                     vm.frame_authoritative = block_authoritative.clone();
+                    vm.frame_owned = block_owned.clone();
                     {
                         let assumed_count = data.assumed_positional.len();
                         // Bind assumed positional args first

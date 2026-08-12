@@ -267,6 +267,11 @@ impl Interpreter {
         let saved_block_declared_vars = std::mem::take(&mut self.block_declared_vars);
         let saved_loop_local_vars = std::mem::take(&mut self.loop_local_vars);
         let saved_loop_local_saved_env = std::mem::take(&mut self.loop_local_saved_env);
+        // ADR-0027: a nested run (EVAL, dies-ok/lives-ok block, ...) starts
+        // with an empty loop-owned vouch, for the same isolation rationale as
+        // `active_loop_param_names` below — its own closures must not
+        // inherit an unrelated enclosing loop's frozen-capture vouch.
+        let saved_frame_owned = std::mem::take(&mut self.frame_owned);
         // ADR-0023: a routine called from a loop body starts with an empty
         // active-loop-param stack, so a spawn inside the callee whose free
         // variable merely shares an OUTER loop's parameter name is not
@@ -349,6 +354,7 @@ impl Interpreter {
         self.block_declared_vars = saved_block_declared_vars;
         self.loop_local_vars = saved_loop_local_vars;
         self.loop_local_saved_env = saved_loop_local_saved_env;
+        self.frame_owned = saved_frame_owned;
         self.active_loop_param_names = saved_active_loop_param_names;
         self.outer_scope_locals = saved_outer_scope_locals;
         self.pending_alias_bind_names = saved_pending_alias_bind_names;
