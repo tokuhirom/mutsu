@@ -93,6 +93,17 @@ impl Interpreter {
             }
             let target = self.stack.pop().unwrap_or(Value::NIL);
             Self::throw_if_failure(&target)?;
+            // Resolve slot refs and Scalar containers to the underlying value,
+            // like every subscript READ does (vm_var_index_ops): a chained
+            // `@in[0]{$key}:exists` pops the element as an itemized (`$%(...)`)
+            // hash — a Scalar wrapper — which no target arm below matched, so
+            // the lookup always answered False (Text::CSV's csv(key => ...)
+            // died with error 4001 on data whose key existed).
+            let target = match target.view() {
+                ValueView::HashEntryRef { .. } => target.hash_entry_read(),
+                ValueView::Scalar(inner) => inner.clone(),
+                _ => target,
+            };
             // A nested single-dim slice (`@a[(3, (30, (5,)))]:exists`) preserves
             // its index-tree shape in the result, so it recurses rather than
             // walking a flat pair list. Distinct from a multidim `@a[1;2]` walk.
