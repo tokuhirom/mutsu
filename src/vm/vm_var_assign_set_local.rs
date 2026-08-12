@@ -247,6 +247,23 @@ impl Interpreter {
         // block (it lives in the package registry, with no closure env). Box the
         // local AND persist the cell so a call after the block reads the live value.
         let box_decl_our = self.vardecl_context && !code.needs_cell_escaping_our_sub.is_empty();
+        // Container-descriptor naming (`@kh.VAR.name`): a plain `my @x`/`my %h`
+        // declaration stamps the variable name into the fresh container below,
+        // after the store. A `:=` bind keeps the bound container's original
+        // name (rakudo first-name-wins), so detect the bind shape up front —
+        // the flags are consumed inside the inner handler.
+        let stamp_decl_name = self.vardecl_context
+            && !self.bind_context
+            && !self.scalar_bind_context
+            && !matches!(
+                self.stack.last().map(Value::view),
+                Some(ValueView::VarRef { .. })
+            )
+            && code.locals.get(idx as usize).is_some_and(|n| {
+                (n.starts_with('@') || n.starts_with('%'))
+                    && !n[1..].starts_with(['!', '.'])
+                    && !n.contains("__ANON")
+            });
         let r = self.exec_set_local_op_inner(code, idx);
         // The store that ends a declaration's in-flight window: from here the
         // slot holds the new binding, so a spawn may unmask the name again (see
@@ -258,6 +275,12 @@ impl Interpreter {
         }
         // Phase 3 Stage 2: write-through scalar attribute writes to the cell.
         if r.is_ok() {
+            if stamp_decl_name {
+                let name = code.locals[idx as usize].clone();
+                if let Some(val) = self.locals.get_mut(idx as usize) {
+                    val.stamp_descriptor_name(&name);
+                }
+            }
             self.sync_our_package_var_from_local(code, idx as usize);
             self.mirror_attr_local_to_cell(code, idx as usize);
             if box_decl

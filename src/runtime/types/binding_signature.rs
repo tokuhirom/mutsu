@@ -1308,6 +1308,33 @@ impl Interpreter {
                         // container-sharing/rw promotion below.
                         bound_value =
                             self.check_and_coerce_param_type(pd, bound_value, None, None)?;
+                        // Named `is copy` container param: own a distinct
+                        // container, exactly like the positional arm — and give
+                        // the fresh copy the "element" descriptor name (rakudo:
+                        // `sub g(:@kh is copy)` bound to `@x` reports "element").
+                        if (pd.name.starts_with('@') || pd.name.starts_with('%'))
+                            && !pd.name[1..].starts_with(['!', '.'])
+                            && pd.traits.iter().any(|t| t == "copy")
+                            && matches!(
+                                bound_value.view(),
+                                ValueView::Array(..) | ValueView::Hash(..)
+                            )
+                        {
+                            bound_value = bound_value.detach_shared_container();
+                            if pd.name.starts_with('@')
+                                && let ValueView::Array(
+                                    gc,
+                                    crate::value::ArrayKind::List
+                                    | crate::value::ArrayKind::ItemList,
+                                ) = bound_value.view()
+                            {
+                                bound_value = Value::array_with_kind(
+                                    crate::gc::Gc::new((*gc).as_ref().clone()),
+                                    crate::value::ArrayKind::Array,
+                                );
+                            }
+                            bound_value.stamp_descriptor_name("element");
+                        }
                         if self.named_scalar_container_share_eligible(pd)
                             && matches!(
                                 bound_value.view(),
@@ -1750,6 +1777,13 @@ impl Interpreter {
                     // caller's `@a`.
                     if is_copy {
                         value = value.detach_shared_container();
+                        // The copy is a fresh container: its descriptor name is
+                        // "element" in rakudo, not the source variable's name the
+                        // detach clone inherited (`sub f(:@kh is copy)` bound to
+                        // `@x` reports "element", never "@x").
+                        if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                            value.stamp_descriptor_name("element");
+                        }
                         // A `@`-sigil `is copy` param is a *mutable Array* copy of
                         // its argument, even when the argument is an (immutable)
                         // List (`f(<x y>)`, `f((1,2))`): `@d[0] = …`, `.push`, and
