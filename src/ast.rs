@@ -2043,6 +2043,30 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(target, out);
             collect_ph_expr(index, out);
         }
+        // A placeholder can be the TARGET of an element assignment
+        // (`{ $^x<a> = 3 }` — Text::CSV's on_in callbacks); without this arm
+        // the block compiled with arity 0 and never bound its argument.
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            collect_ph_expr(target, out);
+            collect_ph_expr(index, out);
+            collect_ph_expr(value, out);
+        }
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+        } => {
+            collect_ph_expr(target, out);
+            for d in dimensions {
+                collect_ph_expr(d, out);
+            }
+            collect_ph_expr(value, out);
+        }
         Expr::Ternary {
             cond,
             then_expr,
@@ -2381,6 +2405,29 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         Expr::Index { target, index, .. } => {
             collect_ph_expr_shallow(target, out);
             collect_ph_expr_shallow(index, out);
+        }
+        // Element-assignment TARGET placeholders (`{ $^x<a> = 3 }`) — see the
+        // matching arm in `collect_ph_expr`.
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            collect_ph_expr_shallow(target, out);
+            collect_ph_expr_shallow(index, out);
+            collect_ph_expr_shallow(value, out);
+        }
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+        } => {
+            collect_ph_expr_shallow(target, out);
+            for d in dimensions {
+                collect_ph_expr_shallow(d, out);
+            }
+            collect_ph_expr_shallow(value, out);
         }
         Expr::Ternary {
             cond,
