@@ -179,7 +179,7 @@ impl Interpreter {
                 }
             }
         }
-        Self::drop_flattened_role_duplicates(&mut expansion);
+        self.drop_flattened_role_duplicates(&mut expansion);
         expansion
     }
 }

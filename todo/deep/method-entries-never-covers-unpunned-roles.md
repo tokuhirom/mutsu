@@ -98,6 +98,16 @@ populating role entries so the sequence matches the real walker: the E8a mismatc
 re-audited per-shape against raku first (qualified `self.R::m()` calls and conflict-resolution
 shapes may still legitimately need the role's own entry; the shadowed-by-class shape must not).
 
+## Update 2026-08-13: the shadowed-by-class ticket is fixed; this ticket's own scope is unchanged
+
+`todo/tickets/role-shadowed-method-in-defer-chain.md` is resolved
+(`news/2026-08/role-shadowed-method-in-defer-chain.md`) — `drop_flattened_role_duplicates`
+(`resolution_method.rs`) now excludes a `does`-composed role's raw entry from the real walker's
+output whenever a class-owned method of matching signature shadows it, so the real walker no
+longer disagrees with raku for that shape. This ticket's own subject — `method_entries` never
+covering an un-punned role at all, affecting the four *production dispatch* call sites listed
+above — is untouched by that fix and remains open exactly as scoped.
+
 ## Suggested fix, for whoever picks this up
 
 - Add a role branch to `sync_user_method_entries` mirroring the class branch (`self.roles.get(class_name)`
