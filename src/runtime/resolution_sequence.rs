@@ -33,6 +33,26 @@
 //! literal). Expected on the sweep and bucketed (like E1a's ledger) rather than
 //! blocking the box; unifying it is E8's job (candidates carry `level`/`stored_idx`
 //! so this exact rule becomes representable in the sequence itself).
+//!
+//! **E8a's own accepted divergence, found by the new deferral-list shadow check**
+//! ([`Interpreter::shadow_check_deferral_sequence`]): [`Self::resolve_sequence`]'s
+//! per-level lookup, `Registry::user_method_overloads`, silently returns nothing
+//! for a **role** owner that has never been *punned* (used as a standalone type
+//! via `RoleName.new`) — `Registry::method_entries` (the E1/E2 canonical table
+//! `user_method_overloads` reads) is only ever populated for `self.classes`
+//! keys, and a role is not one unless a pun briefly registered (and then
+//! withdrew) a synthetic `ClassDef` for it. `resolve_all_methods_with_owner`
+//! (the real deferral-list walker `push_method_dispatch_frame` still uses) does
+//! not have this gap — it reads `self.registry().roles` directly, bypassing
+//! `method_entries` — so every mismatch this shadow check found (2026-08-12
+//! sweep) had the same shape: the sequence is missing exactly the role-owned
+//! candidate the real walker still finds (a role's un-flattened method the
+//! composing class overrides with its own, or a role-qualified call
+//! `self.R::name()`). Full root-cause and fix plan in
+//! `todo/deep/method-entries-never-covers-unpunned-roles.md` — not fixed here
+//! because `method_entries` also feeds several REAL dispatch paths (winner
+//! selection included), so populating it for roles is a real-behavior-change
+//! outside this shadow-only box's scope.
 
 use super::*;
 use crate::builtins::native_method_row::{NativeArityMask, native_row_servable};
@@ -91,8 +111,35 @@ pub(crate) enum MethodVisibility {
 #[derive(Clone)]
 pub(crate) enum ResolvedCandidate {
     /// A user-declared method, at its MRO level, in the class's stored
-    /// declaration order.
-    User { owner: TypeId, def: Arc<MethodDef> },
+    /// declaration order. `level`/`stored_idx` are ADR-0019 E8a's structural
+    /// additions (design decision 1 in
+    /// `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`): `level` is
+    /// this candidate's position in the `chain` it was built from (0 =
+    /// receiver's own class), `stored_idx` its position within that level's
+    /// `user_method_overloads` (declaration order). Together they reproduce
+    /// today's observable deferral order (MRO level, then stored index,
+    /// filtered per-call by signature match) without re-deriving it from a
+    /// second walk — see [`Interpreter::shadow_check_deferral_sequence`].
+    User {
+        owner: TypeId,
+        def: Arc<MethodDef>,
+        // Not read by any production code path yet: E8a's own shadow probe
+        // ([`Interpreter::shadow_check_deferral_sequence`]) relies on the
+        // candidate Vec's own construction (insertion) order already being
+        // `(level, stored_idx)`-ascending rather than re-deriving it from
+        // these fields, and no real dispatch path consumes a sequence at
+        // all yet (E9 is the box that builds a `DispatchCursor` over one).
+        // Kept as struct fields now (not deferred to E9) because they are
+        // structural facts of *this* box's own model — see the `User`
+        // variant doc above — exercised directly by unit tests
+        // (`#[cfg(test)]`, which `cargo build`/`clippy`'s dead-code pass
+        // does not see). Mirrors [`ResolvedSequence::generation`]'s same
+        // "measurement/future aid, not consulted yet" `#[allow(dead_code)]`.
+        #[allow(dead_code)]
+        level: u16,
+        #[allow(dead_code)]
+        stored_idx: u16,
+    },
     /// A `ClassDef::native_methods` binding — an `is native(&sym)` NativeCall
     /// trait, or one of the handful of built-in classes whose getters are
     /// implemented by dedicated `native_io_*` dispatch helpers
@@ -163,7 +210,7 @@ impl Interpreter {
                 .registry()
                 .user_method_overloads(owner_str, name.as_str())
             {
-                for def in overloads {
+                for (stored_idx, def) in overloads.into_iter().enumerate() {
                     let visible = match visibility {
                         MethodVisibility::Public => !(def.is_private || (def.is_my && is_ancestor)),
                         MethodVisibility::Private => def.is_private,
@@ -174,6 +221,8 @@ impl Interpreter {
                     candidates.push(ResolvedCandidate::User {
                         owner: *owner,
                         def: Arc::new(def),
+                        level: level as u16,
+                        stored_idx: stored_idx as u16,
                     });
                 }
             }
@@ -217,10 +266,83 @@ impl Interpreter {
                 native_row_found = true;
             }
         }
+        Self::drop_flattened_role_duplicate_candidates(&mut candidates);
         ResolvedSequence {
             generation,
             candidates,
         }
+    }
+
+    /// ADR-0019 E8a: the sequence-builder twin of
+    /// `resolve_all_methods_with_owner`'s post-match
+    /// `drop_flattened_role_duplicates` (`resolution_method.rs`), applied here
+    /// at sequence *build* time instead — before any per-call argument
+    /// matching, per design decision 1 ("submethod visibility and
+    /// `drop_flattened_role_duplicates` are applied at sequence build time").
+    /// Moving the dedup earlier is behavior-preserving: it removes candidates
+    /// purely by owner identity (a role's own raw copy once a class level
+    /// already carries the role-flattened copy), which does not interact with
+    /// per-call argument matching -- the flattened copy has the same
+    /// signature as the raw one it replaces, so filtering by owner before or
+    /// after a `method_args_match_for_invocant` pass yields the same final
+    /// matched set. See `resolution_method.rs`'s `drop_flattened_role_duplicates`
+    /// doc comment for why the duplicate exists at all (mutsu keeps a composed
+    /// role in the class's MRO; rakudo does not).
+    fn drop_flattened_role_duplicate_candidates(candidates: &mut Vec<ResolvedCandidate>) {
+        let flattened: HashSet<String> = candidates
+            .iter()
+            .filter_map(|c| match c {
+                ResolvedCandidate::User { def, .. } => def.role_origin.clone(),
+                ResolvedCandidate::NativeCallBinding { .. } | ResolvedCandidate::Native { .. } => {
+                    None
+                }
+            })
+            .collect();
+        if flattened.is_empty() {
+            return;
+        }
+        candidates.retain(|c| match c {
+            ResolvedCandidate::User { owner, .. } => !flattened.contains(owner.as_str()),
+            ResolvedCandidate::NativeCallBinding { .. } | ResolvedCandidate::Native { .. } => true,
+        });
+    }
+
+    /// ADR-0019 E8a: "ranker extracted to consume a candidate slice" — the
+    /// per-call signature-match filtering step both
+    /// [`Self::shadow_check_resolver_chain`] (E4a's winner probe) and
+    /// [`Self::shadow_check_deferral_sequence`] (this box's deferral-list
+    /// probe) need before ranking or fingerprinting a sequence's `User`
+    /// candidates. Extracted so the two probes share one filtering pass
+    /// instead of each carrying its own copy of the loop. Skips every
+    /// non-`User` candidate (`Native`/`NativeCallBinding` never enter the
+    /// method ranking ladder). Returns matches in the sequence's own order
+    /// (`(level, stored_idx)` construction order), unchanged by this
+    /// extraction — ranking itself stays [`Self::pick_method_winner`],
+    /// called separately by the winner probe; this only produces its input.
+    pub(crate) fn match_sequence_candidates(
+        &mut self,
+        class_name: &str,
+        candidates: &[ResolvedCandidate],
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+    ) -> Vec<(Symbol, MethodDef)> {
+        let mut matched: Vec<(Symbol, MethodDef)> = Vec::new();
+        for c in candidates {
+            let ResolvedCandidate::User { owner, def, .. } = c else {
+                continue;
+            };
+            if self.method_args_match_for_invocant(
+                class_name,
+                def,
+                arg_values,
+                role_bindings,
+                invocant,
+            ) {
+                matched.push((owner.symbol(), (**def).clone()));
+            }
+        }
+        matched
     }
 
     /// ADR-0019 E4a shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
@@ -330,21 +452,13 @@ impl Interpreter {
         }
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
-        let mut matched: Vec<(Symbol, MethodDef)> = Vec::new();
-        for c in &seq.candidates {
-            let ResolvedCandidate::User { owner, def } = c else {
-                continue;
-            };
-            if self.method_args_match_for_invocant(
-                class_name,
-                def,
-                arg_values,
-                role_bindings.as_ref(),
-                invocant,
-            ) {
-                matched.push((owner.symbol(), (**def).clone()));
-            }
-        }
+        let matched = self.match_sequence_candidates(
+            class_name,
+            &seq.candidates,
+            arg_values,
+            invocant,
+            role_bindings.as_ref(),
+        );
         let shadow = self.pick_method_winner(&mro, arg_values, invocant, matched);
         self.dispatch_ambiguous = saved_ambiguous;
         let matched_ok = match (real, shadow.as_ref()) {
@@ -392,6 +506,120 @@ impl Interpreter {
         crate::vm::vm_stats::record_native_row_shadow_check(real_served == shadow_served, || {
             format!(
                 "method={method} arity={arg_count} real={real_served} shadow={shadow_served} native_row_owner={native_row_owner:?}"
+            )
+        });
+    }
+
+    /// ADR-0019 E8a shadow probe (`MUTSU_VM_STATS`-gated, a no-op otherwise):
+    /// does the sequence's own `(level, stored_idx)` construction order,
+    /// filtered per-call by [`Self::method_args_match_for_invocant`] and with
+    /// the chosen winner's fingerprint removed, reproduce the "remaining"
+    /// deferral list [`Interpreter::push_method_dispatch_frame`] builds today
+    /// via a second, unranked `resolve_all_methods_with_owner` walk plus
+    /// fingerprint-based winner removal? Per design decision 1 in
+    /// `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`, that
+    /// walk's own output IS the target this box's `level`/`stored_idx`
+    /// fields are meant to reproduce — deferral order = sequence order (MRO
+    /// level, then stored index) filtered by per-call signature match.
+    /// Comparison is **order-sensitive** (a `Vec<u64>` equality, not a set):
+    /// deferral order is user-observable through repeated `nextsame`/
+    /// `callsame`.
+    ///
+    /// `chosen_fp` is the caller's already-computed fingerprint of the
+    /// dispatch winner (`None` when no candidate was chosen at all); passing
+    /// it in avoids re-deriving the winner here, which this probe does not
+    /// need to do — [`Self::shadow_check_resolver`] already shadow-checks
+    /// winner selection independently at the `resolve_method_cached`
+    /// boundaries, and per design decision 1 the winner ranking itself is
+    /// unchanged by `level`/`stored_idx` (they are deferral-order-only
+    /// facts), so there is no new winner-selection logic here to verify.
+    ///
+    /// Same `where`-clause care point as
+    /// [`Self::shadow_check_resolver_chain`]: a `where` clause is user code
+    /// whose dynamic-variable writes are an observable side effect of the
+    /// REAL match already performed by `push_method_dispatch_frame`'s own
+    /// `resolve_all_methods_with_owner` call — running
+    /// `method_args_match_for_invocant` a second time here for a
+    /// `where`-carrying candidate would duplicate that side effect, so any
+    /// candidate with a `where` clause anywhere in the sequence skips the
+    /// whole probe.
+    ///
+    /// **Invocant-blind matching, deliberately**: `resolve_all_methods_with_owner`
+    /// itself always calls `method_args_match_for_invocant(..., invocant:
+    /// None)` (`resolution_method.rs`) — the deferral list is NOT filtered by
+    /// the invocant's type/definedness (`:U:`/`:D:` smileys), only by the
+    /// call's non-invocant argument shape. A first version of this probe
+    /// passed `Some(invocant)` here, which is *stricter* than the real
+    /// target and produced spurious mismatches on every `::?ROLE:U:`/
+    /// `::?ROLE:D:` multi pair (`t/role-ud-multi-dispatch.t` et al.): the
+    /// real "remaining" list still contains the sibling smiley candidate
+    /// (raku's own `nextsame`/`callsame` walk does not re-check the
+    /// invocant), so the shadow list must be built the same invocant-blind
+    /// way to actually be a shadow of this target, not an improvement on it.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn shadow_check_deferral_sequence(
+        &mut self,
+        receiver_class: &str,
+        method: &str,
+        arg_values: &[Value],
+        invocant: &Value,
+        chosen_fp: Option<u64>,
+        real_remaining: &[(String, MethodDef)],
+    ) {
+        if !crate::vm::vm_stats::enabled() {
+            return;
+        }
+        let method_sym = Symbol::intern(method);
+        let mro = self.class_mro(receiver_class);
+        let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
+        let native_shape = NativeCallShape::new(arg_values.len(), value_is_definite(invocant));
+        let seq = self.resolve_sequence(&chain, method_sym, native_shape, MethodVisibility::Public);
+        let has_where_candidate = seq.candidates.iter().any(|c| {
+            let ResolvedCandidate::User { def, .. } = c else {
+                return false;
+            };
+            def.param_defs.iter().any(|p| p.where_constraint.is_some())
+        });
+        if has_where_candidate {
+            return;
+        }
+        let role_bindings = self.registry().get_role_param_bindings(receiver_class);
+        let matched = self.match_sequence_candidates(
+            receiver_class,
+            &seq.candidates,
+            arg_values,
+            None,
+            role_bindings.as_ref(),
+        );
+        // Mirrors `push_method_dispatch_frame`'s own loop shape exactly (fp
+        // compare against `chosen_fp` first, THEN the hidden-defer-parent
+        // filter `should_skip_defer_method_candidate`) so a candidate that
+        // happens to be both the winner AND nominally hidden is still
+        // dropped for the winner reason, not double-counted as a hidden-
+        // parent divergence.
+        let mut shadow_fps: Vec<u64> = Vec::new();
+        let mut skipped_chosen = false;
+        for (owner, def) in &matched {
+            let fp = self.method_def_fingerprint(def);
+            if !skipped_chosen && Some(fp) == chosen_fp {
+                skipped_chosen = true;
+                continue;
+            }
+            if self.should_skip_defer_method_candidate(receiver_class, owner.as_str()) {
+                continue;
+            }
+            shadow_fps.push(fp);
+        }
+        let real_fps: Vec<u64> = real_remaining
+            .iter()
+            .map(|(_, def)| self.method_def_fingerprint(def))
+            .collect();
+        let matched = shadow_fps == real_fps;
+        crate::vm::vm_stats::record_deferral_shadow_check(matched, || {
+            format!(
+                "class={receiver_class} method={method} real_len={} shadow_len={}",
+                real_fps.len(),
+                shadow_fps.len()
             )
         });
     }
@@ -622,6 +850,88 @@ mod tests {
         assert!(
             seq.candidates.is_empty(),
             "hardcoded native-method names must not apply to an ancestor level"
+        );
+    }
+
+    /// ADR-0019 E8a: `level` is the candidate's position in the chain (0 =
+    /// receiver's own class); `stored_idx` is its position within that
+    /// level's own declaration order. Two `multi method` overloads on the
+    /// receiver's class come before the single ancestor override.
+    #[test]
+    fn resolve_sequence_assigns_level_and_stored_idx() {
+        let mut i = interp();
+        i.run(
+            "class Base { method greet { 'base' } }\n\
+             class Child is Base {\n\
+               multi method greet(Int $x) { 'child-int' }\n\
+               multi method greet(Str $x) { 'child-str' }\n\
+             }",
+        )
+        .unwrap();
+        let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("greet"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
+        let facts: Vec<(&str, u16, u16)> =
+            seq.candidates
+                .iter()
+                .filter_map(|c| match c {
+                    ResolvedCandidate::User {
+                        owner,
+                        level,
+                        stored_idx,
+                        ..
+                    } => Some((owner.as_str(), *level, *stored_idx)),
+                    ResolvedCandidate::NativeCallBinding { .. }
+                    | ResolvedCandidate::Native { .. } => None,
+                })
+                .collect();
+        assert_eq!(
+            facts,
+            vec![("Child", 0, 0), ("Child", 0, 1), ("Base", 1, 0)],
+            "expected declaration-order stored_idx within Child's level 0, then Base at level 1"
+        );
+    }
+
+    /// ADR-0019 E8a: `drop_flattened_role_duplicate_candidates` (applied
+    /// inside `resolve_sequence` at build time) removes a composed role's own
+    /// raw MRO entry once a class level already carries the flattened copy —
+    /// the sequence-builder twin of `resolution_method.rs`'s
+    /// `drop_flattened_role_duplicates`, moved to build time per design
+    /// decision 1.
+    #[test]
+    fn resolve_sequence_drops_a_flattened_role_duplicate_at_build_time() {
+        let mut i = interp();
+        i.run("role R { method greet { 'r' } }\nclass C does R { }")
+            .unwrap();
+        let mro = i.class_mro("C");
+        let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
+        assert!(
+            chain.iter().any(|t| t.as_str() == "R"),
+            "a composed role stays in mutsu's own MRO (see the module-level doc on the dedup)"
+        );
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("greet"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
+        let owners: Vec<&str> =
+            seq.candidates
+                .iter()
+                .filter_map(|c| match c {
+                    ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
+                    ResolvedCandidate::NativeCallBinding { .. }
+                    | ResolvedCandidate::Native { .. } => None,
+                })
+                .collect();
+        assert_eq!(
+            owners,
+            vec!["C"],
+            "only the class-level flattened copy should remain; the role's own raw copy is dropped"
         );
     }
 

@@ -612,6 +612,42 @@ pub(crate) fn record_walk_shadow_check(matched: bool, detail: impl FnOnce() -> S
     }
 }
 
+// ADR-0019 Phase E box E8a (`todo/deep/adr0019-e8-e11-candidate-sequence-
+// semantics.md`, design decision 1): shadow comparison between the
+// `resolve_sequence` candidate's new `level`/`stored_idx` fields -- filtered
+// per-call and with the winner's fingerprint removed -- and the
+// `nextsame`/`callsame` deferral list `push_method_dispatch_frame` builds
+// today via `resolve_all_methods_with_owner` + fingerprint-based winner
+// removal (`Interpreter::shadow_check_deferral_sequence`). A dedicated
+// counter pair, not the shared `RESOLVER_SHADOW_*` infra: this compares an
+// ORDERED LIST of remaining candidates, not a single dispatch-winner pick,
+// the same reasoning that kept E7 steps 4/6/7's chain/existence checks on
+// their own pairs. Nothing reads these counters to make a dispatch
+// decision: shadow-only, zero behavior change.
+static DEFERRAL_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static DEFERRAL_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn deferral_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one E8a deferral-list shadow comparison. `detail` is only
+/// evaluated on a mismatch, mirroring [`record_walk_shadow_check`].
+#[inline]
+pub(crate) fn record_deferral_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    DEFERRAL_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        DEFERRAL_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = deferral_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1138,6 +1174,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e7 walk-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let deferral_shadow_checks = DEFERRAL_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let deferral_shadow_mismatches = DEFERRAL_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-e8a: deferral_shadow_checks={deferral_shadow_checks} deferral_shadow_mismatches={deferral_shadow_mismatches}"
+    );
+    if let Ok(map) = deferral_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-e8a deferral-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );
