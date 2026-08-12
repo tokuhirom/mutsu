@@ -204,6 +204,244 @@ impl Interpreter {
         }
     }
 
+    /// Check a bound value against a parameter's declared type constraint
+    /// (coercing/wrapping it as needed) and return the possibly-adjusted
+    /// value, or a typed `X::TypeCheck::Binding::Parameter` error. Shared by
+    /// the positional and named binding arms of `bind_function_args_values`
+    /// so both get the same type/subset/coercion enforcement — a named
+    /// `:$param` used to skip this entirely (see
+    /// `todo/tickets/named-parameter-user-subset-type-not-enforced-at-
+    /// binding.md`). `source_name`/`source_type_constraint` are only
+    /// meaningful for the positional arm's typed-container diagnostics
+    /// (`Array[Int] $x = @untyped`); pass `None` for a named param.
+    fn check_and_coerce_param_type(
+        &mut self,
+        pd: &ParamDef,
+        mut value: Value,
+        source_name: Option<&str>,
+        source_type_constraint: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        if let Some(constraint) = &pd.type_constraint
+            && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
+        {
+            let resolved_constraint = self.resolved_type_capture_name(constraint);
+            let type_error_kind = "X::TypeCheck::Binding::Parameter";
+            // For &-sigil parameters, the type constraint specifies the
+            // callable's return type, not the type of the value itself.
+            // e.g. `Callable &x` means Callable[Callable], `Int &x` means Callable[Int].
+            if pd.name.starts_with('&') {
+                // First, the value must be Callable
+                if !self.type_matches_value("Callable", &value) {
+                    let mut err = RuntimeError::new(format!(
+                        "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
+                        type_error_kind,
+                        pd.name,
+                        resolved_constraint,
+                        crate::runtime::value_type_name(&value),
+                        crate::runtime::utils::gist_value(&value)
+                    ));
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    let exception = Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                        ex_attrs,
+                    );
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+                // Then check the callable's return type matches the constraint
+                let return_type = self.callable_return_type(&value);
+                let return_ok = return_type
+                    .as_deref()
+                    .is_some_and(|rt| rt == resolved_constraint);
+                if !return_ok {
+                    let mut err = RuntimeError::new(format!(
+                        "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
+                        type_error_kind,
+                        pd.name,
+                        resolved_constraint,
+                        crate::runtime::value_type_name(&value),
+                        crate::runtime::utils::gist_value(&value)
+                    ));
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    let exception = Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                        ex_attrs,
+                    );
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+            } else if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
+                self.bind_type_capture(captured_name, &value);
+            } else if let Some((target, source)) = parse_coercion_type(&resolved_constraint) {
+                // Coercion type: check source type if specified, then coerce.
+                // A `T(S)` parameter accepts a value that is already a `T`
+                // (no coercion needed) as well as an `S` (coerced via `.T`),
+                // so only reject a value that matches neither.
+                if let Some(src) = source
+                    && !self.type_matches_value(src, &value)
+                    && !self.type_matches_value(target, &value)
+                {
+                    let mut err = RuntimeError::new(format!(
+                        "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
+                        pd.name,
+                        resolved_constraint,
+                        crate::runtime::value_type_name(&value)
+                    ));
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    let exception = Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                        ex_attrs,
+                    );
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+                let original = value.clone();
+                value = self
+                    .try_coerce_value_for_constraint(&resolved_constraint, value)
+                    .map_err(|e| Self::normalize_coercion_binding_error(e, pd, Some(&*self)))?;
+                // A Failure from coercion is passed through as-is
+                // (it will throw when sunk or used). Only check
+                // type match for non-Failure results.
+                if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
+                    && !self.type_matches_value(target, &value)
+                {
+                    return Err(coerce_impossible_error(&resolved_constraint, &original));
+                }
+            } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
+                let expected = self
+                    .typed_container_param_expected(&pd.name, &resolved_constraint)
+                    .unwrap_or_else(|| resolved_constraint.clone());
+                if !self.typed_container_param_matches(
+                    &pd.name,
+                    &resolved_constraint,
+                    &value,
+                    source_name,
+                    source_type_constraint,
+                ) {
+                    let mut err = RuntimeError::new(format!(
+                        "{}: Type check failed in binding to parameter '{}'; expected {} but got {} ({})",
+                        type_error_kind,
+                        pd.name,
+                        expected,
+                        crate::runtime::value_type_name(&value),
+                        crate::runtime::utils::gist_value(&value)
+                    ));
+                    let mut ex_attrs = std::collections::HashMap::new();
+                    ex_attrs.insert("message".to_string(), Value::str(err.message.clone()));
+                    let exception = Value::make_instance(
+                        Symbol::intern("X::TypeCheck::Binding::Parameter"),
+                        ex_attrs,
+                    );
+                    err.exception = Some(Box::new(exception));
+                    return Err(err);
+                }
+            } else if resolved_constraint == "Num"
+                && matches!(
+                    value.view(),
+                    ValueView::Int(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(_, _)
+                        | ValueView::FatRat(_, _)
+                        | ValueView::BigRat(_, _)
+                )
+            {
+                // Binding accepts numeric widening into Num parameters.
+            } else if !self.type_matches_value(&resolved_constraint, &value) {
+                // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
+                let (base_type, smiley) =
+                    crate::runtime::types::strip_type_smiley(&resolved_constraint);
+                if smiley.is_some_and(|s| s == ":D" || s == ":U")
+                    && self.type_matches_value(base_type, &value)
+                {
+                    let should_be_concrete = smiley == Some(":D");
+                    let got_type = if let ValueView::Package(pkg) = value.view() {
+                        pkg.resolve().to_string()
+                    } else {
+                        crate::runtime::value_type_name(&value).to_string()
+                    };
+                    let routine = self
+                        .samewith_context_stack
+                        .last()
+                        .map(|(name, _)| name.as_str())
+                        .unwrap_or("<anon>");
+                    return Err(RuntimeError::parameter_invalid_concreteness(
+                        base_type,
+                        &got_type,
+                        routine,
+                        &pd.name,
+                        should_be_concrete,
+                        pd.is_invocant,
+                    ));
+                }
+                let display_name = if pd.name == "__type_only__" {
+                    format!("parameter '{}'", resolved_constraint)
+                } else {
+                    pd.name.clone()
+                };
+                let got = crate::runtime::value_type_name(&value);
+                // A subset failure is a *constraint* failure in raku:
+                // "Constraint type check failed in binding to
+                // parameter '$x'; expected Even but got Int (3)".
+                let base = resolved_constraint
+                    .split(':')
+                    .next()
+                    .unwrap_or(&resolved_constraint);
+                if self.registry().subsets.contains_key(base) {
+                    let param_display = if pd.name.starts_with(['$', '@', '%', '&']) {
+                        pd.name.clone()
+                    } else {
+                        format!("${}", pd.name)
+                    };
+                    return Err(RuntimeError::typecheck_binding_parameter(
+                        &display_name,
+                        &resolved_constraint,
+                        got,
+                        Some(format!(
+                            "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
+                            param_display,
+                            resolved_constraint,
+                            got,
+                            crate::runtime::utils::gist_value(&value)
+                        )),
+                    )
+                    .with_parameter_object(pd, Some(&*self)));
+                }
+                return Err(RuntimeError::typecheck_binding_parameter(
+                    &display_name,
+                    &resolved_constraint,
+                    got,
+                    Some(format!(
+                        "{}: Type check failed for {}: expected {}, got {}",
+                        type_error_kind, display_name, resolved_constraint, got
+                    )),
+                )
+                .with_parameter_object(pd, Some(&*self)));
+            } else {
+                value = self
+                    .try_coerce_value_for_constraint(&resolved_constraint, value)
+                    .map_err(|e| Self::normalize_coercion_binding_error(e, pd, Some(&*self)))?;
+            }
+            if (resolved_constraint.starts_with("Associative[")
+                || resolved_constraint.starts_with("Hash["))
+                && matches!(value.view(), ValueView::Array(..))
+            {
+                let mut map = std::collections::HashMap::new();
+                if let ValueView::Array(items, ..) = value.view() {
+                    for item in items.iter() {
+                        if let ValueView::Pair(k, v) = item.view() {
+                            map.insert(k.clone(), v.clone());
+                        }
+                    }
+                }
+                value = Value::hash(map);
+            }
+        }
+        Ok(value)
+    }
+
     pub(crate) fn bind_function_args_values(
         &mut self,
         param_defs: &[ParamDef],
@@ -1035,6 +1273,16 @@ impl Interpreter {
                         // (`:$n` shorthand over `my $n = @a`) is excluded — it shares
                         // by reference already, like the positional scalar source.
                         let mut bound_value = val.clone();
+                        // A named param's declared type constraint (built-in,
+                        // user class, or user `subset`) must be enforced here
+                        // too — this used to be positional-only (see
+                        // todo/tickets/named-parameter-user-subset-type-not-
+                        // enforced-at-binding.md), so `sub f(Int :$x!) {};
+                        // f(x => "no")` silently bound the mismatched Str.
+                        // Checked against the raw passed value, before any
+                        // container-sharing/rw promotion below.
+                        bound_value =
+                            self.check_and_coerce_param_type(pd, bound_value, None, None)?;
                         if self.named_scalar_container_share_eligible(pd)
                             && matches!(
                                 bound_value.view(),
@@ -1576,237 +1824,12 @@ impl Interpreter {
                             self.env.insert(readonly_key, Value::TRUE);
                         }
                     }
-                    if let Some(constraint) = &pd.type_constraint
-                        && (pd.name != "__type_only__" || self.is_resolvable_type(constraint))
-                    {
-                        let resolved_constraint = self.resolved_type_capture_name(constraint);
-                        let type_error_kind = "X::TypeCheck::Binding::Parameter";
-                        // For &-sigil parameters, the type constraint specifies the
-                        // callable's return type, not the type of the value itself.
-                        // e.g. `Callable &x` means Callable[Callable], `Int &x` means Callable[Int].
-                        if pd.name.starts_with('&') {
-                            // First, the value must be Callable
-                            if !self.type_matches_value("Callable", &value) {
-                                let mut err = RuntimeError::new(format!(
-                                    "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
-                                    type_error_kind,
-                                    pd.name,
-                                    resolved_constraint,
-                                    crate::runtime::value_type_name(&value),
-                                    crate::runtime::utils::gist_value(&value)
-                                ));
-                                let mut ex_attrs = std::collections::HashMap::new();
-                                ex_attrs
-                                    .insert("message".to_string(), Value::str(err.message.clone()));
-                                let exception = Value::make_instance(
-                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                    ex_attrs,
-                                );
-                                err.exception = Some(Box::new(exception));
-                                return Err(err);
-                            }
-                            // Then check the callable's return type matches the constraint
-                            let return_type = self.callable_return_type(&value);
-                            let return_ok = return_type
-                                .as_deref()
-                                .is_some_and(|rt| rt == resolved_constraint);
-                            if !return_ok {
-                                let mut err = RuntimeError::new(format!(
-                                    "{}: Type check failed in binding to parameter '{}'; expected Callable[{}] but got {} ({})",
-                                    type_error_kind,
-                                    pd.name,
-                                    resolved_constraint,
-                                    crate::runtime::value_type_name(&value),
-                                    crate::runtime::utils::gist_value(&value)
-                                ));
-                                let mut ex_attrs = std::collections::HashMap::new();
-                                ex_attrs
-                                    .insert("message".to_string(), Value::str(err.message.clone()));
-                                let exception = Value::make_instance(
-                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                    ex_attrs,
-                                );
-                                err.exception = Some(Box::new(exception));
-                                return Err(err);
-                            }
-                        } else if let Some(captured_name) = resolved_constraint.strip_prefix("::") {
-                            self.bind_type_capture(captured_name, &value);
-                        } else if let Some((target, source)) =
-                            parse_coercion_type(&resolved_constraint)
-                        {
-                            // Coercion type: check source type if specified, then coerce.
-                            // A `T(S)` parameter accepts a value that is already a `T`
-                            // (no coercion needed) as well as an `S` (coerced via `.T`),
-                            // so only reject a value that matches neither.
-                            if let Some(src) = source
-                                && !self.type_matches_value(src, &value)
-                                && !self.type_matches_value(target, &value)
-                            {
-                                let mut err = RuntimeError::new(format!(
-                                    "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter '{}'; expected {}, got {}",
-                                    pd.name,
-                                    resolved_constraint,
-                                    crate::runtime::value_type_name(&value)
-                                ));
-                                let mut ex_attrs = std::collections::HashMap::new();
-                                ex_attrs
-                                    .insert("message".to_string(), Value::str(err.message.clone()));
-                                let exception = Value::make_instance(
-                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                    ex_attrs,
-                                );
-                                err.exception = Some(Box::new(exception));
-                                return Err(err);
-                            }
-                            let original = value.clone();
-                            value = self
-                                .try_coerce_value_for_constraint(&resolved_constraint, value)
-                                .map_err(|e| {
-                                    Self::normalize_coercion_binding_error(e, pd, Some(&*self))
-                                })?;
-                            // A Failure from coercion is passed through as-is
-                            // (it will throw when sunk or used). Only check
-                            // type match for non-Failure results.
-                            if !matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "Failure")
-                                && !self.type_matches_value(target, &value)
-                            {
-                                return Err(coerce_impossible_error(
-                                    &resolved_constraint,
-                                    &original,
-                                ));
-                            }
-                        } else if pd.name.starts_with('@') || pd.name.starts_with('%') {
-                            let expected = self
-                                .typed_container_param_expected(&pd.name, &resolved_constraint)
-                                .unwrap_or_else(|| resolved_constraint.clone());
-                            if !self.typed_container_param_matches(
-                                &pd.name,
-                                &resolved_constraint,
-                                &value,
-                                source_name.as_deref(),
-                                source_type_constraint.as_deref(),
-                            ) {
-                                let mut err = RuntimeError::new(format!(
-                                    "{}: Type check failed in binding to parameter '{}'; expected {} but got {} ({})",
-                                    type_error_kind,
-                                    pd.name,
-                                    expected,
-                                    crate::runtime::value_type_name(&value),
-                                    crate::runtime::utils::gist_value(&value)
-                                ));
-                                let mut ex_attrs = std::collections::HashMap::new();
-                                ex_attrs
-                                    .insert("message".to_string(), Value::str(err.message.clone()));
-                                let exception = Value::make_instance(
-                                    Symbol::intern("X::TypeCheck::Binding::Parameter"),
-                                    ex_attrs,
-                                );
-                                err.exception = Some(Box::new(exception));
-                                return Err(err);
-                            }
-                        } else if resolved_constraint == "Num"
-                            && matches!(
-                                value.view(),
-                                ValueView::Int(_)
-                                    | ValueView::Num(_)
-                                    | ValueView::Rat(_, _)
-                                    | ValueView::FatRat(_, _)
-                                    | ValueView::BigRat(_, _)
-                            )
-                        {
-                            // Binding accepts numeric widening into Num parameters.
-                        } else if !self.type_matches_value(&resolved_constraint, &value) {
-                            // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
-                            let (base_type, smiley) =
-                                crate::runtime::types::strip_type_smiley(&resolved_constraint);
-                            if smiley.is_some_and(|s| s == ":D" || s == ":U")
-                                && self.type_matches_value(base_type, &value)
-                            {
-                                let should_be_concrete = smiley == Some(":D");
-                                let got_type = if let ValueView::Package(pkg) = value.view() {
-                                    pkg.resolve().to_string()
-                                } else {
-                                    crate::runtime::value_type_name(&value).to_string()
-                                };
-                                let routine = self
-                                    .samewith_context_stack
-                                    .last()
-                                    .map(|(name, _)| name.as_str())
-                                    .unwrap_or("<anon>");
-                                return Err(RuntimeError::parameter_invalid_concreteness(
-                                    base_type,
-                                    &got_type,
-                                    routine,
-                                    &pd.name,
-                                    should_be_concrete,
-                                    pd.is_invocant,
-                                ));
-                            }
-                            let display_name = if pd.name == "__type_only__" {
-                                format!("parameter '{}'", resolved_constraint)
-                            } else {
-                                pd.name.clone()
-                            };
-                            let got = crate::runtime::value_type_name(&value);
-                            // A subset failure is a *constraint* failure in raku:
-                            // "Constraint type check failed in binding to
-                            // parameter '$x'; expected Even but got Int (3)".
-                            let base = resolved_constraint
-                                .split(':')
-                                .next()
-                                .unwrap_or(&resolved_constraint);
-                            if self.registry().subsets.contains_key(base) {
-                                let param_display = if pd.name.starts_with(['$', '@', '%', '&']) {
-                                    pd.name.clone()
-                                } else {
-                                    format!("${}", pd.name)
-                                };
-                                return Err(RuntimeError::typecheck_binding_parameter(
-                                    &display_name,
-                                    &resolved_constraint,
-                                    got,
-                                    Some(format!(
-                                        "Constraint type check failed in binding to parameter '{}'; expected {} but got {} ({})",
-                                        param_display,
-                                        resolved_constraint,
-                                        got,
-                                        crate::runtime::utils::gist_value(&value)
-                                    )),
-                                )
-                                .with_parameter_object(pd, Some(&*self)));
-                            }
-                            return Err(RuntimeError::typecheck_binding_parameter(
-                                &display_name,
-                                &resolved_constraint,
-                                got,
-                                Some(format!(
-                                    "{}: Type check failed for {}: expected {}, got {}",
-                                    type_error_kind, display_name, resolved_constraint, got
-                                )),
-                            )
-                            .with_parameter_object(pd, Some(&*self)));
-                        } else {
-                            value = self
-                                .try_coerce_value_for_constraint(&resolved_constraint, value)
-                                .map_err(|e| {
-                                    Self::normalize_coercion_binding_error(e, pd, Some(&*self))
-                                })?;
-                        }
-                        if (resolved_constraint.starts_with("Associative[")
-                            || resolved_constraint.starts_with("Hash["))
-                            && matches!(value.view(), ValueView::Array(..))
-                        {
-                            let mut map = std::collections::HashMap::new();
-                            if let ValueView::Array(items, ..) = value.view() {
-                                for item in items.iter() {
-                                    if let ValueView::Pair(k, v) = item.view() {
-                                        map.insert(k.clone(), v.clone());
-                                    }
-                                }
-                            }
-                            value = Value::hash(map);
-                        }
-                    }
+                    value = self.check_and_coerce_param_type(
+                        pd,
+                        value,
+                        source_name.as_deref(),
+                        source_type_constraint.as_deref(),
+                    )?;
                     // A literal-value parameter (`sub f("a") {}`, `-> 'about' {}`)
                     // constrains the argument to equal that literal exactly, not
                     // merely share its type -- the type_constraint check above
