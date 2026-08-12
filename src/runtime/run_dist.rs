@@ -29,6 +29,24 @@ impl Interpreter {
             .current_distribution_frame_floor
             .min(self.routine_stack.len());
         for frame in self.routine_stack[floor..].iter().rev() {
+            // A named sub's frame carries the file it was defined in
+            // (`def_file`, from `SubData::source_file`). That is a more
+            // precise key than `frame.package`: a module file with no `unit
+            // module` declaration compiles its top-level subs under the
+            // generic "GLOBAL" package (see `run_modules.rs`), so
+            // `package_distributions["GLOBAL"]` is last-loaded-module-wins —
+            // whichever OTHER bare module happens to `use` most recently
+            // clobbers the entry, and a sub from an unrelated distribution
+            // then resolves `%?RESOURCES` against the wrong one (seen with
+            // Cro::HTTP::Router's `resources-from %?RESOURCES` inside a
+            // caller-defined `sub` exported from its own distribution).
+            // Resolving straight from the routine's own source file
+            // sidesteps the shared-key collision entirely.
+            if let Some(file) = &frame.def_file
+                && let Some(dist) = Self::find_real_distribution_meta6(Path::new(file))
+            {
+                return self.build_resources_from_dist(&dist);
+            }
             if let Some(dist) = self.package_distributions.get(&frame.package) {
                 return self.build_resources_from_dist(&dist.clone());
             }
@@ -146,8 +164,19 @@ impl Interpreter {
         self.current_distribution.clone()
     }
 
-    /// Detect a distribution (META6.json) for the given module source path.
-    pub(super) fn detect_distribution(source_path: &Path) -> Option<Value> {
+    /// Walk up from `source_path` looking for an actual `META6.json` on disk —
+    /// the strict half of [`Self::detect_distribution`], without its synthetic
+    /// fallback. `None` means no real distribution metadata was found (the
+    /// caller decides what "no real dist" should mean for it); unlike
+    /// `detect_distribution`, this never fabricates one from the lib directory.
+    /// Used where a false-positive synthetic match would be worse than a miss
+    /// — e.g. `build_resources_for_package`'s def_file-based lookup must not
+    /// out-rank an already-registered `package_distributions` entry (which
+    /// could be an *installed* module's `Distribution::Installation`, whose
+    /// resources come from a `files` hash, not a plain-filesystem META6.json)
+    /// just because some frame's source file happens to sit under an
+    /// unrelated directory tree with no META6.json anywhere above it.
+    pub(super) fn find_real_distribution_meta6(source_path: &Path) -> Option<Value> {
         let mut dir = source_path.parent()?;
         for _ in 0..4 {
             let meta_path = dir.join("META6.json");
@@ -160,6 +189,14 @@ impl Interpreter {
                 return Self::build_distribution_from_meta(&content, &dist_prefix);
             }
             dir = dir.parent()?;
+        }
+        None
+    }
+
+    /// Detect a distribution (META6.json) for the given module source path.
+    pub(super) fn detect_distribution(source_path: &Path) -> Option<Value> {
+        if let Some(dist) = Self::find_real_distribution_meta6(source_path) {
+            return Some(dist);
         }
         // No META6.json found; build a minimal auto-generated distribution
         let lib_dir = source_path.parent()?;

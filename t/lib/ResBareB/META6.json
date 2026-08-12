@@ -1,0 +1,13 @@
+{
+  "name": "ResBareB",
+  "description": "Fixture distribution with no `unit module` declaration, loaded only to occupy the generic GLOBAL package's distribution slot after ResBareA",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResBareB": "lib/ResBareB.rakumod"
+  },
+  "resources": [],
+  "depends": [],
+  "license": "Artistic-2.0"
+}
