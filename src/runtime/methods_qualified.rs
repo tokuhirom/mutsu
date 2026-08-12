@@ -352,9 +352,46 @@ impl Interpreter {
             }
         }
         // Try running the actual method on the qualifier class
-        if let Some((_owner, method_def)) =
-            self.resolve_method_with_owner(qualifier, actual_method, &args)
-        {
+        let resolved = self.resolve_method_with_owner(qualifier, actual_method, &args);
+        // ADR-0019 Phase E box E7 (second consumer family, qualified dispatch —
+        // see `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 2"):
+        // shadow-check this ad-hoc `resolve_method_with_owner` MRO walk
+        // against the E4 resolver's `resolve_sequence`, for the chain rooted
+        // at the QUALIFIER class (not the receiver's own chain — a qualified
+        // call resolves relative to `qualifier`, e.g. `self.Mu::Str`, so the
+        // shadow chain must be too). `dispatch_qualified_instance_method` has
+        // exactly one caller (`methods_call_dispatch.rs`), so this is gated
+        // inline rather than threaded through a `site` parameter like
+        // `run_instance_method_at` (E7 step 1) — no other call site exists to
+        // tag differently. `record_dispatch_entry_intercept`/`_outcome` reuse
+        // the generic E5/E6 dispatch-entry counters under a new entry key
+        // ("qualifieddispatch"); the per-arm histogram (arm = the called
+        // method name) is the traffic-shape breakdown, mirroring E7 step 1's
+        // choice. A no-op unless `MUTSU_VM_STATS` is set: zero behavior
+        // change.
+        if crate::vm::vm_stats::enabled() {
+            let method_sym = Symbol::intern(actual_method);
+            let qualifier_chain = self.dispatch_mro(&Value::package(Symbol::intern(qualifier)));
+            self.shadow_check_resolver_chain(
+                "qualifieddispatch",
+                qualifier,
+                actual_method,
+                method_sym,
+                &args,
+                None,
+                &qualifier_chain,
+                resolved.as_ref(),
+            );
+            if resolved.is_some() {
+                crate::vm::vm_stats::record_dispatch_entry_intercept(
+                    "qualifieddispatch",
+                    actual_method,
+                );
+            } else {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("qualifieddispatch", "notfound");
+            }
+        }
+        if let Some((_owner, method_def)) = resolved {
             let attrs_map = attributes.to_map();
             let (result, updated) = match self.run_instance_method(
                 qualifier,
