@@ -1,0 +1,15 @@
+{
+  "name": "ResBareA",
+  "description": "Fixture distribution with no `unit module` declaration, whose exported sub builds a nested closure that reads %?RESOURCES when later called",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "perl": "6.d",
+  "provides": {
+    "ResBareA": "lib/ResBareA.rakumod"
+  },
+  "resources": [
+    "greeting.txt"
+  ],
+  "depends": [],
+  "license": "Artistic-2.0"
+}

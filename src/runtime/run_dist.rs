@@ -29,6 +29,24 @@ impl Interpreter {
             .current_distribution_frame_floor
             .min(self.routine_stack.len());
         for frame in self.routine_stack[floor..].iter().rev() {
+            // A named sub's frame carries the file it was defined in
+            // (`def_file`, from `SubData::source_file`). That is a more
+            // precise key than `frame.package`: a module file with no `unit
+            // module` declaration compiles its top-level subs under the
+            // generic "GLOBAL" package (see `run_modules.rs`), so
+            // `package_distributions["GLOBAL"]` is last-loaded-module-wins —
+            // whichever OTHER bare module happens to `use` most recently
+            // clobbers the entry, and a sub from an unrelated distribution
+            // then resolves `%?RESOURCES` against the wrong one (seen with
+            // Cro::HTTP::Router's `resources-from %?RESOURCES` inside a
+            // caller-defined `sub` exported from its own distribution).
+            // Resolving straight from the routine's own source file
+            // sidesteps the shared-key collision entirely.
+            if let Some(file) = &frame.def_file
+                && let Some(dist) = Self::detect_distribution(Path::new(file))
+            {
+                return self.build_resources_from_dist(&dist);
+            }
             if let Some(dist) = self.package_distributions.get(&frame.package) {
                 return self.build_resources_from_dist(&dist.clone());
             }

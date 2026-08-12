@@ -251,7 +251,16 @@ impl Interpreter {
                 is_decl_expr_thunk: false,
                 deprecated_message: None,
                 source_line: cc_source_line,
-                source_file: self.current_source_file(),
+                // Not `current_source_file()`: that reads the dynamically-scoped
+                // `?FILE` env var, which only tracks the unit currently being
+                // *loaded* (see `run_modules.rs`) — correct for a closure built
+                // while its module loads, but wrong for one built later, each
+                // time an already-loaded module's routine runs and constructs
+                // this literal afresh (`?FILE` has reverted to the caller's own
+                // file by then). `executing_source_file()` instead reads the
+                // file baked onto the innermost enclosing routine frame's own
+                // `def_file`, which stays correct regardless of who is calling.
+                source_file: self.executing_source_file(),
                 captured_fatal_mode: self.fatal_mode,
             }));
             self.stack.push(val);
@@ -346,7 +355,12 @@ impl Interpreter {
                 is_decl_expr_thunk: false,
                 deprecated_message: None,
                 source_line: cc_source_line,
-                source_file: self.current_source_file(),
+                // See the comment on the equivalent `MakeAnonSub` arm above:
+                // `executing_source_file()` (not `current_source_file()`)
+                // keeps this correct for a closure literal that is (re)built
+                // each time an already-loaded module's routine runs, after
+                // the module's own `?FILE` scope has long since reverted.
+                source_file: self.executing_source_file(),
             }));
             self.stack.push(val);
             Ok(())
