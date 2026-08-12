@@ -83,6 +83,15 @@ point). Either way it needs design alignment with
 `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` first — that doc's decision 2 should
 be amended before E9a starts.
 
+**Update (same day): the amendment landed, and the "two-level structure" concern above is
+resolved** — the "E9 design decision 2 — REDRAWN" section of
+`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` records a FLAT expansion (per-class
+entries, each a plain method or a proto's ranked block, duplicates across blocks allowed) that
+reproduces raku exactly, confirmed by two exact-hit predictions (probe 1: parent candidate runs
+twice via block re-visit; probe 2: three-level implicit-clone chain). A flat cursor index
+suffices; only the sequence BUILDER changes. This ticket remains open as the tracking item for
+the actual behavior fix, which is E9a's cutover.
+
 ## Repro harness
 
 Campaign probes lived in `tmp/e9pre/` (gitignored); the two order-diverging scripts are inlined
