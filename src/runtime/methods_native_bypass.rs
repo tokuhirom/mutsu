@@ -339,7 +339,12 @@ impl Interpreter {
         // consume `resolve_sequence` uniformly for both receiver kinds.
         let chain = self.dispatch_mro(target);
         let native_shape = super::resolution_sequence::NativeCallShape::new(arg_count, is_instance);
-        let seq = self.resolve_sequence(&chain, Symbol::intern(method), native_shape);
+        let seq = self.resolve_sequence(
+            &chain,
+            Symbol::intern(method),
+            native_shape,
+            super::resolution_sequence::MethodVisibility::Public,
+        );
         let native_binding_owner = seq.candidates.iter().find_map(|c| match c {
             ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
             ResolvedCandidate::User { .. } | ResolvedCandidate::Native { .. } => None,
@@ -591,6 +596,7 @@ mod tests {
             &chain,
             Symbol::intern("bar"),
             super::resolution_sequence::NativeCallShape::new(0, false),
+            super::resolution_sequence::MethodVisibility::Public,
         );
         assert!(
             seq.candidates.is_empty(),

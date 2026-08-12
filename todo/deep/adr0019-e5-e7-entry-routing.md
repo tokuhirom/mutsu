@@ -2012,3 +2012,106 @@ name directly). Next E7 sub-slice: private-as-sequence-query, per the design's c
 above (`dispatch_qualified_mixin_method`/`dispatch_qualified_non_instance_method`'s own
 `resolve_method_with_owner` fallbacks remain untagged, available for a later qualified-dispatch
 sub-slice too).
+
+## E7 step 3: private-as-sequence-query — one real chain-scoping bug found and fixed
+
+`resolve_private_method_for_vm` (`runtime/resolution_private_method.rs`) is the single VM-facing
+entry point for `self!method(...)`-style private-method calls, both the unqualified form
+(`$obj!m(...)`, delegates to `resolve_private_method_any_owner`) and the owner-qualified form
+(`$obj!Owner::m(...)`, delegates to `resolve_private_method_with_owner`). It has exactly two
+callers in the whole codebase — `vm_call_method_compiled_interpret.rs:382` and
+`vm_call_method_compiled_mut.rs:278`, both `loan_env!(self, resolve_private_method_for_vm(...))` —
+the same "exactly two live VM callers" shape as E7 step 1's carrier, and (like step 2) there is only
+one logical call site to tag, so the probe is gated inline (`if crate::vm::vm_stats::enabled()`)
+rather than threaded through a `site` parameter.
+
+**The "private-as-sequence-query" work.** Unlike steps 1/2, which only ever asked `resolve_sequence`
+for the `Public` tier, this step is the one the ADR's own E7 line item names directly ("private-
+method dispatch ... becomes a sequence query with a private-visibility flag"). `resolve_sequence`
+(`resolution_sequence.rs`) gained a `MethodVisibility` enum parameter:
+
+- `Public` is byte-for-byte the pre-existing filter (`is_private` skip; ancestor-level submethod
+  skip) — every existing caller (`shadow_check_resolver_chain`'s three receiver-chain callers via
+  `shadow_check_resolver`, `dispatch_qualified_instance_method`'s qualifier-chain call, both
+  `methods_native_bypass.rs` bypass/native-row shadow probes, and all pre-existing unit tests) now
+  passes `MethodVisibility::Public` explicitly. Zero behavior change at any of those sites.
+- `Private` collects every `is_private` def at every chain level, with **no** `is_my` exclusion —
+  read directly off the two ad-hoc resolvers being shadowed, neither of which ever checks `is_my`
+  at all (confirmed by reading both function bodies, not assumed). It also skips the
+  `NativeCallBinding`/`Native` candidate blocks entirely: a private name (post `!`-stripping) can
+  coincidentally collide with a public builtin/native-row name (e.g. a user `method !chars`), and
+  neither native candidate kind is ever reachable through `self!name` dispatch — surfacing one as a
+  candidate would be a false hit invisible to any real caller. A new unit test
+  (`resolve_sequence_private_never_surfaces_a_native_candidate`) pins this directly against
+  `Str.chars`.
+
+`shadow_check_resolver_chain` gained the same `visibility: MethodVisibility` parameter, threaded
+through unchanged from its existing three `Public` callers plus the new private call site.
+
+**Chain construction — read from the real ad-hoc walk, not guessed.** The owner-qualified form's
+shadow chain must be exactly `[owner]`, mirroring `resolve_private_method_with_owner`'s own `for cn
+in self.class_mro(class_name) { if cn != owner_class { continue } }`. The unqualified form's shadow
+chain is the receiver's full `self.class_mro(class_name)`, exactly what
+`resolve_private_method_any_owner` itself walks — and since `resolve_private_method_for_vm`'s
+`class_name` parameter is already the receiver's own class (not an arbitrary qualifier the way E7
+step 2's `qualifier` was), no `Value::package(...)` round-trip through `dispatch_mro` is needed the
+way step 2's qualifier-rooted chain required one.
+
+**The sweep found and fixed one real bug before landing.** The first cut built the qualified
+chain as `[TypeId::intern(owner)]` unconditionally — i.e. it queried `owner`'s own private methods
+directly, without checking whether `owner` is actually reachable from the receiver's own MRO. The
+very first sweep caught it immediately: `t/private-owner-qualified-permission.t` (`class B { }`,
+`class A { method !p() { 42 } }`, `my $_ = B.new; '$_!A::p()'` — `B` does not inherit from `A`)
+produced `class=B method=p real=None shadow=Some("A")`. The real walk is correct (`B`'s MRO is just
+`[B]`, `A` never appears, so the `cn != owner_class` filter admits nothing and the loop body never
+runs); the naive shadow chain was wrong — it treated the qualified form as a direct lookup on
+`owner`'s own methods regardless of the receiver's relationship to `owner`, which is not what the
+real resolver does. Fixed by computing `receiver_mro = self.class_mro(class_name)` once and using
+`if receiver_mro.iter().any(|s| s.as_str() == owner) { vec![TypeId::intern(owner)] } else {
+Vec::new() }` — an empty chain for an unrelated owner, matching the real `None`. Re-running the same
+file after the fix: `resolver_shadow_mismatches=0`, `privatedispatch:notfound=1` (correctly
+matching `real=None`). This is exactly the kind of "small, obviously safe" fix the box's own
+guidance allows landing inline rather than deferring, and — unlike the accepted E4a early-stopping
+bucket steps 1/2 catalogued — it was a bug in this step's own new shadow-probe code, not a
+pre-existing, already-documented divergence.
+
+**Sweep** (post-fix): full local `t/` (3047 files, debug binary; run both `-j2`/`-j4`-parallel and
+serially) plus an 11-file roast slice, found by grepping roast for `!\w+\(`/`self!`/`\$\w+!Owner::`
+patterns under `S12-*`/`S14-*` and intersecting with `roast-whitelist.txt`: `S12-attributes/
+{class,instance}.t`, `S12-class/inheritance.t`, `S12-enums/thorough.t`,
+`S12-introspection/methods.t`, `S12-methods/{instance,private,trusts}.t`,
+`S14-roles/{basic,conflicts,stubs}.t` (an unwhitelisted twelfth candidate,
+`S12-attributes/trusts.t`, was excluded — it has a pre-existing, unrelated failure). `S12-methods/
+private.t` is the private-dispatch spec file itself and its last subtest is a `for ^10000`
+role-private-method-caching stress loop (deliberately heavy on a debug build — it took ~40-60s,
+which briefly looked like a hang before a longer `timeout` confirmed it completes and passes), so
+the slice exercises this dispatch shape far more heavily than a token grep-based selection would:
+`privatedispatch` fired ~260,600 times in that one file alone. **Zero shadow mismatches tagged
+`privatedispatch` in either sweep post-fix**: the roast slice recorded 260,566
+`resolver_shadow_checks` / 1 mismatch total, and the `t/` sweep recorded 15,600 checks / 10
+mismatches total (246 of the checks were `privatedispatch`, fired across 30 distinct `t/` files) —
+every one of the 11 total mismatches (across both sweeps) is tagged `resolve_method_cached:fresh`,
+the exact pre-existing E4a "non-multi method resolves by name independent of whether the call's
+arguments actually bind it" bucket steps 1/2 already root-caused and confirmed reproduces on the
+pre-E7 baseline; none are tagged `privatedispatch`.
+
+**A parallel-`prove` red herring.** The first `-j4`/`-j2` full-`t/` sweep runs showed ~20 unrelated
+files failing (`proc-async.t`, `io-handle-stdout-stderr-native.t`, `io-pipe-slurp-rest.t`,
+`is-run.t`, `quietly.t`, `sink-warning.t`, `command-line-negation.t`, ...) — none of them exercise
+private-method dispatch. Re-running exactly those files with plain serial `prove` (no `-j`) passed
+every one, confirming local concurrent-subprocess resource contention (many are IO/subprocess-
+spawning tests), not a regression; the CI-matching sequential `make test` run is fully green.
+
+`cargo build` / `cargo test --lib` (804 tests, including 3 new `resolve_sequence` unit tests: two
+for the new `Private` tier plus one confirming the unchanged `Public` tier still excludes a private
+method) / `cargo clippy -- -D warnings` / `cargo fmt` clean; `make test` (3047 files/28,481 tests)
+green; the 11-file roast slice green (491 tests, `MUTSU_FUDGE=1`).
+
+**Conclusion**: this consumer family needed one small, safe fix in the shadow probe's own chain
+construction — not in any real dispatch path, so still zero real-behavior change end to end. After
+the fix, the ad-hoc private-method resolvers agree with the E4 resolver's `resolve_sequence` (now
+extended with the `Private` visibility tier) for every observed call in both sweeps. Next E7
+sub-slice: `.^lookup`/`.^can`/`.^methods` reading the call-path sequence, per the design's consumer
+ordering — the design paragraph calls out the `.^can` dummy-`Value::NIL` probe replacement
+specifically as "a correctness fix as well as a routing change," so that sub-slice is not expected
+to be another clean zero-mismatch/zero-fix result the way steps 1/2 were.

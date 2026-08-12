@@ -380,6 +380,7 @@ impl Interpreter {
                 &args,
                 None,
                 &qualifier_chain,
+                super::resolution_sequence::MethodVisibility::Public,
                 resolved.as_ref(),
             );
             if resolved.is_some() {

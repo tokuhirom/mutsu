@@ -1,4 +1,5 @@
 use super::*;
+use crate::type_id::TypeId;
 
 impl Interpreter {
     pub(crate) fn should_skip_defer_method_candidate(
@@ -208,11 +209,85 @@ impl Interpreter {
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
         let private_rest = method.strip_prefix('!')?;
-        if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
-            self.resolve_private_method_with_owner(class_name, owner_class, pm_name, arg_values)
-        } else {
-            self.resolve_private_method_any_owner(class_name, private_rest, arg_values)
+        let split = private_rest.split_once("::");
+        let owner_class = split.map(|(o, _)| o);
+        let pm_name = split.map(|(_, n)| n).unwrap_or(private_rest);
+        let real = match owner_class {
+            Some(owner) => {
+                self.resolve_private_method_with_owner(class_name, owner, pm_name, arg_values)
+            }
+            None => self.resolve_private_method_any_owner(class_name, pm_name, arg_values),
+        };
+        // ADR-0019 Phase E box E7 (third consumer family, private-as-
+        // sequence-query -- see `todo/deep/adr0019-e5-e7-entry-routing.md`
+        // "E7 step 3"): shadow-check this ad-hoc private-method MRO walk
+        // against the E4 resolver's `resolve_sequence`, now extended with a
+        // `MethodVisibility::Private` tier (E7 steps 1/2 only ever built the
+        // `Public` tier). The owner-qualified form (`$obj!Owner::m`)
+        // restricts the shadow chain to exactly `[owner]` -- but ONLY when
+        // `owner` actually appears in the RECEIVER's own MRO
+        // (`self.class_mro(class_name)`), matching
+        // `resolve_private_method_with_owner`'s own `for cn in
+        // self.class_mro(class_name) { if cn != owner_class { continue } }`:
+        // the real walk is rooted at the receiver's MRO and merely filters it
+        // down to one level, it is not a direct lookup on `owner_class`'s own
+        // methods regardless of relation to the receiver. An unrelated
+        // `owner` (e.g. `$b!A::p()` where `$b`'s class `B` does not inherit
+        // from `A`) must yield an EMPTY chain, not `[A]` -- an empty chain
+        // was exactly the fix for the one mismatch the initial sweep found
+        // (`t/private-owner-qualified-permission.t`, `class=B method=p
+        // real=None shadow=Some("A")`): `class_mro("B")` is just `[B]`, so
+        // `A` never appears and the real walk finds nothing, but a naive
+        // `[TypeId::intern("A")]` chain found `A`'s own private `p` anyway.
+        // The unqualified form (`$obj!m`) walks the receiver's own full MRO
+        // via `self.class_mro(class_name)`, exactly what
+        // `resolve_private_method_any_owner` itself walks (`class_name` here
+        // is already the receiver's class, not an arbitrary qualifier, so no
+        // `Value::package(...)` round-trip through `dispatch_mro` is needed
+        // the way E7 step 2's qualifier-rooted chain required one).
+        // `resolve_private_method_for_vm` has exactly two callers in the
+        // whole codebase (both VM carrier sites,
+        // `vm_call_method_compiled_interpret.rs` /
+        // `vm_call_method_compiled_mut.rs`), so -- like E7 step 2 -- this is
+        // gated inline rather than threaded through a `site` parameter. A
+        // no-op unless `MUTSU_VM_STATS` is set: zero behavior change.
+        if crate::vm::vm_stats::enabled() {
+            let method_sym = Symbol::intern(pm_name);
+            let receiver_mro = self.class_mro(class_name);
+            let chain: Vec<TypeId> = match owner_class {
+                Some(owner) => {
+                    if receiver_mro.iter().any(|s| s.as_str() == owner) {
+                        vec![TypeId::intern(owner)]
+                    } else {
+                        Vec::new()
+                    }
+                }
+                None => receiver_mro
+                    .iter()
+                    .map(|s| TypeId::intern(s.as_str()))
+                    .collect(),
+            };
+            let real_sym = real
+                .as_ref()
+                .map(|(owner, def)| (Symbol::intern(owner), def.clone()));
+            self.shadow_check_resolver_chain(
+                "privatedispatch",
+                class_name,
+                pm_name,
+                method_sym,
+                arg_values,
+                None,
+                &chain,
+                super::resolution_sequence::MethodVisibility::Private,
+                real_sym.as_ref(),
+            );
+            if real.is_some() {
+                crate::vm::vm_stats::record_dispatch_entry_intercept("privatedispatch", pm_name);
+            } else {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("privatedispatch", "notfound");
+            }
         }
+        real
     }
 
     pub(crate) fn can_fast_dispatch_private_method_vm(&self, owner_class: &str) -> bool {

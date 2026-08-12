@@ -63,6 +63,28 @@ impl NativeCallShape {
     }
 }
 
+/// Which visibility tier [`Interpreter::resolve_sequence`] should collect.
+/// Added for ADR-0019 Phase E box E7 step 3 (private-as-sequence-query,
+/// `todo/deep/adr0019-e5-e7-entry-routing.md` "E7 step 3") so the same
+/// sequence builder can answer a private-method shadow probe without
+/// disturbing any existing `Public` caller.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MethodVisibility {
+    /// The E4a/E6/E7-step-1/E7-step-2 behavior, unchanged: skip `is_private`
+    /// defs and skip an ancestor-level submethod (`is_my && is_ancestor`).
+    /// Also the only tier that consults `NativeCallBinding`/`Native`
+    /// candidates — a private name (post `!`-stripping) can coincidentally
+    /// collide with a public builtin/native row name, and neither native
+    /// candidate kind is ever reachable through `self!name` dispatch, so
+    /// `Private` skips both blocks entirely rather than surface a false hit.
+    Public,
+    /// Every `is_private` def at every chain level, with no `is_my`
+    /// exclusion — mirrors `resolve_private_method_with_owner`/
+    /// `resolve_private_method_any_owner` (`resolution_private_method.rs`),
+    /// neither of which checks `is_my` at all.
+    Private,
+}
+
 /// One candidate in a [`ResolvedSequence`]. E4a only ever constructed `User`;
 /// E4b adds the NativeCall-binding and native-row-catalog kinds (design
 /// decision 4).
@@ -128,6 +150,7 @@ impl Interpreter {
         chain: &[TypeId],
         name: Symbol,
         native_shape: NativeCallShape,
+        visibility: MethodVisibility,
     ) -> ResolvedSequence {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
@@ -141,7 +164,11 @@ impl Interpreter {
                 .user_method_overloads(owner_str, name.as_str())
             {
                 for def in overloads {
-                    if def.is_private || (def.is_my && is_ancestor) {
+                    let visible = match visibility {
+                        MethodVisibility::Public => !(def.is_private || (def.is_my && is_ancestor)),
+                        MethodVisibility::Private => def.is_private,
+                    };
+                    if !visible {
                         continue;
                     }
                     candidates.push(ResolvedCandidate::User {
@@ -149,6 +176,14 @@ impl Interpreter {
                         def: Arc::new(def),
                     });
                 }
+            }
+            if visibility == MethodVisibility::Private {
+                // Private dispatch (`self!name`) never reaches a NativeCall
+                // binding or a native-row catalog entry — both are indexed by
+                // public builtin/binding names, and a coincidental name match
+                // (e.g. a user `method !chars` vs. the `Str.chars` row) must
+                // not surface as a false candidate here.
+                continue;
             }
             // `hardcoded_native_method` only ever fires for the receiver's own
             // (most-derived) class name, mirroring `is_native_method` — it is
@@ -231,6 +266,7 @@ impl Interpreter {
             arg_values,
             Some(invocant),
             &chain,
+            MethodVisibility::Public,
             real,
         );
     }
@@ -255,6 +291,13 @@ impl Interpreter {
     /// `resolve_method_with_owner`'s registry-only walk itself calls
     /// `resolve_method_with_owner_impl(..., invocant: None)` for the case
     /// this is shadowing.
+    ///
+    /// `visibility` (added for ADR-0019 Phase E box E7 step 3,
+    /// private-as-sequence-query) selects which
+    /// [`MethodVisibility`] tier `resolve_sequence` collects — every existing
+    /// caller (both `Public`-chain callers above, plus qualified dispatch's
+    /// `dispatch_qualified_instance_method`) passes `MethodVisibility::Public`
+    /// unchanged; only the new private-dispatch shadow probe passes `Private`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn shadow_check_resolver_chain(
         &mut self,
@@ -265,6 +308,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: Option<&Value>,
         chain: &[TypeId],
+        visibility: MethodVisibility,
         real: Option<&(Symbol, MethodDef)>,
     ) {
         if !crate::vm::vm_stats::enabled() {
@@ -273,7 +317,7 @@ impl Interpreter {
         let saved_ambiguous = self.dispatch_ambiguous;
         let definite = invocant.map(value_is_definite).unwrap_or(false);
         let native_shape = NativeCallShape::new(arg_values.len(), definite);
-        let seq = self.resolve_sequence(chain, method_sym, native_shape);
+        let seq = self.resolve_sequence(chain, method_sym, native_shape, visibility);
         let has_where_candidate = seq.candidates.iter().any(|c| {
             let ResolvedCandidate::User { def, .. } = c else {
                 return false;
@@ -339,7 +383,7 @@ impl Interpreter {
         }
         let chain = self.dispatch_mro(target);
         let native_shape = NativeCallShape::new(arg_count, value_is_definite(target));
-        let seq = self.resolve_sequence(&chain, method_sym, native_shape);
+        let seq = self.resolve_sequence(&chain, method_sym, native_shape, MethodVisibility::Public);
         let native_row_owner = seq.candidates.iter().find_map(|c| match c {
             ResolvedCandidate::Native { owner } => Some(owner.as_str()),
             ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding { .. } => None,
@@ -367,7 +411,12 @@ mod tests {
         i.run("class Base { method greet { 'base' } }\nclass Child is Base { method greet { 'child' } }")
             .unwrap();
         let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("greet"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("greet"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         let owners: Vec<&str> =
             seq.candidates
                 .iter()
@@ -386,7 +435,12 @@ mod tests {
         i.run("class Base { submethod only-base { } }\nclass Child is Base { }")
             .unwrap();
         let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("only-base"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         assert!(
             seq.candidates.is_empty(),
             "a submethod on an ancestor level must not appear in a descendant's sequence"
@@ -399,7 +453,12 @@ mod tests {
         i.run("class Base { submethod only-base { } }\nclass Child is Base { }")
             .unwrap();
         let chain = vec![TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("only-base"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("only-base"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         assert_eq!(seq.candidates.len(), 1);
     }
 
@@ -408,7 +467,12 @@ mod tests {
         let mut i = interp();
         i.run("class Base { }").unwrap();
         let chain = vec![TypeId::intern("Base")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("nope"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("nope"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         assert!(seq.candidates.is_empty());
     }
 
@@ -421,7 +485,12 @@ mod tests {
         let mut i = interp();
         assert!(i.is_native_method("Supply", "tap"));
         let chain = vec![TypeId::intern("Supply")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("tap"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("tap"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         assert!(
             seq.candidates.iter().any(
                 |c| matches!(c, ResolvedCandidate::NativeCallBinding { owner }
@@ -442,6 +511,7 @@ mod tests {
             &chain,
             Symbol::intern("chars"),
             NativeCallShape::new(0, true),
+            MethodVisibility::Public,
         );
         assert!(
             seq.candidates.iter().any(
@@ -460,12 +530,78 @@ mod tests {
             &chain,
             Symbol::intern("chars"),
             NativeCallShape::new(1, true),
+            MethodVisibility::Public,
         );
         assert!(
             !seq.candidates
                 .iter()
                 .any(|c| matches!(c, ResolvedCandidate::Native { .. })),
             "Str.chars is an A0 row and must not surface for a 1-arg call"
+        );
+    }
+
+    /// ADR-0019 E7 step 3: `MethodVisibility::Private` finds a private
+    /// method, and (unlike `Public`) does not exclude it from an ancestor
+    /// level — neither `resolve_private_method_with_owner` nor
+    /// `resolve_private_method_any_owner` checks `is_my` at all.
+    #[test]
+    fn resolve_sequence_private_finds_a_private_method() {
+        let mut i = interp();
+        i.run("class Base { method !secret { 'shh' } }").unwrap();
+        let chain = vec![TypeId::intern("Base")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("secret"),
+            default_shape(),
+            MethodVisibility::Private,
+        );
+        let owners: Vec<&str> =
+            seq.candidates
+                .iter()
+                .filter_map(|c| match c {
+                    ResolvedCandidate::User { owner, .. } => Some(owner.as_str()),
+                    ResolvedCandidate::NativeCallBinding { .. }
+                    | ResolvedCandidate::Native { .. } => None,
+                })
+                .collect();
+        assert_eq!(owners, vec!["Base"]);
+    }
+
+    /// The `Public` tier's existing behavior is unchanged by adding
+    /// `Private`: a private method must never appear in a `Public` sequence.
+    #[test]
+    fn resolve_sequence_public_excludes_a_private_method() {
+        let mut i = interp();
+        i.run("class Base { method !secret { 'shh' } }").unwrap();
+        let chain = vec![TypeId::intern("Base")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("secret"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
+        assert!(
+            seq.candidates.is_empty(),
+            "a private method must not appear in a Public sequence"
+        );
+    }
+
+    /// `Private` never surfaces a `NativeCallBinding`/`Native` candidate,
+    /// even when the (post-`!`-stripping) name coincides with a public
+    /// builtin/native row name — private dispatch can never reach either.
+    #[test]
+    fn resolve_sequence_private_never_surfaces_a_native_candidate() {
+        let mut i = interp();
+        let chain = vec![TypeId::intern("Str")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("chars"),
+            NativeCallShape::new(0, true),
+            MethodVisibility::Private,
+        );
+        assert!(
+            seq.candidates.is_empty(),
+            "Private must not surface Str.chars's public Native row"
         );
     }
 
@@ -477,7 +613,12 @@ mod tests {
         let mut i = interp();
         assert!(i.is_native_method("IO::Handle", "chomp"));
         let chain = vec![TypeId::intern("Base"), TypeId::intern("IO::Handle")];
-        let seq = i.resolve_sequence(&chain, Symbol::intern("chomp"), default_shape());
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("chomp"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
         assert!(
             seq.candidates.is_empty(),
             "hardcoded native-method names must not apply to an ancestor level"

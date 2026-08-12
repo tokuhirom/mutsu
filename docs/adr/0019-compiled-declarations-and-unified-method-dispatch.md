@@ -3340,6 +3340,63 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `resolve_method_with_owner` fallback shape but are deliberately left untagged for a later E7
   sub-slice (one consumer family per sub-PR). Next E7 sub-slice: private-as-sequence-query, per
   `todo/deep/adr0019-e5-e7-entry-routing.md`'s consumer list.
+  **Progress 2026-08-12** (third consumer family, private-as-sequence-query, shadow-measurement
+  only): `resolve_private_method_for_vm` (`runtime/resolution_private_method.rs`) — the single VM-
+  facing entry point for both private-method call shapes, `$obj!m(...)` (unqualified,
+  `resolve_private_method_any_owner`) and `$obj!Owner::m(...)` (owner-qualified,
+  `resolve_private_method_with_owner`) — has exactly two callers in the whole codebase, both VM
+  carrier sites (`vm_call_method_compiled_interpret.rs` / `vm_call_method_compiled_mut.rs`), the
+  same "exactly two live callers" shape as step 1's carrier; the probe is gated inline like step 2
+  (a single logical entry point, no second call site to tag differently). This step also does the
+  "private-as-sequence-query" work the ADR's own E7 description names: `resolve_sequence`
+  (`resolution_sequence.rs`) gained a `MethodVisibility` parameter (`Public`/`Private`) — `Public`
+  is byte-for-byte the pre-existing filter (`is_private` skip, ancestor-submethod skip) and every
+  existing caller (both `resolve_method_cached` boundaries, E7 step 1, E7 step 2, both
+  `methods_native_bypass.rs` sites) now passes it explicitly, unchanged behavior; `Private` collects
+  every `is_private` def at every chain level with no `is_my` exclusion (mirroring that neither
+  ad-hoc private resolver ever checks `is_my`) and skips the `NativeCallBinding`/`Native` candidate
+  blocks entirely (a private name can coincidentally collide with a public builtin/row name, and
+  private dispatch can never reach either). `shadow_check_resolver_chain` gained the same
+  `visibility` parameter threaded through from its existing callers (`Public`) plus the new private
+  call site (`Private`). The owner-qualified chain is scoped to exactly `[owner]` — but ONLY when
+  `owner` is actually present in the receiver's OWN MRO (`self.class_mro(class_name)`); the
+  unqualified chain is the receiver's full `class_mro(class_name)`, both matching what the real
+  ad-hoc walks consult. **The sweep found and fixed one real bug before landing**: the first cut
+  built the qualified chain as `[TypeId::intern(owner)]` unconditionally, so a call like
+  `$b!A::p()` where `$b`'s class does not inherit from `A` incorrectly found `A`'s own private `p`
+  as a shadow candidate (`class=B method=p real=None shadow=Some("A")`, `t/private-owner-qualified-
+  permission.t`) even though the real walk (rooted at `B`'s own MRO, which never contains `A`)
+  correctly answers `None`. Guarding the chain to empty when `owner` is absent from the receiver's
+  MRO fixed it — cheap and safe per the box's own "small, obviously safe" allowance, not deferred.
+  **Sweep** (after the fix): full local `t/` (3047 files, debug binary, run both `-j2`/`-j4` and
+  serially) plus an 11-file roast slice (found by grepping roast for `!\w+\(`/`self!`/`$_!Owner::`
+  patterns under `S12-*`/`S14-*` and intersecting with `roast-whitelist.txt`): `S12-attributes/
+  {class,instance}.t`, `S12-class/inheritance.t`, `S12-enums/thorough.t`, `S12-introspection/
+  methods.t`, `S12-methods/{instance,private,trusts}.t`, `S14-roles/{basic,conflicts,stubs}.t` — all
+  eleven already whitelisted; `S12-methods/private.t` in particular is the private-dispatch spec
+  file itself and includes a `for ^10000` role-private-method-caching stress loop, so the slice
+  exercises this dispatch shape heavily rather than getting a misleadingly clean zero-traffic
+  result (`privatedispatch` fired ~260,600 times in that one file alone). **Zero shadow mismatches
+  tagged `privatedispatch` in either sweep** post-fix: the roast slice recorded 260,566
+  `resolver_shadow_checks` / 1 mismatch, and the `t/` sweep recorded 15,600 checks / 10 mismatches
+  (246 of the checks were `privatedispatch`, fired across 30 distinct `t/` files) — every one of
+  the 11 total mismatches is tagged `resolve_method_cached:fresh`, the same pre-existing E4a "non-
+  multi method resolves by name independent of argument bind" bucket steps 1/2 already root-caused;
+  none are tagged `privatedispatch`. The apparent `-j4`/`-j2` parallel-`prove` failures in ~20
+  unrelated `t/` files (`proc-async.t`, `io-handle-*.t`, `is-run.t`, `quietly.t`, ...) were
+  confirmed to be local concurrent-subprocess resource contention, not a regression: every one of
+  those files passes individually, and the sequential `make test` run (the CI-matching invocation)
+  is fully green. `cargo build`/`cargo test --lib` (804 tests, including 3 new `resolve_sequence`
+  unit tests: two for the new `Private` tier plus one confirming the unchanged `Public` tier still
+  excludes a private method) / `cargo clippy -- -D warnings` / `cargo fmt` clean; `make test` (3047
+  files/28,481 tests) green; the 11-file roast slice green (491 tests, `MUTSU_FUDGE=1`).
+  Full detail in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E7 step 3: private-as-sequence-query
+  — one real chain-scoping bug found and fixed". **This consumer family needed one small fix, now
+  closed** (unlike steps 1/2's zero-mismatch results, but the fix was in the shadow probe's own
+  chain construction, not in the real dispatch path — still zero real-behavior change). Next E7
+  sub-slice: `.^lookup`/`.^can`/`.^methods` reading the call-path sequence, per the design's
+  consumer ordering (the `.^can` dummy-`Value::NIL` probe replacement is called out specifically in
+  the design paragraph above).
 - [ ] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   **Design 2026-08-10** (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`):
