@@ -768,40 +768,17 @@ impl Interpreter {
                 out.push_str(&format!("\\x[{:02X}]", ch as u32));
                 continue;
             }
-            if matches!(
-                ch,
-                '\\' | '.'
-                        | '^'
-                        | '$'
-                        | '*'
-                        | '+'
-                        | '?'
-                        | '('
-                        | ')'
-                        | '['
-                        | ']'
-                        | '{'
-                        | '}'
-                        | '<'
-                        | '>'
-                        | '|'
-                        | ':'
-                        | '#'
-                        // Both quote chars: an unescaped `"` (or `'`) in the
-                        // spliced pattern reads as a quoted-literal opener and
-                        // swallows the rest of the source — `my $q = '"';
-                        // / $q | x /` lost the alternation split entirely
-                        // (Text::CSV's combine/string quoting).
-                        | '\''
-                        | '"'
-                        // `%` (and `%%`) is the separator-quantifier infix and `&`
-                        // is the conjunction infix; an interpolated scalar matches
-                        // *literally* (raku does not re-parse it as regex source),
-                        // so e.g. a `%>` delimiter after `\h*` must not bind as a
-                        // `\h* % ...` separator. Escape them to force literal match.
-                        | '%'
-                        | '&'
-            ) {
+            // Escape EVERY non-identifier char, not an enumerated metachar
+            // list: an interpolated scalar matches *literally* (raku does not
+            // re-parse it as regex source), and the enumerated approach leaked
+            // whichever metachar it forgot — `~` (the goal-match marker)
+            // survived to the structural parser as a bare `TildeMarker` atom
+            // and panicked the matcher (Text::CSV 55_combi with `~` as a
+            // quote/sep/escape char). A backslash before any non-alphanumeric
+            // char is always a literal in regex slang, so blanket-escaping is
+            // safe; alphanumerics and `_` must stay bare (escaping them would
+            // CREATE class shorthands like `\d`/`\w`).
+            if !ch.is_alphanumeric() && ch != '_' {
                 out.push('\\');
             }
             out.push(ch);
