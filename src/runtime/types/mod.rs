@@ -555,6 +555,14 @@ impl Interpreter {
         if pd.name.starts_with('%') {
             return Value::hash(std::collections::HashMap::new());
         }
+        if pd.name.starts_with('&') && pd.type_constraint.is_none() {
+            // An unsupplied `&`-sigil param's implicit nominal type is
+            // `Callable` (not `Any`) — `&cb ~~ Callable` must be True even
+            // when unbound, e.g. `Logger.new(:routine(&log-routine))` inside
+            // Template::Mustache passing an unsupplied `:&log-routine` into
+            // a `Callable :$routine` constructor param.
+            return Value::package(Symbol::intern("Callable"));
+        }
         if let Some(constraint) = &pd.type_constraint {
             // A native int type has no undefined state (`int8 $x;` is 0, not
             // an uninitialized `Int`), so an unpassed `int8 :$id` / `int8 $y?`
