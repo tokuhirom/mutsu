@@ -332,4 +332,76 @@ deferral path the way the hand-written `t/` regression tests do). Two new unit t
 `make test` (3070 files / 28652 tests) green. `resolve_all_methods_with_owner`,
 `push_method_dispatch_frame`'s own logic, and every real dispatch decision are untouched.
 
-**Next E8 sub-slice: E8b — proto methods into `MethodEntry`**, per the slice plan above.
+## E8b: proto methods gain a `MethodEntry` column in shadow mode; the registry's own sync logic was silently dropping proto-only rows
+
+Landed 2026-08-12. Scoped down from this slice plan's original text ("proto methods into
+`MethodEntry`; `lookup_proto_method` deleted") to a measure-first shape, matching E1a's own
+precedent (`TypeId` landed beside the still-authoritative string owner; a later box made it
+authoritative) rather than E8a's "shadow-check-then-immediate-cutover-in-the-same-PR" shape —
+proto methods have exactly one write site and one read site (both far lower blast radius than
+E1a's owner-string problem), but a *cutover* is still a different risk class from adding a
+column even when the write site is singular, so the cutover itself is deferred to E8c.
+
+**Structural change.** `MethodEntry` (`registry.rs`) gained `proto: Option<FunctionDef>`.
+`Registry::set_proto_method(class_name, method_name, def)` is the single write site (called
+from `registration_class_body.rs`'s `class_body_proto_method_decl`, replacing its old direct
+`proto_methods.insert(...)`): it writes `def` into both the still-standalone `proto_methods:
+HashMap<(String, String), FunctionDef>` (still the *only* table `Interpreter::
+lookup_proto_method` reads for real dispatch) and the new `MethodEntry.proto` column, keeping
+them in lockstep by construction. `Registry::method_entry_proto(class_name, method_name)` is
+the new column's read side — a single-level probe (no MRO walk), mirroring
+`user_method_overloads`'s own shape.
+
+**Shadow check.** `lookup_proto_method`'s real MRO walk (`class_mro` + `proto_methods` lookup
+per level) is untouched; it now also calls `shadow_check_proto_method` under
+`MUTSU_VM_STATS`, which repeats the identical MRO walk reading `method_entry_proto` instead and
+compares (owner name, `FunctionDef::body_fingerprint()`) against the real result — a dedicated
+`PROTO_METHOD_SHADOW_CHECKS`/`_MISMATCHES` counter pair (`vm_stats.rs`), following the same
+"one pair per probe family, not the shared `RESOLVER_SHADOW_*` infra" convention every prior
+box in this ADR established.
+
+**Finding (a real bug, in existing code the box merely lit up — fixed): `sync_user_method_
+entries` was dropping proto-only rows.** The first sweep found *majority* mismatches (e.g.
+10/13, 12/19 checks per file), always shaped `real=Some(owner) shadow=None` — the shadow
+column had nothing where the real table had an entry. Root cause: `Registry::
+sync_user_method_entries` (pre-existing, run from every one of `registration_class_body.rs`'s
+own call sites *after* a proto decl in the same class body already landed, plus composition/
+augmentation/redeclaration sites elsewhere) `retain`s a `(owner, name)` row only when
+`entry.builtin.is_some() || !entry.user_candidates.is_empty() || entry.accessor.is_some()`. A
+row holding only a freshly-written `.proto` matched none of those three and was dropped from
+the map outright the moment anything else synced that owner — which, for a proto method
+declared inside a class body, is *immediately*, since `class_body_proto_method_decl` runs
+mid-body and later statements in the same body trigger further syncs before the class exits.
+Fixed by adding `entry.proto.is_some()` to the retain's keep condition. `.proto` itself is
+deliberately left OUT of the `key.owner == owner` clearing branch just above that condition
+(the one that resets `user_candidates`/`accessor` before re-deriving them from `ClassDef`
+below): unlike those two, `.proto` has no `ClassDef`-backed source to re-derive from — it is
+written once, directly, only by `set_proto_method` — so clearing it there would delete it with
+nothing to repopulate it. Confirmed zero real-behavior impact from the bug itself: nothing
+outside this box's own new shadow probe read `.proto` before the fix landed, so the drop was
+entirely self-contained to a column no real dispatch path had started consuming yet — exactly
+the kind of "bug in the box's own new probe/scaffolding, not production" finding this ADR's
+prior boxes (E7, E8a) also hit and fixed before landing.
+
+**Verification.** After the fix, a `MUTSU_VM_STATS=1` sweep of every `t/` file mentioning
+`proto method`/`proto submethod` (22 files) found 171 checks, 0 mismatches. A roast slice
+touching proto/multi/wrap dispatch — the same 16-file list E8a's own verification used above
+(`S06-multi/{proto,type-based,syntax,redispatch}`, `S12-methods/{defer-next,defer-call,
+lastcall,multi,parallel-dispatch}`, `S06-advanced/{callsame,dispatching,wrap}`,
+`6.c/S12-class/mro-6c`, `S12-class/{inheritance,basic}`, `6.c/S14-roles/mixin-6c}`, plus
+`S06-multi/proto.t` added since it is the box's own dedicated roast file) — found 24 checks (3
+files actually exercise a proto method under `MUTSU_VM_STATS`; the rest is coverage against a
+false negative, not evidence of a gap), 0 mismatches. Two new unit tests: `set_proto_method_
+populates_both_the_legacy_table_and_method_entries`, `method_entry_proto_is_scoped_to_the_
+exact_owner`. `cargo build`/`cargo clippy -- -D warnings`/`cargo fmt` clean; `cargo test --lib`
+(814 tests) and the full local `make test` (3071 files / 28661 tests) green.
+`lookup_proto_method`'s own return value and every real proto-method dispatch decision are
+untouched — `proto_methods` stays the sole table actually read for dispatch.
+
+**Next E8 sub-slice: E8c — cutover.** With both sweeps at zero mismatches, `proto_methods` and
+`lookup_proto_method`'s standalone MRO walk are ready to retire in favor of reading
+`method_entries` directly (recovering the slice plan's original E8b scope), but that is left as
+its own slice rather than folded into this one — matching E1a→E1b's two-step precedent, since a
+cutover changes what real dispatch reads even when the measurement backing it is clean. After
+E8c, the next Phase E box is **E9-pre**: the mandatory raku verification campaign for
+`samewith`/`nextsame`/`callsame`/`nextwith` cursor semantics (design decision 3 above) — 拙速厳禁.

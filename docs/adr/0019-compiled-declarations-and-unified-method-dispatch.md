@@ -3742,8 +3742,59 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   clippy -- -D warnings`/`cargo fmt --check` clean; `cargo test --lib` (812 tests) and full
   local `make test` (3070 files / 28652 tests) green. Zero real-behavior change: `resolve_
   all_methods_with_owner`, `push_method_dispatch_frame`'s own logic, and every real dispatch
-  decision are untouched by this slice. **Next E8 sub-slice: E8b — proto methods into
-  `MethodEntry`**, per the slice plan.
+  decision are untouched by this slice.
+  **Progress 2026-08-12** (E8b, proto methods into `MethodEntry`, shadow mode): scoped down
+  from the slice plan's full text ("`lookup_proto_method` deleted") to the same
+  measure-first shape every prior Phase E box used before a cutover — E1a's `TypeId` column
+  landing beside the still-authoritative string owner is the closest precedent. `MethodEntry`
+  (`registry.rs`) gained a `proto: Option<FunctionDef>` column; `Registry::set_proto_method`
+  (the single write site, called from `registration_class_body.rs`'s
+  `class_body_proto_method_decl`) writes it alongside the still-standalone, still-sole-real-
+  reader `proto_methods: HashMap<(String, String), FunctionDef>`. `Interpreter::
+  lookup_proto_method`'s real MRO walk is untouched; it now also calls a new
+  `MUTSU_VM_STATS`-gated probe, `shadow_check_proto_method`, which repeats the identical
+  `class_mro` walk reading the new `method_entries`-backed `Registry::method_entry_proto`
+  instead, and compares owner name + `FunctionDef::body_fingerprint()` against the real
+  result under a dedicated `PROTO_METHOD_SHADOW_CHECKS`/`_MISMATCHES` counter pair
+  (`vm_stats.rs`), following the same "own pair, not `RESOLVER_SHADOW_*`" reasoning as every
+  prior probe family in this ADR.
+  **One real bug found and fixed, in the registry's existing sync logic, not the new probe
+  itself**: the first sweep found *majority* mismatches (e.g. 10/13, 12/19 checks), always
+  `real=Some(owner) shadow=None` — the new column was silently losing its only entry.
+  Root cause: `Registry::sync_user_method_entries` (pre-existing, called from every one of
+  `registration_class_body.rs`'s own call sites *after* the proto decl already landed, plus
+  composition/augmentation/redeclaration elsewhere) `retain`s a `(owner, name)` row only when
+  `entry.builtin.is_some() || !entry.user_candidates.is_empty() || entry.accessor.is_some()` —
+  a row holding only a freshly-written `.proto` (no builtin/user_candidates/accessor) matched
+  none of those and was dropped from the map outright the next time anything synced that
+  owner. Fixed by adding `entry.proto.is_some()` to the keep condition; `.proto` itself is
+  deliberately NOT reset by the `key.owner == owner` clearing branch above it (unlike
+  `user_candidates`/`accessor`, it has no `ClassDef`-backed source that branch re-derives
+  from below — it is written once, directly, by `set_proto_method`). Confirmed zero real-
+  behavior impact: nothing outside this box's own shadow probe read `.proto` before the fix,
+  so the bug was entirely self-contained to the new, not-yet-consulted column. After the fix,
+  a `MUTSU_VM_STATS=1` sweep of every `t/` file mentioning `proto method`/`proto submethod`
+  (22 files) found 171 checks, 0 mismatches; a roast slice touching proto/multi/wrap dispatch
+  (`S06-multi/{proto,type-based,syntax,redispatch}`, `S12-methods/{defer-next,defer-call,
+  lastcall,multi,parallel-dispatch}`, `S06-advanced/{callsame,dispatching,wrap}`,
+  `6.c/S12-class/mro-6c`, `S12-class/{inheritance,basic}`, `6.c/S14-roles/mixin-6c`, 16 files)
+  found 24 checks (3 files actually exercise a proto method; the rest is coverage, not a
+  gap), 0 mismatches. Two new unit tests (`set_proto_method_populates_both_the_legacy_table_
+  and_method_entries`, `method_entry_proto_is_scoped_to_the_exact_owner`). `cargo build`/
+  `cargo clippy -- -D warnings`/`cargo fmt` clean; `cargo test --lib` (814 tests) and full
+  local `make test` (3071 files / 28661 tests) green. Zero real-behavior change:
+  `lookup_proto_method`'s own return value, and every real proto-method dispatch decision,
+  are untouched — `proto_methods` stays the sole table actually read for dispatch.
+  **Next E8 sub-slice: E8c — cutover.** Given zero mismatches on both sweeps, `proto_methods`
+  and `lookup_proto_method`'s standalone MRO walk are ready to retire in favor of reading
+  `method_entries` directly (the slice plan's original E8b text), but that is left as its own
+  small, easily-revertible slice rather than folded into this one, matching E1a→E1b's own
+  two-step precedent — a cutover is a different risk class from a table addition even when
+  the measurement is clean. After E8c, the next Phase E box is **E9-pre**: the mandatory raku
+  verification campaign for `samewith`/`nextsame`/`callsame`/`nextwith` cursor semantics
+  (design decision 3 in `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`) — the
+  highest-semantic-risk box of the whole phase (拙速厳禁), required before any E9a/b/c cursor
+  cutover work starts.
 - [ ] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
   the resolved sequence instead of re-entering name-based resolution.
   **Design 2026-08-10** (same doc): one `DispatchCursor {seq, next, invocant, args}` replaces

@@ -59,6 +59,15 @@ pub(crate) struct MethodEntry {
     /// `ClassAttributeDef` (that stays in `ClassDef::attributes`, the source
     /// this is synced from).
     pub(crate) accessor: Option<bool>,
+    /// `proto method`/`proto submethod` body declared directly on this
+    /// `(owner, name)` (ADR-0019 E8b): the `MethodEntry` fold of the
+    /// formerly-standalone `Registry::proto_methods` table. Written by
+    /// [`Registry::set_proto_method`] alongside `proto_methods` — shadow
+    /// mode: `proto_methods` stays the sole table `Interpreter::
+    /// lookup_proto_method` reads for real dispatch, this field is compared
+    /// against it under `MUTSU_VM_STATS` (`Interpreter::
+    /// shadow_check_proto_method`) before any cutover.
+    pub(crate) proto: Option<FunctionDef>,
 }
 
 /// Program declaration registry. See module docs.
@@ -315,7 +324,23 @@ impl Registry {
                 entry.user_candidates.clear();
                 entry.accessor = None;
             }
-            entry.builtin.is_some() || !entry.user_candidates.is_empty() || entry.accessor.is_some()
+            // `entry.proto` (ADR-0019 E8b) is NOT reset here even for a
+            // `key.owner == owner` row: unlike `user_candidates`/`accessor`,
+            // it has no `ClassDef`-backed source this function re-derives
+            // from below (it is written once, directly, by
+            // `Registry::set_proto_method` at proto-method declaration
+            // time) — clearing it here would just delete it with nothing to
+            // repopulate it. It must still count toward keeping the row
+            // alive, or a proto-only entry (no builtin/user_candidates/
+            // accessor) is silently dropped the next time ANY sync call
+            // touches this owner (composition, augmentation, re-declaration
+            // — all of `registration_class_body.rs`'s own call sites run
+            // this after the proto decl already landed), which is exactly
+            // what the E8b shadow probe caught during its first sweep.
+            entry.builtin.is_some()
+                || !entry.user_candidates.is_empty()
+                || entry.accessor.is_some()
+                || entry.proto.is_some()
         });
         let Some(class_def) = self.classes.get(class_name) else {
             self.bump_method_generation();
@@ -413,6 +438,50 @@ impl Registry {
     pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
         self.method_entries = source.method_entries.clone();
         self.bump_method_generation();
+    }
+
+    /// Register a `proto method`/`proto submethod` body for `(class_name,
+    /// method_name)` (ADR-0019 E8b). Writes to both the legacy `proto_methods`
+    /// table (still the only one `Interpreter::lookup_proto_method` actually
+    /// reads for dispatch) and the new `MethodEntry.proto` column, so the two
+    /// can be shadow-compared before any cutover. Single call site
+    /// (`registration_class_body.rs`'s `class_body_proto_method_decl`).
+    pub(crate) fn set_proto_method(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        def: FunctionDef,
+    ) {
+        self.proto_methods.insert(
+            (class_name.to_string(), method_name.to_string()),
+            def.clone(),
+        );
+        self.method_entries
+            .entry(MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .or_default()
+            .proto = Some(def);
+        self.bump_method_generation();
+    }
+
+    /// The `MethodEntry.proto` column at exactly `(class_name, method_name)`
+    /// — no MRO walk (the caller supplies the chain, mirroring how
+    /// `user_method_overloads` is a per-level, not per-chain, probe).
+    /// ADR-0019 E8b shadow-check helper for [`Interpreter::
+    /// shadow_check_proto_method`]; not read by real dispatch yet.
+    pub(crate) fn method_entry_proto(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<FunctionDef> {
+        self.method_entries
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(class_name),
+                name: Symbol::intern(method_name),
+            })
+            .and_then(|entry| entry.proto.clone())
     }
 
     fn bump_method_generation(&mut self) {
@@ -1105,5 +1174,68 @@ mod tests {
             .expect("built-in entry survives user removal");
         assert!(entry.builtin.is_some());
         assert!(entry.user_candidates.is_empty());
+    }
+
+    fn dummy_proto_def(owner: &str, name: &str) -> FunctionDef {
+        FunctionDef {
+            package: Symbol::intern(owner),
+            name: Symbol::intern(name),
+            params: Vec::new(),
+            param_defs: Vec::new(),
+            body: Vec::new(),
+            is_test_assertion: false,
+            is_rw: false,
+            is_raw: false,
+            is_method: true,
+            empty_sig: false,
+            is_stub: false,
+            return_type: None,
+            is_default: false,
+            deprecated_message: None,
+            source_file: None,
+            decl_order: 0,
+            compiled: None,
+            body_fp_cache: std::sync::OnceLock::new(),
+            body_facts_cache: std::sync::OnceLock::new(),
+            rw_tail_expr: None,
+        }
+    }
+
+    /// ADR-0019 E8b: `set_proto_method` writes both the legacy `proto_methods`
+    /// table and the new `MethodEntry.proto` column, and both agree.
+    #[test]
+    fn set_proto_method_populates_both_the_legacy_table_and_method_entries() {
+        let mut registry = Registry::default();
+        let seeded_generation = registry.method_generation;
+        let def = dummy_proto_def("Foo", "bar");
+        registry.set_proto_method("Foo", "bar", def.clone());
+        assert!(registry.method_generation > seeded_generation);
+
+        assert_eq!(
+            registry
+                .proto_methods
+                .get(&("Foo".to_string(), "bar".to_string()))
+                .map(FunctionDef::body_fingerprint),
+            Some(def.body_fingerprint())
+        );
+        assert_eq!(
+            registry
+                .method_entry_proto("Foo", "bar")
+                .map(|f| f.body_fingerprint()),
+            Some(def.body_fingerprint())
+        );
+    }
+
+    /// `method_entry_proto` is a per-name probe (no MRO walk): a class that
+    /// never declared its own proto method reports `None` even if an
+    /// ancestor did — the MRO walk is the caller's job
+    /// (`Interpreter::lookup_proto_method`/`shadow_check_proto_method`).
+    #[test]
+    fn method_entry_proto_is_scoped_to_the_exact_owner() {
+        let mut registry = Registry::default();
+        registry.set_proto_method("Base", "greet", dummy_proto_def("Base", "greet"));
+        assert!(registry.method_entry_proto("Base", "greet").is_some());
+        assert!(registry.method_entry_proto("Child", "greet").is_none());
+        assert!(registry.method_entry_proto("Base", "other").is_none());
     }
 }
