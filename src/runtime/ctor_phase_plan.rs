@@ -251,6 +251,7 @@ impl Interpreter {
                         r
                     } else {
                         self.run_instance_method_celled(
+                            "",
                             mro_class,
                             probe,
                             method_name,

@@ -1882,3 +1882,53 @@ confirmed pre-existing, not a regression. `cargo clippy -- -D warnings` / `cargo
 needed a two-line fix one level below the opcode it was filed against, closing the same hole for
 both dynamic and static mut dispatch at once. **All of E6 (E6a, E6b, E6c, E6d) is now closed.**
 Next: E7 (metaobject, qualified, and re-entrant calls).
+
+## E7 step 1: `run_instance_method` carrier sites — clean shadow-check, no cutover needed
+
+`run_instance_method`/`run_instance_method_celled` (`runtime/class_dispatch.rs`) is the
+interpreter slow-path carrier for instance-method dispatch used by ~16 call sites across
+`runtime/` (`new`, coercion, `handles`, qualified dispatch, ...) plus exactly two VM opcode
+sites, reached via `vm_core_helpers::vm_run_instance_method`: `CallDefined`'s user `.defined`
+and `SinkPop`'s user `.sink` (`vm_exec_dispatch.rs`). Per the design's "one consumer family per
+sub-PR" rule, this slice measures only those two VM sites — the carrier's other ~14 callers stay
+untouched and untagged for a later E7 sub-slice.
+
+**Mechanism**: both functions gained an optional `site: &'static str` parameter. Every existing
+caller passes `""` through a preserved-signature `run_instance_method` (now a thin wrapper over
+a new `run_instance_method_at(site, ...)`), so the change is behavior-invisible everywhere except
+`vm_run_instance_method`, which now passes `"run_instance_method:vm-carrier"`. When `site` is
+non-empty, `run_instance_method_celled` calls E4a's existing `Interpreter::shadow_check_resolver`
+(the same probe already wired at `resolve_method_cached`'s two boundaries) to compare this
+carrier's own ad-hoc `resolve_method_with_owner_invocant` MRO walk against the E4 resolver's
+`resolve_sequence` answer for the identical `(receiver, method, args)`, and records the outcome
+under the E5/E6 generic dispatch-entry counters with entry key `"runinstancemethod"` (the arm
+name is the called method name — always `defined` or `sink` at this site, confirming no other
+call ever exercises the tagged carrier).
+
+**Sweep**: full local `t/` (3040 files, debug binary) plus a 124-file roast slice
+(`S12-methods`, `S12-attributes`, `S14-roles`, `S02-types` — chosen for metaobject/instance
+dispatch relevance). The new `runinstancemethod` counters fired 102 times across 4 `t/` files
+(0 in the roast slice — those directories don't happen to call `.defined`/`.sink` on a receiver
+where the ad-hoc/resolver answer could plausibly diverge) — **zero shadow mismatches at the new
+site in either sweep**.
+
+**The 10 (`t/`) + 1 (roast slice) mismatches the raw sweep total did show are a false lead**: the
+`resolver_shadow_checks`/`_mismatches` atomics are shared globally across every
+`shadow_check_resolver` call site, so a naive total conflates this box's new site with E4a's
+pre-existing `resolve_method_cached:fresh`/`:cached` boundaries. Every one of the 11 mismatches
+is tagged `resolve_method_cached:fresh` in the per-mismatch detail string, not
+`run_instance_method:vm-carrier`. Rebuilding at the pre-E7 commit (10ecbd371, this change fully
+reverted) and re-running the same 7 files reproduces byte-identical counts and detail strings
+(e.g. `t/type-check.t`: `class=Holder method=set real=Some("Holder") shadow=None`), proving these
+are pre-existing E4a findings, not something this slice introduced or need fix. They all match
+E4a's own already-documented explained bucket (the E8-deferred early-stopping rule: a non-multi
+method resolves by name in the real ad-hoc walk even when its typed signature does not bind the
+call — e.g. `method set(Int $x)` called via `$h.set("x")`, a `Str`) — this wider full-`t/` sweep
+just surfaced more instances of that same bucket (10-11 vs. E4a's original narrower-sweep count
+of 3), not a new mismatch class. No action needed; still tracked under E4a/E8.
+
+**Conclusion**: this consumer family needs no cutover fix — a clean, zero-mismatch shadow-check
+result is itself the box's answer here (unlike E6c, which found and fixed a real divergence).
+`cargo clippy -- -D warnings` / `cargo fmt` clean; full `t/` (3040 files/28,437 tests) green.
+Next E7 sub-slice: qualified dispatch / private-as-sequence-query, per the design's consumer
+ordering above.
