@@ -300,6 +300,63 @@ impl Interpreter {
             }
             return;
         }
+        // A SIGILED scalar source (`"$h"`) is the deref'd-container tag emitted
+        // for `for @$h` / `for $h.list`: the loop iterates the scalar's inner
+        // array, so a mutated topic writes back into that element THROUGH the
+        // shared node (container identity — every holder observes it), never
+        // wholesale into the scalar. `$_ .= uc for @$hdr` is Text::CSV's
+        // header munge (91_csv_cb.t tests 20-23).
+        if let Some(bare) = source.strip_prefix('$') {
+            let loop_var = param_name.as_deref().unwrap_or("_");
+            let Some(current_topic) = self.env().get(loop_var).cloned() else {
+                return;
+            };
+            // A plain scalar local is slot-only (never mirrored to env), so
+            // resolve the holder through its local slot first; the env read
+            // covers globals and `:=`-bound cells.
+            let source_local = self.find_local_slot(code, bare);
+            let raw_source = source_local
+                .and_then(|s| self.locals.get(s))
+                .filter(|v| !v.is_nil())
+                .cloned()
+                .map(Some)
+                .unwrap_or_else(|| self.get_env_with_main_alias(bare));
+            // The scalar may hold the array itemized (`Scalar(Array)`) or via a
+            // `ContainerRef` cell — strip both wrappers to the backing array.
+            let Some((items, kind)) = raw_source
+                .as_ref()
+                .and_then(|v| v.deref_container().into_descalarized().into_array())
+            else {
+                return;
+            };
+            let actual_idx = if reversed && total_items > 0 {
+                total_items - 1 - idx
+            } else {
+                idx
+            };
+            if actual_idx >= items.len()
+                || Self::loop_var_unchanged(&current_topic, &items[actual_idx])
+            {
+                return;
+            }
+            // Same rebuild-and-store as the `@`-source path below: clone the
+            // ArrayData (keeping its kind/metadata, so the scalar's itemization
+            // survives) with the one mutated element, and let
+            // `write_back_container_source` update env, the local slot, and a
+            // `ContainerRef` cell uniformly.
+            let mut new_data = (*items).clone();
+            new_data.items_mut()[actual_idx] = current_topic;
+            let mut updated_value = Value::array_with_kind(crate::gc::Gc::new(new_data), kind);
+            // Keep the scalar's itemization wrapper if it had one.
+            if raw_source
+                .as_ref()
+                .is_some_and(|v| matches!(v.view(), crate::value::ValueView::Scalar(_)))
+            {
+                updated_value = Value::scalar(updated_value);
+            }
+            self.write_back_container_source(code, bare, None, &raw_source, updated_value);
+            return;
+        }
         // A scalar source iterated via `.values` binding a mutable QuantHash is
         // written back by `write_back_quanthash_value_item`, called *before* the
         // body-result match (its coercion can raise X::Str::Numeric, which must

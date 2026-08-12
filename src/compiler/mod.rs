@@ -2356,6 +2356,26 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty() && *name == "reverse" => Self::for_iterable_source_name(target),
+            // `@$h` desugars to `($h).list`: the loop iterates the scalar's
+            // inner array and must alias its elements (`$_ .= uc for @$hdr`
+            // uppercases in place — Text::CSV's header munge). Tag the source
+            // SIGILED ("$h") so the runtime's per-element writeback recognizes
+            // the deref'd-container shape, while the whole-topic scalar
+            // writeback (keyed on the bare name, `for $x {...}`) stays off.
+            // `@a.list` re-tags the array itself, same as bare `for @a`.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if args.is_empty() && *name == "list" => {
+                let inner = match target.as_ref() {
+                    Expr::Grouped(g) => g.as_ref(),
+                    other => other,
+                };
+                match inner {
+                    Expr::Var(name) => Some(format!("${}", name)),
+                    Expr::ArrayVar(name) => Some(format!("@{}", name)),
+                    _ => None,
+                }
+            }
             _ => None,
         }
     }
