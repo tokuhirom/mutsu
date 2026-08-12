@@ -3870,6 +3870,9 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   implementation. E9a is now a deliberate behavior-changing cutover (the old walker is wrong
   where the E9-pre tickets point) gated on new raku-valued pins + local `make roast`, with the
   matcher-strictness ticket (`multi-matcher-admits-int-for-num`) as prerequisite/co-requisite.
+  That prerequisite was fixed the same day (the Int/Rat→Num "numeric widening" removed from the
+  shared matcher and binder — `news/2026-08/multi-num-param-strictness.md`), so E9a's remaining
+  blocker is only the cursor sequence-builder work itself.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every
