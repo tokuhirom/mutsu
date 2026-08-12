@@ -2007,6 +2007,20 @@ pub struct Interpreter {
     /// a different copy than the one the compile-time propagation mutates). Set on
     /// closure entry, saved/restored across call frames like `upvalues`.
     pub(crate) frame_authoritative: Vec<crate::symbol::Symbol>,
+    /// Free-var names the currently-running closure frame vouches for as
+    /// loop-frozen (ADR-0027) — its own `owned_captures`, installed
+    /// force-overwrite at entry because they held a distinct value for this
+    /// closure's creating iteration. A closure created in this frame
+    /// inherits owned (force-overwrite) capture for any of its free vars
+    /// listed here WHOSE CURRENTLY CAPTURED VALUE IS PLAIN — a
+    /// `ContainerRef`-valued name is a live shared cell (already handled by
+    /// the unconditional cell-overwrite merge) and must NOT be cascaded as
+    /// frozen, which would reintroduce the `roast/S17-lowlevel/lock.t`
+    /// stale-snapshot hazard `frame_authoritative` deliberately excludes
+    /// `owned_captures` from. Set on closure entry, saved/restored across
+    /// call frames like `frame_authoritative`, emptied on every other frame
+    /// push.
+    pub(crate) frame_owned: Vec<crate::symbol::Symbol>,
     pub(crate) in_smartmatch_rhs: bool,
     pub(crate) transliterate_in_smartmatch: bool,
     pub(crate) substitution_in_smartmatch: bool,

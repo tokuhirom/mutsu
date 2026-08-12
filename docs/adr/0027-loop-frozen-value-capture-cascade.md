@@ -1,12 +1,43 @@
 # ADR-0027: Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind
 
-- Status: Proposed
+- Status: Accepted (Slice 1 implemented; Slices 2-3 planned)
 - Date: 2026-08-12
 - Related: ADR-0018 (slot-addressed lexical capture), ADR-0023 (binding
   provenance for spawn capture), ADR-0025 (value-kind-blind cell boxing),
   PR #2668 (lever C, `owned_captures`), PR #4627 (`frame_authoritative`
   runtime vouching)
 - Addresses: `todo/deep/for-loop-var-shared-across-nested-closure-captures.md`
+  (resolved, moved to `news/2026-08/for-loop-var-shared-across-nested-closure-captures.md`)
+
+## Outcome (Slice 1, 2026-08-12)
+
+Implemented as designed: `Interpreter::frame_owned` added (save/seed/consult
+mirroring `frame_authoritative`), seeded at all four closure-entry sites
+(`vm_closure_dispatch.rs`, `resolution_call_sub.rs`,
+`resolution_map_grep.rs`, `resolution_map_grep_rw.rs`), consulted in
+`compute_owned_captures` gated on the live value kind exactly as designed.
+
+One additional prerequisite gap surfaced during implementation, not
+anticipated by the design: a `for`-loop's own pointy parameter never
+populated `loop_local_vars` in the first place (it binds via a direct
+env/slot store, not the generic declaration path that populates
+`loop_local_vars` for an ordinary loop-body `my`), so the OUTER closure in
+the repro was never marked as an owned capture at all — nothing for the
+Slice 1 cascade to propagate. Fixed by registering the for-loop's own
+pointy-parameter name(s) into `loop_local_vars` at loop entry, reusing the
+exact name set already computed for ADR-0023's `active_loop_param_names`.
+See the news entry for the full account.
+
+Pin: `t/loop-var-nested-closure-freeze.t`. `roast/S17-lowlevel/lock.t`
+verified green across repeated runs (the live-cell gate's canary).
+`t/http-router.rakutest` test 437 could not be directly re-measured — the
+vendored Cro::HTTP suite currently hits an unrelated pre-existing parse-time
+failure before reaching it — but the isolated repro this ADR was written
+against now matches `raku` exactly.
+
+Slices 2 (parity audit of secondary execution paths) and 3 (retirement-path
+documentation) remain open, tracked as follow-up work rather than blocking
+this slice.
 
 ## Context
 

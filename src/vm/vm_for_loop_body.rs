@@ -389,7 +389,24 @@ impl Interpreter {
                 })
                 .collect()
         };
-        self.push_loop_local_scope(loop_param_names);
+        self.push_loop_local_scope(loop_param_names.clone());
+        // ADR-0027: the for-loop's own pointy parameter(s) are a genuine
+        // per-iteration fresh binding but, unlike an ordinary loop-body `my`
+        // declaration, are bound via a direct env/slot store (below) that
+        // never runs through the generic declaration path
+        // (`exec_set_var_dynamic_op`) which populates `loop_local_vars` for
+        // `my` locals. Without this, `compute_owned_captures` never marks a
+        // closure over the pointy param itself as loop-owned — invisible for
+        // a closure invoked standalone (its captured value simply has no
+        // competing binding to lose to), but wrong the moment such a closure
+        // is invoked NESTED inside a call frame that has a DIFFERENT
+        // iteration's value of the same name live (the IIFE-factory shape;
+        // see `todo/deep/for-loop-var-shared-across-nested-closure-captures.md`).
+        // Reuses the exact name set just pushed for `active_loop_param_names`
+        // (ADR-0023), so this is additive bookkeeping, not a new computation.
+        if let Some(set) = self.loop_local_vars.last_mut() {
+            set.extend(loop_param_names.iter().map(|n| Symbol::intern(n)));
+        }
         // Determine if the implicit topic ($_) should be read-only.
         // Only mark $_ readonly when iterating over an *immutable* collection
         // (Mix/Set/Bag, the `(_, false)` variants). This blocks `.value = ...`

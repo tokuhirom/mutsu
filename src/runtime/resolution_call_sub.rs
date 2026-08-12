@@ -670,6 +670,12 @@ impl Interpreter {
                     })
                     .unwrap_or_default(),
             );
+            // ADR-0027: the interpreter-path twin of the VM closure-entry
+            // `frame_owned` seed above (see `vm_closure_dispatch.rs`) — this
+            // block's own loop-frozen owned captures, so a closure created
+            // inside its body can inherit the vouch.
+            let saved_frame_owned =
+                std::mem::replace(&mut self.frame_owned, data.owned_captures.clone());
             // Tell the fresh-compiler body path which PLACEHOLDER params this
             // call has bound (`{ 0 <= $^p <= 5 }` called as a subset `where`
             // predicate), so the chained-comparison DoBlock's stray-placeholder
@@ -766,6 +772,7 @@ impl Interpreter {
             }
             self.pending_eval_placeholder_params = saved_eval_placeholders;
             self.frame_authoritative = saved_frame_auth;
+            self.frame_owned = saved_frame_owned;
             let result = match body_result {
                 Err(mut e) if e.is_leave => {
                     let routine_key = format!("{}::{}", data.package, data.name);

@@ -434,7 +434,7 @@ impl Interpreter {
         &self,
         compiled_code: &Option<std::sync::Arc<CompiledCode>>,
     ) -> Vec<Symbol> {
-        if self.loop_local_vars.is_empty() {
+        if self.loop_local_vars.is_empty() && self.frame_owned.is_empty() {
             return Vec::new();
         }
         let Some(cc) = compiled_code else {
@@ -444,7 +444,25 @@ impl Interpreter {
         // an enclosing loop body froze a distinct value per iteration.
         cc.free_var_syms
             .iter()
-            .filter(|sym| self.loop_local_vars.iter().any(|set| set.contains(*sym)))
+            .filter(|sym| {
+                self.loop_local_vars.iter().any(|set| set.contains(*sym))
+                    // ADR-0027: cascade an inherited loop-frozen vouch from the
+                    // creating frame (a closure created one closure-CALL deep
+                    // from the loop body, e.g. an IIFE factory's returned
+                    // block) — but ONLY when the name's currently captured
+                    // value is plain, never when it is a `ContainerRef`. A
+                    // cell is a live shared binding (already force-installed
+                    // by the unconditional cell-overwrite capture-env merge);
+                    // re-freezing it here would reintroduce the
+                    // `roast/S17-lowlevel/lock.t` stale-snapshot hazard that
+                    // `frame_authoritative` deliberately excludes
+                    // `owned_captures` from.
+                    || (self.frame_owned.contains(sym)
+                        && !matches!(
+                            self.env().get_sym(**sym).map(Value::view),
+                            Some(ValueView::ContainerRef(_))
+                        ))
+            })
             .copied()
             .collect()
     }
