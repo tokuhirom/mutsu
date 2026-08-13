@@ -361,6 +361,13 @@ impl Interpreter {
         override_args: Option<Vec<Value>>,
         tail_call: bool,
     ) -> Result<Value, RuntimeError> {
+        // Whether this call fell through an exhausted method-wrap frame
+        // (sub_id == 0, remaining now empty): raku's `lastcall` inside a
+        // method wrapper empties the chain, so a following callsame must
+        // resolve to Nil -- we are still inside the wrap dispatcher, even
+        // when there is no method_dispatch_stack/method_class_stack frame to
+        // say so (a plain, unwrapped-by-MRO method has neither).
+        let mut wrap_chain_exhausted = false;
         // Try wrap dispatch stack first (wrapper chains).
         if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
             if let Some(next) = frame.remaining.first().cloned() {
@@ -424,6 +431,7 @@ impl Interpreter {
             }
             // Method wraps (sub_id == 0): fall through to method dispatch stack
             // so callsame inside the original method can continue the MRO chain.
+            wrap_chain_exhausted = true;
         }
         // Try method dispatch stack
         if !self.method_dispatch_stack.is_empty() {
@@ -922,7 +930,7 @@ impl Interpreter {
         // If we're inside a method but there's simply no next candidate in the MRO,
         // return Nil (this is the Raku behavior for callsame/callwith at the end of
         // the MRO).  Plain subs without multi dispatch should still throw.
-        if !self.method_class_stack.is_empty() {
+        if !self.method_class_stack.is_empty() || wrap_chain_exhausted {
             if tail_call {
                 return Err(RuntimeError {
                     return_value: Some(Value::NIL),
