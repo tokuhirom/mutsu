@@ -1197,7 +1197,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 && ll.is_genuinely_lazy()
             {
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    ll.with_cached_no_sink(),
+                    ll.with_cached_no_sink().with_list_context(),
                 ))));
             }
             // An already-reified Positional caches as itself: `@a.cache` is
