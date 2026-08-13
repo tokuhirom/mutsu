@@ -110,8 +110,21 @@ impl Interpreter {
     /// Extract subname, package, subtype, and sub attributes from a code value
     /// and insert them into the CallFrame attributes map.
     fn insert_callframe_code_attrs(attrs: &mut HashMap<String, Value>, code: &Value) {
-        match code.view() {
-            ValueView::Sub(sd) => {
+        // A routine ever composed with a role (`.^mixin(Role)`, or a trait
+        // handler's `$r does Role`) is a `Mixin` wrapping its `Sub` here, not
+        // a bare `Sub` — see `Interpreter::materialize_routine_mixins`. Look
+        // through it so such a routine still reports its name/package instead
+        // of falling to the "no code" arm below.
+        let sub_data = match code.view() {
+            ValueView::Sub(sd) => Some(sd),
+            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                ValueView::Sub(sd) => Some(sd),
+                _ => None,
+            },
+            _ => None,
+        };
+        match sub_data {
+            Some(sd) => {
                 let name = sd.name.resolve();
                 attrs.insert("subname".to_string(), Value::str(name.to_string()));
                 let pkg = sd.package.resolve();
@@ -119,7 +132,7 @@ impl Interpreter {
                 attrs.insert("subtype".to_string(), Value::str("SubRoutine".to_string()));
                 attrs.insert("sub".to_string(), code.clone());
             }
-            _ => {
+            None => {
                 attrs.insert("subname".to_string(), Value::str(String::new()));
                 attrs.insert("package".to_string(), Value::str(String::new()));
                 attrs.insert("subtype".to_string(), Value::str(String::new()));
@@ -130,8 +143,13 @@ impl Interpreter {
 
     fn current_routine_sub_value(&self) -> Value {
         // Try to find the current routine as a Sub value from the block stack
+        // (looking through a `Mixin` wrapper the same way as above).
         for v in self.block_stack.iter().rev() {
-            if matches!(v.view(), ValueView::Sub(_)) {
+            let inner_is_sub = match v.view() {
+                ValueView::Mixin(inner, _) => matches!(inner.as_ref().view(), ValueView::Sub(_)),
+                other => matches!(other, ValueView::Sub(_)),
+            };
+            if inner_is_sub {
                 return v.clone();
             }
         }

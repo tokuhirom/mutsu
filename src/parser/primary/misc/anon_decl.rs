@@ -189,7 +189,10 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = if rest.starts_with('{') {
         let id = ANON_ROLE_COUNTER.fetch_add(1, Ordering::Relaxed);
         (rest, format!("__ANON_ROLE_{id}__"))
-    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+    } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
+        // Not just uppercase/`_`: a role name in expression/argument position
+        // (e.g. `.^mixin(role is-marked { ... })`) is a plain identifier and
+        // may be lowercase and/or kebab-cased, same as at statement position.
         let (r, role_name) = parse_qualified_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         (r, role_name)

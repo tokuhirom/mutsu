@@ -62,6 +62,12 @@ impl Interpreter {
             // must expose the full lexical view, not a scoped overlay.
             self.clone_env(),
         );
+        // Re-apply any role ever composed onto this routine (`.^mixin(Role)`,
+        // or a trait handler's `$r does Role`) — this Sub is a fresh rebuild
+        // from the registry, not the same object the composition ran on, so
+        // it does not carry the role by itself. See
+        // `Interpreter::materialize_routine_mixins`.
+        let sub_val = self.materialize_routine_mixins(sub_val, fn_package, fn_name);
         self.push_block(sub_val);
 
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty

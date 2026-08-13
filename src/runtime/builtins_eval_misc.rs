@@ -205,20 +205,29 @@ impl Interpreter {
         };
         attrs.insert("subtype".to_string(), Value::str(subtype.to_string()));
 
-        // Search the block_stack for a Sub matching this frame's name
+        // Search the block_stack for a Sub matching this frame's name. A
+        // routine ever composed with a role (`.^mixin(Role)`, or a trait
+        // handler's `$r does Role`) is a `Mixin` wrapping its `Sub` here, not
+        // a bare `Sub` — see `Interpreter::materialize_routine_mixins` — so
+        // look through that wrapper the same way.
         let sub_val = self
             .block_stack
             .iter()
             .rev()
             .find(|v| {
-                if let ValueView::Sub(sd) = v.view() {
-                    sd.name.resolve() == frame.name
-                        && (sd.package.resolve() == frame.package
-                            || (frame.package == "GLOBAL" && sd.package.resolve().is_empty())
-                            || (sd.package.resolve() == "GLOBAL" && frame.package.is_empty()))
-                } else {
-                    false
-                }
+                let sd = match v.view() {
+                    ValueView::Sub(sd) => Some(sd),
+                    ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+                        ValueView::Sub(sd) => Some(sd),
+                        _ => None,
+                    },
+                    _ => None,
+                };
+                let Some(sd) = sd else { return false };
+                sd.name.resolve() == frame.name
+                    && (sd.package.resolve() == frame.package
+                        || (frame.package == "GLOBAL" && sd.package.resolve().is_empty())
+                        || (sd.package.resolve() == "GLOBAL" && frame.package.is_empty()))
             })
             .cloned()
             .or_else(|| self.env.get(&format!("&{}", frame.name)).cloned())

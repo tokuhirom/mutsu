@@ -188,7 +188,12 @@ impl Interpreter {
             new_data.empty_sig = true;
             sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
         }
-        sub_val
+        // Restore any role ever composed onto this routine (`.^mixin(Role)`,
+        // or a trait handler's `$r does Role`) — this is a fresh rebuild from
+        // the registry, not the same object the composition ran on, so it
+        // does not carry the role by itself. See
+        // `Interpreter::materialize_routine_mixins_shared`.
+        self.materialize_routine_mixins_shared(sub_val, &def.package.resolve(), &def.name.resolve())
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {

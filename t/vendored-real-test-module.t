@@ -3,7 +3,7 @@ use Test;
 use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test::Util;
 
-plan 9;
+plan 10;
 
 # `MUTSU_REAL_TEST=1` makes `use Test` load the vendored upstream
 # `Test.rakumod` (modules/Rakudo-Core/lib/) instead of being recognized as a
@@ -59,3 +59,16 @@ is_run 'use Test; plan 3; ok 1, "a";', { status => 255 },
 is_run "# NativeCall\nuse Test; plan 2; ok 1, 'a'; ok 1, 'b';",
     { status => 0, out => "1..2\nok 1 - a\nok 2 - b\n", err => '' },
     'the module answers on the fallback dispatch path too';
+
+# `is test-assertion` (news/2026-08/test-assertion-trait-is-not-introspectable.md):
+# the vendored module's own `trait_mod:<is>(Routine:D, :$test-assertion!)`
+# mixes an introspectable `is-test-assertion` role onto the routine so its
+# `callframe`-walking backtrace can blame the CALLER's line, not its own. That
+# requires mutsu's parser to actually reach the module's user trait handler,
+# and the mixed-in role to survive into `callframe(N).code` on every
+# rebuild -- both were previously broken, always reporting the assertion
+# helper's own line instead.
+is_run
+    "use Test;\nplan 1;\nsub foo-ok() is test-assertion \{ flunk \"foo-ok\" \}\nfoo-ok;\n",
+    { status => 1, err => /'Failed test ' (\N* \n \N*)? 'at ' \N* ' line 4'/ },
+    'is test-assertion blames the call site line under the vendored module';
