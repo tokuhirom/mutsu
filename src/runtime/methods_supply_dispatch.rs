@@ -440,6 +440,12 @@ impl Interpreter {
             elems_attrs.insert("taps".to_string(), Value::array(Vec::new()));
             elems_attrs.insert("live".to_string(), Value::FALSE);
             elems_attrs.insert("supplier_id".to_string(), Value::int(supplier_id));
+            // ADR-0028 Slice 2: deferred to tap-time — copy `"scheduler"`
+            // forward so the `"tap"|"act"` chokepoint still classifies it
+            // when the eventual `.tap()` runs.
+            if let Some(scheduler) = attributes.get("scheduler") {
+                elems_attrs.insert("scheduler".to_string(), scheduler.clone());
+            }
             elems_attrs.insert("supplier_done".to_string(), Value::truth(done));
             elems_attrs.insert("elems_filter".to_string(), Value::TRUE);
             elems_attrs.insert("elems_interval".to_string(), Value::num(interval));

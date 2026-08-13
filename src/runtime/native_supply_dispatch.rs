@@ -493,6 +493,15 @@ impl Interpreter {
                 if let Some(supplier_id) = attributes.get("supplier_id") {
                     new_attrs.insert("supplier_id".to_string(), supplier_id.clone());
                 }
+                // ADR-0028 Slice 2: this method defers registration to
+                // whenever `.tap()` is eventually called on the derived
+                // Supply (it just carries `supplier_id` + a mode flag
+                // forward), so the `"tap"|"act"` chokepoint sees this exact
+                // attrs map — copy `"scheduler"` forward so it still
+                // classifies correctly.
+                if let Some(scheduler) = attributes.get("scheduler") {
+                    new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                }
                 if let Some(done) = attributes.get("supplier_done") {
                     new_attrs.insert("supplier_done".to_string(), done.clone());
                 }
@@ -740,6 +749,11 @@ impl Interpreter {
                     if let Some(sid) = attributes.get("supplier_id") {
                         new_attrs.insert("supplier_id".to_string(), sid.clone());
                     }
+                    // ADR-0028 Slice 2: deferred to tap-time — copy
+                    // `"scheduler"` forward (see the `.lines` comment above).
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
                     new_attrs.insert("produce_callable".to_string(), reducer);
                     new_attrs.insert("live".to_string(), Value::FALSE);
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
@@ -909,6 +923,15 @@ impl Interpreter {
                 }
                 if let Some(supplier_id) = attributes.get("supplier_id") {
                     new_attrs.insert("supplier_id".to_string(), supplier_id.clone());
+                }
+                // ADR-0028 Slice 2: this method defers registration to
+                // whenever `.tap()` is eventually called on the derived
+                // Supply (it just carries `supplier_id` + a mode flag
+                // forward), so the `"tap"|"act"` chokepoint sees this exact
+                // attrs map — copy `"scheduler"` forward so it still
+                // classifies correctly.
+                if let Some(scheduler) = attributes.get("scheduler") {
+                    new_attrs.insert("scheduler".to_string(), scheduler.clone());
                 }
                 if let Some(done) = attributes.get("supplier_done") {
                     new_attrs.insert("supplier_done".to_string(), done.clone());

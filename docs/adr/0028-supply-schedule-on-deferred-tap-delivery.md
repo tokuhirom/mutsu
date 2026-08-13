@@ -1,7 +1,8 @@
 # ADR-0028: `Supply.schedule-on` genuinely defers tap delivery — callback shims at the tap-registration chokepoint, with a serialized per-tap drain
 
 - Status: Accepted (Slice 1 implemented and Cro-verified 2026-08-13; Slice 2
-  bypass-path audit remaining)
+  bypass-path audit complete 2026-08-13 — two confirmed gaps fixed, one
+  deferred to a new deep ticket, two probed and found not to be gaps)
 - Date: 2026-08-12
 - Related: [ADR-0020](0020-shared-worker-pool.md) (the worker pool the drain
   runs on; supply-lifetime pumps are a sanctioned slice-3 shape there),
@@ -420,8 +421,87 @@ Cro::HTTP suite: 34/35 fully-green (up from 33/35), remaining gap being that
 file plus the unrelated pre-existing `http2-request-parser.rakutest`
 concurrent-stream ticket. Cro::Core stays 9/9.
 
-**Slice 2 (bypass-path audit) is NOT done** — still open, tracked by this
-ADR's own Slice 2 section above, not a separate ticket.
+**Slice 2 (bypass-path audit) is done (2026-08-13).** Each of the four
+candidates in the Slice-2 section above was probed against real `raku` with a
+thread-identity probe and, where that showed a difference, a deadlock-shape
+probe mirroring the Slice-1 repro (mutsu deadlocks — `Planned` — exactly where
+raku resolves — `Kept` — confirms a *real* gap, not just a cosmetic thread-id
+difference; several probes needed a same-thread-race fix, or hit unrelated
+raku quirks, before they were trustworthy — see below):
+
+- **Confirmed gap, fixed:** `whenever $scheduled-supply { ... }` inside
+  another `supply { }` block. Its direct `register_supplier_tap(supplier_id,
+  body_cb, 0.0)` call (bypassing the chokepoint) now routes through a new
+  shared helper, `wrap_scheduled_callbacks` (extracted from the `"tap"|"act"`
+  arm's inline scheduler-classification code, zero behavior change there —
+  verified against the existing Slice-1 pins before adding anything new),
+  keyed off the *inner* (whenever-source) Supply's own attrs rather than the
+  outer supply block's. A `ThreadPoolScheduler` pump created this way is
+  threaded onto the upstream-close cascade as a nested synthetic `Tap`
+  instance (reusing `close_upstream_taps`'s existing Instance-recursion
+  branch) so `Tap.close` on the *outer* supply block still reclaims the
+  nested pump — no separate cleanup mechanism needed.
+- **Confirmed gap, fixed:** deferred-registration derived operators
+  (`.lines`, `.words`, `.unique`, `.elems`, `.produce` — `.head` already
+  worked, since its live branch `attributes.clone()`s the whole map) applied
+  *after* `.schedule-on()`. These build a fresh attrs map carrying
+  `supplier_id` forward and defer actual tap registration to whenever the
+  caller eventually calls `.tap()`/`.act()` on the derived Supply — which
+  *does* hit the chokepoint, so the only gap was that none of them copied
+  `"scheduler"` into that fresh map. Fixed by copying it forward alongside
+  the existing `supplier_id` copy at each of the 5 sites (mechanical,
+  low-risk).
+- **Confirmed gap, NOT fixed — new deep ticket:** `.map`/`.grep`/`.do` (all
+  three share `make_live_transform_supply`) and `.flat` register their
+  transform tap *immediately* at call time, directly on the source's raw
+  `supplier_id` via `register_supplier_transform_tap`/`register_supplier_flat_tap`
+  — a `TransformState` consulted synchronously at the emit sites, which never
+  sees the "scheduler" attribute (it isn't visible from there; the Supply
+  *value* that carries it isn't in scope at that layer). This is
+  architecturally different from the two fixes above — no attrs map to
+  thread `"scheduler"` through, and no existing tap-callback registration
+  point to route through `wrap_scheduled_callbacks`. A correct fix needs a
+  new synthesized-shim class following the `__ScheduledTapPump` idiom;
+  design sketch, confirmed repro, and affected-file inventory are in
+  `todo/deep/schedule-on-live-transform-operators-bypass-deferral.md`.
+- **Probed, NOT a gap:** `react whenever $scheduled-supply { ... }`. A naive
+  thread-identity probe was misleading here — mutsu's react drive loop
+  already runs on its own dedicated driving thread even *without*
+  `.schedule-on()` (architecturally different from Rakudo, where an
+  unscheduled `whenever` inside `react` runs synchronously on the emitting
+  thread), so "different thread" doesn't distinguish scheduled from
+  unscheduled in mutsu's react. A deadlock-shape probe (mirroring the other
+  two confirmed gaps, with a blocking `await` + `done` phaser inside the
+  whenever body) was inconclusive in a different way: it hit a **pre-existing
+  raku quirk unrelated to scheduling** — the same non-`Kept` outcome
+  reproduced in real raku *with and without* `.schedule-on()`, isolating it
+  as an await/react/`done`-phaser interaction quirk, not a scheduling gap.
+  No fix, no pin — recorded here per the ADR's "each non-gap gets a line"
+  rule.
+- **Probed, NOT a gap:** the internal taps of `.Promise`/`.list`. The first
+  attempt at a `.Promise` probe showed a false gap (`Planned` in mutsu vs
+  `Kept` in raku) that turned out to be a **test race**, not a real one: the
+  probe spawned the emitting `start {}` concurrently with the `.Promise`
+  coercion's own tap registration, so the emit could beat the tap into
+  existence. Removing the race (register the Promise coercion on the main
+  thread *before* spawning the emitter) showed `Kept` for both scheduled and
+  unscheduled sources in mutsu, matching raku — no gap. `.list` on a *live*
+  (Supplier-backed, cross-thread) source returned an empty list in mutsu
+  **even without `.schedule-on()`** — a real bug, but unrelated to this ADR
+  (out of scope for Slice 2; not filed as a new ticket in this pass, since
+  `Supply.list` on a static/eager source works fine per the existing
+  `t/supply-list.t` coverage and this narrower live-cross-thread shape wasn't
+  independently confirmed beyond the one probe).
+
+Pinned in `t/supply-schedule-on-defer-nested-whenever.t` (3 cases, all
+cross-checked against real `raku` first): the `whenever`-in-supply deadlock
+repro, the `.lines`-after-`schedule-on` deadlock repro, and a `Tap.close`
+cascade-reclaims-the-nested-pump case. `make test` and the whitelisted
+`roast/S17-supply` (release) stay green; the Slice-1 pins
+(`t/supply-schedule-on-defer.t`, `t/supply-schedule-on.t`,
+`t/schedule-on-whenever-env.t`, `t/supply-interval-scheduler.t`) are
+unaffected by the `wrap_scheduled_callbacks` extraction (verified before and
+after — identical pass/fail).
 
 ## Risks
 
