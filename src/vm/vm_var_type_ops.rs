@@ -99,10 +99,16 @@ impl Interpreter {
                 .then(|| loan_env!(self, type_arg_value_from_name(constraint)));
             match parametric {
                 Some(v) if matches!(v.view(), ValueView::ParametricRole { .. }) => v,
-                _ => Value::package(Symbol::intern(
-                    &loan_env!(self, var_type_constraint(name))
-                        .unwrap_or_else(|| constraint.to_string()),
-                )),
+                _ => {
+                    // The seeded package must carry the NOMINAL type name —
+                    // smileys stripped (`my Int:_ $a` seeds `Int`, not
+                    // `Int:_`) and coercion parens unwrapped — same as the
+                    // read-path Nil→type-object conversion it replaces.
+                    let base = loan_env!(self, var_type_constraint(name))
+                        .unwrap_or_else(|| constraint.to_string());
+                    let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&base));
+                    Value::package(Symbol::intern(&nominal))
+                }
             }
         }
     }
