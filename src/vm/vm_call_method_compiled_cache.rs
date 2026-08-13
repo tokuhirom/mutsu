@@ -444,6 +444,16 @@ impl Interpreter {
             if pd.slurpy && pd.name == "%_" {
                 return false;
             }
+            // An attributive parameter (`$!x`/`@!a`) binds straight to an
+            // attribute, i.e. it mutates `self` — so it is not read-only and
+            // must take the full path (which mirrors it into the shared
+            // cell and writes it back; see the matching gate in
+            // `call_compiled_method`, vm_method_dispatch.rs). Caching this
+            // method as fast-dispatchable would make every call after the
+            // first silently drop the attribute write.
+            if Self::attr_twigil_base(&pd.name).is_some() {
+                return true;
+            }
             pd.slurpy
                 || pd.double_slurpy
                 || pd.named
