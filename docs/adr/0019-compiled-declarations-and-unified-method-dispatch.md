@@ -3951,6 +3951,31 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   files, 334 assertions) green. **Both E9-pre divergence tickets are now closed**; the separate
   `method-entries-never-covers-unpunned-roles.md` production-dispatch gap remains open. E9b
   (wrap-prefix) and E9c (proto `{*}` cursor rewrite, `samewith`) are still unstarted.
+  **Design 2026-08-13 — E9b and E9c detailed designs landed (docs-only), with four raku
+  probes.** Full designs in the E8-E11 doc ("E9b design" / "E9c design" sections). E9b:
+  method wraps fold into `MethodDispatchFrame` as `DeferralEntry` prefix entries (enum of
+  `Wrapper(Value)` / `Candidate{owner, def, wraps_spliced}`); the wrap stack reverts to
+  sub-only; the `sub_id == 0` sentinel, the `__mutsu_method_wrap_original` by-name re-entry,
+  the mid-MRO interception block, and the #6349 `wrap_chain_exhausted` bool are all deleted;
+  mid-MRO wrapper expansion is LAZY at advance (amending decision 2's build-time phrasing, for
+  chain-read timing parity and to avoid per-candidate `find_method_candidate_index` cost).
+  Probes found two real divergences the design fixes structurally, filed as tickets:
+  `wrap-chain-skipped-inside-foreign-wrap-dispatch.md` (the global
+  `is_inside_wrap_dispatch()` guard suppresses an unrelated method's chain) and
+  `callsame-in-method-consumes-enclosing-sub-wrap-chain.md` (fixed wrap→method stack priority
+  picks the wrong frame; fix = shared monotonic dispatch token, innermost frame wins —
+  slice E9b-0, which should land first). E9c: `{*}` resolves the winner DIRECTLY via a
+  boundary-parameterized resolver (`resolve_method_within_boundary`), deleting
+  `proto_method_skip`, the ambient `proto_redispatch_boundary` field/bracket, and the
+  double `lookup_proto_method` walk — a same-answer mechanism swap against #6355 semantics.
+  **A probe falsified decision 2's `samewith` clause**: `samewith` re-runs the governing
+  proto BODY (side effects observably repeat) in both raku AND mutsu, so the by-name
+  full-dispatcher restart is the CORRECT semantics and stays; E9c's samewith work shrinks to
+  carrier consolidation (merging `samewith_context_stack` + `samewith_call_args_stack` into
+  one `SamewithContext` stack, closing the raw-push desync class). A third divergence — the
+  proto body never runs for TYPE-OBJECT invocants (`try_proto_method_body`'s Instance gate) —
+  is adjacent, filed as `proto-method-body-skipped-for-type-object-invocant.md`, not in E9c
+  scope. Slice order: E9b-0 → E9b-1 → E9b-2 → E9c-1 → E9c-2 (E9b/E9c independent).
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

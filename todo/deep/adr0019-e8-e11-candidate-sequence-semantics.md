@@ -660,3 +660,370 @@ Two scope decisions, both deliberate:
   MRO walker for the *winner*, unaffected by this box) — that is E9c's job per decision 2's own
   migration order. Filing new pins for either shape now would encode a still-open mutsu bug as
   a passing test; both tickets stay as-is.
+
+## E9b design (2026-08-13): method wraps become deferral-frame prefix entries; the wrap stack reverts to sub-only
+
+Design pass only — no code. Surveyed against current main (`bd9a94acd`, which includes the
+#6349 lastcall-in-wrapper fix and the #6355 explicit-proto boundary). Two raku probes run
+during this pass each found a REAL divergence in the existing wrap machinery (inlined below,
+per the E9-pre convention, because `tmp/` is gitignored); both are fixed *structurally* by
+this design, and both are also filed as tickets so they cannot evaporate:
+`todo/tickets/wrap-chain-skipped-inside-foreign-wrap-dispatch.md` and
+`todo/tickets/callsame-in-method-consumes-enclosing-sub-wrap-chain.md`.
+
+### Facts (updated line refs; the §"Facts" survey at the top of this doc has drifted)
+
+- The two frames carry disjoint payloads: `WrapDispatchFrame { sub_id: u64, remaining:
+  Vec<Value>, args: Vec<Value>, arg_sources: Option<Vec<Option<String>>> }`
+  (`decl_types.rs:178-193`) vs `MethodDispatchFrame { receiver_class, invocant, args,
+  remaining: Vec<(String, MethodDef)>, rw_params }` (`decl_types.rs:165-176`). The type
+  mismatch in `remaining` (code objects vs owner+def pairs) is the representational problem
+  this box solves. `wrap_dispatch_stack` lives at `mod.rs:1910-1911`.
+- Four `WrapDispatchFrame` construction sites: the sub wrap (`resolution_call_sub.rs:225-291`
+  — the only `sub_id != 0` site), the interpreter method-wrap entry
+  (`class_dispatch.rs:336-420`), the VM method-wrap entry (`check_method_wrap_chain`,
+  `vm_call_method_compiled.rs:271-402`), and the mid-MRO interception inside
+  `dispatch_next_candidate` itself (`builtins_dispatch_next.rs:487-543`).
+- The wrap prefix and the MRO deferral list are two cursors spliced at runtime by THREE
+  mechanisms, all of which this box deletes: (i) the `sub_id == 0` method-wrap sentinel and
+  its exhaustion fallthrough (`builtins_dispatch_next.rs:414`, `:452-469`), including the
+  #6349 `wrap_chain_exhausted` bool threaded to the final fallback (`:400-404`, `:468`,
+  `:967`); (ii) the synthetic "original" sub tagged `__mutsu_method_wrap_original`
+  (`class_dispatch.rs:370-380`, `vm_call_method_compiled.rs:294-303`) whose advance leg
+  re-enters `call_method_with_values` BY NAME (`builtins_dispatch_next.rs:425-433`), guarded
+  against chain re-entry by the global `is_inside_wrap_dispatch()` checks at both entry sites
+  (`class_dispatch.rs:341`, `vm_call_method_compiled.rs:282-284`); (iii) the mid-MRO
+  peek-and-intercept block (`:487-543`), which pushes a wrapper-only frame (no synthetic
+  original) and deliberately does NOT consume the peeked candidate.
+- E9a's `resolve_deferral_expansion` (`resolution_deferral.rs`) is wrap-blind by construction
+  — zero occurrences of wrap logic. Wrap is a fully separate stack layered on top.
+- A plain (single, non-multi, non-wrapped-by-MRO) wrapped method pushes NO
+  `method_dispatch_stack` frame at all (`push_method_dispatch_frame`'s `<=1` fast-outs,
+  `accessors_state.rs:788-796`, `:822-827`) — the situation the #6349 bool exists to paper
+  over.
+- `wrap_skip_once` (`mod.rs:1912-1918`) is set at exactly one place
+  (`builtins_dispatch_next.rs:442-444`) and consumed at exactly one
+  (`resolution_call_sub.rs:230`); it is sub-side only and is untouched by this box.
+
+### Probe findings (both raku-confirmed divergences in TODAY's machinery)
+
+**P1 — a wrapped method called from inside a FOREIGN wrapper loses its own chain.** The
+global `is_inside_wrap_dispatch()` guard at both method-wrap entry sites suppresses every
+wrap chain while ANY wrap dispatch is live, including a different method's:
+
+```raku
+class A { method x() { "x-orig" } }
+class B { method y() { "y-orig" } }
+A.^lookup('x').wrap(-> $self { "x-wrap[" ~ callsame() ~ "]+" ~ B.new.y });
+B.^lookup('y').wrap(-> $self { "y-wrap[" ~ callsame() ~ "]" });
+say A.new.x;
+# raku:  x-wrap[x-orig]+y-wrap[y-orig]
+# mutsu: x-wrap[x-orig]+y-orig          (B's chain silently skipped)
+```
+
+The guard exists only to stop the synthetic original's by-name re-entry from re-entering its
+own chain; it is far too blunt. Ticket:
+`todo/tickets/wrap-chain-skipped-inside-foreign-wrap-dispatch.md`.
+
+**P2 — `callsame` in a method dispatched from inside a sub's wrapper consumes the SUB's wrap
+chain.** `dispatch_next_candidate` searches the stacks in fixed priority wrap → method
+(`builtins_dispatch_next.rs:403-406`), so a live sub-wrap frame shadows a more-recent method
+frame:
+
+```raku
+class P { method m() { "P-m" } }
+class C is P { method m() { "C-m[" ~ callsame() ~ "]" } }
+sub g() { "g-orig" }
+&g.wrap(sub () { say C.new.m; "g-wrap[" ~ callsame() ~ "]" });
+say g();
+# raku:  C-m[P-m]    then g-wrap[g-orig]
+# mutsu: C-m[g-orig] then "Use of Nil in string context" + g-wrap[]
+#        (the method's callsame ate g's chain; g's own callsame then found nothing)
+```
+
+Ticket: `todo/tickets/callsame-in-method-consumes-enclosing-sub-wrap-chain.md`.
+
+### Design decisions
+
+**1. `DeferralEntry` — the frame's `remaining` becomes heterogeneous.**
+
+```rust
+pub(crate) enum DeferralEntry {
+    /// A wrapper code object; invoked with [invocant, args...] and shifted arg sources.
+    Wrapper(Value),
+    /// A user method candidate; invoked directly as a resolved method (the existing
+    /// method-frame advance leg, builtins_dispatch_next.rs:542-770, unchanged in substance).
+    Candidate { owner: Symbol, def: MethodDef, wraps_spliced: bool },
+}
+```
+
+`MethodDispatchFrame.remaining` becomes `Vec<DeferralEntry>`, and the frame gains
+`arg_sources: Option<Vec<Option<String>>>` (today carried only by the wrap frame; needed by
+the Wrapper leg's rw-param source restoration, `builtins_dispatch_next.rs:420-424`).
+`gc_roots.rs` must trace `Wrapper` values (today `:153-156` traces the wrap frames' `remaining`;
+that tracing moves with the values).
+
+**2. One frame per wrapped method call; the wrap stack no longer holds method wraps.** The two
+method-wrap entry sites build a SINGLE `MethodDispatchFrame` whose `remaining` is
+`[Wrapper(below-outermost wrappers, in call order)..., Candidate(winner, wraps_spliced:
+true), ...MRO tail from resolve_deferral_expansion...]`, then invoke the outermost wrapper
+directly (mirroring today's "outermost runs, the rest are `remaining`" shape). Consequences:
+
+- A wrapped PLAIN method now always gets a frame — the wrap entry path bypasses
+  `push_method_dispatch_frame`'s `<=1` fast-outs whenever a wrap prefix exists. Exhaustion
+  becomes "frame exists, `remaining` empty → Nil", which deletes the #6349
+  `wrap_chain_exhausted` bool with no replacement state.
+- Deleted outright: the `sub_id == 0` sentinel and its exhaustion fallthrough, the synthetic
+  original sub and the `__mutsu_method_wrap_original` marker, the by-name original re-entry
+  leg, and the global `is_inside_wrap_dispatch()` guards at the method entry sites (the
+  original is now invoked directly as a resolved `Candidate`, so there is no by-name re-entry
+  to protect — and deleting the guard is precisely the P1 fix; a nested call to a different
+  wrapped method enters its own chain like any fresh dispatch).
+- `WrapDispatchFrame` survives for SUB wraps only (`resolution_call_sub.rs` site untouched;
+  `sub_id` is now always a real id — add a `debug_assert!(sub_id != 0)` at the push helper).
+  `wrap_skip_once` stays as-is (sub-side). Sub wrap exhaustion still returns Nil.
+- `lastcall` inside a method wrapper truncates the unified frame's `remaining` — same
+  observable Nil-on-callsame as #6349 pinned, one mechanism instead of two.
+  (`t/lastcall-in-wrapper-callsame-dies.t` must stay green; the still-open
+  `lastcall-in-wrapper-nextsame-swallows-output.md` ticket — the `nextsame` routine-boundary
+  unwind divergence — is OUT of this box's scope, but the unified frame is its prerequisite
+  groundwork.)
+
+**3. Mid-MRO wraps: lazy splice at advance, not build-time expansion.** Decision 2's original
+phrasing ("resolving a wrapped candidate yields [Wrapper..., candidate, ...rest]") reads as
+build-time expansion; this design deliberately amends it to LAZY: when advancement reaches a
+`Candidate { wraps_spliced: false }` whose `(owner, method, find_method_candidate_index)` has
+a chain (same lookups the interception block does today, `builtins_dispatch_next.rs:499-507`),
+replace that entry in place with `[Wrapper(chain)..., Candidate { wraps_spliced: true }]` and
+advance into the first Wrapper. Two reasons, in the repo's gain/risk terms:
+
+- *Timing parity*: today the mid-MRO chain is read at advance time (`:487-543`), so a
+  `.wrap`/`.unwrap` executed mid-dispatch is honored; build-time expansion would silently
+  change when chains are observed — an unverified semantic difference with no raku ground
+  truth taken, i.e. exactly the kind of by-value-style "correct only if nothing mutates"
+  choice the CLAUDE.md risk definition warns against.
+- *Cost*: build-time expansion pays `find_method_candidate_index` (Arc::ptr_eq, then an
+  O(candidates × AST) fingerprint fallback — `accessors_state.rs:907-940`) for every tail
+  candidate on every wrapped dispatch, even though most deferral lists are never advanced.
+
+The winner's own prefix IS built at frame-build time (that moment is the advance for the
+winner), with `wraps_spliced: true` so it is never re-expanded. The entire interception block
+(`:470-543`) is deleted.
+
+**4. Cross-stack frame ordering: a shared dispatch token replaces fixed priority (the P2
+fix).** `wrap_dispatch_stack` (sub wraps), `method_dispatch_stack`, and
+`multi_dispatch_stack` frames each gain a `dispatch_token: u64` stamped from one shared
+monotonic counter at push. `dispatch_next_candidate`, `builtin_lastcall`, and
+`builtin_nextcallee` select the live frame with the HIGHEST token — i.e. the innermost
+dynamic dispatch context — instead of the fixed wrap → method → multi search order
+(`builtins_dispatch_next.rs:403`, `:58-77`, `:979-1035`). For today's paired method-wrap
+frames the wrap frame is pushed second and would win, so the current pairing behavior is
+preserved by construction; the only behavior change is the P2 shape, where the innermost
+context is now correctly preferred. Exhaustion semantics stay per-family (an exhausted
+sub-wrap frame still answers Nil; it does not fall through to an unrelated outer method
+frame).
+
+**5. Explicitly out of scope** (each has its own home): the method-wrap `unwrap`/`restore`
+no-op (`todo/tickets/method-wrap-unwrap-restore-noop.md` — E10a, registry-owned wrap state);
+the `has_any_wrap_chains()` prefilter and its five call sites (E10b, after E3); the
+`lastcall`-then-`nextsame` routine-boundary unwind
+(`todo/tickets/lastcall-in-wrapper-nextsame-swallows-output.md` — needs its own raku
+verification pass); wrap identity's `find_method_candidate_index` fingerprint fallback and the
+`(String, String, usize)` chain key (E10a); the sub-side `multi_dispatch_stack`'s own
+`Vec`-advance mechanics (Phase C/F); `nextcallee` for method dispatch (today unimplemented,
+`builtins_dispatch_next.rs:1000-1001` — note that `Wrapper` entries make it implementable
+later by peeking the next entry, but do not implement it here).
+
+### Slice plan
+
+- **E9b-0** — the dispatch-token frame ordering (decision 4). Independent of the enum work,
+  fixes P2 today, smallest possible diff (one counter, three stamped fields, three selection
+  sites). Pin: the P2 probe as a raku-valued `t/` test. Local `make roast` (dispatch
+  semantics).
+- **E9b-1** — mechanical: `DeferralEntry` + `Vec<DeferralEntry>` + the `arg_sources` frame
+  field; every existing builder emits `Candidate`; zero behavior change; full `t/` + clippy.
+- **E9b-2** — the cutover, one coherent PR: single-frame construction at both method-wrap
+  entry sites, the Wrapper advance leg, lazy splice, and the deletion list from decision 2/3
+  (sentinel, marker, synthetic original, by-name leg, global guard, mid-MRO block,
+  `wrap_chain_exhausted`). Fixes P1; pin the P1 probe raku-valued in the same PR. Gate: the
+  full wrap/defer pin corpus (`t/wrap*.t`, `t/method-wrap-*.t`,
+  `t/lastcall-in-wrapper-callsame-dies.t`, `t/lastcall-then-nextsame.t`, `t/defer-*.t`,
+  `t/nextsame-role-mixin.t`), local `make roast`, and the E8a/E8b roast slice list plus
+  `S06-advanced/wrap.t`.
+
+### Risk notes
+
+The closure-env write-back filters at both entry sites (`class_dispatch.rs:405-414`,
+`vm_call_method_compiled.rs:346-395`) fire around the OUTERMOST wrapper call and must keep
+doing so — the unified frame changes who owns `remaining`, not the entry bracket; advance-leg
+`call_sub_value` calls on `Wrapper` entries do not run entry write-back today and must not
+start to. Thread fork keeps its current shape (`wrap_dispatch_stack` forks empty,
+`runtime_thread.rs:685`; the method stack likewise). The frame-priority change (E9b-0) is the
+one slice that can change behavior outside wrap-using programs — any program nesting a method
+deferral inside a sub wrapper — which is exactly why it lands first, alone, raku-pinned.
+
+## E9c design (2026-08-13): proto `{*}` resolves directly within the governing boundary; `samewith`'s by-name restart is CONFIRMED correct and stays
+
+Design pass only — no code. Probed against Rakudo v2026.06 first (拙速厳禁); the probes
+settled the one semantic question this box hinged on, and found one adjacent real divergence
+(ticket filed, deliberately NOT folded into this box's scope:
+`todo/tickets/proto-method-body-skipped-for-type-object-invocant.md`).
+
+### Probe results (inlined; run against both engines)
+
+**P3 — `samewith` re-runs the governing proto BODY. mutsu already matches raku, in both the
+method and the sub case.**
+
+```raku
+class C {
+    proto method m($x) { say "proto($x)"; {*} }
+    multi method m(Int $x) { say "int($x)"; samewith($x + 10) if $x < 10; }
+    multi method m(Str $s) { say "str($s)" }
+}
+C.new.m(1);
+# raku AND mutsu: proto(1) / int(1) / proto(11) / int(11)
+
+proto sub f($x) { say "proto($x)"; {*} }
+multi sub f(Int $x) { say "int($x)"; samewith("s") if $x != 0; }
+multi sub f(Str $s) { say "str($s)" }
+f(1);
+# raku AND mutsu: proto(1) / int(1) / proto(s) / str(s)
+```
+
+**This falsifies decision 2's `samewith` clause** ("re-runs the *ranker* over the same
+sequence with new args") for every proto-governed candidate: a sequence-level re-rank would
+skip the proto body, whose side effects observably re-run. `samewith` is a full DISPATCHER
+restart, and mutsu's by-name re-entry (`builtin_samewith`,
+`builtins_dispatch_next.rs:101-118` → `call_method_with_values`/`call_function`) is the
+CORRECT encoding of that semantics, not a legacy shortcut to remove. Decision 2 is amended
+accordingly: E9c does not convert `samewith` to sequence-based re-ranking. A pin encoding P3
+(`t/samewith-proto-body-rerun.t`, green on both engines today) lands with E9c-1.
+
+**P4 — mutsu skips the proto body entirely for a TYPE-OBJECT invocant (real divergence,
+adjacent, not this box).**
+
+```raku
+class P {
+    proto method m($x) { say "proto($x)"; {*} }
+    multi method m(Int $x) { say "int($x)" }
+}
+P.m(5);
+# raku:  proto(5) / int(5)
+# mutsu: int(5)            (proto body never runs)
+```
+
+Root cause is the `ValueView::Instance` gate at the interception entry
+(`try_proto_method_body`, `dispatch_proto.rs:317-320`) — the interception, not the `{*}`
+handler this box rewrites. Filed as
+`todo/tickets/proto-method-body-skipped-for-type-object-invocant.md`; E9c-2 neither needs it
+nor fixes it, but whoever fixes it will touch the same file.
+
+### Facts
+
+- `{*}` is rewritten at declaration to `__PROTO_DISPATCH__()` (`dispatch_proto_rewrite.rs`);
+  the VM arm delegates the METHOD case to the interpreter unconditionally
+  (`vm_call_func_ops.rs:1747-1749`), so this box's changes are confined to the interpreter.
+- The method branch of `call_proto_dispatch` (`dispatch_proto_call.rs:5-75`): reads the
+  `proto_dispatch_stack` frame (`(proto_name, args, Some(ProtoMethodCtx))`, pushed by
+  `run_proto_method`, `dispatch_proto.rs:278-286`), re-derives the owner via a second
+  `lookup_proto_method` walk (`:42-43`), rebuilds rw-mutated args from the proto body's live
+  params (`proto_rw_redispatch_args`, `:44-49` — "part A"), sets the one-shot
+  `proto_method_skip` (`:50`), restores pending call-arg sources so an `is rw` candidate can
+  bind through the re-entry (`:51-60` — "part B"), brackets
+  `proto_redispatch_boundary: Option<(Symbol, Symbol)>` (save/restore, `:61-73`), and
+  re-enters `call_method_with_values` BY NAME (`:72`).
+- The re-entry runs the full dispatch pipeline again: `try_proto_method_body` consumes the
+  skip flag (`dispatch_proto.rs:321-324`), then `resolve_method_with_owner_impl` truncates
+  its MRO walk at the boundary owner (`resolution_method.rs:135-144`); the diagnostics
+  listing reads the boundary too (`format_method_candidate_signatures`, `class.rs:310-319`).
+- The boundary bracket spans the CANDIDATE BODY's entire execution (the bracket closes after
+  `call_method_with_values` returns), relying on (a) name-matching to not bite unrelated
+  dispatches and (b) nested redispatches saving/restoring. No concrete mis-truncation repro
+  was found during this pass (the shapes that would bite are themselves proto-governed and
+  re-bracket correctly), but ambient dispatch state live across arbitrary user code is a
+  standing hazard class, and it costs a save/restore plus a name-compare on every method
+  resolution.
+- The winner's deferral list is built UNtruncated (`class_dispatch.rs:424` build_remaining →
+  `resolve_deferral_expansion`), which is correct only because E9a's expansion encodes
+  governing-block isolation independently — two mechanisms expressing one rule.
+- The VM multi cache (`vm_call_method_compiled_cache.rs:176-260`) does not key on the
+  boundary; correctness today depends on the interpreter re-entry path bypassing that cache
+  (`class_dispatch.rs:144` calls `resolve_method_with_owner_invocant` directly). Any rewrite
+  must preserve that invariant.
+- `samewith` state is split across two parallel stacks kept in lockstep only by convention:
+  `samewith_context_stack: Vec<(String, Option<Value>)>` (`mod.rs:1870-1873`) and
+  `samewith_call_args_stack: Vec<Vec<Value>>` (`mod.rs:1874-1881`, added 2026-08-13 for the
+  native-array fallback, whose sole reader is `builtins_dispatch_next.rs:296`). Only
+  `push_method_samewith_context`/`pop_method_samewith_context` (`accessors_state.rs:736-754`,
+  `:947-957`) push both; at least five sites push the context stack RAW with no args entry
+  (`methods_mixin_dispatch.rs:212`, `dispatch_proto_call.rs:137`,
+  `builtins_operators_fallback.rs:460`, `builtins_dispatch_next.rs:165`, plus the VM sub
+  paths `vm_call_dispatch.rs:295` / `vm_call_func_ops.rs:627`, `:1233`) — so
+  `samewith_call_args_stack.last()` can pair with the WRONG context whenever a raw push sits
+  above a helper push. A latent desync class, not a reproduced bug.
+
+### Design decisions
+
+**1. `{*}` = direct resolution within the governing boundary; the ambient state dies.** A new
+parameterized resolver — `resolve_method_within_boundary(receiver_class, method_name, args,
+invocant, boundary_owner: Option<Symbol>)` — hoists `resolve_method_with_owner_impl`'s
+truncation (`resolution_method.rs:135-144`) into an explicit argument; the ambient
+`proto_redispatch_boundary` field (`mod.rs:1182-1197`), its bracket
+(`dispatch_proto_call.rs:61-73`), and its init/fork sites are deleted, and
+`format_method_candidate_signatures` takes the boundary as a parameter instead of reading
+interpreter state (`class.rs:310-319`). The method branch of `call_proto_dispatch` becomes:
+
+1. Owner from `lookup_proto_method` (unchanged — it already names the governing class).
+2. rw-args rebuild ("part A") unchanged; it feeds the resolver's `args`.
+3. `resolve_method_within_boundary(..., Some(owner))` picks the winner directly — no by-name
+   re-entry, so `proto_method_skip` (set `:50`, consumed `dispatch_proto.rs:321-324`) is
+   deleted with nothing replacing it: there is no re-entry left to intercept, and a candidate
+   body's own fresh calls to the same method correctly re-enter the proto from the top (P3's
+   observed `samewith` behavior depends on exactly that).
+4. The winner is invoked through the SAME resolved-method run path ordinary dispatch uses
+   (the `run_instance_method_celled` → `build_remaining` → run leg,
+   `class_dispatch.rs:124-`), so the deferral frame for `nextsame`/`callsame` inside
+   candidates is built identically to today. "Part B"'s pending-source restore shrinks to a
+   tight set immediately before that invocation (same mechanism, no longer spanning a whole
+   re-dispatch pipeline).
+5. No-match raises `X::Multi::NoMatch` with the truncated candidate listing produced from the
+   same boundary parameter (diagnostic parity with #6355).
+
+Gains, in the repo's terms: one resolution walk instead of two `lookup_proto_method` walks
+plus a full by-name re-dispatch; the skip flag (name-keyed only, no invocant identity) and
+the body-spanning ambient bracket both retire as hazard classes; the VM-cache invariant
+becomes structural (the boundary is a parameter of an interpreter-side resolver that never
+touches the cache) instead of an accident of which path bypasses what. The observable
+behavior is #6355's — this is a same-answer mechanism swap, gated accordingly.
+
+**2. `samewith` stays by-name; E9c's samewith work is carrier consolidation only.** Per P3,
+the restart semantics are correct as implemented. What E9c fixes is the state carrier: merge
+the two parallel stacks into one
+`Vec<SamewithContext { name: String, invocant: Option<Value>, args: Option<Vec<Value>> }>`
+with a single push/pop helper pair; every raw push site goes through the helpers (`args:
+None` where no original-args carrier is needed), eliminating the lockstep-by-convention
+desync class. `builtin_samewith` and every name-only reader
+(`method_name_for_dispatch`, the native fallbacks, the wrap peek) read the same struct.
+
+**3. Untouched, deliberately:** the VM `{*}` arm keeps delegating the method case to the
+interpreter (`vm_call_func_ops.rs:1747-1749` — compiling the boundary-resolved dispatch is
+follow-on perf work, not semantics); the SUB branch of `call_proto_dispatch` (`:76-150`) and
+the sub-side `multi_dispatch_stack` mechanics (Phase C/F); `proto_dispatch_stack` and
+`ProtoMethodCtx` themselves (they carry invocant + call-site arg sources from interception to
+`{*}` and are the right shape already); the P4 type-object gate (its ticket).
+
+### Slice plan
+
+- **E9c-1** — `SamewithContext` consolidation (mechanical, zero behavior) + the P3 pin
+  `t/samewith-proto-body-rerun.t` (green on both engines today — it encodes ground truth so
+  the E9c-2 rewrite cannot silently regress the restart semantics).
+- **E9c-2** — the `{*}` direct-resolution cutover (decision 1) with its deletion list
+  (`proto_method_skip`, `proto_redispatch_boundary` + bracket + fork/init sites, part B's
+  broad restore). Same-answer swap, but it rewires a real dispatch path: gate on the proto
+  pin corpus (`t/proto-*.t`, `t/multi-*.t` — 61 files as of #6355), the E9-pre pins, local
+  `make roast` (house rule for name/type-resolution changes), and the E8-era roast slice plus
+  `S06-multi/proto.t`.
+
+E9b and E9c are independent (E9b lives in `builtins_dispatch_next.rs`/frame types; E9c in
+`dispatch_proto_call.rs`/`resolution_method.rs`); either order works, but E9b-0 (the P2
+ordering fix) is the highest-value single slice across both and should go first.
