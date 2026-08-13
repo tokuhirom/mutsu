@@ -196,11 +196,15 @@ impl Interpreter {
                     }
                     _ => None,
                 };
-                let base_remaining: Vec<(String, MethodDef)> = if let Some(bc) = &base_class {
+                let base_remaining: Vec<super::DeferralEntry> = if let Some(bc) = &base_class {
                     self.resolve_all_methods_with_owner(bc, lookup_name, &args)
                         .into_iter()
                         .filter(|(_, d)| d.is_private == is_private_call)
-                        .map(|(o, d)| (o.resolve(), d))
+                        .map(|(owner, def)| super::DeferralEntry::Candidate {
+                            owner,
+                            def: Box::new(def),
+                            wraps_spliced: false,
+                        })
                         .collect()
                 } else {
                     Vec::new()
@@ -219,6 +223,7 @@ impl Interpreter {
                         remaining: base_remaining,
                         rw_params,
                         dispatch_token,
+                        arg_sources: None,
                     });
                 }
                 let method_result = self.run_resolved_method_compiled_or_treewalk(

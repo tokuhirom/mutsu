@@ -137,6 +137,14 @@ impl Interpreter {
         for frame in &self.method_dispatch_stack {
             visitor.visit_value(&frame.invocant);
             visit_slice(visitor, &frame.args);
+            // ADR-0019 E9b-1: a `Wrapper` entry carries a live callable Value;
+            // no builder emits one yet (E9b-2), but tracing it now means the
+            // cutover never has to remember to add this.
+            for entry in &frame.remaining {
+                if let super::DeferralEntry::Wrapper(v) = entry {
+                    visitor.visit_value(v);
+                }
+            }
         }
         for (_, v) in &self.samewith_context_stack {
             visit_opt(visitor, v);

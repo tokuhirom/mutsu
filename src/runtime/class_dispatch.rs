@@ -283,9 +283,7 @@ impl Interpreter {
         // otherwise pays just to learn "nothing to defer to".
         let skip_remaining = (method_def.is_my || method_def.is_submethod)
             && self.count_visible_method_candidates(receiver_class_name, method_name) <= 1;
-        let build_remaining = |this: &mut Self,
-                               method_def: &MethodDef|
-         -> Vec<(String, MethodDef)> {
+        let build_remaining = |this: &mut Self, method_def: &MethodDef| -> Vec<DeferralEntry> {
             if skip_remaining {
                 return Vec::new();
             }
@@ -319,7 +317,14 @@ impl Interpreter {
                 if this.should_skip_defer_method_candidate(receiver_class_name, owner.as_str()) {
                     continue;
                 }
-                remaining.push((owner.resolve(), def));
+                // ADR-0019 E9b-1: every entry is a plain Candidate here — this
+                // builder never wraps a method's own chain into the frame
+                // (that is E9b-2).
+                remaining.push(DeferralEntry::Candidate {
+                    owner,
+                    def: Box::new(def),
+                    wraps_spliced: false,
+                });
             }
             remaining
         };
@@ -367,6 +372,7 @@ impl Interpreter {
                     remaining,
                     rw_params,
                     dispatch_token,
+                    arg_sources: None,
                 });
             }
             let mut orig_env = crate::env::Env::new();
@@ -451,6 +457,7 @@ impl Interpreter {
                 remaining,
                 rw_params,
                 dispatch_token,
+                arg_sources: None,
             });
         }
         // Check for `is DEPRECATED` trait on the method

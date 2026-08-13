@@ -840,7 +840,7 @@ impl Interpreter {
         let chosen_fp = chosen
             .as_ref()
             .map(|(_, def)| self.method_def_fingerprint(def));
-        let mut remaining: Vec<(String, super::MethodDef)> = Vec::new();
+        let mut remaining: Vec<(Symbol, super::MethodDef)> = Vec::new();
         let mut skipped_chosen = false;
         for (owner, def) in all_candidates {
             let fp = self.method_def_fingerprint(&def);
@@ -851,7 +851,7 @@ impl Interpreter {
             if self.should_skip_defer_method_candidate(receiver_class, owner.as_str()) {
                 continue;
             }
-            remaining.push((owner.resolve(), def));
+            remaining.push((owner, def));
         }
         // ADR-0019 E8a shadow probe (zero behavior change): see
         // `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`.
@@ -872,6 +872,16 @@ impl Interpreter {
                 })
                 .unwrap_or_default();
             let dispatch_token = self.next_dispatch_token();
+            // ADR-0019 E9b-1: every entry is a plain Candidate — this builder
+            // never wraps a method's own chain into the frame (that is E9b-2).
+            let remaining = remaining
+                .into_iter()
+                .map(|(owner, def)| super::DeferralEntry::Candidate {
+                    owner,
+                    def: Box::new(def),
+                    wraps_spliced: false,
+                })
+                .collect();
             self.method_dispatch_stack.push(super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
@@ -879,6 +889,7 @@ impl Interpreter {
                 remaining,
                 rw_params,
                 dispatch_token,
+                arg_sources: None,
             });
         }
         pushed
