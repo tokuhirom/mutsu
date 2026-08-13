@@ -954,7 +954,11 @@ fn is_infinite_range(value: &Value) -> bool {
 }
 
 pub(crate) fn is_value_lazy(value: &Value) -> bool {
-    matches!(value.view(), ValueView::LazyList(_))
+    // CatHandle pullers are internally on-demand but expose eager Seq
+    // semantics; every other LazyList remains eligible for `.lazy` handling,
+    // including plain gather lists whose laziness is established by that
+    // method rather than by `is_genuinely_lazy()`.
+    matches!(value.view(), ValueView::LazyList(ll) if !ll.is_cat_pull())
         || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
         || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(&items))

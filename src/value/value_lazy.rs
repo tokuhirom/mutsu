@@ -65,7 +65,9 @@ impl LazyList {
     }
 
     /// True when this list is genuinely lazy (`.is-lazy`), so gist/Str/raku
-    /// render a placeholder instead of materializing it.
+    /// render a placeholder instead of materializing it. CatHandle pullers
+    /// are intentionally excluded: their backing iterator is lazy internally,
+    /// but Rakudo exposes them as eager `Seq`s.
     ///
     /// An infinite sequence/closure/scan/map-grep generator is only ever stored
     /// as a *live* `LazyList` when actually infinite (finite ones materialize to
@@ -78,7 +80,6 @@ impl LazyList {
             || self.lazy_pipe.is_some()
             || self.closure_seq.is_some()
             || self.scan_spec.is_some()
-            || self.cat_pull.is_some()
             // The `__mutsu_preserve_lazy_on_array_assign` marker is set
             // exclusively by an explicit `lazy` prefix / `.lazy` method call
             // (see `dispatch_core_str.rs`), including on an already-finite
@@ -97,6 +98,13 @@ impl LazyList {
         self.is_genuinely_lazy() && self.cat_pull.is_none()
     }
 
+    /// Whether this list is backed by a live `IO::CatHandle` iterator.
+    /// CatHandle iterators pull lazily internally, but Rakudo exposes both
+    /// `.lines` and `.handles` as eager `Seq` values (`.is-lazy` is `False`).
+    pub(crate) fn is_cat_pull(&self) -> bool {
+        self.cat_pull.is_some()
+    }
+
     /// Whether iterating this list could hang or be unsafe to consume twice
     /// right now (a live generator with no complete cache yet) — as opposed
     /// to `is_genuinely_lazy()`, which answers `.is-lazy` and is also True for
@@ -111,7 +119,6 @@ impl LazyList {
             || self.lazy_pipe.is_some()
             || self.closure_seq.is_some()
             || self.scan_spec.is_some()
-            || self.cat_pull.is_some()
             || ((self.coroutine.is_some() || !self.body.is_empty() || self.compiled_code.is_some())
                 && self.is_lazy_marked())
     }

@@ -411,6 +411,11 @@ impl Interpreter {
                 ValueView::Str(_) => constraint == "Str",
                 ValueView::Bool(_) => constraint == "Bool",
                 ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
+                // CatHandle pullers are represented by a live LazyList so they
+                // can observe mid-iteration changes, but their public Raku
+                // type is Seq (and they are not lazy from the type system's
+                // point of view).
+                ValueView::LazyList(list) if list.is_cat_pull() => constraint == "Seq",
                 _ => false,
             }
         };

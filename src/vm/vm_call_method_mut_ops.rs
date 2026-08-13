@@ -819,7 +819,7 @@ impl Interpreter {
         // the matching note in the non-mut dispatch path.
         if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
-            && ll.is_genuinely_lazy()
+            && (ll.is_genuinely_lazy() || ll.is_cat_pull())
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lazy-cache");
             self.stack.push(Value::lazy_list(crate::gc::Gc::new(

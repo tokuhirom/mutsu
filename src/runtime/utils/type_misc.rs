@@ -23,6 +23,9 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // without forcing reification, so honour those context markers first.
         ValueView::LazyList(ll) if ll.in_array_context() => "Array",
         ValueView::LazyList(ll) if ll.in_list_context() => "List",
+        // CatHandle iterators pull from the live handle on demand internally,
+        // but Rakudo exposes both `.lines` and `.handles` as eager `Seq`s.
+        ValueView::LazyList(ll) if ll.is_cat_pull() => "Seq",
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
         ValueView::LazyList(_) => "Array",
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",

@@ -1194,7 +1194,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Forcing here would defeat e.g. `(my $l = $cat.lines).cache` whose
             // later `$l[2,3]` must reflect mid-iteration attribute changes.
             if let ValueView::LazyList(ll) = target.view()
-                && ll.is_genuinely_lazy()
+                && (ll.is_genuinely_lazy() || ll.is_cat_pull())
             {
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
                     ll.with_cached_no_sink().with_list_context(),
