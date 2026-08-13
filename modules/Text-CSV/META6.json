@@ -1,0 +1,22 @@
+{ "name"          : "Text::CSV",
+  "version"       : "0.022",
+  "perl"          : "6.d",
+  "description"   : "Handle CSV data. API based on Perl's Text::CSV_XS",
+  "auth"          : "zef:Tux",
+  "authors"       : [ "H.Merijn Brand (Tux)"       ],
+  "tags"          : [ "CSV","CPAN5"                ],
+  "depends"       : [ "Slang::Tuxic", "File::Temp" ],
+  "test-depends"  : [ "Test", "Test::META"         ],
+  "provides"      : {
+    "Text::CSV"   : "lib/Text/CSV.rakumod",
+    "Text::IO::String"  : "lib/Text/IO/String.rakumod"
+    },
+  "repo-type"     : "git",
+  "source-url"    : "git://github.com/Tux/CSV.git",
+  "license"       : "Artistic-2.0",
+  "support"       : {
+    "irc"         : "irc://irc.perl.org/#csv"
+    },
+  "build-depends" : [ ],
+  "resources"     : [ ]
+  } 

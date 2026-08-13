@@ -1753,6 +1753,11 @@ impl Interpreter {
                     matches!(s, "self" | "__ANON_STATE__" | "?CLASS" | "?ROLE" | "_")
                         || method_def.params.iter().any(|p| p == s)
                         || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+                        // Env-only `my` declarations (no compiled slot, e.g.
+                        // `if (my $file = ...)`) are frame state too — same
+                        // exclusion as the primary merge path above (Text::CSV's
+                        // `method csv` clobbered a same-named caller `$file`).
+                        || cc.env_only_decls.iter().any(|n| n == s)
                         || attrs_cell
                             .as_ref()
                             .is_some_and(|c| attr_twigil_local(&c.as_map(), s))

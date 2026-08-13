@@ -59,11 +59,6 @@ gaps with general interpreter fixes.
       value: [python-stdlib-comparison.md](docs/batteries/python-stdlib-comparison.md).
 - [ ] **Web-framework slot: make Cro run** — the campaign that fills the last hole in that criterion.
       Target, rationale, and gate order: [docs/batteries/web-framework.md](docs/batteries/web-framework.md).
-- [ ] **CSV slot: pick and bundle the candidate.** The measurement phase is DONE: the ADR-0026
-      slang campaign landed and `Text::CSV`'s functional suite is fully green on mutsu (32/32
-      files, 22,696 assertions; `99_meta.t` waived — user decision 2026-08-13, `Test::META` will
-      not be vendored). Remaining is the bundle decision (`Text::CSV` vs `CSV::Table` API-fit) and
-      the bundling mechanics. Survey and status: [docs/batteries/csv.md](docs/batteries/csv.md).
 - [ ] **Documentation per battery** — a usage document (no install needed, API, examples) for each
       bundled library. "Well-documented" is an explicit goal requirement, so this is mandatory when
       adding a module.

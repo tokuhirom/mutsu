@@ -135,6 +135,18 @@ SIDECAR = {
         "slot": "Monitors (`monitor` declarator)",
         "record": "docs/batteries/oo-monitors.md",
     },
+    "Slangify": {
+        "slot": "CSV read/write (dependency: slang plumbing)",
+        "record": "docs/batteries/slang-tuxic.md",
+    },
+    "Slang::Tuxic": {
+        "slot": "CSV read/write (dependency: spaced-call slang)",
+        "record": "docs/batteries/slang-tuxic.md",
+    },
+    "Text::CSV": {
+        "slot": "CSV read/write",
+        "record": "docs/batteries/csv.md",
+    },
 }
 
 

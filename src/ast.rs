@@ -1349,6 +1349,29 @@ pub(crate) fn collect_routine_body_local_names(
             out.insert(bare.to_string());
         }
     }
+    // A `my` can hide inside a *condition* expression — `if (my $d = ...)` /
+    // `while my $x = ...` parse the decl into the cond (as `DoStmt(VarDecl)`),
+    // not the branch body. Without walking it, the callee's `$d` is not
+    // recognized as routine-local and the return env merge writes it back over
+    // a same-named caller lexical (found via Text::CSV's `csv()`, whose
+    // `if (my $file = %args<file>:delete)` clobbered the caller's `$file`).
+    // Mirrors `collect_all_my_decl_names::add_from_expr`; stops at closure
+    // boundaries the same way.
+    fn add_from_cond(expr: &Expr, out: &mut std::collections::HashSet<String>) {
+        match expr {
+            Expr::DoStmt(s) => collect_routine_body_local_names(std::slice::from_ref(s), out),
+            Expr::Block(stmts) | Expr::Gather(stmts) => {
+                collect_routine_body_local_names(stmts, out)
+            }
+            Expr::DoBlock { body, .. } => collect_routine_body_local_names(body, out),
+            Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => add_from_cond(expr, out),
+            Expr::Binary { left, right, .. } => {
+                add_from_cond(left, out);
+                add_from_cond(right, out);
+            }
+            _ => {}
+        }
+    }
     for stmt in stmts {
         match stmt {
             Stmt::VarDecl { name, .. } => add_scalar(name, out),
@@ -1367,19 +1390,24 @@ pub(crate) fn collect_routine_body_local_names(
                 collect_routine_body_local_names(body, out);
             }
             Stmt::If {
+                cond,
                 then_branch,
                 else_branch,
                 binding_var,
                 ..
             } => {
+                add_from_cond(cond, out);
                 if let Some(v) = binding_var {
                     add_scalar(v, out);
                 }
                 collect_routine_body_local_names(then_branch, out);
                 collect_routine_body_local_names(else_branch, out);
             }
-            Stmt::While { body, .. }
-            | Stmt::Loop { body, .. }
+            Stmt::While { cond, body, .. } => {
+                add_from_cond(cond, out);
+                collect_routine_body_local_names(body, out);
+            }
+            Stmt::Loop { body, .. }
             | Stmt::React { body }
             | Stmt::Block(body)
             | Stmt::SyntheticBlock(body)

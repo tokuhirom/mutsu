@@ -1570,6 +1570,19 @@ impl Interpreter {
                 // this write is exclusive — the env/`our`/shared-var stores below
                 // are skipped for it.
                 let unit_lexical_write = self.unit_scope_lexical_write(&name, &val);
+                // A DECLARATION reaching SetGlobal (an expression-position `my`,
+                // e.g. `if (my $file = ...)`) creates a fresh binding — it is
+                // never a write to a carrier-caller's lexical, so it must not
+                // enter the carrier log: the carrier-return writeback would
+                // copy the callee's env entry over a same-named caller slot
+                // (Text::CSV's `method csv` clobbering the caller's `$file`).
+                // Only remove what THIS write would have added: a name already
+                // logged by an earlier genuine write stays logged.
+                let carrier_logged_before = sg_is_vardecl
+                    && self
+                        .carrier_writes
+                        .as_ref()
+                        .is_some_and(|s| s.contains(name.as_str()));
                 if unit_lexical_write {
                     // nothing further: the cell is the only home for this name
                 } else if raw_mode && name.starts_with('@') {
@@ -1578,6 +1591,12 @@ impl Interpreter {
                     self.env_mut().insert(name.clone(), val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
+                }
+                if sg_is_vardecl
+                    && !carrier_logged_before
+                    && let Some(set) = self.carrier_writes.as_mut()
+                {
+                    set.remove(name.as_str());
                 }
                 // Slice F (env<->locals coherence): a callee assigning to a
                 // caller-declared dynamic variable (`$*foo = v`) reaches SetGlobal

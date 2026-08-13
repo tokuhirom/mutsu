@@ -144,6 +144,25 @@
       "readme": "![Sparky](https://sparky.sparrowhub.io/badge/grondilu-libdigest-raku?foo=bar)\n# Digests in raku\n\nThis is a pure [raku](https://raku.org/) repository implementing some digest\nalgorithms.\n\nAs of today (march 2023), raku still is fairly slow so if you need a faster way\nto compute digest, consider using a\n[nativecall](https://docs.raku.org/language/nativecall) binding to the OpenSSL\nlibrary instead.\n\n## Synopsis\n\nNb.  Since commit 911c292688ad056a98285f7930297c5e1aea3bfb,\nthere is no `Digest` module anymore, the submodules, `Digest::MD5`, `Digest::SHA1` and\nso on must be used directly.\n\n```raku\nuse Digest::MD5;\nsay md5      \"hello\";\nuse HMAC;\nsay hmac\n  key => \"key\",\n  msg => \"The quick brown fox jumps over the lazy dog\", \n  hash => &md5,\n  block-size => 64;\n\nuse Digest::SHA1;\nsay sha1     \"Hola\";\n\nuse Digest::SHA2;\nsay sha256   \"Привет\"; \n\nuse Digest::RIPEMD;\nsay rmd160   \"Saluton\";\n\nuse Digest::SHA3;\nsay sha3_256 \"Bonjour\";\nsay shake256 \"Merhaba\", 16;\n\n# This will keep printing blocks\n.say for shake256 \"नमस्ते\", *;\n```\n    \n## Features\n\nCurrently implemented:\n\n* HMAC\n  - hmac\n* Digest\n  - md5\n* Digest::SHA1\n  - sha1\n* Digest::SHA2\n  - sha224\n  - sha256\n  - sha384\n  - sha512\n* Digest::SHA3\n  - sha3\\_224\n  - sha3\\_256\n  - sha3\\_384\n  - sha3\\_512\n  - shake128\n  - shake256\n* Digest::RIPEMD :\n  - rmd160\n\n## License\n\nThis work is published under the terms of the artistic license, as rakudo is.\nSee LICENSE file.\n\n"
     },
     {
+      "name": "Digest::HMAC",
+      "version": "1.0.7",
+      "description": "Generic HMAC implementation",
+      "license": "",
+      "authors": [
+        "Andrew Egeler",
+        "JJ Merelo"
+      ],
+      "auth": "zef:jjmerelo",
+      "provides": [
+        "Digest::HMAC"
+      ],
+      "depends": [],
+      "upstream": "git://github.com/JJ/Raku-Digest-HMAC",
+      "slot": "",
+      "record": "",
+      "readme": "Raku-Digest-HMAC\n==============\n\nFork from [@retupmoca's original](https://github.com/retupmoca/P6-Digest-HMAC) fixing some installation errors.\n\n## Example Usage ##\n\n    use Digest::HMAC;\n    use Digest;\n\n    my Buf $hmac = hmac($key, $data, &md5);\n    my Str $hmac = hmac-hex($key, $data, &md5);\n\n## Functions ##\n\n -  `sub hmac-hex($key, $data, Callable &hash, $blocksize = 64 --> Str)`\n\n    Returns the hex stringified output of hmac.\n\n -  `sub hmac($key, $data, Callable &hash, $blocksize = 64 --> Buf)`\n\n    Computes the HMAC of the passed information.\n\n    `$key` and `$data` can either be Str or Blob objects; if they are Str they\n    will be encoded as ascii.\n\n    `&hash` needs to be a hash function that takes and returns a Blob or Buf. If\n    it operates on or returns a Str, it will not work. (The md5, sha1, sha256 functions\n    from Digest work well, as in the example above)\n\n    `$blocksize` is the block size of the hash function. 64 is the default, and\n    is correct for at least md5, sha1, sha256.\n\n## See also\n\nSince version 0.28, [`Digest`](https://raku.land/zef:grondilu/Digest) also\n implements the HMAC algorithm, along with many others. You can use that one\n  for a more complete range of digest methods.\n"
+    },
+    {
       "name": "Encode",
       "version": "0.0.4",
       "description": "Character encodings in Perl 6",
@@ -395,6 +414,48 @@
       "readme": "# Rakudo-Core (vendored)\n\nModules that **Rakudo ships inside its own core library** (`rakudo/lib/`) rather\nthan through the Zef ecosystem. They are ordinary Raku source, so mutsu runs the\ngenuine upstream implementation instead of reimplementing it natively.\n\n- Upstream project: <https://github.com/rakudo/rakudo>\n- Imported from release **2026.06**, source tarball\n  <https://rakudo.org/dl/rakudo/rakudo-2026.06.tar.gz> (`rakudo-2026.06/`)\n- License: **Artistic-2.0** — `LICENSE` in this directory is the upstream\n  license file copied verbatim from the same release, and it governs every file\n  under `lib/` here. Copyright remains with The Perl Foundation / the Rakudo\n  contributors.\n- Vendored **verbatim** — do not edit these files. If a module does not run on\n  mutsu, fix the interpreter (BATTERIES.md §1 rung 2), never the vendored source.\n\n## Contents\n\n| Module          | Upstream path             | md5 of the imported file           |\n| --------------- | ------------------------- | ---------------------------------- |\n| `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |\n| `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |\n\n(`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)\n\n### `Test` is vendored but not yet the default\n\n`Test` is here because it is measurably reachable\n(`todo/tickets/vendor-real-test-module.md`), but `use Test` still resolves to\nmutsu's native TAP provider by default. Every `t/` file and every roast file\nstands on `Test`, so swapping the implementation swaps the foundation of the\nwhole suite; step 3 of that ticket flips it once the residue is gone. Until\nthen set **`MUTSU_REAL_TEST=1`** to load this file instead:\n\n```\nMUTSU_REAL_TEST=1 mutsu t/some-test.t\n```\n\nThe switch replaced the throwaway `unit module Test2;` rename the exercise ran\nunder before, so the file under test is now the unmodified upstream one that\nships in the repository. Pinned by `t/vendored-real-test-module.t`.\n\n## Why this directory exists\n\n`Pod::To::Text` was previously provided natively: `use Pod::To::Text` was\nrecognized as a built-in no-op and `pod2text` was a Rust builtin rendering the\nPod object tree (`src/runtime/io_pod.rs`). That is BATTERIES.md rung 3 applied to\na module that never needed it — unlike `JSON::Fast`, the real `Pod::To::Text` is\n168 lines of plain Raku with no `use` statements and no nqp dependency at all.\nBundling the real file replaces the private dialect with the upstream behaviour\nand turns any remaining gap into an interpreter bug we can fix.\n\nOther Rakudo core modules mutsu still provides natively (`NativeCall`,\n`experimental`, `newline`, ...) belong here too, once the interpreter runs them —\nexcept `NativeCall`, measured on 2026-08-01 as genuinely out of reach\n(`todo/deep/nativecall-cannot-be-vendored.md`).\n\n## Updating\n\nDownload the Rakudo release tarball, copy the files listed above verbatim, and\nupdate the version in this README and in `META6.json`.\n"
     },
     {
+      "name": "Slang::Tuxic",
+      "version": "0.0.5",
+      "description": "Allow whitespace between subroutine and the opening parenthesis",
+      "license": "Artistic-2.0",
+      "authors": [
+        "Tobias Leich"
+      ],
+      "auth": "zef:raku-community-modules",
+      "provides": [
+        "Slang::Tuxic"
+      ],
+      "depends": {
+        "runtime": {
+          "requires": [
+            "Slangify:ver<0.0.4+>:auth<zef:lizmat>"
+          ]
+        }
+      },
+      "upstream": "https://github.com/raku-community-modules/Slang-Tuxic",
+      "slot": "CSV read/write (dependency: spaced-call slang)",
+      "record": "docs/batteries/slang-tuxic.md",
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/Slang-Tuxic/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/Slang-Tuxic/actions) [![Actions Status](https://github.com/raku-community-modules/Slang-Tuxic/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/Slang-Tuxic/actions) [![Actions Status](https://github.com/raku-community-modules/Slang-Tuxic/actions/workflows/windows.yml/badge.svg)](https://github.com/raku-community-modules/Slang-Tuxic/actions)\n\nNAME\n====\n\nSlang::Tuxic - allow whitespace between subroutine and the opening parenthesis\n\nSYNOPSIS\n========\n\n```raku\nfoo 3, 5;   # 15, as usual\nfoo(3, 5);  # also 15, as usual\nfoo (3, 5); # 15, /o\\\n\n# It also allows to put space before argument lists in method calls:\n42.fmt('-%d-');  # -42-\n42.fmt: '-%d-';  # -42-\n42.fmt ('-%d-'); # -42-\n```\n\nDESCRIPTION\n===========\n\nThe `Slang::Tuxic` module adapts the Raku Programming Language syntax to allow you to put whitespace between the name of a subroutine and the opening parenthesis when calling a subroutine.\n\nBe aware that this introduces ambiguous situations, like when you want to pass a List to a sub, or when you need parenthesis around the condition after the keywords `if`, `while` and so on.\n\nAUTHORS\n=======\n\n  * Tobias Leich (FROGGS)\n\nSource can be located at: https://github.com/raku-community-modules/Slang-Tuxic . Comments and Pull Requests are welcome.\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2014 - 2018 Tobias Leich\n\nCopyright 2023 - 2025 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
+    },
+    {
+      "name": "Slangify",
+      "version": "0.0.4",
+      "description": "Provide an easy interface to activating slangs",
+      "license": "Artistic-2.0",
+      "authors": [
+        "Elizabeth Mattijsen"
+      ],
+      "auth": "zef:lizmat",
+      "provides": [
+        "Slangify"
+      ],
+      "depends": [],
+      "upstream": "https://github.com/lizmat/Slangify",
+      "slot": "CSV read/write (dependency: slang plumbing)",
+      "record": "docs/batteries/slang-tuxic.md",
+      "readme": "[![Actions Status](https://github.com/lizmat/Slangify/actions/workflows/linux.yml/badge.svg)](https://github.com/lizmat/Slangify/actions) [![Actions Status](https://github.com/lizmat/Slangify/actions/workflows/macos.yml/badge.svg)](https://github.com/lizmat/Slangify/actions) [![Actions Status](https://github.com/lizmat/Slangify/actions/workflows/windows.yml/badge.svg)](https://github.com/lizmat/Slangify/actions)\n\nNAME\n====\n\nSlangify - Provide an easy interface to activating slangs\n\nSYNOPSIS\n========\n\n```raku\n# Code of a slang module with only a grammar change\nrole Foo::Grammar { ... }\nuse Slangify Foo::Grammar, Mu;\n\n# Code of a slang module with both grammar and actions\nrole Foo::Grammar { ... }\nrole Foo::Actions { ... }\nuse Slangify Foo::Grammar, Foo::Actions;\n\n# Code of a slang module with only an actions change\nrole Foo::Actions { ... }\nuse Slangify Mu, Foo::Actions;\n\n# code of a slang module with legacy grammar\nrole Foo::Grammar { ... }\nrole Foo::Actions { ... }\nrole Foo::Grammar::Legacy { ... }\nrole Foo::Actions::Legacy { ... }\nuse Slangify Foo::Grammar, Foo::Actions,\n  Foo::Grammar::Legacy, Foo::Actions::Legacy;\n```\n\nDESCRIPTION\n===========\n\nThe `Slangify` module is a module intended for slang developers.\n\nIt abstracts the internals of slang creation and activation so that module developers of slangs have a consistent interface they can work with across current and future versions of the Raku Programming Language.\n\nThis module is **only** needed to install a module that provides a slang. And as such, would only need to be specified in the `build-depends` section of the META information.\n\nNote that the absence of a grammar role or an actions role, can be indicated by specifying `Mu`. Sadly, some core ideosyncracies make it currently impossible to indicate no change otherwise.\n\nIf the given grammar / actions can work with both the legacy grammar, as well as with the new RakuAST based grammar, then no changes are needed. If there **is** a different grammar for the legacy grammar and/or actions for the legacy grammar, then you can specify these as the 3rd and 4th argument in the `use Slangify` statement.\n\nADDITIONAL EXPORTS\n==================\n\nThe `Slangify` module also exports special candidates for postcircumfix `{ }` and for prefix `~`. This allows slang developers to remain closer to original grammar code which is often living in NQP land, e.g.: `~$<identifier> eq 'foo'`. Without these special candidates, slang developers would need to resort to using NQP ops.\n\nAUTHOR\n======\n\nElizabeth Mattijsen <liz@raku.rocks>\n\nSource can be located at: https://github.com/lizmat/Slangify . Comments and Pull Requests are welcome.\n\nIf you like this module, or what I’m doing more generally, committing to a [small sponsorship](https://github.com/sponsors/lizmat/) would mean a great deal to me!\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2023, 2025 Elizabeth Mattijsen\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
+    },
+    {
       "name": "Template::Mustache",
       "version": "1.2.6",
       "description": "A logic-free, cross-language templating format",
@@ -436,6 +497,28 @@
       "slot": "Test helpers",
       "record": "docs/batteries/test-helpers.md",
       "readme": "# Test::Util::ServerPort \n\nGet a free server port for testing with\n\n![Build Status](https://github.com/jonathanstowe/Test-Util-ServerPort/workflows/CI/badge.svg)\n\n## Synopsis\n\n```raku\n\nuse Test::Util::ServerPort;\n\nmy $port = get-unused-port();\n\n# .. start some server with the port\n\n\n```\n\n## Description\n\nThis is a utility to help with the testing of TCP server software.\n\nIt exports a single subroutine ```get-unused-port``` that will return\na port number in the range 1025 - 65535 (or a specified range\nas an argument,) that is free to be used by a listening socket. It\nchecks by attempting to ```listen``` on a random port on the range\nuntil it finds one that is not already bound.\n\n## Installation\n\nAssuming you have a working Rakudo installation you should be able to install this with *zef* :\n\n    # From the source directory\n   \n    zef install .\n\n    # Remote installation\n\n    zef install Test::Util::ServerPort\n\n## Support\n\nSuggestions and patches that may make it more useful in your software\nare welcomed via github at:\n\nhttps://github.com/jonathanstowe/Test-Util-ServerPort\n\n## Licence\n\nThis is free software.\n\nPlease see the [LICENCE](LICENCE) file in the distribution for details.\n\n© Jonathan Stowe 2016 - 2021\n"
+    },
+    {
+      "name": "Text::CSV",
+      "version": "0.022",
+      "description": "Handle CSV data. API based on Perl's Text::CSV_XS",
+      "license": "Artistic-2.0",
+      "authors": [
+        "H.Merijn Brand (Tux)"
+      ],
+      "auth": "zef:Tux",
+      "provides": [
+        "Text::CSV",
+        "Text::IO::String"
+      ],
+      "depends": [
+        "Slang::Tuxic",
+        "File::Temp"
+      ],
+      "upstream": "git://github.com/Tux/CSV",
+      "slot": "CSV read/write",
+      "record": "docs/batteries/csv.md",
+      "readme": "Module [![Test raku](https://github.com/Tux/CSV/actions/workflows/test.yaml/badge.svg)](https://github.com/Tux/CSV/actions/workflows/test.yaml)\n------\nText::CSV - Handle CSV data in Raku\n\nDescription\n-----------\nText::CSV provides facilities for the composition and decomposition\nof comma-separated values.  An instance of the Text::CSV class can\ncombine fields into a CSV string and parse a CSV string into fields.\n\nThis module provides both an OO API and a functional API to parse\nand produce CSV data.\n```\n use Text::CSV;\n\n my $csv = Text::CSV.new;\n my $io  = open \"file.csv\", :r, chomp => False;\n my @dta = $csv.getline_all($io);\n\n my @dta = csv(in => \"file.csv\");\n```\n\nAdditional (still incomplete) documentation in [the `doc` directory](/doc), including [a markdown version](/doc/Text-CSV.md). Check out also the [examples](/examples).\n\nDebugging information can be obtained by setting the `RAKU_VERBOSE`\nenvironment variable with values ranging to 2 to 9, less to annoyingly verbose.\n\n## Installation \n\nRecent changes can be (re)viewed in the public GIT repository at\nhttps://github.com/Tux/CSV\nFeel free to clone your own copy:\n```\n $ git clone https://github.com/Tux/CSV Text-CSV\n```\n\nPrerequisites\n-------------\n* raku 6.c\n* File::Temp   - as long as in-memory IO is not native\n* Slang::Tuxic - to support my style\n\nBuild/Installation\n------------------\n```\n $ zef install Text::CSV\n``` \n\nOr just \n\n```shell\n$ zef install .\n```\n\nfor the already downloaded repo\n \nLicense\n-------\nCopyright (c) 2015-2023 H.Merijn Brand.  All rights reserved.\n\nThis program is free software; you can redistribute it and/or\nmodify it under the same terms as Raku itself, which is\nGNU General Public License or Artistic License 2.\n\n\nAuthor\n------\nH.Merijn Brand <h.m.brand@xs4all.nl>\n"
     },
     {
       "name": "URI",
