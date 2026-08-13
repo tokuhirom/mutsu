@@ -190,6 +190,31 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
 }
 
 pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
+    // `parse_raku_ident` deliberately diagnoses a trailing `::` without an
+    // identifier.  Recognize the one legal parenthesized continuation first:
+    // a bare package-qualified symbolic dereference (`MY::("$x")`).
+    if let Ok((at_dynamic, head)) =
+        crate::parser::primary::var::parse_qualified_ident_prefix_with_hyphens(input)
+        && let Some(after_paren) = at_dynamic.strip_prefix("::(")
+    {
+        let (rest, key_expr) = expression(after_paren)?;
+        let (rest, _) = ws(rest)?;
+        let (rest, _) = parse_char(rest, ')')?;
+        let combined = Expr::Binary {
+            left: Box::new(Expr::Literal(Value::str(format!("{head}::")))),
+            op: crate::token_kind::TokenKind::Tilde,
+            right: Box::new(key_expr),
+        };
+        let (rest, combined) =
+            crate::parser::primary::var::parse_symbolic_deref_segments(rest, combined)?;
+        return Ok((
+            rest,
+            Expr::SymbolicDeref {
+                sigil: String::new(),
+                expr: Box::new(combined),
+            },
+        ));
+    }
     let (rest, name) = crate::parser::stmt::parse_raku_ident(input)?;
     let name = normalize_raku_identifier(name);
 

@@ -20,9 +20,11 @@ mod sigil_vars;
 
 // ── pub(crate): accessible from anywhere in the crate ──────────────────────
 pub(crate) use adverb::parse_adverb_value_pub;
+pub(in crate::parser) use ident::parse_qualified_ident_prefix_with_hyphens;
 pub(crate) use ident::{is_pseudo_package, parse_ident_with_hyphens};
 pub(crate) use perl5::detect_perl5_scalar_var;
 pub(in crate::parser) use scalar::mint_anon_state_name;
+pub(in crate::parser) use scalar::parse_symbolic_deref_segments;
 
 // ── pub(super): accessible from parser::primary (the parent of `var`)
 //    and all its descendants via `crate::parser::primary::var::` paths ──────

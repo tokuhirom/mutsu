@@ -137,7 +137,7 @@ impl Interpreter {
             || self.exported_vars.contains_key(package)
     }
 
-    fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
+    pub(crate) fn stash_lookup_symbol(stash: &Value, key: &str) -> Option<Value> {
         let ValueView::Instance {
             class_name,
             attributes,

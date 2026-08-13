@@ -63,10 +63,7 @@ form has always used.
 Pinned by `t/indirect-code-lookup.t`, which passes under `raku` too.
 `roast/S02-names/pseudo-6e.t` improves from 77 to 74 failing subtests.
 
-## Still open
+## Follow-up
 
-Two neighbouring spellings are unaffected and are tracked in
-`todo/tickets/bare-package-symbolic-deref-and-stash-routines.md`: the bare-term
-form `MY::("x")` does not parse at all, and the `MY`/`LEXICAL` pseudo-stash is
-built from `code.locals` plus `env`, so a registered `sub f` is absent from
-`MY::{'&f'}`. Neither blocks the `Test` module, which uses only the `&` form.
+The neighbouring bare-term spelling and registered-routine stash entries were
+completed in `bare-package-symbolic-deref-and-stash-routines.md`.

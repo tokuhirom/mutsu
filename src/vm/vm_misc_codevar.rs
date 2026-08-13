@@ -154,6 +154,38 @@ impl Interpreter {
         let sigil = Self::const_str(code, sigil_idx).to_string();
         let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
+        if sigil.is_empty() {
+            let mut parts = name.split("::").filter(|part| !part.is_empty());
+            let val = if let Some(first) = parts.next()
+                && Self::is_pseudo_package_name(first)
+            {
+                let mut current = self.build_pseudo_stash(code, first);
+                let mut found = true;
+                for part in parts {
+                    let next = match current.view() {
+                        // Unlike ordinary stash indexing, a symbolic name is
+                        // exact: `MY::("x")` must not fall back to `$x`.
+                        ValueView::Hash(symbols) => symbols.get(part).cloned(),
+                        _ => Self::stash_lookup_symbol(&current, part),
+                    };
+                    if let Some(next) = next {
+                        current = next;
+                    } else {
+                        found = false;
+                        break;
+                    }
+                }
+                if found {
+                    current
+                } else {
+                    Self::no_such_symbol_failure(&name)
+                }
+            } else {
+                loan_env!(self, resolve_indirect_type_name(&name))
+            };
+            self.stack.push(val);
+            return;
+        }
         // For $::("x"), look up the bare name "x" (scalars are stored without sigil).
         // For @::("x"), look up "@x" (arrays are stored with sigil).
         // For %::("x"), look up "%x" (hashes are stored with sigil).
