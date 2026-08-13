@@ -4105,6 +4105,59 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   **Design 2026-08-10** (same doc): grep-based completion criterion — no caller of
   `native_method_{0,1,2}arg` outside the resolver's native-invocation helper, `builtins/`
   internal recursion, and `#[cfg(test)]`; added to the G2 architectural guard test.
+  **Progress 2026-08-13 — slice 1 landed.** Inventory of every non-`builtins/`, non-test caller
+  outside the two canonical resolver entry points (`Interpreter::call_method_with_values`'s own
+  by-arity match in `methods_call_dispatch.rs`, and the VM's `Interpreter::try_native_method` in
+  `vm/vm_native_dispatch.rs`, both of which stay). This slice retired the eight call sites that
+  were pure invocation-context duplicates of what `call_method_with_values` already does
+  internally (try native by arity, fall through) — `methods_instance_ops.rs`'s numeric-bridge
+  delegation (`.Bridge`/`.Real` coercion re-dispatch collapsed to one
+  `self.call_method_with_values(coerced, method, delegated_args)` call, dropping a manual
+  0/1/2-arg match that only ever reached the code the callee already runs first), and the six
+  `SetHash`/`BagHash`/`MixHash` `.grab`/`.grabpairs` Callable-arg sites plus the `pick`/`roll`/
+  `grab`/`grabpairs`/`pickpairs` Callable-arg site in `methods_call_dispatch.rs` (all of which
+  computed `.elems`/`.total`/`.Int` via a direct dummy-fallback native call instead of routing
+  through the resolver). Zero behavior change: the receiver at each site is always a native
+  Set/Bag/Mix/numeric value at that point, so `call_method_with_values`'s own native-first path
+  serves the identical result. `roast/S02-types/{set,sethash,bag,baghash,mix,mixhash}.t`,
+  `roast/S17-supply/grab.t`, and the `does Real`/`Bridge` local suite
+  (`t/stringy-numeric-object.t`, `t/duration-numeric-methods.t`, `t/instant-duration-do-real.t`,
+  `t/native-instant-duration-render.t`, `t/role-attr-shadows-builtin-method.t`,
+  `t/builtin-role-composes-its-own-roles.t`) all green; full local `make test` and targeted roast
+  green.
+  **Remaining callers (deferred, each for a distinct reason — grep criterion not yet met):**
+  - `runtime/accessors_stack.rs::value_can_method` and
+    `runtime/methods_classhow_method_obj.rs`'s `.^lookup`/`.^can` builder both probe *existence*
+    (dummy-arg native calls used as a "does this respond" check), not invocation — the fix is
+    routing them through `Interpreter::e2_native_method_exists` (E7 step 4's `dispatch_owner_chain`
+    + `canonical_builtin_owner`-fold E2-row lookup), not `call_method_with_values`. **Re-verified
+    E7 step 4's deferred cutover is still not safe**: a fresh `MUTSU_VM_STATS=1` sweep of the full
+    `t/` suite (2026-08-13) still finds live `real=true shadow=false` mismatches — one new
+    (`class=List method=int8`) alongside the previously-known `class=Cancellation method=cancel`
+    (a native-Instance dispatch method the E2 arity-cascade catalog was never meant to cover, since
+    `Cancellation` sits outside `BUILTIN_METHOD_OWNERS`). Root cause for the catalog-coverage half
+    of this gap, newly identified: `builtin_type_methods::builtin_sample_value` has no branch for
+    `"IO::Path"`, `"IO::Handle"`, `"Cool"`, `"Sub"`, `"Signature"`, `"Any"`, or `"Mu"` (only the ten
+    concrete `Str`/`Int`/`Num`/`Rat`/`Complex`/`Bool`/`List`/`Array`/`Hash`/`Range` types plus the
+    Buf/Blob family get a sample value) — the one-time throwaway probe that generated
+    `native_method_row_table.rs`'s `RAW_ROWS` therefore emitted **zero** rows for those owners
+    (confirmed: `grep -c '"IO::Path",'`/`'"Cool",'`/`'"Sub",'`/`'"IO::Handle",'` on the table all
+    return 0), so `native_method_row_exists` is unconditionally `false` for every real method on
+    those types. Fixing this needs (a) sample values for the missing owners, (b) a rerun of the
+    `RAW_ROWS` probe to add their rows, and (c) a decision on `Cancellation`-shaped native-Instance
+    methods (outside the arity-cascade model entirely) before either call site can cut over.
+  - `runtime/builtins_collection.rs::builtin_unary_collection_method` (`kv`/`pairs`) takes `&self`,
+    not `&mut self` — cutting over needs a signature change that ripples to its callers.
+  - `runtime/test_functions/mod.rs::value_raku_repr` is a free function (no `self` at all), called
+    from `.map(Self::value_raku_repr)` combinator sites in `test_functions/comparison.rs`'s
+    `is-deeply` diagnostic formatter — low-risk but needs the four call sites converted to
+    closures over `&mut self` first.
+  - `repl_core.rs`'s last-value `.gist` display bypasses user-defined `.gist` entirely (native probe
+    only, falls to `to_string_value()` on a miss) — routing it through `call_method_with_values`
+    would also fix that gap for `Instance` values, but it is a REPL-observable behavior change that
+    needs its own test coverage, not a mechanical swap.
+  Next E11 slice: pick one of the above (the `.^can`/`e2_native_method_exists` catalog-gap fix is
+  the highest-value one, since it also closes out E7 step 4's long-deferred cutover).
 
 ### Phase F — derive introspection and remove compatibility state
 
