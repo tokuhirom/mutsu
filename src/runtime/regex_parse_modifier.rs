@@ -173,35 +173,10 @@ impl Interpreter {
             // # starts a comment — skip without interpolation.
             // #`[...] is an embedded comment; plain # is a line comment.
             if ch == '#' {
-                if i + 1 < chars.len() && chars[i + 1] == '`' {
-                    out.push(chars[i]);
-                    i += 1;
-                    out.push(chars[i]); // `
-                    i += 1;
-                    if i < chars.len() {
-                        let bracket = chars[i];
-                        let close =
-                            crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
-                        out.push(bracket);
-                        i += 1;
-                        let mut embed_depth = 1u32;
-                        while i < chars.len() && embed_depth > 0 {
-                            let c = chars[i];
-                            if c == bracket && bracket != close {
-                                embed_depth += 1;
-                            } else if c == close {
-                                embed_depth -= 1;
-                            }
-                            out.push(c);
-                            i += 1;
-                        }
-                    }
-                } else {
-                    while i < chars.len() && chars[i] != '\n' {
-                        out.push(chars[i]);
-                        i += 1;
-                    }
-                }
+                let end = super::regex_parse::regex_comment_end(&chars, i)
+                    .expect("comment marker was checked");
+                out.extend(chars[i..end].iter());
+                i = end;
                 continue;
             }
             // Skip code blocks { ... } — don't interpolate variables inside them

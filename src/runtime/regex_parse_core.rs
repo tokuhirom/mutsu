@@ -797,30 +797,8 @@ impl Interpreter {
             // bracket-delimited embedded comment (may sit mid-line with pattern
             // after it); a plain `#` is a line comment (until end of line).
             if c == '#' {
-                if chars.peek() == Some(&'`') {
-                    chars.next(); // consume `
-                    if let Some(bracket) = chars.next() {
-                        let close =
-                            crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
-                        let mut embed_depth = 1u32;
-                        for ch in chars.by_ref() {
-                            if ch == bracket && bracket != close {
-                                embed_depth += 1;
-                            } else if ch == close {
-                                embed_depth -= 1;
-                                if embed_depth == 0 {
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    continue;
-                }
-                for ch in chars.by_ref() {
-                    if ch == '\n' {
-                        break;
-                    }
-                }
+                let mut comment = String::new();
+                consume_regex_comment(c, &mut chars, &mut comment);
                 continue;
             }
             if c == '^' {

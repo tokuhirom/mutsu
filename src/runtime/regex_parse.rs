@@ -118,6 +118,75 @@ pub(crate) fn regex_pattern_is_static(pattern: &str) -> bool {
     true
 }
 
+/// Return the character index immediately after a regex comment beginning at
+/// `start`, or `None` when `start` is not a comment marker.
+///
+/// A plain `#` comment ends before the newline. An embedded ``#`[...]`` (or
+/// another bracket-delimited form) consumes the matching, possibly nested,
+/// closing bracket. Keeping this scan in one place is important: structural
+/// scanners must not mistake operators appearing in comments for regex
+/// operators.
+pub(super) fn regex_comment_end(chars: &[char], start: usize) -> Option<usize> {
+    if chars.get(start) != Some(&'#') {
+        return None;
+    }
+    if chars.get(start + 1) != Some(&'`') {
+        return Some(
+            (start + 1..chars.len())
+                .find(|&i| chars[i] == '\n')
+                .unwrap_or(chars.len()),
+        );
+    }
+
+    let bracket = match chars.get(start + 2).copied() {
+        Some(bracket) => bracket,
+        None => return Some(chars.len()),
+    };
+    let close = crate::parser::helpers::matching_bracket(bracket).unwrap_or(bracket);
+    let mut depth = 1u32;
+    let mut i = start + 3;
+    while i < chars.len() {
+        if chars[i] == bracket && bracket != close {
+            depth += 1;
+        } else if chars[i] == close {
+            depth -= 1;
+            if depth == 0 {
+                return Some(i + 1);
+            }
+        }
+        i += 1;
+    }
+    Some(chars.len())
+}
+
+/// Consume a regex comment from a peekable stream after its `#` marker was
+/// read. The comment text is copied to `current` so callers preserve source
+/// spans for later blank-branch checks.
+pub(super) fn consume_regex_comment<I>(
+    marker: char,
+    chars: &mut std::iter::Peekable<I>,
+    current: &mut String,
+) -> bool
+where
+    I: Iterator<Item = char> + Clone,
+{
+    if marker != '#' {
+        return false;
+    }
+    let mut remaining = vec![marker];
+    remaining.extend(chars.clone());
+    let Some(end) = regex_comment_end(&remaining, 0) else {
+        return false;
+    };
+    current.push(marker);
+    for _ in 1..end {
+        if let Some(ch) = chars.next() {
+            current.push(ch);
+        }
+    }
+    true
+}
+
 #[cfg(test)]
 mod static_pattern_tests {
     use super::regex_pattern_is_static;

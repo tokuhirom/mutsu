@@ -105,6 +105,13 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
+            if depth_angle == 0
+                && !in_single_quote
+                && !in_double_quote
+                && consume_regex_comment(ch, &mut chars, &mut current)
+            {
+                continue;
+            }
             // Inside a `<...>` assertion, `'` and `"` are ordinary characters, not
             // quote delimiters: a `< a b ' c >` alternation may list a lone quote
             // as a one-character word (the HTTP `tchar` set does). Toggling on it
@@ -221,6 +228,13 @@ impl Interpreter {
             if ch == '\\' {
                 current.push(ch);
                 escaped = true;
+                continue;
+            }
+            if depth_angle == 0
+                && !in_single_quote
+                && !in_double_quote
+                && consume_regex_comment(ch, &mut chars, &mut current)
+            {
                 continue;
             }
             // See `split_top_level_alternation`: `'`/`"` inside a `<...>` assertion
