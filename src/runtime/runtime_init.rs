@@ -2318,6 +2318,7 @@ impl Interpreter {
             wrap_callable_ids: HashMap::new(),
             wrap_handle_counter: 0,
             wrap_dispatch_stack: Vec::new(),
+            dispatch_token_counter: 0,
             wrap_skip_once: None,
             suppress_binding_error_enhance: false,
             method_wrap_chains: HashMap::new(),

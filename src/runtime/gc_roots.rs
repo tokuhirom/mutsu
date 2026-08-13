@@ -131,7 +131,7 @@ impl Interpreter {
     /// Multi/method dispatch stacks and wrap chains — all hold live invocants
     /// and arguments for a dispatch in progress.
     fn visit_dispatch_state(&self, visitor: &mut dyn RootVisitor) {
-        for (_, _, args, _) in &self.multi_dispatch_stack {
+        for (_, _, args, _, _) in &self.multi_dispatch_stack {
             visit_slice(visitor, args);
         }
         for frame in &self.method_dispatch_stack {

@@ -450,11 +450,13 @@ impl Interpreter {
             if pushed_dispatch {
                 let rw_params =
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
+                let dispatch_token = self.next_dispatch_token();
                 self.multi_dispatch_stack.push((
                     name.to_string(),
                     remaining,
                     args.to_vec(),
                     rw_params,
+                    dispatch_token,
                 ));
             }
             self.samewith_context_stack.push((name.to_string(), None));
