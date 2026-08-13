@@ -5,6 +5,28 @@
 license (hard gate) → dependency weight → proven behaviour on mutsu → API fit
 · **Procedure:** [selection-method.md](selection-method.md)
 
+> **Status update 2026-08-13 — `Text::CSV` measurement COMPLETE, suite
+> green.** Everything below the update is the original survey, kept for the
+> method and the `CSV::Table` comparison; the `Text::CSV` blockers it
+> describes are all resolved:
+>
+> - The slang blocker (point 2 of the candidate list) fell to the ADR-0026
+>   slang-activation campaign
+>   ([news/2026-08/slang-activation-machinery.md](../../news/2026-08/slang-activation-machinery.md));
+>   `use Text::CSV` parses and the module runs. Its deep ticket is deleted.
+> - The functional test suite is **fully green on mutsu: 32/32 files,
+>   22,696 assertions** (the tail fixes: #6342, #6347, and the typed-lexical
+>   constraint frame-scoping in
+>   [news/2026-08/typed-lexical-constraint-frame-scoped.md](../../news/2026-08/typed-lexical-constraint-frame-scoped.md)
+>   which finished `t/66_formula.t`).
+> - The 33rd file, `t/99_meta.t`, needs the ecosystem `Test::META` module
+>   (dist-metadata QA, not CSV functionality). **User decision 2026-08-13:
+>   Test::META will not be vendored — `99_meta.t` is permanently out of
+>   scope.** The measurement axis for this slot is therefore closed.
+>
+> Remaining for the slot: the bundle decision itself (Text::CSV vs
+> CSV::Table API-fit question in point 3 below) and the bundling mechanics.
+
 Flagged as gap #2 in
 [python-stdlib-comparison.md](python-stdlib-comparison.md) — Python's `csv`
 is a stdlib module with no direct Raku core equivalent, and CSV handling is
