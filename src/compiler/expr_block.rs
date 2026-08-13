@@ -148,12 +148,30 @@ impl Compiler {
                         && self.local_scopes[..self.local_scopes.len() - 1]
                             .iter()
                             .any(|scope| scope.contains_key(name));
+                let predeclared_shadow = self
+                    .local_scopes
+                    .last()
+                    .and_then(|scope| scope.get(name))
+                    .is_some_and(Option::is_some);
                 // A shadowing expression-position declaration is lexical just
-                // like the statement form. Give it a declaration slot after its
-                // initializer has compiled, preserving the existing initializer
-                // semantics while preventing an inherited same-named binding
+                // like the statement form. Give it a declaration slot before its
+                // initializer is compiled, preventing an inherited same-named binding
                 // (including a captured ContainerRef cell) from being overwritten.
-                let mut decl_slot = None;
+                let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
+                    self.local_map.get(name).copied()
+                } else {
+                    (!*is_our && !is_promoted && shadows_outer).then(|| self.declare_local(name))
+                };
+                if decl_slot.is_some() {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                    });
+                }
+                let mark_explicit_local_init = decl_slot.is_some()
+                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && !custom_traits.iter().any(|(t, _)| t == "default");
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
                     // Register the declared type constraint BEFORE the init,
@@ -167,11 +185,7 @@ impl Compiler {
                         self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                     }
                     self.compile_expr(expr);
-                    let slot = if is_promoted {
-                        self.alloc_local(name)
-                    } else {
-                        self.declare_local(name)
-                    };
+                    let slot = decl_slot.unwrap_or_else(|| self.alloc_local(name));
                     let ip = self.code.ops.len();
                     let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                     let key_idx = self.code.add_constant(Value::str(key.clone()));
@@ -228,9 +242,6 @@ impl Compiler {
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
                     self.compile_expr(expr);
-                    if !is_promoted && shadows_outer {
-                        decl_slot = Some(self.declare_local(name));
-                    }
                     // Re-clear AFTER the initializer: evaluating the RHS can call
                     // into code that declares its own typed same-named lexical
                     // (Text::CSV's `my Int @r = @!crange` runs inside
@@ -251,6 +262,9 @@ impl Compiler {
                     // (`(my @a)`) is marked too so `use strict` accepts the
                     // declaring write; its fresh-container detach is a no-op (the
                     // marker-slot cache path reuses the stored value regardless).
+                    if mark_explicit_local_init {
+                        self.code.emit(OpCode::MarkExplicitInitializerContext);
+                    }
                     self.code.emit(OpCode::MarkVarDeclContext);
                     if let Some(slot) = decl_slot {
                         self.code.emit(OpCode::SetLocal(slot));
@@ -361,9 +375,6 @@ impl Compiler {
                     } else {
                         self.compile_expr(expr);
                     }
-                    if !*is_our && !is_promoted && shadows_outer {
-                        self.declare_local(name);
-                    }
                     if *is_our {
                         self.code.emit(OpCode::Dup); // for return value
                         self.code.emit(OpCode::Dup); // for SetGlobal
@@ -397,6 +408,9 @@ impl Compiler {
                             self.code.emit(OpCode::TypeCheck(tc_idx2, None));
                             // Now Dup the wrapped value and store
                             self.code.emit(OpCode::Dup);
+                            if mark_explicit_local_init {
+                                self.code.emit(OpCode::MarkExplicitInitializerContext);
+                            }
                             self.code.emit(OpCode::MarkVarDeclContext);
                             self.emit_set_named_var(name);
                         } else {
@@ -416,6 +430,9 @@ impl Compiler {
                                 let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                                 self.emit_set_var_type(name, name_idx2, tc_idx, false);
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                                 self.emit_get_named_var(name);
@@ -441,9 +458,17 @@ impl Compiler {
                                 // trait applies (below).
                                 self.code.emit(OpCode::Pop);
                                 self.compile_expr(&Expr::BareWord("Any".to_string()));
-                                self.code.emit(OpCode::Dup);
+                                if decl_slot.is_none() {
+                                    self.code.emit(OpCode::Dup);
+                                }
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
+                                if decl_slot.is_some() {
+                                    self.emit_get_named_var(name);
+                                }
                             } else {
                                 // Enforce a scalar type constraint in expression
                                 // position too (e.g. a bare `my Str $x := 3` whose
@@ -465,18 +490,28 @@ impl Compiler {
                                             .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
                                     }
                                 }
-                                self.code.emit(OpCode::Dup);
+                                if decl_slot.is_none() {
+                                    self.code.emit(OpCode::Dup);
+                                }
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
+                                if decl_slot.is_some() {
+                                    self.emit_get_named_var(name);
+                                }
                             }
                         }
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::SetVarDynamic {
-                    name_idx,
-                    dynamic: is_dynamic,
-                });
+                if decl_slot.is_none() {
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                    });
+                }
                 // Register a scalar type constraint AFTER `SetVarDynamic` (which
                 // clears any stale same-named constraint) so it persists and is
                 // enforced on *later* assignments — `(my Subset $c = 6); $c = 7`
