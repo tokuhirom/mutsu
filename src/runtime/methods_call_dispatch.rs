@@ -3253,17 +3253,9 @@ impl Interpreter {
             // For pick/grab, pass total; for pickpairs/grabpairs, pass elems
             let input = match method {
                 "pickpairs" | "grabpairs" => {
-                    // .elems
-                    let method_sym = crate::symbol::Symbol::intern("elems");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
+                    self.call_method_with_values(target.clone(), "elems", vec![])?
                 }
-                _ => {
-                    // .total
-                    let method_sym = crate::symbol::Symbol::intern("total");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
-                }
+                _ => self.call_method_with_values(target.clone(), "total", vec![])?,
             };
             let count = self.call_sub_value(callable, vec![input], false)?;
             // Convert to Int
@@ -3271,11 +3263,9 @@ impl Interpreter {
                 ValueView::Int(n) => Value::int(n),
                 ValueView::Num(f) => Value::int(f as i64),
                 ValueView::Rat(n, d) if d != 0 => Value::int(n / d),
-                _ => {
-                    let method_sym = crate::symbol::Symbol::intern("Int");
-                    crate::builtins::native_method_0arg(&count, method_sym)
-                        .unwrap_or(Ok(count.clone()))?
-                }
+                _ => self
+                    .call_method_with_values(count.clone(), "Int", vec![])
+                    .unwrap_or_else(|_| count.clone()),
             };
             return self.call_method_with_values(target, method, vec![count_int]);
         }

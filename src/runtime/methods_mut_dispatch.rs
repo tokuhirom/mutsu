@@ -1898,9 +1898,7 @@ impl Interpreter {
             // Resolve Callable args: call with .elems to get count
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
-                let method_sym = crate::symbol::Symbol::intern("elems");
-                let input = crate::builtins::native_method_0arg(&target, method_sym)
-                    .unwrap_or(Ok(Value::int(0)))?;
+                let input = self.call_method_with_values(target.clone(), "elems", vec![])?;
                 let count = self.call_sub_value(callable, vec![input], false)?;
                 let count_int = match count.view() {
                     ValueView::Int(n) => Value::int(n),
@@ -1990,13 +1988,9 @@ impl Interpreter {
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
                 let input = if method == "grabpairs" {
-                    let method_sym = crate::symbol::Symbol::intern("elems");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
+                    self.call_method_with_values(target.clone(), "elems", vec![])?
                 } else {
-                    let method_sym = crate::symbol::Symbol::intern("total");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
+                    self.call_method_with_values(target.clone(), "total", vec![])?
                 };
                 let count = self.call_sub_value(callable, vec![input], false)?;
                 let count_int = match count.view() {
@@ -2120,13 +2114,9 @@ impl Interpreter {
             let args = if !args.is_empty() && args[0].as_sub().is_some() {
                 let callable = args[0].clone();
                 let input = if method == "grabpairs" {
-                    let method_sym = crate::symbol::Symbol::intern("elems");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
+                    self.call_method_with_values(target.clone(), "elems", vec![])?
                 } else {
-                    let method_sym = crate::symbol::Symbol::intern("total");
-                    crate::builtins::native_method_0arg(&target, method_sym)
-                        .unwrap_or(Ok(Value::int(0)))?
+                    self.call_method_with_values(target.clone(), "total", vec![])?
                 };
                 let count = self.call_sub_value(callable, vec![input], false)?;
                 let count_int = match count.view() {

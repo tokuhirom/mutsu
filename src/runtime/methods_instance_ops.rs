@@ -1466,32 +1466,11 @@ impl Interpreter {
                         };
                         delegated_args.push(coerced_arg);
                     }
-                    let method_sym = crate::symbol::Symbol::intern(method);
-                    if delegated_args.is_empty()
-                        && let Some(result) =
-                            crate::builtins::native_method_0arg(&coerced, method_sym)
-                    {
-                        result
-                    } else if delegated_args.len() == 1
-                        && let Some(result) = crate::builtins::native_method_1arg(
-                            &coerced,
-                            method_sym,
-                            &delegated_args[0],
-                        )
-                    {
-                        result
-                    } else if delegated_args.len() == 2
-                        && let Some(result) = crate::builtins::native_method_2arg(
-                            &coerced,
-                            method_sym,
-                            &delegated_args[0],
-                            &delegated_args[1],
-                        )
-                    {
-                        result
-                    } else {
-                        self.call_method_with_values(coerced, method, delegated_args)
-                    }
+                    // `call_method_with_values` already tries the native arity
+                    // cascade first (ADR-0019 E11: keep native dispatch behind
+                    // the one canonical resolver entry point instead of
+                    // duplicating the by-arity match here).
+                    self.call_method_with_values(coerced, method, delegated_args)
                 }
             {
                 return Ok(result);
