@@ -48,6 +48,7 @@ pub(crate) use state::{
 };
 pub(in crate::runtime) use state_lock::next_lock_id;
 pub(in crate::runtime) use state_lock::next_semaphore_id;
+pub(in crate::runtime) use state_lock::register_act_loop_close;
 pub(in crate::runtime) use state_scheduled_pump::register_scheduled_pump;
 pub(in crate::runtime) use state_scheduler::{fake_scheduler_init, next_fake_scheduler_id};
 pub(in crate::runtime) use state_supplier::{

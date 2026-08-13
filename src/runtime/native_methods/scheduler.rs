@@ -191,6 +191,23 @@ impl Interpreter {
                 if let Some(ValueView::Int(pump_id)) = attributes.get("pump_id").map(Value::view) {
                     super::state_scheduled_pump::drop_scheduled_pump(pump_id as u64);
                 }
+                // Stop every channel-backed act-loop worker this tap spawned:
+                // setting the shared close flag makes the worker's bounded
+                // wait exit and the flagged sender refuse further sends, so
+                // an interval-timer entry feeding the channel retires on its
+                // next tick. Without this the workers (and the timer) ran
+                // until process exit — 4000 closed taps in
+                // roast/S17-supply/syntax.t test 63 left ~4000 live threads
+                // burning ~10 cores for the rest of the file.
+                if let Some(ValueView::Array(ids, ..)) =
+                    attributes.get("act_loop_close_ids").map(Value::view)
+                {
+                    for id in ids.iter() {
+                        if let ValueView::Int(id) = id.view() {
+                            close_act_loop(id as u64);
+                        }
+                    }
+                }
                 // Cascade upstream. In raku, closing a tap closes the supply
                 // block that produced it, which closes the `whenever`
                 // subscriptions inside it, which closes *their* sources — all

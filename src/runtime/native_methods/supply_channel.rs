@@ -10,6 +10,7 @@
 //! unregisters on every exit path.
 use super::SupplyEvent;
 use crate::value::waker::ReactWaker;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -30,6 +31,7 @@ fn notify_all(wakers: &WakerSet) {
 pub(crate) struct SupplySender {
     tx: mpsc::Sender<SupplyEvent>,
     wakers: WakerSet,
+    closed: Arc<AtomicBool>,
 }
 
 impl Clone for SupplySender {
@@ -37,12 +39,21 @@ impl Clone for SupplySender {
         Self {
             tx: self.tx.clone(),
             wakers: Arc::clone(&self.wakers),
+            closed: Arc::clone(&self.closed),
         }
     }
 }
 
 impl SupplySender {
     pub(crate) fn send(&self, event: SupplyEvent) -> Result<(), mpsc::SendError<SupplyEvent>> {
+        // A closed channel refuses further sends so producers holding a
+        // sender clone (e.g. the interval-timer heap entry) observe the
+        // teardown as "receiver gone" and retire themselves. The flag is set
+        // only by `Tap.close`/`.cancel` via the act-loop close registry — for
+        // every other channel user it stays false forever.
+        if self.closed.load(Ordering::Acquire) {
+            return Err(mpsc::SendError(event));
+        }
         self.tx.send(event)?;
         notify_all(&self.wakers);
         Ok(())
@@ -65,6 +76,7 @@ impl Drop for SupplySender {
 pub(crate) struct SupplyReceiver {
     rx: mpsc::Receiver<SupplyEvent>,
     wakers: WakerSet,
+    closed: Arc<AtomicBool>,
 }
 
 impl SupplyReceiver {
@@ -77,6 +89,24 @@ impl SupplyReceiver {
     /// waker-blocking instead.
     pub(crate) fn recv(&self) -> Result<SupplyEvent, mpsc::RecvError> {
         self.rx.recv()
+    }
+
+    /// Bounded blocking receive, for consumer threads that must observe an
+    /// external close flag (the act-loop teardown re-checks its flag between
+    /// waits — see `run_supply_act_loop`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn recv_timeout(
+        &self,
+        timeout: std::time::Duration,
+    ) -> Result<SupplyEvent, mpsc::RecvTimeoutError> {
+        self.rx.recv_timeout(timeout)
+    }
+
+    /// Handle on the shared close flag, kept by the tap site after the
+    /// receiver moves into its worker. Setting it makes `send` fail and lets
+    /// the worker's bounded wait notice the close.
+    pub(crate) fn close_flag(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.closed)
     }
 
     /// Register a drive-loop waker to poke on future sends (no-op if this
@@ -100,11 +130,13 @@ impl SupplyReceiver {
 pub(crate) fn supply_event_channel() -> (SupplySender, SupplyReceiver) {
     let (tx, rx) = mpsc::channel();
     let wakers: WakerSet = Arc::new(Mutex::new(Vec::new()));
+    let closed = Arc::new(AtomicBool::new(false));
     (
         SupplySender {
             tx,
             wakers: Arc::clone(&wakers),
+            closed: Arc::clone(&closed),
         },
-        SupplyReceiver { rx, wakers },
+        SupplyReceiver { rx, wakers, closed },
     )
 }
