@@ -2367,7 +2367,7 @@ impl Interpreter {
                             Self::native_array_storage_mut(&mut storage, &method, &args)
                         {
                             let result = result?;
-                            self.write_back_array_storage_instance(
+                            let updated_instance = self.write_back_array_storage_instance(
                                 &target_name,
                                 &inst_class,
                                 &attributes,
@@ -2390,7 +2390,16 @@ impl Interpreter {
                                 args.len(),
                                 true,
                             );
-                            self.stack.push(result);
+                            self.stack.push(
+                                if matches!(
+                                    method.as_str(),
+                                    "push" | "append" | "prepend" | "unshift"
+                                ) {
+                                    updated_instance
+                                } else {
+                                    result
+                                },
+                            );
                             return Ok(());
                         }
                         // Non-mutating block list methods (`.map`/`.first`/
@@ -2970,7 +2979,7 @@ impl Interpreter {
         attributes: &crate::gc::Gc<crate::value::InstanceAttrs>,
         inst_id: u64,
         storage: Value,
-    ) {
+    ) -> Value {
         let new_attrs = crate::value::InstanceAttrs::clone(attributes);
         new_attrs.insert("__mutsu_array_storage".to_string(), storage);
         let updated_instance = Value::instance_parts(
@@ -2984,7 +2993,8 @@ impl Interpreter {
             inst_id,
         );
         self.env_mut()
-            .insert(target_name.to_string(), updated_instance);
+            .insert(target_name.to_string(), updated_instance.clone());
+        updated_instance
     }
 
     /// Interpreter-native `splice` on a plain, untyped `@`-array bound to `target_name`
