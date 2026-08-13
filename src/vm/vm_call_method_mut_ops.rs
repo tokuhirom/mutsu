@@ -32,6 +32,7 @@ impl Interpreter {
         code: &CompiledCode,
         arity: u32,
         modifier_idx: Option<u32>,
+        quoted: bool,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.flatten_scoped_env();
@@ -54,6 +55,17 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamic target")
         })?;
+        if !quoted && !matches!(name_val.view(), ValueView::Package(_)) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(Self::invocant_as_positional(target));
+            call_args.extend(args);
+            let result = self.vm_call_on_value(name_val, call_args, None);
+            match modifier {
+                Some("+") | Some("*") => self.stack.push(Value::array(vec![result?])),
+                _ => self.stack.push(result?),
+            }
+            return Ok(());
+        }
         // Force lazy IO lines for non-lazy-preserving methods
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
@@ -350,6 +362,7 @@ impl Interpreter {
         arity: u32,
         target_name_idx: u32,
         modifier_idx: Option<u32>,
+        quoted: bool,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.flatten_scoped_env();
@@ -373,6 +386,17 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
         })?;
+        if !quoted && !matches!(name_val.view(), ValueView::Package(_)) {
+            let mut call_args = Vec::with_capacity(args.len() + 1);
+            call_args.push(Self::invocant_as_positional(target));
+            call_args.extend(args);
+            let result = self.vm_call_on_value(name_val, call_args, None);
+            match modifier {
+                Some("+") | Some("*") => self.stack.push(Value::array(vec![result?])),
+                _ => self.stack.push(result?),
+            }
+            return Ok(());
+        }
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
         // Handle .* and .+ modifiers

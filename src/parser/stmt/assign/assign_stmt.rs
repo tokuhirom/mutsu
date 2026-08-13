@@ -336,6 +336,7 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
                     name_expr: Box::new(name_expr),
                     args,
                     modifier: None,
+                    quoted: true,
                 },
             };
             let stmt = if name == "_" {

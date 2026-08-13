@@ -3149,9 +3149,10 @@ impl Interpreter {
             OpCode::CallMethodDynamic {
                 arity,
                 modifier_idx,
+                quoted,
             } => {
                 self.sync_source_line(code, *ip);
-                match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx) {
+                match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx, *quoted) {
                     Ok(()) => {}
                     Err(e) => {
                         // Record a resume point so a method that raises a
@@ -3172,6 +3173,7 @@ impl Interpreter {
                 arity,
                 target_name_idx,
                 modifier_idx,
+                quoted,
             } => {
                 self.sync_source_line(code, *ip);
                 let pre = self.attr_env_snapshot(code, *target_name_idx);
@@ -3180,6 +3182,7 @@ impl Interpreter {
                     *arity,
                     *target_name_idx,
                     *modifier_idx,
+                    *quoted,
                 ) {
                     Ok(()) => {}
                     Err(e) => {

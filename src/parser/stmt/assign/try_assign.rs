@@ -288,6 +288,7 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
                     name_expr: Box::new(name_expr),
                     args,
                     modifier: None,
+                    quoted: true,
                 },
             };
             return Ok((

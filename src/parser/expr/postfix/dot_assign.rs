@@ -452,6 +452,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
                     name_expr: Box::new(name_expr.clone()),
                     args: args.clone(),
                     modifier: None,
+                    quoted: true,
                 })
             }
         };
@@ -477,6 +478,7 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
             name_expr: Box::new(name_expr.clone()),
             args: args.clone(),
             modifier: None,
+            quoted: false,
         });
         return Ok((r_final, result));
     }

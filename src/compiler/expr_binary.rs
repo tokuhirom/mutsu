@@ -60,11 +60,13 @@ impl Compiler {
                 name_expr,
                 args,
                 modifier,
+                quoted,
             } => Expr::DynamicMethodCall {
                 target: Box::new(Self::subst_topic_var(target, var)),
                 name_expr: name_expr.clone(),
                 args: args.clone(),
                 modifier: *modifier,
+                quoted: *quoted,
             },
             other => other.clone(),
         }

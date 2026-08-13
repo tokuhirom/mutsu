@@ -882,6 +882,7 @@ fn postfix_expr_loop_from(
                         name_expr: Box::new(name_expr),
                         args,
                         modifier,
+                        quoted: false,
                     };
                     rest = r;
                     continue;
@@ -917,6 +918,7 @@ fn postfix_expr_loop_from(
                         name_expr: Box::new(name_expr),
                         args,
                         modifier,
+                        quoted: false,
                     };
                     rest = r_inner;
                     continue;
@@ -926,6 +928,7 @@ fn postfix_expr_loop_from(
                     name_expr: Box::new(name_expr),
                     args: Vec::new(),
                     modifier,
+                    quoted: false,
                 };
                 rest = r;
                 continue;
@@ -1232,6 +1235,7 @@ fn postfix_expr_loop_from(
                             name_expr: Box::new(name_expr),
                             args,
                             modifier,
+                            quoted: true,
                         };
                     }
                 }
@@ -1259,6 +1263,7 @@ fn postfix_expr_loop_from(
                             name_expr: Box::new(name_expr),
                             args,
                             modifier,
+                            quoted: false,
                         };
                         rest = r_name;
                         continue;
@@ -1268,6 +1273,7 @@ fn postfix_expr_loop_from(
                         name_expr: Box::new(name_expr),
                         args: Vec::new(),
                         modifier,
+                        quoted: false,
                     };
                     rest = r_name;
                     continue;
@@ -1285,6 +1291,7 @@ fn postfix_expr_loop_from(
                         name_expr: Box::new(name_expr),
                         args,
                         modifier,
+                        quoted: false,
                     };
                     rest = r_name;
                     continue;
@@ -1294,6 +1301,7 @@ fn postfix_expr_loop_from(
                     name_expr: Box::new(name_expr),
                     args: Vec::new(),
                     modifier,
+                    quoted: false,
                 };
                 rest = r_name;
                 continue;
@@ -1423,6 +1431,7 @@ fn postfix_expr_loop_from(
                             name_expr: Box::new(name_expr),
                             args,
                             modifier: Some('!'),
+                            quoted: true,
                         };
                     }
                 }

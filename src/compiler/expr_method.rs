@@ -580,6 +580,7 @@ impl Compiler {
         name_expr: &Expr,
         args: &[Expr],
         modifier: &Option<char>,
+        quoted: bool,
     ) {
         let target_var_name = match target {
             Expr::Var(n) => Some(n.clone()),
@@ -600,11 +601,13 @@ impl Compiler {
                 arity,
                 target_name_idx,
                 modifier_idx,
+                quoted,
             });
         } else {
             self.code.emit(OpCode::CallMethodDynamic {
                 arity,
                 modifier_idx,
+                quoted,
             });
         }
     }
