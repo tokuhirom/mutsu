@@ -51,7 +51,7 @@ impl Interpreter {
         let saved_topic_source = self.topic_source_var.take();
         let saved_container_source = self.topic_container_source.take();
         let saved_element_source = self.element_source.take();
-        let container_binding_full = self.container_ref_var.take();
+        let container_binding_full = self.take_container_ref_for(code);
         let container_source_slot = container_binding_full.as_ref().and_then(|(_, s)| *s);
         let container_binding = container_binding_full.map(|(n, _)| n);
         // An element-source topic (`given %h<k>` / `given @a[i]`) aliases an
@@ -291,7 +291,7 @@ impl Interpreter {
         // (in-place `$_[0]=…`/`.push` propagate through the shared container), so
         // dropping the signal is sufficient; it only scopes topic-source tags to
         // the body and is restored afterwards.
-        let saved_container_ref = self.container_ref_var.take();
+        let saved_container_ref = self.take_container_ref_for(code);
         let saved_topic_source = self.topic_source_var.take();
         let saved_container_source = self.topic_container_source.take();
         if let Some((src, _)) = &saved_container_ref
@@ -322,7 +322,9 @@ impl Interpreter {
                 // Take the container name before moving `return_value` out (a
                 // method borrow of `e` cannot coexist with a partial move).
                 // The signal carries only the name — no compile-time slot.
-                self.container_ref_var = e.take_container_name().map(|n| (n, None));
+                self.container_ref_var = e
+                    .take_container_name()
+                    .map(|n| (n, None, Self::resume_code_fp(code)));
                 if let Some(v) = e.return_value {
                     last = v;
                 }
@@ -447,7 +449,7 @@ impl Interpreter {
                 let last = self.stack.last().cloned().unwrap_or(Value::NIL);
                 let mut sig = RuntimeError::succeed_signal();
                 sig.return_value = Some(last);
-                sig.set_container_name(self.container_ref_var.take().map(|(n, _)| n));
+                sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
                 return Err(sig);
             }
         }
@@ -485,7 +487,7 @@ impl Interpreter {
         let last = self.stack.last().cloned().unwrap_or(Value::NIL);
         let mut sig = RuntimeError::succeed_signal();
         sig.return_value = Some(last);
-        sig.set_container_name(self.container_ref_var.take().map(|(n, _)| n));
+        sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
         *ip = end;
         Err(sig)
     }

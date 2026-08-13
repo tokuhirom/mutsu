@@ -53,6 +53,30 @@ assignment check the TARGET CONTAINER's constraint instead of consulting a
 name-keyed side table; the name-keyed store then shrinks to compile-time /
 EVAL bridging only.
 
-Blocks: Text::CSV `t/66_formula.t` (test after 72, line 129; the suite is
-otherwise expected green through that file). Related pins:
+Blocks: Text::CSV `t/66_formula.t` (test after 72, line 129). Related pins:
 `t/expr-decl-stale-type-constraint.t` (#6337).
+
+## Status 2026-08-13: this is the LAST real Text::CSV suite blocker
+
+After the `TagContainerRef` frame-leak fix (#6347) the full Text::CSV suite
+(33 files, 22685 tests) is green except:
+
+- `t/66_formula.t` — aborts after 72/72-passing tests at exactly this
+  ticket's line-129 shape (`my $e;` in the script poisoned to `Str` by
+  `method string`'s `my Str $e = $!esc;`). Fixing this ticket finishes the
+  file.
+- `t/99_meta.t` — `Unknown function: meta-ok`: needs the ecosystem
+  `Test::META` module (a dist-metadata QA test), unrelated to this ticket
+  and to CSV functionality.
+
+Scoping note for the fix: mutsu scalars in locals are bare NaN-boxed values
+(no Scalar container object exists unless boxed into a `ContainerRef`), so
+"attach the constraint to the container" concretely means either (a) keying
+enforcement by *declaration site* — a compile-time slot→constraint table on
+`CompiledCode` for slot-resident scalars, plus the existing env-scoped
+`__mutsu_type::` for env-resident ones — with the global name-keyed map
+shrinking to EVAL bridging; or (b) boxing typed scalars into cells that
+carry `of`. (a) preserves the no-boxing perf profile and matches how the
+compiler already knows the constraint statically at every `my Str $x` site;
+closures that capture the lexical get the constraint through the captured
+cell in either design.

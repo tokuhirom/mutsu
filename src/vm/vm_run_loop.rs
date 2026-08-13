@@ -245,6 +245,21 @@ impl Interpreter {
         }
     }
 
+    /// Take the pending `TagContainerRef` signal if (and only if) it was set
+    /// by `code`. The tag is emitted immediately before the for/given op that
+    /// consumes it, always in the same code object, so a fingerprint mismatch
+    /// means the tag leaked out of a callee frame (a routine body's own
+    /// tagged loop that returned before any same-frame consumer ran) — it is
+    /// discarded, never applied to this frame's locals.
+    #[inline]
+    pub(crate) fn take_container_ref_for(
+        &mut self,
+        code: &CompiledCode,
+    ) -> Option<(String, Option<u32>)> {
+        let (name, slot, fp) = self.container_ref_var.take()?;
+        (fp == Self::resume_code_fp(code)).then_some((name, slot))
+    }
+
     pub(crate) fn with_nested_registers<R>(&mut self, f: impl FnOnce(&mut Self) -> R) -> R {
         // GC safepoint (§9.2a `nested_run`): the nested-VM entry boundary.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::NestedRun);
