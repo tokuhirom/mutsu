@@ -749,7 +749,9 @@ fn render_signature(info: &SigInfo) -> String {
         if i > 0 {
             if part == ";;" {
                 // ;; replaces the comma
-            } else if i > 0 && parts[i - 1] == ";;" {
+            } else if parts[i - 1] == ";;" || parts[i - 1].ends_with("::") {
+                // After `;;` or an invocant's `Type $name::` marker, raku uses
+                // a plain space rather than a comma before the next param.
                 params_str.push(' ');
             } else {
                 params_str.push_str(", ");
@@ -774,12 +776,19 @@ fn render_signature(info: &SigInfo) -> String {
 fn render_param(p: &SigParam) -> String {
     let mut result = String::new();
 
-    // Invocant parameter: rendered as `TypeName:` (e.g., `B:`)
+    // Invocant parameter: rendered as `TypeName $name::` (e.g., `B $self::`),
+    // with an anonymous `$` standing in for an implicit/unnamed invocant
+    // (`C $::`) -- raku only shows a name when the user wrote one explicitly.
     if p.is_invocant {
         if let Some(ref tc) = p.type_constraint {
             result.push_str(tc);
+            result.push(' ');
         }
-        result.push(':');
+        result.push(p.sigil);
+        if !p.name.is_empty() {
+            result.push_str(&p.name);
+        }
+        result.push_str("::");
         return result;
     }
 

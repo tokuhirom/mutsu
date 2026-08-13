@@ -347,7 +347,12 @@ impl Interpreter {
                     };
                     parts.push(format!("{}{}", ty, var));
                 }
-                let mut sig = format!("({}: ", receiver_class_name);
+                let invocant_pd = def.param_defs.iter().find(|pd| pd.is_invocant);
+                let inv_type = invocant_pd
+                    .and_then(|pd| pd.type_constraint.as_deref())
+                    .unwrap_or(receiver_class_name);
+                let inv_name = invocant_pd.map(|pd| pd.name.as_str()).unwrap_or("");
+                let mut sig = format!("({} ${}:: ", inv_type, inv_name);
                 sig.push_str(&parts.join(", "));
                 if !parts.is_empty() {
                     sig.push_str(", ");
