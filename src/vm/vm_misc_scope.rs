@@ -499,7 +499,25 @@ impl Interpreter {
                 // Variables declared with `my` inside this block should not
                 // propagate their values to the outer scope. Restore the outer
                 // scope's original value instead.
-                if block_declared.contains(&k) {
+                //
+                // A name-derived metadata key (`__mutsu_type::o`,
+                // `__mutsu_hash_key_type::o`) is not itself in `block_declared`
+                // — that set only records the bare variable name a `my`
+                // declared, e.g. "o" — so a block-local typed `my Int $o`
+                // shadowing an outer typed `my Str $o` would otherwise look
+                // like an ordinary reassignment of an outer key and propagate
+                // the block's own type constraint out (breaking the outer
+                // `Str` enforcement after the block exits). Strip a known
+                // metadata prefix and check the base name instead.
+                let owned_by_block_declared_name = block_declared.contains(&k)
+                    || k.with_str(|s| {
+                        s.strip_prefix("__mutsu_type::")
+                            .or_else(|| s.strip_prefix("__mutsu_hash_key_type::"))
+                            .is_some_and(|base| {
+                                block_declared.contains(&crate::symbol::Symbol::intern(base))
+                            })
+                    });
+                if owned_by_block_declared_name {
                     continue;
                 }
                 restored_env.insert_sym(k, v);

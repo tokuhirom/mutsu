@@ -841,6 +841,13 @@ impl Compiler {
                     self.code.emit(OpCode::PopImportScope);
                 } else {
                     // Plain blocks still create a lexical routine scope.
+                    // `BlockScope` snapshots env before the body and restores
+                    // it after (dropping any new env key), so a `my TYPE $x`
+                    // compiled while this flag is set can safely use the
+                    // env-only SetVarTypeScoped opcode — see
+                    // `lexically_in_block`'s doc comment.
+                    let saved_lexically_in_block =
+                        std::mem::replace(&mut self.lexically_in_block, true);
                     let idx = self.code.emit(OpCode::BlockScope {
                         pre_end: 0,
                         enter_end: 0,
@@ -929,6 +936,7 @@ impl Compiler {
                     self.code.patch_block_undo_start(idx);
                     self.code.patch_block_post_start(idx);
                     self.code.patch_loop_end(idx);
+                    self.lexically_in_block = saved_lexically_in_block;
                 }
                 self.sigilless_locals.retain(|n| {
                     sigilless_type_names_before.contains(n)
