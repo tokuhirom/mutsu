@@ -108,7 +108,7 @@ main lists only ONE `foo` (with the Int signature) while raku lists one proto-li
 | `foo(3.5)` (matches neither) | dies listing BOTH `(A: Int $t ...)` and `(A: Str $t ...)` | dies listing both | both candidates + substituted types survive dispatch |
 | Body `"arg=" ~ $t.^name` (no `T` read) | `arg=Int`, `arg=Str` | same | candidate SELECTION is correct |
 | plus class-body `multi method foo(Rat $t)` | `class-Rat` for `foo(3.5)`; `T=Str`/`T=Str` for Int/Str args | `class-Rat`; `T=Int`/`T=Str` | class multi coexists; role-candidate `T` still wrong |
-| `also does R[Int]; also does R[Str]` in class body | dies: `Cannot resolve caller foo(A:D: Int); ... (A: T $t, ...)` — UNsubstituted `T` | `T=Int`, `T=Str` | DIFFERENT pre-existing bug: `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md`. Do not test `also does` in this fix |
+| `also does R[Int]; also does R[Str]` in class body | reaches the same candidate-selection bug as the header form | `T=Int`, `T=Str` | Body composition now shares the header composition path; this row belongs to the same remaining bug |
 | Single composition `does R[Int]` (two classes, one arg type each) | correct | correct | per-class map is fine when each class composes the role once |
 
 ### Fix plan (step by step)

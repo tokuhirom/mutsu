@@ -163,7 +163,7 @@ impl Interpreter {
 
     /// Compose one resolved role candidate (attributes, methods, deferred
     /// body, transitive parents) into the class under construction.
-    fn compose_role_into_class(
+    pub(super) fn compose_role_into_class(
         &mut self,
         cx: &mut RoleCompositionCx<'_>,
         resolved_parent_name: &str,

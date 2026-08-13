@@ -2,7 +2,9 @@
 //! `also does Role` arm of the class-body walk. Pure mechanical extraction
 //! from `registration_class_decl.rs` — no behavior change.
 
+use super::registration_class::{parse_role_type_args, should_treat_role_arg_as_type_expr};
 use super::registration_class_body::{ClassBodyCx, ClassBodyFlow};
+use super::registration_class_compose::{RoleCompositionCx, RoleCompositionOutcome};
 use super::*;
 
 impl Interpreter {
@@ -13,6 +15,7 @@ impl Interpreter {
         &mut self,
         cx: &mut ClassBodyCx<'_>,
         role_name: Symbol,
+        arg_chunks: Option<&[crate::opcode::DeclTraitArg]>,
     ) -> Result<ClassBodyFlow, RuntimeError> {
         let raw_role_name = role_name.resolve();
         // An imported role referenced by its short alias (`does
@@ -22,16 +25,11 @@ impl Interpreter {
         // `resolve_declared_type_name`; the body `DoesDecl` emitted
         // for an anonymous `class :: does R` did not, so it failed
         // with "Unknown role" for module-exported roles.
-        let role_name_str = if self.registry().roles.contains_key(&raw_role_name) {
-            raw_role_name.clone()
-        } else {
-            let resolved = self.resolve_declared_type_name(&raw_role_name);
-            if self.registry().roles.contains_key(&resolved) {
-                resolved
-            } else {
-                raw_role_name.clone()
-            }
-        };
+        let role_name_str = self.resolve_declared_type_name(&raw_role_name);
+        let base_role_name = role_name_str
+            .split_once('[')
+            .map(|(base, _)| base)
+            .unwrap_or(role_name_str.as_str());
         if !self.registry().roles.contains_key(&role_name_str)
             && matches!(
                 role_name_str.as_str(),
@@ -44,79 +42,75 @@ impl Interpreter {
             }
             return Ok(ClassBodyFlow::SkipTail);
         }
-        let role = self
-            .registry()
-            .roles
-            .get(&role_name_str)
-            .cloned()
+        let has_type_expr_arg = role_name_str
+            .find('[')
+            .map(|start| {
+                let args_str = &role_name_str[start + 1..role_name_str.len() - 1];
+                parse_role_type_args(args_str)
+                    .iter()
+                    .any(|arg| should_treat_role_arg_as_type_expr(arg))
+            })
+            .unwrap_or(false);
+        let pre_args = if has_type_expr_arg {
+            None
+        } else if let Some(chunks) = arg_chunks {
+            let mut values = Vec::with_capacity(chunks.len());
+            for chunk in chunks {
+                values.push(self.eval_decl_trait_arg(chunk)?);
+            }
+            Some(values)
+        } else {
+            None
+        };
+        let resolved = self
+            .resolve_role_candidate_with_args(&role_name_str, pre_args.as_deref())?
             .ok_or_else(|| RuntimeError::new(format!("Unknown role: {}", role_name_str)))?;
-        if role.is_stub_role {
-            return Err(RuntimeError::typed_msg(
-                "X::Role::Parametric::NoSuchCandidate",
-                "No matching candidate found for the parametric role",
-            ));
-        }
-        // Look up the role's language revision for submethod composition rules.
-        let role_lang_rev_does = self
-            .type_metadata
-            .get(&role_name_str)
-            .and_then(|m| m.get("language-revision"))
-            .map(|v| v.to_string_value())
-            .unwrap_or_else(|| "c".to_string());
-        let compose_submethods_does = cx.class_lang_rev == "c" && role_lang_rev_does == "c";
-        for attr in &role.attributes {
-            if !cx.class_def.attributes.iter().any(|a| a.name == attr.name) {
-                cx.class_def.attributes.push(attr.clone());
-            }
-        }
-        for (mname, overloads) in role.methods {
-            let composed: Vec<MethodDef> = overloads
-                .into_iter()
-                .filter(|md| !md.is_my || (md.is_submethod && compose_submethods_does))
-                .map(|mut md| {
-                    if md.original_role.is_none() {
-                        md.original_role = md.role_origin.clone();
-                    }
-                    md.role_origin = Some(role_name_str.clone());
-                    md
-                })
-                .collect();
-            if composed.is_empty() {
-                continue;
-            }
+
+        let old_composed = self
+            .registry()
+            .class_composed_roles
+            .get(cx.name)
+            .cloned()
+            .unwrap_or_default();
+        let old_direct = self
+            .registry()
+            .class_direct_composed_roles
+            .get(cx.name)
+            .cloned()
+            .unwrap_or_default();
+        let mut composition = RoleCompositionCx {
+            name: cx.name,
+            class_lang_rev: cx.class_lang_rev,
+            class_def: &mut cx.class_def,
+            out: RoleCompositionOutcome::default(),
+        };
+        self.compose_role_into_class(
+            &mut composition,
+            &role_name_str,
+            base_role_name,
+            false,
+            resolved,
+        )?;
+        let mut outcome = composition.out;
+        cx.class_own_attrs.extend(
             cx.class_def
-                .methods
-                .entry(mname)
-                .or_default()
-                .extend(composed);
-        }
-        // Transfer wildcard handles from role to class
-        for wh in &role.wildcard_handles {
-            if !cx.class_def.wildcard_handles.contains(wh) {
-                cx.class_def.wildcard_handles.push(wh.clone());
-            }
-        }
-        if !cx.class_def.parents.iter().any(|p| p == &role_name_str) {
-            // Keep role composition visible in MRO introspection.
-            cx.class_def.parents.insert(0, role_name_str.clone());
-            cx.class_def.mro = [].into();
-        }
-        // Transfer role's own parents (from `is` declarations) to the class
-        if let Some(rparents) = self.registry().role_parents.get(&role_name_str).cloned() {
-            for rp in rparents {
-                let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                if self.registry().classes.contains_key(rp_base)
-                    && !cx.class_def.parents.iter().any(|p| p == &rp)
-                {
-                    cx.class_def.parents.push(rp.clone());
-                    cx.class_def.mro = [].into();
-                }
-            }
-        }
-        // `also does R` is a composition like any other, so R's
-        // body runs — and so do the bodies of the roles R composes.
-        self.run_role_body_for_composition(&role_name_str, cx.name, &role.deferred_body)?;
-        self.run_composed_role_ancestor_bodies(&role_name_str, cx.name)?;
+                .attributes
+                .iter()
+                .map(|attribute| attribute.name.clone()),
+        );
+        outcome.composed_roles_list.splice(0..0, old_composed);
+        outcome.direct_composed_roles.splice(0..0, old_direct);
+        self.registry_mut()
+            .class_role_param_bindings
+            .entry(cx.name.to_string())
+            .or_default()
+            .extend(outcome.class_role_param_bindings);
+        self.record_class_composed_roles(
+            cx.name,
+            &mut cx.class_def,
+            &outcome.composed_roles_list,
+            &outcome.direct_composed_roles,
+        );
         Ok(ClassBodyFlow::RunTail)
     }
 }

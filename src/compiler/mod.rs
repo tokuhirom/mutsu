@@ -404,7 +404,7 @@ mod declaration_plan_tests {
         assert!(matches!(typed[1], ClassBodyOp::Method));
         assert!(matches!(
             typed[2],
-            ClassBodyOp::Does { name } if name.as_str() == "Baz"
+            ClassBodyOp::Does { name, .. } if name.as_str() == "Baz"
         ));
         // `ClassSub` shares `Other`'s chunk mechanism (D6-3b).
         assert!(matches!(
