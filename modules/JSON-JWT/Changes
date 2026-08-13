@@ -1,0 +1,12 @@
+Revision history for JSON::JWT
+
+{{$NEXT}}
+
+1.1.2  2024-12-11T12:38:57+01:00
+    - Add CI badges for each OS
+
+1.1.1  2022-02-23T12:52:18+01:00
+    - Fix pod: encode/decode are methods, not subs!
+ 
+1.1  2022-02-23T11:48:10+01:00
+    - First version in the zef ecosystem

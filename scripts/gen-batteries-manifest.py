@@ -147,6 +147,38 @@ SIDECAR = {
         "slot": "CSV read/write",
         "record": "docs/batteries/csv.md",
     },
+    "JSON::JWT": {
+        "slot": "JSON Web Tokens",
+        "record": "docs/batteries/cro-deps.md",
+    },
+    "CBOR::Simple": {
+        "slot": "CBOR codec",
+        "record": "docs/batteries/cro-deps.md",
+    },
+    "TinyFloats": {
+        "slot": "Half/bfloat16 float codec",
+        "record": "docs/batteries/cro-deps.md",
+    },
+    "IO::Socket::Async::SSL": {
+        "slot": "Async TLS sockets",
+        "record": "docs/batteries/cro-deps.md",
+    },
+    "Log::Timeline": {
+        "slot": "Structured task/event logging",
+        "record": "docs/batteries/cro-deps.md",
+    },
+    "Cro::Core": {
+        "slot": "Web framework",
+        "record": "docs/batteries/cro-http.md",
+    },
+    "Cro::TLS": {
+        "slot": "Web framework",
+        "record": "docs/batteries/cro-http.md",
+    },
+    "Cro::HTTP": {
+        "slot": "Web framework",
+        "record": "docs/batteries/cro-http.md",
+    },
 }
 
 

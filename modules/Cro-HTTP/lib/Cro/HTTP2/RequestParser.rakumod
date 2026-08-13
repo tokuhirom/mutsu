@@ -1,0 +1,37 @@
+use Cro::HTTP2::Frame;
+use Cro::HTTP2::GeneralParser;
+use Cro::HTTP::Internal;
+use Cro::Transform;
+
+class Cro::HTTP2::RequestParser does Cro::Transform does Cro::HTTP2::GeneralParser {
+    has %!allowed-methods;
+    method consumes() { Cro::HTTP2::Frame  }
+    method produces() { Cro::HTTP::Request }
+
+    submethod TWEAK(
+        :@allowed-methods = <GET HEAD POST PUT DELETE PATCH CONNECT OPTIONS>
+    ) {
+        %!allowed-methods{@allowed-methods} = True xx *;
+    }
+
+    submethod BUILD(:@allowed-methods) {
+        $!pseudo-headers = <:method :scheme :authority :path :status>;
+    }
+
+    method !get-message($http2-stream-id, $connection, $cancellation) {
+        Cro::HTTP::Request.new(:$http2-stream-id,
+                               :$connection,
+                               http-version => '2.0')
+    }
+
+    method !message-full($req--> Bool) { so $req.method && so $req.target }
+
+    method !check-data($stream, $sid, $csid) {
+        if  $sid > $csid
+        ||  $stream.state !~~ data
+        || !$stream.message.method
+        || !$stream.message.target {
+            die X::Cro::HTTP2::Error.new(code => PROTOCOL_ERROR)
+        }
+    }
+}

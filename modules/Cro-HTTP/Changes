@@ -1,0 +1,26 @@
+Revision history for Cro::HTTP
+
+0.8.13
+    - fix unbounded memory growth with $connection-state.early-responses.done;
+
+0.8.12
+    - Fix content-length header in HTTP/2
+    - Support link generation
+    - Make http function accept a list of http methods
+    - Catch URI parse errors during routing
+    - Fix throwing with client-supplied invalid cookie
+
+0.8.11
+    - Avoid sending a 0-byte WINDOW_UPDATE frame.
+    - Permit use of updated HTTP::Pack module, Samuel Gillespie++
+
+0.8.10
+    - Add two `Response` convenience methods: `not-supported` (500) and
+      `server-error` (505).
+    - Add support for HTTP/2 cookie headers.
+    - Be more lenient when receiving Cookies with duplicate parameters.
+    - Fix HTTP1.1 connection caching when explicitly passing the HTTP version.
+    - Fix HTTP2 connections with multiple streams stalling.
+    - Change dependency management to allow individual Cro modules to be
+      updated individually.
+    - Rename all `.pm6` files to `.rakumod` and `.t` files to `.rakutest`.

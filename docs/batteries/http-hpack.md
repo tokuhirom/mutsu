@@ -23,7 +23,7 @@ Worthington (Edument), now maintained under `raku-community-modules`.
 ## Why it is bundled
 
 **It is a hard dependency of Cro::HTTP** (its HTTP/2 support). The Cro
-campaign (`docs/batteries/web-framework.md`) needs every module in
+campaign (`docs/batteries/cro-http.md`) needs every module in
 Cro::HTTP's `depends` working under mutsu.
 
 **Selection.** Dictated by the Cro dependency edge, like the other Cro-dep

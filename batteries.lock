@@ -19,7 +19,8 @@
 #   bundled_lib     the shipped library dir mutsu resolves `use` against
 #   test_url        upstream git repo that carries the test suite
 #   commit          pinned upstream commit to fetch the tests from
-#   test_glob       glob (relative to the clone) selecting the test files
+#   test_glob       comma-separated glob(s) (relative to the clone) selecting
+#                   the test files (e.g. a suite mixing extensions)
 #   extra_includes  comma-separated extra `-I` dirs; `{clone}` = the fetched
 #                   repo root; `-` means none
 name	bundled_lib	test_url	commit	test_glob	extra_includes
@@ -50,3 +51,11 @@ Digest::HMAC	modules/Digest-HMAC/lib	https://github.com/JJ/Raku-Digest-HMAC.git	
 Slangify	modules/Slangify/lib	https://github.com/lizmat/Slangify.git	2a1a52322a2c66e38e7356b3030088571135e8bb	t/*.rakutest	{clone}/t
 Slang::Tuxic	modules/Slang-Tuxic/lib	https://github.com/raku-community-modules/Slang-Tuxic.git	e8d5ca34c3d33659f19daa175bb37d3ebb3438c9	t/*.rakutest	modules/Slangify/lib
 Text::CSV	modules/Text-CSV/lib	https://github.com/Tux/CSV.git	4e4ed4151dddc27583caf86f375bfc005d14c5be	t/*.t	modules/Slang-Tuxic/lib,modules/Slangify/lib,modules/File-Temp/lib,modules/File-Directory-Tree/lib
+TinyFloats	modules/TinyFloats/lib	https://github.com/japhb/TinyFloats.git	ee901975aca54e2bbf3af01c1f85e2b307ad2a55	t/*.rakutest	-
+CBOR::Simple	modules/CBOR-Simple/lib	https://github.com/japhb/CBOR-Simple.git	48104256cee6e10cc88bb07e2a643ea2ef5d1d6a	t/*.rakutest	modules/TinyFloats/lib
+Cro::Core	modules/Cro-Core/lib	https://github.com/croservices/cro-core.git	cfabfbc8bd3ccb01b36159a9cce3db8929a3a7b5	t/*.rakutest	-
+IO::Socket::Async::SSL	modules/IO-Socket-Async-SSL/lib	https://github.com/raku-community-modules/IO-Socket-Async-SSL.git	93de258042282d13f0ade0987bfed3649f7b459b	t/*.rakutest	modules/OpenSSL/lib
+Cro::TLS	modules/Cro-TLS/lib	https://github.com/croservices/cro-tls.git	2be4b0c17329100eefea6d33525b0a070a21a1ca	t/*.rakutest	modules/Cro-Core/lib,modules/IO-Socket-Async-SSL/lib,modules/OpenSSL/lib
+JSON::JWT	modules/JSON-JWT/lib	https://github.com/raku-community-modules/JSON-JWT.git	ca573c81d9c22f79de19652bb6ee8eb6cefe0052	t/*.rakutest	modules/MIME-Base64/lib,modules/OpenSSL/lib,modules/Digest-HMAC/lib,modules/Digest/lib
+Log::Timeline	modules/Log-Timeline/lib	https://github.com/raku-community-modules/Log-Timeline.git	1d9dd580aa6af97e7603c044b3e741a7b1a94f0e	t/*.rakutest	modules/CBOR-Simple/lib,modules/TinyFloats/lib
+Cro::HTTP	modules/Cro-HTTP/lib	https://github.com/croservices/cro-http.git	6238e7539c32bd0e8b7962d38d778906af41f0a2	t/*.rakutest,t/*.t	modules/Cro-Core/lib,modules/Cro-TLS/lib,modules/IO-Socket-Async-SSL/lib,modules/OO-Monitors/lib,modules/IO-Path-ChildSecure/lib,modules/Base64/lib,modules/HTTP-HPACK/lib,modules/Crypt-Random/lib,modules/JSON-JWT/lib,modules/DateTime-Parse/lib,modules/Log-Timeline/lib,modules/CBOR-Simple/lib,modules/TinyFloats/lib,modules/OpenSSL/lib,modules/MIME-Base64/lib,modules/Digest-HMAC/lib,modules/Digest/lib

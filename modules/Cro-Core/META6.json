@@ -1,0 +1,40 @@
+{
+  "name": "Cro::Core",
+  "description": "Implements the asynchronous pipeline at the heart of all Cro libraries.",
+  "version": "0.8.10",
+  "api": "0",
+  "auth": "zef:cro",
+  "perl": "6.*",
+  "authors": [
+    "Jonathan Worthington <jnthn@jnthn.net>"
+  ],
+  "depends": [],
+  "provides": {
+    "Cro": "lib/Cro.rakumod",
+    "Cro::BodyParser": "lib/Cro/BodyParser.rakumod",
+    "Cro::BodyParserSelector": "lib/Cro/BodyParserSelector.rakumod",
+    "Cro::BodySerializer": "lib/Cro/BodySerializer.rakumod",
+    "Cro::BodySerializerSelector": "lib/Cro/BodySerializerSelector.rakumod",
+    "Cro::Connection": "lib/Cro/Connection.rakumod",
+    "Cro::Connector": "lib/Cro/Connector.rakumod",
+    "Cro::Iri": "lib/Cro/Iri.rakumod",
+    "Cro::MediaType": "lib/Cro/MediaType.rakumod",
+    "Cro::Message": "lib/Cro/Message.rakumod",
+    "Cro::MessageWithBody": "lib/Cro/MessageWithBody.rakumod",
+    "Cro::Policy::Timeout": "lib/Cro/Policy/Timeout.rakumod",
+    "Cro::Replyable": "lib/Cro/Replyable.rakumod",
+    "Cro::ResourceIdentifier": "lib/Cro/ResourceIdentifier.rakumod",
+    "Cro::Service": "lib/Cro/Service.rakumod",
+    "Cro::Sink": "lib/Cro/Sink.rakumod",
+    "Cro::Source": "lib/Cro/Source.rakumod",
+    "Cro::TCP": "lib/Cro/TCP.rakumod",
+    "Cro::TCP::NoDelay": "lib/Cro/TCP/NoDelay.rakumod",
+    "Cro::Transform": "lib/Cro/Transform.rakumod",
+    "Cro::Types": "lib/Cro/Types.rakumod",
+    "Cro::UnhandledErrorReporter": "lib/Cro/UnhandledErrorReporter.rakumod",
+    "Cro::Uri": "lib/Cro/Uri.rakumod"
+  },
+  "resources": [],
+  "license": "Artistic-2.0",
+  "source-url": "https://github.com/croservices/cro-core.git"
+}

@@ -209,7 +209,7 @@ module).
 | Python | Raku / mutsu | Status | Notes |
 | --- | --- | --- | --- |
 | `webbrowser` | — | Gap | Niche. |
-| `wsgiref` / `socketserver` / `http.server` | `Cro::HTTP` | Selected, not yet bundled | The web-framework slot — see [web-framework.md](web-framework.md) and [PLAN.md §1 B1](../../PLAN.md). This is the single biggest structural gap against the "small web blog with the bundle alone" yardstick. |
+| `wsgiref` / `socketserver` / `http.server` | `Cro::HTTP` | mutsu battery | The web-framework slot — see [cro-http.md](cro-http.md). |
 | `urllib.*` / `http.client` | `HTTP::UserAgent`, `URI` | mutsu battery | [http-client.md](http-client.md), [http-deps.md](http-deps.md) |
 | `ftplib` / `poplib` / `imaplib` / `smtplib` | — | Gap | No bundled mail/FTP client protocols. |
 | `uuid` | — | Ecosystem (not bundled) | A `UUID` module exists on the ecosystem; not vendored. |
@@ -288,7 +288,7 @@ most worth a battery survey next (methodology:
 
 1. **A web framework** (`Cro::HTTP`) — already surveyed and selected, not yet
    bundled; the single biggest hole against the project's own "small web blog"
-   yardstick. See [web-framework.md](web-framework.md).
+   yardstick. See [cro-http.md](cro-http.md).
 2. **CSV** (`Text::CSV` / `CSV::Table` / `CSV::Parser`) — extremely common in
    scripting; surveyed 2026-08-11, see [csv.md](csv.md). Not a weak field —
    both strong candidates are healthy under raku; the shared compiler bug

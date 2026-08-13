@@ -156,8 +156,15 @@ while IFS=$'\t' read -r name bundled_lib test_url commit test_glob extra_include
     done
   fi
 
+  # test_glob may be a comma-separated list (a suite that mixes extensions,
+  # e.g. Cro::HTTP's t/*.rakutest plus one legacy t/*.t) — same convention as
+  # extra_includes below.
   shopt -s nullglob
-  files=("$clone"/$test_glob)
+  files=()
+  IFS=',' read -r -a globs <<< "$test_glob"
+  for g in "${globs[@]}"; do
+    files+=("$clone"/$g)
+  done
   shopt -u nullglob
   if [ "${#files[@]}" -eq 0 ]; then
     echo "  warning: no test files matched '$test_glob'" >&2

@@ -23,7 +23,7 @@ Single file (~45 lines), zero dependencies, by the author of zef.
 ## Why it is bundled
 
 **It is a hard dependency of Cro::HTTP** (WebSocket handshake keys and
-basic-auth headers). The Cro campaign (`docs/batteries/web-framework.md`)
+basic-auth headers). The Cro campaign (`docs/batteries/cro-http.md`)
 needs every module in Cro::HTTP's `depends` working under mutsu.
 
 **Selection.** Dictated by the Cro dependency edge (like `Crypt::Random` and

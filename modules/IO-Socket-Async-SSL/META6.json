@@ -1,0 +1,30 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Jonathan Worthington"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "OpenSSL"
+  ],
+  "description": "Provides an API like IO::Socket::Async, but with TLS support",
+  "license": "Artistic-2.0",
+  "name": "IO::Socket::Async::SSL",
+  "perl": "6.*",
+  "provides": {
+    "IO::Socket::Async::SSL": "lib/IO/Socket/Async/SSL.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/IO-Socket-Async-SSL.git",
+  "tags": [
+    "SSL",
+    "TLS",
+    "Asynchronous",
+    "Socket"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.8.2"
+}

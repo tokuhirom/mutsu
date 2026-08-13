@@ -44,7 +44,7 @@ mutsu's unique position. Four components:
 
 ## 1. 🔋 Batteries — bundled libraries and distribution (main effort)
 
-23 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
+35 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
 gate runs their upstream suites against the shipped copies
 ([docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)) and is **all-green, so a drop
 below the whitelisted baseline is a regression to fix, not a baseline to accept**. Adding a battery
@@ -57,8 +57,6 @@ gaps with general interpreter fixes.
       alone". Method and per-battery selection records:
       [docs/batteries/](docs/batteries/), [BATTERIES.md](BATTERIES.md). Candidate slots ranked by
       value: [python-stdlib-comparison.md](docs/batteries/python-stdlib-comparison.md).
-- [ ] **Web-framework slot: make Cro run** — the campaign that fills the last hole in that criterion.
-      Target, rationale, and gate order: [docs/batteries/web-framework.md](docs/batteries/web-framework.md).
 - [ ] **Documentation per battery** — a usage document (no install needed, API, examples) for each
       bundled library. "Well-documented" is an explicit goal requirement, so this is mandatory when
       adding a module.

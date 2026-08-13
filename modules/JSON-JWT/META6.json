@@ -1,0 +1,30 @@
+{
+  "auth": "zef:raku-community-modules",
+  "author": "Andrew Egeler",
+  "build-depends": [
+  ],
+  "depends": [
+    "JSON::Fast",
+    "MIME::Base64",
+    "OpenSSL",
+    "Digest::HMAC"
+  ],
+  "description": "JSON Web Token (JWT) implementation for Raku",
+  "license": "MIT",
+  "name": "JSON::JWT",
+  "perl": "6.*",
+  "provides": {
+    "JSON::JWT": "lib/JSON/JWT.rakumod"
+  },
+  "resources": [
+  ],
+  "source-type": "git",
+  "source-url": "https://github.com/raku-community-modules/JSON-JWT.git",
+  "tags": [
+    "JSON",
+    "JWT"
+  ],
+  "test-depends": [
+  ],
+  "version": "1.1.2"
+}

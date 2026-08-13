@@ -1,0 +1,135 @@
+Revision history for CBOR-Simple
+
+{{$NEXT}}
+
+0.1.4  2025-05-24T22:58:45-07:00
+  [Docs]
+  - Fix out of date docs for packed int support (it's been there for a while,
+    but the README still said it wasn't).
+
+  [Packaging]
+  - Stop trying to CI against now-ancient Rakudos.
+  - Fix CI badge link in dist.ini
+
+
+0.1.3  2022-07-31T17:16:36-07:00
+  [Tests]
+  - Support testing back to Rakudo 2021.02, the earliest release that supports
+    the zef/fez ecosystem natively; this allows downstreams to run CI against
+    older Rakudo releases back to 2021.02 as well.
+
+
+0.1.2  2022-04-18T12:16:05-07:00
+  [Bug Fix]
+  - Fix encoding of NaNs in packed numeric arrays on platforms with signed NaN
+    (originally reported on Windows); this already worked for all other variants
+
+
+0.1.1  2021-11-09
+  [Docs]
+  - Remove Unicode BiDi control characters that had slipped into the docs with
+    a copy/paste
+
+  [Tags]
+  - Support Capture round-tripping using new tag (for which this module is the
+    reference implementation!).  Note that the tag number used (25441) must be
+    considered EXPERIMENTAL until the spec has been ratified, so do not consider
+    serializations using this tag to be long-term durable.  For more details see:
+    https://github.com/japhb/cbor-specs/blob/main/capture.md
+  - Refactor typed array packing for less needless repetition
+  - Support int and uint packed native arrays (RFC 8746 tags 64-79)
+
+  [Tests]
+  - Factored test helpers out into a common test library
+  - Rearranged tests for easier maintenance
+  - Test all implemented native array subtags of RFC 8746 (typed arrays)
+
+
+0.1.0  2021-09-09
+  [Breaking Changes]
+  - Date objects (*not* DateTime) are now properly serialized as tag 100,
+    instead of serializing them as a DateTime with zeroed time components
+
+  [Docs]
+  - Vastly expanded Pod/README docs, with several new sections
+  - Support status details for every CBOR tag known to IANA
+
+  [Tags]
+  - Detection of invalid tag numbers
+  - Support manual tag wrapping using CBOR::Simple::Tagged wrapper objects
+  - Support delayed/lazy-decoding tags
+    *    24: encoded CBOR value
+    *    63: encoded CBOR Sequence
+  - Support for several other new tags
+    *    31: absent value
+    *   100: Date expressed as days since epoch
+    *   258: Set
+    *   259: Map with object keys
+    *   264: Decimal fraction with arbitrary exponent
+    *   265: Bigfloat with arbitrary exponent
+    *   275: Map with only string keys
+    *  1004: Date expressed as yyyy-mm-dd string
+    * 55800: Self-described CBOR Sequence
+
+  [Tests]
+  - Refactored common code
+  - Improved encodes-to descriptions
+  - Added malformed tests section for tag syntax/content requirements
+  - Dropped perf-test script in favor of pointing users to serializer-perf
+
+
+0.0.9  2021-06-07
+  - Lots of small-to-medium performance improvements for *non-packed* data
+  - Encode ±Inf and NaN as 16 bit floats if possible
+
+
+0.0.8  2021-05-12
+  - Partial support for RFC 8746 Typed Arrays tag
+    * Common code and constants
+    * Packed num arrays, both encode and decode
+      (2+ orders of magnitude faster than unpacked Num arrays)
+    * Fallback support for encoding intarrays that encodes as standard Arrays
+  - Version dependency on TinyFloats
+
+
+0.0.7  2021-05-02
+  - Improve performance in many small (a few %) to medium (2x) ways,
+    both for encoding and decoding
+
+
+0.0.6  2021-04-29
+  [Diagnostics]
+  - Add cbor-diagnostic($cbor) routine to decode into text diagnostics
+  - Add RFC 8949 Appendix A diagnostic tests
+
+  [Tags]
+  - Support decoding Decimal Fraction (4) and Bigfloat (5) tags
+  - Support 'self-describing CBOR' tag (55799)
+  - Switch epoch time tag (1) to decode as Instant
+
+  [Docs]
+  - Improve README
+
+
+0.0.5  2021-04-26
+  - Support parsing 16-bit floats, using the new TinyFloats module
+
+
+0.0.4  2021-04-24
+  - perf-test script added to tools/
+  - More general performance optimization
+  - Now requires nqp for nqp::istype (which sped type testing quite a bit)
+
+
+0.0.3  2021-04-22
+  - Low-hanging fruit performance optimizations
+  - Enum and magic number reform
+  - Minor tweaks
+
+
+0.0.2  2021-04-21
+  - Massive improvement; aside from num16, handles most core functionality
+
+
+0.0.1  2021-04-20
+  - Initial version, very incomplete
