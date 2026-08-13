@@ -77,11 +77,43 @@ impl Interpreter {
                 // must be visible to the caller afterwards.
                 let mut shared_var_names: Vec<Symbol> = Vec::new();
                 for (k, v) in &self.env {
-                    if k.contains_str("::") {
+                    // Skip genuine package-qualified names (`Foo::bar`) — those
+                    // are handled separately — but NOT an internal `__mutsu_`
+                    // metadata key, which also contains `::` (e.g.
+                    // `__mutsu_type::text`, the env-scoped type-constraint
+                    // registration a block-local `my TYPE $x` writes — see
+                    // `Interpreter::set_var_type_constraint_routine_scoped`).
+                    // Dropping it here made `throws-like q[$text = 'oops']`
+                    // blind to a block-scoped typed lexical's constraint even
+                    // though a direct (non-EVAL'd) assignment enforced it fine
+                    // (roast S02-types/subset-6c.t).
+                    if k.contains_str("::") && !k.with_str(|s| s.starts_with("__mutsu_")) {
                         continue;
                     }
                     nested.env.insert_sym(*k, v.clone());
                     shared_var_names.push(*k);
+                }
+                // The nested interpreter has no local slot for any of these
+                // copied names (they arrive purely through env), so the
+                // bytecode `EVAL`'d code compiles for a plain assignment to
+                // one (e.g. `$text = 'oops'`) resolves it as a package-global
+                // reference and its runtime type-check goes through the
+                // MAP-ONLY `var_type_constraint_fast`, which never consults
+                // env. A block-local typed `my TYPE $x` registers its
+                // constraint env-scoped ONLY (`SetVarTypeScoped`), so without
+                // this it is invisible here even though the env key itself
+                // was just copied above. Resolve each copied name's EFFECTIVE
+                // constraint (env-first, matching normal reads) in the
+                // caller and fold it into the nested interpreter's own map.
+                for name_sym in &shared_var_names {
+                    name_sym.with_str(|name| {
+                        if name.starts_with("__mutsu_") || name.contains("::") {
+                            return;
+                        }
+                        if let Some(tc) = self.var_type_constraint(name) {
+                            nested.var_type_constraints.insert(name.to_string(), tc);
+                        }
+                    });
                 }
                 // Under the (B) per-store env-write gate the caller's plain lexicals
                 // keep only their decl-seed `Any` in `self.env` (their initializing
@@ -584,7 +616,10 @@ impl Interpreter {
                 nested.operator_assoc = self.operator_assoc.clone();
                 nested.user_declared_infix_ops = self.user_declared_infix_ops.clone();
                 for (k, v) in &self.env {
-                    if !k.contains_str("::") {
+                    // Skip genuine package-qualified names, but not an
+                    // internal `__mutsu_` metadata key — see the matching
+                    // comment above in `test_fn_throws_like`.
+                    if !k.contains_str("::") || k.with_str(|s| s.starts_with("__mutsu_")) {
                         nested.env.insert_sym(*k, v.clone());
                     }
                 }

@@ -1236,27 +1236,50 @@ impl Interpreter {
                     && !name.starts_with('%')
                     && !name.starts_with('@')
                 {
-                    if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
-                        // When assigning an unhandled Failure to a typed variable
-                        // that can't hold it, explode the Failure first (Raku behavior)
-                        if let ValueView::Instance { class_name, .. } = val.view()
-                            && class_name.resolve() == "Failure"
-                            && !val.is_failure_handled()
-                            && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
-                        {
-                            return Err(err);
+                    // A Nil ASSIGNED to a typed scalar resets it to its type
+                    // object (`my Str $x = "a"; $x = Nil` leaves `$x === Str`),
+                    // mirroring `exec_set_local_op`'s STORE-time reset. This
+                    // SetGlobal path is reached when the writer has no local
+                    // slot for the name (a closure/embedded-regex-code-block
+                    // write to a captured typed scalar, `$Foo::x = Nil`, ...):
+                    // without the reset here, the raw Nil got stored as-is,
+                    // and the GetGlobal read path deliberately does NOT
+                    // convert a Nil read into the type object via an
+                    // env-scoped constraint (a genuine `Mu $b = Nil` parameter
+                    // default must stay Nil) — so the value never became the
+                    // type object at all (roast S02-types/nil.t,
+                    // S02-types/subset-6e.t "assigns to subset type object").
+                    if val.is_nil()
+                        && !is_bind_ctx
+                        && !is_rebind
+                        && constraint != "Nil"
+                        && self.var_default(&name).is_none()
+                    {
+                        val = self.typed_scalar_nil_seed_value(&name, &constraint);
+                    } else {
+                        if !val.is_nil() && !self.type_matches_value(&constraint, &val) {
+                            // When assigning an unhandled Failure to a typed variable
+                            // that can't hold it, explode the Failure first (Raku behavior)
+                            if let ValueView::Instance { class_name, .. } = val.view()
+                                && class_name.resolve() == "Failure"
+                                && !val.is_failure_handled()
+                                && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
+                            {
+                                return Err(err);
+                            }
+                            return Err(runtime::utils::type_check_assignment_typed_error(
+                                &name,
+                                &constraint,
+                                &val,
+                            ));
                         }
-                        return Err(runtime::utils::type_check_assignment_typed_error(
-                            &name,
-                            &constraint,
-                            &val,
-                        ));
+                        if !val.is_nil() {
+                            val =
+                                loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
+                        }
+                        // Wrap native integer values on assignment (overflow wrapping)
+                        val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                     }
-                    if !val.is_nil() {
-                        val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
-                    }
-                    // Wrap native integer values on assignment (overflow wrapping)
-                    val = Self::wrap_native_int_by_constraint(&constraint, val)?;
                 }
                 if self.fatal_mode
                     && !name.contains("__mutsu_")

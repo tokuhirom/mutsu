@@ -77,7 +77,11 @@ impl Interpreter {
                 nested.set_current_package(self.current_package());
                 nested.var_dynamic_flags = self.var_dynamic_flags.clone();
                 for (k, v) in &self.env {
-                    if k.contains_str("::") {
+                    // Skip genuine package-qualified names, but not an
+                    // internal `__mutsu_` metadata key (e.g.
+                    // `__mutsu_type::x`) — see the matching comment in
+                    // `throws_like.rs`.
+                    if k.contains_str("::") && !k.with_str(|s| s.starts_with("__mutsu_")) {
                         continue;
                     }
                     if matches!(v.view(), ValueView::Sub(_) | ValueView::Routine { .. }) {

@@ -974,6 +974,21 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// Whether we are directly compiling the body statements of a plain
+    /// `Stmt::Block` that emits `OpCode::BlockScope` (see the `Stmt::Block`
+    /// arm in `stmt.rs`). That opcode snapshots `env` before the body and
+    /// restores it after, dropping any new env key the body introduced — so
+    /// a `my TYPE $x` declaration compiled while this flag is set can safely
+    /// use the env-only `SetVarTypeScoped` opcode instead of the both-store
+    /// `SetVarType`, exactly like inside a routine
+    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`, issue
+    /// 2 "Mainline blocks"). Set/restored narrowly around that one branch —
+    /// the other `Stmt::Block` branches (implicit try, phaser scope,
+    /// `LetBlock`, import scope) do not perform this env restore, so a `my`
+    /// directly inside one of those keeps using the unscoped opcode; a
+    /// plain block nested inside any of them still gets its own
+    /// `BlockScope` and sets this flag again for its own body.
+    pub(crate) lexically_in_block: bool,
     /// Whether the enclosing routine is a `method` (or submethod). A method
     /// always carries an implicit `*%_` / `*@_` slurpy, so the legacy argument
     /// variables `%_` / `@_` are valid lexicals throughout its body — including
@@ -1208,6 +1223,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             lexically_in_routine: false,
+            lexically_in_block: false,
             lexically_in_method: false,
             bind_vardecl: false,
             whenever_bind_target: false,
@@ -1805,22 +1821,31 @@ impl Compiler {
 
     /// Emit the declaration-time type-constraint registration op for a
     /// `my TYPE $x`-family declaration. A SCALAR `my`/`state` lexically inside
-    /// a routine gets `SetVarTypeScoped` — env-only registration, exactly like
-    /// a typed parameter — so its constraint dies with the frame instead of
-    /// leaking onto a same-named variable in another frame through the global
-    /// name-keyed store (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    /// a routine, or directly inside a plain `{ ... }` block (see
+    /// `lexically_in_block`), gets `SetVarTypeScoped` — env-only
+    /// registration, exactly like a typed parameter — so its constraint dies
+    /// with the frame/block instead of leaking onto a same-named variable
+    /// elsewhere through the global name-keyed store
+    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
     /// Everything else keeps the both-store `SetVarType`: `@`/`%` containers
     /// (their element/key metadata is consulted through the global map by the
     /// push/subscript fast paths), `our` (package-scoped, outlives the frame),
-    /// dynamics (`$*x`, read cross-frame by design), and mainline declarations
-    /// (no frame to scope to).
+    /// dynamics (`$*x`, read cross-frame by design), an anonymous scalar
+    /// (`my T $`, name `__ANON_STATE__` — stored via `SetGlobal`/`GetGlobal`
+    /// rather than a local slot, immediately consumed into a
+    /// `WrapTypedContainer` cell, so there is no per-declaration slot for a
+    /// block/frame exit to scope; going through the env-only opcode here
+    /// starved that read of the global-map registration it depends on — see
+    /// `t/pair-typed-value-container.t`), and mainline declarations outside
+    /// any block (no frame/scope to scope to).
     fn emit_set_var_type(&mut self, name: &str, name_idx: u32, tc_idx: u32, is_our: bool) {
         let scoped = !is_our
-            && (self.is_routine || self.lexically_in_routine)
+            && (self.is_routine || self.lexically_in_routine || self.lexically_in_block)
             && !name.starts_with('@')
             && !name.starts_with('%')
             && !name.starts_with('&')
             && !name.starts_with('*')
+            && name != "__ANON_STATE__"
             && !name.contains("::");
         if scoped {
             self.code
