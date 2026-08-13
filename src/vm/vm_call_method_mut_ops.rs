@@ -2852,7 +2852,13 @@ impl Interpreter {
         )
     }
 
-    fn native_array_storage_mut(
+    /// `pub(crate)`: also reused by the `nextsame`/`callsame` synthesized native
+    /// fallback (`native_array_storage_next_candidate` in
+    /// `runtime/builtins_dispatch_next.rs`) so a deferred call from a user
+    /// override reaches the same mutation as the direct `$a.push(...)` path,
+    /// instead of silently no-op'ing through the non-mutating
+    /// `try_native_method` dispatch.
+    pub(crate) fn native_array_storage_mut(
         storage: &mut Value,
         method: &str,
         args: &[Value],

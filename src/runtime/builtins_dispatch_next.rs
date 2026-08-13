@@ -285,6 +285,15 @@ impl Interpreter {
                 .method_dispatch_stack
                 .last()
                 .map(|f| f.args.clone())
+                // A single (non-multi, non-wrapped) compiled method — the
+                // common case for a `method push(...) { nextsame }` override on
+                // an `is Array` subclass — pushes no `method_dispatch_stack`
+                // frame at all, so the original call args live only in
+                // `samewith_call_args_stack` (pushed alongside the samewith
+                // context by `push_method_samewith_context`). Without this,
+                // `args` silently defaulted to empty and the deferred push
+                // appended nothing.
+                .or_else(|| self.samewith_call_args_stack.last().cloned())
                 .unwrap_or_default(),
         };
         let ValueView::Instance {
@@ -302,6 +311,31 @@ impl Interpreter {
                 .any(|n| n == "Array")
         {
             return None;
+        }
+        // Mutating array methods (push/append/prepend/unshift/pop/shift) must
+        // route through the NATIVE mutable-array path, not `try_native_method`
+        // (a pure `&Value` dispatch that has no entry for these methods at all
+        // and silently returns `None` — the "no error, no effect" symptom this
+        // ticket describes). `attributes.with_attr_mut` hands out a `&mut
+        // Value` into the instance's SHARED attribute cell, so the mutation is
+        // visible to every other holder of the same instance (not a detached
+        // copy) — mirrors the direct `$a.push(...)` fast path in
+        // `vm_call_method_mut_ops.rs`. Raku's base `Array.push`/`.append`/
+        // `.prepend`/`.unshift` return the invocant itself (not the raw backing
+        // array), so those four map the mutation's Ok value to `invocant.clone()`
+        // — the SAME instance (same id, same attribute cell), so `===` and
+        // `.^name` come out right; `pop`/`shift` return the removed element as-is.
+        if matches!(
+            method_name.as_str(),
+            "push" | "append" | "prepend" | "unshift" | "pop" | "shift"
+        ) {
+            let outcome = attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                Self::native_array_storage_mut(storage, &method_name, &args)
+            })??;
+            return Some(outcome.map(|value| match method_name.as_str() {
+                "push" | "append" | "prepend" | "unshift" => invocant.clone(),
+                _ => value,
+            }));
         }
         let method_sym = Symbol::intern(&method_name);
         attributes.with_attr_mut("__mutsu_array_storage", |storage| {

@@ -742,6 +742,7 @@ impl Interpreter {
     ) {
         self.samewith_context_stack
             .push((method_name.to_string(), invocant));
+        self.samewith_call_args_stack.push(args.to_vec());
         if self.is_metamodel_how_class(receiver_class) {
             self.metamodel_dispatch_stack.push((
                 self.samewith_context_stack.len(),
@@ -952,6 +953,7 @@ impl Interpreter {
             self.metamodel_dispatch_stack.pop();
         }
         self.samewith_context_stack.pop();
+        self.samewith_call_args_stack.pop();
     }
 
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
