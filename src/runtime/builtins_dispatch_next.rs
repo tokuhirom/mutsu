@@ -437,20 +437,15 @@ impl Interpreter {
         override_args: Option<Vec<Value>>,
         tail_call: bool,
     ) -> Result<Value, RuntimeError> {
-        // Whether this call fell through an exhausted method-wrap frame
-        // (sub_id == 0, remaining now empty): raku's `lastcall` inside a
-        // method wrapper empties the chain, so a following callsame must
-        // resolve to Nil -- we are still inside the wrap dispatcher, even
-        // when there is no method_dispatch_stack/method_class_stack frame to
-        // say so (a plain, unwrapped-by-MRO method has neither).
-        let mut wrap_chain_exhausted = false;
         // ADR-0019 E9b-0: resolve to the innermost live dispatch context (by
         // dispatch_token) instead of a fixed wrap-then-method-then-multi order,
         // so an outer sub/method wrap does not shadow a more recently pushed
         // frame on a different stack (and vice versa).
         let innermost = self.innermost_dispatch_stack();
-        // Try wrap dispatch stack first (wrapper chains) — only when it is
-        // genuinely the innermost context.
+        // Try wrap dispatch stack first (SUB wraps only — ADR-0019 E9b-2 moved
+        // method wraps into `method_dispatch_stack` as `DeferralEntry::Wrapper`
+        // prefix entries, so this stack no longer carries a `sub_id == 0`
+        // entry) — only when it is genuinely the innermost context.
         if innermost == Some(DispatchFrameKind::Wrap)
             && let Some(frame) = self.wrap_dispatch_stack.last_mut()
         {
@@ -458,7 +453,6 @@ impl Interpreter {
                 frame.remaining.remove(0);
                 let is_override = override_args.is_some();
                 let call_args = override_args.unwrap_or_else(|| frame.args.clone());
-                let is_method_wrap = frame.sub_id == 0;
                 // Restore the original call site's arg-source names: the
                 // outermost wrapper's own binding consumed the pending ones, so
                 // an `is rw` parameter of the next callee (a wrappee or the
@@ -470,30 +464,10 @@ impl Interpreter {
                 if restore_sources {
                     self.set_pending_call_arg_sources(frame_arg_sources);
                 }
-                // If this is a method wrap original, separate the invocant
-                // from the args and dispatch as a method call.
-                let result = if let ValueView::Sub(data) = next.view()
-                    && data.env.get("__mutsu_method_wrap_original").is_some()
-                    && !call_args.is_empty()
-                {
-                    let invocant = call_args[0].clone();
-                    let method_args = call_args[1..].to_vec();
-                    let method_name = data.name.resolve();
-                    self.call_method_with_values(invocant, &method_name, method_args)?
-                } else {
-                    // This exact call continues the active wrap chain — it must
-                    // run `next` directly, not re-enter the chain from the top.
-                    // An inner *wrapper* sees the same invocant-prepended
-                    // argument list the outermost one did, so its sources need
-                    // the same shift.
-                    if restore_sources && is_method_wrap {
-                        self.shift_arg_sources_for_wrap_invocant();
-                    }
-                    if let ValueView::Sub(data) = next.view() {
-                        self.wrap_skip_once = Some(data.id);
-                    }
-                    self.call_sub_value(next, call_args, false)?
-                };
+                if let ValueView::Sub(data) = next.view() {
+                    self.wrap_skip_once = Some(data.id);
+                }
+                let result = self.call_sub_value(next, call_args, false)?;
                 if tail_call {
                     return Err(RuntimeError {
                         return_value: Some(result),
@@ -502,115 +476,99 @@ impl Interpreter {
                 }
                 return Ok(result);
             }
-            // Remaining is empty.
-            if frame.sub_id != 0 {
-                // Non-method wrap: exhausted — return Nil
-                if tail_call {
-                    return Err(RuntimeError {
-                        return_value: Some(Value::NIL),
-                        ..RuntimeError::new("")
-                    });
-                }
-                return Ok(Value::NIL);
+            // Remaining is empty: exhausted — return Nil.
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(Value::NIL),
+                    ..RuntimeError::new("")
+                });
             }
-            // Method wraps (sub_id == 0): fall through to method dispatch stack
-            // so callsame inside the original method can continue the MRO chain.
-            wrap_chain_exhausted = true;
+            return Ok(Value::NIL);
         }
-        // Try method dispatch stack — either it is genuinely the innermost
-        // context, or we just fell through an exhausted method-wrap sentinel
-        // above: today's paired method+wrap frames (wrap pushed second, so it
-        // wins the innermost check first) still hand off to the SAME paired
-        // method frame once the wrap chain is exhausted.
-        if (innermost == Some(DispatchFrameKind::Method) || wrap_chain_exhausted)
-            && !self.method_dispatch_stack.is_empty()
-        {
+        // Try method dispatch stack — only when it is genuinely the innermost context.
+        if innermost == Some(DispatchFrameKind::Method) && !self.method_dispatch_stack.is_empty() {
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();
-            // If the next MRO candidate carries a method-level wrap chain, route the
-            // call through its wrappers so a `nextsame` reaching a wrapped parent
-            // method runs ...->wrapper->original->... in order (S06-advanced/wrap.t
-            // GH#2178). The initial dispatch (class_dispatch.rs) applies wraps only
-            // to the first method called; without this, a wrapper added to a parent
-            // method via `^find_method(...).wrap(...)` is skipped on `nextsame`.
-            //
-            // The candidate is NOT removed here: only the wrappers are pushed onto
-            // the wrap-dispatch stack. When the wrappers' `nextsame` chain is
-            // exhausted (sub_id == 0) it falls through to this same method frame,
-            // and the `!is_inside_wrap_dispatch()` guard is then true — so the
-            // original candidate body runs once via the normal path below and its
-            // own `nextsame` continues the rest of the MRO.
-            if !is_override && !self.is_inside_wrap_dispatch() {
-                let peeked = self.method_dispatch_stack[frame_idx]
+            // ADR-0019 E9b-2 decision 3: lazy mid-MRO wrap splice. When the
+            // front entry is an un-spliced Candidate that itself carries a
+            // method-level wrap chain (e.g. `^find_method(...).wrap(...)` on
+            // a PARENT method, reached via nextsame/callsame), splice
+            // `[Wrapper(chain, outermost included)..., Candidate{
+            // wraps_spliced: true}]` in its place so the match below advances
+            // into the first Wrapper. Replaces the old mid-MRO
+            // peek-and-intercept block entirely (no separate
+            // WrapDispatchFrame, no re-entry dance) — S06-advanced/wrap.t
+            // GH#2178.
+            loop {
+                let is_unspliced_candidate = matches!(
+                    self.method_dispatch_stack[frame_idx].remaining.first(),
+                    Some(DeferralEntry::Candidate {
+                        wraps_spliced: false,
+                        ..
+                    })
+                );
+                if !is_unspliced_candidate || is_override || !self.has_any_wrap_chains() {
+                    break;
+                }
+                let method_name_now = self
+                    .samewith_context_stack
+                    .last()
+                    .map(|(n, _)| n.clone())
+                    .unwrap_or_default();
+                if method_name_now.is_empty() {
+                    break;
+                }
+                let Some(DeferralEntry::Candidate { owner, def, .. }) = self.method_dispatch_stack
+                    [frame_idx]
                     .remaining
                     .first()
-                    .cloned();
-                // ADR-0019 E9b-1: no builder emits `Wrapper` yet, so every
-                // peeked entry is a Candidate (E9b-2 adds the Wrapper leg).
-                if let Some(DeferralEntry::Candidate {
-                    owner: owner_sym,
-                    def: method_def,
-                    ..
-                }) = peeked
-                {
-                    let owner_class = owner_sym.resolve();
-                    let method_name_now = self
-                        .samewith_context_stack
-                        .last()
-                        .map(|(n, _)| n.clone())
-                        .unwrap_or_default();
-                    if !method_name_now.is_empty()
-                        && self.has_any_wrap_chains()
-                        && let Some(cand_idx) = self.find_method_candidate_index(
-                            &owner_class,
-                            &method_name_now,
-                            &method_def,
-                        )
-                        && let Some(chain) = self
-                            .get_method_wrap_chain(&owner_class, &method_name_now, cand_idx)
-                            .cloned()
-                    {
-                        let invocant = self.env.get("self").cloned().unwrap_or_else(|| {
-                            self.method_dispatch_stack[frame_idx].invocant.clone()
-                        });
-                        // The wrap dispatch expects the invocant at position 0; the
-                        // method frame's stored args do not include it.
-                        let mut wrap_call_args = vec![invocant];
-                        wrap_call_args.extend(self.method_dispatch_stack[frame_idx].args.clone());
-                        let outermost = chain.last().unwrap().1.clone();
-                        let mut wrap_remaining: Vec<Value> = Vec::new();
-                        for i in (0..chain.len() - 1).rev() {
-                            wrap_remaining.push(chain[i].1.clone());
-                        }
-                        let frame = WrapDispatchFrame {
-                            sub_id: 0,
-                            remaining: wrap_remaining,
-                            args: wrap_call_args.clone(),
-                            arg_sources: self.pending_call_arg_sources().cloned(),
-                            dispatch_token: 0,
-                        };
-                        self.push_wrap_dispatch_frame(frame);
-                        self.shift_arg_sources_for_wrap_invocant();
-                        let result = self.call_sub_value(outermost, wrap_call_args, false);
-                        self.wrap_dispatch_stack.pop();
-                        let result = result?;
-                        if tail_call {
-                            return Err(RuntimeError {
-                                return_value: Some(result),
-                                ..RuntimeError::new("")
-                            });
-                        }
-                        return Ok(result);
-                    }
+                    .cloned()
+                else {
+                    break;
+                };
+                let owner_class = owner.resolve();
+                let Some(cand_idx) =
+                    self.find_method_candidate_index(&owner_class, &method_name_now, &def)
+                else {
+                    break;
+                };
+                let Some(chain) = self
+                    .get_method_wrap_chain(&owner_class, &method_name_now, cand_idx)
+                    .cloned()
+                else {
+                    break;
+                };
+                // Unlike the winner's own prefix (built once at frame
+                // construction, outermost invoked directly), nobody invokes
+                // the outermost directly here — the WHOLE chain becomes
+                // Wrapper entries, followed by the spliced candidate.
+                let mut splice: Vec<DeferralEntry> = Vec::with_capacity(chain.len() + 1);
+                for i in (0..chain.len()).rev() {
+                    splice.push(DeferralEntry::Wrapper(chain[i].1.clone()));
                 }
+                splice.push(DeferralEntry::Candidate {
+                    owner,
+                    def,
+                    wraps_spliced: true,
+                });
+                self.method_dispatch_stack[frame_idx]
+                    .remaining
+                    .splice(0..1, splice);
+                // Loop back: the front entry is now Wrapper(outermost).
             }
-            let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
-                let frame = &mut self.method_dispatch_stack[frame_idx];
-                let Some(entry) = frame.remaining.first().cloned() else {
+            match self.method_dispatch_stack[frame_idx]
+                .remaining
+                .first()
+                .cloned()
+            {
+                None => {
                     // User MRO exhausted: a grammar `parse`/`subparse` override, an
                     // `is Array` subclass's Positional override, or a metamodel-HOW
                     // dispatch falls through to the native implementation as the
-                    // last candidate before giving up.
+                    // last candidate before giving up. ADR-0019 E9b-2: a wrapped
+                    // method now always has a frame, so "frame exists, remaining
+                    // empty" is the single exhaustion signal (the #6349
+                    // `wrap_chain_exhausted` bool is retired).
                     let result = if let Some(res) =
                         self.native_grammar_parse_next_candidate(override_args.as_deref())
                     {
@@ -636,37 +594,152 @@ impl Interpreter {
                         });
                     }
                     return Ok(result);
-                };
-                // ADR-0019 E9b-1: no builder emits `Wrapper` yet, so every
-                // entry here is a Candidate (E9b-2 adds the Wrapper leg).
+                }
+                Some(DeferralEntry::Wrapper(code)) => {
+                    // ADR-0019 E9b-2: advance leg for a wrap-prefix entry —
+                    // invoke it with [invocant, ...args] and the (shifted)
+                    // wrap-captured call-site arg sources, mirroring today's
+                    // (now sub-only) WrapDispatchFrame wrapper leg.
+                    self.method_dispatch_stack[frame_idx].remaining.remove(0);
+                    let caller_in_wrapper = self.method_dispatch_stack[frame_idx].in_wrapper;
+                    if let Some(new_args) = override_args {
+                        // `callwith`'s args are invocant-INCLUSIVE (element 0
+                        // is the new SELF) exactly when the CALLER is itself
+                        // a wrapper block — a wrapper's own positional
+                        // signature is `(invocant, ...args)`. A candidate
+                        // body landing here via a freshly mid-MRO-spliced
+                        // wrap chain (decision 3) is NOT a wrapper, so its
+                        // override args stay invocant-exclusive
+                        // (S06-advanced/dispatching.t "Args to callwith in
+                        // wrapper/multi are used by enclosing ...").
+                        let frame = &mut self.method_dispatch_stack[frame_idx];
+                        if caller_in_wrapper {
+                            let mut it = new_args.into_iter();
+                            if let Some(inv) = it.next() {
+                                frame.invocant = inv;
+                            }
+                            frame.args = it.collect();
+                        } else {
+                            frame.args = new_args;
+                        }
+                    }
+                    let frame = &mut self.method_dispatch_stack[frame_idx];
+                    // ADR-0019 E9b-2: unlike the plain-Candidate advance leg
+                    // below, this call runs from INSIDE a wrapper block's own
+                    // execution, not from a method body — `self.env`'s "self"
+                    // binding at this point (if any) is leftover from the
+                    // wrapper closure's LEXICAL capture (e.g. OO::Monitors'
+                    // wrapper closes over `add_method`'s own `self`, the HOW
+                    // instance), not the true invocant. `frame.invocant` is
+                    // the correct, stable value captured at frame-push time
+                    // (and kept live via the shared attribute cell — no
+                    // snapshot to go stale), mirroring how the pre-E9b-2
+                    // `WrapDispatchFrame.args[0]` was used unconditionally,
+                    // with no env lookup, for every wrap-stack advance.
+                    frame.in_wrapper = true;
+                    let current_invocant = frame.invocant.clone();
+                    let mut call_args = vec![current_invocant];
+                    call_args.extend(frame.args.clone());
+                    let frame_arg_sources = frame.arg_sources.clone();
+                    let restore_sources = !is_override && frame_arg_sources.is_some();
+                    if restore_sources {
+                        self.set_pending_call_arg_sources(frame_arg_sources);
+                        self.shift_arg_sources_for_wrap_invocant();
+                    }
+                    if let ValueView::Sub(data) = code.view() {
+                        self.wrap_skip_once = Some(data.id);
+                    }
+                    let result = self.call_sub_value(code, call_args, false)?;
+                    if tail_call {
+                        return Err(RuntimeError {
+                            return_value: Some(result),
+                            ..RuntimeError::new("")
+                        });
+                    }
+                    return Ok(result);
+                }
+                Some(DeferralEntry::Candidate { .. }) => {}
+            }
+            let (
+                receiver_class,
+                invocant,
+                mut call_args,
+                owner_class,
+                mut method_def,
+                rw_params,
+                came_from_wrapper,
+                frame_wrap_arg_sources,
+            ) = {
+                let frame = &mut self.method_dispatch_stack[frame_idx];
+                let entry = frame.remaining.first().cloned().expect(
+                    "ADR-0019 E9b-2: the match above only falls through here for a Candidate",
+                );
                 let DeferralEntry::Candidate {
                     owner: owner_sym,
                     def: method_def,
                     ..
                 } = entry
                 else {
-                    unreachable!("ADR-0019 E9b-1: no builder emits DeferralEntry::Wrapper yet")
+                    unreachable!(
+                        "ADR-0019 E9b-2: the match above only falls through here for a Candidate"
+                    )
                 };
                 let owner_class = owner_sym.resolve();
                 let method_def = *method_def;
                 frame.remaining.remove(0);
                 let rw_params = frame.rw_params.clone();
-                let call_args = if let Some(new_args) = override_args {
-                    // Update the frame's args so subsequent callsame uses the new args
-                    frame.args = new_args.clone();
-                    new_args
-                } else {
-                    frame.args.clone()
-                };
+                let frame_wrap_arg_sources = frame.arg_sources.clone();
+                // ADR-0019 E9b-2: whether the code CURRENTLY executing (the
+                // thing whose callsame/callwith call reached this Candidate)
+                // is a wrapper block rather than a real method body — reached
+                // either directly from the caller's single outermost wrapper
+                // (chain.len() == 1, so no `Wrapper` entry ever ran), from
+                // the `Wrapper` advance leg above, or NOT at all when a plain
+                // candidate's own nextsame/nextwith lands here in the
+                // ordinary (non-wrap) MRO tail.
+                let came_from_wrapper = frame.in_wrapper;
                 // Use the current `self` from the environment instead of the stale
                 // frame invocant.  The method body may have mutated attributes
                 // (e.g. `$.tracker ~= "bar,"`) before calling callsame/callwith,
                 // so the frame's snapshot is outdated.
-                let current_invocant = self
-                    .env
-                    .get("self")
-                    .cloned()
-                    .unwrap_or_else(|| frame.invocant.clone());
+                //
+                // ADR-0019 E9b-2 exception: when `came_from_wrapper`, the
+                // CURRENT execution context is a wrapper BLOCK, not this
+                // candidate's own method body, so `self.env`'s "self"
+                // binding (if any) is leftover from the wrapper closure's
+                // lexical capture (e.g. OO::Monitors' wrapper closes over
+                // `add_method`'s own `self`, the HOW instance), not the true
+                // invocant — using it here dispatched `bump()` against the
+                // HOW and died "no such attribute '$!n'". `frame.invocant`
+                // is the correct, stable value (kept live via the shared
+                // attribute cell, so there is no staleness to guard against
+                // on this leg).
+                let base_invocant = if came_from_wrapper {
+                    frame.invocant.clone()
+                } else {
+                    self.env
+                        .get("self")
+                        .cloned()
+                        .unwrap_or_else(|| frame.invocant.clone())
+                };
+                // `callwith`'s args are invocant-INCLUSIVE (element 0 is the
+                // new SELF) exactly when the caller is a wrapper block —
+                // mirrors the `Wrapper` advance leg's own split above
+                // (S06-advanced/dispatching.t "Args to callwith in
+                // wrapper/multi are used by enclosing multi and method
+                // dispatch").
+                let (current_invocant, call_args) = match override_args {
+                    Some(new_args) if came_from_wrapper => {
+                        let mut it = new_args.into_iter();
+                        let inv = it.next().unwrap_or_else(|| base_invocant.clone());
+                        (inv, it.collect::<Vec<_>>())
+                    }
+                    Some(new_args) => (base_invocant, new_args),
+                    None => (base_invocant, frame.args.clone()),
+                };
+                frame.args = call_args.clone();
+                frame.invocant = current_invocant.clone();
+                frame.in_wrapper = false;
                 (
                     frame.receiver_class.clone(),
                     current_invocant,
@@ -674,6 +747,8 @@ impl Interpreter {
                     owner_class,
                     method_def,
                     rw_params,
+                    came_from_wrapper,
+                    frame_wrap_arg_sources,
                 )
             };
             // §B: compile the next MRO candidate on-demand if it has no compiled code
@@ -685,30 +760,47 @@ impl Interpreter {
                 let dist = self.resolve_package_distribution(&owner_class);
                 Self::compile_method_def_in_place_with_dist(&mut method_def, &owner_class, dist);
             }
-            // nextsame/callsame+rw chaining for methods (§D capstone): the stored
-            // method args are plain values (no varref), so without an arg source the
-            // next candidate's `is rw` param dies with X::Parameter::RW. Forward the
-            // first candidate's CURRENT rw value and name the FIRST candidate's param
-            // as the source, so the next candidate writes back into it (env-only, all
-            // method candidates run via the interpreter) and the first candidate's own
-            // exit writeback then propagates the chained result to the caller.
-            let mut rw_sources: Vec<Option<String>> = Vec::new();
+            // ADR-0019 E9b-2: a candidate freshly reached right after a
+            // Wrapper group (the former by-name "original" re-entry, or a
+            // lazily mid-MRO-spliced wrapped parent) restores the wrap's TRUE
+            // outer call-site arg sources directly, instead of the rw_params
+            // synthetic self-referential handoff name below — an `is rw`
+            // parameter must still write back to the CALLER's variable, not a
+            // synthetic name (`t/wrap-invocant-arg-source.t` test E). When the
+            // frame carries no wrap arg sources (an ordinary non-wrap
+            // nextsame/callsame chain, or a mid-MRO wrap whose winner wasn't
+            // itself wrapped), fall back to the pre-existing rw_params
+            // chain-forwarding dance unchanged.
+            let use_wrap_sources =
+                came_from_wrapper && frame_wrap_arg_sources.is_some() && !is_override;
             let mut have_rw_source = false;
-            if !rw_params.is_empty() && !is_override {
-                rw_sources = vec![None; call_args.len()];
-                for (pos, first_param) in &rw_params {
-                    if *pos >= call_args.len() {
-                        continue;
+            if use_wrap_sources {
+                self.set_pending_call_arg_sources(frame_wrap_arg_sources);
+            } else {
+                // nextsame/callsame+rw chaining for methods (§D capstone): the stored
+                // method args are plain values (no varref), so without an arg source the
+                // next candidate's `is rw` param dies with X::Parameter::RW. Forward the
+                // first candidate's CURRENT rw value and name the FIRST candidate's param
+                // as the source, so the next candidate writes back into it (env-only, all
+                // method candidates run via the interpreter) and the first candidate's own
+                // exit writeback then propagates the chained result to the caller.
+                let mut rw_sources: Vec<Option<String>> = Vec::new();
+                if !rw_params.is_empty() && !is_override {
+                    rw_sources = vec![None; call_args.len()];
+                    for (pos, first_param) in &rw_params {
+                        if *pos >= call_args.len() {
+                            continue;
+                        }
+                        if let Some(cur) = self.first_candidate_rw_value(first_param) {
+                            call_args[*pos] = crate::runtime::types::unwrap_varref_value(cur);
+                        }
+                        rw_sources[*pos] = Some(first_param.clone());
+                        have_rw_source = true;
                     }
-                    if let Some(cur) = self.first_candidate_rw_value(first_param) {
-                        call_args[*pos] = crate::runtime::types::unwrap_varref_value(cur);
-                    }
-                    rw_sources[*pos] = Some(first_param.clone());
-                    have_rw_source = true;
                 }
-            }
-            if have_rw_source {
-                self.set_pending_call_arg_sources(Some(rw_sources));
+                if have_rw_source {
+                    self.set_pending_call_arg_sources(Some(rw_sources));
+                }
             }
             // The first method candidate runs as compiled bytecode (VM slots), so
             // its exit flush reads its rw-param slot. Capture its frame code now to
@@ -813,14 +905,19 @@ impl Interpreter {
                     }
                 }
             };
-            if have_rw_source {
+            if use_wrap_sources || have_rw_source {
                 self.set_pending_call_arg_sources(None);
             }
             let (result, updated_invocant) = dispatch_result?;
             // Write the chain's final value (now in env under each first-candidate
             // param name) back into the first (compiled) candidate's VM local slot
             // so its exit flush propagates it instead of its own pre-nextsame value.
-            if caller_code != 0 && have_rw_source {
+            // ADR-0019 E9b-2: skipped for `use_wrap_sources` — that path
+            // mirrors the deleted by-name "original" re-entry, which never
+            // ran this rw_params-specific chain-forwarding dance either (the
+            // wrap's own arg_sources already routed the writeback through the
+            // TRUE call-site variable name, not a synthetic per-candidate one).
+            if !use_wrap_sources && caller_code != 0 && have_rw_source {
                 // SAFETY: caller_code is the address of the CompiledCode of the
                 // first (compiled) method candidate, the live ancestor frame
                 // currently executing this nextsame/callsame.
@@ -1049,7 +1146,10 @@ impl Interpreter {
         // If we're inside a method but there's simply no next candidate in the MRO,
         // return Nil (this is the Raku behavior for callsame/callwith at the end of
         // the MRO).  Plain subs without multi dispatch should still throw.
-        if !self.method_class_stack.is_empty() || wrap_chain_exhausted {
+        // ADR-0019 E9b-2: the `wrap_chain_exhausted` bool (#6349) is retired — a
+        // wrapped method now always has a `method_dispatch_stack` frame, so its
+        // exhaustion is already handled by the Method branch above.
+        if !self.method_class_stack.is_empty() {
             if tail_call {
                 return Err(RuntimeError {
                     return_value: Some(Value::NIL),

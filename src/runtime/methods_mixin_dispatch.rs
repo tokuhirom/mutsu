@@ -224,6 +224,7 @@ impl Interpreter {
                         rw_params,
                         dispatch_token,
                         arg_sources: None,
+                        in_wrapper: false,
                     });
                 }
                 let method_result = self.run_resolved_method_compiled_or_treewalk(
