@@ -5,7 +5,6 @@
 //! the exact same line-accumulation and value-display semantics.
 
 use crate::Interpreter;
-use crate::builtins::native_method_0arg;
 
 /// Check if the input has unbalanced brackets, suggesting more input is needed.
 pub(crate) fn is_incomplete(input: &str) -> bool {
@@ -108,8 +107,8 @@ pub(crate) fn process_line(
                 && let Some(value) = interpreter.last_value.take()
                 && !value.is_nil()
             {
-                let text = if let Some(Ok(gist)) =
-                    native_method_0arg(&value, crate::symbol::Symbol::intern("gist"))
+                let text = if let Ok(gist) =
+                    interpreter.call_method_with_values(value.clone(), "gist", Vec::new())
                 {
                     format!("{}\n", gist.to_string_value())
                 } else {
@@ -295,5 +294,19 @@ mod tests {
     fn test_multiline_paren_continuation() {
         let out = repl_session(&["say (1,", "2).elems"]);
         assert_eq!(out, vec!["2\n"]);
+    }
+
+    /// A user-defined `.gist` override must win over the native fallback when
+    /// the REPL displays a line's last value — the native probe alone never
+    /// sees an `Instance`'s own method. Confirmed against real `raku`'s REPL
+    /// (`class Foo { has $.x; method gist { "Foo<{$!x}>" } }; Foo.new(x=>42)`
+    /// answers `Foo<42>`, not the default positional gist).
+    #[test]
+    fn test_user_defined_gist_wins_in_repl_display() {
+        let out = repl_session(&[
+            "class Foo { has $.x; method gist { \"Foo<{$!x}>\" } }",
+            "Foo.new(x => 42)",
+        ]);
+        assert_eq!(out, vec!["Foo<42>\n"]);
     }
 }
