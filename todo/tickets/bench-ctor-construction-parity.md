@@ -75,10 +75,13 @@ specializes the whole new -> bless -> BUILDALL chain.
 - [ ] **S4 (ADR territory, long term):** flat attribute slots instead of the
   per-instance hash map (the ADR-0016 "span + shared subject" analog for
   objects). Only if S1-S3 leave a measurable gap.
-- [ ] **S5 (deep, general):** closure env capture is O(program symbols) per
-  lambda creation — `*.flat` in TWEAK costs ~10% of this bench, and every
-  hot-loop `.map({...})` pays it. Design ticket:
-  `todo/deep/closure-env-capture-cost.md`.
+- [x] **S5 (deep, general):** closure env capture was O(program symbols) per
+  lambda creation — `*.flat` in TWEAK cost ~10% of this bench, and every
+  hot-loop `.map({...})` paid it. Fixed by #5571 (`Env::filtered_flat` never
+  walks/materializes the shared `GLOBAL_BASE` tier); see
+  `news/2026-08/closure-env-capture-cost-resolved.md`. Re-profiled
+  2026-08-14: closure capture is now ~2-3% of this bench, not the dominant
+  cost.
 
 Progress: S1 landed (#5569) — resolver-path TWEAK dispatches 2/construction
 -> 0, phase re-derivation gone, probe skeleton replaces the per-construction
@@ -86,10 +89,11 @@ Progress: S1 landed (#5569) — resolver-path TWEAK dispatches 2/construction
 `to_map()`+`commit_attrs` round-trip replaced with a single-key cell write
 (3 whole-map clones/construction removed), `is Type` container-trait lookup
 plan-cached, `run_resolved_method_celled` borrows the def instead of cloning
-per call. A frame-pointer profile (2026-07-30) puts the remaining
-construction cost in: closure capture (S5), `bind_function_args_values`
-(~8%), `merge_method_env` (~7%), GC safepoint/candidate churn (S3, ~10%
-combined with pop_call_frame).
+per call. S5 landed (#5571, see above). A 2026-08-14 re-profile (40k
+iterations, profiling build) shows no single dominant function anymore: the
+remaining cost is spread across malloc/free (~10%), string formatting
+(~5-8%), hashing (~2-3%), and NaN-box payload/GC bookkeeping — S2 (arg
+plumbing) and S3 (GC candidate churn) territory.
 
 ## Measurement notes
 
