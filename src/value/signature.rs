@@ -732,7 +732,9 @@ fn render_signature(info: &SigInfo) -> String {
     if info.params.is_empty() && info.return_type.is_none() {
         return ":()".to_string();
     }
-    // Build params string with ;; separators for multi-invocant boundaries
+    // Build params string with ;; separators for multi-invocant boundaries.
+    // An invocant parameter's own trailing `::` (see render_param) already
+    // separates it from the next parameter, so no comma is added there.
     let mut parts = Vec::new();
     let mut prev_multi_invocant = true;
     for p in &info.params {
@@ -743,19 +745,22 @@ fn render_signature(info: &SigInfo) -> String {
         parts.push(render_param(p));
         prev_multi_invocant = p.multi_invocant;
     }
-    // Join: items separated by ", " but ;; stands alone
+    // Join: items separated by ", " but ;; stands alone and an invocant's
+    // trailing `::` needs only a space before the next item.
     let mut params_str = String::new();
+    let mut prev_was_invocant_part = false;
     for (i, part) in parts.iter().enumerate() {
         if i > 0 {
             if part == ";;" {
                 // ;; replaces the comma
-            } else if i > 0 && parts[i - 1] == ";;" {
+            } else if parts[i - 1] == ";;" || prev_was_invocant_part {
                 params_str.push(' ');
             } else {
                 params_str.push_str(", ");
             }
         }
         params_str.push_str(part);
+        prev_was_invocant_part = part.ends_with("::");
     }
     if let Some(ref ret) = info.return_type {
         if params_str.is_empty() {
@@ -774,12 +779,20 @@ fn render_signature(info: &SigInfo) -> String {
 fn render_param(p: &SigParam) -> String {
     let mut result = String::new();
 
-    // Invocant parameter: rendered as `TypeName:` (e.g., `B:`)
+    // Invocant parameter: rendered as `TypeName $name::` (e.g., `C $x::`),
+    // with an anonymous scalar (`$`) when unnamed and no type when
+    // untyped (`$self::`). The trailing `::` replaces the usual comma
+    // separator before the next parameter (see render_signature).
     if p.is_invocant {
         if let Some(ref tc) = p.type_constraint {
             result.push_str(tc);
+            result.push(' ');
         }
-        result.push(':');
+        result.push(p.sigil);
+        if !p.name.is_empty() {
+            result.push_str(&p.name);
+        }
+        result.push_str("::");
         return result;
     }
 
