@@ -2219,14 +2219,12 @@ impl Interpreter {
                     ) {
                         self.wrap_handle_counter += 1;
                         let handle_id = self.wrap_handle_counter;
-                        let key = (cls.to_string(), meth.to_string(), idx as usize);
-                        self.method_wrap_chains
-                            .entry(key)
-                            .or_default()
-                            .push((handle_id, wrapper));
-                        let mut wh = std::collections::HashMap::new();
-                        wh.insert("handle-id".to_string(), Value::int(handle_id as i64));
-                        wh.insert("wrapped-sub".to_string(), target.clone());
+                        let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                        self.registry_mut()
+                            .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);
+                        let wh = super::methods_sub::method_wrap_handle_attrs(
+                            &cls, &meth, idx, handle_id, &target,
+                        );
                         return Ok(Value::make_instance(
                             Symbol::intern("Routine::WrapHandle"),
                             wh,

@@ -2318,7 +2318,6 @@ impl Interpreter {
             dispatch_token_counter: 0,
             wrap_skip_once: None,
             suppress_binding_error_enhance: false,
-            method_wrap_chains: HashMap::new(),
             method_fallbacks: HashMap::new(),
             suppressed_names: HashSet::new(),
             class_scoped_short_names: HashSet::new(),

@@ -542,9 +542,8 @@ impl Interpreter {
                 else {
                     break;
                 };
-                let Some(chain) = self
-                    .get_method_wrap_chain(&owner_class, &method_name_now, cand_idx)
-                    .cloned()
+                let Some(chain) =
+                    self.get_method_wrap_chain(&owner_class, &method_name_now, cand_idx)
                 else {
                     break;
                 };

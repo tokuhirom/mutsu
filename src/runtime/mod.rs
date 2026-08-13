@@ -1906,9 +1906,6 @@ pub struct Interpreter {
     /// `X::TypeCheck::Binding` identity a sequence endpoint check relies on
     /// (roast S03-sequence/misc.t).
     pub(crate) suppress_binding_error_enhance: bool,
-    /// Method-level wrap chains: (class_name, method_name, candidate_index) ->
-    /// stack of (handle_id, wrapper_sub).
-    method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
     /// Metamodel method fallbacks registered via `.^add_fallback(cond, calc)`:
     /// class_name -> list of (condition, calculator) code pairs. When a method
     /// is not found on a value of that class, each condition is called with

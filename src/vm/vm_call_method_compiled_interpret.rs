@@ -503,8 +503,19 @@ impl Interpreter {
 
             // Fast method dispatch cache: skip wrap chain check, compiled_code
             // extraction, and param_def eligibility scans for known-fast methods.
-            if !self.has_any_wrap_chains()
-                && let Some(entry) = self.fast_method_cache.get(&cache_key)
+            //
+            // ADR-0019 E10: no `!self.has_any_wrap_chains()` guard here anymore.
+            // That used to disable this cache PROGRAM-WIDE the instant any method
+            // anywhere was wrapped, even for completely unrelated methods. It is
+            // safe to drop because `try_populate_fast_cache` (below) is only ever
+            // reached after `check_method_wrap_chain` has already returned `None`
+            // for this exact method, so a wrapped method is never cached here in
+            // the first place; and wrapping/unwrapping now bumps
+            // `Registry::method_generation` (`push_method_wrap`/`pop_method_wrap`/
+            // `remove_method_wrap`), which `refresh_method_caches_for_generation`
+            // (just above) already clears `fast_method_cache` on — evicting any
+            // entry cached before a method it names got wrapped.
+            if let Some(entry) = self.fast_method_cache.get(&cache_key)
                 && args.len() <= entry.positional_count
             {
                 let needs_default_eval =
