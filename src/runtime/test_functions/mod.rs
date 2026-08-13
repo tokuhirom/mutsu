@@ -333,9 +333,16 @@ impl Interpreter {
         val.to_string_value()
     }
 
-    pub(crate) fn value_raku_repr(val: &Value) -> String {
-        if let Some(Ok(v)) =
-            crate::builtins::native_method_0arg(val, crate::symbol::Symbol::intern("raku"))
+    /// ADR-0019 Phase E box E11: routes through the canonical resolver entry
+    /// point (`call_method_with_values`) instead of calling `native_method_0arg`
+    /// directly, so a user-defined `.raku` override on an `Instance` is
+    /// honored too. The E2 catalog existence check
+    /// (`Interpreter::e2_native_method_exists`) preserves the exact prior
+    /// fallback: a `(val, "raku")` pair the catalog does not recognize still
+    /// falls back to `to_string_value()` instead of a dispatch error.
+    pub(crate) fn value_raku_repr(&mut self, val: &Value) -> String {
+        if self.e2_native_method_exists(val, "raku")
+            && let Ok(v) = self.call_method_with_values(val.clone(), "raku", Vec::new())
             && let Some(s) = v.as_str()
         {
             s.to_string()

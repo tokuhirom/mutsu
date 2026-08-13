@@ -251,8 +251,8 @@ impl Interpreter {
         };
         self.test_ok(ok, &desc, todo)?;
         if !ok {
-            let got_raku = left.map(Self::value_raku_repr).unwrap_or_default();
-            let expected_raku = right.map(Self::value_raku_repr).unwrap_or_default();
+            let got_raku = left.map(|v| self.value_raku_repr(v)).unwrap_or_default();
+            let expected_raku = right.map(|v| self.value_raku_repr(v)).unwrap_or_default();
             self.emit_output(&format!(
                 "# expected: {}\n#      got: {}\n",
                 expected_raku, got_raku
@@ -568,8 +568,8 @@ impl Interpreter {
         let ok = got.eqv(&expected);
         self.test_ok(ok, &desc, false)?;
         if !ok {
-            let got_raku = Self::value_raku_repr(&got);
-            let expected_raku = Self::value_raku_repr(&expected);
+            let got_raku = self.value_raku_repr(&got);
+            let expected_raku = self.value_raku_repr(&expected);
             self.emit_output(&format!(
                 "# expected: {}\n#      got: {}\n",
                 expected_raku, got_raku
