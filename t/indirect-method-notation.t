@@ -15,4 +15,4 @@ is (c $o: 20, 22), 42, 'indirect object notation with multiple args and without 
 is a($o:), 'test', 'indirect object notation with parens and no args';
 is EVAL('abs -42:'), 42, 'indirect object notation with colon at EOF';
 my $meth = 'a';
-is $o.$meth, 'test', 'dynamic method call with variable method name and no parens';
+is $o."$meth"(), 'test', 'quoted dynamic method call with variable method name';

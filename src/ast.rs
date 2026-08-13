@@ -464,6 +464,9 @@ pub(crate) enum Expr {
         name_expr: Box<Expr>,
         args: Vec<Expr>,
         modifier: Option<char>,
+        /// True for the string-name `\.""` form; false when the name value
+        /// itself must be Callable (or a type object), as in `.$name`.
+        quoted: bool,
     },
     HyperMethodCall {
         target: Box<Expr>,

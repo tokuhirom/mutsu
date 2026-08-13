@@ -7,7 +7,7 @@ use Test;
 # its gist (`(Int)`) and threw "No such method '(Int)'".
 # From raku-doc Language/signatures.rakudoc (doc-diff finding [11]).
 
-plan 8;
+plan 15;
 
 sub can-turn-into(Str $string, Any:U $type) {
     so $string.$type
@@ -31,6 +31,30 @@ my $w = Widget;
 throws-like { 42.$w }, X::Method::NotFound,
     'user class type object looks up the class-named method (.Widget)';
 
-# A plain Str name specifier still names a method (mutsu extension, unchanged).
+# Only the quoted `.""` operator dispatches a method by a string name. An
+# unquoted `.$name` invokes the name value as a Callable with the receiver as
+# its first argument.
 my $m = "uc";
-is "abc".$m, "ABC", 'Str name specifier still dispatches by method name';
+throws-like { "abc".$m() }, X::Method::NotFound,
+    method => 'CALL-ME', typename => 'Str',
+    'unquoted Str name specifier must be Callable';
+
+my $receiver = "abc";
+throws-like { $receiver.$m() }, X::Method::NotFound,
+    method => 'CALL-ME', typename => 'Str',
+    'mutable receiver uses the same unquoted Callable semantics';
+
+is "abc"."$m"(), "ABC", 'quoted dynamic name dispatches by string';
+
+my $callable = -> $invocant, $suffix = "" { $invocant.uc ~ $suffix };
+is "abc".$callable("!"), "ABC!", 'unquoted Callable receives invocant first';
+
+class CallableName {
+    method CALL-ME($invocant, $suffix) { $invocant.uc ~ $suffix }
+}
+my $callable-name = CallableName.new;
+is "abc".$callable-name("?"), "ABC?", 'object with CALL-ME is a valid name specifier';
+
+is "abc".?$callable(), "ABC", '.? invokes a valid Callable name';
+is-deeply "abc".*$callable(), ("ABC",), '.* wraps a Callable result';
+is-deeply "abc".+$callable(), ("ABC",), '.+ wraps a Callable result';

@@ -114,6 +114,7 @@ pub(crate) fn assign_to_target_expr(target: Expr, value: Expr) -> Expr {
             name_expr,
             args,
             modifier,
+            ..
         } => {
             let target_var_name = match target.as_ref() {
                 Expr::Var(v) => Some(v.clone()),

@@ -77,6 +77,7 @@ fn lvalue_assign_to_expr(lvalue: Expr, rhs: Expr) -> Expr {
             name_expr,
             args,
             modifier,
+            ..
         } => {
             let target_var_name = match target.as_ref() {
                 Expr::Var(v) => Some(v.clone()),

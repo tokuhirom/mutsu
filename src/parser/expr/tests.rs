@@ -105,14 +105,17 @@ fn parse_method_call() {
 fn parse_dynamic_quoted_method_call() {
     let (rest, expr) = expression("$_.\"$k\"()").unwrap();
     assert_eq!(rest, "");
-    assert!(matches!(expr, Expr::DynamicMethodCall { .. }));
+    assert!(matches!(expr, Expr::DynamicMethodCall { quoted: true, .. }));
 }
 
 #[test]
 fn parse_dynamic_sigiled_method_call() {
     let (rest, expr) = expression("$o.$meth").unwrap();
     assert_eq!(rest, "");
-    assert!(matches!(expr, Expr::DynamicMethodCall { .. }));
+    assert!(matches!(
+        expr,
+        Expr::DynamicMethodCall { quoted: false, .. }
+    ));
 }
 
 #[test]

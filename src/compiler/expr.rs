@@ -537,8 +537,9 @@ impl Compiler {
                 name_expr,
                 args,
                 modifier,
+                quoted,
             } => {
-                self.compile_expr_dynamic_method(target, name_expr, args, modifier);
+                self.compile_expr_dynamic_method(target, name_expr, args, modifier, *quoted);
             }
             // Hyper method call: target>>.method(args)
             Expr::HyperMethodCall {

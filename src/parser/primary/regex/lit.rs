@@ -1382,6 +1382,7 @@ pub(in crate::parser::primary) fn topic_method_call(input: &str) -> PResult<'_, 
                         name_expr: Box::new(name_expr),
                         args,
                         modifier: None,
+                        quoted: true,
                     }
                 }
             },
