@@ -160,7 +160,7 @@ impl Interpreter {
         // the slot lets the topic writeback target the exact `locals` slot when
         // shadow slots are active (a shadowed name occupies several slots and
         // the by-name `position` search resolves to the outer one).
-        let container_binding_full = self.container_ref_var.take();
+        let container_binding_full = self.take_container_ref_for(code);
         let container_source_slot = container_binding_full.as_ref().and_then(|(_, s)| *s);
         let container_binding = container_binding_full.map(|(n, _)| n);
         // A sigilless/`is rw` for-param aliases the source element, but an
@@ -680,7 +680,8 @@ impl Interpreter {
                             let base = stack_base.unwrap();
                             if self.stack.len() > base {
                                 let val = self.stack.pop().unwrap();
-                                let deferred_ref = self.container_ref_var.take().map(|(n, _)| n);
+                                let deferred_ref =
+                                    self.take_container_ref_for(code).map(|(n, _)| n);
                                 let coll_start_len = coll.len();
                                 Self::collect_loop_value(coll, val);
                                 if let Some(name) = deferred_ref

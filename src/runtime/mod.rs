@@ -2042,10 +2042,20 @@ pub struct Interpreter {
     pub(crate) topic_source_save_stack: Vec<(Value, Option<String>)>,
     /// The named container the current topic/loop source came from
     /// (`TagContainerRef`), paired with its compile-time-baked local slot
-    /// (§1.5; `None` = non-local or runtime-derived). The slot lets the
+    /// (§1.5; `None` = non-local or runtime-derived) and the fingerprint of
+    /// the `CompiledCode` that set it (`resume_code_fp`). The slot lets the
     /// for/given container writeback target the exact `locals` slot when
     /// shadow slots are active, instead of the by-name `position` search.
-    pub(crate) container_ref_var: Option<(String, Option<u32>)>,
+    /// The fingerprint scopes the signal to its own frame: the tag is always
+    /// emitted immediately before the for/given op that consumes it, in the
+    /// SAME code object, so consumers (`take_container_ref_for`) discard a
+    /// tag whose fingerprint does not match — a leftover from a callee frame
+    /// (e.g. a module method's own `for @x` loop) would otherwise be mistaken
+    /// for the caller's loop source and its slot would index the WRONG frame's
+    /// locals (Text::CSV t/90_csv.t 507-508: `method CSV`'s `@in` tag, slot 28
+    /// in the method frame, made the caller's untagged `for in () -> $in` loop
+    /// write its items over the mainline's slot 28).
+    pub(crate) container_ref_var: Option<(String, Option<u32>, usize)>,
     pub(crate) container_ref_reversed: bool,
     pub(crate) topic_source_var: Option<String>,
     /// The `@`/`%` source variable when `$_` is a whole-container topic
