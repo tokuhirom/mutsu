@@ -2654,6 +2654,29 @@ impl Compiler {
 
                 // Statement-level call with named args: compile values and encode
                 // named args as Pair(name => value), then dispatch without stmt_pool.
+                //
+                // A closure literal NAMED-argument value escapes exactly as it
+                // does for a plain call's named-args branch
+                // (`compile_expr_call_inner`, and the identical fix in
+                // `compile_tail_stmt_call_value`): the callee may store it
+                // rather than invoke it immediately, and this stmt-call shape
+                // (a listop-style call whose callee is not statically known,
+                // e.g. an imported routine — see `Stmt::Call`) is otherwise
+                // indistinguishable from a plain call at the syntax level.
+                // Without this, a closure literal's captured-and-mutated free
+                // variables never get boxed into a shared cell, so a
+                // same-named parameter in the callee's own call chain can
+                // shadow the closure's own captured lexical when it is later
+                // invoked from a nested block
+                // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
+                //
+                // Positional args here deliberately keep `compile_call_arg`'s
+                // unconditional non-escaping treatment: unlike the named-arg
+                // case, marking a positional closure literal (e.g.
+                // `lives-ok { ... }, $desc` — rewritten to an anon sub before
+                // this loop runs, so it still matches `is_closure_literal_arg`)
+                // escaping here regressed `t/bind-alias-chain.t`, so this
+                // narrower fix only touches the shape the bug report is about.
                 for arg in &rewritten_args {
                     match arg {
                         CallArg::Positional(expr) => self.compile_call_arg(expr),
@@ -2662,7 +2685,8 @@ impl Compiler {
                             value: Some(expr),
                         } => {
                             self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                            self.compile_expr(expr);
+                            let escaping = Self::is_closure_literal_arg(expr);
+                            self.with_escape(escaping, |s| s.compile_expr(expr));
                             self.code.emit(OpCode::MakeNamedArg);
                         }
                         CallArg::Named { name, value: None } => {

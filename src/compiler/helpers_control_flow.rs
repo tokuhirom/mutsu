@@ -760,13 +760,33 @@ impl Compiler {
 
         for arg in &rewritten_args {
             match arg {
+                // A closure literal NAMED-argument value escapes exactly as it
+                // does for a plain call's named-args branch
+                // (`compile_expr_call_inner`, and the identical fix in
+                // `compile_stmt`'s `Stmt::Call` arm): the callee may store it
+                // rather than invoke it immediately, and this stmt-call shape
+                // (a listop-style tail call whose callee is not statically
+                // known, e.g. an imported routine — see `Stmt::Call`) is
+                // otherwise indistinguishable from a plain call at the syntax
+                // level. Without this, a closure literal's captured-and-mutated
+                // free variables never get boxed into a shared cell, so a
+                // same-named parameter in the callee's own call chain can
+                // shadow the closure's own captured lexical when it is later
+                // invoked from a nested block
+                // (todo/deep/closure-capture-shadowed-by-colliding-callee-parameter.md).
+                //
+                // Positional args deliberately keep `compile_call_arg`'s
+                // unconditional non-escaping treatment — see the identical
+                // note in `compile_stmt`'s `Stmt::Call` arm
+                // (t/bind-alias-chain.t regressed when this was widened).
                 CallArg::Positional(expr) => self.compile_call_arg(expr),
                 CallArg::Named {
                     name,
                     value: Some(expr),
                 } => {
                     self.compile_expr(&Expr::Literal(Value::str(name.clone())));
-                    self.compile_expr(expr);
+                    let escaping = Self::is_closure_literal_arg(expr);
+                    self.with_escape(escaping, |s| s.compile_expr(expr));
                     self.code.emit(OpCode::MakeNamedArg);
                 }
                 CallArg::Named { name, value: None } => {
