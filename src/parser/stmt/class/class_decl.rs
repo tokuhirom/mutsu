@@ -658,14 +658,17 @@ pub(crate) fn also_trait_stmt(input: &str) -> PResult<'_, Stmt> {
     // Handle `also does RoleName;`
     if let Some(r) = keyword("does", rest) {
         let (r, _) = ws1(r)?;
-        let (r, name) = parse_token_like_name(r)?;
+        let (r, mut name) = parse_token_like_name(r)?;
+        let (r, bracket_suffix) = parse_optional_bracket_suffix(r)?;
+        let args = parse_bracket_arg_exprs(bracket_suffix);
+        name.push_str(bracket_suffix);
         let (r, _) = ws(r)?;
         let (r, _) = opt_char(r, ';');
         return Ok((
             r,
             Stmt::DoesDecl {
                 name: Symbol::intern(&name),
-                args: None,
+                args,
             },
         ));
     }

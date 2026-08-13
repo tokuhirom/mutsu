@@ -2873,7 +2873,10 @@ pub(crate) enum ClassBodyOp {
     /// `method_name_chunks`/`method_decls` position cursor.
     Method,
     /// A body-level `also does Role` clause.
-    Does { name: Symbol },
+    Does {
+        name: Symbol,
+        args: Option<Vec<DeclTraitArg>>,
+    },
     /// A `sub` declaration. Runs like `Other` (via `chunk`), plus carries
     /// the fact that a successful registration also needs the
     /// `class_subs` tail-probe `run_class_body` performs after executing it.
@@ -2961,7 +2964,10 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
         },
         Stmt::HasDecl { name, .. } => ClassBodyOp::Attr { name: *name },
         Stmt::MethodDecl { .. } => ClassBodyOp::Method,
-        Stmt::DoesDecl { name, .. } => ClassBodyOp::Does { name: *name },
+        Stmt::DoesDecl { name, .. } => ClassBodyOp::Does {
+            name: *name,
+            args: None,
+        },
         Stmt::VarDecl {
             expr: Expr::CodeVar(_),
             name: var_name,

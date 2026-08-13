@@ -284,7 +284,29 @@ impl Compiler {
         let Some(package_name) = package_name else {
             return ops;
         };
+        let does_args: Vec<Option<&Vec<Expr>>> = body
+            .iter()
+            .flat_map(|stmt| match stmt {
+                Stmt::SyntheticBlock(inner) => inner.iter().collect::<Vec<_>>(),
+                other => vec![other],
+            })
+            .filter_map(|stmt| match stmt {
+                Stmt::DoesDecl { args, .. } => Some(args.as_ref()),
+                _ => None,
+            })
+            .collect();
+        let mut does_idx = 0;
         for op in &mut ops {
+            if let crate::opcode::ClassBodyOp::Does { args, .. } = op {
+                *args = does_args.get(does_idx).copied().flatten().map(|exprs| {
+                    exprs
+                        .iter()
+                        .map(|expr| self.compile_decl_trait_arg(expr))
+                        .collect()
+                });
+                does_idx += 1;
+                continue;
+            }
             if let crate::opcode::ClassBodyOp::LeavePhaser { chunk, raw } = op {
                 let Stmt::Phaser {
                     body: phaser_body, ..

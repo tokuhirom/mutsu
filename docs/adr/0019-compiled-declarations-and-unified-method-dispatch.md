@@ -1100,9 +1100,10 @@ walkers wholesale is not possible before then.
   `role_attribute_smileys`, type-parameter substitution into methods) that
   `compose_role_into_class` performs for the header form — confirmed against `raku`
   (`role R[::T]{...}; class Foo { also does R[Int]; }` returns the wrong type). This is a plain
-  correctness bug, independent of ADR-0019's declaration-plan migration either way; filed as
-  `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md` rather than fixed here, since
-  a correct fix means porting a ~200-line carryover block, not a one-line parser change.
+  correctness bug, independent of ADR-0019's declaration-plan migration either way; it was filed
+  separately rather than fixed here, since a correct fix means porting a ~200-line carryover block,
+  not a one-line parser change. It was later fixed by routing the body form through the shared
+  composition path; see `news/2026-08/also-does-parametric-role.md`.
   **D4 design pass done 2026-08-08 (no code landed):**
   `todo/deep/adr0019-d4-parent-expr-chunks.md` details the D4-1/2/3 sub-boxes: D4-1 (parser
   captures bracket args as parsed `Vec<Expr>` alongside the unchanged concatenated string —
@@ -1172,10 +1173,9 @@ walkers wholesale is not possible before then.
   the D4-3-cutover composition (collapsing it to one evaluation is a real behavior change for a
   side-effecting bracket argument, explicitly deferred by D4-3's own note); and the pre-existing
   `also does Role[Args]` bracket-argument-dropping bug found while reading the parent-expression
-  call sites, filed as `todo/tickets/also-does-role-bracket-args-dropped-in-class-body.md` (an
-  independent correctness bug, not a plan-migration gap — `class_body_does_decl` never reads a
-  `CompiledClassDeclPlan` field at all today, so there is no plan encoding for D4 to have migrated
-  here in the first place).
+  call sites (an independent correctness bug, not a plan-migration gap). That bug was later fixed
+  by carrying argument chunks on `ClassBodyOp::Does` and sharing the header composition path; see
+  `news/2026-08/also-does-parametric-role.md`.
 - [x] **D5 — Drive user HOW operations from plan ops.** Execute `new_type`, `add_method`, trait
   interception, and `compose` without entering `register_class_decl`'s AST walker.
   **Design pass done 2026-08-08 (no code landed) — the box shrinks:**

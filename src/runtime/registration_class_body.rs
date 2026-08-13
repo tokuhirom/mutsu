@@ -163,9 +163,12 @@ impl Interpreter {
                 crate::opcode::ClassBodyOp::Method => {
                     self.class_body_method_decl(&mut cx)?;
                 }
-                crate::opcode::ClassBodyOp::Does { name: role_name } => {
+                crate::opcode::ClassBodyOp::Does {
+                    name: role_name,
+                    args,
+                } => {
                     if matches!(
-                        self.class_body_does_decl(&mut cx, *role_name)?,
+                        self.class_body_does_decl(&mut cx, *role_name, args.as_deref())?,
                         ClassBodyFlow::SkipTail
                     ) {
                         continue;
