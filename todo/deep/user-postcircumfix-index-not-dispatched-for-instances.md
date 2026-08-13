@@ -1,5 +1,48 @@
 # A user-exported `postcircumfix:&lt;[ ]&gt;` multi candidate is never dispatched for `@obj[...]` subscript syntax
 
+## Status update: the READ-path dispatch gap is fixed
+
+The core claim below — that `@obj[...]`/`%obj{...}` *read* access never consults
+a user-declared `postcircumfix:&lt;[ ]&gt;`/`postcircumfix:&lt;{ }&gt;` multi
+candidate for an `Instance` target — is fixed: `exec_index_op_with_positional`
+(`src/vm/vm_var_index_ops.rs`) now probes `resolve_function_with_types` for the
+op name against `[target, index]` *before* the built-in AT-POS/AT-KEY arms,
+mirroring how `prefix:&lt;~&gt;`/`infix:&lt;...&gt;` operator overloads are
+checked ahead of their native fallback. Candidate specificity (`Int:D` beating
+`Any:D`) and the "no candidate declared at all" fast path (`Registry::functions`
+name-existence gate, same one `prefix:&lt;~&gt;` already relies on) both work
+as in real `raku` — pinned in `t/user-postcircumfix-index-instance.t`.
+
+**Still open** (do not re-close this ticket on the strength of the above):
+
+1. **The *assignment* path is untouched.** `@obj[i] = v` / `%obj{k} = v` still
+   lowers straight to `IndexAssign`/`ASSIGN-POS`/`ASSIGN-KEY`
+   (`vm_var_assign_index_named.rs`, `builtins_multidim_assign.rs`) without ever
+   consulting a user `postcircumfix:&lt;[ ]&gt;` candidate. In real Raku this
+   normally isn't a *separate* mechanism — assignment targets whatever
+   container the read side handed back — but mutsu's element storage is not
+   uniformly container/Proxy-based (ADR-0013), so "read via the multi
+   candidate, then STORE into what it returns" needs its own design pass
+   rather than a copy of the read-side fix above.
+2. **`&postcircumfix:&lt;[ ]&gt;` does not exist as a callable term at all.**
+   The `Array::Rounded`-style idiom this ticket was filed for depends on
+   `my constant &old-same = &postcircumfix:&lt;[ ]&gt;;` capturing the
+   *pre-augmentation* native dispatcher so the module's own candidates can
+   delegate back to native indexing (`old-same SELF, $index`) without infinite
+   recursion into their own just-added candidates. mutsu has no native Sub
+   value registered under this name at all — bareword resolution of
+   `&postcircumfix:&lt;[ ]&gt;` currently fails outright. This is a distinct,
+   still-unstarted gap: it needs a native callable wrapping the same
+   AT-POS/AT-KEY dispatch logic the read-path fix above added inline, exposed
+   as a term *before* any user candidates exist, frozen at the point captured
+   (not a live re-lookup of the growing multi table).
+3. The constant-alias `is` trait gap in "What's still broken" below is
+   unrelated and still fully open.
+
+Do not close `Array::Rounded`'s row in `dist-test-suite-failures-batch.md`
+until items 1-3 above are resolved, in addition to everything already listed
+under "What's still broken".
+
 Found while investigating `Array::Rounded` (`todo/tickets/dist-test-suite-failures-batch.md`'s
 Un-triaged list). The dist's actual rounding mechanism is NOT the `AT-POS` method override it also
 declares (that one only matters for a *direct* `.AT-POS(...)` call, or the Positional protocol paths

@@ -439,6 +439,27 @@ impl Interpreter {
             self.stack.push(target);
             return Ok(());
         }
+        // A user-declared `multi sub postcircumfix:<[ ]>`/`postcircumfix:<{ }>`
+        // intercepts the bracket-subscript OPERATOR itself for a matching
+        // (invocant, index) type pair — this must be consulted before the
+        // built-in AT-POS/AT-KEY protocol dispatch below, mirroring how
+        // `prefix:<~>`/`infix:<...>` operator overloads are checked ahead of
+        // their native fallback (`vm_misc_coerce.rs`, `builtins_operators_infix.rs`).
+        // See todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md.
+        if let ValueView::Instance { .. } = target.view() {
+            let op_name = if is_positional {
+                "postcircumfix:<[ ]>"
+            } else {
+                "postcircumfix:<{ }>"
+            };
+            let args = vec![target.clone(), index.clone()];
+            if let Some(def) = self.resolve_function_with_types(op_name, &args) {
+                let empty_fns = crate::opcode::CompiledFns::default();
+                let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
+                self.stack.push(result);
+                return Ok(());
+            }
+        }
         if let ValueView::LazyIoLines {
             handle, kv, words, ..
         } = target.view()
