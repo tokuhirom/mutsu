@@ -49,3 +49,4 @@ Digest	modules/Digest/lib	https://github.com/grondilu/libdigest-raku.git	2870e65
 Digest::HMAC	modules/Digest-HMAC/lib	https://github.com/JJ/Raku-Digest-HMAC.git	9bae022a49c14ab92a059d7a0d5aa95c4026c27f	t/*.t	modules/Digest/lib
 Slangify	modules/Slangify/lib	https://github.com/lizmat/Slangify.git	2a1a52322a2c66e38e7356b3030088571135e8bb	t/*.rakutest	{clone}/t
 Slang::Tuxic	modules/Slang-Tuxic/lib	https://github.com/raku-community-modules/Slang-Tuxic.git	e8d5ca34c3d33659f19daa175bb37d3ebb3438c9	t/*.rakutest	modules/Slangify/lib
+Text::CSV	modules/Text-CSV/lib	https://github.com/Tux/CSV.git	4e4ed4151dddc27583caf86f375bfc005d14c5be	t/*.t	modules/Slang-Tuxic/lib,modules/Slangify/lib,modules/File-Temp/lib,modules/File-Directory-Tree/lib

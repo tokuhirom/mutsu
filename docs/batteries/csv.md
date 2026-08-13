@@ -1,9 +1,82 @@
 # Battery survey: CSV
 
-**Slot:** CSV read/write · **Status:** surveyed, **no candidate bundled yet** ·
+**Slot:** CSV read/write · **Status:** **BUNDLED — `Text::CSV` 0.022**
+(2026-08-13, `modules/Text-CSV/`) ·
 **Yardstick:** [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) —
 license (hard gate) → dependency weight → proven behaviour on mutsu → API fit
 · **Procedure:** [selection-method.md](selection-method.md)
+
+## Decision: `Text::CSV` is the CSV battery (2026-08-13)
+
+The API-fit question in Recommendation point 3 below is closed in
+`Text::CSV`'s favor:
+
+- **Measurement:** its functional suite is fully green on mutsu — 32/32
+  files, 22,696 assertions (`99_meta.t` waived by user decision 2026-08-13;
+  `Test::META` is dist-metadata QA, not CSV functionality) — versus
+  `CSV::Table`'s 184 assertions. It is by far the deeper-tested candidate.
+- **API fit:** it is the only candidate with a from-scratch generation story
+  (`csv(in => @data, out => $file)` needs no pre-existing template file;
+  `CSV::Table`'s constructor requires an existing `:csv($file)` to load).
+- **Cost:** its former blocker (the `Slang::Tuxic` dependency) was already
+  paid by the ADR-0026 slang-activation campaign — `Slang::Tuxic` and
+  `Slangify` are bundled batteries in their own right, and `File::Temp` (its
+  other runtime dep) was already bundled for the HTTP slot. Bundling
+  `Text::CSV` added no new dependency.
+
+### What ships
+
+`modules/Text-CSV/` vendors the dist verbatim from upstream
+[Tux/CSV](https://github.com/Tux/CSV) at tag `v0.022`
+(`4e4ed4151dddc27583caf86f375bfc005d14c5be`, the commit matching the
+`zef:Tux` 0.022 release; `lib/` and `META6.json` are byte-identical to the
+REA archive): `lib/Text/CSV.rakumod`, `lib/Text/IO/String.rakumod`, the
+`Text/CSV.pod6` docs, `META6.json`, `LICENSE` (Artistic-2.0), `README.md`.
+The release gate fetches the upstream suite at that same commit
+(`batteries.lock`) and runs it against the bundled tree on every release.
+Smoke pin: `t/text-csv-battery.t` — parse/combine and a `csv()` file
+round-trip, resolved with no `-I`.
+
+### Usage (no install needed)
+
+```raku
+use Text::CSV;
+
+# Functional form: read a file into rows (arrays of Str)
+my @rows = csv(in => "data.csv");
+
+# ... or write an in-memory structure out as a CSV file
+csv(in => [["name", "score"], ["ana", "42"]], out => "out.csv");
+
+# Method form: line-at-a-time control
+my $csv = Text::CSV.new;
+$csv.parse('one,"two, with comma",three');
+say $csv.fields».text;            # (one two, with comma three)
+$csv.combine("a", "b,c", "d");
+say $csv.string;                  # a,"b,c",d
+
+# Hash rows keyed by the header line
+my @records = csv(in => "data.csv", headers => "auto");
+```
+
+The full upstream API documentation ships in
+`modules/Text-CSV/lib/Text/CSV.pod6`.
+
+### Interpreter fixes the bundling itself surfaced
+
+Writing the four-line smoke test exposed one more general bug family (after
+the ~30 the measurement campaign already fixed): an expression-position `my`
+inside a routine (`if (my $file = %args<file> :delete)`, `Text::CSV.rakumod`'s
+`method csv`) leaked back into a same-named CALLER lexical through four
+separate return paths (free-var writeback drain, two return-merge exclusion
+gaps, and the interpreter-carrier write log). Fixed with the bundling PR;
+pin: `t/expr-decl-lexical-no-leak.t`. One shape remains open —
+`todo/deep/expr-decl-writes-through-captured-cell.md`.
+
+---
+
+Everything below is the original survey, kept for the method and the field
+comparison.
 
 > **Status update 2026-08-13 — `Text::CSV` measurement COMPLETE, suite
 > green.** Everything below the update is the original survey, kept for the

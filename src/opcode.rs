@@ -5256,6 +5256,14 @@ impl CompiledCode {
             {
                 if own.contains(name.as_str()) {
                     self_mutated.insert(Symbol::intern(&name));
+                } else if self.expr_declared_syms.contains(&Symbol::intern(&name)) {
+                    // An expression-position `my` THIS body declares
+                    // (`if (my $d = ...)`) stores env-only under the bare name;
+                    // that store is the declaration's own binding, not a write
+                    // to an enclosing lexical. Recording it as a free-var write
+                    // made the call-site writeback drain copy the callee's `$d`
+                    // over a same-named CALLER lexical (Text::CSV's `csv()`
+                    // clobbering the caller's `$file`).
                 } else if !Self::is_attribute_accessor_name(&name) {
                     // Attribute accessors (`$.count++` → name `.count`, `$!x`, the
                     // `@.`/`@!`/`%.`/`%!` forms) resolve via `self`, NOT the
