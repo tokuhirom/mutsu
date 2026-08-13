@@ -371,9 +371,8 @@ impl Interpreter {
         if self.has_any_wrap_chains()
             && let Some(cand_idx) =
                 self.find_method_candidate_index(owner_class.as_str(), method_name, &method_def)
-            && let Some(chain) = self
-                .get_method_wrap_chain(owner_class.as_str(), method_name, cand_idx)
-                .cloned()
+            && let Some(chain) =
+                self.get_method_wrap_chain(owner_class.as_str(), method_name, cand_idx)
         {
             let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
             self.push_method_samewith_context(

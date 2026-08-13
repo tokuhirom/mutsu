@@ -82,6 +82,16 @@ pub(crate) struct Registry {
     pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
+    /// Method-candidate wrap chains: `(owner class, method name, candidate
+    /// index)` -> stack of `(handle_id, wrapper_sub)`, outermost (currently
+    /// active) last. Populated by `.wrap()` on a Sub/Method obtained via
+    /// `^lookup`/`^find_method(...).candidates[N]` (ADR-0019 E10: moved from
+    /// the Interpreter so every mutation runs through [`Registry`] and can
+    /// bump `method_generation` like any other canonical dispatch state,
+    /// letting the generation-checked `fast_method_cache` stay valid instead
+    /// of a program-wide `has_any_wrap_chains()` prefilter disabling it
+    /// whenever ANY method anywhere is wrapped).
+    pub(crate) method_wrap_chains: HashMap<(String, String, usize), Vec<(u64, Value)>>,
     /// `enum Name (...)` declarations: enum name -> [(variant name, value)].
     pub(crate) enum_types: HashMap<String, Vec<(String, EnumValue)>>,
     /// `subset Name of Base where { ... }` declarations.
@@ -484,6 +494,116 @@ impl Registry {
         self.method_generation = self.method_generation.wrapping_add(1);
         if self.method_generation == 0 {
             self.method_generation = 1;
+        }
+    }
+
+    /// Whether ANY method-candidate wrap chain exists anywhere in the
+    /// program — a cheap live short-circuit for the per-candidate scans in
+    /// `class_dispatch.rs`/`ctor_phase_plan.rs`/`builtins_dispatch_next.rs`/
+    /// `vm_call_method_compiled.rs`'s `check_method_wrap_chain` (ADR-0019
+    /// E10). Unlike the deleted `fast_method_cache` gate, these sites guard a
+    /// live `find_method_candidate_index` scan rather than a cache, so the
+    /// prefilter is still a correct, cheap win and stays.
+    pub(crate) fn has_any_method_wrap_chains(&self) -> bool {
+        !self.method_wrap_chains.is_empty()
+    }
+
+    /// The wrap chain for one method candidate, if non-empty.
+    pub(crate) fn method_wrap_chain(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+    ) -> Option<&Vec<(u64, Value)>> {
+        self.method_wrap_chains
+            .get(&(
+                class_name.to_string(),
+                method_name.to_string(),
+                candidate_idx,
+            ))
+            .filter(|c| !c.is_empty())
+    }
+
+    /// Push a new wrapper onto a method candidate's chain (ADR-0019 E10).
+    pub(crate) fn push_method_wrap(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        handle_id: u64,
+        wrapper: Value,
+    ) {
+        self.method_wrap_chains
+            .entry((
+                class_name.to_string(),
+                method_name.to_string(),
+                candidate_idx,
+            ))
+            .or_default()
+            .push((handle_id, wrapper));
+        self.bump_method_generation();
+    }
+
+    /// Pop the outermost wrapper off a method candidate's chain, returning it
+    /// if the chain was non-empty (ADR-0019 E10's `.unwrap()`-with-no-args
+    /// leg).
+    pub(crate) fn pop_method_wrap(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+    ) -> Option<(u64, Value)> {
+        let key = (
+            class_name.to_string(),
+            method_name.to_string(),
+            candidate_idx,
+        );
+        let popped = self.method_wrap_chains.get_mut(&key).and_then(Vec::pop);
+        if popped.is_some() {
+            self.bump_method_generation();
+        }
+        popped
+    }
+
+    /// Remove one wrapper by handle id from a method candidate's chain
+    /// (ADR-0019 E10's `.unwrap(handle)`/`.restore()` leg — fixes the
+    /// "unwrap method-wrap leak": previously nothing ever removed a
+    /// `method_wrap_chains` entry at all, so a restored/unwrapped
+    /// method-candidate handle silently kept the wrapper active forever).
+    /// Returns whether an entry was actually removed.
+    pub(crate) fn remove_method_wrap(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        candidate_idx: usize,
+        handle_id: u64,
+    ) -> bool {
+        let key = (
+            class_name.to_string(),
+            method_name.to_string(),
+            candidate_idx,
+        );
+        let Some(chain) = self.method_wrap_chains.get_mut(&key) else {
+            return false;
+        };
+        let before = chain.len();
+        chain.retain(|(hid, _)| *hid != handle_id);
+        let removed = chain.len() != before;
+        if removed {
+            self.bump_method_generation();
+        }
+        removed
+    }
+
+    /// Drop every wrap chain owned by a class being redeclared (mirrors
+    /// `sync_user_method_entries`'s per-class reset). Bumps the generation
+    /// only when something was actually removed.
+    pub(crate) fn clear_method_wrap_chains_for_class(&mut self, class_name: &str) {
+        let before = self.method_wrap_chains.len();
+        self.method_wrap_chains
+            .retain(|(cls, _, _), _| cls != class_name);
+        if self.method_wrap_chains.len() != before {
+            self.bump_method_generation();
         }
     }
 }

@@ -292,9 +292,7 @@ impl Interpreter {
             return None;
         }
         let cand_idx = self.find_method_candidate_index(owner_class, method, method_def)?;
-        let chain = self
-            .get_method_wrap_chain(owner_class, method, cand_idx)?
-            .clone();
+        let chain = self.get_method_wrap_chain(owner_class, method, cand_idx)?;
         let invocant_for_dispatch = target.clone();
         self.push_method_samewith_context(cn, method, args, Some(invocant_for_dispatch.clone()));
         self.push_wrapped_method_dispatch_frame(

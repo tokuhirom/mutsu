@@ -14,6 +14,36 @@ fn routine_unwrap_error(message: &str) -> RuntimeError {
     err
 }
 
+/// Attributes for a `Routine::WrapHandle` returned by wrapping a method
+/// CANDIDATE (`.^lookup(...).candidates[N].wrap(...)`, or the `Method`
+/// instance path in `methods_instance_ops.rs`) — as opposed to a plain sub
+/// wrap, which is keyed by `sub-id` instead. Carrying the owning class,
+/// method name, and candidate index lets `.unwrap()`/`.restore()` find and
+/// remove the right `Registry::method_wrap_chains` entry later (ADR-0019
+/// E10's "unwrap method-wrap leak" fix — previously these attrs carried no
+/// way to locate the entry at all, so it was never removed).
+pub(super) fn method_wrap_handle_attrs(
+    class_name: &str,
+    method_name: &str,
+    candidate_idx: usize,
+    handle_id: u64,
+    wrapped: &Value,
+) -> std::collections::HashMap<String, Value> {
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("wrap-class".to_string(), Value::str(class_name.to_string()));
+    attrs.insert(
+        "wrap-method".to_string(),
+        Value::str(method_name.to_string()),
+    );
+    attrs.insert(
+        "wrap-candidate-idx".to_string(),
+        Value::int(candidate_idx as i64),
+    );
+    attrs.insert("handle-id".to_string(), Value::int(handle_id as i64));
+    attrs.insert("wrapped-sub".to_string(), wrapped.clone());
+    attrs
+}
+
 impl Interpreter {
     /// Dispatch methods on callable values (Routine, Sub, WeakSub).
     /// Returns Some(result) if handled, None to fall through to common dispatch.
@@ -792,15 +822,10 @@ impl Interpreter {
                     .get("__mutsu_lookup_candidate_idx")
                     .map(Value::view)
             {
-                let key = (cls.to_string(), meth.to_string(), idx as usize);
-                self.method_wrap_chains
-                    .entry(key)
-                    .or_default()
-                    .push((handle_id, wrapper));
-                let mut attrs = std::collections::HashMap::new();
-                attrs.insert("sub-id".to_string(), Value::int(data.id as i64));
-                attrs.insert("handle-id".to_string(), Value::int(handle_id as i64));
-                attrs.insert("wrapped-sub".to_string(), target.clone());
+                let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                self.registry_mut()
+                    .push_method_wrap(&cls, &meth, idx, handle_id, wrapper);
+                let attrs = method_wrap_handle_attrs(&cls, &meth, idx, handle_id, target);
                 return Some(Ok(Value::make_instance(
                     Symbol::intern("Routine::WrapHandle"),
                     attrs,
@@ -901,6 +926,48 @@ impl Interpreter {
             )));
         }
         if method == "unwrap" {
+            // Method candidate unwrap: mirrors the `.wrap()` branch above —
+            // if this Sub came from `^lookup(...).candidates[N]`, remove from
+            // `Registry::method_wrap_chains` instead of the sub-level
+            // `wrap_chains` (ADR-0019 E10; previously this branch was never
+            // reached for a candidate Sub, so `.unwrap()` fell through to the
+            // sub-level logic below, found nothing under `data.id`, and
+            // always errored "not wrapped").
+            if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)
+                && let Some(ValueView::Str(meth)) =
+                    data.env.get("__mutsu_lookup_method").map(Value::view)
+                && let Some(ValueView::Int(idx)) = data
+                    .env
+                    .get("__mutsu_lookup_candidate_idx")
+                    .map(Value::view)
+            {
+                let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                if args.is_empty() {
+                    return Some(
+                        match self.registry_mut().pop_method_wrap(&cls, &meth, idx) {
+                            Some(_) => Ok(Value::TRUE),
+                            None => Err(routine_unwrap_error("Cannot unwrap routine: not wrapped")),
+                        },
+                    );
+                }
+                let Some(handle_id) = self.extract_wrap_handle_id(&args[0]) else {
+                    return Some(Err(routine_unwrap_error(
+                        "Cannot unwrap routine: invalid wrap handle",
+                    )));
+                };
+                return Some(
+                    if self
+                        .registry_mut()
+                        .remove_method_wrap(&cls, &meth, idx, handle_id)
+                    {
+                        Ok(Value::TRUE)
+                    } else {
+                        Err(routine_unwrap_error(
+                            "Cannot unwrap routine: invalid wrap handle",
+                        ))
+                    },
+                );
+            }
             // Look up original sub_id by name, since &foo creates a fresh Sub each time
             let func_name = data.name.resolve();
             let sub_id = self

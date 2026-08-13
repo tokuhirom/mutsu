@@ -374,7 +374,7 @@ impl Interpreter {
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.
         // Clear stale method wrap chains from a previous class with the same name.
-        self.method_wrap_chains.retain(|(cls, _, _), _| cls != name);
+        self.registry_mut().clear_method_wrap_chains_for_class(name);
         // `class C hides P` marks parent P hidden from C's (and descendants')
         // `.^mro_unhidden`. Record it so the mro_unhidden filter can drop P.
         if !hidden_parents.is_empty() {

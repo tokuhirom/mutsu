@@ -2295,13 +2295,44 @@ impl Interpreter {
             && class_name.resolve() == "Routine::WrapHandle"
             && method == "restore"
         {
-            let sub_id = attributes
-                .as_map()
-                .get("sub-id")
-                .and_then(|v| v.as_int().map(|i| i as u64));
             let handle_id = attributes
                 .as_map()
                 .get("handle-id")
+                .and_then(|v| v.as_int().map(|i| i as u64));
+            // Method-candidate handle (`.^lookup(...).candidates[N].wrap(...)`):
+            // ADR-0019 E10's "unwrap method-wrap leak" fix — this handle shape
+            // used to carry no way to locate its `Registry::method_wrap_chains`
+            // entry, so `.restore()` silently did nothing and still reported
+            // success. See `method_wrap_handle_attrs` (`methods_sub.rs`).
+            let method_candidate_key = attributes
+                .as_map()
+                .get("wrap-class")
+                .and_then(|v| v.as_str().map(str::to_string))
+                .zip(
+                    attributes
+                        .as_map()
+                        .get("wrap-method")
+                        .and_then(|v| v.as_str().map(str::to_string)),
+                )
+                .zip(
+                    attributes
+                        .as_map()
+                        .get("wrap-candidate-idx")
+                        .and_then(|v| v.as_int().map(|i| i as usize)),
+                );
+            if let (Some(((cls, meth), idx)), Some(handle_id)) = (method_candidate_key, handle_id) {
+                return if self
+                    .registry_mut()
+                    .remove_method_wrap(&cls, &meth, idx, handle_id)
+                {
+                    Ok(Value::TRUE)
+                } else {
+                    Err(RuntimeError::new("Invalid WrapHandle: not wrapped"))
+                };
+            }
+            let sub_id = attributes
+                .as_map()
+                .get("sub-id")
                 .and_then(|v| v.as_int().map(|i| i as u64));
             if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
                 if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {

@@ -1021,7 +1021,7 @@ impl Interpreter {
     }
 
     pub(crate) fn has_any_wrap_chains(&self) -> bool {
-        !self.method_wrap_chains.is_empty()
+        self.registry().has_any_method_wrap_chains()
     }
 
     pub(crate) fn push_wrap_dispatch_frame(&mut self, mut frame: super::WrapDispatchFrame) {
@@ -1046,13 +1046,10 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
         candidate_idx: usize,
-    ) -> Option<&Vec<(u64, Value)>> {
-        let key = (
-            class_name.to_string(),
-            method_name.to_string(),
-            candidate_idx,
-        );
-        self.method_wrap_chains.get(&key).filter(|c| !c.is_empty())
+    ) -> Option<Vec<(u64, Value)>> {
+        self.registry()
+            .method_wrap_chain(class_name, method_name, candidate_idx)
+            .cloned()
     }
 
     /// Find the candidate index for a method definition in its class.

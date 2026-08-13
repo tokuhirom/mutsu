@@ -683,7 +683,6 @@ impl Interpreter {
             dispatch_token_counter: 0,
             wrap_skip_once: None,
             suppress_binding_error_enhance: false,
-            method_wrap_chains: self.method_wrap_chains.clone(),
             method_fallbacks: self.method_fallbacks.clone(),
             suppressed_names: self.suppressed_names.clone(),
             class_scoped_short_names: self.class_scoped_short_names.clone(),

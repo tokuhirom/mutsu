@@ -162,7 +162,7 @@ impl Interpreter {
             visit_slice(visitor, &frame.remaining);
             visit_slice(visitor, &frame.args);
         }
-        for chain in self.method_wrap_chains.values() {
+        for chain in self.registry().method_wrap_chains.values() {
             for (_, v) in chain {
                 visitor.visit_value(v);
             }

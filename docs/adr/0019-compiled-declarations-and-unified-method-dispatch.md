@@ -3838,7 +3838,7 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   the highest-semantic-risk box of the whole phase (拙速厳禁) — it must run as its own dedicated
   session, not be attempted inline here, and is required before any E9a/b/c cursor cutover work
   starts.
-- [ ] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
+- [x] **E9 — Add resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`.** Continue within
   the resolved sequence instead of re-entering name-based resolution.
   **Design 2026-08-10** (same doc): one `DispatchCursor {seq, next, invocant, args}` replaces
   the recomputed `MethodDispatchFrame.remaining` + fingerprint winner-removal; wrap chains
@@ -4008,13 +4008,98 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   have to remember it. Full `t/` + targeted roast (`S06-advanced/*`,
   `S06-multi/*`, `S12-methods/{defer-call,defer-next,multi}.t`) green with no
   new pin (behavior is unchanged by construction).
-- [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
+  **Progress 2026-08-13 (same day) — E9b-2 landed, the wrap-prefix cutover.**
+  Both method-wrap entry sites (interpreter `class_dispatch.rs` and VM
+  `vm_call_method_compiled.rs`) now build a SINGLE `MethodDispatchFrame` whose
+  `remaining` is `[Wrapper(prefix)..., Candidate(winner, wraps_spliced:
+  true), ...MRO tail]`, instead of a separate `WrapDispatchFrame` plus a
+  synthetic "original" sub re-entered by name. Deleted: the `sub_id == 0`
+  method-wrap sentinel and its exhaustion fallthrough, the
+  `__mutsu_method_wrap_original` marker and its by-name re-entry leg, the
+  global `is_inside_wrap_dispatch()` guards at both entry sites, the old
+  mid-MRO peek-and-intercept block (replaced by the lazy splice at advance
+  time E9b-1 already wired up), and the #6349 `wrap_chain_exhausted` bool.
+  Fixes P1 (`wrap-chain-skipped-inside-foreign-wrap-dispatch.md`): a wrapped
+  method called from inside a DIFFERENT method's wrapper no longer loses its
+  own wrap chain, since no global guard remains to suppress it. Pinned by
+  `t/wrap-chain-foreign-wrapper-not-shadowed.t`.
+  **Progress 2026-08-13 (same day) — E9c-1 landed, samewith carrier
+  consolidation.** Merges the two parallel stacks `samewith_context_stack:
+  Vec<(String, Option<Value>)>` and `samewith_call_args_stack: Vec<Vec<Value>>`
+  into one `Vec<SamewithContext { name, invocant, args }>`: several raw push
+  sites (`methods_mixin_dispatch.rs`, `dispatch_proto_call.rs`,
+  `builtins_operators_fallback.rs`, `builtins_dispatch_next.rs`, and the VM sub
+  paths) used to push only the context stack, leaving the args stack free to
+  pair with a stale, deeper context entry. Folding args into the same struct
+  makes that desync structurally impossible. Mechanical, zero behavior change.
+  **Progress 2026-08-13 (same day) — E9c-2 landed, direct proto `{*}`
+  resolution.** Replaces the by-name re-entry a proto method's `{*}` used for
+  redispatch (two `lookup_proto_method` walks, the one-shot
+  `proto_method_skip` flag, the ambient `proto_redispatch_boundary` field
+  bracketed around the whole re-dispatch pipeline) with a direct resolver,
+  `resolve_method_within_boundary(receiver_class, method_name, args,
+  invocant, boundary_owner)`, which picks the winning candidate in one MRO
+  walk truncated to the governing proto's owner —
+  `resolve_method_with_owner_impl`'s boundary parameter now expresses that
+  explicitly instead of reading ambient interpreter state. The resolved
+  winner runs through the same resolved-method path ordinary dispatch uses
+  (`run_instance_method_celled`'s two legs extracted into
+  `instance_method_not_found`/`run_resolved_instance_method`). Same-answer
+  mechanism swap against #6355 semantics; the earlier falsified `samewith`
+  design clause (§ decision 2 note above) is unaffected — `samewith` still
+  re-enters by name.
+  **Both E9b and E9c are now fully landed** (slice order E9b-0 → E9b-1 →
+  E9b-2 → E9c-1 → E9c-2, all merged 2026-08-13: #6361/#6363/#6369/#6372/#6375).
+  The `DispatchCursor{seq, next, invocant, args}` index-based rewrite
+  mentioned in the box's opening design remains explicitly out of scope (E9a's
+  progress note called it "orthogonal perf/cleanliness work, left for a
+  follow-up slice") — every load-bearing piece of E9's own scope (wrap
+  chains as cursor-prefix entries, proto `{*}` re-ranking instead of by-name
+  re-entry, and the deferral-order redraw from E9-pre/E9a) is done through
+  other means (`DeferralEntry`, `resolve_method_within_boundary`,
+  `resolve_deferral_expansion`), so this box closes here.
+- [x] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every
   wrap/unwrap/restore path — including the two that currently invalidate nothing — bumps
   `method_generation`; the global `has_any_wrap_chains()` prefilter (which disables the fast
   cache program-wide once any wrap exists) is deleted after E3; the `.unwrap` method-wrap leak
   is fixed en route.
+  **Progress 2026-08-13 — E10 landed.** `Registry::method_wrap_chains` replaces the
+  Interpreter-level `HashMap<(String,String,usize), Vec<(u64,Value)>>`; every mutation
+  (`push_method_wrap`/`pop_method_wrap`/`remove_method_wrap`/
+  `clear_method_wrap_chains_for_class`) now bumps `method_generation`, including the two push
+  sites that previously invalidated nothing at all (the `^lookup(...).candidates[N].wrap(...)`
+  Sub path and the `.^methods(:local)` `Method`-instance path). The one real "fast cache"
+  gate — `vm_call_method_compiled_interpret.rs`'s `!self.has_any_wrap_chains() &&` guard on
+  `fast_method_cache`, which disabled that cache for EVERY method call program-wide the instant
+  ANY method anywhere was wrapped — is deleted: `try_populate_fast_cache` is only ever reached
+  after `check_method_wrap_chain` has already returned `None` for that exact method, so a
+  wrapped method is never cached there in the first place, and a later wrap on a
+  previously-cached method evicts the stale entry via the generation bump
+  (`refresh_method_caches_for_generation`, already called just above). The other
+  `has_any_wrap_chains()` call sites (`class_dispatch.rs`, `ctor_phase_plan.rs`,
+  `builtins_dispatch_next.rs`, `check_method_wrap_chain` itself) guard a live
+  `find_method_candidate_index` scan rather than a cache and stay — they were never the
+  "program-wide" problem, and reproving that live scan every call would only cost, not gain.
+  **Fixed the `.unwrap` method-wrap leak**, confirmed against Rakudo v2026.06 first
+  (`Foo.^lookup('bar').candidates[0].wrap(...)` then `.restore`/`.unwrap($handle)`): neither
+  ever actually removed the `method_wrap_chains` entry before this fix.
+  `.restore()` looked in the sub-level `wrap_chains` map under a `"sub-id"` attribute that a
+  method-candidate `WrapHandle` never populated meaningfully (it held the candidate SUB's own
+  id, unrelated to the class-keyed chain it was actually stored under), so it silently did
+  nothing and still returned `Ok(TRUE)`; `.unwrap()` on the candidate itself never even checked
+  for the `^lookup` markers, so it fell straight to sub-level logic and always raised "not
+  wrapped". Fixed by giving a method-candidate `WrapHandle` its own attribute shape
+  (`wrap-class`/`wrap-method`/`wrap-candidate-idx`, built by the new
+  `method_wrap_handle_attrs` helper shared between the Sub and `Method`-instance wrap sites) and
+  teaching `.restore()`/`.unwrap()` to route through `Registry::remove_method_wrap`/
+  `pop_method_wrap` when those attributes are present. New pin:
+  `t/wrap-candidate-unwrap-restore.t` (10 assertions, raku-verified, including the multi-candidate
+  case). `cargo build`/`clippy -D warnings`/`fmt` clean; full local `make test` (3128 files, 29005
+  tests) and the targeted wrap/dispatch suite
+  (`roast/S06-advanced/{dispatching,wrap}.t`, `roast/S14-traits/routines.t`,
+  `roast/integration/failure-and-callsame.t`, `t/wrap.t`, `t/wrap-closure-capture.t`) green.
 - [ ] **E11 — Retire arity-specific lookup entry points.** Keep native arity functions only as
   handler implementations selected by `MethodEntry`.
   **Design 2026-08-10** (same doc): grep-based completion criterion — no caller of
