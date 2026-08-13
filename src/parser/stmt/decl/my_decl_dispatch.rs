@@ -200,6 +200,15 @@ pub(super) fn try_keyword_dispatch(
         let (r, _) = ws1(r)?;
         return class_decl_body(r, !is_our).map(Some);
     }
+    // our native Name is Type is ctype<...> is repr<...> { ... }
+    if let Some(r) = keyword("native", rest) {
+        let (r, _) = ws1(r)?;
+        let (r, mut stmt) = class_decl_body(r, !is_our)?;
+        if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+            custom_traits.push(("__mutsu_native_decl".to_string(), None));
+        }
+        return Ok(Some((r, stmt)));
+    }
     // my grammar Name { ... }
     if keyword("grammar", rest).is_some() {
         return super::super::class::grammar_decl(rest).map(Some);

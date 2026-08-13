@@ -615,6 +615,35 @@ pub(super) fn skip_balanced_parens(input: &str) -> &str {
     }
 }
 
+/// Parse a `<...>` trait argument (e.g. `is repr<CStruct>`, `is ctype<long>`),
+/// depth-tracking nested `<...>` and `\`-escapes. Returns the trimmed content
+/// and the input past the closing `>`.
+pub(super) fn parse_trait_angle_arg(input: &str) -> PResult<'_, String> {
+    let after_open = input
+        .strip_prefix('<')
+        .ok_or_else(|| PError::expected("trait angle argument"))?;
+    let mut depth = 1u32;
+    let mut chars = after_open.char_indices();
+    while let Some((i, c)) = chars.next() {
+        match c {
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    let arg = after_open[..i].trim().to_string();
+                    let after_close = &after_open[i + 1..];
+                    return Ok((after_close, arg));
+                }
+            }
+            '<' => depth += 1,
+            '\\' => {
+                chars.next();
+            }
+            _ => {}
+        }
+    }
+    Err(PError::expected("closing '>' in trait argument"))
+}
+
 /// Require at least one whitespace character (or comment).
 pub(super) fn ws1(input: &str) -> PResult<'_, ()> {
     let (rest, _) = ws(input)?;
