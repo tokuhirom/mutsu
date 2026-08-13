@@ -1,0 +1,25 @@
+{
+  "auth": "zef:japhb",
+  "authors": [
+    "Geoffrey Broadwell"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "Convert to/from tiny float formats",
+  "license": "Artistic-2.0",
+  "name": "TinyFloats",
+  "perl": "6.d",
+  "provides": {
+    "TinyFloats": "lib/TinyFloats.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/japhb/TinyFloats.git",
+  "tags": [
+  ],
+  "test-depends": [
+  ],
+  "version": "0.0.5"
+}

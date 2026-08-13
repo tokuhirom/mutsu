@@ -125,7 +125,7 @@ OpenSSL) which mutsu has no foundation for. Overkill for "make one request."
 > **Update 2026-07-31:** the "no foundation" claim is stale — mutsu now bundles
 > and drives the `OpenSSL` binding (sync TLS battery), and a measured
 > re-assessment of the whole Cro chain (no `nqp` left upstream; concrete,
-> ticketed blockers) is in [web-framework.md](web-framework.md). The *rejection
+> ticketed blockers) is in [cro-http.md](cro-http.md). The *rejection
 > for the HTTP-client slot* stands; Cro's reachability picture changed.
 
 ### Homegrown curl-shellout client — rejected

@@ -1,0 +1,11 @@
+Revision history for Cro::Core
+
+0.8.10
+    - Fix parsing URIs with empty path segments.
+    - Enhance `Cro::Message` objects to allow adding arbitrary data via
+      `%.attributes`.
+    - Add an `$.origin` field to the `X::Cro::Uri::ParseError` exception so that
+      consuming code can add origination information if so desired.
+    - Change dependency management to allow individual Cro modules to be
+      updated individually.
+    - Rename all `.pm6` files to `.rakumod` and `.t` files to `.rakutest`.

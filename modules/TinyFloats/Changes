@@ -1,0 +1,26 @@
+Revision history for TinyFloats
+
+{{$NEXT}}
+
+0.0.5  2025-05-13T14:57:31-07:00
+  - Add support and tests for TensorFlow-32 (tf32) and FP8-E5M2 (e5m2) formats
+  - Greatly improve README
+  - Update dist.ini for modern fez/zef compliance
+
+
+0.0.4  2021-12-28
+  - Silence a new warning in Rakudo 2021.12; the original construct was being
+    handled correctly, but better to make the intent clear and warning-free
+
+
+0.0.3  2021-06-06
+  - Support for Google Brain bfloat16 format
+
+
+0.0.2  2021-04-26
+  - Turn off NaN sign bit when reducing for Windows compatibility
+
+
+0.0.1  2021-04-26
+  - Initial version
+  - Support for IEEE 754 binary16 format

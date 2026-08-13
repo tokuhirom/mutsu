@@ -29,7 +29,7 @@ which mutsu implements natively — the ecosystem `if` dist is not needed.
 ## Why it is bundled
 
 **It is a hard dependency of Cro::HTTP.** The Cro campaign
-(`docs/batteries/web-framework.md`) needs every module in Cro::HTTP's `depends`
+(`docs/batteries/cro-http.md`) needs every module in Cro::HTTP's `depends`
 to load and work under mutsu; `Crypt::Random` supplies Cro's session-token and
 boundary-string entropy. Bundling it (a) locks the working state in with the
 release gate and (b) gives the bundle a proper CSPRNG slot — `rand`/`.pick` are

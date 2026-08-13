@@ -1,7 +1,13 @@
-# Battery survey: web framework
+# Battery: web framework — `Cro::HTTP` (+ `Cro::Core`, `Cro::TLS`)
 
-**Status: surveyed, no winner bundled yet — the survey's output is a work list
-(as predicted by [selection-method.md](selection-method.md) §5).**
+**Slot:** Web framework · **Chosen:** `Cro::HTTP` v0.8.13 + `Cro::Core` v0.8.10
++ `Cro::TLS` v0.8.10 (all `auth<zef:cro>`, Artistic-2.0) · **Kind:** Adopted
+(community modules, vendored as-is)
+
+**Status: bundled and working.** The survey below (2026-07-31) picked Cro as
+the target and set the campaign goal as "Cro::HTTP suite green under mutsu";
+that goal was reached 2026-08-13 (Cro::HTTP 35/35 files, Cro::Core 9/9 —
+see the "Bundling" section below), and Cro now ships as a battery.
 
 Date: 2026-07-31. Method: [selection-method.md](selection-method.md) — field
 enumerated from the fez index (7711 entries; recency taken from the CDN
@@ -136,7 +142,119 @@ foundation to bundle.
   (not a framework; its 0/3 is a real mutsu bug cluster worth fixing but the
   dist doesn't fill the slot).
 
-## Reproduction
+## Bundling (2026-08-13): status: working
+
+The campaign target above ("Cro::HTTP suite green under mutsu") was reached
+after roughly 100 sessions of general-bug fixes to mutsu itself (cross-thread
+`Supply`/`whenever`/closure semantics, method dispatch, typed lexicals,
+regex/parser edge cases — none of it Cro-specific; see `news/2026-08/` and
+`news/2026-07/` for the individual fixes). Final measurement:
+
+| Suite | raku | mutsu (bundled) |
+| --- | --- | --- |
+| Cro::Core `t/` (9 files) | 9/9 | **9/9** |
+| Cro::HTTP `t/` (35 files) | 35/35 | **35/35** |
+
+All 44 files resolve and pass with **zero `-I` flags** — purely from the
+bundled `modules/` tree (`Cro::HTTP`'s own test-local helper, `t/TestModule`,
+still resolves via its own `use lib 't/TestModule'`, unaffected). This
+matches the "zero-config `use`" bar every other battery meets.
+
+**Cro::TLS is bundled alongside Cro::Core/Cro::HTTP** — it was not separately
+surveyed above (the field enumeration was HTTP frameworks, and Cro::TLS is
+Cro::HTTP's own declared TLS-transform dependency, not a competing choice)
+but follows the same "adopt the real dependency" rule as the rest of the Cro
+dependency chain (`crypt-random.md`, `io-path-childsecure.md`, `base64.md`,
+`http-hpack.md`). Its own upstream suite (`t/types.rakutest`) is a single
+file exercising `Cro::TLS::Configuration`; it passes and is registered in
+`batteries.lock` like every other file here.
+
+**New supporting dependencies this pulled in** (not previously bundled):
+`Cro::Core`, `Cro::TLS`, `IO::Socket::Async::SSL`, `JSON::JWT`,
+`Log::Timeline`, `CBOR::Simple`, `TinyFloats` — see
+[cro-deps.md](cro-deps.md) for their individual records. Every other
+`Cro::HTTP` dependency (`OO::Monitors`, `Crypt::Random`,
+`IO::Path::ChildSecure`, `Base64`, `HTTP::HPACK`, `Digest::HMAC`,
+`DateTime::Parse`, plus `JSON::Fast` — native) was already bundled ahead of
+this campaign, per their own records.
+
+### Why Cro::TLS was not a separate rejection/comparison exercise
+
+Unlike the HTTP-*framework* choice (where Humming-Bird/Air/etc. were real
+alternatives), there is no competing "TLS transform for Cro's pipeline" —
+Cro::TLS is Cro's own module, required to run Cro::HTTP over `https://` or
+HTTP/2 (`h2`/ALPN). The only decision was *whether to bundle Cro at all*,
+already made above.
+
+## Provenance and update procedure
+
+Per [BATTERIES.md §3](../../BATTERIES.md#updating-a-vendored-module-must-be-documented-per-library).
+To bump a module, re-vendor — do **not** hand-edit the vendored tree:
+
+| Module | Upstream | Pinned version | Commit |
+| --- | --- | --- | --- |
+| `Cro::Core` | <https://github.com/croservices/cro-core> | release-0.8.10 | `cfabfbc8` (2025-01-15) |
+| `Cro::TLS` | <https://github.com/croservices/cro-tls> | release-0.8.10 | `2be4b0c1` (2025-01-15) |
+| `Cro::HTTP` | <https://github.com/croservices/cro-http> | release-0.8.13 | `6238e753` (2026-06-02) |
+
+```sh
+# 1. Clone the new upstream revision, then copy the runtime tree + attribution.
+#    Upstream tests/CI/precomp/dev-utility (t/, it/, utils/, dist.ini) are
+#    deliberately NOT vendored: the release gate fetches the tests fresh at
+#    the pinned commit (BATTERIES.md §3).
+rsync -a --exclude '.precomp' <checkout>/lib/ modules/Cro-HTTP/lib/
+cp <checkout>/{META6.json,LICENSE,README.md,Changes} modules/Cro-HTTP/
+
+# 2. Bump the module's `commit` row in batteries.lock and the table above
+#    (three rows: Cro::Core, Cro::TLS, Cro::HTTP — bump together, they are
+#    released as one project and version-locked against each other via
+#    META6.json `depends` ranges).
+# 3. Re-run the gate and review the diff (a newly failing file is a
+#    regression to fix, not to whitelist away):
+cargo build --release && scripts/battery-testsuite.sh --update
+git diff batteries-whitelist.txt
+
+# 4. Refresh the Pages manifest:
+python3 scripts/gen-batteries-manifest.py
+```
+
+## API sketch
+
+```raku
+use Cro::HTTP::Router;
+use Cro::HTTP::Server;
+
+my $application = route {
+    get -> 'hello', $name {
+        content 'text/plain', "Hello, $name!";
+    }
+}
+
+my Cro::Service $service = Cro::HTTP::Server.new(:host<0.0.0.0>, :port(10000), :$application);
+$service.start;
+react whenever signal(SIGINT) { $service.stop; exit; }
+```
+
+`Cro::TLS` layers HTTPS/HTTP2 on top, given a cert/key pair:
+
+```raku
+use Cro::HTTP::Server;
+use Cro::TLS;
+
+my $service = Cro::HTTP::Server.new(
+    :host<0.0.0.0>, :port(10443), :$application,
+    tls => %( private-key-file => 'key.pem', certificate-file => 'cert.pem' ),
+);
+```
+
+## License
+
+**Artistic-2.0** — declared in each dist's `META6.json` and shipped as
+`LICENSE`. Vendored verbatim with `LICENSE` / `META6.json` / `README` /
+`Changes` preserved for attribution, source unmodified (per
+[BATTERIES.md §4](../../BATTERIES.md#4-license-policy)).
+
+## Reproduction (of the original survey)
 
 Survey harness (fetch + closure of `-I` paths + per-file prove) lives in the
 session scratchpad, pattern identical to `tmp/tmpl-survey.sh` from the

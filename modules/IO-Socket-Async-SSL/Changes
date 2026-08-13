@@ -1,0 +1,10 @@
+Revision history for IO-Socket-Async-SSL
+
+{{$NEXT}}
+
+0.8.2  2025-06-03T10:57:36+02:00
+    - Fix testing on Windows, Sam Gillespie++
+    - Update copyright year
+
+0.8.1  2024-11-09T12:50:47+01:00
+    - Initial version as a Raku Community module

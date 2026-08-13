@@ -25,7 +25,7 @@ zero dependencies.
 
 **It is a hard dependency of Cro::HTTP** (the static-file-serving router
 uses it to stop request paths escaping the docroot). The Cro campaign
-(`docs/batteries/web-framework.md`) needs every module in Cro::HTTP's
+(`docs/batteries/cro-http.md`) needs every module in Cro::HTTP's
 `depends` working under mutsu; this was the smallest one still missing.
 It also directly serves the batteries yardstick ("a small web blog can be
 written with the bundle alone") — serving a file for a URL is exactly the

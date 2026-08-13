@@ -1,0 +1,7 @@
+Revision history for Cro::TLS
+
+0.8.10
+    - Change dependency management to allow individual Cro modules to be
+      updated individually.
+    - Update test certificates.
+    - Rename all `.pm6` files to `.rakumod` and `.t` files to `.rakutest`.

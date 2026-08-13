@@ -26,6 +26,6 @@ of its own:
   concurrency-scheduling campaign, i.e. [shared-worker-pool-adr.md](../deep/shared-worker-pool-adr.md).
 
 Humming-Bird is **not** the web-framework target any more (Cro is — see
-[docs/batteries/web-framework.md](../../docs/batteries/web-framework.md)), so B1/B2 matter as
+[docs/batteries/cro-http.md](../../docs/batteries/cro-http.md)), so B1/B2 matter as
 general interpreter bugs, not as a battery gate. B1 in particular is a plain correctness bug worth
 fixing on its own.

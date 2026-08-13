@@ -1,0 +1,25 @@
+{
+  "name": "Cro::TLS",
+  "description": "Cro pipeline components for building services that use TLS.",
+  "version": "0.8.10",
+  "api": "0",
+  "auth": "zef:cro",
+  "perl": "6.*",
+  "authors": [
+    "Jonathan Worthington <jnthn@jnthn.net>"
+  ],
+  "depends": [
+    "Cro::Core:ver<0.8.10+>:api<0>:auth<zef:cro>",
+    "IO::Socket::Async::SSL:ver<0.7.10+>"
+  ],
+  "provides": {
+    "Cro::TLS": "lib/Cro/TLS.rakumod"
+  },
+  "resources": [],
+  "license": "Artistic-2.0",
+  "tags": [
+    "SSL",
+    "TLS"
+  ],
+  "source-url": "https://github.com/croservices/cro-tls.git"
+}

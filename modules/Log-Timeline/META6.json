@@ -1,0 +1,36 @@
+{
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Jonathan Worthington"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "CBOR::Simple",
+    "JSON::Fast"
+  ],
+  "description": "Log tasks with start/end periods and phases, as well as individual events",
+  "license": "Artistic-2.0",
+  "name": "Log::Timeline",
+  "perl": "6.d",
+  "provides": {
+    "Log::Timeline": "lib/Log/Timeline.rakumod",
+    "Log::Timeline::Model": "lib/Log/Timeline/Model.rakumod",
+    "Log::Timeline::Output": "lib/Log/Timeline/Output.rakumod",
+    "Log::Timeline::Output::CBORSequence": "lib/Log/Timeline/Output/CBORSequence.rakumod",
+    "Log::Timeline::Output::JSONLines": "lib/Log/Timeline/Output/JSONLines.rakumod",
+    "Log::Timeline::Output::Socket": "lib/Log/Timeline/Output/Socket.rakumod",
+    "Log::Timeline::Raku::LogTimelineSchema": "lib/Log/Timeline/Raku/LogTimelineSchema.rakumod",
+    "Log::Timeline::Raku::Setup": "lib/Log/Timeline/Raku/Setup.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/Log-Timeline.git",
+  "tags": [
+    "LOG",
+    "TIMELINE"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.5.2"
+}

@@ -1,0 +1,26 @@
+{
+  "auth": "zef:japhb",
+  "authors": [
+    "Geoffrey Broadwell"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+    "TinyFloats:ver<0.0.3+>"
+  ],
+  "description": "Simple codec for the CBOR serialization format",
+  "license": "Artistic-2.0",
+  "name": "CBOR::Simple",
+  "perl": "6.d",
+  "provides": {
+    "CBOR::Simple": "lib/CBOR/Simple.rakumod"
+  },
+  "resources": [
+  ],
+  "source-url": "https://github.com/japhb/CBOR-Simple.git",
+  "tags": [
+  ],
+  "test-depends": [
+  ],
+  "version": "0.1.4"
+}
