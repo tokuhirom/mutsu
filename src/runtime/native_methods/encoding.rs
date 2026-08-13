@@ -441,6 +441,15 @@ impl Interpreter {
     /// them left an `IO::Socket::Async` reader waiting forever for the `done`
     /// that a closed peer had already sent (roast S32-io/IO-Socket-Async.t
     /// "Echo server").
+    ///
+    /// `close_flag` is the Tap-teardown handle (`register_act_loop_close` id
+    /// plus the channel's shared close flag): `Tap.close` sets the flag and
+    /// this loop's bounded wait re-checks it, so the worker exits instead of
+    /// blocking on the channel forever. `None` (the scheduled-pump drain,
+    /// whose sender is dropped on close) keeps the plain blocking receive. A
+    /// flag-driven exit is a *close*, not a `done` — it must not run the
+    /// done chain (raku does not fire LAST phasers on `.close`; CLOSE phasers
+    /// are fired separately by `native_tap`).
     pub(in crate::runtime) fn run_supply_act_loop(
         interp: &mut Interpreter,
         rx: &super::supply_channel::SupplyReceiver,
@@ -448,16 +457,46 @@ impl Interpreter {
         delay_seconds: f64,
         done_cb: Option<Value>,
         quit_cb: Option<Value>,
+        close_flag: Option<(u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
     ) {
         use std::io::Write;
+        use std::sync::atomic::Ordering;
         loop {
+            let received = match &close_flag {
+                None => rx.recv().map_err(|_| ()),
+                Some((_, flag)) => loop {
+                    if flag.load(Ordering::Acquire) {
+                        break Err(()); // closed: exit like a disconnect
+                    }
+                    // The 250 ms cap is a safety net, not a latency bound: a
+                    // close racing the wait is honoured at most 250 ms late.
+                    #[cfg(not(target_arch = "wasm32"))]
+                    match rx.recv_timeout(std::time::Duration::from_millis(250)) {
+                        Ok(ev) => break Ok(ev),
+                        Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Err(()),
+                    }
+                    // wasm: the pool runs on the cooperative scheduler, where a
+                    // timeout poll loop would spin the only thread.
+                    #[cfg(target_arch = "wasm32")]
+                    break rx.recv().map_err(|_| ());
+                },
+            };
+            // Re-check after a successful receive: once `close` returns no new
+            // body dispatch may start (the pin test t/supply-tap-close-interval.t
+            // relies on this being a hard guarantee).
+            if let Some((_, flag)) = &close_flag
+                && flag.load(Ordering::Acquire)
+            {
+                break;
+            }
             // `is_done_marker` selects `invoke_done_callback` over a plain call:
             // the tap's `done =>` slot may hold a done-group marker or a
             // `__SupplyDoneChain` (a `whenever`'s LAST phasers bundled with the
             // enclosing supply's group marker), which only that dispatcher
             // understands. It falls through to a plain call for an ordinary
             // callable, so the other callers are unaffected.
-            let (value, end_cb, is_done_marker) = match rx.recv() {
+            let (value, end_cb, is_done_marker) = match received {
                 Ok(SupplyEvent::Emit(value)) => (value, None, false),
                 Ok(SupplyEvent::Done) => match done_cb {
                     Some(ref cb) => (Value::NIL, Some((cb.clone(), Vec::new())), true),
@@ -467,7 +506,7 @@ impl Interpreter {
                     Some(ref cb) => (Value::NIL, Some((cb.clone(), vec![reason])), false),
                     None => break,
                 },
-                Err(_) => break,
+                Err(()) => break,
             };
             let is_end = end_cb.is_some();
             Self::sleep_for_supply_delay(delay_seconds);
@@ -537,6 +576,12 @@ impl Interpreter {
             if is_end {
                 break;
             }
+        }
+        // Every loop exit lands here (the `process::exit` paths above tear the
+        // whole process down anyway): drop the registry entry so act loops
+        // that end on their own don't leak it.
+        if let Some((id, _)) = close_flag {
+            super::state_lock::unregister_act_loop_close(id);
         }
     }
 }

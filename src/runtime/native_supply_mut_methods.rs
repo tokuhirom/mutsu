@@ -259,11 +259,30 @@ impl Interpreter {
                     let delay = delay_seconds;
                     let done = done_cb.clone();
                     let quit = quit_cb.clone();
+                    // Record a close handle on the Tap so `.close` can stop
+                    // this worker — without it the act loop (and an interval
+                    // source feeding it) ran until process exit.
+                    let close_flag = rx.close_flag();
+                    let close_id = register_act_loop_close(close_flag.clone());
                     // Pooled (ADR-0020 slice 3): supply-lifetime act driver.
                     crate::runtime::worker_pool::submit(move || {
-                        Self::run_supply_act_loop(&mut thread_interp, &rx, &cb, delay, done, quit);
+                        Self::run_supply_act_loop(
+                            &mut thread_interp,
+                            &rx,
+                            &cb,
+                            delay,
+                            done,
+                            quit,
+                            Some((close_id, close_flag)),
+                        );
                     });
-                    let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
+                    let mut tap_handle_attrs = HashMap::new();
+                    tap_handle_attrs.insert(
+                        "act_loop_close_ids".to_string(),
+                        Value::array(vec![Value::int(close_id as i64)]),
+                    );
+                    let tap_instance =
+                        Value::make_instance(Symbol::intern("Tap"), tap_handle_attrs);
                     return Ok((tap_instance, attrs));
                 }
                 if !is_proc_output
@@ -294,6 +313,11 @@ impl Interpreter {
                 // from a chained on-demand source; `native_tap`'s "close" walks
                 // them recursively.
                 let mut upstream_taps: Vec<Value> = Vec::new();
+                // Close-registry ids for every channel-backed act-loop worker
+                // this tap spawns (a supply block can hold several such
+                // `whenever` sources); recorded on the Tap handle so `.close`
+                // can stop the workers.
+                let mut act_loop_close_ids: Vec<Value> = Vec::new();
                 let values = if let Some(on_demand_cb) = attrs.get("on_demand_callback").cloned() {
                     // Give the emitter a supplier_id so that when a `whenever`
                     // body calls `$emitter.emit(val)`, the value can be dispatched
@@ -643,8 +667,12 @@ impl Interpreter {
                                 };
                                 let mut driver = self.clone_for_thread();
                                 let body_cb = body_cb.clone();
+                                let close_flag = rx.close_flag();
+                                let close_id = register_act_loop_close(close_flag.clone());
+                                act_loop_close_ids.push(Value::int(close_id as i64));
                                 // Pooled (ADR-0020 slice 3): whenever-source
-                                // reader, lives until the channel closes.
+                                // reader, lives until the channel closes (or
+                                // the Tap is closed via the flag).
                                 crate::runtime::worker_pool::submit(move || {
                                     Self::run_supply_act_loop(
                                         &mut driver,
@@ -653,6 +681,7 @@ impl Interpreter {
                                         0.0,
                                         chain_done_cb,
                                         None,
+                                        Some((close_id, close_flag)),
                                     );
                                 });
                             } else if let ValueView::Instance {
@@ -1164,6 +1193,12 @@ impl Interpreter {
                     tap_handle_attrs
                         .insert("upstream_taps".to_string(), Value::array(upstream_taps));
                 }
+                if !act_loop_close_ids.is_empty() {
+                    tap_handle_attrs.insert(
+                        "act_loop_close_ids".to_string(),
+                        Value::array(act_loop_close_ids),
+                    );
+                }
                 if let Some(pump_id) = scheduled_pump_id {
                     tap_handle_attrs.insert("pump_id".to_string(), Value::int(pump_id as i64));
                 }
@@ -1289,6 +1324,9 @@ impl Interpreter {
                     // defers away.
                     delay_seconds = 0.0;
                     let mut thread_interp = self.clone_for_thread();
+                    // No close flag: `Tap.close` drops the pump's sender
+                    // (`drop_scheduled_pump`), so the blocking recv observes
+                    // the disconnect and this drain worker exits.
                     crate::runtime::worker_pool::submit(move || {
                         Self::run_supply_act_loop(
                             &mut thread_interp,
@@ -1297,6 +1335,7 @@ impl Interpreter {
                             real_delay,
                             real_done,
                             real_quit,
+                            None,
                         );
                     });
                     scheduled_pump_id = Some(pump_id);
