@@ -19,6 +19,54 @@ impl Interpreter {
         // `proto_redispatch_boundary` field. No re-entry is left to guard
         // against, so the former one-shot `proto_method_skip` flag is gone too.
         if let Some(ctx) = method_ctx {
+            // ADR-0019 E9c-2 fix: Junction auto-threading. The pre-E9c-2
+            // by-name re-entry into `call_method_with_values` incidentally
+            // provided this — that function's own top-of-body Junction check
+            // (`methods_call_dispatch.rs`) fired on the re-entry's `args`,
+            // which for a slurpy `proto method f(|) {*}` are exactly the
+            // outer call's original arguments (still containing an
+            // unresolved Junction whenever the OUTER call reached here via a
+            // fast/compiled path that itself never autothreaded). Direct
+            // resolution has no such incidental checkpoint, so a Junction
+            // argument reaching `{*}` — e.g. `self.contains-spec(any(@specs),
+            // :$strict)` recursing through `Zef::Distribution`'s
+            // `proto method contains-spec` — failed to resolve against any
+            // concrete-typed multi candidate. Restored explicitly here,
+            // mirroring `methods_call_dispatch.rs`'s own target/arg checks.
+            if Self::should_autothread_method(&proto_name) {
+                if let ValueView::Junction { kind, values } = ctx.invocant.view() {
+                    let mut results = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        results.push(self.call_method_with_values(
+                            value.clone(),
+                            &proto_name,
+                            args.clone(),
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+                if let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
+                    if !arg.is_junction_value() {
+                        return None;
+                    }
+                    match arg.view() {
+                        ValueView::Junction { kind, values } => Some((idx, kind, values.clone())),
+                        _ => None,
+                    }
+                }) {
+                    let mut results = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        let mut threaded_args = args.clone();
+                        threaded_args[idx] = value.clone();
+                        results.push(self.call_method_with_values(
+                            ctx.invocant.clone(),
+                            &proto_name,
+                            threaded_args,
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+            }
             // `{*}` rw-redispatch for a proto *method* (ledger §D): like the proto
             // *sub* path (`vm_call_proto_dispatch`), Rakudo redispatches with the
             // proto's CURRENT (body-mutated) parameter, and a candidate's `is rw`
