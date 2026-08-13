@@ -200,14 +200,14 @@ fn lift_phasers_from_stmt(
         | Stmt::Die(expr)
         | Stmt::Fail(expr)
         | Stmt::Take(expr, _) => {
-            lift_phasers_from_expr(expr, begin, check, init);
+            lift_phasers_from_current_expr(expr, begin, check, init);
         }
         Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => {
-            lift_phasers_from_expr(expr, begin, check, init);
+            lift_phasers_from_current_expr(expr, begin, check, init);
         }
         Stmt::Say(exprs) | Stmt::Put(exprs) | Stmt::Print(exprs) | Stmt::Note(exprs) => {
             for e in exprs.iter_mut() {
-                lift_phasers_from_expr(e, begin, check, init);
+                lift_phasers_from_current_expr(e, begin, check, init);
             }
         }
         Stmt::Call { args, .. } => {
@@ -216,11 +216,11 @@ fn lift_phasers_from_stmt(
                     crate::ast::CallArg::Positional(e)
                     | crate::ast::CallArg::Slip(e)
                     | crate::ast::CallArg::Invocant(e) => {
-                        lift_phasers_from_expr(e, begin, check, init);
+                        lift_phasers_from_current_expr(e, begin, check, init);
                     }
                     crate::ast::CallArg::Named { value, .. } => {
                         if let Some(e) = value {
-                            lift_phasers_from_expr(e, begin, check, init);
+                            lift_phasers_from_current_expr(e, begin, check, init);
                         }
                     }
                 }
@@ -232,33 +232,33 @@ fn lift_phasers_from_stmt(
             else_branch,
             ..
         } => {
-            lift_phasers_from_expr(cond, begin, check, init);
+            lift_phasers_from_current_expr(cond, begin, check, init);
             // Lift from if/else branches - BEGIN/INIT/CHECK are global
             lift_phasers_from_closure_stmts(then_branch, begin, check, init);
             lift_phasers_from_closure_stmts(else_branch, begin, check, init);
         }
         Stmt::For { iterable, body, .. } => {
-            lift_phasers_from_expr(iterable, begin, check, init);
+            lift_phasers_from_current_expr(iterable, begin, check, init);
             // Lift BEGIN/INIT/CHECK from loop body - they should run once
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::While { cond, body, .. } => {
-            lift_phasers_from_expr(cond, begin, check, init);
+            lift_phasers_from_current_expr(cond, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::When { cond, body } => {
-            lift_phasers_from_expr(cond, begin, check, init);
+            lift_phasers_from_current_expr(cond, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::Given { topic, body, .. } => {
-            lift_phasers_from_expr(topic, begin, check, init);
+            lift_phasers_from_current_expr(topic, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::Whenever { supply, body, .. } => {
-            lift_phasers_from_expr(supply, begin, check, init);
+            lift_phasers_from_current_expr(supply, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
         Stmt::Label { stmt: inner, .. } => {
@@ -385,11 +385,33 @@ fn extract_begin_from_stmts(stmts: &mut [Stmt], begin: &mut Vec<Stmt>) {
 }
 
 /// Extract PhaserExpr { Check | Init } from expressions (including closures).
+fn lift_phasers_from_current_expr(
+    expr: &mut Expr,
+    begin: &mut Vec<Stmt>,
+    check: &mut Vec<Stmt>,
+    init: &mut Vec<Stmt>,
+) {
+    // A BEGIN in the current statement list must stay in source order so the
+    // compiler has already recorded preceding constants. Child closure bodies
+    // use `lift_phasers_from_expr` below and retain compile-time lifting.
+    lift_phasers_from_expr_inner(expr, begin, check, init, false);
+}
+
 fn lift_phasers_from_expr(
     expr: &mut Expr,
     begin: &mut Vec<Stmt>,
     check: &mut Vec<Stmt>,
     init: &mut Vec<Stmt>,
+) {
+    lift_phasers_from_expr_inner(expr, begin, check, init, true);
+}
+
+fn lift_phasers_from_expr_inner(
+    expr: &mut Expr,
+    begin: &mut Vec<Stmt>,
+    check: &mut Vec<Stmt>,
+    init: &mut Vec<Stmt>,
+    lift_begin: bool,
 ) {
     // Handle PhaserExpr at this node
     if matches!(
@@ -398,7 +420,15 @@ fn lift_phasers_from_expr(
             kind: PhaserKind::Check | PhaserKind::Init,
             ..
         }
-    ) {
+    ) || lift_begin
+        && matches!(
+            expr,
+            Expr::PhaserExpr {
+                kind: PhaserKind::Begin,
+                ..
+            }
+        )
+    {
         let temp_name = next_temp_name();
         let old = std::mem::replace(expr, Expr::Var(temp_name.clone()));
         if let Expr::PhaserExpr { kind, body } = old {
@@ -425,6 +455,10 @@ fn lift_phasers_from_expr(
                 op: AssignOp::Assign,
             };
             match kind {
+                PhaserKind::Begin => {
+                    begin.push(var_decl);
+                    begin.push(assign);
+                }
                 PhaserKind::Check => {
                     check.push(var_decl);
                     check.push(assign);
