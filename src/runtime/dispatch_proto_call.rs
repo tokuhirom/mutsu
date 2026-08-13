@@ -136,7 +136,7 @@ impl Interpreter {
                 dispatch_token,
             ));
         }
-        self.samewith_context_stack.push((proto_name.clone(), None));
+        self.push_samewith_context(&proto_name, None, None);
         // The compiled entry replaces the run_block(&def.body) body run that
         // lived here (ADR-0019 C6d-3): it enforces empty_sig, binds parameters
         // (including the rw writeback), pushes the routine frame, and performs
@@ -145,7 +145,7 @@ impl Interpreter {
         // Err-with-return_value is a non-local return targeting an outer
         // callable and must propagate.
         let result = self.call_routine_def(&def, args);
-        self.samewith_context_stack.pop();
+        self.pop_samewith_context();
         if pushed_dispatch {
             self.multi_dispatch_stack.pop();
         }

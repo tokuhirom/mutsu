@@ -740,9 +740,7 @@ impl Interpreter {
         args: &[Value],
         invocant: Option<Value>,
     ) {
-        self.samewith_context_stack
-            .push((method_name.to_string(), invocant));
-        self.samewith_call_args_stack.push(args.to_vec());
+        self.push_samewith_context(method_name, invocant, Some(args.to_vec()));
         if self.is_metamodel_how_class(receiver_class) {
             self.metamodel_dispatch_stack.push((
                 self.samewith_context_stack.len(),
@@ -1106,8 +1104,7 @@ impl Interpreter {
         {
             self.metamodel_dispatch_stack.pop();
         }
-        self.samewith_context_stack.pop();
-        self.samewith_call_args_stack.pop();
+        self.pop_samewith_context();
     }
 
     /// Push a multi dispatch frame for callsame/nextsame/callwith/nextwith support.
@@ -1193,10 +1190,25 @@ impl Interpreter {
         self.proto_dispatch_stack.last().cloned()
     }
 
-    /// Push a samewith context for a multi sub dispatch.
-    pub(crate) fn push_samewith_context(&mut self, name: &str, invocant: Option<Value>) {
-        self.samewith_context_stack
-            .push((name.to_string(), invocant));
+    /// Push a samewith context (ADR-0019 E9c-1: the single push/pop helper
+    /// pair every call site funnels through, so `samewith_context_stack`'s
+    /// `args` can never desync from `name`/`invocant` the way the former
+    /// separate `samewith_call_args_stack` could). `args` is `None` when the
+    /// caller has no original-args carrier to attach (a plain sub/proto
+    /// samewith context, or a captured `gather`-body re-push) —
+    /// `push_method_samewith_context` is the sole caller that passes
+    /// `Some(..)`. Always pair with `pop_samewith_context`.
+    pub(crate) fn push_samewith_context(
+        &mut self,
+        name: &str,
+        invocant: Option<Value>,
+        args: Option<Vec<Value>>,
+    ) {
+        self.samewith_context_stack.push(super::SamewithContext {
+            name: name.to_string(),
+            invocant,
+            args,
+        });
     }
 
     /// Pop a samewith context.

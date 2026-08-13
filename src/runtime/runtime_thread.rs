@@ -675,7 +675,6 @@ impl Interpreter {
             multi_dispatch_stack: Vec::new(),
             method_dispatch_stack: Vec::new(),
             samewith_context_stack: Vec::new(),
-            samewith_call_args_stack: Vec::new(),
             metamodel_dispatch_stack: Vec::new(),
             wrap_chains: self.wrap_chains.clone(),
             wrap_sub_names: self.wrap_sub_names.clone(),

@@ -1867,18 +1867,13 @@ pub struct Interpreter {
     /// candidate's exit flush clobbering it with its own stale value (§D capstone).
     multi_dispatch_stack: Vec<MultiDispatchEntry>,
     method_dispatch_stack: Vec<MethodDispatchFrame>,
-    /// Stack of samewith dispatch contexts.
-    /// Each entry is (function_or_method_name, optional_invocant).
-    /// Pushed whenever a multi sub or multi method is entered, popped on exit.
-    samewith_context_stack: Vec<(String, Option<Value>)>,
-    /// Original call args for each `push_method_samewith_context` push, in
-    /// lockstep with `samewith_context_stack` (pushed/popped together by
-    /// `push_method_samewith_context`/`pop_method_samewith_context`). A single
-    /// (non-multi, non-wrapped) compiled method pushes NO `method_dispatch_stack`
-    /// frame at all — so `native_array_storage_next_candidate`'s `nextsame`/
-    /// `callsame` fallback (the only reader) has nowhere else to recover the
-    /// original call args from in that case.
-    samewith_call_args_stack: Vec<Vec<Value>>,
+    /// Stack of samewith dispatch contexts, pushed whenever a multi sub,
+    /// multi method, or proto is entered, popped on exit. ADR-0019 E9c-1:
+    /// a single `Vec<SamewithContext>` — every push site funnels through
+    /// `push_samewith_context`/`push_method_samewith_context`, so `args` can
+    /// never desync from `name`/`invocant` the way the former separate
+    /// `samewith_call_args_stack` could (see `SamewithContext`'s doc comment).
+    samewith_context_stack: Vec<SamewithContext>,
     /// Metamodel-method dispatch contexts:
     /// (samewith_depth, receiver_class, method_name, args).
     /// Pushed alongside the samewith context when the receiver's MRO includes

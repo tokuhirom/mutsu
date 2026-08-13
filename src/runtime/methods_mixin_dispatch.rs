@@ -213,8 +213,7 @@ impl Interpreter {
                 if pushed_base_dispatch {
                     let rw_params =
                         super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs);
-                    self.samewith_context_stack
-                        .push((lookup_name.to_string(), Some(target.clone())));
+                    self.push_samewith_context(lookup_name, Some(target.clone()), None);
                     let dispatch_token = self.next_dispatch_token();
                     self.method_dispatch_stack.push(super::MethodDispatchFrame {
                         receiver_class: base_class.clone().unwrap_or_default(),
@@ -238,7 +237,7 @@ impl Interpreter {
                 );
                 if pushed_base_dispatch {
                     self.method_dispatch_stack.pop();
-                    self.samewith_context_stack.pop();
+                    self.pop_samewith_context();
                 }
                 for (name, previous) in &saved_role_params {
                     if let Some(prev) = previous {
