@@ -59,79 +59,12 @@ impl Interpreter {
                 // scheduler wiring (`cue_scheduler_interval` below), which
                 // already delivers on the scheduler for a different reason
                 // (it drives the ticks, not just delivery).
-                let mut scheduled_pump_id: Option<u64> = None;
-                if attrs.contains_key("scheduler") && !attrs.contains_key("scheduler_interval") {
-                    let scheduler = attrs.get("scheduler").cloned().unwrap_or(Value::NIL);
-                    // A scheduler may be a concrete instance (`$*SCHEDULER`)
-                    // or a bare type object used directly (`CurrentThreadScheduler`,
-                    // undefined but a legal Scheduler.cue invocant — real Raku
-                    // dispatches `.cue` on it as a class method).
-                    let class_name = match scheduler.view() {
-                        ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                        ValueView::Package(sym) => Some(sym.resolve()),
-                        _ => None,
-                    };
-                    match class_name.as_deref() {
-                        // Rakudo's CurrentThreadScheduler.cue runs its block
-                        // inline, so synchronous delivery is already correct
-                        // — no wrapping.
-                        Some("CurrentThreadScheduler") => {}
-                        Some("ThreadPoolScheduler") => {
-                            let (pump_id, rx) = register_scheduled_pump();
-                            let real_tap = tap_cb.clone();
-                            let real_done = done_cb.clone();
-                            let real_quit = quit_cb.clone();
-                            let real_delay = delay_seconds;
-                            if Self::supply_has_active_callback(&tap_cb) {
-                                tap_cb = Self::build_scheduled_pump_shim(pump_id, "emit");
-                            }
-                            done_cb = Some(Self::build_scheduled_pump_shim(pump_id, "done"));
-                            quit_cb = Some(Self::build_scheduled_pump_shim(pump_id, "quit"));
-                            // The tap's own `:delay` moves into the drain
-                            // loop, which is where a per-event sleep belongs
-                            // now — sleeping on the emitting thread is
-                            // exactly the deadlock class this defers away.
-                            delay_seconds = 0.0;
-                            let mut thread_interp = self.clone_for_thread();
-                            crate::runtime::worker_pool::submit(move || {
-                                Self::run_supply_act_loop(
-                                    &mut thread_interp,
-                                    &rx,
-                                    &real_tap,
-                                    real_delay,
-                                    real_done,
-                                    real_quit,
-                                );
-                            });
-                            scheduled_pump_id = Some(pump_id);
-                        }
-                        // Any other Scheduler (FakeScheduler, a user-written
-                        // one): its own `.cue` is the contract, honored
-                        // per-event rather than bypassed with a hardcoded
-                        // pool submit.
-                        _ => {
-                            if Self::supply_has_active_callback(&tap_cb) {
-                                tap_cb = Self::build_scheduled_cue_shim(
-                                    scheduler.clone(),
-                                    tap_cb.clone(),
-                                    "emit",
-                                );
-                            }
-                            if let Some(real_done) = done_cb.take() {
-                                done_cb = Some(Self::build_scheduled_cue_shim(
-                                    scheduler.clone(),
-                                    real_done,
-                                    "done",
-                                ));
-                            }
-                            if let Some(real_quit) = quit_cb.take() {
-                                quit_cb = Some(Self::build_scheduled_cue_shim(
-                                    scheduler, real_quit, "quit",
-                                ));
-                            }
-                        }
-                    }
-                }
+                let (new_tap_cb, new_done_cb, new_quit_cb, new_delay_seconds, scheduled_pump_id) =
+                    self.wrap_scheduled_callbacks(&attrs, tap_cb, done_cb, quit_cb, delay_seconds);
+                tap_cb = new_tap_cb;
+                done_cb = new_done_cb;
+                quit_cb = new_quit_cb;
+                delay_seconds = new_delay_seconds;
 
                 if let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)
                 {
@@ -495,12 +428,46 @@ impl Interpreter {
                                     inner_attrs.as_map().get("supplier_id").map(Value::view)
                             {
                                 let supplier_id = sid as u64;
-                                register_supplier_tap(supplier_id, body_cb.clone(), 0.0);
+                                // ADR-0028 Slice 2: this registration bypasses
+                                // the `"tap"|"act"` chokepoint entirely (it
+                                // calls `register_supplier_tap` directly), so
+                                // a `whenever` on a `.schedule-on()`'d nested
+                                // source needs its own scheduler-kind wrap
+                                // here, keyed off the *source*'s own attrs.
+                                let (wrapped_body_cb, _, _, _, whenever_pump_id) = self
+                                    .wrap_scheduled_callbacks(
+                                        &inner_attrs.as_map(),
+                                        body_cb.clone(),
+                                        None,
+                                        None,
+                                        0.0,
+                                    );
+                                register_supplier_tap(supplier_id, wrapped_body_cb, 0.0);
                                 if let Some(tid) = last_supplier_tap_id(supplier_id) {
-                                    upstream_taps.push(Value::array(vec![
-                                        Value::int(supplier_id as i64),
-                                        Value::int(tid as i64),
-                                    ]));
+                                    if let Some(pump_id) = whenever_pump_id {
+                                        // Route the upstream-close cascade
+                                        // through a nested Tap handle so
+                                        // `close_upstream_taps` also drops
+                                        // this pump (its `Instance{class_name
+                                        // == "Tap"}` branch recurses into
+                                        // `native_tap`'s "close", which
+                                        // already knows how to release a
+                                        // `pump_id`).
+                                        let mut h = HashMap::new();
+                                        h.insert(
+                                            "supplier_id".to_string(),
+                                            Value::int(supplier_id as i64),
+                                        );
+                                        h.insert("tap_id".to_string(), Value::int(tid as i64));
+                                        h.insert("pump_id".to_string(), Value::int(pump_id as i64));
+                                        upstream_taps
+                                            .push(Value::make_instance(Symbol::intern("Tap"), h));
+                                    } else {
+                                        upstream_taps.push(Value::array(vec![
+                                            Value::int(supplier_id as i64),
+                                            Value::int(tid as i64),
+                                        ]));
+                                    }
                                 }
                                 // Raku serializes all `whenever` handlers of one
                                 // supply block ("only in one whenever block at a
@@ -1264,6 +1231,98 @@ impl Interpreter {
                 method
             ))),
         }
+    }
+
+    /// ADR-0028 Slice 2: classify `attrs`'s `"scheduler"` (if any, and not a
+    /// `"scheduler_interval"` tick wiring — see the chokepoint comment) and
+    /// substitute the emit/done/quit callbacks so delivery genuinely defers,
+    /// exactly like the `"tap"|"act"` chokepoint above. Shared by that
+    /// chokepoint and by the registration paths Slice 1 left bypassing it: a
+    /// `whenever` on a nested on-demand source registers its body tap
+    /// directly via `register_supplier_tap` rather than going through
+    /// `native_supply_mut`, so it must call this itself with the *source*
+    /// Supply's attrs. Returns the (possibly substituted) callbacks, the
+    /// delay override, and a pump id to track for cleanup (`None` unless a
+    /// `ThreadPoolScheduler` pump was actually created).
+    pub(super) fn wrap_scheduled_callbacks(
+        &mut self,
+        attrs: &AttrMap,
+        mut tap_cb: Value,
+        mut done_cb: Option<Value>,
+        mut quit_cb: Option<Value>,
+        mut delay_seconds: f64,
+    ) -> (Value, Option<Value>, Option<Value>, f64, Option<u64>) {
+        let mut scheduled_pump_id: Option<u64> = None;
+        if attrs.contains_key("scheduler") && !attrs.contains_key("scheduler_interval") {
+            let scheduler = attrs.get("scheduler").cloned().unwrap_or(Value::NIL);
+            // A scheduler may be a concrete instance (`$*SCHEDULER`) or a bare
+            // type object used directly (`CurrentThreadScheduler`, undefined
+            // but a legal Scheduler.cue invocant — real Raku dispatches
+            // `.cue` on it as a class method).
+            let class_name = match scheduler.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(sym) => Some(sym.resolve()),
+                _ => None,
+            };
+            match class_name.as_deref() {
+                // Rakudo's CurrentThreadScheduler.cue runs its block inline,
+                // so synchronous delivery is already correct — no wrapping.
+                Some("CurrentThreadScheduler") => {}
+                Some("ThreadPoolScheduler") => {
+                    let (pump_id, rx) = register_scheduled_pump();
+                    let real_tap = tap_cb.clone();
+                    let real_done = done_cb.clone();
+                    let real_quit = quit_cb.clone();
+                    let real_delay = delay_seconds;
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        tap_cb = Self::build_scheduled_pump_shim(pump_id, "emit");
+                    }
+                    done_cb = Some(Self::build_scheduled_pump_shim(pump_id, "done"));
+                    quit_cb = Some(Self::build_scheduled_pump_shim(pump_id, "quit"));
+                    // The tap's own `:delay` moves into the drain loop, which
+                    // is where a per-event sleep belongs now — sleeping on
+                    // the emitting thread is exactly the deadlock class this
+                    // defers away.
+                    delay_seconds = 0.0;
+                    let mut thread_interp = self.clone_for_thread();
+                    crate::runtime::worker_pool::submit(move || {
+                        Self::run_supply_act_loop(
+                            &mut thread_interp,
+                            &rx,
+                            &real_tap,
+                            real_delay,
+                            real_done,
+                            real_quit,
+                        );
+                    });
+                    scheduled_pump_id = Some(pump_id);
+                }
+                // Any other Scheduler (FakeScheduler, a user-written one):
+                // its own `.cue` is the contract, honored per-event rather
+                // than bypassed with a hardcoded pool submit.
+                _ => {
+                    if Self::supply_has_active_callback(&tap_cb) {
+                        tap_cb = Self::build_scheduled_cue_shim(
+                            scheduler.clone(),
+                            tap_cb.clone(),
+                            "emit",
+                        );
+                    }
+                    if let Some(real_done) = done_cb.take() {
+                        done_cb = Some(Self::build_scheduled_cue_shim(
+                            scheduler.clone(),
+                            real_done,
+                            "done",
+                        ));
+                    }
+                    if let Some(real_quit) = quit_cb.take() {
+                        quit_cb =
+                            Some(Self::build_scheduled_cue_shim(scheduler, real_quit, "quit"));
+                    }
+                }
+            }
+        }
+        (tap_cb, done_cb, quit_cb, delay_seconds, scheduled_pump_id)
     }
 
     /// Cue a scheduler-driven `Supply.interval`'s ticks on its Scheduler.

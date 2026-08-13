@@ -32,6 +32,12 @@ impl Interpreter {
             if let Some(sid) = attributes.get("supplier_id") {
                 new_attrs.insert("supplier_id".to_string(), sid.clone());
             }
+            // ADR-0028 Slice 2: deferred to tap-time — copy `"scheduler"`
+            // forward so the `"tap"|"act"` chokepoint still classifies it
+            // when the eventual `.tap()` runs.
+            if let Some(scheduler) = attributes.get("scheduler") {
+                new_attrs.insert("scheduler".to_string(), scheduler.clone());
+            }
             if let Some(d) = attributes.get("supplier_done") {
                 new_attrs.insert("supplier_done".to_string(), d.clone());
             }
