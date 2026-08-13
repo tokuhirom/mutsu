@@ -1366,4 +1366,105 @@ mod tests {
             }
         }
     }
+
+    /// ADR-0019 E11 slice 2: the `Cool`/`Any`/`Mu`/`Code`/`Signature`/
+    /// `IO::Path`/`IO::Handle` rows added to close the `.^can` catalog gap
+    /// (see the table comment in `native_method_row_table.rs` for the
+    /// samples and why each was chosen). Same discipline as
+    /// `match_rows_are_backed_by_the_cascade`: every non-`SPECIAL`/
+    /// `MUTATES_RECEIVER` row must be recognized by the SAME sample the row
+    /// was generated against, so a future edit to either the table or the
+    /// cascade cannot silently drift them apart.
+    #[test]
+    fn e11_slice2_owner_rows_are_backed_by_the_cascade() {
+        fn assert_row_backed(row_owner: &str, name: &str, arity: u8, flags: u8, sample: &Value) {
+            let flags = NativeRowFlags(flags);
+            if flags.contains(NativeRowFlags::SPECIAL)
+                || flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+            {
+                return;
+            }
+            let observed = native_method_arities(sample, name);
+            let mask = NativeArityMask(arity);
+            for (bit, m) in [
+                (0u8, NativeArityMask::A0),
+                (1u8, NativeArityMask::A1),
+                (2u8, NativeArityMask::A2),
+            ] {
+                if mask.contains(m) {
+                    assert!(
+                        observed & (1 << bit) != 0,
+                        "{row_owner}x{name} row claims arity {bit} but the cascade does not recognize it"
+                    );
+                }
+            }
+        }
+
+        // Cool: verified against the same Int/numeric-Str pair used to
+        // generate the rows -- either recognizing the name is enough (same
+        // "small spread" discipline as `native_method_arities`).
+        let int_sample = Value::int(2);
+        let numeric_str_sample = Value::str_from("5");
+        let any_type_obj = Value::package(Symbol::intern("Any"));
+        let mu_type_obj = Value::package(Symbol::intern("Mu"));
+
+        let mut sub_interp = crate::runtime::Interpreter::new();
+        sub_interp
+            .run("sub e11_verify_sub($a, $b) { $a + $b }; my &e11-v = &e11_verify_sub;")
+            .unwrap();
+        let sub_sample = sub_interp.env().get("&e11-v").cloned().unwrap();
+
+        let mut sig_interp = crate::runtime::Interpreter::new();
+        sig_interp
+            .run("sub e11_verify_sig($a, $b) { }; my $e11-vsig = &e11_verify_sig.signature;")
+            .unwrap();
+        let sig_sample = sig_interp.env().get("e11-vsig").cloned().unwrap();
+
+        let mut path_interp = crate::runtime::Interpreter::new();
+        path_interp.run(r#"my $e11-vpath = "tmp".IO;"#).unwrap();
+        let path_sample = path_interp.env().get("e11-vpath").cloned().unwrap();
+
+        for &(row_owner, name, arity, flags) in super::super::native_method_row_table::RAW_ROWS {
+            let sample = match row_owner {
+                "Cool" => {
+                    let observed = native_method_arities(&int_sample, name)
+                        | native_method_arities(&numeric_str_sample, name);
+                    let mask = NativeArityMask(arity);
+                    let row_flags = NativeRowFlags(flags);
+                    if !row_flags.contains(NativeRowFlags::SPECIAL)
+                        && !row_flags.contains(NativeRowFlags::MUTATES_RECEIVER)
+                    {
+                        for (bit, m) in [
+                            (0u8, NativeArityMask::A0),
+                            (1u8, NativeArityMask::A1),
+                            (2u8, NativeArityMask::A2),
+                        ] {
+                            if mask.contains(m) {
+                                assert!(
+                                    observed & (1 << bit) != 0,
+                                    "Cool x {name} row claims arity {bit} but neither probed sample's cascade recognizes it"
+                                );
+                            }
+                        }
+                    }
+                    continue;
+                }
+                "Any" => &any_type_obj,
+                "Mu" => &mu_type_obj,
+                "Code" => &sub_sample,
+                "Signature" => &sig_sample,
+                "IO::Path" => &path_sample,
+                "IO::Handle" => {
+                    let mut h = crate::runtime::Interpreter::new();
+                    h.run(r#"my $e11-vfh = "tmp/e11_verify_handle.txt".IO.open(:w);"#)
+                        .unwrap();
+                    let fh = h.env().get("e11-vfh").cloned().unwrap();
+                    assert_row_backed(row_owner, name, arity, flags, &fh);
+                    continue;
+                }
+                _ => continue,
+            };
+            assert_row_backed(row_owner, name, arity, flags, sample);
+        }
+    }
 }
