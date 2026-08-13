@@ -395,7 +395,7 @@ fn lift_phasers_from_expr(
     if matches!(
         expr,
         Expr::PhaserExpr {
-            kind: PhaserKind::Begin | PhaserKind::Check | PhaserKind::Init,
+            kind: PhaserKind::Check | PhaserKind::Init,
             ..
         }
     ) {
@@ -425,10 +425,6 @@ fn lift_phasers_from_expr(
                 op: AssignOp::Assign,
             };
             match kind {
-                PhaserKind::Begin => {
-                    begin.push(var_decl);
-                    begin.push(assign);
-                }
                 PhaserKind::Check => {
                     check.push(var_decl);
                     check.push(assign);

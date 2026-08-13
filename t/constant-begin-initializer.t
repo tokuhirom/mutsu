@@ -1,6 +1,6 @@
 use Test;
 
-plan 4;
+plan 5;
 
 # `constant X = BEGIN ...` used to die "Cannot assign to a readonly variable":
 # the phaser-reordering pass (src/runtime/phasers.rs, reorder_at_level) splits
@@ -27,3 +27,6 @@ is G, 5, 'constant with a block-form BEGIN initializer';
 # in the same statement list).
 constant H = 10;
 is H, 10, 'a plain constant sharing a block with a BEGIN-initialized constant';
+
+constant A = 3;
+is (BEGIN A + 1), 4, 'rvalue BEGIN resolves a prior constant in an expression';
