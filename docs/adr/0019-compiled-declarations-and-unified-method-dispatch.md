@@ -4100,7 +4100,7 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   tests) and the targeted wrap/dispatch suite
   (`roast/S06-advanced/{dispatching,wrap}.t`, `roast/S14-traits/routines.t`,
   `roast/integration/failure-and-callsame.t`, `t/wrap.t`, `t/wrap-closure-capture.t`) green.
-- [ ] **E11 — Retire arity-specific lookup entry points.** Keep native arity functions only as
+- [x] **E11 — Retire arity-specific lookup entry points.** Keep native arity functions only as
   handler implementations selected by `MethodEntry`.
   **Design 2026-08-10** (same doc): grep-based completion criterion — no caller of
   `native_method_{0,1,2}arg` outside the resolver's native-invocation helper, `builtins/`
@@ -4202,6 +4202,42 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   signature, `test_functions/mod.rs::value_raku_repr`'s free-function callers, or `repl_core.rs`'s
   `.gist` display), or revisit the grep-based completion criterion now that the two `.^can` sites are
   closed.
+  **Progress 2026-08-14 — slice 3 landed.** `runtime/builtins_collection.rs`'s
+  `builtin_unary_collection_method` (backing the free-function `keys()`/`values()`/`kv()`/`pairs()`
+  builtins) took `&self` and called `native_method_0arg()` directly. Changed its signature to
+  `&mut self` and routed it through `call_method_with_values()`, guarded by `e2_native_method_exists()`
+  to preserve the exact prior fallback (an unrecognized `(target, method)` pair — e.g. a bare `keys()`
+  call with no target — still yields an empty list instead of a dispatch error). Verified against real
+  `raku` across `Hash`/`Array`/`Int`/`Any` receivers; `roast/S32-hash`/`S32-array`
+  `keys`/`values`/`kv`/`pairs` and the `S02-types` `set`/`bag`/`mix` family, plus full local `make test`
+  (3131 files), all green.
+  **Progress 2026-08-14 — slice 4 landed.** `test_functions/mod.rs::value_raku_repr`, the
+  "expected:"/"got:" diagnostic formatter behind `is-deeply`/`is-eqv`, was a free function calling
+  `native_method_0arg()` directly — which never recognizes a user-defined `.raku` override on an
+  `Instance`, so the diagnostic silently fell back to a generic stringification. Converted to a
+  `&mut self` method routing through `call_method_with_values()`, guarded by `e2_native_method_exists()`
+  to preserve the exact prior fallback (an unrecognized `(val, "raku")` pair still falls back to
+  `to_string_value()`, not a dispatch error); the four `.map(Self::value_raku_repr)` call sites in
+  `test_functions/comparison.rs` became closures over `&mut self`. New pin:
+  `t/is-deeply-user-raku-diagnostic.t`, verified against real `raku` first. Full local `make test`
+  (3132 files) green.
+  **Progress 2026-08-14 — slice 5 landed.** `repl_core.rs`'s last-value display was the last deferred
+  site: it called `native_method_0arg(&value, "gist")` directly, falling back to
+  `value.to_string_value()` on a miss — a native-only probe that never sees a user-defined `.gist` on
+  an `Instance`. Routed the display through `call_method_with_values(value, "gist", vec![])`, keeping
+  the identical fallback shape (any error still falls back to `to_string_value()`). Verified against
+  real `raku`'s REPL (`class Foo { has $.x; method gist { "Foo<{$!x}>" } }; Foo.new(x=>42)` answers
+  `Foo<42>` in both). New pin: `test_user_defined_gist_wins_in_repl_display` in `repl_core.rs`'s test
+  module. Full local `make test` (3137 files) green.
+  **Every site in the original deferred-sites inventory is now cut over.** Re-checked the grep-based
+  completion criterion: `grep -rn 'native_method_[012]arg' src --include='*.rs'` outside
+  `src/builtins/` now returns only the two canonical invocation points
+  (`Interpreter::call_method_with_values`'s by-arity match in `methods_call_dispatch.rs` and
+  `Interpreter::try_native_method`/`try_native_method_raw` in `vm/vm_native_dispatch.rs`) plus doc
+  comments — every other match found before slice 1 is gone. **E11 closes here.** No dedicated guard
+  test was added (G1/G2 in "Completion gates" cover the whole ADR at the end, not per-box); a future
+  regression would need a new caller of the arity functions outside those two sites, which `cargo
+  clippy`/code review would catch since the functions are `pub(crate)` with a narrow call surface.
 
 ### Phase F — derive introspection and remove compatibility state
 
