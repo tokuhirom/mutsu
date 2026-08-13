@@ -85,21 +85,22 @@ Date `+`/`-` arithmetic only recognized the literal class name `"Date"`, so a
 subclass instance was never treated as date-like. Both fixed generally; see
 `news/2026-08/date-subclass-qualified-new-and-arithmetic.md`.
 
-### `PSpec` — triaged; one bug fixed, one gap needs a parser design pass
+### ~~`PSpec` — two independent bugs~~ — FIXED
 
 `lib/PSpec.rakumod` exports two custom word-form infix operators,
 `infix:<times>` and `infix:<xxx>`, that each take a closure operand:
-`20 times { $value++ }` and `{ $value--; } xxx 25`. Two independent bugs:
+`20 times { $value++ }` and `{ $value--; } xxx 25`. Two independent bugs,
+both fixed:
 
 - A closure passed as an argument to a custom infix operator (the `times`
   case) did not write its mutation of an outer lexical back to the caller —
   fixed generally in `src/vm/vm_flipflop_ops.rs`
   (`news/2026-08/user-infix-closure-arg-writeback.md`).
-- A leading `{ ... }` before ANY infix operator (custom or not) is never
+- A leading `{ ... }` before ANY infix operator (custom or not) was never
   recognized as that operator's LHS operand — the `xxx` case, where the
-  block is a bare block STATEMENT in mutsu's parse, not a term. This is a
-  genuine grammar-ambiguity lookahead feature needing a design pass:
-  [todo/deep/bare-block-as-infix-operand-not-recognized.md](../deep/bare-block-as-infix-operand-not-recognized.md).
+  block was committed to a bare-block STATEMENT in mutsu's parse instead of
+  a term. Fixed with a lookahead in `simple::block_stmt`
+  (`news/2026-08/bare-block-infix-operand.md`).
 
 ### `Array::Rounded` — triaged, 4 general bugs fixed, 2 remain (needs a design pass)
 
