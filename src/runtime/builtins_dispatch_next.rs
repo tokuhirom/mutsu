@@ -145,13 +145,13 @@ impl Interpreter {
         // A lazy `gather` body re-pushes the context it captured at creation for
         // the duration of its force (see `push_captured_samewith_context`), so
         // this stack is correct there too.
-        if let Some((name, invocant)) = self.samewith_context_stack.last().cloned() {
-            if let Some(inv) = invocant {
+        if let Some(ctx) = self.samewith_context_stack.last().cloned() {
+            if let Some(inv) = ctx.invocant {
                 // Method dispatch: re-call the method on the same invocant
-                return self.call_method_with_values(inv, &name, args.to_vec());
+                return self.call_method_with_values(inv, &ctx.name, args.to_vec());
             } else {
                 // Sub dispatch: re-call the function by name
-                return self.call_function(&name, args.to_vec());
+                return self.call_function(&ctx.name, args.to_vec());
             }
         }
         Err(RuntimeError::new(
@@ -177,14 +177,14 @@ impl Interpreter {
     /// Record the innermost dynamic samewith context into `env` so a closure
     /// captured from it (today: a lazy `gather` body) can still redispatch.
     pub(crate) fn capture_samewith_context_into(&self, env: &mut crate::env::Env) {
-        let Some((name, invocant)) = self.samewith_context_stack.last() else {
+        let Some(ctx) = self.samewith_context_stack.last() else {
             return;
         };
         env.insert(
             Self::SAMEWITH_LEXICAL_NAME_KEY.to_string(),
-            Value::str(name.clone()),
+            Value::str(ctx.name.clone()),
         );
-        if let Some(inv) = invocant {
+        if let Some(inv) = &ctx.invocant {
             env.insert(Self::SAMEWITH_LEXICAL_INVOCANT_KEY.to_string(), inv.clone());
         }
     }
@@ -204,14 +204,14 @@ impl Interpreter {
         };
         let name = name.to_string_value();
         let invocant = env.get(Self::SAMEWITH_LEXICAL_INVOCANT_KEY).cloned();
-        self.samewith_context_stack.push((name, invocant));
+        self.push_samewith_context(&name, invocant, None);
         true
     }
 
     /// Undo a [`Self::push_captured_samewith_context`] that returned `true`.
     pub(crate) fn pop_captured_samewith_context(&mut self, pushed: bool) {
         if pushed {
-            self.samewith_context_stack.pop();
+            self.pop_samewith_context();
         }
     }
 
@@ -231,7 +231,7 @@ impl Interpreter {
         if self
             .samewith_context_stack
             .last()
-            .is_none_or(|(n, _)| n != &method_name)
+            .is_none_or(|ctx| ctx.name != method_name)
         {
             return None;
         }
@@ -273,7 +273,10 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        let method_name = self
+            .samewith_context_stack
+            .last()
+            .map(|ctx| ctx.name.clone())?;
         if !matches!(method_name.as_str(), "BUILDALL" | "POPULATE" | "clone") {
             return None;
         }
@@ -306,7 +309,15 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        // ADR-0019 E9c-1: read name/invocant/args off the SAME
+        // `samewith_context_stack` entry (a single clone) rather than
+        // name/invocant from one stack and args from a separately
+        // pushed/popped stack — the former dual-stack shape could pair the
+        // top-of-args-stack entry with a DIFFERENT (deeper, stale)
+        // context if a raw push sat above the pairing `push_method_
+        // samewith_context` push; see `SamewithContext`'s doc comment.
+        let ctx = self.samewith_context_stack.last().cloned();
+        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
         // A single (non-multi, non-wrapped) compiled method pushes no
         // `method_dispatch_stack` frame, so the invocant/args must come from
         // the samewith context and `self` rather than a dispatch frame (mirrors
@@ -315,11 +326,7 @@ impl Interpreter {
             .method_dispatch_stack
             .last()
             .map(|f| f.invocant.clone())
-            .or_else(|| {
-                self.samewith_context_stack
-                    .last()
-                    .and_then(|(_, i)| i.clone())
-            })
+            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
             .or_else(|| self.env.get("self").cloned())?;
         let args: Vec<Value> = match override_args {
             Some(a) => a.to_vec(),
@@ -330,12 +337,12 @@ impl Interpreter {
                 // A single (non-multi, non-wrapped) compiled method — the
                 // common case for a `method push(...) { nextsame }` override on
                 // an `is Array` subclass — pushes no `method_dispatch_stack`
-                // frame at all, so the original call args live only in
-                // `samewith_call_args_stack` (pushed alongside the samewith
-                // context by `push_method_samewith_context`). Without this,
-                // `args` silently defaulted to empty and the deferred push
-                // appended nothing.
-                .or_else(|| self.samewith_call_args_stack.last().cloned())
+                // frame at all, so the original call args live only in the
+                // samewith context's own `args` field (set by
+                // `push_method_samewith_context`). Without this, `args`
+                // silently defaulted to empty and the deferred push appended
+                // nothing.
+                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
                 .unwrap_or_default(),
         };
         let ValueView::Instance {
@@ -395,7 +402,10 @@ impl Interpreter {
         &mut self,
         override_args: Option<&[Value]>,
     ) -> Option<Result<Value, RuntimeError>> {
-        let method_name = self.samewith_context_stack.last().map(|(n, _)| n.clone())?;
+        let method_name = self
+            .samewith_context_stack
+            .last()
+            .map(|ctx| ctx.name.clone())?;
         if !matches!(method_name.as_str(), "parse" | "subparse" | "parsefile") {
             return None;
         }
@@ -513,7 +523,7 @@ impl Interpreter {
                 let method_name_now = self
                     .samewith_context_stack
                     .last()
-                    .map(|(n, _)| n.clone())
+                    .map(|ctx| ctx.name.clone())
                     .unwrap_or_default();
                 if method_name_now.is_empty() {
                     break;
@@ -816,7 +826,7 @@ impl Interpreter {
             let method_name_for_dispatch = self
                 .samewith_context_stack
                 .last()
-                .map(|(n, _)| n.clone())
+                .map(|ctx| ctx.name.clone())
                 .unwrap_or_default();
             let empty_fns = crate::opcode::CompiledFns::default();
             let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
@@ -1114,7 +1124,7 @@ impl Interpreter {
                 || self
                     .samewith_context_stack
                     .last()
-                    .is_some_and(|(name, _)| name == "new");
+                    .is_some_and(|ctx| ctx.name == "new");
             if in_new && let Some(invocant) = self.env.get("self").cloned() {
                 let call_args = override_args.unwrap_or_default();
                 let result = self.call_method_with_values(invocant, "bless", call_args)?;

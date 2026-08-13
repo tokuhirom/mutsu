@@ -459,7 +459,7 @@ impl Interpreter {
                     dispatch_token,
                 ));
             }
-            self.samewith_context_stack.push((name.to_string(), None));
+            self.push_samewith_context(name, None, None);
             // ADR-0019 C6d-5: a compiled-eligible routine runs its plan-attached
             // (or memoized OTF) bytecode through the shared compiled entry
             // instead of the per-call `eval_block_value_with_pre_post` compile
@@ -481,7 +481,7 @@ impl Interpreter {
             if Self::def_module_single_sig_body_ok_ignoring_state(&def) {
                 let fold_is_rw = !def.is_raw;
                 let result = self.call_routine_def(&def, args.to_vec());
-                self.samewith_context_stack.pop();
+                self.pop_samewith_context();
                 if pushed_dispatch {
                     self.multi_dispatch_stack.pop();
                 }
@@ -502,7 +502,7 @@ impl Interpreter {
                 });
             }
             if def.empty_sig && !args.is_empty() {
-                self.samewith_context_stack.pop();
+                self.pop_samewith_context();
                 return Err(Self::reject_args_for_empty_sig(args));
             }
             let routine_is_rw = !def.is_raw;
@@ -546,7 +546,7 @@ impl Interpreter {
                         self.pop_caller_env();
                         self.env = saved_env;
                         self.exit_readonly_frame(saved_readonly);
-                        self.samewith_context_stack.pop();
+                        self.pop_samewith_context();
                         return Err(Self::enhance_binding_error(
                             e,
                             &def.name.resolve(),
@@ -675,7 +675,7 @@ impl Interpreter {
                 .map(|spec| self.resolved_type_capture_name(spec));
             self.env = restored_env;
             self.exit_readonly_frame(saved_readonly);
-            self.samewith_context_stack.pop();
+            self.pop_samewith_context();
             if pushed_dispatch {
                 self.multi_dispatch_stack.pop();
             }

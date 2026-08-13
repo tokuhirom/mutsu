@@ -292,7 +292,7 @@ impl Interpreter {
 
         // Set up samewith and multi-dispatch context that call_compiled_function_named
         // expects the caller to manage (mirrors exec_call_fn_op).
-        self.push_samewith_context(&name, None);
+        self.push_samewith_context(&name, None, None);
         let pushed_dispatch = loan_env!(self, push_multi_dispatch_frame(&name, &args));
 
         // Prefer the routine's own nested-sub table over the caller's: a

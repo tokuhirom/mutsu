@@ -195,6 +195,30 @@ pub(crate) enum DeferralEntry {
     },
 }
 
+/// One entry of `Interpreter::samewith_context_stack` (ADR-0019 E9c-1).
+/// Replaces the former dual-stack shape (`samewith_context_stack:
+/// Vec<(String, Option<Value>)>` alongside a separately pushed/popped
+/// `samewith_call_args_stack: Vec<Vec<Value>>`), which relied on every push
+/// site pushing both stacks in lockstep by CONVENTION — several raw push
+/// sites pushed only the context, leaving `samewith_call_args_stack.last()`
+/// free to pair with the wrong (stale, deeper) context entry. Folding `args`
+/// into the same struct as `name`/`invocant` makes that desync structurally
+/// impossible: a site with no original-args carrier to attach passes `args:
+/// None` for its own entry instead of silently leaving a separate stack
+/// short by one.
+#[derive(Debug, Clone)]
+pub(crate) struct SamewithContext {
+    /// The enclosing multi sub / method / proto's dispatch name.
+    pub(crate) name: String,
+    /// The invocant for a method dispatch; `None` for a plain sub.
+    pub(crate) invocant: Option<Value>,
+    /// The original call args, when this push site has them to carry
+    /// (`push_method_samewith_context`); `None` otherwise — e.g. a plain sub
+    /// samewith context, or a captured `gather`-body re-push, never carried
+    /// args here even before this consolidation.
+    pub(crate) args: Option<Vec<Value>>,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct MethodDispatchFrame {
     pub(crate) receiver_class: String,
