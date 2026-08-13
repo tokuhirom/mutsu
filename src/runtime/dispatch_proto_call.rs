@@ -34,11 +34,16 @@ impl Interpreter {
             } else {
                 None
             };
-            let (args, rw_sources) = match invocant_class
-                .and_then(|cn| self.lookup_proto_method(&cn, &proto_name))
-                .and_then(|(_, proto)| {
-                    self.proto_rw_redispatch_args(&proto.param_defs, &args, proto_body_code)
-                }) {
+            // The (owner_class, proto def) governing this redispatch. `owner`
+            // is the class that actually declared this `proto method` body
+            // (`lookup_proto_method`'s MRO walk stops at the nearest EXPLICIT
+            // proto, whether that is the receiver's own class or an
+            // ancestor's). It doubles as the candidate-set boundary below.
+            let owner_and_proto =
+                invocant_class.and_then(|cn| self.lookup_proto_method(&cn, &proto_name));
+            let (args, rw_sources) = match owner_and_proto.as_ref().and_then(|(_, proto)| {
+                self.proto_rw_redispatch_args(&proto.param_defs, &args, proto_body_code)
+            }) {
                 Some((rebuilt, sources)) => (rebuilt, Some(sources)),
                 None => (args, None),
             };
@@ -53,7 +58,20 @@ impl Interpreter {
                 // long since cleared them, so restore them here.
                 self.set_pending_call_arg_sources(ctx.call_arg_sources.clone());
             }
-            return self.call_method_with_values(ctx.invocant, &proto_name, args);
+            // Fresh-candidate-set boundary (this ticket): restrict the
+            // redispatch to multi candidates declared at or below the
+            // proto's declaring class in the MRO — see the field doc on
+            // `Interpreter::proto_redispatch_boundary`. Bracket-style: save
+            // and restore rather than a one-shot flag, so a candidate that
+            // itself triggers a nested proto method redispatch doesn't
+            // clobber this outer boundary.
+            let saved_boundary = self.proto_redispatch_boundary;
+            self.proto_redispatch_boundary = owner_and_proto
+                .as_ref()
+                .map(|(owner, _)| (Symbol::intern(&proto_name), Symbol::intern(owner)));
+            let result = self.call_method_with_values(ctx.invocant, &proto_name, args);
+            self.proto_redispatch_boundary = saved_boundary;
+            return result;
         }
         self.clear_pending_dispatch_error();
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {

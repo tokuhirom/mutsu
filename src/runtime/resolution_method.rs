@@ -122,7 +122,26 @@ impl Interpreter {
     ) -> Option<(Symbol, MethodDef)> {
         self.dispatch_ambiguous = false;
         let role_bindings = self.registry().get_role_param_bindings(class_name);
-        let mro = self.class_mro(class_name);
+        let mro_full = self.class_mro(class_name);
+        // An explicit `proto method`'s `{*}` redispatch starts a fresh
+        // candidate set (todo/tickets/explicit-child-proto-assumes-parent-
+        // candidates.md): when `proto_redispatch_boundary` names THIS
+        // method and its declaring class is in this MRO, only classes at or
+        // below that owner (i.e. the receiver's own class down through the
+        // owner, inclusive) are visible — an ancestor beyond the owner is
+        // not, even though it would be reachable in an ordinary (non-proto)
+        // multi-method dispatch. See the field doc on
+        // `Interpreter::proto_redispatch_boundary`.
+        let truncate_at: Option<usize> = match self.proto_redispatch_boundary {
+            Some((boundary_method, owner)) if boundary_method == Symbol::intern(method_name) => {
+                mro_full.iter().position(|s| *s == owner)
+            }
+            _ => None,
+        };
+        let mro: &[Symbol] = match truncate_at {
+            Some(pos) => &mro_full[..=pos],
+            None => &mro_full[..],
+        };
         // Collect all matching multi candidates across the MRO, then pick the
         // most specific one by type hierarchy distance.
         let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
@@ -215,7 +234,7 @@ impl Interpreter {
             }
         }
         let _ = submethod_blocks; // used for control flow above
-        self.pick_method_winner(&mro, arg_values, invocant, all_matches)
+        self.pick_method_winner(mro, arg_values, invocant, all_matches)
     }
 
     /// Pick the winning candidate from an MRO walk's collected multi-method

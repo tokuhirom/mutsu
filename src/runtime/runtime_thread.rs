@@ -500,6 +500,7 @@ impl Interpreter {
             registry_write_gen: std::sync::atomic::AtomicU64::new(0),
             proto_dispatch_stack: Vec::new(),
             proto_method_skip: None,
+            proto_redispatch_boundary: None,
             pending_dispatch_error: None,
             pending_dist_selectors: Vec::new(),
             pending_use_export_args: None,

@@ -3923,6 +3923,34 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   Array`-backed instance with no override has the SAME return-identity bug (returns the backing
   array, not `self`) — a pre-existing issue in `vm_call_method_mut_ops.rs`'s own fast path, filed
   separately.
+  **Progress 2026-08-13 (same day) — explicit-child-proto-assumes-parent-candidates ticket
+  fixed.** An EXPLICIT `proto method` declared on some class in the MRO now starts a fresh
+  candidate set for its `{*}` redispatch: a new `Interpreter::proto_redispatch_boundary:
+  Option<(Symbol, Symbol)>` field records `(method_name, owner_class)` for the proto currently
+  governing a redispatch — `owner_class` is whichever class `lookup_proto_method`'s MRO walk
+  actually found the explicit proto body on, set bracket-style (saved/restored, not a one-shot
+  flag) around `call_method_with_values` in `dispatch_proto_call.rs` so a candidate that itself
+  triggers a nested proto redispatch does not clobber the outer boundary. Both multi-candidate
+  collection sites — `resolve_method_with_owner_impl`'s MRO walk (`resolution_method.rs`) and the
+  `X::Multi::NoMatch` diagnostic's signature-listing walk (`class.rs`) — truncate the MRO at that
+  owner when the boundary names the method being resolved, so an ancestor's candidates beyond the
+  proto's own declaring class are invisible to the redispatch, matching raku exactly (verified:
+  `class P { multi method m(Int $x) {...} } class C is P { proto method m($x) {*}; multi method
+  m(Str $x) {...} }; C.new.m(5)` raises `X::Multi::NoMatch` in both raku and mutsu now, was
+  silently resolving `P`'s candidate before). The inverse direction — an implicit child proto (no
+  proto written in the child) inheriting and merging a parent's explicit proto's candidates — is
+  untouched (the boundary is only set when `lookup_proto_method` names an owner, and a purely
+  implicit case never enters this branch) and stays green on the existing
+  `t/proto-star-cross-mro-candidates.t` pin. New pin: `t/proto-explicit-child-fresh-candidates.t`
+  (4 assertions, including a mid-MRO case where the governing proto is neither the receiver's own
+  class nor the ultimate ancestor, to confirm the boundary tracks the actual declaring class, not
+  just "the receiver"). `cargo build`/`clippy -D warnings`/`fmt` clean; targeted `t/proto-*.t
+  t/multi-*.t` (61 files, 541 assertions) and full local `make test` (3108 files, 28857 tests)
+  green; local roast slice (`S06-multi/{proto,redispatch,syntax,type-based}.t`,
+  `S12-methods/{defer-call,defer-next,multi}.t`, `S06-advanced/{callsame,dispatching,wrap}.t`, 10
+  files, 334 assertions) green. **Both E9-pre divergence tickets are now closed**; the separate
+  `method-entries-never-covers-unpunned-roles.md` production-dispatch gap remains open. E9b
+  (wrap-prefix) and E9c (proto `{*}` cursor rewrite, `samewith`) are still unstarted.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every
