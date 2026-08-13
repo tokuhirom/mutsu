@@ -828,7 +828,19 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, false)
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, &[])
+    }
+
+    /// Compile a synthesized WhateverCode body whose expression-position
+    /// declarations lexically belong to the surrounding source block.
+    pub(crate) fn compile_closure_body_with_promoted_decls(
+        &mut self,
+        params: &[String],
+        param_defs: &[crate::ast::ParamDef],
+        body: &[Stmt],
+        promoted_decls: &[String],
+    ) -> CompiledCode {
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, false, promoted_decls)
     }
 
     pub(crate) fn compile_routine_closure_body(
@@ -837,7 +849,7 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
     ) -> CompiledCode {
-        self.compile_closure_body_with_routine_flag(params, param_defs, body, true)
+        self.compile_closure_body_with_routine_flag(params, param_defs, body, true, &[])
     }
 
     fn compile_closure_body_with_routine_flag(
@@ -846,8 +858,10 @@ impl Compiler {
         param_defs: &[crate::ast::ParamDef],
         body: &[Stmt],
         is_routine: bool,
+        promoted_decls: &[String],
     ) -> CompiledCode {
         let mut sub_compiler = Compiler::new();
+        sub_compiler.promoted_expr_decl_names = promoted_decls.iter().cloned().collect();
         self.inherit_fold_ctx(&mut sub_compiler);
         self.inherit_outer_code_var_names(&mut sub_compiler);
         self.inherit_enclosing_scopes(&mut sub_compiler);
@@ -901,6 +915,9 @@ impl Compiler {
         for param in params {
             sub_compiler.declare_param(param);
         }
+        // A WhateverCode is a compiler-generated callable, not a source lexical
+        // scope. Its `my` declarations therefore use captured slots belonging to
+        // the surrounding source block.
         for pd in param_defs {
             if !pd.name.is_empty() {
                 sub_compiler.declare_param(&pd.name);

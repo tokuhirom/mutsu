@@ -937,6 +937,9 @@ pub(crate) struct Compiler {
     /// those while letting OUTER-variable mutations persist. A nested closure
     /// compiles in a fresh `Compiler` (own scope) so it never pollutes this.
     pub(crate) block_decl_tracker: Vec<Vec<String>>,
+    /// Expression declarations inside a synthesized WhateverCode belong to the
+    /// surrounding source block and therefore store through its captured slot.
+    promoted_expr_decl_names: HashSet<String>,
     /// The kind of package (`module`/`package`/`grammar`) whose body is
     /// currently being compiled, or `None` in the mainline. Used to raise
     /// X::Attribute::Package when a `has` attribute is declared in a
@@ -1194,6 +1197,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             block_decl_tracker: Vec::new(),
+            promoted_expr_decl_names: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,
@@ -1942,27 +1946,41 @@ impl Compiler {
     }
 
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
-        let entries: Vec<Value> = args
-            .iter()
-            .map(|arg| {
-                if let Some(name) = Self::positional_arg_source_name(arg) {
-                    // §1.4/§1.5: bake the caller's local slot for a plain source var
-                    // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
-                    // the LIVE (inner shadow) slot instead of the by-name `position`
-                    // (outer) slot. A source with no local slot, or an encoded
-                    // `key=var` named form, stays a bare `Str(name)`. Decoders extract
-                    // the name from either shape, so existing consumers are unchanged.
-                    match self.local_map.get(&name) {
-                        Some(&slot) if !name.contains('=') => {
-                            Value::pair(name, Value::int(slot as i64))
-                        }
-                        _ => Value::str(name),
-                    }
-                } else {
-                    Value::NIL
+        let mut entries = Vec::with_capacity(args.len());
+        for arg in args {
+            if let Expr::DoStmt(stmt) = arg
+                && let Stmt::VarDecl {
+                    name,
+                    is_our: false,
+                    ..
+                } = stmt.as_ref()
+            {
+                let shadows_outer = self.enclosing_local_names.contains(name)
+                    || self.local_scopes.len() >= 2
+                        && self.local_scopes[..self.local_scopes.len() - 1]
+                            .iter()
+                            .any(|scope| scope.contains_key(name));
+                if shadows_outer {
+                    self.declare_local(name);
                 }
-            })
-            .collect();
+            }
+            entries.push(if let Some(name) = Self::positional_arg_source_name(arg) {
+                // §1.4/§1.5: bake the caller's local slot for a plain source var
+                // as `Pair(name, Int(slot))`, so the rw-arg writeback can target
+                // the LIVE (inner shadow) slot instead of the by-name `position`
+                // (outer) slot. A source with no local slot, or an encoded
+                // `key=var` named form, stays a bare `Str(name)`. Decoders extract
+                // the name from either shape, so existing consumers are unchanged.
+                match self.local_map.get(&name) {
+                    Some(&slot) if !name.contains('=') => {
+                        Value::pair(name, Value::int(slot as i64))
+                    }
+                    _ => Value::str(name),
+                }
+            } else {
+                Value::NIL
+            });
+        }
         if entries.iter().all(|v| v.is_nil()) {
             None
         } else {

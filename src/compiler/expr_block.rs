@@ -136,10 +136,42 @@ impl Compiler {
                 // ...and for the free-variable analysis, which would otherwise
                 // read the env-only store as a write to an enclosing same-named
                 // lexical. See `CompiledCode::expr_declared_syms`.
-                self.code
-                    .expr_declared_syms
-                    .insert(crate::symbol::Symbol::intern(name));
+                let is_promoted = self.promoted_expr_decl_names.contains(name);
+                if !is_promoted {
+                    self.code
+                        .expr_declared_syms
+                        .insert(crate::symbol::Symbol::intern(name));
+                }
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
+                let shadows_outer = self.enclosing_local_names.contains(name)
+                    || self.local_scopes.len() >= 2
+                        && self.local_scopes[..self.local_scopes.len() - 1]
+                            .iter()
+                            .any(|scope| scope.contains_key(name));
+                let predeclared_shadow = self
+                    .local_scopes
+                    .last()
+                    .and_then(|scope| scope.get(name))
+                    .is_some_and(Option::is_some);
+                // A shadowing expression-position declaration is lexical just
+                // like the statement form. Give it a declaration slot before its
+                // initializer is compiled, preventing an inherited same-named binding
+                // (including a captured ContainerRef cell) from being overwritten.
+                let decl_slot = if !*is_our && !is_promoted && predeclared_shadow {
+                    self.local_map.get(name).copied()
+                } else {
+                    (!*is_our && !is_promoted && shadows_outer).then(|| self.declare_local(name))
+                };
+                if decl_slot.is_some() {
+                    let name_idx = self.code.add_constant(Value::str(name.clone()));
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                    });
+                }
+                let mark_explicit_local_init = decl_slot.is_some()
+                    && custom_traits.iter().any(|(t, _)| t == "__has_initializer")
+                    && !custom_traits.iter().any(|(t, _)| t == "default");
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
                     // Register the declared type constraint BEFORE the init,
@@ -153,7 +185,7 @@ impl Compiler {
                         self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                     }
                     self.compile_expr(expr);
-                    let slot = self.alloc_local(name);
+                    let slot = decl_slot.unwrap_or_else(|| self.alloc_local(name));
                     let ip = self.code.ops.len();
                     let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                     let key_idx = self.code.add_constant(Value::str(key.clone()));
@@ -230,8 +262,15 @@ impl Compiler {
                     // (`(my @a)`) is marked too so `use strict` accepts the
                     // declaring write; its fresh-container detach is a no-op (the
                     // marker-slot cache path reuses the stored value regardless).
+                    if mark_explicit_local_init {
+                        self.code.emit(OpCode::MarkExplicitInitializerContext);
+                    }
                     self.code.emit(OpCode::MarkVarDeclContext);
-                    self.code.emit(OpCode::SetGlobal(name_idx));
+                    if let Some(slot) = decl_slot {
+                        self.code.emit(OpCode::SetLocal(slot));
+                    } else {
+                        self.code.emit(OpCode::SetGlobal(name_idx));
+                    }
                     // Apply an `is default(...)` trait BEFORE reading the value back,
                     // so the container's embedded default travels with the value
                     // returned by this expression (`(my % is default(42))`). The
@@ -246,13 +285,11 @@ impl Compiler {
                         }
                         let trait_name_idx =
                             self.code.add_constant(Value::str("default".to_string()));
-                        // Expression-position declarations are env-only (stored
-                        // via SetGlobal, no local slot) — nothing to bake.
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
                             has_arg: trait_arg.is_some(),
-                            slot: None,
+                            slot: decl_slot,
                         });
                     }
                     // Tag the container's element-type metadata so `.of` survives
@@ -371,6 +408,9 @@ impl Compiler {
                             self.code.emit(OpCode::TypeCheck(tc_idx2, None));
                             // Now Dup the wrapped value and store
                             self.code.emit(OpCode::Dup);
+                            if mark_explicit_local_init {
+                                self.code.emit(OpCode::MarkExplicitInitializerContext);
+                            }
                             self.code.emit(OpCode::MarkVarDeclContext);
                             self.emit_set_named_var(name);
                         } else {
@@ -390,6 +430,9 @@ impl Compiler {
                                 let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
                                 self.emit_set_var_type(name, name_idx2, tc_idx, false);
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                                 self.emit_get_named_var(name);
@@ -415,9 +458,17 @@ impl Compiler {
                                 // trait applies (below).
                                 self.code.emit(OpCode::Pop);
                                 self.compile_expr(&Expr::BareWord("Any".to_string()));
-                                self.code.emit(OpCode::Dup);
+                                if decl_slot.is_none() {
+                                    self.code.emit(OpCode::Dup);
+                                }
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
+                                if decl_slot.is_some() {
+                                    self.emit_get_named_var(name);
+                                }
                             } else {
                                 // Enforce a scalar type constraint in expression
                                 // position too (e.g. a bare `my Str $x := 3` whose
@@ -439,18 +490,28 @@ impl Compiler {
                                             .emit(OpCode::TypeCheck(tc_idx, Some(var_name_idx)));
                                     }
                                 }
-                                self.code.emit(OpCode::Dup);
+                                if decl_slot.is_none() {
+                                    self.code.emit(OpCode::Dup);
+                                }
+                                if mark_explicit_local_init {
+                                    self.code.emit(OpCode::MarkExplicitInitializerContext);
+                                }
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
+                                if decl_slot.is_some() {
+                                    self.emit_get_named_var(name);
+                                }
                             }
                         }
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::SetVarDynamic {
-                    name_idx,
-                    dynamic: is_dynamic,
-                });
+                if decl_slot.is_none() {
+                    self.code.emit(OpCode::SetVarDynamic {
+                        name_idx,
+                        dynamic: is_dynamic,
+                    });
+                }
                 // Register a scalar type constraint AFTER `SetVarDynamic` (which
                 // clears any stale same-named constraint) so it persists and is
                 // enforced on *later* assignments — `(my Subset $c = 6); $c = 7`
