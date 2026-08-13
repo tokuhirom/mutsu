@@ -4156,8 +4156,52 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
     only, falls to `to_string_value()` on a miss) — routing it through `call_method_with_values`
     would also fix that gap for `Instance` values, but it is a REPL-observable behavior change that
     needs its own test coverage, not a mechanical swap.
-  Next E11 slice: pick one of the above (the `.^can`/`e2_native_method_exists` catalog-gap fix is
-  the highest-value one, since it also closes out E7 step 4's long-deferred cutover).
+  **Progress 2026-08-14 — slice 2 landed.** Closed the catalog-coverage gap and cut both deferred
+  `.^can` sites over. Added `native_method_row_table.rs` rows for the seven owners
+  `builtin_sample_value` had no branch for: `Cool` (hand-probed against an `Int(2)` and a
+  numeric-parseable `Str("5")`, since it has no concrete instance of its own), `Any`/`Mu` beyond the
+  handful E2b added by hand (probed against `Value::package(Symbol::intern(owner))`, the bare type
+  object — matching the sample the pre-existing `eighth_slice_tail_rows_are_backed_by_the_cascade`
+  test already re-verifies every `Any`/`Mu` row against, so a definite value would have over-claimed:
+  `Int(2).reverse` is native-recognized but the abstract `Any.reverse` is not, confirmed against real
+  `raku` returning `((Any))` where mutsu still errors "No such method" — a real dispatch gap, left
+  alone as out of scope), and `Code` (the folded owner for `Sub`/`Method`/`Block`/`Routine`)/
+  `Signature`/`IO::Path`/`IO::Handle` (each needs a real interpreter-constructed value, not a bare
+  `Value::` literal — a `sub`'s value, `&sub.signature`, `"tmp".IO`, and a fresh `"...".IO.open(:w)`
+  handle per candidate name respectively, the last because a handle is stateful and probing `close`
+  early would starve every later candidate). Every declared name in each owner's
+  `builtin_type_method_names` list got a row regardless of probe outcome — confirmed against real
+  `raku` that `.^can` is a static "does the class declare this" check (`Cool.can("abs")` is true
+  independent of receiver content), so a name the probe cascade does not recognize at any pure arity
+  still needs a conservative `N`/`SPECIAL` row (existence, not invocation, is what E7 step 4 needs)
+  rather than being omitted. A follow-up `MUTSU_VM_STATS=1` sweep of the full `t/` suite after this
+  landed found one more real gap the initial pass missed: the native-int-coercion method family
+  (`42.int8`, `"42".byte`, ... — deliberately excluded from `COOL_OWN`/`.^methods` per
+  `is_native_int_coerce_method`'s doc comment, but genuinely dispatched via `target.isa_check("Cool")`
+  unconditionally for the whole `Cool` family) had no rows at all; added eleven more `Cool` rows for
+  it (`t/native-int-coerce-methods-are-cool-only.t` was the file that surfaced `class=List
+  method=int8 real=true shadow=false`). The re-swept `t/` suite (99 shadow checks across every test
+  file that exercises `.^can`) landed at exactly one remaining mismatch: the already-known,
+  already-out-of-scope `class=Cancellation method=cancel` (a native-Instance dispatch method outside
+  `BUILTIN_METHOD_OWNERS` entirely — the arity-cascade catalog was never meant to model it).
+  With the catalog now accurate, cut over both deferred sites: `methods_classhow_method_obj.rs`'s
+  `.^can`/`.^lookup` builder now calls `Interpreter::e2_native_method_exists` in place of its
+  `native_method_0arg`/`native_method_1arg` dummy-`Value::NIL`-arg probe (the `classhow_find_method`
+  and declared-per-type-list branches stay untouched — they cover `Cancellation`-shaped
+  class-registry-only methods and slow-path methods invisible to the pure arity cascade); the
+  now-dead `CAN_SHADOW_*` shadow-check counters and `record_can_shadow_check` were removed from
+  `vm/vm_stats.rs` along with the call site. `accessors_stack.rs::value_can_method` (the `can-ok`
+  builtin's only caller) also cut over, fixing a REAL pre-existing bug in the process: the old check
+  only ever probed `native_method_0arg`, so any 1-arg-or-later native method was invisible to `can-ok`
+  even on its own concrete owner (`can-ok "abc", "substr"` and `"index"` both failed; `raku` passes
+  both). New pin: `t/can-ok-cool-bridging-methods.t` (8 assertions, each individually verified against
+  real `raku` first). `cargo build`/`clippy -D warnings`/`fmt` clean; `cargo test --lib` (815 tests,
+  including a new permanent `e11_slice2_owner_rows_are_backed_by_the_cascade` inverse-probe test) and
+  full local `make test` green.
+  Next E11 slice: pick one of the still-deferred sites above (`builtins_collection.rs`'s `&self`
+  signature, `test_functions/mod.rs::value_raku_repr`'s free-function callers, or `repl_core.rs`'s
+  `.gist` display), or revisit the grep-based completion criterion now that the two `.^can` sites are
+  closed.
 
 ### Phase F — derive introspection and remove compatibility state
 

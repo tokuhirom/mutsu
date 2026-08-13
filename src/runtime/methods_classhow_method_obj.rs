@@ -422,19 +422,25 @@ impl Interpreter {
             }
         }
         // Also check for native/builtin methods if no user-defined methods found.
-        // For built-in types, probe the native method dispatch to see if the method exists.
+        // For built-in types, consult the native-method-row catalog to see if
+        // the method exists.
         if results.is_empty() {
             let method_sym = Symbol::intern(method_name);
-            let has_native =
-                // Check 0-arg builtins
-                crate::builtins::native_method_0arg(target, method_sym).is_some()
-                // Check 1-arg builtins with a dummy arg
-                || crate::builtins::native_method_1arg(
-                    target,
-                    method_sym,
-                    &Value::NIL,
-                )
-                .is_some()
+            // ADR-0019 Phase E box E11 (`todo/deep/adr0019-e5-e7-entry-
+            // routing.md` "E7 step 4"): the arity-cascade catalog
+            // (`Interpreter::e2_native_method_exists`) replaces invoking
+            // `native_method_0arg`/`native_method_1arg` with a dummy
+            // `Value::NIL` arg just to answer an EXISTENCE question --
+            // `MUTSU_VM_STATS=1` shadow-checked against the dummy-probe it
+            // replaces over the full `t/` suite with zero mismatches after
+            // the E11 slice 2 catalog-completeness pass (Cool/Any/Mu/Code/
+            // Signature/IO::Path/IO::Handle rows, plus the native-int-coerce
+            // family). The declared per-type list and `classhow_find_method`
+            // branches stay: they cover slow-path methods invisible to the
+            // pure arity cascade (`Buf.allocate`) and class-registry-only
+            // methods outside `BUILTIN_METHOD_OWNERS` (e.g. `Cancellation`'s
+            // `cancel`, the one case that still diverges from the catalog).
+            let has_native = self.e2_native_method_exists(target, method_sym.as_str())
                 // Slow-path builtin methods (block-taking / `&mut self`, e.g.
                 // `Buf.allocate`) are invisible to the pure native probe; the
                 // declared per-type lists cover them. NativeHelpers::Blob's
@@ -447,23 +453,6 @@ impl Interpreter {
                     let pkg = Value::package(Symbol::intern(&class_name));
                     self.classhow_find_method(&pkg, method_name).is_some()
                 };
-            // ADR-0019 Phase E box E7 step 4 (`todo/deep/adr0019-e5-e7-entry-
-            // routing.md` "E7 step 4"): shadow-check the dummy-`Value::NIL`-arg
-            // probe above against an E2 native-method-row catalog lookup
-            // (`Interpreter::e2_native_method_exists`) for the SAME question
-            // ("does target have a native method_name at all"). A dedicated
-            // counter pair (not the E4a/E7 `resolve_sequence`-winner shadow
-            // infra those steps reused) because this compares two EXISTENCE
-            // predicates, not two dispatch-winner picks. `MUTSU_VM_STATS`-gated,
-            // zero behavior change: `has_native` alone still drives `results`.
-            if crate::vm::vm_stats::enabled() {
-                let e2_says = self.e2_native_method_exists(target, method_sym.as_str());
-                crate::vm::vm_stats::record_can_shadow_check(has_native == e2_says, || {
-                    format!(
-                        "class={class_name} method={method_name} real={has_native} shadow={e2_says}"
-                    )
-                });
-            }
             if has_native {
                 results.push(Value::routine_parts(
                     Symbol::intern(&class_name),

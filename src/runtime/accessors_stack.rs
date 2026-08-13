@@ -185,10 +185,13 @@ impl Interpreter {
 
     /// Check if a value can respond to a given method name.
     pub(crate) fn value_can_method(&mut self, value: &Value, method: &str) -> bool {
-        // Check builtin 0-arg method (covers most built-in methods)
-        if crate::builtins::native_method_0arg(value, crate::symbol::Symbol::intern(method))
-            .is_some()
-        {
+        // ADR-0019 Phase E box E11: the arity-cascade catalog
+        // (`Interpreter::e2_native_method_exists`) replaces a dummy-0-arg-only
+        // `native_method_0arg` probe here, which missed every 1-arg-or-later
+        // native method entirely (`can-ok "abc", "substr"` / `"index"` failed
+        // even though `raku` passes both -- a real gap, not a style choice).
+        let method_sym = crate::symbol::Symbol::intern(method);
+        if self.e2_native_method_exists(value, method_sym.as_str()) {
             return true;
         }
         // For instances, check class methods

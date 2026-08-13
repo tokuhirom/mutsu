@@ -504,51 +504,16 @@ pub(crate) fn record_native_row_shadow_check(matched: bool, detail: impl FnOnce(
     }
 }
 
-// ADR-0019 Phase E box E7 step 4 (`.^can`, `todo/deep/adr0019-e5-e7-entry-
-// routing.md` "E7 step 4"): shadow comparison between `collect_can_methods`'s
-// existing dummy-`Value::NIL`-arg native probe and the new E2-row-catalog
-// existence check (`Interpreter::e2_native_method_exists`), for the same
-// `(receiver, method_name)` question. Deliberately a SEPARATE counter pair
-// from `RESOLVER_SHADOW_*`/`NATIVE_ROW_SHADOW_*` above: those compare a
-// dispatch-WINNER pick against `resolve_sequence`; this compares two
-// EXISTENCE predicates that never invoke `resolve_sequence` at all, so
-// mixing them into a shared total would repeat the "false lead" step 1 had
-// to disentangle (see the ADR's E7 step 1 progress note). Nothing reads
-// these counters to make a dispatch decision: shadow-only, zero behavior
-// change.
-static CAN_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
-static CAN_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
-
-fn can_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
-    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
-    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Record one E7 step-4 `.^can` shadow comparison. `detail` is only
-/// evaluated on a mismatch, mirroring [`record_native_row_shadow_check`].
-#[inline]
-pub(crate) fn record_can_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
-    if !enabled() {
-        return;
-    }
-    CAN_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
-    if !matched {
-        CAN_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
-        if let Ok(mut map) = can_shadow_mismatch_by_key().lock() {
-            *map.entry(detail()).or_insert(0) += 1;
-        }
-    }
-}
-
 // ADR-0019 Phase E box E7 step 6 (`.^methods`, `todo/deep/adr0019-e5-e7-
 // entry-routing.md` "E7 step 6"): shadow comparison between the existing
 // `class_mro`-based chain `dispatch_classhow_methods` walks to enumerate
 // `.^methods()` and the E4 resolver's own canonical chain
 // (`Interpreter::dispatch_owner_chain`) for the same receiver. A dedicated
 // counter pair, not the shared `RESOLVER_SHADOW_*` infra: this compares two
-// whole MRO CHAINS, not a single dispatch-winner pick, the same reasoning
-// that kept E7 step 4's `.^can` check on its own `CAN_SHADOW_*` pair.
-// Nothing reads these counters to make a dispatch decision: shadow-only,
+// whole MRO CHAINS, not a single dispatch-winner pick (the same reasoning
+// that gave E7 step 4's now-retired `.^can` shadow check its own pair before
+// E11 cut `.^can` over to the catalog outright, see `methods_classhow_
+// method_obj.rs`). Nothing reads these counters to make a dispatch decision: shadow-only,
 // zero behavior change.
 static METHODS_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
 static METHODS_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
@@ -559,7 +524,7 @@ fn methods_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
 }
 
 /// Record one E7 step-6 `.^methods` chain-shadow comparison. `detail` is only
-/// evaluated on a mismatch, mirroring [`record_can_shadow_check`].
+/// evaluated on a mismatch, mirroring [`record_native_row_shadow_check`].
 #[inline]
 pub(crate) fn record_methods_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
     if !enabled() {
@@ -585,7 +550,7 @@ pub(crate) fn record_methods_shadow_check(matched: bool, detail: impl FnOnce() -
 // WALK spec, not MRO restatements, so comparing them against the resolver's
 // MRO chain would be a guaranteed, meaningless mismatch. A dedicated counter
 // pair for the same "whole MRO CHAIN, not a single dispatch-winner pick"
-// reason as `CAN_SHADOW_*`/`METHODS_SHADOW_*`. Shadow-only, zero behavior
+// reason as `METHODS_SHADOW_*`. Shadow-only, zero behavior
 // change: `class_mro_readonly` alone still drives WALK's own chain.
 static WALK_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
 static WALK_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
@@ -1111,27 +1076,6 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e4b native-row-shadow mismatches (top {}): {}",
-            top.len(),
-            top.join(" ")
-        );
-    }
-    let can_shadow_checks = CAN_SHADOW_CHECKS.load(Ordering::Relaxed);
-    let can_shadow_mismatches = CAN_SHADOW_MISMATCHES.load(Ordering::Relaxed);
-    eprintln!(
-        "[mutsu vm-stats] adr0019-e7: can_shadow_checks={can_shadow_checks} can_shadow_mismatches={can_shadow_mismatches}"
-    );
-    if let Ok(map) = can_shadow_mismatch_by_key().lock()
-        && !map.is_empty()
-    {
-        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
-        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
-        let top: Vec<String> = entries
-            .iter()
-            .take(25)
-            .map(|(name, count)| format!("{name}={count}"))
-            .collect();
-        eprintln!(
-            "[mutsu vm-stats] adr0019-e7 can-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );
