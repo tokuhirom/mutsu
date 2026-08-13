@@ -274,60 +274,6 @@ impl Interpreter {
                 &sigs,
             ));
         }
-        // Helper to build remaining candidates, skipping the chosen one.
-        // Submethod prefilter: a submethod is never inherited, so when the
-        // visible-candidate table holds at most one entry the remaining list is
-        // empty by construction — skip the full `resolve_all_methods_with_owner`
-        // pass (per-MRO-class overload-Vec clones + signature matching +
-        // fingerprints) that every construction-phase BUILD/TWEAK dispatch
-        // otherwise pays just to learn "nothing to defer to".
-        let skip_remaining = (method_def.is_my || method_def.is_submethod)
-            && self.count_visible_method_candidates(receiver_class_name, method_name) <= 1;
-        let build_remaining = |this: &mut Self, method_def: &MethodDef| -> Vec<DeferralEntry> {
-            if skip_remaining {
-                return Vec::new();
-            }
-            // ADR-0019 E9a: the flat deferral expansion (`resolution_deferral.rs`) replaces
-            // `resolve_all_methods_with_owner` as the ordering source — see its module doc.
-            // The expansion is structural (unfiltered); apply the same per-call, invocant-blind
-            // argument match `resolve_all_methods_with_owner` used to apply internally.
-            let role_bindings = this.registry().get_role_param_bindings(receiver_class_name);
-            let expansion = this.resolve_deferral_expansion(receiver_class_name, method_name);
-            let mut all: Vec<(Symbol, MethodDef)> = Vec::new();
-            for (owner, def) in expansion {
-                if this.method_args_match_for_invocant(
-                    receiver_class_name,
-                    &def,
-                    &args,
-                    role_bindings.as_ref(),
-                    None,
-                ) {
-                    all.push((owner, def));
-                }
-            }
-            let chosen_fp = this.method_def_fingerprint(method_def);
-            let mut remaining = Vec::new();
-            let mut skipped = false;
-            for (owner, def) in all {
-                let fp = this.method_def_fingerprint(&def);
-                if !skipped && fp == chosen_fp {
-                    skipped = true;
-                    continue;
-                }
-                if this.should_skip_defer_method_candidate(receiver_class_name, owner.as_str()) {
-                    continue;
-                }
-                // ADR-0019 E9b-1: every entry is a plain Candidate here — this
-                // builder never wraps a method's own chain into the frame
-                // (that is E9b-2).
-                remaining.push(DeferralEntry::Candidate {
-                    owner,
-                    def: Box::new(def),
-                    wraps_spliced: false,
-                });
-            }
-            remaining
-        };
         let make_invocant_for_dispatch =
             |invocant: &Option<Value>, attributes: &AttrMap| -> Value {
                 if let Some(inv) = invocant {
@@ -343,8 +289,17 @@ impl Interpreter {
         // instance call (e.g. every bless/TWEAK) pays a candidate-index scan
         // even though no `.wrap` exists in the whole program (mirrors the
         // compiled path's guard in vm_call_method_compiled.rs).
+        //
+        // ADR-0019 E9b-2: a SINGLE `MethodDispatchFrame` carries the
+        // below-outermost wrappers, the winner (as an ordinary resolved
+        // `Candidate`), and the MRO tail — replacing the separate
+        // `WrapDispatchFrame` + by-name "original" re-entry. This is the P1
+        // fix (`todo/tickets/wrap-chain-skipped-inside-foreign-wrap-dispatch.md`):
+        // no `is_inside_wrap_dispatch()` guard is needed anymore, since the
+        // "original" is never re-entered by name — a nested call to a
+        // DIFFERENT wrapped method now enters its own chain like any fresh
+        // dispatch.
         if self.has_any_wrap_chains()
-            && !self.is_inside_wrap_dispatch()
             && let Some(cand_idx) =
                 self.find_method_candidate_index(owner_class.as_str(), method_name, &method_def)
             && let Some(chain) = self
@@ -352,64 +307,31 @@ impl Interpreter {
                 .cloned()
         {
             let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
-            let remaining = build_remaining(self, &method_def);
-            let pushed_dispatch = !remaining.is_empty();
             self.push_method_samewith_context(
                 receiver_class_name,
                 method_name,
                 &args,
                 Some(invocant_for_dispatch.clone()),
             );
-            if pushed_dispatch {
-                let rw_params = super::builtins_dispatch_next::rw_scalar_positional_params(
-                    &method_def.param_defs,
-                );
-                let dispatch_token = self.next_dispatch_token();
-                self.method_dispatch_stack.push(MethodDispatchFrame {
-                    receiver_class: receiver_class_name.to_string(),
-                    invocant: invocant_for_dispatch,
-                    args: args.clone(),
-                    remaining,
-                    rw_params,
-                    dispatch_token,
-                    arg_sources: None,
-                });
-            }
-            let mut orig_env = crate::env::Env::new();
-            orig_env.insert("__mutsu_method_wrap_original".to_string(), Value::TRUE);
-            let original_sub = Value::make_sub(
+            self.push_wrapped_method_dispatch_frame(
+                receiver_class_name,
+                method_name,
+                &args,
+                invocant_for_dispatch,
                 owner_class,
-                Symbol::intern(method_name),
-                method_def.params.clone(),
-                method_def.param_defs.clone(),
-                (*method_def.body).clone(),
-                method_def.is_rw,
-                orig_env,
+                &method_def,
+                &chain,
             );
             let outermost = chain.last().unwrap().1.clone();
-            let mut wrap_remaining: Vec<Value> = Vec::new();
-            for i in (0..chain.len() - 1).rev() {
-                wrap_remaining.push(chain[i].1.clone());
-            }
-            wrap_remaining.push(original_sub);
             let mut call_args = vec![inv_value.clone()];
             call_args.extend(args);
-            let frame = WrapDispatchFrame {
-                sub_id: 0,
-                remaining: wrap_remaining,
-                args: call_args.clone(),
-                arg_sources: self.pending_call_arg_sources().cloned(),
-                dispatch_token: 0,
-            };
             let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
                 Some(wd.id)
             } else {
                 None
             };
-            self.push_wrap_dispatch_frame(frame);
             self.shift_arg_sources_for_wrap_invocant();
             let result = self.call_sub_value(outermost, call_args, false);
-            self.wrap_dispatch_stack.pop();
             // Propagate closure variable mutations from the wrapper back to
             // the current env so captured variables are visible to the caller.
             if let Some(wid) = wrapper_id
@@ -422,15 +344,14 @@ impl Interpreter {
                 }
             }
             self.pop_method_samewith_context();
-            if pushed_dispatch {
-                self.method_dispatch_stack.pop();
-            }
+            self.method_dispatch_stack.pop();
             // The wrapped call mutated attributes (if any) through the live
             // cell; there is no `:=` reconcile on this path.
             return result.map(|v| (v, None));
         }
         let invocant_for_dispatch = make_invocant_for_dispatch(&invocant, attributes);
-        let remaining = build_remaining(self, &method_def);
+        let remaining =
+            self.deferral_tail_entries(receiver_class_name, method_name, &args, &method_def);
         // A user-overridden grammar `parse`/`subparse`/`parsefile` still needs an MRO
         // frame even with no further USER candidate, so a `nextsame`/`nextwith` inside
         // it can defer to the NATIVE grammar parse — the base candidate that is not a
@@ -458,6 +379,7 @@ impl Interpreter {
                 rw_params,
                 dispatch_token,
                 arg_sources: None,
+                in_wrapper: false,
             });
         }
         // Check for `is DEPRECATED` trait on the method

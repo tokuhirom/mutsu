@@ -763,6 +763,145 @@ impl Interpreter {
         self.dispatch_token_counter
     }
 
+    /// ADR-0019 E9a/E9b-2: candidates from the deferral expansion whose
+    /// signature matches this call's args (invocant-blind, per E8a finding
+    /// 1). Shared first half of [`Self::push_method_dispatch_frame`]'s and
+    /// [`Self::deferral_tail_entries`]'s computation, before either applies
+    /// its own "skip the chosen winner" step.
+    fn matched_deferral_candidates(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+    ) -> Vec<(Symbol, super::MethodDef)> {
+        let role_bindings = self.registry().get_role_param_bindings(receiver_class);
+        let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
+        let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
+        for (owner, def) in expansion {
+            if self.method_args_match_for_invocant(
+                receiver_class,
+                &def,
+                args,
+                role_bindings.as_ref(),
+                None,
+            ) {
+                all_candidates.push((owner, def));
+            }
+        }
+        all_candidates
+    }
+
+    /// ADR-0019 E9b-2: the plain MRO-tail deferral entries following an
+    /// ALREADY-KNOWN winning candidate `chosen_def` — shared by the two
+    /// method-wrap entry sites (`class_dispatch.rs`'s
+    /// `run_instance_method_celled`, `vm_call_method_compiled.rs`'s
+    /// `check_method_wrap_chain`), which resolve their own winner
+    /// independently (it is the wrapped candidate) and only need the tail to
+    /// append after their own Wrapper-prefixed `Candidate{wraps_spliced:
+    /// true}` entry. Every entry here is `wraps_spliced: false` — a later
+    /// entry with its OWN wrap chain is spliced lazily at advance time
+    /// (`dispatch_next_candidate`), not here (decision 3 of the E9b design).
+    pub(crate) fn deferral_tail_entries(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        chosen_def: &super::MethodDef,
+    ) -> Vec<super::DeferralEntry> {
+        // Submethod fast path, mirroring `push_method_dispatch_frame`'s own
+        // `<=1` guard: a submethod is never inherited, so a single visible
+        // candidate can never produce a deferral tail.
+        if (chosen_def.is_my || chosen_def.is_submethod)
+            && self.count_visible_method_candidates(receiver_class, method_name) <= 1
+        {
+            return Vec::new();
+        }
+        let all_candidates = self.matched_deferral_candidates(receiver_class, method_name, args);
+        let chosen_fp = self.method_def_fingerprint(chosen_def);
+        let mut remaining = Vec::new();
+        let mut skipped = false;
+        for (owner, def) in all_candidates {
+            let fp = self.method_def_fingerprint(&def);
+            if !skipped && fp == chosen_fp {
+                skipped = true;
+                continue;
+            }
+            if self.should_skip_defer_method_candidate(receiver_class, owner.as_str()) {
+                continue;
+            }
+            remaining.push(super::DeferralEntry::Candidate {
+                owner,
+                def: Box::new(def),
+                wraps_spliced: false,
+            });
+        }
+        remaining
+    }
+
+    /// ADR-0019 E9b-2: build and push the SINGLE wrap-prefixed
+    /// `MethodDispatchFrame` for a method-wrap entry site — the below-
+    /// outermost wrappers (in call order), the winner as a `wraps_spliced:
+    /// true` `Candidate`, then the MRO tail. Shared by the two method-wrap
+    /// entry sites (`class_dispatch.rs`'s `run_instance_method_celled`,
+    /// `vm_call_method_compiled.rs`'s `check_method_wrap_chain`), which then
+    /// invoke `chain`'s outermost wrapper (`chain.last()`) directly with
+    /// `[invocant, ...args]` — mirrors the pattern every other VM call site
+    /// uses `push_method_dispatch_frame` for, kept as a `pub(crate)`
+    /// Interpreter method (rather than the caller touching
+    /// `method_dispatch_stack` directly) so `vm/` call sites do not need
+    /// visibility into private `runtime` fields/modules.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn push_wrapped_method_dispatch_frame(
+        &mut self,
+        receiver_class: &str,
+        method_name: &str,
+        args: &[Value],
+        invocant: Value,
+        owner_class: Symbol,
+        method_def: &super::MethodDef,
+        chain: &[(u64, Value)],
+    ) {
+        let mro_tail = self.deferral_tail_entries(receiver_class, method_name, args, method_def);
+        let rw_params =
+            super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
+        let dispatch_token = self.next_dispatch_token();
+        // Save the pending call-site arg sources BEFORE the outermost
+        // wrapper's own binding consumes them: the `Wrapper`/wraps_spliced
+        // `Candidate` advance legs in `dispatch_next_candidate` restore this
+        // so an `is rw`/sigilless param anywhere in the chain still binds to
+        // the true call-site variable (`t/wrap-invocant-arg-source.t`).
+        let arg_sources = self.pending_call_arg_sources().cloned();
+        // Below-outermost wrappers, in call order (second-outermost first,
+        // innermost/oldest last) — the outermost is invoked directly by the
+        // caller, mirroring today's "outermost runs, the rest are remaining"
+        // shape.
+        let mut remaining: Vec<super::DeferralEntry> =
+            Vec::with_capacity(chain.len() + mro_tail.len());
+        for i in (0..chain.len() - 1).rev() {
+            remaining.push(super::DeferralEntry::Wrapper(chain[i].1.clone()));
+        }
+        remaining.push(super::DeferralEntry::Candidate {
+            owner: owner_class,
+            def: Box::new(method_def.clone()),
+            wraps_spliced: true,
+        });
+        remaining.extend(mro_tail);
+        self.method_dispatch_stack.push(super::MethodDispatchFrame {
+            receiver_class: receiver_class.to_string(),
+            invocant,
+            args: args.to_vec(),
+            remaining,
+            rw_params,
+            dispatch_token,
+            arg_sources,
+            // The caller invokes chain's outermost wrapper directly right
+            // after this push, so this frame always STARTS inside wrapper
+            // code (even when `chain.len() == 1` and `remaining` holds no
+            // `Wrapper` entry at all).
+            in_wrapper: true,
+        });
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -810,20 +949,7 @@ impl Interpreter {
         // a `multi method` spans MRO levels. The expansion is structural (unfiltered); apply the
         // same per-call, invocant-blind argument match `resolve_all_methods_with_owner` used to
         // apply internally.
-        let role_bindings = self.registry().get_role_param_bindings(receiver_class);
-        let expansion = self.resolve_deferral_expansion(receiver_class, method_name);
-        let mut all_candidates: Vec<(Symbol, super::MethodDef)> = Vec::new();
-        for (owner, def) in expansion {
-            if self.method_args_match_for_invocant(
-                receiver_class,
-                &def,
-                args,
-                role_bindings.as_ref(),
-                None,
-            ) {
-                all_candidates.push((owner, def));
-            }
-        }
+        let all_candidates = self.matched_deferral_candidates(receiver_class, method_name, args);
         // Fast path: with zero or one candidate there is nothing to defer to, so no
         // dispatch frame is ever pushed (the single candidate is the chosen one and
         // gets skipped, leaving `remaining` empty). Returning early here avoids the
@@ -890,13 +1016,10 @@ impl Interpreter {
                 rw_params,
                 dispatch_token,
                 arg_sources: None,
+                in_wrapper: false,
             });
         }
         pushed
-    }
-
-    pub(crate) fn is_inside_wrap_dispatch(&self) -> bool {
-        !self.wrap_dispatch_stack.is_empty()
     }
 
     pub(crate) fn has_any_wrap_chains(&self) -> bool {
@@ -904,6 +1027,13 @@ impl Interpreter {
     }
 
     pub(crate) fn push_wrap_dispatch_frame(&mut self, mut frame: super::WrapDispatchFrame) {
+        // ADR-0019 E9b-2: method wraps moved to `MethodDispatchFrame::remaining`
+        // (`DeferralEntry::Wrapper`) — this stack now carries SUB wraps only,
+        // whose `sub_id` is always a real (non-zero) sub id.
+        debug_assert!(
+            frame.sub_id != 0,
+            "ADR-0019 E9b-2: WrapDispatchFrame is sub-only; sub_id == 0 was the retired method-wrap sentinel"
+        );
         frame.dispatch_token = self.next_dispatch_token();
         self.wrap_dispatch_stack.push(frame);
     }

@@ -270,6 +270,15 @@ impl Interpreter {
 
     /// Check if a method candidate has a wrap chain from ^lookup().candidates[N].wrap().
     /// If so, dispatch through the wrapper and return Some(result).
+    ///
+    /// ADR-0019 E9b-2: builds a SINGLE `MethodDispatchFrame` (below-outermost
+    /// wrappers, the winner as an ordinary resolved `Candidate`, then the MRO
+    /// tail) instead of a separate `WrapDispatchFrame` + by-name "original"
+    /// re-entry — the P1 fix
+    /// (`todo/tickets/wrap-chain-skipped-inside-foreign-wrap-dispatch.md`):
+    /// no `is_inside_wrap_dispatch()` guard is needed anymore, since the
+    /// "original" is never re-entered by name. Mirrors
+    /// `class_dispatch.rs`'s `run_instance_method_celled` wrap branch.
     pub(crate) fn check_method_wrap_chain(
         &mut self,
         cn: &str,
@@ -279,7 +288,7 @@ impl Interpreter {
         target: &Value,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if !self.has_any_wrap_chains() || self.is_inside_wrap_dispatch() {
+        if !self.has_any_wrap_chains() {
             return None;
         }
         let cand_idx = self.find_method_candidate_index(owner_class, method, method_def)?;
@@ -287,36 +296,19 @@ impl Interpreter {
             .get_method_wrap_chain(owner_class, method, cand_idx)?
             .clone();
         let invocant_for_dispatch = target.clone();
-        let pushed_dispatch = loan_env!(
-            self,
-            push_method_dispatch_frame(cn, method, args, invocant_for_dispatch)
-        );
-        let mut orig_env = crate::env::Env::new();
-        orig_env.insert("__mutsu_method_wrap_original".to_string(), Value::TRUE);
-        let original_sub = Value::make_sub(
+        self.push_method_samewith_context(cn, method, args, Some(invocant_for_dispatch.clone()));
+        self.push_wrapped_method_dispatch_frame(
+            cn,
+            method,
+            args,
+            invocant_for_dispatch,
             crate::symbol::Symbol::intern(owner_class),
-            crate::symbol::Symbol::intern(method),
-            method_def.params.clone(),
-            method_def.param_defs.clone(),
-            (*method_def.body).clone(),
-            method_def.is_rw,
-            orig_env,
+            method_def,
+            &chain,
         );
         let outermost = chain.last().unwrap().1.clone();
-        let mut remaining: Vec<Value> = Vec::new();
-        for i in (0..chain.len() - 1).rev() {
-            remaining.push(chain[i].1.clone());
-        }
-        remaining.push(original_sub);
         let mut call_args = vec![target.clone()];
         call_args.extend(args.to_vec());
-        let frame = crate::runtime::WrapDispatchFrame {
-            sub_id: 0,
-            remaining,
-            args: call_args.clone(),
-            arg_sources: self.pending_call_arg_sources().cloned(),
-            dispatch_token: 0,
-        };
         let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
             Some(wd.id)
         } else {
@@ -339,10 +331,8 @@ impl Interpreter {
                     _ => None,
                 })
         });
-        self.push_wrap_dispatch_frame(frame);
         self.shift_arg_sources_for_wrap_invocant();
         let result = self.vm_call_sub_value(outermost, call_args, false);
-        self.pop_wrap_dispatch_frame();
         // Propagate closure variable mutations from the wrapper back to the
         // current env so captured variables are visible to the caller.
         if let Some(wid) = wrapper_id
@@ -396,9 +386,7 @@ impl Interpreter {
                 }
             }
         }
-        if pushed_dispatch {
-            self.pop_method_dispatch();
-        }
+        self.pop_method_dispatch();
         self.pop_method_samewith_context();
         Some(result)
     }

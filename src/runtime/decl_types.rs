@@ -164,16 +164,17 @@ pub(crate) type MultiDispatchEntry = (
     u64,
 );
 
-/// One entry of `MethodDispatchFrame::remaining` (ADR-0019 E9b-1). A
-/// `Candidate` is the pre-E9b-1 `(owner, MethodDef)` shape unchanged in
-/// substance; `Wrapper` lets a method's own `.wrap()` chain fold into the same
-/// `remaining` list as prefix entries instead of a separate stack (E9b-2 —
-/// no builder emits `Wrapper` yet in this slice, so it is currently inert).
+/// One entry of `MethodDispatchFrame::remaining` (ADR-0019 E9b-1/E9b-2). A
+/// `Candidate` is invoked directly as a resolved method; `Wrapper` lets a
+/// method's own `.wrap()` chain fold into the same `remaining` list as prefix
+/// entries instead of a separate `WrapDispatchFrame` — both variants are
+/// built and consumed as of E9b-2 (`class_dispatch.rs`,
+/// `vm_call_method_compiled.rs`'s wrap entry sites; the lazy mid-MRO splice
+/// and advance legs in `builtins_dispatch_next.rs`).
 #[derive(Debug, Clone)]
 pub(crate) enum DeferralEntry {
     /// A wrapper code object; invoked with `[invocant, args...]` and shifted
     /// arg sources, mirroring today's `WrapDispatchFrame` wrapper leg.
-    #[allow(dead_code)]
     Wrapper(Value),
     /// A user method candidate; invoked directly as a resolved method (the
     /// existing method-frame advance leg, unchanged in substance).
@@ -183,7 +184,13 @@ pub(crate) enum DeferralEntry {
         // DeferralEntry (including the small Wrapper(Value) variant) pay that
         // size (clippy::large_enum_variant).
         def: Box<MethodDef>,
-        #[allow(dead_code)]
+        /// Whether this entry's own method-level wrap chain (if any) has
+        /// already been spliced into `remaining` as `Wrapper` prefix entries
+        /// — `true` for the winner's own entry (built at frame-construction
+        /// time by the two wrap entry sites) and for a mid-MRO candidate
+        /// after the lazy splice (`dispatch_next_candidate`); `false` for
+        /// every other MRO-tail candidate, whose wrap chain (if any) is only
+        /// checked when advancement actually reaches it.
         wraps_spliced: bool,
     },
 }
@@ -203,26 +210,51 @@ pub(crate) struct MethodDispatchFrame {
     /// `MultiDispatchEntry`. callsame/nextsame/lastcall/nextcallee compare tokens
     /// across all three deferral stacks and pick the highest (innermost) live frame.
     pub(crate) dispatch_token: u64,
-    /// ADR-0019 E9b-1: call-site source variable names for the wrapped
-    /// method's arguments, mirroring `WrapDispatchFrame::arg_sources`. Unused
-    /// until E9b-2's `Wrapper` advance leg restores them for an `is rw`
-    /// parameter of the next callee; every E9b-1 builder sets this to `None`.
-    #[allow(dead_code)]
+    /// ADR-0019 E9b-1/E9b-2: call-site source variable names for a wrapped
+    /// method's arguments, mirroring `WrapDispatchFrame::arg_sources`.
+    /// `Some` only when this frame was built at a method-wrap entry site
+    /// (`class_dispatch.rs`, `vm_call_method_compiled.rs`); every other
+    /// builder sets `None`. Restored (and shifted for a `Wrapper` leg's
+    /// `[invocant, ...args]` call shape) so an `is rw`/sigilless parameter
+    /// anywhere in the wrap chain — including the wrapped original method
+    /// itself — still binds to the TRUE call-site variable
+    /// (`t/wrap-invocant-arg-source.t`).
     pub(crate) arg_sources: Option<Vec<Option<String>>>,
+    /// ADR-0019 E9b-2: whether the code CURRENTLY executing under this frame
+    /// (the thing whose `callsame`/`callwith` call is about to run through
+    /// `dispatch_next_candidate`) is a `.wrap()` wrapper BLOCK rather than a
+    /// real method body. A wrapper's own positional signature is
+    /// `(invocant, ...args)` (its first param is bound to SELF), so
+    /// `callwith`/`nextwith`'s override args, when called from inside a
+    /// wrapper, include the invocant as element 0 — the same convention the
+    /// pre-E9b-2 `WrapDispatchFrame.args` used unconditionally. A real
+    /// method's signature never includes the invocant positionally, so
+    /// override args from a method body are invocant-EXCLUSIVE. Only
+    /// `push_wrapped_method_dispatch_frame` starts this `true` (the caller
+    /// always invokes the outermost wrapper directly); every other builder
+    /// leaves it `false` since none of them ever enter wrapper code. Updated
+    /// by `dispatch_next_candidate` immediately before each advance so a
+    /// NESTED `callwith` call reads the context it is actually running in.
+    pub(crate) in_wrapper: bool,
 }
 
-/// Frame for navigating through wrapper chain during callsame/callwith.
+/// Frame for navigating through a SUB wrapper chain during callsame/callwith.
+///
+/// ADR-0019 E9b-2: method wraps no longer use this frame — they fold into
+/// `MethodDispatchFrame::remaining` as `DeferralEntry::Wrapper` prefix
+/// entries instead, so `sub_id` is now always a real (non-zero) sub id. The
+/// push helper (`Interpreter::push_wrap_dispatch_frame`) asserts this.
 #[derive(Debug, Clone)]
 pub(crate) struct WrapDispatchFrame {
     /// The sub id being wrapped (to prevent re-entrant wrap dispatch).
+    /// Always non-zero as of E9b-2 (see the struct doc comment).
     pub(crate) sub_id: u64,
     /// Remaining callables: inner wrappers then original sub. Next to call is first.
     pub(crate) remaining: Vec<Value>,
     /// Original call arguments.
     pub(crate) args: Vec<Value>,
-    /// Call-site source variable names for the *wrapped routine's* arguments
-    /// (for a method wrap: excluding the invocant, which `args` carries at
-    /// index 0). The outermost wrapper consumes the pending arg sources when
+    /// Call-site source variable names for the wrapped sub's arguments.
+    /// The outermost wrapper consumes the pending arg sources when
     /// its own signature binds, so `callsame` reaching the original would
     /// otherwise see none and reject an `is rw` parameter.
     pub(crate) arg_sources: Option<Vec<Option<String>>>,
