@@ -52,4 +52,15 @@ is ~$/, "bar", 'a comment before an aligned leading `|` inside a capture group i
     | 'bar' | 'baz' ] /;
 is ~$/, "bar", 'a comment before an aligned leading `|` inside a non-capturing group is elided too';
 
+# Operators inside regex comments are inert and must not become top-level
+# alternation/conjunction separators.
+"bar" ~~ / # a comment mentioning `|` and & operators
+    | 'bar'
+    | 'baz'
+/;
+is ~$/, "bar", 'operators in a line comment do not split alternation';
+
+ok 'bar' ~~ / #`[an embedded comment containing | and &] 'bar' /,
+    'operators in an embedded comment do not split alternation or conjunction';
+
 done-testing;
