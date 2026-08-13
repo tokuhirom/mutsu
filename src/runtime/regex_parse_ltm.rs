@@ -105,7 +105,11 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if consume_regex_comment(ch, &mut chars, &mut current) {
+            if depth_angle == 0
+                && !in_single_quote
+                && !in_double_quote
+                && consume_regex_comment(ch, &mut chars, &mut current)
+            {
                 continue;
             }
             // Inside a `<...>` assertion, `'` and `"` are ordinary characters, not
@@ -226,7 +230,11 @@ impl Interpreter {
                 escaped = true;
                 continue;
             }
-            if consume_regex_comment(ch, &mut chars, &mut current) {
+            if depth_angle == 0
+                && !in_single_quote
+                && !in_double_quote
+                && consume_regex_comment(ch, &mut chars, &mut current)
+            {
                 continue;
             }
             // See `split_top_level_alternation`: `'`/`"` inside a `<...>` assertion
