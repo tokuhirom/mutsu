@@ -48,7 +48,7 @@ fn concat_exprs(left: Expr, right: Expr) -> Expr {
 /// segment to `combined` as `~ "::" ~ <segment>` so the full name is built at
 /// runtime. Shared with the `&`-sigil parser, which needs the same tail after a
 /// package-qualified head (`&CALLER::LEXICAL::("infix:<+>")`).
-pub(super) fn parse_symbolic_deref_segments(
+pub(in crate::parser) fn parse_symbolic_deref_segments(
     mut rest: &str,
     mut combined: Expr,
 ) -> PResult<'_, Expr> {

@@ -458,6 +458,7 @@ impl Interpreter {
         }
         if let Some(package) = name.strip_suffix("::")
             && package != "MY"
+            && package != "LEXICAL"
             && !package.is_empty()
         {
             // A lexical bound to a *type object* names that package:
@@ -492,6 +493,7 @@ impl Interpreter {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
+        self.add_visible_routines_to_pseudo_stash(&mut entries);
         self.stack
             .push(Value::hash_with_data(Value::hash_arc(entries)));
     }
@@ -532,7 +534,34 @@ impl Interpreter {
             let display_key = Self::add_sigil_prefix(&key_str);
             entries.entry(display_key).or_insert_with(|| val.clone());
         }
+        self.add_visible_routines_to_pseudo_stash(&mut entries);
         Value::hash_with_data(Value::hash_arc(entries))
+    }
+
+    fn add_visible_routines_to_pseudo_stash(&self, entries: &mut HashMap<String, Value>) {
+        let packages = self.bare_name_packages();
+        let names: std::collections::HashSet<String> = {
+            let registry = self.registry();
+            registry
+                .functions
+                .keys()
+                .filter_map(|key| {
+                    let key = key.resolve();
+                    packages.iter().find_map(|package| {
+                        let prefix = format!("{package}::");
+                        let rest = key.strip_prefix(&prefix)?;
+                        let name = rest.split('/').next().unwrap_or(rest);
+                        (!name.contains("::") && !name.is_empty()).then(|| name.to_string())
+                    })
+                })
+                .collect()
+        };
+        for name in names {
+            let value = self.resolve_code_var(&name);
+            if !value.is_nil() {
+                entries.entry(format!("&{name}")).or_insert(value);
+            }
+        }
     }
 
     /// Add a sigil prefix to a variable name for display in pseudo-stash.
