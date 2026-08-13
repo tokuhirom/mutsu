@@ -394,6 +394,36 @@ pub(crate) fn subtest_stmt(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, Stmt::Subtest { name, body }))
 }
 
+/// True when `input` begins, at this exact position, with a user-declared
+/// custom infix operator (symbol or word form). Used by `block_stmt` to
+/// detect that a leading `{ ... }` is really the left operand of a declared
+/// operator (`{ $x--; } zork 25;`, where `infix:<zork>` takes a `&closure`
+/// first parameter) rather than a complete bare-block statement. Unlike the
+/// generic word-operator lookahead used mid-expression (which accepts any
+/// unreserved word and lets an undeclared name fail later with a
+/// Raku-compatible "Two terms in a row"), this check requires the operator to
+/// actually be declared — otherwise every bare block followed on the same
+/// line by an ordinary call (`{ $x++; } say $x;`) would be misdirected into
+/// the same fallback and fail instead of running as two statements.
+fn starts_with_declared_custom_infix(input: &str) -> bool {
+    if match_user_declared_infix_symbol_op(input).is_some() {
+        return true;
+    }
+    let first = match input.chars().next() {
+        Some(c) if c.is_alphabetic() || c == '_' => c,
+        _ => return false,
+    };
+    let mut end = first.len_utf8();
+    for ch in input[end..].chars() {
+        if ch.is_alphanumeric() || ch == '_' || ch == '-' {
+            end += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    is_user_defined_infix(&input[..end])
+}
+
 /// Parse a block statement: { ... }
 /// If the block is followed by `.method(...)`, treat it as a block expression
 /// with postfix operators (e.g. `{ $^a }.assuming(123)()`).
@@ -430,6 +460,17 @@ pub(crate) fn block_stmt(input: &str) -> PResult<'_, Stmt> {
         };
         let (rest, expr) = crate::parser::expr::postfix_expr_continue(rest, block_expr)?;
         return parse_statement_modifier(rest, Stmt::Expr(expr));
+    }
+    // A declared custom infix operator immediately follows, on the same line:
+    // `{ ... }` is the operator's left operand, not a complete statement. Fail
+    // this parse so `statement()` falls through to `simple::expr_stmt`, which
+    // re-parses `{ ... }` as a term via `block_or_hash_expr` and continues
+    // into the infix expression.
+    let ws_before_next = &rest[..rest.len() - r_ws.len()];
+    if !ws_before_next.contains('\n') && starts_with_declared_custom_infix(r_ws) {
+        return Err(PError::expected(
+            "statement (block is a custom-infix operand)",
+        ));
     }
     parse_statement_modifier(rest, Stmt::Block(body))
 }
