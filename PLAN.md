@@ -150,8 +150,6 @@ bench CI, never a local run.
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
       [todo/deep/interpreter-call-path-in-hot-loops.md](todo/deep/interpreter-call-path-in-hot-loops.md).
-- [ ] **The `needs_env_sync` blanket** — the last structural piece of dual-store decoupling, a fused
-      campaign: [todo/deep/needs-env-sync-blanket-removal.md](todo/deep/needs-env-sync-blanket-removal.md).
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
       [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome.
