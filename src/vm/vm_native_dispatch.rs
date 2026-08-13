@@ -153,7 +153,21 @@ impl Interpreter {
             && ll.lazy_pipe.is_some()
             && Self::lazy_pipe_preserving_coercion(method_name.as_str())
         {
-            return Some(Ok(target.clone()));
+            // The pipeline stays pullable, but `.List`/`.Array`/`.cache` change
+            // the reported type immediately (Rakudo: type changes, laziness
+            // does not) — tag the context marker the same way `.^name`/`.WHAT`
+            // read it. `.Seq`/`.lazy` leave the value unchanged.
+            let retagged = match method_name.as_str() {
+                "Array" => Value::lazy_list(crate::gc::Gc::new(ll.with_array_context())),
+                "List" | "list" | "values" => {
+                    Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
+                }
+                "cache" => Value::lazy_list(crate::gc::Gc::new(
+                    ll.with_cached_no_sink().with_list_context(),
+                )),
+                _ => target.clone(),
+            };
+            return Some(Ok(retagged));
         }
         // Eager list operations cannot run on a lazy/infinite source: throw
         // X::Cannot::Lazy instead of hanging while the native impl materializes

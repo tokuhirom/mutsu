@@ -412,7 +412,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     .get("__mutsu_preserve_lazy_on_array_assign")
                     .is_some() =>
             {
-                Some(Ok(target.clone()))
+                Some(Ok(Value::lazy_list(crate::gc::Gc::new(
+                    ll.with_list_context(),
+                ))))
             }
             ValueView::LazyList(_) => None, // fall through to runtime to force
             // `.List` on a Hash is its pairs, exactly like `.list`/`.Array`

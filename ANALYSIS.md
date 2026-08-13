@@ -373,7 +373,6 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
   `thread_local!` and lose registration across thread boundaries; pending DESTROY queues
   likewise. Seq consumed/cached/lazy state is O(n) linear scans of `OnceLock<Mutex<Vec<Weak>>>`
   statics. Fragile and slow; also the root of
-  `todo/deep/cache-on-a-lazy-seq-must-not-answer-seq.md` and
   `todo/deep/deferred-seq-materialization-destroys-the-original.md`.
 - **Env**: COW `Arc<FxHashMap<Symbol,Value>>` with a scoped parent-overlay chain capped at
   `MAX_OVERLAY_DEPTH=16` (`env.rs:318`). The structural remainder is §1.3's blanket.

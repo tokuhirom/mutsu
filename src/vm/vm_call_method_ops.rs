@@ -1128,7 +1128,7 @@ impl Interpreter {
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-cache");
             self.stack.push(Value::lazy_list(crate::gc::Gc::new(
-                ll.with_cached_no_sink(),
+                ll.with_cached_no_sink().with_list_context(),
             )));
             return Ok(());
         }

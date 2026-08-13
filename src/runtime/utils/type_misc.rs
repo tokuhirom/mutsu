@@ -19,6 +19,10 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Array(_, _) => "List",
         // A `gather` block evaluates to a `Seq` in Raku; other lazy lists
         // (`lazy for`, arithmetic/closure sequences) present as `Array`/`List`.
+        // `.List`/`.Array`/`.cache` on a lazy Seq changes the reported type
+        // without forcing reification, so honour those context markers first.
+        ValueView::LazyList(ll) if ll.in_array_context() => "Array",
+        ValueView::LazyList(ll) if ll.in_list_context() => "List",
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
         ValueView::LazyList(_) => "Array",
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",
