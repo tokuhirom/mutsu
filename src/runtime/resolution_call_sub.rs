@@ -256,13 +256,14 @@ impl Interpreter {
                     remaining,
                     args: sanitized_args.clone(),
                     arg_sources: self.pending_call_arg_sources().cloned(),
+                    dispatch_token: 0,
                 };
                 let (wrapper_id, wrapper_base_env) = if let ValueView::Sub(wd) = outermost.view() {
                     (Some(wd.id), Some(wd.env.clone()))
                 } else {
                     (None, None)
                 };
-                self.wrap_dispatch_stack.push(frame);
+                self.push_wrap_dispatch_frame(frame);
                 let result = self.call_sub_value(outermost, sanitized_args, false);
                 self.wrap_dispatch_stack.pop();
                 // Propagate closure variable mutations from the wrapper back to

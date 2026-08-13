@@ -359,12 +359,14 @@ impl Interpreter {
                 let rw_params = super::builtins_dispatch_next::rw_scalar_positional_params(
                     &method_def.param_defs,
                 );
+                let dispatch_token = self.next_dispatch_token();
                 self.method_dispatch_stack.push(MethodDispatchFrame {
                     receiver_class: receiver_class_name.to_string(),
                     invocant: invocant_for_dispatch,
                     args: args.clone(),
                     remaining,
                     rw_params,
+                    dispatch_token,
                 });
             }
             let mut orig_env = crate::env::Env::new();
@@ -391,13 +393,14 @@ impl Interpreter {
                 remaining: wrap_remaining,
                 args: call_args.clone(),
                 arg_sources: self.pending_call_arg_sources().cloned(),
+                dispatch_token: 0,
             };
             let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
                 Some(wd.id)
             } else {
                 None
             };
-            self.wrap_dispatch_stack.push(frame);
+            self.push_wrap_dispatch_frame(frame);
             self.shift_arg_sources_for_wrap_invocant();
             let result = self.call_sub_value(outermost, call_args, false);
             self.wrap_dispatch_stack.pop();
@@ -440,12 +443,14 @@ impl Interpreter {
         if pushed_dispatch {
             let rw_params =
                 super::builtins_dispatch_next::rw_scalar_positional_params(&method_def.param_defs);
+            let dispatch_token = self.next_dispatch_token();
             self.method_dispatch_stack.push(MethodDispatchFrame {
                 receiver_class: receiver_class_name.to_string(),
                 invocant: invocant_for_dispatch,
                 args: args.clone(),
                 remaining,
                 rw_params,
+                dispatch_token,
             });
         }
         // Check for `is DEPRECATED` trait on the method

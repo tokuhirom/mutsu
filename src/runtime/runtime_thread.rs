@@ -683,6 +683,7 @@ impl Interpreter {
             wrap_callable_ids: self.wrap_callable_ids.clone(),
             wrap_handle_counter: self.wrap_handle_counter,
             wrap_dispatch_stack: Vec::new(),
+            dispatch_token_counter: 0,
             wrap_skip_once: None,
             suppress_binding_error_enhance: false,
             method_wrap_chains: self.method_wrap_chains.clone(),

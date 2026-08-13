@@ -315,6 +315,7 @@ impl Interpreter {
             remaining,
             args: call_args.clone(),
             arg_sources: self.pending_call_arg_sources().cloned(),
+            dispatch_token: 0,
         };
         let wrapper_id = if let ValueView::Sub(wd) = outermost.view() {
             Some(wd.id)

@@ -1909,6 +1909,13 @@ pub struct Interpreter {
     wrap_handle_counter: u64,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
     wrap_dispatch_stack: Vec<WrapDispatchFrame>,
+    /// Monotonic counter stamped onto `wrap_dispatch_stack`/`method_dispatch_stack`/
+    /// `multi_dispatch_stack` frames at push time (ADR-0019 E9b-0). callsame/nextsame/
+    /// lastcall/nextcallee select the live frame with the HIGHEST token — the innermost
+    /// dynamic dispatch context — instead of a fixed wrap-then-method-then-multi search
+    /// order, so a method deferral nested inside a sub wrapper (or vice versa) resolves
+    /// to its own chain instead of shadowing/being shadowed by the other stack.
+    dispatch_token_counter: u64,
     /// One-shot chain-skip for callsame/callwith invoking the *original* sub
     /// (or an inner wrapper) of an active wrap dispatch: the very next
     /// `call_sub_value` on this sub id must run the sub directly instead of

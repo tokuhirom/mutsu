@@ -3976,6 +3976,23 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   proto body never runs for TYPE-OBJECT invocants (`try_proto_method_body`'s Instance gate) —
   is adjacent, filed as `proto-method-body-skipped-for-type-object-invocant.md`, not in E9c
   scope. Slice order: E9b-0 → E9b-1 → E9b-2 → E9c-1 → E9c-2 (E9b/E9c independent).
+  **Progress 2026-08-13 (same day) — E9b-0 landed.** `wrap_dispatch_stack`,
+  `method_dispatch_stack`, and `multi_dispatch_stack` frames now each carry a
+  `dispatch_token: u64` stamped from one shared monotonic counter
+  (`Interpreter::next_dispatch_token`) at push. `dispatch_next_candidate`,
+  `builtin_lastcall`, and `builtin_nextcallee` select the live frame with the
+  highest token (innermost dispatch context) via a new
+  `innermost_dispatch_stack()` helper, replacing the fixed
+  wrap-then-method-then-multi search order. For today's paired method-wrap
+  frames the wrap frame is still pushed second and wins by construction, so
+  same-stack and paired-frame behavior is unchanged; only genuine cross-stack
+  nesting changes. Fixes
+  `callsame-in-method-consumes-enclosing-sub-wrap-chain.md` (the P2 probe),
+  raku-confirmed and pinned (`t/dispatch-token-cross-stack-nesting.t`, both
+  nesting directions). The companion P1 divergence
+  (`wrap-chain-skipped-inside-foreign-wrap-dispatch.md`, the global
+  `is_inside_wrap_dispatch()` guard) is untouched — that is E9b-2 scope, which
+  deletes the guard entirely as part of the single-frame cutover.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

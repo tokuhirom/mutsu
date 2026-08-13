@@ -153,13 +153,15 @@ pub(crate) struct ProtoMethodCtx {
 }
 
 /// One entry of `multi_dispatch_stack`: (function_name, remaining_candidates,
-/// original_args, first_candidate_rw_params). See the field doc on
-/// `Interpreter::multi_dispatch_stack`.
+/// original_args, first_candidate_rw_params, dispatch_token). See the field doc
+/// on `Interpreter::multi_dispatch_stack`. The trailing `u64` is the ADR-0019
+/// E9b-0 push-order token — see `MethodDispatchFrame::dispatch_token`.
 pub(crate) type MultiDispatchEntry = (
     String,
     Vec<Arc<FunctionDef>>,
     Vec<Value>,
     Vec<(usize, String)>,
+    u64,
 );
 
 #[derive(Debug, Clone)]
@@ -173,6 +175,10 @@ pub(crate) struct MethodDispatchFrame {
     /// MRO chain so a `nextsame`+rw redispatch can forward the rw param's current
     /// value and route the next candidate's writeback through it (§D capstone).
     pub(crate) rw_params: Vec<(usize, String)>,
+    /// ADR-0019 E9b-0: monotonic push-order token shared with `WrapDispatchFrame`/
+    /// `MultiDispatchEntry`. callsame/nextsame/lastcall/nextcallee compare tokens
+    /// across all three deferral stacks and pick the highest (innermost) live frame.
+    pub(crate) dispatch_token: u64,
 }
 
 /// Frame for navigating through wrapper chain during callsame/callwith.
@@ -190,6 +196,8 @@ pub(crate) struct WrapDispatchFrame {
     /// its own signature binds, so `callsame` reaching the original would
     /// otherwise see none and reject an `is rw` parameter.
     pub(crate) arg_sources: Option<Vec<Option<String>>>,
+    /// ADR-0019 E9b-0: see `MethodDispatchFrame::dispatch_token`.
+    pub(crate) dispatch_token: u64,
 }
 
 #[derive(Debug, Clone)]

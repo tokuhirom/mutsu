@@ -753,6 +753,16 @@ impl Interpreter {
         }
     }
 
+    /// ADR-0019 E9b-0: mint the next push-order token for a wrap/method/multi
+    /// dispatch frame. `dispatch_next_candidate`/`builtin_lastcall`/
+    /// `builtin_nextcallee` compare tokens across all three deferral stacks and
+    /// select the highest (innermost) live frame instead of a fixed
+    /// wrap-then-method-then-multi search order.
+    pub(crate) fn next_dispatch_token(&mut self) -> u64 {
+        self.dispatch_token_counter += 1;
+        self.dispatch_token_counter
+    }
+
     pub(crate) fn push_method_dispatch_frame(
         &mut self,
         receiver_class: &str,
@@ -861,12 +871,14 @@ impl Interpreter {
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
                 })
                 .unwrap_or_default();
+            let dispatch_token = self.next_dispatch_token();
             self.method_dispatch_stack.push(super::MethodDispatchFrame {
                 receiver_class: receiver_class.to_string(),
                 invocant,
                 args: args.to_vec(),
                 remaining,
                 rw_params,
+                dispatch_token,
             });
         }
         pushed
@@ -880,7 +892,8 @@ impl Interpreter {
         !self.method_wrap_chains.is_empty()
     }
 
-    pub(crate) fn push_wrap_dispatch_frame(&mut self, frame: super::WrapDispatchFrame) {
+    pub(crate) fn push_wrap_dispatch_frame(&mut self, mut frame: super::WrapDispatchFrame) {
+        frame.dispatch_token = self.next_dispatch_token();
         self.wrap_dispatch_stack.push(frame);
     }
 
@@ -1001,8 +1014,14 @@ impl Interpreter {
                     super::builtins_dispatch_next::rw_scalar_positional_params(&def.param_defs)
                 })
                 .unwrap_or_default();
-            self.multi_dispatch_stack
-                .push((name.to_string(), remaining, args.to_vec(), rw_params));
+            let dispatch_token = self.next_dispatch_token();
+            self.multi_dispatch_stack.push((
+                name.to_string(),
+                remaining,
+                args.to_vec(),
+                rw_params,
+                dispatch_token,
+            ));
         }
         pushed
     }

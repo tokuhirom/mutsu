@@ -37,7 +37,43 @@ pub(super) fn rw_scalar_positional_params(
     out
 }
 
+/// ADR-0019 E9b-0: which of the three deferral stacks currently holds the
+/// innermost live dispatch context, per `Interpreter::innermost_dispatch_stack`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DispatchFrameKind {
+    Wrap,
+    Method,
+    Multi,
+}
+
 impl Interpreter {
+    /// ADR-0019 E9b-0: `wrap_dispatch_stack`, `method_dispatch_stack`, and
+    /// `multi_dispatch_stack` are independent stacks, each stamped with a
+    /// shared monotonic `dispatch_token` at push time. `callsame`/`nextsame`/
+    /// `lastcall`/`nextcallee` must resolve to the INNERMOST live dynamic
+    /// dispatch context — the frame with the highest token among the three
+    /// stacks' top frames — rather than a fixed wrap-then-method-then-multi
+    /// search order, which lets an outer frame on one stack shadow a more
+    /// recently pushed frame on a different stack (e.g. a method deferral
+    /// nested inside a sub wrapper, or vice versa).
+    fn innermost_dispatch_stack(&self) -> Option<DispatchFrameKind> {
+        let mut best: Option<(u64, DispatchFrameKind)> = None;
+        if let Some(frame) = self.wrap_dispatch_stack.last() {
+            best = Some((frame.dispatch_token, DispatchFrameKind::Wrap));
+        }
+        if let Some(frame) = self.method_dispatch_stack.last()
+            && best.is_none_or(|(t, _)| frame.dispatch_token > t)
+        {
+            best = Some((frame.dispatch_token, DispatchFrameKind::Method));
+        }
+        if let Some(entry) = self.multi_dispatch_stack.last()
+            && best.is_none_or(|(t, _)| entry.4 > t)
+        {
+            best = Some((entry.4, DispatchFrameKind::Multi));
+        }
+        best.map(|(_, kind)| kind)
+    }
+
     pub(super) fn no_dispatcher_error(func_name: &str) -> RuntimeError {
         let mut attrs = HashMap::new();
         attrs.insert(
@@ -57,24 +93,30 @@ impl Interpreter {
     /// Trim the candidate list so that the current call is the final candidate.
     /// After lastcall, callsame/nextsame from the same dispatch context return Nil.
     pub(super) fn builtin_lastcall(&mut self) -> Result<Value, RuntimeError> {
-        // Clear remaining candidates of the topmost dispatch frame.
-        // Try wrap dispatch stack first.
-        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
-            frame.remaining.clear();
-            return Ok(Value::TRUE);
+        // Clear remaining candidates of the innermost live dispatch frame
+        // (ADR-0019 E9b-0: chosen by dispatch_token, not a fixed stack order).
+        match self.innermost_dispatch_stack() {
+            Some(DispatchFrameKind::Wrap) => {
+                if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+                    frame.remaining.clear();
+                }
+                Ok(Value::TRUE)
+            }
+            Some(DispatchFrameKind::Method) => {
+                if let Some(frame) = self.method_dispatch_stack.last_mut() {
+                    frame.remaining.clear();
+                }
+                Ok(Value::TRUE)
+            }
+            Some(DispatchFrameKind::Multi) => {
+                if let Some(top) = self.multi_dispatch_stack.last_mut() {
+                    top.1.clear();
+                }
+                Ok(Value::TRUE)
+            }
+            // Outside a dispatch context: no-op (return False).
+            None => Ok(Value::FALSE),
         }
-        // Try method dispatch stack.
-        if let Some(frame) = self.method_dispatch_stack.last_mut() {
-            frame.remaining.clear();
-            return Ok(Value::TRUE);
-        }
-        // Try multi dispatch stack.
-        if let Some(top) = self.multi_dispatch_stack.last_mut() {
-            top.1.clear();
-            return Ok(Value::TRUE);
-        }
-        // Outside a dispatch context: no-op (return False).
-        Ok(Value::FALSE)
     }
 
     /// Call next method/multi candidate with the original args; returns the result.
@@ -402,8 +444,16 @@ impl Interpreter {
         // when there is no method_dispatch_stack/method_class_stack frame to
         // say so (a plain, unwrapped-by-MRO method has neither).
         let mut wrap_chain_exhausted = false;
-        // Try wrap dispatch stack first (wrapper chains).
-        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+        // ADR-0019 E9b-0: resolve to the innermost live dispatch context (by
+        // dispatch_token) instead of a fixed wrap-then-method-then-multi order,
+        // so an outer sub/method wrap does not shadow a more recently pushed
+        // frame on a different stack (and vice versa).
+        let innermost = self.innermost_dispatch_stack();
+        // Try wrap dispatch stack first (wrapper chains) — only when it is
+        // genuinely the innermost context.
+        if innermost == Some(DispatchFrameKind::Wrap)
+            && let Some(frame) = self.wrap_dispatch_stack.last_mut()
+        {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
                 let is_override = override_args.is_some();
@@ -467,8 +517,14 @@ impl Interpreter {
             // so callsame inside the original method can continue the MRO chain.
             wrap_chain_exhausted = true;
         }
-        // Try method dispatch stack
-        if !self.method_dispatch_stack.is_empty() {
+        // Try method dispatch stack — either it is genuinely the innermost
+        // context, or we just fell through an exhausted method-wrap sentinel
+        // above: today's paired method+wrap frames (wrap pushed second, so it
+        // wins the innermost check first) still hand off to the SAME paired
+        // method frame once the wrap chain is exhausted.
+        if (innermost == Some(DispatchFrameKind::Method) || wrap_chain_exhausted)
+            && !self.method_dispatch_stack.is_empty()
+        {
             let frame_idx = self.method_dispatch_stack.len() - 1;
             let is_override = override_args.is_some();
             // If the next MRO candidate carries a method-level wrap chain, route the
@@ -523,8 +579,9 @@ impl Interpreter {
                             remaining: wrap_remaining,
                             args: wrap_call_args.clone(),
                             arg_sources: self.pending_call_arg_sources().cloned(),
+                            dispatch_token: 0,
                         };
-                        self.wrap_dispatch_stack.push(frame);
+                        self.push_wrap_dispatch_frame(frame);
                         self.shift_arg_sources_for_wrap_invocant();
                         let result = self.call_sub_value(outermost, wrap_call_args, false);
                         self.wrap_dispatch_stack.pop();
@@ -769,9 +826,12 @@ impl Interpreter {
             }
             return Ok(result);
         }
-        // Try multi dispatch stack
-        if let Some((_name, candidates, orig_args, rw_params)) =
-            self.multi_dispatch_stack.last().cloned()
+        // Try multi dispatch stack — only when it is genuinely the innermost
+        // context. Exhaustion semantics stay per-family: an exhausted wrap or
+        // method frame does not fall through to an unrelated outer multi.
+        if innermost == Some(DispatchFrameKind::Multi)
+            && let Some((_name, candidates, orig_args, rw_params, dispatch_token)) =
+                self.multi_dispatch_stack.last().cloned()
         {
             let is_override = override_args.is_some();
             let mut call_args = override_args.unwrap_or(orig_args);
@@ -836,8 +896,13 @@ impl Interpreter {
             let stack_len = self.multi_dispatch_stack.len();
             // Keep rw_params fixed: it always identifies the FIRST candidate's
             // slots, even as the chain advances through later candidates.
-            self.multi_dispatch_stack[stack_len - 1] =
-                (_name, remaining, call_args.clone(), rw_params.clone());
+            self.multi_dispatch_stack[stack_len - 1] = (
+                _name,
+                remaining,
+                call_args.clone(),
+                rw_params.clone(),
+                dispatch_token,
+            );
             if have_rw_source {
                 self.set_pending_call_arg_sources(Some(rw_sources));
             }
@@ -978,8 +1043,14 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
-        // Check wrap dispatch stack first (wrapper chains)
-        if let Some(frame) = self.wrap_dispatch_stack.last_mut() {
+        // ADR-0019 E9b-0: resolve to the innermost live dispatch context, same
+        // as dispatch_next_candidate/builtin_lastcall.
+        let innermost = self.innermost_dispatch_stack();
+        // Check wrap dispatch stack first (wrapper chains) — only when it is
+        // genuinely the innermost context.
+        if innermost == Some(DispatchFrameKind::Wrap)
+            && let Some(frame) = self.wrap_dispatch_stack.last_mut()
+        {
             if let Some(next) = frame.remaining.first().cloned() {
                 frame.remaining.remove(0);
                 // The wrappee returned by nextcallee is the inner code object
@@ -996,10 +1067,13 @@ impl Interpreter {
             }
             return Ok(Value::NIL);
         }
-        // Check method dispatch stack
-        // (not yet implemented for methods — return Nil)
+        // Method dispatch is not yet implemented for nextcallee — Nil, same as
+        // when there is no live dispatch context at all.
+        if innermost != Some(DispatchFrameKind::Multi) {
+            return Ok(Value::NIL);
+        }
         // Check multi dispatch stack
-        let Some((_name, candidates, orig_args, rw_params)) =
+        let Some((_name, candidates, orig_args, rw_params, dispatch_token)) =
             self.multi_dispatch_stack.last().cloned()
         else {
             return Ok(Value::NIL);
@@ -1022,7 +1096,8 @@ impl Interpreter {
         // Remove this candidate and all before it from the remaining list
         let remaining = candidates[idx + 1..].to_vec();
         let stack_len = self.multi_dispatch_stack.len();
-        self.multi_dispatch_stack[stack_len - 1] = (_name, remaining, orig_args, rw_params);
+        self.multi_dispatch_stack[stack_len - 1] =
+            (_name, remaining, orig_args, rw_params, dispatch_token);
         // Return as a callable Sub value
         Ok(Value::make_sub_for_routine(
             next_def.package,
