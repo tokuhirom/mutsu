@@ -2,7 +2,7 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Outcome of a `register_sub_decl` call, distinguishing a genuine
 /// (re-)installation from an idempotent no-op re-registration of an already
@@ -42,6 +42,56 @@ pub(crate) fn test_assertion_name_possible(name: &str) -> bool {
     TEST_ASSERTION_NAMES
         .get()
         .is_some_and(|names| names.read().unwrap().contains(name))
+}
+
+/// Process-wide, monotonic record of role names composed onto a *named
+/// routine* (`sub foo() {...}` mixed with a role via `.^mixin(Role)` or a
+/// trait handler's `$r does Role`), keyed by `"package::name"`. A Sub value
+/// for a named routine is rebuilt fresh from the registry at every call
+/// (`vm_call_named_inner.rs`) and at every bare `&name` mention
+/// (`vm_misc_codevar.rs`) — see
+/// `news/2026-08/test-assertion-trait-is-not-introspectable.md` — so
+/// composing a role onto one instance of that Sub does not by
+/// itself make a later rebuild carry it. This records "roles a plain rebuild
+/// must also re-apply" so `Interpreter::materialize_routine_mixins` can
+/// restore them. Same conservative monotonic-counter contract as
+/// `TEST_ASSERTION_DECLS` above: insert-only, so a lookup miss is always
+/// correct (just means "never mixed"), and the common case (no routine ever
+/// mixed) costs one relaxed load on every call.
+static ROUTINE_MIXIN_DECLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static ROUTINE_MIXIN_ROLES: std::sync::OnceLock<std::sync::RwLock<HashMap<String, Vec<String>>>> =
+    std::sync::OnceLock::new();
+
+/// Record that `role_name` was composed onto the named routine
+/// `qualified_name` (`"package::name"`).
+pub(crate) fn note_routine_mixin_role(qualified_name: &str, role_name: &str) {
+    let map = ROUTINE_MIXIN_ROLES.get_or_init(|| std::sync::RwLock::new(HashMap::new()));
+    let mut roles = map.write().unwrap();
+    let entry = roles.entry(qualified_name.to_string()).or_default();
+    if !entry.iter().any(|r| r == role_name) {
+        entry.push(role_name.to_string());
+    }
+    drop(roles);
+    ROUTINE_MIXIN_DECLS.fetch_add(1, std::sync::atomic::Ordering::Release);
+}
+
+/// Cheap pre-check for the overwhelmingly common case (no routine anywhere
+/// was ever mixed with a role): a caller on a hot path should skip building
+/// the `"package::name"` lookup key entirely when this is false.
+pub(crate) fn any_routine_mixin_roles() -> bool {
+    ROUTINE_MIXIN_DECLS.load(std::sync::atomic::Ordering::Acquire) != 0
+}
+
+/// The role names ever composed onto the named routine `qualified_name`
+/// (empty when none were).
+pub(crate) fn routine_mixin_roles(qualified_name: &str) -> Vec<String> {
+    if !any_routine_mixin_roles() {
+        return Vec::new();
+    }
+    ROUTINE_MIXIN_ROLES
+        .get()
+        .and_then(|m| m.read().unwrap().get(qualified_name).cloned())
+        .unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1385,6 +1435,13 @@ impl Interpreter {
                     && !matches!(t.as_str(), "native" | "symbol" | "nativeconv" | "encoded")
             }) {
                 if !has_trait_mod {
+                    // `test-assertion` is a builtin trait (mutsu's parser
+                    // already recorded it on the def via `is_test_assertion`);
+                    // it must not be reported as unknown just because no user
+                    // `trait_mod:<is>` handler happens to be in scope.
+                    if trait_name == "test-assertion" {
+                        continue;
+                    }
                     // In EVAL context, report the error. Outside EVAL
                     // (e.g. module loading), silently skip unknown traits
                     // because the handler may not be visible yet.
@@ -1467,12 +1524,26 @@ impl Interpreter {
                 // The writeback mechanism captures the Mixin from DoesVar
                 // inside the trait_mod and propagates it back to &name.
                 let code_var_key = format!("&{}", name);
-                if let Ok(ref result) = call_result
-                    && matches!(result.view(), ValueView::Mixin(..))
-                {
-                    self.env.insert(code_var_key, result.clone());
-                } else if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
-                    self.env.insert(code_var_key, mixin_val);
+                match call_result {
+                    Ok(ref result) if matches!(result.view(), ValueView::Mixin(..)) => {
+                        self.env.insert(code_var_key, result.clone());
+                    }
+                    Ok(_) => {
+                        if let Some(mixin_val) = self.trait_mod_writeback_value.take() {
+                            self.env.insert(code_var_key, mixin_val);
+                        }
+                    }
+                    // No user candidate accepted this trait (e.g. `is
+                    // test-assertion` with no `Test` handler in scope, or a
+                    // genuinely unknown custom trait): keep whatever builtin
+                    // meaning parsing already recorded and move on, same as
+                    // the analogous variable-trait fallback in
+                    // `vm_var_trait_ops.rs`.
+                    Err(e) if Self::is_trait_mod_no_candidate(&e) => {}
+                    // A real error raised from inside a handler that DID
+                    // match (e.g. it `die`s) must propagate, not be silently
+                    // swallowed.
+                    Err(e) => return Err(e),
                 }
             }
         }

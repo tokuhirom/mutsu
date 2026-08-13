@@ -615,7 +615,7 @@ impl Interpreter {
 
     /// Whether `e` is the "none of these signatures matches" verdict for
     /// `trait_mod:<is>` itself, rather than an error from inside a handler.
-    fn is_trait_mod_no_candidate(e: &RuntimeError) -> bool {
+    pub(crate) fn is_trait_mod_no_candidate(e: &RuntimeError) -> bool {
         let msg = &e.message;
         msg.contains("No matching candidates for proto sub: trait_mod:<is>")
             || msg.contains("Cannot resolve caller trait_mod:<is>")

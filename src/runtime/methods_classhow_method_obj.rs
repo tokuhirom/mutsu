@@ -288,6 +288,47 @@ impl Interpreter {
     /// Returns a list of callable Sub values, one per class in the MRO that
     /// defines the method. This implements `.can(method-name)`.
     pub(super) fn collect_can_methods(&mut self, target: &Value, method_name: &str) -> Vec<Value> {
+        // A Mixin (`but`/`does`, or a trait handler's `$routine does Role`) has
+        // no entry of its own in the class registry, so the generic MRO walk
+        // below (keyed by `mop_receiver_owner`) never sees it and mixin-added
+        // methods are invisible to `.^can` / `nqp::can` even though `.can`
+        // (dispatch_mixin_method_call) already finds them. Delegate to the
+        // wrapped value for the base MRO, then add methods contributed by
+        // the mixed-in roles, mirroring the `.can` handling above.
+        if let ValueView::Mixin(inner, mixins) = target.view() {
+            let mut results = self.collect_can_methods(inner.as_ref(), method_name);
+            if (mixins.contains_key(method_name)
+                || mixins.contains_key(&format!("__mutsu_attr__{method_name}")))
+                && results.is_empty()
+            {
+                results.push(Value::routine_parts(
+                    Symbol::intern("Mixin"),
+                    Symbol::intern(method_name),
+                    false,
+                ));
+            }
+            for role_name in mixins.keys().filter_map(|key| {
+                key.strip_prefix("__mutsu_role__")
+                    .map(|name| name.to_string())
+            }) {
+                if let Some(role) = self.registry().roles.get(&role_name)
+                    && let Some(defs) = role.methods.get(method_name)
+                {
+                    for def in defs {
+                        results.push(Value::make_sub(
+                            Symbol::intern(&role_name),
+                            Symbol::intern(method_name),
+                            def.params.clone(),
+                            def.param_defs.clone(),
+                            (*def.body).clone(),
+                            def.is_rw,
+                            crate::env::Env::new(),
+                        ));
+                    }
+                }
+            }
+            return results;
+        }
         let class_name = match target.view() {
             ValueView::RakuAst(node) => node.class.printed_name().to_string(),
             ValueView::Enum { enum_type, .. } => enum_type.resolve(),

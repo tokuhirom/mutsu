@@ -105,10 +105,24 @@ impl Interpreter {
                     ));
                 }
                 // Generic `.^mixin(R)`: same composition as infix `but`
-                // (`Str.^mixin(R)` is the `Str+{R}` mixin type object).
+                // (`Str.^mixin(R)` is the `Str+{R}` mixin type object). When
+                // `R` is an actual role, route through the same role
+                // composition `but`/`does` use (`eval_does_values`) rather
+                // than `apply_but_mixin`'s generic by-type-name keying —
+                // otherwise the mixin map is keyed by the bare role name
+                // instead of the `__mutsu_role__<name>` marker every other
+                // role-aware consumer (`.can`, `.^can`, `nqp::can`, `.does`)
+                // expects, and (for a routine invocant) the composition is
+                // never recorded for `materialize_routine_mixins` to restore
+                // on a later rebuild (see
+                // news/2026-08/test-assertion-trait-is-not-introspectable.md).
                 let mut result = args[0].clone();
                 for role in &args[1..] {
-                    result = Self::apply_but_mixin(result, role.clone())?;
+                    result = if self.is_role_application(role) {
+                        self.eval_does_values(result, role.clone())?
+                    } else {
+                        Self::apply_but_mixin(result, role.clone())?
+                    };
                 }
                 Ok(result)
             }

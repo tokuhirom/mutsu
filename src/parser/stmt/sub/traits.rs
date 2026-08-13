@@ -161,6 +161,11 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 continue;
             } else if trait_name == "test-assertion" {
                 is_test_assertion = true;
+                // Also queue it as a custom trait so a user-defined
+                // `trait_mod:<is>(Routine:D, :$test-assertion!)` (e.g. the real
+                // `Test.rakumod`) gets a chance to run, in addition to mutsu's
+                // own builtin handling of the flag above.
+                custom_traits.push((trait_name.to_string(), None));
             } else if trait_name == "rw" {
                 is_rw = true;
             } else if trait_name == "raw" {

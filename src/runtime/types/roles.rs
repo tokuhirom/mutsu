@@ -2,6 +2,87 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// Re-apply any roles ever composed onto the named routine
+    /// `package::name` (via `.^mixin(Role)` or a trait handler's `$r does
+    /// Role`) to a freshly rebuilt `sub_val` for that same routine.
+    ///
+    /// A named routine's Sub value is rebuilt from the registry at every call
+    /// and at every bare `&name` mention rather than kept as one persistent
+    /// object, so a role composed onto one instance does not automatically
+    /// appear on the next rebuild. `note_routine_mixin_role` (called from
+    /// `compose_role_on_value` above) records which roles a given routine has
+    /// ever been composed with; this restores them. Cheap no-op (a single
+    /// relaxed atomic load, no allocation) when no routine anywhere has ever
+    /// been mixed with a role.
+    ///
+    /// TODO: recorded compositions are always parameterless (`&[]`) — a
+    /// routine mixed with a *parameterized* role (`$r does Role[Arg]`) would
+    /// lose the type arguments on rebuild. No known caller does this yet
+    /// (`Test.rakumod`'s marker roles are parameterless); extending
+    /// `note_routine_mixin_role` to also record `role_args` would fix it.
+    pub(crate) fn materialize_routine_mixins(
+        &mut self,
+        sub_val: Value,
+        package: &str,
+        name: &str,
+    ) -> Value {
+        if !crate::runtime::registration_sub::any_routine_mixin_roles() {
+            return sub_val;
+        }
+        let qualified = format!("{package}::{name}");
+        let roles = crate::runtime::registration_sub::routine_mixin_roles(&qualified);
+        let mut result = sub_val;
+        for role_name in roles {
+            result = self
+                .compose_role_on_value(result.clone(), &role_name, &[])
+                .unwrap_or(result);
+        }
+        result
+    }
+
+    /// Lightweight `&self` counterpart to [`Self::materialize_routine_mixins`]
+    /// for call sites that only hold shared access (e.g.
+    /// `sub_value_from_function_def`, which `&name` code-var resolution uses
+    /// and cannot take `&mut self` without a much larger signature change).
+    /// Restores only the `__mutsu_role__<name>` / role-id markers, not the
+    /// full composition — the role's BUILD/TWEAK submethods and deferred body
+    /// already ran once, at the original `.^mixin`/`does` call that first
+    /// composed it, and must not run again on every rebuild.
+    pub(crate) fn materialize_routine_mixins_shared(
+        &self,
+        sub_val: Value,
+        package: &str,
+        name: &str,
+    ) -> Value {
+        if !crate::runtime::registration_sub::any_routine_mixin_roles() {
+            return sub_val;
+        }
+        let qualified = format!("{package}::{name}");
+        let roles = crate::runtime::registration_sub::routine_mixin_roles(&qualified);
+        if roles.is_empty() {
+            return sub_val;
+        }
+        let (inner, mut mixins) = match sub_val.view() {
+            ValueView::Mixin(inner, existing) => (inner.as_ref().clone(), (**existing).clone()),
+            _ => (sub_val, HashMap::new()),
+        };
+        for role_name in &roles {
+            mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
+            let role_id = self
+                .registry()
+                .roles
+                .get(role_name)
+                .map_or(0, |r| r.role_id);
+            if role_id != 0 {
+                mixins.insert(
+                    format!("__mutsu_role_id__{role_name}"),
+                    Value::int(role_id as i64),
+                );
+            }
+        }
+        Value::mixin(inner, mixins)
+    }
+
     pub(crate) fn role_def_for_mixin_role(
         &self,
         mixins: &std::collections::HashMap<String, Value>,
@@ -477,6 +558,18 @@ impl Interpreter {
             if let Some(saved) = saved_env {
                 self.env = saved;
             }
+        }
+
+        // A Sub value is rebuilt fresh from the registry at every call and at
+        // every bare `&name` mention (see `Interpreter::materialize_routine_mixins`),
+        // so composing a role onto *this* instance does not by itself make a
+        // later rebuild of the same routine carry it. Record the composition
+        // so those rebuild sites can re-apply it.
+        if let ValueView::Sub(sub_data) = inner.view() {
+            crate::runtime::registration_sub::note_routine_mixin_role(
+                &format!("{}::{}", sub_data.package, sub_data.name),
+                role_name,
+            );
         }
 
         Ok(Value::mixin(inner, mixins))
