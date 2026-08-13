@@ -136,10 +136,24 @@ impl Compiler {
                 // ...and for the free-variable analysis, which would otherwise
                 // read the env-only store as a write to an enclosing same-named
                 // lexical. See `CompiledCode::expr_declared_syms`.
-                self.code
-                    .expr_declared_syms
-                    .insert(crate::symbol::Symbol::intern(name));
+                let is_promoted = self.promoted_expr_decl_names.contains(name);
+                if !is_promoted {
+                    self.code
+                        .expr_declared_syms
+                        .insert(crate::symbol::Symbol::intern(name));
+                }
                 let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
+                let shadows_outer = self.enclosing_local_names.contains(name)
+                    || self.local_scopes.len() >= 2
+                        && self.local_scopes[..self.local_scopes.len() - 1]
+                            .iter()
+                            .any(|scope| scope.contains_key(name));
+                // A shadowing expression-position declaration is lexical just
+                // like the statement form. Give it a declaration slot after its
+                // initializer has compiled, preserving the existing initializer
+                // semantics while preventing an inherited same-named binding
+                // (including a captured ContainerRef cell) from being overwritten.
+                let mut decl_slot = None;
                 // my $x = expr in expression context -> declare, assign, return value
                 if *is_state {
                     // Register the declared type constraint BEFORE the init,
@@ -153,7 +167,11 @@ impl Compiler {
                         self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                     }
                     self.compile_expr(expr);
-                    let slot = self.alloc_local(name);
+                    let slot = if is_promoted {
+                        self.alloc_local(name)
+                    } else {
+                        self.declare_local(name)
+                    };
                     let ip = self.code.ops.len();
                     let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
                     let key_idx = self.code.add_constant(Value::str(key.clone()));
@@ -210,6 +228,9 @@ impl Compiler {
                         self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
                     }
                     self.compile_expr(expr);
+                    if !is_promoted && shadows_outer {
+                        decl_slot = Some(self.declare_local(name));
+                    }
                     // Re-clear AFTER the initializer: evaluating the RHS can call
                     // into code that declares its own typed same-named lexical
                     // (Text::CSV's `my Int @r = @!crange` runs inside
@@ -231,7 +252,11 @@ impl Compiler {
                     // declaring write; its fresh-container detach is a no-op (the
                     // marker-slot cache path reuses the stored value regardless).
                     self.code.emit(OpCode::MarkVarDeclContext);
-                    self.code.emit(OpCode::SetGlobal(name_idx));
+                    if let Some(slot) = decl_slot {
+                        self.code.emit(OpCode::SetLocal(slot));
+                    } else {
+                        self.code.emit(OpCode::SetGlobal(name_idx));
+                    }
                     // Apply an `is default(...)` trait BEFORE reading the value back,
                     // so the container's embedded default travels with the value
                     // returned by this expression (`(my % is default(42))`). The
@@ -246,13 +271,11 @@ impl Compiler {
                         }
                         let trait_name_idx =
                             self.code.add_constant(Value::str("default".to_string()));
-                        // Expression-position declarations are env-only (stored
-                        // via SetGlobal, no local slot) — nothing to bake.
                         self.code.emit(OpCode::ApplyVarTrait {
                             name_idx,
                             trait_name_idx,
                             has_arg: trait_arg.is_some(),
-                            slot: None,
+                            slot: decl_slot,
                         });
                     }
                     // Tag the container's element-type metadata so `.of` survives
@@ -337,6 +360,9 @@ impl Compiler {
                         self.compile_expr(&Self::any_type_object_expr());
                     } else {
                         self.compile_expr(expr);
+                    }
+                    if !*is_our && !is_promoted && shadows_outer {
+                        self.declare_local(name);
                     }
                     if *is_our {
                         self.code.emit(OpCode::Dup); // for return value

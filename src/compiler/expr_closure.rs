@@ -1,4 +1,43 @@
 use super::*;
+
+/// Find expression-position declarations inside a synthesized WhateverCode.
+/// The generated callable is transparent for lexical scoping, while explicit
+/// source closures/blocks remain boundaries of their own.
+fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSet<String>) {
+    fn expr(node: &Expr, out: &mut std::collections::HashSet<String>) {
+        match node {
+            Expr::DoStmt(stmt) => {
+                if let Stmt::VarDecl { name, is_our, .. } = stmt.as_ref()
+                    && !*is_our
+                {
+                    out.insert(name.clone());
+                }
+            }
+            Expr::Unary { expr: inner, .. }
+            | Expr::PostfixOp { expr: inner, .. }
+            | Expr::Grouped(inner) => expr(inner, out),
+            Expr::Binary { left, right, .. } => {
+                expr(left, out);
+                expr(right, out);
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                expr(cond, out);
+                expr(then_expr, out);
+                expr(else_expr, out);
+            }
+            _ => {}
+        }
+    }
+    for stmt in body {
+        if let Stmt::Expr(e) = stmt {
+            expr(e, out);
+        }
+    }
+}
 use crate::symbol::Symbol;
 
 impl Compiler {
@@ -250,8 +289,28 @@ impl Compiler {
             param_defs
         };
         // Pointy blocks are NOT routine boundaries for `return`.
+        let mut promoted_decls = std::collections::HashSet::new();
+        if is_whatever_code {
+            collect_whatever_expr_decls(body, &mut promoted_decls);
+        }
+        let mut promoted_decls: Vec<String> = promoted_decls
+            .into_iter()
+            .filter(|name| {
+                self.local_map.contains_key(name) || self.enclosing_local_names.contains(name)
+            })
+            .collect();
+        promoted_decls.sort();
+        for name in &promoted_decls {
+            let slot = self.declare_local(name);
+            self.record_block_decl(name);
+            self.code.emit(OpCode::LoadNil);
+            self.code.emit(OpCode::MarkVarDeclContext);
+            self.code.emit(OpCode::SetLocal(slot));
+        }
         let mut compiled = if is_pointy {
             self.compile_closure_body(params, param_defs, body)
+        } else if is_whatever_code {
+            self.compile_closure_body_with_promoted_decls(params, param_defs, body, &promoted_decls)
         } else {
             self.compile_routine_closure_body(params, param_defs, body)
         };
@@ -345,7 +404,34 @@ impl Compiler {
         } else {
             Vec::new()
         };
-        let mut compiled = self.compile_closure_body(&params, &wc_param_defs, body);
+        let mut promoted_decls = std::collections::HashSet::new();
+        if is_whatever_code {
+            collect_whatever_expr_decls(body, &mut promoted_decls);
+        }
+        let mut promoted_decls: Vec<String> = promoted_decls
+            .into_iter()
+            .filter(|name| {
+                self.local_map.contains_key(name) || self.enclosing_local_names.contains(name)
+            })
+            .collect();
+        promoted_decls.sort();
+        for name in &promoted_decls {
+            let slot = self.declare_local(name);
+            self.record_block_decl(name);
+            self.code.emit(OpCode::LoadNil);
+            self.code.emit(OpCode::MarkVarDeclContext);
+            self.code.emit(OpCode::SetLocal(slot));
+        }
+        let mut compiled = if is_whatever_code {
+            self.compile_closure_body_with_promoted_decls(
+                &params,
+                &wc_param_defs,
+                body,
+                &promoted_decls,
+            )
+        } else {
+            self.compile_closure_body(&params, &wc_param_defs, body)
+        };
         // A pointy block (`-> $x {...}`) is a `Block`, not a `Sub`. A WhateverCode
         // (`*+1`, also an `Expr::Lambda`) is tagged separately via callable_type.
         if !is_whatever_code {

@@ -937,6 +937,9 @@ pub(crate) struct Compiler {
     /// those while letting OUTER-variable mutations persist. A nested closure
     /// compiles in a fresh `Compiler` (own scope) so it never pollutes this.
     pub(crate) block_decl_tracker: Vec<Vec<String>>,
+    /// Expression declarations inside a synthesized WhateverCode belong to the
+    /// surrounding source block and therefore store through its captured slot.
+    promoted_expr_decl_names: HashSet<String>,
     /// The kind of package (`module`/`package`/`grammar`) whose body is
     /// currently being compiled, or `None` in the mainline. Used to raise
     /// X::Attribute::Package when a `has` attribute is declared in a
@@ -1194,6 +1197,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             block_decl_tracker: Vec::new(),
+            promoted_expr_decl_names: HashSet::new(),
             current_package_kind: None,
             enclosing_package: None,
             tmp_counter: 0,
