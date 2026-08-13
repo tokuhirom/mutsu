@@ -288,6 +288,13 @@ impl Interpreter {
                 self.stack.push(def.clone());
                 return Ok(());
             }
+            // Deliberately the global-map-only fast probe: an env-scoped
+            // constraint (`SetVarTypeScoped` / a typed param bind) must NOT
+            // convert a Nil read into the type object here — a `Mu $b = Nil`
+            // parameter's default really is Nil. A typed routine LEXICAL never
+            // reads Nil in the first place: its declaration seeds the type
+            // object and a Nil assignment resets to it in the SetLocal store
+            // path (`typed_scalar_nil_seed_value`).
             if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
                 // Nil type constraint: the type object for Nil is the Nil value

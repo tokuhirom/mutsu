@@ -1987,6 +1987,13 @@ fn merge_method_env(
                     // afterwards (a later closure's `return` then escapes its
                     // routine instead of returning from it).
                     || s == "__mutsu_callable_id"
+                    // A typed method-lexical's env-scoped constraint metadata
+                    // (`__mutsu_type::<local>`, from a typed param bind or
+                    // `SetVarTypeScoped`) is frame state: merging it back would
+                    // impose the method's constraint on a same-named caller
+                    // variable (the Text::CSV 66_formula.t leak, via env
+                    // instead of the global map).
+                    || s.strip_prefix("__mutsu_type::").is_some_and(is_method_local)
             }) {
                 return None;
             }

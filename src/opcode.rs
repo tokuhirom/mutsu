@@ -661,6 +661,17 @@ pub(crate) enum OpCode {
         name_idx: u32,
         tc_idx: u32,
     },
+    /// [`Self::SetVarType`] for a scalar `my`/`state` declaration LEXICALLY
+    /// INSIDE a routine: registers the constraint in the env-scoped
+    /// `__mutsu_type::` metadata ONLY (exactly like a typed parameter), never
+    /// in the global name-keyed `var_type_constraints` map. The env entry dies
+    /// with the routine frame (and travels with a captured closure env), so
+    /// the constraint cannot leak onto a same-named variable in another frame
+    /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    SetVarTypeScoped {
+        name_idx: u32,
+        tc_idx: u32,
+    },
     SetTopic,
     SaveTopic,
     RestoreTopic,
@@ -6966,6 +6977,25 @@ impl CompiledFunction {
     /// exactly as the call sites did before.
     #[inline]
     pub(crate) fn is_callee_local_sym(&self, sym: Symbol) -> bool {
+        if self.is_callee_local_sym_direct(sym) {
+            return true;
+        }
+        // A callee's own typed-lexical metadata (`__mutsu_type::<local>`,
+        // written env-scoped by a typed parameter bind or `SetVarTypeScoped`)
+        // is frame state: merging it back into the caller env would re-create
+        // the cross-frame constraint leak through the env store (see
+        // `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+        sym.with_str(|s| {
+            s.strip_prefix("__mutsu_type::")
+                .is_some_and(|base| self.is_callee_local_sym_direct(Symbol::intern(base)))
+        })
+    }
+
+    /// [`Self::is_callee_local_sym`] without the `__mutsu_type::` metadata-key
+    /// unwrapping — the bare membership test over params / `my` decls / `for`
+    /// params.
+    #[inline]
+    fn is_callee_local_sym_direct(&self, sym: Symbol) -> bool {
         match &self.declared_locals {
             Some(declared) => declared.contains(&sym),
             None if self.code.locals_sym.len() == self.code.locals.len() => {

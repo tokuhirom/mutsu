@@ -72,6 +72,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SetGlobalRaw(_)
             | OpCode::SetVarDynamic { .. }
             | OpCode::SetVarType { .. }
+            | OpCode::SetVarTypeScoped { .. }
             | OpCode::AssignExpr(_)
             | OpCode::TopicDotAssign(_)
             | OpCode::AtomicCompoundVar { .. }
