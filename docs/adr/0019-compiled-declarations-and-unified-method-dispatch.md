@@ -3897,6 +3897,32 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   `t/role-shadowed-method-in-defer-chain.t`. `explicit-child-proto-assumes-parent-candidates.md`
   and `native-array-push-defer-fallback-broken.md` remain open, as does the separate
   `method-entries-never-covers-unpunned-roles.md` production-dispatch gap.
+  **Progress 2026-08-13 (same day) — native-array-push-defer-fallback-broken ticket fixed.** The
+  second of the two divergence tickets is resolved: `nextsame`/`callsame` from a user-overridden
+  `push`/`append`/`prepend`/`unshift`/`pop`/`shift` on an `is Array` subclass now reaches the real
+  native array mutation instead of silently doing nothing. Two independent bugs in
+  `native_array_storage_next_candidate` (`runtime/builtins_dispatch_next.rs`): (1) it routed
+  through `try_native_method`, the PURE `&Value` native dispatch that has no entry for any
+  mutating list method at all (the E6c sigil-only-routing precedent, again) — now routes the six
+  mutators through `native_array_storage_mut` (promoted `pub(crate)` from
+  `vm_call_method_mut_ops.rs`, the same helper the direct `$a.push(...)` fast path uses) via
+  `with_attr_mut`'s `&mut Value` into the instance's SHARED attribute cell, so the mutation is
+  visible to every other holder of the same instance; and (2) the common case — a single,
+  non-multi, non-wrapped override — pushes NO `method_dispatch_stack` frame at all, so the
+  original call args (`push(1)`'s `1`) had no carrier and silently defaulted to empty. Fixed by
+  adding `samewith_call_args_stack`, a `Vec<Value>` stack pushed/popped in lockstep with
+  `samewith_context_stack` by `push_method_samewith_context`/`pop_method_samewith_context`
+  (`accessors_state.rs`), giving the fallback a place to recover the original args when no
+  dispatch frame exists (also GC-rooted in `gc_roots.rs`). `push`/`append`/`prepend`/`unshift`
+  additionally return the invocant itself (Raku's base `Array.push` semantics), not the raw
+  backing array, so `callsame`'s return value now has correct identity (`===`) and subclass type.
+  New pin: `t/native-array-push-defer-fallback.t` (16 assertions, raku-verified). Only
+  `explicit-child-proto-assumes-parent-candidates.md` remains open from the E9-pre campaign;
+  `method-entries-never-covers-unpunned-roles.md` stays a separate production-dispatch gap. Also
+  noted, out of scope for this ticket: the DIRECT (non-deferred) `$x.push(1)` on a plain `is
+  Array`-backed instance with no override has the SAME return-identity bug (returns the backing
+  array, not `self`) — a pre-existing issue in `vm_call_method_mut_ops.rs`'s own fast path, filed
+  separately.
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

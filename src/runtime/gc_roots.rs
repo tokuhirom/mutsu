@@ -141,6 +141,9 @@ impl Interpreter {
         for (_, v) in &self.samewith_context_stack {
             visit_opt(visitor, v);
         }
+        for args in &self.samewith_call_args_stack {
+            visit_slice(visitor, args);
+        }
         for chain in self.wrap_chains.values() {
             for (_, v) in chain {
                 visitor.visit_value(v);
