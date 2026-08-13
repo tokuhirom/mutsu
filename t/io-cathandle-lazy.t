@@ -5,7 +5,7 @@ use Test;
 # concurrently, CR-LF is one line ending and normalizes to "\n", and a lazy
 # `for $cat.lines` interleaves with the body so the cat stays mid-stream.
 
-plan 9;
+plan 13;
 
 my $seq = 0;
 sub tmpfile($content) {
@@ -32,13 +32,19 @@ sub tmpfile($content) {
 # --- CR-LF is one line ending (longest-match separator) ---
 {
     my $cat = IO::CatHandle.new: tmpfile("a\r\nb\r\nc");
-    is-deeply $cat.lines, ("a", "b", "c"), 'CR-LF is a single line ending';
+    my $lines = $cat.lines;
+    is $lines.^name, 'Seq', 'lines reports Seq';
+    nok $lines.is-lazy, 'lines is not lazy externally';
+    is-deeply $lines, ("a", "b", "c"), 'CR-LF is a single line ending';
 }
 
 # --- lazy .handles is consumable concurrently with the cat ---
 {
     my $cat := IO::CatHandle.new: tmpfile("a1\na2\na3\na4"), tmpfile("b1\nb2\nb3\nb4"), tmpfile("c1\nc2\nc3\nc4");
-    is-deeply $cat.handles.map({ eager .lines: 2 }),
+    my $handles = $cat.handles;
+    is $handles.^name, 'Seq', 'handles reports Seq';
+    nok $handles.is-lazy, 'handles is not lazy externally';
+    is-deeply $handles.map({ eager .lines: 2 }),
         (<a1 a2>, <b1 b2>, <c1 c2>).Seq, 'lazy .handles: reads 2 lines per handle';
 }
 

@@ -1124,7 +1124,7 @@ impl Interpreter {
         // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
         if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
-            && ll.is_genuinely_lazy()
+            && (ll.is_genuinely_lazy() || ll.is_cat_pull())
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lazy-cache");
             self.stack.push(Value::lazy_list(crate::gc::Gc::new(

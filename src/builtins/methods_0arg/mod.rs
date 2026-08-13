@@ -954,7 +954,7 @@ fn is_infinite_range(value: &Value) -> bool {
 }
 
 pub(crate) fn is_value_lazy(value: &Value) -> bool {
-    matches!(value.view(), ValueView::LazyList(_))
+    matches!(value.view(), ValueView::LazyList(ll) if ll.is_genuinely_lazy())
         || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
         || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(&items))
