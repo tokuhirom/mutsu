@@ -316,32 +316,6 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
     }
 }
 
-pub(crate) fn parse_trait_angle_arg(input: &str) -> PResult<'_, String> {
-    let after_open = input
-        .strip_prefix('<')
-        .ok_or_else(|| PError::expected("trait angle argument"))?;
-    let mut depth = 1u32;
-    let mut chars = after_open.char_indices();
-    while let Some((i, c)) = chars.next() {
-        match c {
-            '>' => {
-                depth -= 1;
-                if depth == 0 {
-                    let arg = after_open[..i].trim().to_string();
-                    let after_close = &after_open[i + 1..];
-                    return Ok((after_close, arg));
-                }
-            }
-            '<' => depth += 1,
-            '\\' => {
-                chars.next();
-            }
-            _ => {}
-        }
-    }
-    Err(PError::expected("closing '>' in trait argument"))
-}
-
 pub(crate) fn parse_export_trait_tags(input: &str) -> PResult<'_, Vec<String>> {
     let mut tags = Vec::new();
     let (mut rest, _) = ws(input)?;

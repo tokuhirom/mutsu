@@ -6,7 +6,7 @@ use crate::value::Value;
 use crate::value::ValueView;
 
 use crate::parser::expr::expression;
-use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
+use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, take_while1};
 use crate::parser::stmt::sub::parse_indirect_decl_name;
 use crate::parser::stmt::{block, keyword, qualified_ident};
@@ -195,6 +195,23 @@ pub(crate) fn class_decl(input: &str) -> PResult<'_, Stmt> {
     Ok((rest, stmt))
 }
 
+/// Parse `native` declaration: a package declarator peer to `class`/`role`,
+/// used by rakudo's `NativeCall::Types` to define native scalar types
+/// (`native long is Int is ctype<long> is repr<P6int> { }`). Parses exactly
+/// like `class`; the resulting ClassDecl carries a `__mutsu_native_decl`
+/// marker trait so a `native`-declared type can be told apart from an
+/// ordinary class if that ever matters.
+pub(crate) fn native_decl(input: &str) -> PResult<'_, Stmt> {
+    let rest = keyword("native", input).ok_or_else(|| PError::expected("native declaration"))?;
+    let (rest, _) = ws1(rest)?;
+    let (rest, mut stmt) = class_decl_body(rest, false)?;
+    if let Stmt::ClassDecl { custom_traits, .. } = &mut stmt {
+        custom_traits.push(("__mutsu_native_decl".to_string(), None));
+    }
+    reject_trailing_postfix(rest)?;
+    Ok((rest, stmt))
+}
+
 /// Parse a declarator registered through a `use`d module's EXPORTHOW::DECLARE
 /// block (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
 /// `kw Name { ... }` parses exactly like `class`, and the resulting ClassDecl
@@ -326,6 +343,13 @@ pub(crate) fn anon_class_decl(input: &str) -> PResult<'_, Stmt> {
         let (r2, _) = ws1(r2)?;
         let (r2, parent) = qualified_ident(r2)?;
         if parent == "repr" {
+            if r2.starts_with('<') {
+                let (r3, repr_val) = parse_trait_angle_arg(r2)?;
+                anon_repr = Some(repr_val);
+                let (r3, _) = ws(r3)?;
+                r = r3;
+                continue;
+            }
             if let Some(inner) = r2.strip_prefix('(') {
                 let end = inner.find(')').unwrap_or(inner.len());
                 let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
@@ -418,7 +442,14 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
             } else if parent == "rw" {
                 class_is_rw = true;
             } else if parent == "repr" {
-                // Extract repr value from `is repr('CUnion')` etc.
+                // Extract repr value from `is repr('CUnion')` or `is repr<CUnion>`.
+                if r2.starts_with('<') {
+                    let (r3, repr_val) = parse_trait_angle_arg(r2)?;
+                    is_repr = Some(repr_val);
+                    let (r3, _) = ws(r3)?;
+                    r = r3;
+                    continue;
+                }
                 if let Some(inner) = r2.strip_prefix('(') {
                     // Find the content between parens, stripping quotes
                     let end = inner.find(')').unwrap_or(inner.len());
@@ -486,6 +517,15 @@ pub(crate) fn class_decl_body(input: &str, is_lexical: bool) -> PResult<'_, Stmt
                     | "repr"
                     | "open"
             ) {
+                // Check for an angle-bracket argument: `is trait-name<arg>`
+                // (e.g. `is ctype<long>`), as used by NativeCall-style traits.
+                if r2.starts_with('<') {
+                    let (r3, arg) = parse_trait_angle_arg(r2)?;
+                    custom_traits.push((parent.clone(), Some(Expr::Literal(Value::str(arg)))));
+                    let (r3, _) = ws(r3)?;
+                    r = r3;
+                    continue;
+                }
                 // Check for parenthesized argument: `is trait-name('arg')`
                 // This indicates a custom trait_mod:<is> call.
                 if let Some(inner_start) = r2.strip_prefix('(') {

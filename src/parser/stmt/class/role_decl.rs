@@ -5,7 +5,7 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 
 use crate::parser::expr::expression;
-use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
+use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::sub::parse_single_param;
 use crate::parser::stmt::{block, ident, keyword, parse_param_list, qualified_ident};
@@ -349,11 +349,31 @@ pub(crate) fn role_decl(input: &str) -> PResult<'_, Stmt> {
                     | "nodal"
                     | "pure"
             ) {
-                // Known lowercase trait keywords are skipped
-                let r = skip_balanced_parens(r);
+                // Known lowercase trait keywords are skipped (RoleDecl has no
+                // dedicated `repr` field, unlike ClassDecl — this only makes
+                // `is repr<...>`/`is repr(...)` parse, matching the
+                // pre-existing paren-only behaviour of silently discarding
+                // the value rather than newly wiring it into trait_mod:<is>
+                // dispatch, which would misfire on unrelated user-defined
+                // trait_mod:<is> candidates that don't accept a `:$repr`).
+                let r = if r.starts_with('<') {
+                    parse_trait_angle_arg(r)?.0
+                } else {
+                    skip_balanced_parens(r)
+                };
                 let (r, _) = ws(r)?;
                 rest = r;
             } else {
+                // Unknown trait (e.g. `ctype`, which has no dedicated field
+                // on RoleDecl either) — record name + argument via
+                // custom_traits, same as a class's generic `is` fallback.
+                if r.starts_with('<') {
+                    let (r2, arg) = parse_trait_angle_arg(r)?;
+                    custom_traits.push((trait_name.clone(), Some(Expr::Literal(Value::str(arg)))));
+                    let (r2, _) = ws(r2)?;
+                    rest = r2;
+                    continue;
+                }
                 // Unknown trait — check for parenthesized argument for
                 // custom trait_mod:<is> dispatch.
                 if let Some(inner_start) = r.strip_prefix('(') {

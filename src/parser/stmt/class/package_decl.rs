@@ -4,7 +4,7 @@ use crate::ast::Stmt;
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-use crate::parser::helpers::{skip_balanced_parens, ws, ws1};
+use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws1};
 use crate::parser::parse_result::{PError, PResult, opt_char, parse_char};
 use crate::parser::primary::var::is_pseudo_package;
 use crate::parser::stmt::sub::parse_sub_name;
@@ -188,6 +188,8 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
         let mut is_hidden = false;
         let mut hidden_parents = Vec::new();
         let mut parent_args: Vec<(String, Vec<crate::ast::Expr>)> = Vec::new();
+        let mut is_repr: Option<String> = None;
+        let mut custom_traits: Vec<(String, Option<crate::ast::Expr>)> = Vec::new();
         let mut r = r;
         loop {
             if let Some(r2) = keyword("is", r) {
@@ -208,6 +210,24 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     let (r2, _) = ws(r2)?;
                     r = r2;
                     continue;
+                } else if parent == "repr" {
+                    // `unit class Foo is repr('CStruct');` / `is repr<CStruct>;`
+                    if r2.starts_with('<') {
+                        let (r3, repr_val) = parse_trait_angle_arg(r2)?;
+                        is_repr = Some(repr_val);
+                        let (r3, _) = ws(r3)?;
+                        r = r3;
+                        continue;
+                    }
+                    if let Some(inner) = r2.strip_prefix('(') {
+                        let end = inner.find(')').unwrap_or(inner.len());
+                        let repr_val = inner[..end].trim().trim_matches('\'').trim_matches('"');
+                        is_repr = Some(repr_val.to_string());
+                    }
+                    let r2 = skip_balanced_parens(r2);
+                    let (r2, _) = ws(r2)?;
+                    r = r2;
+                    continue;
                 } else if parent.starts_with(|c: char| c.is_ascii_uppercase())
                     || parent.starts_with("::")
                 {
@@ -225,9 +245,20 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     continue;
                 }
                 // A lowercase `is` name on a `unit class` is a trait
-                // (`export`, `repr('CStruct')`, `DEPRECATED`, custom trait_mod,
-                // ...), NOT a parent class. Skip it and any parenthesized
-                // argument rather than mis-recording it as a superclass.
+                // (`export`, `DEPRECATED`, `ctype<...>`, a custom trait_mod,
+                // ...), NOT a parent class. Record name + angle/paren
+                // argument (if any) as a custom trait rather than mis-recording
+                // it as a superclass.
+                if r2.starts_with('<') {
+                    let (r3, arg) = parse_trait_angle_arg(r2)?;
+                    custom_traits.push((
+                        parent.clone(),
+                        Some(crate::ast::Expr::Literal(Value::str(arg))),
+                    ));
+                    let (r3, _) = ws(r3)?;
+                    r = r3;
+                    continue;
+                }
                 let r2 = skip_balanced_parens(r2);
                 let (r2, _) = ws(r2)?;
                 r = r2;
@@ -267,10 +298,10 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     is_lexical: false,
                     hidden_parents,
                     does_parents,
-                    repr: None,
+                    repr: is_repr,
                     body: Vec::new(),
                     language_version: super::super::simple::current_language_version(),
-                    custom_traits: Vec::new(),
+                    custom_traits,
                     is_unit: true,
                     decl_id: crate::ast::next_class_decl_id(),
                     parent_args,
@@ -334,6 +365,16 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
                     let r2 = skip_balanced_parens(r2);
                     let (r2, _) = ws(r2)?;
                     r = r2;
+                } else if r2.starts_with('<') {
+                    // `is repr<CStruct>` / `is ctype<long>` — angle-bracket
+                    // trait argument (no dedicated field on RoleDecl, so it
+                    // is recorded via custom_traits like an unrecognized
+                    // `is` trait with a parenthesized argument).
+                    let (r3, arg) = parse_trait_angle_arg(r2)?;
+                    custom_traits
+                        .push((trait_name, Some(crate::ast::Expr::Literal(Value::str(arg)))));
+                    let (r3, _) = ws(r3)?;
+                    r = r3;
                 } else {
                     // Unknown lowercase trait: skip any parenthesized argument.
                     // An uppercase bare name would be a parent role, but a
@@ -617,4 +658,48 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             is_our,
         },
     ))
+}
+
+#[cfg(test)]
+mod unit_repr_tests {
+    use super::*;
+
+    // `unit class`/`unit role` extend to the end of the file, so their
+    // angle-bracket trait parsing (`is repr<...>`, `is ctype<...>`) is
+    // exercised here directly rather than via a t/*.t script — see
+    // t/is-repr-angle-bracket-trait.t for the block-form (`class`/`role`)
+    // coverage of the same underlying `parse_trait_angle_arg` mechanism.
+
+    #[test]
+    fn unit_class_accepts_repr_angle_trait() {
+        let (_, stmt) = unit_module_stmt("unit class Foo is repr<CStruct>;").unwrap();
+        let Stmt::ClassDecl { repr, .. } = stmt else {
+            panic!("expected ClassDecl, got {stmt:?}");
+        };
+        assert_eq!(repr.as_deref(), Some("CStruct"));
+    }
+
+    #[test]
+    fn unit_class_accepts_ctype_angle_trait_as_custom_trait() {
+        let (_, stmt) = unit_module_stmt("unit class Foo is ctype<long>;").unwrap();
+        let Stmt::ClassDecl { custom_traits, .. } = stmt else {
+            panic!("expected ClassDecl, got {stmt:?}");
+        };
+        assert!(
+            custom_traits.iter().any(|(name, _)| name == "ctype"),
+            "expected a 'ctype' custom trait, got {custom_traits:?}"
+        );
+    }
+
+    #[test]
+    fn unit_role_accepts_ctype_angle_trait_as_custom_trait() {
+        let (_, stmt) = unit_module_stmt("unit role Foo is ctype<long>;").unwrap();
+        let Stmt::RoleDecl { custom_traits, .. } = stmt else {
+            panic!("expected RoleDecl, got {stmt:?}");
+        };
+        assert!(
+            custom_traits.iter().any(|(name, _)| name == "ctype"),
+            "expected a 'ctype' custom trait, got {custom_traits:?}"
+        );
+    }
 }
