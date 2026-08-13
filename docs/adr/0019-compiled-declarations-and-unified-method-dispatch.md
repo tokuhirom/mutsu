@@ -3993,6 +3993,21 @@ phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
   (`wrap-chain-skipped-inside-foreign-wrap-dispatch.md`, the global
   `is_inside_wrap_dispatch()` guard) is untouched — that is E9b-2 scope, which
   deletes the guard entirely as part of the single-frame cutover.
+  **Progress 2026-08-13 (same day) — E9b-1 landed (mechanical, zero behavior
+  change).** `DeferralEntry` enum added (`Wrapper(Value)` /
+  `Candidate{owner: Symbol, def: Box<MethodDef>, wraps_spliced: bool}` —
+  `def` boxed to keep the enum small, clippy's `large_enum_variant`);
+  `MethodDispatchFrame.remaining` is now `Vec<DeferralEntry>` and the frame
+  gains an `arg_sources: Option<Vec<Option<String>>>` field (unused until
+  E9b-2's Wrapper advance leg). Every existing builder (the plain MRO
+  deferral push, the two method-wrap entry sites, the mixin base-dispatch
+  push) emits only `Candidate` entries — `Wrapper` is not constructed
+  anywhere yet, so the two consumer match sites in `dispatch_next_candidate`
+  hit an `unreachable!()` arm documented as E9b-2's job to fill in.
+  `gc_roots.rs` traces `Wrapper` values pre-emptively so the cutover doesn't
+  have to remember it. Full `t/` + targeted roast (`S06-advanced/*`,
+  `S06-multi/*`, `S12-methods/{defer-call,defer-next,multi}.t`) green with no
+  new pin (behavior is unchanged by construction).
 - [ ] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Design 2026-08-10** (same doc): `method_wrap_chains` moves into the registry; every

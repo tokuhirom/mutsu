@@ -564,7 +564,7 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: &Value,
         chosen_fp: Option<u64>,
-        real_remaining: &[(String, MethodDef)],
+        real_remaining: &[(Symbol, MethodDef)],
     ) {
         if !crate::vm::vm_stats::enabled() {
             return;

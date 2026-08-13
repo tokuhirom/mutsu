@@ -545,7 +545,15 @@ impl Interpreter {
                     .remaining
                     .first()
                     .cloned();
-                if let Some((owner_class, method_def)) = peeked {
+                // ADR-0019 E9b-1: no builder emits `Wrapper` yet, so every
+                // peeked entry is a Candidate (E9b-2 adds the Wrapper leg).
+                if let Some(DeferralEntry::Candidate {
+                    owner: owner_sym,
+                    def: method_def,
+                    ..
+                }) = peeked
+                {
+                    let owner_class = owner_sym.resolve();
                     let method_name_now = self
                         .samewith_context_stack
                         .last()
@@ -598,7 +606,7 @@ impl Interpreter {
             }
             let (receiver_class, invocant, mut call_args, owner_class, mut method_def, rw_params) = {
                 let frame = &mut self.method_dispatch_stack[frame_idx];
-                let Some((owner_class, method_def)) = frame.remaining.first().cloned() else {
+                let Some(entry) = frame.remaining.first().cloned() else {
                     // User MRO exhausted: a grammar `parse`/`subparse` override, an
                     // `is Array` subclass's Positional override, or a metamodel-HOW
                     // dispatch falls through to the native implementation as the
@@ -629,6 +637,18 @@ impl Interpreter {
                     }
                     return Ok(result);
                 };
+                // ADR-0019 E9b-1: no builder emits `Wrapper` yet, so every
+                // entry here is a Candidate (E9b-2 adds the Wrapper leg).
+                let DeferralEntry::Candidate {
+                    owner: owner_sym,
+                    def: method_def,
+                    ..
+                } = entry
+                else {
+                    unreachable!("ADR-0019 E9b-1: no builder emits DeferralEntry::Wrapper yet")
+                };
+                let owner_class = owner_sym.resolve();
+                let method_def = *method_def;
                 frame.remaining.remove(0);
                 let rw_params = frame.rw_params.clone();
                 let call_args = if let Some(new_args) = override_args {

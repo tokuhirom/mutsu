@@ -164,12 +164,36 @@ pub(crate) type MultiDispatchEntry = (
     u64,
 );
 
+/// One entry of `MethodDispatchFrame::remaining` (ADR-0019 E9b-1). A
+/// `Candidate` is the pre-E9b-1 `(owner, MethodDef)` shape unchanged in
+/// substance; `Wrapper` lets a method's own `.wrap()` chain fold into the same
+/// `remaining` list as prefix entries instead of a separate stack (E9b-2 —
+/// no builder emits `Wrapper` yet in this slice, so it is currently inert).
+#[derive(Debug, Clone)]
+pub(crate) enum DeferralEntry {
+    /// A wrapper code object; invoked with `[invocant, args...]` and shifted
+    /// arg sources, mirroring today's `WrapDispatchFrame` wrapper leg.
+    #[allow(dead_code)]
+    Wrapper(Value),
+    /// A user method candidate; invoked directly as a resolved method (the
+    /// existing method-frame advance leg, unchanged in substance).
+    Candidate {
+        owner: crate::symbol::Symbol,
+        // Boxed: MethodDef is ~300 bytes, which would otherwise make every
+        // DeferralEntry (including the small Wrapper(Value) variant) pay that
+        // size (clippy::large_enum_variant).
+        def: Box<MethodDef>,
+        #[allow(dead_code)]
+        wraps_spliced: bool,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct MethodDispatchFrame {
     pub(crate) receiver_class: String,
     pub(crate) invocant: Value,
     pub(crate) args: Vec<Value>,
-    pub(crate) remaining: Vec<(String, MethodDef)>,
+    pub(crate) remaining: Vec<DeferralEntry>,
     /// The FIRST (winning) candidate's scalar `is rw`/`is raw` positional params
     /// as (positional_arg_index, sigil-less_param_name). Stays fixed across the
     /// MRO chain so a `nextsame`+rw redispatch can forward the rw param's current
@@ -179,6 +203,12 @@ pub(crate) struct MethodDispatchFrame {
     /// `MultiDispatchEntry`. callsame/nextsame/lastcall/nextcallee compare tokens
     /// across all three deferral stacks and pick the highest (innermost) live frame.
     pub(crate) dispatch_token: u64,
+    /// ADR-0019 E9b-1: call-site source variable names for the wrapped
+    /// method's arguments, mirroring `WrapDispatchFrame::arg_sources`. Unused
+    /// until E9b-2's `Wrapper` advance leg restores them for an `is rw`
+    /// parameter of the next callee; every E9b-1 builder sets this to `None`.
+    #[allow(dead_code)]
+    pub(crate) arg_sources: Option<Vec<Option<String>>>,
 }
 
 /// Frame for navigating through wrapper chain during callsame/callwith.
