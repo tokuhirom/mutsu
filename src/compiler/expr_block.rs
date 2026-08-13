@@ -150,7 +150,7 @@ impl Compiler {
                     if let Some(tc) = type_constraint {
                         let name_idx = self.code.add_constant(Value::str(name.clone()));
                         let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                        self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                        self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                     }
                     self.compile_expr(expr);
                     let slot = self.alloc_local(name);
@@ -365,10 +365,7 @@ impl Compiler {
                             // Set type constraint so future assignments also wrap
                             let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                             let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                            self.code.emit(OpCode::SetVarType {
-                                name_idx: name_idx2,
-                                tc_idx,
-                            });
+                            self.emit_set_var_type(name, name_idx2, tc_idx, false);
                             // TypeCheck wraps the value on the stack for native types
                             let tc_idx2 = self.code.add_constant(Value::str(tc.clone()));
                             self.code.emit(OpCode::TypeCheck(tc_idx2, None));
@@ -392,10 +389,7 @@ impl Compiler {
                                 // subset's `where` predicate against Nil.
                                 let name_idx2 = self.code.add_constant(Value::str(name.clone()));
                                 let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                                self.code.emit(OpCode::SetVarType {
-                                    name_idx: name_idx2,
-                                    tc_idx,
-                                });
+                                self.emit_set_var_type(name, name_idx2, tc_idx, false);
                                 self.code.emit(OpCode::MarkVarDeclContext);
                                 self.emit_set_named_var(name);
                                 self.emit_get_named_var(name);

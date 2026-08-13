@@ -86,6 +86,33 @@ impl Interpreter {
         self.set_var_type_constraint_impl(name, constraint, false);
     }
 
+    /// [`Self::set_var_type_constraint_decl`] for a scalar `my`/`state`
+    /// declared LEXICALLY INSIDE a routine (`OpCode::SetVarTypeScoped`):
+    /// registers the constraint ONLY in the env-scoped `__mutsu_type::`
+    /// metadata, exactly like a typed parameter
+    /// ([`Self::bind_param_type_constraint`]), and never in the global
+    /// name-keyed `var_type_constraints` map. The env entry is dropped with
+    /// the routine frame and travels with a captured closure env, so the
+    /// constraint cannot leak onto a same-named variable in another frame —
+    /// the Text::CSV `t/66_formula.t` shape, where a module method's
+    /// `my Str $e = ...` poisoned the caller script's untyped `$e` (see
+    /// `todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    /// A stale same-named GLOBAL entry (an outer frame's typed lexical) is
+    /// left untouched: the env-first read in [`Self::var_type_constraint`]
+    /// shadows it while this frame is live, and the outer frame's own
+    /// enforcement must survive this frame's return.
+    pub(crate) fn set_var_type_constraint_routine_scoped(&mut self, name: &str, constraint: &str) {
+        let info = Self::parse_container_constraint(name, constraint);
+        if info.value_type == "atomicint" || constraint.contains("atomicint") {
+            self.mark_atomic_var_seen();
+        }
+        self.env.insert(
+            format!("__mutsu_type::{}", name),
+            Value::str(info.value_type),
+        );
+        self.env_type_constraint_seen = true;
+    }
+
     fn set_var_type_constraint_impl(
         &mut self,
         name: &str,

@@ -1211,26 +1211,38 @@ impl Interpreter {
                     ));
                 }
             }
-            // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
-            // aliases the array element). The type constraint applies to the
-            // *contained* value, so deref the cell before matching -- otherwise the
-            // check inspects the container itself and reports the bogus "got Any".
-            // Only the (rare) bind path derefs; the common assignment path borrows
-            // `val` directly with no clone.
-            let bind_derefed = is_bind.then(|| val.deref_container());
-            let check_val = bind_derefed.as_ref().unwrap_or(&val);
-            if !check_val.is_nil() && !self.type_matches_value(&constraint, check_val) {
-                return Err(runtime::utils::type_check_assignment_typed_error(
-                    name,
-                    &constraint,
-                    check_val,
-                ));
+            // A Nil ASSIGNED to a typed scalar resets it to its type object
+            // (`my Str $x = "a"; $x = Nil` leaves `$x === Str`). The reset must
+            // happen in the STORE: a routine lexical's constraint is env-scoped
+            // (`SetVarTypeScoped`), invisible to the read paths' global-map
+            // probe — which deliberately leaves a genuinely-Nil `= Nil`
+            // parameter default as Nil — so the stored value itself must carry
+            // the type object. Binds keep the Nil (`:=` stores the value as
+            // is), and an `is default(...)` value takes over the Nil read.
+            if val.is_nil() && !is_bind && constraint != "Nil" && self.var_default(name).is_none() {
+                val = self.typed_scalar_nil_seed_value(name, &constraint);
+            } else {
+                // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
+                // aliases the array element). The type constraint applies to the
+                // *contained* value, so deref the cell before matching -- otherwise the
+                // check inspects the container itself and reports the bogus "got Any".
+                // Only the (rare) bind path derefs; the common assignment path borrows
+                // `val` directly with no clone.
+                let bind_derefed = is_bind.then(|| val.deref_container());
+                let check_val = bind_derefed.as_ref().unwrap_or(&val);
+                if !check_val.is_nil() && !self.type_matches_value(&constraint, check_val) {
+                    return Err(runtime::utils::type_check_assignment_typed_error(
+                        name,
+                        &constraint,
+                        check_val,
+                    ));
+                }
+                if !val.is_nil() {
+                    val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
+                }
+                // Wrap native integer values on assignment (overflow wrapping)
+                val = Self::wrap_native_int_by_constraint(&constraint, val)?;
             }
-            if !val.is_nil() {
-                val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
-            }
-            // Wrap native integer values on assignment (overflow wrapping)
-            val = Self::wrap_native_int_by_constraint(&constraint, val)?;
         } else if !is_bind && (!is_vardecl || has_explicit_initializer) {
             // Untyped scalar: assigning Nil resets it to the default type
             // object Any (`$x = Nil` / `my $x = Nil` leave `$x === Any`,

@@ -544,7 +544,10 @@ impl Interpreter {
     fn unwrap_varref_for_dispatch(&self, value: &Value) -> (Value, Option<String>) {
         match value.as_varref() {
             Some((name, inner, _)) => {
-                let var_type = name.with_str(|n| self.var_type_constraint_fast(n).cloned());
+                // Full (env-first) lookup: a typed routine lexical is env-scoped
+                // only (`SetVarTypeScoped`), invisible to the global-map-only
+                // fast probe.
+                let var_type = name.with_str(|n| self.var_type_constraint(n));
                 (inner.clone(), var_type)
             }
             None => (value.clone(), None),

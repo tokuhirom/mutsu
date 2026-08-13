@@ -1289,7 +1289,7 @@ impl Compiler {
                 // the trait is applied so the default value can be set first.
                 if !has_default_trait && let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }
                 // Record type constraint for compile-time literal type checks
                 if let Some(tc) = type_constraint {
@@ -1756,7 +1756,7 @@ impl Compiler {
                 // Deferred type constraint registration after traits are applied
                 if has_default_trait && let Some(tc) = type_constraint {
                     let tc_idx = self.code.add_constant(Value::str(tc.clone()));
-                    self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+                    self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }
                 // Mark constant variables as readonly so that subsequent
                 // assignments are rejected at runtime.

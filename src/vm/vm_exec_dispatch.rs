@@ -513,6 +513,11 @@ impl Interpreter {
                 let val = if val.is_nil() {
                     if let Some(def) = self.var_default(name) {
                         def.clone()
+                    // Global-map-only on purpose: an env-scoped constraint (a
+                    // typed param / `SetVarTypeScoped` lexical) must not turn a
+                    // genuinely-Nil read (a `= Nil` param default) into the
+                    // type object; see the matching comment in
+                    // `vm_var_assign_local_get.rs`.
                     } else if let Some(constraint) = self.var_type_constraint_fast(name).cloned() {
                         let nominal =
                             loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
@@ -1724,87 +1729,10 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SetVarType { name_idx, tc_idx } => {
-                let name = Self::const_str(code, *name_idx).to_string();
-                let raw_constraint = Self::const_str(code, *tc_idx).to_string();
-                // Empty constraint = CLEAR: an untyped expression-position
-                // declaration dropping a stale same-named constraint (the
-                // compiler never emits an empty string for a real type).
-                if raw_constraint.is_empty() {
-                    self.vm_set_var_type_constraint(&name, None);
-                    *ip += 1;
-                    return Ok(());
-                }
-                // Resolve type capture variables (e.g., `T` → `Int` when `::T`
-                // was captured earlier in the signature).
-                let constraint = loan_env!(self, resolved_type_capture_name(&raw_constraint));
-                // Clear stale atomic CAS state when an @-variable is
-                // (re-)declared with a type constraint like atomicint.
-                if name.starts_with('@') && constraint == "atomicint" {
-                    self.clear_atomic_array_state(&name);
-                }
-                self.vm_set_var_type_constraint_decl(&name, Some(constraint.clone()));
-                // For scalar variables, if the current value is Nil, set it to the type object.
-                // Exception: if the constraint is "Nil", keep the value as Nil
-                // (the Nil type object is Nil itself, not the Package "Nil").
-                if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
-                    let is_nil = matches!(
-                        self.env().get(&name).map(Value::view),
-                        Some(ValueView::Nil) | None
-                    );
-                    if is_nil {
-                        // Native types get zero/empty defaults instead of type objects.
-                        let init_val =
-                            if crate::runtime::native_types::is_native_int_type(&constraint) {
-                                Value::int(0)
-                            } else if matches!(constraint.as_str(), "num" | "num32" | "num64") {
-                                Value::num(0.0)
-                            } else if constraint == "str" {
-                                Value::str(String::new())
-                            } else {
-                                // A parameterized role constraint (`my Cup of
-                                // EggNog $mug` / `my Cup[EggNog] $mug`) resolves
-                                // to the ParametricRole type object so .WHAT /
-                                // .raku keep the type arguments. The stored
-                                // constraint metadata normalizes to the base
-                                // name, so probe the raw constraint here.
-                                let parametric = constraint.contains('[').then(|| {
-                                    loan_env!(self, type_arg_value_from_name(&constraint))
-                                });
-                                match parametric {
-                                    Some(v)
-                                        if matches!(v.view(), ValueView::ParametricRole { .. }) =>
-                                    {
-                                        v
-                                    }
-                                    _ => Value::package(Symbol::intern(
-                                        &loan_env!(self, var_type_constraint(&name))
-                                            .unwrap_or(constraint.clone()),
-                                    )),
-                                }
-                            };
-                        self.set_env_with_main_alias(&name, init_val.clone());
-                        self.update_local_if_exists(code, &name, &init_val);
-                    }
-                } else if let Some(value) = self.get_env_with_main_alias(&name) {
-                    let info = crate::runtime::ContainerTypeInfo {
-                        value_type: loan_env!(self, var_type_constraint(&name))
-                            .unwrap_or(constraint),
-                        key_type: if name.starts_with('%') {
-                            loan_env!(self, var_hash_key_constraint(&name))
-                        } else {
-                            None
-                        },
-                        declared_type: None,
-                    };
-                    // Hashes embed metadata in `HashData`; write the tagged value
-                    // back (no-op Arc for array/instance side-table containers).
-                    // Tagging an object hash also re-keys it by `.WHICH`
-                    // (see `tag_container_metadata`).
-                    let tagged = self.tag_container_metadata(value, info);
-                    self.set_env_with_main_alias(&name, tagged.clone());
-                    self.update_local_if_exists(code, &name, &tagged);
-                }
-                *ip += 1;
+                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, false)?;
+            }
+            OpCode::SetVarTypeScoped { name_idx, tc_idx } => {
+                self.exec_set_var_type(code, ip, *name_idx, *tc_idx, true)?;
             }
             OpCode::SetTopic => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);

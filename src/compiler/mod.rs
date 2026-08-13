@@ -1799,6 +1799,33 @@ impl Compiler {
         }
     }
 
+    /// Emit the declaration-time type-constraint registration op for a
+    /// `my TYPE $x`-family declaration. A SCALAR `my`/`state` lexically inside
+    /// a routine gets `SetVarTypeScoped` — env-only registration, exactly like
+    /// a typed parameter — so its constraint dies with the frame instead of
+    /// leaking onto a same-named variable in another frame through the global
+    /// name-keyed store (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
+    /// Everything else keeps the both-store `SetVarType`: `@`/`%` containers
+    /// (their element/key metadata is consulted through the global map by the
+    /// push/subscript fast paths), `our` (package-scoped, outlives the frame),
+    /// dynamics (`$*x`, read cross-frame by design), and mainline declarations
+    /// (no frame to scope to).
+    fn emit_set_var_type(&mut self, name: &str, name_idx: u32, tc_idx: u32, is_our: bool) {
+        let scoped = !is_our
+            && (self.is_routine || self.lexically_in_routine)
+            && !name.starts_with('@')
+            && !name.starts_with('%')
+            && !name.starts_with('&')
+            && !name.starts_with('*')
+            && !name.contains("::");
+        if scoped {
+            self.code
+                .emit(OpCode::SetVarTypeScoped { name_idx, tc_idx });
+        } else {
+            self.code.emit(OpCode::SetVarType { name_idx, tc_idx });
+        }
+    }
+
     /// For a genuine assignment (`$*x = ...`) to a dynamic variable, emit a
     /// runtime guard that throws X::Dynamic::NotFound when the dynamic var is
     /// not in scope (Raku requires `my $*x` first). Called ONLY from the plain

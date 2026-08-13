@@ -251,6 +251,7 @@ mod vm_var_multidim_helpers;
 mod vm_var_multidim_ops;
 mod vm_var_ops;
 mod vm_var_trait_ops;
+mod vm_var_type_ops;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     crate::runtime::compare_values(left, right).cmp(&0)
