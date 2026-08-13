@@ -1742,8 +1742,9 @@ impl Interpreter {
             // `{*}` outside a proto — let the interpreter raise the proper error.
             return self.loan_env_for(|i| i.call_proto_dispatch());
         };
-        // `proto method` redispatch needs the invocant + one-shot `proto_method_skip`
-        // bookkeeping the interpreter owns; only proto *subs* run compiled here.
+        // `proto method` redispatch needs the invocant + the boundary-resolved
+        // dispatch (ADR-0019 E9c-2) the interpreter owns; only proto *subs* run
+        // compiled here.
         if method_ctx.is_some() {
             return self.loan_env_for(|i| i.call_proto_dispatch());
         }

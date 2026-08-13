@@ -1174,27 +1174,6 @@ pub struct Interpreter {
     /// `{*}` redispatches to a multi *method* candidate on the invocant rather
     /// than a proto sub candidate.
     proto_dispatch_stack: Vec<(String, Vec<Value>, Option<ProtoMethodCtx>)>,
-    /// One-shot guard set by a proto method's `{*}` redispatch: the next method
-    /// call of this name bypasses proto-body interception (so it reaches the
-    /// real multi candidate). Recursive calls from within the candidate, which
-    /// happen after this flag is consumed, run the proto body again (matching raku).
-    pub(crate) proto_method_skip: Option<String>,
-    /// Owner-class boundary for an EXPLICIT `proto method`'s `{*}` redispatch
-    /// (`(method_name, owner_class)`). An explicit `proto method` declared on
-    /// some class in the MRO starts a fresh candidate set: its `{*}`
-    /// redispatch may only see multi candidates declared at or below that
-    /// class in the MRO, never a candidate from an ancestor beyond it (a
-    /// parent's own multi candidates of the same name are NOT inherited
-    /// through a child's explicit proto — the inverse, a proto in a PARENT
-    /// governing candidates a child adds with no proto of its own, still
-    /// works because the "owner" found by `lookup_proto_method` is that
-    /// ancestor, and the whole tail from the receiver down through it stays
-    /// in scope). Set bracket-style by `call_proto_dispatch`'s method_ctx
-    /// branch immediately around the redispatch call (saved/restored, not a
-    /// one-shot consumed flag, so nested proto redispatches — a candidate
-    /// that itself triggers another proto method — do not clobber an outer
-    /// boundary). Consulted by `resolve_method_with_owner_impl`'s MRO walk.
-    pub(crate) proto_redispatch_boundary: Option<(Symbol, Symbol)>,
     pending_dispatch_error: Option<RuntimeError>,
     /// Distribution selectors (`:ver`/`:auth`/`:api`) of the `use` currently
     /// being resolved, split off the module name by `use_module_with_tags` and

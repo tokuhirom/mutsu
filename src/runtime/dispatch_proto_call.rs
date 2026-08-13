@@ -9,9 +9,64 @@ impl Interpreter {
             .cloned()
             .ok_or_else(|| RuntimeError::new("{*} used outside proto".to_string()))?;
         // `proto method` body: `{*}` redispatches to the matching multi *method*
-        // candidate on the invocant. The one-shot `proto_method_skip` flag makes
-        // the re-entry bypass proto interception so it reaches the real candidate.
+        // candidate on the invocant.
+        //
+        // ADR-0019 E9c-2: resolves the winning candidate DIRECTLY within the
+        // governing boundary (`resolve_method_within_boundary`) and invokes it
+        // through the same resolved-method run path ordinary dispatch uses
+        // (`run_resolved_instance_method`), instead of the former by-name
+        // re-entry into `call_method_with_values` bracketed by the ambient
+        // `proto_redispatch_boundary` field. No re-entry is left to guard
+        // against, so the former one-shot `proto_method_skip` flag is gone too.
         if let Some(ctx) = method_ctx {
+            // ADR-0019 E9c-2 fix: Junction auto-threading. The pre-E9c-2
+            // by-name re-entry into `call_method_with_values` incidentally
+            // provided this — that function's own top-of-body Junction check
+            // (`methods_call_dispatch.rs`) fired on the re-entry's `args`,
+            // which for a slurpy `proto method f(|) {*}` are exactly the
+            // outer call's original arguments (still containing an
+            // unresolved Junction whenever the OUTER call reached here via a
+            // fast/compiled path that itself never autothreaded). Direct
+            // resolution has no such incidental checkpoint, so a Junction
+            // argument reaching `{*}` — e.g. `self.contains-spec(any(@specs),
+            // :$strict)` recursing through `Zef::Distribution`'s
+            // `proto method contains-spec` — failed to resolve against any
+            // concrete-typed multi candidate. Restored explicitly here,
+            // mirroring `methods_call_dispatch.rs`'s own target/arg checks.
+            if Self::should_autothread_method(&proto_name) {
+                if let ValueView::Junction { kind, values } = ctx.invocant.view() {
+                    let mut results = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        results.push(self.call_method_with_values(
+                            value.clone(),
+                            &proto_name,
+                            args.clone(),
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+                if let Some((idx, kind, values)) = args.iter().enumerate().find_map(|(idx, arg)| {
+                    if !arg.is_junction_value() {
+                        return None;
+                    }
+                    match arg.view() {
+                        ValueView::Junction { kind, values } => Some((idx, kind, values.clone())),
+                        _ => None,
+                    }
+                }) {
+                    let mut results = Vec::with_capacity(values.len());
+                    for value in values.iter() {
+                        let mut threaded_args = args.clone();
+                        threaded_args[idx] = value.clone();
+                        results.push(self.call_method_with_values(
+                            ctx.invocant.clone(),
+                            &proto_name,
+                            threaded_args,
+                        )?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+            }
             // `{*}` rw-redispatch for a proto *method* (ledger §D): like the proto
             // *sub* path (`vm_call_proto_dispatch`), Rakudo redispatches with the
             // proto's CURRENT (body-mutated) parameter, and a candidate's `is rw`
@@ -23,8 +78,15 @@ impl Interpreter {
             // which is exactly that frame at the `{*}`/`__PROTO_DISPATCH__` point) so
             // `proto_rw_redispatch_args` reads slot-first. Gate OFF keeps `None`
             // (env mirrors the slot, byte-identical).
+            //
+            // `invocant_class` covers both an `Instance` (the ordinary
+            // `proto method` case, always reached via `try_proto_method_body`'s
+            // Instance-only gate) and a `Package` type object (the `.new`
+            // constructor-proto case, `dispatch_new` -> `run_proto_method`) so
+            // the governing owner can be re-derived for either shape.
             let invocant_class = match ctx.invocant.view() {
                 ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
                 _ => None,
             };
             let proto_body_code: Option<&CompiledCode> = if self.current_code != 0 {
@@ -39,39 +101,74 @@ impl Interpreter {
             // (`lookup_proto_method`'s MRO walk stops at the nearest EXPLICIT
             // proto, whether that is the receiver's own class or an
             // ancestor's). It doubles as the candidate-set boundary below.
-            let owner_and_proto =
-                invocant_class.and_then(|cn| self.lookup_proto_method(&cn, &proto_name));
+            let owner_and_proto = invocant_class
+                .as_deref()
+                .and_then(|cn| self.lookup_proto_method(cn, &proto_name));
             let (args, rw_sources) = match owner_and_proto.as_ref().and_then(|(_, proto)| {
                 self.proto_rw_redispatch_args(&proto.param_defs, &args, proto_body_code)
             }) {
                 Some((rebuilt, sources)) => (rebuilt, Some(sources)),
                 None => (args, None),
             };
-            self.proto_method_skip = Some(proto_name.clone());
+            let Some((owner, _)) = owner_and_proto else {
+                // No governing owner could be re-derived from the invocant (an
+                // exotic non-Instance/non-Package view). Preserve the pre-E9c-2
+                // fallback: an untruncated by-name redispatch.
+                // `try_proto_method_body`'s Instance-only gate means this can
+                // never actually re-intercept for such an invocant.
+                if rw_sources.is_some() {
+                    self.set_pending_call_arg_sources(rw_sources);
+                } else if ctx.call_arg_sources.is_some() {
+                    self.set_pending_call_arg_sources(ctx.call_arg_sources.clone());
+                }
+                return self.call_method_with_values(ctx.invocant, &proto_name, args);
+            };
+            // "Part B", shrunk to a tight scope immediately before the
+            // resolved-method invocation (formerly it spanned the whole
+            // by-name re-dispatch pipeline): restore the original call site's
+            // argument sources so an `is rw` candidate can bind through.
             if rw_sources.is_some() {
                 self.set_pending_call_arg_sources(rw_sources);
             } else if ctx.call_arg_sources.is_some() {
-                // The proto declares no rw parameter of its own (`proto method
-                // f(|) {*}` is the common shape), so nothing was rebuilt — but
-                // the ORIGINAL call site's argument sources still decide whether
-                // an `is rw` candidate is eligible. Running the proto body has
-                // long since cleared them, so restore them here.
                 self.set_pending_call_arg_sources(ctx.call_arg_sources.clone());
             }
-            // Fresh-candidate-set boundary (this ticket): restrict the
-            // redispatch to multi candidates declared at or below the
-            // proto's declaring class in the MRO — see the field doc on
-            // `Interpreter::proto_redispatch_boundary`. Bracket-style: save
-            // and restore rather than a one-shot flag, so a candidate that
-            // itself triggers a nested proto method redispatch doesn't
-            // clobber this outer boundary.
-            let saved_boundary = self.proto_redispatch_boundary;
-            self.proto_redispatch_boundary = owner_and_proto
-                .as_ref()
-                .map(|(owner, _)| (Symbol::intern(&proto_name), Symbol::intern(owner)));
-            let result = self.call_method_with_values(ctx.invocant, &proto_name, args);
-            self.proto_redispatch_boundary = saved_boundary;
-            return result;
+            let boundary_owner = Some(Symbol::intern(&owner));
+            let receiver_class_name = invocant_class.expect("owner_and_proto implies Some");
+            let attributes = match ctx.invocant.view() {
+                ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
+                _ => crate::value::AttrMap::new(),
+            };
+            let resolved = self.resolve_method_within_boundary(
+                &receiver_class_name,
+                &proto_name,
+                &args,
+                Some(&ctx.invocant),
+                boundary_owner,
+            );
+            return match resolved {
+                Some((resolved_owner, method_def)) => self
+                    .run_resolved_instance_method(
+                        &receiver_class_name,
+                        &attributes,
+                        &proto_name,
+                        args,
+                        Some(ctx.invocant.clone()),
+                        ctx.invocant,
+                        resolved_owner,
+                        method_def,
+                        boundary_owner,
+                    )
+                    .map(|(v, _)| v),
+                None => self
+                    .instance_method_not_found(
+                        &receiver_class_name,
+                        &proto_name,
+                        args,
+                        ctx.invocant,
+                        boundary_owner,
+                    )
+                    .map(|(v, _)| v),
+            };
         }
         self.clear_pending_dispatch_error();
         let Some(def) = self.resolve_proto_candidate_with_types(&proto_name, &args) else {

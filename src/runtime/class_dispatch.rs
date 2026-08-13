@@ -180,81 +180,146 @@ impl Interpreter {
             }
         }
         let Some((owner_class, method_def)) = resolved else {
-            // Distinguish X::Multi::NoMatch (method exists but no candidate
-            // matched) from X::Method::NotFound (method does not exist at all,
-            // e.g. submethod on ancestor only).
-            let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
-                self.registry()
-                    .classes
-                    .get(cn.as_str())
-                    .and_then(|c| c.methods.get(method_name))
-                    .is_some_and(|ovs| {
-                        let is_ancestor = cn.as_str() != receiver_class_name;
-                        ovs.iter()
-                            .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
-                    })
-            });
-            if has_visible_method {
-                // `self.new(:named)` on a concrete invocant whose class declares
-                // user multi `new` candidates that don't match: Mu.new(*%attrinit)
-                // is always available as a fallback multi candidate, exactly as
-                // `dispatch_new` provides for type-object targets. An explicit
-                // `proto method new` owns dispatch, so no fallback then. Gated on
-                // a concrete invocant: `dispatch_new`'s own user-new probe runs
-                // with a Package invocant and must surface no-match to reach its
-                // default-constructor fall-through (not recurse through here).
-                if method_name == "new"
-                    && matches!(
-                        inv_value.view(),
-                        ValueView::Instance { .. } | ValueView::Mixin(..)
-                    )
-                    && self
-                        .lookup_proto_method(receiver_class_name, "new")
-                        .is_none()
-                    && args
-                        .iter()
-                        .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
-                {
-                    let v = self.dispatch_new(
-                        Value::package(crate::symbol::Symbol::intern(receiver_class_name)),
-                        args,
-                    )?;
-                    return Ok((v, None));
-                }
-                let sigs =
-                    self.format_method_candidate_signatures(receiver_class_name, method_name);
-                let profile = self.format_call_arg_profile(&args);
-                let concrete = !matches!(inv_value.view(), ValueView::Package(_));
-                return Err(
-                    super::methods_signature_errors::make_multi_no_match_error_detailed(
-                        method_name,
-                        receiver_class_name,
-                        concrete,
-                        &profile,
-                        &sigs,
-                    ),
-                );
-            }
-            // A field read on an `is repr('CStruct')` handle: the instance
-            // carries the C pointer, so resolve the name against the struct's
-            // declared field layout and read it out of native memory
-            // (`$ssl.server`, `nativecast(evp_cipher_st, $c).key_len`). The
-            // class declares the fields as attributes but has no storage for
-            // them, so accessor resolution reaches here.
-            if args.is_empty()
-                && let Some(field) = self.cstruct_field_value(&inv_value, method_name)
-            {
-                return Ok((field, None));
-            }
-            let type_name = receiver_class_name.to_string();
-            return Err(
-                super::methods_signature_errors::make_method_not_found_error(
-                    method_name,
-                    &type_name,
-                    false,
-                ),
+            return self.instance_method_not_found(
+                receiver_class_name,
+                method_name,
+                args,
+                inv_value,
+                None,
             );
         };
+        self.run_resolved_instance_method(
+            receiver_class_name,
+            attributes,
+            method_name,
+            args,
+            invocant,
+            inv_value,
+            owner_class,
+            method_def,
+            None,
+        )
+    }
+
+    /// The `resolved == None` leg of [`Self::run_instance_method_celled`],
+    /// extracted (ADR-0019 E9c-2) so a proto `{*}` redispatch's own
+    /// boundary-resolved no-match
+    /// (`resolve_method_within_boundary` returning `None`) can reuse the same
+    /// error-shape logic with its own `boundary_owner` instead of by-name
+    /// re-entering the whole dispatch pipeline. `boundary_owner` narrows the
+    /// `X::Multi::NoMatch` candidate listing exactly as
+    /// `resolve_method_with_owner_impl`'s own boundary narrowed the walk that
+    /// failed to resolve; ordinary dispatch passes `None`.
+    pub(crate) fn instance_method_not_found(
+        &mut self,
+        receiver_class_name: &str,
+        method_name: &str,
+        args: Vec<Value>,
+        inv_value: Value,
+        boundary_owner: Option<Symbol>,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // Distinguish X::Multi::NoMatch (method exists but no candidate
+        // matched) from X::Method::NotFound (method does not exist at all,
+        // e.g. submethod on ancestor only).
+        let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
+            self.registry()
+                .classes
+                .get(cn.as_str())
+                .and_then(|c| c.methods.get(method_name))
+                .is_some_and(|ovs| {
+                    let is_ancestor = cn.as_str() != receiver_class_name;
+                    ovs.iter()
+                        .any(|d| !d.is_private && (!d.is_my || !is_ancestor))
+                })
+        });
+        if has_visible_method {
+            // `self.new(:named)` on a concrete invocant whose class declares
+            // user multi `new` candidates that don't match: Mu.new(*%attrinit)
+            // is always available as a fallback multi candidate, exactly as
+            // `dispatch_new` provides for type-object targets. An explicit
+            // `proto method new` owns dispatch, so no fallback then. Gated on
+            // a concrete invocant: `dispatch_new`'s own user-new probe runs
+            // with a Package invocant and must surface no-match to reach its
+            // default-constructor fall-through (not recurse through here).
+            if method_name == "new"
+                && matches!(
+                    inv_value.view(),
+                    ValueView::Instance { .. } | ValueView::Mixin(..)
+                )
+                && self
+                    .lookup_proto_method(receiver_class_name, "new")
+                    .is_none()
+                && args
+                    .iter()
+                    .all(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+            {
+                let v = self.dispatch_new(
+                    Value::package(crate::symbol::Symbol::intern(receiver_class_name)),
+                    args,
+                )?;
+                return Ok((v, None));
+            }
+            let sigs = self.format_method_candidate_signatures(
+                receiver_class_name,
+                method_name,
+                boundary_owner,
+            );
+            let profile = self.format_call_arg_profile(&args);
+            let concrete = !matches!(inv_value.view(), ValueView::Package(_));
+            return Err(
+                super::methods_signature_errors::make_multi_no_match_error_detailed(
+                    method_name,
+                    receiver_class_name,
+                    concrete,
+                    &profile,
+                    &sigs,
+                ),
+            );
+        }
+        // A field read on an `is repr('CStruct')` handle: the instance
+        // carries the C pointer, so resolve the name against the struct's
+        // declared field layout and read it out of native memory
+        // (`$ssl.server`, `nativecast(evp_cipher_st, $c).key_len`). The
+        // class declares the fields as attributes but has no storage for
+        // them, so accessor resolution reaches here.
+        if args.is_empty()
+            && let Some(field) = self.cstruct_field_value(&inv_value, method_name)
+        {
+            return Ok((field, None));
+        }
+        let type_name = receiver_class_name.to_string();
+        Err(
+            super::methods_signature_errors::make_method_not_found_error(
+                method_name,
+                &type_name,
+                false,
+            ),
+        )
+    }
+
+    /// The `resolved == Some((owner_class, method_def))` leg of
+    /// [`Self::run_instance_method_celled`], extracted (ADR-0019 E9c-2) so a
+    /// proto `{*}` redispatch can invoke an ALREADY-resolved winning
+    /// candidate (from `resolve_method_within_boundary`) through the exact
+    /// same run path ordinary dispatch uses — native-call check, ambiguous
+    /// check, wrap-chain interception, MRO deferral-tail frame push, and the
+    /// compiled run leg — instead of re-entering the whole dispatch pipeline
+    /// by name. `boundary_owner` narrows the `X::Multi::Ambiguous` candidate
+    /// listing exactly as the resolution that produced `method_def` was
+    /// itself narrowed; ordinary dispatch passes `None`.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn run_resolved_instance_method(
+        &mut self,
+        receiver_class_name: &str,
+        attributes: &AttrMap,
+        method_name: &str,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+        inv_value: Value,
+        owner_class: Symbol,
+        method_def: MethodDef,
+        boundary_owner: Option<Symbol>,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         // An `is native(...)` method: its body is the `{ * }` stub, and the
         // call belongs to NativeCall. Keyed by the class that *declared* it, so
         // an inherited native method resolves to the owner's descriptor.
@@ -267,7 +332,11 @@ impl Interpreter {
         // specific. Raise X::Multi::Ambiguous rather than silently choosing.
         if self.dispatch_ambiguous {
             self.dispatch_ambiguous = false;
-            let sigs = self.format_method_candidate_signatures(receiver_class_name, method_name);
+            let sigs = self.format_method_candidate_signatures(
+                receiver_class_name,
+                method_name,
+                boundary_owner,
+            );
             return Err(super::methods_signature_errors::make_multi_ambiguous_error(
                 method_name,
                 receiver_class_name,
