@@ -359,29 +359,40 @@ impl Interpreter {
         Ok(Value::value_pair(Value::str(key), val))
     }
 
-    pub(super) fn builtin_keys(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_keys(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_unary_collection_method(args, "keys")
     }
 
-    pub(super) fn builtin_values(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_values(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_unary_collection_method(args, "values")
     }
 
-    pub(super) fn builtin_kv(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_kv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_unary_collection_method(args, "kv")
     }
 
-    pub(super) fn builtin_pairs(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_pairs(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         self.builtin_unary_collection_method(args, "pairs")
     }
 
+    // ADR-0019 Phase E box E11: route through the canonical resolver entry
+    // point (`call_method_with_values`) instead of calling `native_method_0arg`
+    // directly. The E2 catalog existence check
+    // (`Interpreter::e2_native_method_exists`) stands in for the old
+    // `Option`-based "did the native cascade recognize this name at all"
+    // probe, preserving the exact fallback: an unrecognized `(target, method)`
+    // pair (e.g. a bare `keys()` call, `target` defaulting to `Value::NIL`)
+    // still yields an empty list rather than a dispatch error.
     fn builtin_unary_collection_method(
-        &self,
+        &mut self,
         args: &[Value],
-        method: &str,
+        method: &'static str,
     ) -> Result<Value, RuntimeError> {
         let target = args.first().cloned().unwrap_or(Value::NIL);
-        crate::builtins::native_method_0arg(&target, crate::symbol::Symbol::intern(method))
-            .unwrap_or_else(|| Ok(Value::array(Vec::new())))
+        if self.e2_native_method_exists(&target, method) {
+            self.call_method_with_values(target, method, Vec::new())
+        } else {
+            Ok(Value::array(Vec::new()))
+        }
     }
 }
