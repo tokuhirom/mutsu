@@ -367,7 +367,7 @@ impl Interpreter {
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
             if self.dispatch_ambiguous {
                 self.dispatch_ambiguous = false;
-                let sigs = self.format_method_candidate_signatures(cn, method);
+                let sigs = self.format_method_candidate_signatures(cn, method, None);
                 return Err(
                     crate::runtime::methods_signature_errors::make_multi_ambiguous_error(
                         method, cn, &sigs,

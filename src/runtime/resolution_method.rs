@@ -100,7 +100,7 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(Symbol, MethodDef)> {
-        self.resolve_method_with_owner_impl(class_name, method_name, arg_values, None)
+        self.resolve_method_with_owner_impl(class_name, method_name, arg_values, None, None)
     }
 
     pub(crate) fn resolve_method_with_owner_invocant(
@@ -110,7 +110,47 @@ impl Interpreter {
         arg_values: &[Value],
         invocant: &Value,
     ) -> Option<(Symbol, MethodDef)> {
-        self.resolve_method_with_owner_impl(class_name, method_name, arg_values, Some(invocant))
+        self.resolve_method_with_owner_impl(
+            class_name,
+            method_name,
+            arg_values,
+            Some(invocant),
+            None,
+        )
+    }
+
+    /// Same as [`Self::resolve_method_with_owner_invocant`], but restricts the
+    /// MRO walk to `boundary_owner`'s class and everything below it (i.e. the
+    /// receiver's own class down through `boundary_owner`, inclusive) —
+    /// ancestors beyond `boundary_owner` are not visible, even though they
+    /// would be reachable in an ordinary (non-proto) multi-method dispatch.
+    ///
+    /// ADR-0019 E9c-2: this is the direct-resolution replacement for an
+    /// EXPLICIT `proto method`'s `{*}` redispatch (formerly a by-name
+    /// re-entry into `call_method_with_values` bracketed by the ambient
+    /// `proto_redispatch_boundary` field, which this parameter replaces). See
+    /// `todo/tickets/explicit-child-proto-assumes-parent-candidates.md` for
+    /// why the boundary exists at all: an explicit `proto method` on some
+    /// class in the MRO starts a fresh candidate set that does NOT inherit an
+    /// ancestor's candidates of the same name (the inverse — a proto in a
+    /// PARENT governing candidates a child adds with no proto of its own —
+    /// still works, because `boundary_owner` is then that ancestor and the
+    /// whole tail from the receiver down through it stays in scope).
+    pub(crate) fn resolve_method_within_boundary(
+        &mut self,
+        class_name: &str,
+        method_name: &str,
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        boundary_owner: Option<Symbol>,
+    ) -> Option<(Symbol, MethodDef)> {
+        self.resolve_method_with_owner_impl(
+            class_name,
+            method_name,
+            arg_values,
+            invocant,
+            boundary_owner,
+        )
     }
 
     fn resolve_method_with_owner_impl(
@@ -119,25 +159,13 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
         invocant: Option<&Value>,
+        boundary_owner: Option<Symbol>,
     ) -> Option<(Symbol, MethodDef)> {
         self.dispatch_ambiguous = false;
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro_full = self.class_mro(class_name);
-        // An explicit `proto method`'s `{*}` redispatch starts a fresh
-        // candidate set (todo/tickets/explicit-child-proto-assumes-parent-
-        // candidates.md): when `proto_redispatch_boundary` names THIS
-        // method and its declaring class is in this MRO, only classes at or
-        // below that owner (i.e. the receiver's own class down through the
-        // owner, inclusive) are visible — an ancestor beyond the owner is
-        // not, even though it would be reachable in an ordinary (non-proto)
-        // multi-method dispatch. See the field doc on
-        // `Interpreter::proto_redispatch_boundary`.
-        let truncate_at: Option<usize> = match self.proto_redispatch_boundary {
-            Some((boundary_method, owner)) if boundary_method == Symbol::intern(method_name) => {
-                mro_full.iter().position(|s| *s == owner)
-            }
-            _ => None,
-        };
+        let truncate_at: Option<usize> =
+            boundary_owner.and_then(|owner| mro_full.iter().position(|s| *s == owner));
         let mro: &[Symbol] = match truncate_at {
             Some(pos) => &mro_full[..=pos],
             None => &mro_full[..],
@@ -749,9 +777,13 @@ impl Interpreter {
         let mut matches = Vec::new();
         let mut any_failed = false;
         for cn in &defining_levels {
-            if let Some(resolved) =
-                self.resolve_method_with_owner_impl(cn.as_str(), method_name, arg_values, None)
-            {
+            if let Some(resolved) = self.resolve_method_with_owner_impl(
+                cn.as_str(),
+                method_name,
+                arg_values,
+                None,
+                None,
+            ) {
                 matches.push(resolved);
             } else {
                 any_failed = true;

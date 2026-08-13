@@ -301,8 +301,14 @@ impl Interpreter {
     /// `call_method_with_values`. If `target`'s class (or an ancestor) declares a
     /// `proto method`/`proto submethod` body for `method`, run that body (its
     /// `{*}` dispatches to the matching multi candidate) and return `Some(result)`.
-    /// Returns `None` when the caller should dispatch normally — including the
-    /// one-shot redispatch case, where the `proto_method_skip` flag is consumed.
+    /// Returns `None` when the caller should dispatch normally.
+    ///
+    /// ADR-0019 E9c-2: `{*}`'s redispatch no longer re-enters this interception
+    /// by name (`call_proto_dispatch`'s method branch resolves the winning
+    /// candidate directly via `resolve_method_within_boundary` and invokes it
+    /// through the ordinary resolved-method run leg), so the former one-shot
+    /// `proto_method_skip` guard that used to suppress re-interception here has
+    /// no re-entry left to guard against and was deleted.
     ///
     /// TODO: methods reached via `handles` delegation forwarders run through
     /// `assign_method_lvalue_with_values` rather than the method-call op handlers
@@ -318,10 +324,6 @@ impl Interpreter {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
             _ => return None,
         };
-        if self.proto_method_skip.as_deref() == Some(method) {
-            self.proto_method_skip = None;
-            return None;
-        }
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a multi
         // candidate dispatched through the proto body's `{*}` runs via the slow

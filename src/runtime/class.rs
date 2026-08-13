@@ -294,25 +294,22 @@ impl Interpreter {
     /// Format the candidate signatures of a (multi) method across the
     /// receiver class's MRO, e.g. `(WorkingTie: Int $z, *%_)`. Used to build a
     /// Raku-style `X::Multi::NoMatch` message naming the invocant type and the
-    /// available candidates.
+    /// available candidates. `boundary_owner`, when `Some`, mirrors
+    /// `resolve_method_with_owner_impl`'s boundary parameter (ADR-0019 E9c-2):
+    /// a proto `{*}` redispatch's no-match diagnostic should list only the
+    /// candidates that redispatch can actually reach (at or below the
+    /// proto's owner), not an ancestor's candidates beyond it. Ordinary
+    /// (non-proto) dispatch passes `None`.
     pub(crate) fn format_method_candidate_signatures(
         &self,
         receiver_class_name: &str,
         method_name: &str,
+        boundary_owner: Option<Symbol>,
     ) -> Vec<String> {
         let mut sigs = Vec::new();
         let mro = self.mro_readonly(receiver_class_name);
-        // Mirror `resolve_method_with_owner_impl`'s proto-redispatch boundary
-        // (this ticket): when the active `{*}` redispatch is for THIS method
-        // and its declaring class is in this MRO, the diagnostic should list
-        // only the candidates that redispatch can actually reach (at or
-        // below the proto's owner), not an ancestor's candidates beyond it.
-        let truncate_at = match self.proto_redispatch_boundary {
-            Some((boundary_method, owner)) if boundary_method == Symbol::intern(method_name) => {
-                mro.iter().position(|cn| Symbol::intern(cn) == owner)
-            }
-            _ => None,
-        };
+        let truncate_at =
+            boundary_owner.and_then(|owner| mro.iter().position(|cn| Symbol::intern(cn) == owner));
         let mro = match truncate_at {
             Some(pos) => &mro[..=pos],
             None => &mro[..],
