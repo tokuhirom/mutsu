@@ -140,12 +140,25 @@ impl Interpreter {
                 self.drain_shared_thread_output();
                 let status = shared.status();
                 if status == "Broken" {
-                    // .result on a Broken promise throws the cause as X::AdHoc
+                    // .result on a Broken promise re-throws the cause. A
+                    // plain Str reason (e.g. `Promise.break("oops")`) gets
+                    // wrapped in X::AdHoc; an object instance (a user
+                    // exception the promise was broken with, e.g. via a
+                    // whenever LAST-phaser die propagated through
+                    // `SinkEvent::Quit`) passes through with its real type
+                    // intact — same fix as `.cause` above, and the same
+                    // shape-based check `Supplier.quit()` already uses,
+                    // since a name-based "is this an exception" check cannot
+                    // see a user class's `is Exception` ancestry.
                     let msg = result.to_string_value();
-                    let mut attrs = HashMap::new();
-                    attrs.insert("payload".to_string(), Value::str(msg.clone()));
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(Symbol::intern("X::AdHoc"), attrs);
+                    let ex = if matches!(result.view(), ValueView::Instance { .. }) {
+                        result
+                    } else {
+                        let mut attrs = HashMap::new();
+                        attrs.insert("payload".to_string(), Value::str(msg.clone()));
+                        attrs.insert("message".to_string(), Value::str(msg.clone()));
+                        Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
+                    };
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     Err(err)
@@ -241,13 +254,17 @@ impl Interpreter {
                 } else {
                     // Broken
                     let (result, _, _) = shared.wait();
-                    // Wrap in X::AdHoc if it's a plain string
-                    let is_exc = matches!(
-                        result.view(),
-                        ValueView::Instance { class_name, .. }
-                            if class_name.resolve().contains("Exception")
-                                || class_name.resolve().starts_with("X::")
-                    );
+                    // Wrap in X::AdHoc if it's a plain string. Any object
+                    // instance passes through untouched — a name-based check
+                    // (`class_name` containing "Exception" or starting with
+                    // "X::") cannot see a user class's `is Exception`
+                    // ancestry (e.g. `class TooShort is Exception {...}`, the
+                    // shape `Cro::HTTP::RawBodyParser::ContentLength` used
+                    // before its exception got the conventional `X::...`
+                    // name), so gate on the value shape instead — the same
+                    // fix already applied to `Supplier.quit()`'s reason
+                    // handling in `native_supplier_methods.rs`.
+                    let is_exc = matches!(result.view(), ValueView::Instance { .. });
                     let cause = if is_exc {
                         result
                     } else {

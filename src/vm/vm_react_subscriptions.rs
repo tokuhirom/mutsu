@@ -39,6 +39,7 @@ impl Interpreter {
         waker: &ReactWaker,
         react_subs: &mut [ReactSubscription],
         progressed: &mut bool,
+        policy: &SupplyDrivePolicy,
     ) -> Result<bool, RuntimeError> {
         loop {
             let events = waker.drain();
@@ -143,6 +144,26 @@ impl Interpreter {
                         if handled {
                             react_subs[key].done = true;
                             continue;
+                        }
+                        // Under `SupplyDrivePolicy::Promise` this loop runs
+                        // detached on its own thread whose `Result` the caller
+                        // already discards (see `supply_promise_on_demand`'s
+                        // `spawn_user_thread`) — there is no `react {}` block
+                        // whose die this could become, and returning `Err`
+                        // here left the promise `Planned` forever (e.g. a live
+                        // Supplier-backed `whenever` with no `quit =>` handler
+                        // of its own inside `Promise(supply {...})`, the shape
+                        // `Cro::MessageWithBody.body-blob` uses over a
+                        // `preserve()`d nested source). Break the promise
+                        // directly instead, matching what an explicit
+                        // `quit_cb` above would have driven towards anyway.
+                        // Returning `Ok(true)` (not `Err`) lets the caller's
+                        // normal `break 'react_loop` path run the close
+                        // callbacks exactly once, instead of duplicating that
+                        // call here.
+                        if let SupplyDrivePolicy::Promise { promise, .. } = policy {
+                            promise.break_with(error, String::new(), String::new());
+                            return Ok(true);
                         }
                         Self::run_react_close_callbacks(self, react_subs);
                         let quit_err =
@@ -428,7 +449,7 @@ impl Interpreter {
             }
             // Phase 1: deliver all queued supplier events in push (= emit)
             // order, honouring per-supplier done/quit.
-            if self.dispatch_waker_events(waker, react_subs, &mut progressed)? {
+            if self.dispatch_waker_events(waker, react_subs, &mut progressed, &policy)? {
                 break 'react_loop;
             }
             // Service any nested-`whenever` on-demand taps whose emitter finished,
@@ -475,6 +496,24 @@ impl Interpreter {
                         sub.done = true;
                         progressed = true;
                         if !handled {
+                            // Under `SupplyDrivePolicy::Promise` this loop runs
+                            // detached on its own thread (see
+                            // `supply_promise_on_demand`'s `spawn_user_thread`,
+                            // whose caller already returned and discards this
+                            // function's `Result`) — there is no `react {}`
+                            // block whose die this could reasonably become, and
+                            // returning `Err` here left the promise `Planned`
+                            // forever (e.g. `Cro::MessageWithBody.body-blob`'s
+                            // `Promise(supply { whenever self.body-byte-stream
+                            // {...} })` never resolving when the nested raw
+                            // body parser's own unhandled `LAST`-phaser die
+                            // quit it). Break the promise directly instead —
+                            // exactly what an explicit `quit_cb` above would
+                            // have driven towards anyway.
+                            if let SupplyDrivePolicy::Promise { promise, .. } = &policy {
+                                promise.break_with(reason, String::new(), String::new());
+                                return Ok(());
+                            }
                             let quit_err =
                                 crate::runtime::Interpreter::runtime_error_from_supply_reason(
                                     reason,
@@ -584,7 +623,7 @@ impl Interpreter {
                 // their pending values are delivered in source order.
                 if matches!(poll, Some(Ok(SupplyEvent::Emit(_))))
                     && matches!(policy, SupplyDrivePolicy::React)
-                    && self.dispatch_waker_events(waker, react_subs, &mut progressed)?
+                    && self.dispatch_waker_events(waker, react_subs, &mut progressed, &policy)?
                 {
                     break 'react_loop;
                 }

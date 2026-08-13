@@ -410,7 +410,9 @@ impl Interpreter {
                         let _ = self.call_supply_tap(tap, vec![emitted], true);
                     }
                     for done_cb in take_supplier_done_callbacks(supplier_id) {
-                        self.invoke_done_callback(done_cb)?;
+                        if self.invoke_done_callback_or_quit(done_cb, supplier_id)? {
+                            break;
+                        }
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(supplier_id) {
@@ -934,7 +936,9 @@ impl Interpreter {
                         self.call_supply_tap(tap, vec![emitted], true)?;
                     }
                     for done_cb in take_supplier_done_callbacks(sid) {
-                        self.invoke_done_callback(done_cb)?;
+                        if self.invoke_done_callback_or_quit(done_cb, sid)? {
+                            break;
+                        }
                     }
                     // Propagate done to start-transform output suppliers
                     for out_sid in get_start_output_supplier_ids(sid) {

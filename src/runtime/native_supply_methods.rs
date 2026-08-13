@@ -110,8 +110,62 @@ impl Interpreter {
             }
             return Ok(());
         }
-        let _ = self.call_sub_value(done_cb, Vec::new(), true);
+        self.call_sub_value(done_cb, Vec::new(), true)?;
         Ok(())
+    }
+
+    /// Like `invoke_done_callback`, but a die escaping the callback (the
+    /// established shape: a `whenever`'s `LAST` phaser body throwing, e.g.
+    /// `Cro::HTTP::RawBodyParser::ContentLength`'s "connection closed too
+    /// soon" check) routes to `supplier_id`'s own quit callbacks instead of
+    /// propagating out of the `.done()`/emit-completion call that triggered
+    /// it. Mirrors the established whenever-body-emit die-to-quit
+    /// conversion in the `"emit"` arm of `native_supplier_methods.rs`
+    /// (`SupplierEmitAction::Call`) byte-for-byte, including its silent-drop
+    /// behavior when nothing registered a `quit =>` handler — real Raku
+    /// terminates the supply via quit either way, but mutsu's existing
+    /// contract (already exercised by that sibling site) is that an
+    /// unobserved quit is simply not delivered anywhere, not resurfaced as
+    /// an error from the unrelated call that happened to trigger done.
+    ///
+    /// Returns `true` when the callback died and was converted to a quit —
+    /// the caller's `take_supplier_done_callbacks(supplier_id)` loop must
+    /// stop delivering the rest of that batch then (e.g. the enclosing
+    /// whenever-done-group marker that would otherwise still fire the
+    /// downstream `done =>` handler right after): a supply terminates via
+    /// either `done` or `quit`, never both.
+    pub(super) fn invoke_done_callback_or_quit(
+        &mut self,
+        done_cb: Value,
+        supplier_id: u64,
+    ) -> Result<bool, RuntimeError> {
+        if let Err(err) = self.invoke_done_callback(done_cb) {
+            // A `return` inside the callback targets its lexically enclosing
+            // routine: propagate unchanged, not a supply failure.
+            if err.is_return() || err.return_value.is_some() {
+                return Err(err);
+            }
+            // `done`/`last` inside a whenever body ends the enclosing supply;
+            // propagate the control signal unchanged so the supply machinery
+            // consumes it.
+            if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                return Err(err);
+            }
+            // `next` skips the rest of this body run — not a supply failure.
+            if err.is_next() {
+                return Ok(false);
+            }
+            let reason = err
+                .exception
+                .as_deref()
+                .cloned()
+                .unwrap_or_else(|| Value::str(err.message.clone()));
+            for qcb in take_supplier_quit_callbacks(supplier_id) {
+                self.call_supply_quit_handler(qcb, reason.clone())?;
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// Marker registered on the emitter's done so that a supply terminating via

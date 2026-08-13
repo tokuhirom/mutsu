@@ -421,6 +421,16 @@ Cro::HTTP suite: 34/35 fully-green (up from 33/35), remaining gap being that
 file plus the unrelated pre-existing `http2-request-parser.rakutest`
 concurrent-stream ticket. Cro::Core stays 9/9.
 
+**Update (2026-08-13, later the same day):** that ticket is resolved —
+three compounding general bugs (a `whenever` `LAST`-phaser die not
+converting to quit; a nested-derived-source quit leaving a
+`Promise(supply {...})` coercion `Planned` forever; `.cause`/`.result`
+re-wrapping a user exception in `X::AdHoc` via a name-based ancestry check).
+See `news/2026-08/whenever-last-phaser-die-and-broken-promise-exception-type.md`.
+`http-response-parser.rakutest` is now 156/156; Cro::HTTP suite 34/35
+fully-green (sole remaining gap: the unrelated `http2-request-parser.rakutest`
+concurrent-stream ticket).
+
 **Slice 2 (bypass-path audit) is done (2026-08-13).** Each of the four
 candidates in the Slice-2 section above was probed against real `raku` with a
 thread-identity probe and, where that showed a difference, a deadlock-shape

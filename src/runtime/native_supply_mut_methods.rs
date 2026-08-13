@@ -572,7 +572,11 @@ impl Interpreter {
                                     && supplier_take_preserved_terminal(supplier_id)
                                 {
                                     for done_cb in take_supplier_done_callbacks(supplier_id) {
-                                        self.invoke_done_callback(done_cb)?;
+                                        if self
+                                            .invoke_done_callback_or_quit(done_cb, supplier_id)?
+                                        {
+                                            break;
+                                        }
                                     }
                                 }
                             } else if let ValueView::Instance {
