@@ -67,7 +67,7 @@ pub(crate) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
             // If what follows is `{`, this is an anonymous routine — fatal error.
             if after_type.starts_with('{') {
                 return Err(PError::fatal(format!(
-                    "FATAL:X::Anon::Multi: An anonymous routine may not take a {} declarator",
+                    "X::Anon::Multi: An anonymous routine may not take a {} declarator",
                     declarator
                 )));
             }
@@ -78,7 +78,7 @@ pub(crate) fn anon_multi_check(input: &str) -> PResult<'_, Stmt> {
             // type IS present (e.g. `multi sub (...)`), it's definitely a declaration.
             if after_type.starts_with('(') && after_type != after_kw_ws {
                 return Err(PError::fatal(format!(
-                    "FATAL:X::Anon::Multi: An anonymous routine may not take a {} declarator",
+                    "X::Anon::Multi: An anonymous routine may not take a {} declarator",
                     declarator
                 )));
             }

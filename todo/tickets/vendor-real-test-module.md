@@ -895,6 +895,110 @@ Two measurement rules this batch produced, both learned the hard way:
   `throws-like` does not check them, so a `throws-like …, X::…, what => …` pin
   passes without the fix. Read the attribute off the caught exception instead.
 
+### Re-measured 2026-08-14, ten days of unrelated work later
+
+No one had touched this ticket since 2026-08-04 (confirmed via `gh pr list
+--search vendor-real-test-module`), but ~10 days of general interpreter work
+had landed in the meantime, so the first step was re-measuring rather than
+trusting the 2026-08-04 numbers. Full sweep on `51abd38c6` (release build,
+`prove -j6`, the same command as the "Step 3" section above):
+
+| | 2026-08-04 | 2026-08-14 |
+| --- | --- | --- |
+| regress under `-j6` (raw) | 190 (evening figure) | **157 / 1435** |
+| genuine, re-run alone with 4x the per-file timeout budget | 119 | **90** |
+
+So the general-purpose work of the last ten days — none of it aimed at this
+ticket — closed roughly a third of the residue as a side effect. That is
+consistent with the campaign's own thesis: most of what the real `Test`
+module exposes is ordinary interpreter gaps, not `Test`-shaped ones, so
+unrelated fixes keep chipping at it.
+
+Classifying the 90 by first `not ok` again produces the same flat histogram
+the 2026-08-04 entry warned about (no symptom bucket bigger than a couple of
+files), so per that entry's own rule the right move is to regroup by
+mechanism instead of symptom. One paid off:
+
+**14 of the 90 files fail because a specific `throws-like …, X::Some::Class`
+assertion gets `X::Syntax::Confused` instead** (`grep -l "Got:
+X::Syntax::Confused"` over the per-file logs). The *expected* classes are all
+over the map — `X::Syntax::CannotMeta`, `X::Syntax::Comment::Embedded`,
+`X::Syntax::Signature::InvocantNotAllowed`, `X::Anon::Multi`,
+`X::Comp::Group`, `X::Worry::Precedence::Range`, `X::Syntax::Malformed`, and
+others — so this is *not* one shared parser gap; most of these constructs
+genuinely need their own individual diagnosis work (the long tail the
+2026-08-03/04 entries already describe). But one of them **was** a shared
+mechanism: all 9 `X::Anon::Multi` assertions in `S06-multi/syntax.t`
+(`only sub {}` / `multi sub {}` / `proto sub {}` / `multi sub (Int $x) {}`
+with no name) failed the same way, even though
+`src/parser/{stmt/sub/sub_decl.rs,primary/ident/identifier_call.rs}` already
+raise exactly `X::Anon::Multi` with the right message at the point of the
+error.
+
+**Root cause: `PError::fatal(message)` already prepends the `"FATAL:"`
+sentinel prefix** (`src/parser/parse_result.rs:93-99`) that marks a parse
+error as non-recoverable, but all 4 of its `X::Anon::Multi` call sites (2 in
+`sub_decl.rs`, 2 in `identifier_call.rs`) *also* wrote a literal `"FATAL:"`
+at the front of their own message text. The stored message became
+`"FATAL:FATAL:X::Anon::Multi: An anonymous routine may not take a …
+declarator"`. `PError`'s `Display` impl only strips one `FATAL:` layer
+(`parse_result.rs:352-357`), so the message `parser::parse_program()` puts on
+the resulting `RuntimeError` was left with one residual `"FATAL:"` still
+glued to the front — `"FATAL:X::Anon::Multi: …"` — which no longer
+`starts_with("X::")`. `RuntimeError::split_typed_message_convention()`
+(`src/value/error_construct.rs:162-177`) therefore couldn't recognize the
+class, and `exception_value()` fell back to `untyped_exception_class()`,
+which answers `X::Syntax::Confused` for anything carrying a parse-error code.
+Confirmed with a direct repro before the fix:
+
+```
+$ mutsu -e 'multi sub {}'
+Runtime error: FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator
+```
+
+— the literal leftover `"FATAL:"` in that output was the tell. Audited every
+`PError::fatal`/`fatal_at`/`fatal_with_exception` call site in `src/parser/`
+for the same double-prefix pattern (`grep -rn '"FATAL:' src/parser/`); the
+other four sites (`return_type.rs`, `my_decl_dispatch.rs`,
+`my_decl_helpers.rs`, `param_inner.rs`) use `PError::raw()`, which does
+*not* auto-prepend `"FATAL:"`, so their single literal prefix is correct and
+they were left alone. Only the 4 `X::Anon::Multi` sites had the bug, and all
+4 are now fixed by deleting their redundant `"FATAL:"` literal.
+
+Result: `mutsu -e 'multi sub {}'` now raises `X::Anon::Multi` cleanly (no
+leftover sentinel in the message), `S06-multi/syntax.t` goes from 9 lost
+assertions to **45/45 clean** under `MUTSU_REAL_TEST=1`, and it was already
+whitelisted and still passes under the native provider unchanged (same
+control flow — only the message text changed). Pinned by
+`t/anon-multi-exception-class.t` (10 assertions, green under `raku` too). Full
+`t/` suite (3154 files) and `cargo clippy -- -D warnings` (pinned toolchain
+1.96.1) both clean. Re-running the whole sweep after the fix: `157 → 157` raw
+under `-j6` (one file fixed, one unrelated `-j6`-load artifact —
+`S17-lowlevel/cas-int.t`, a CAS/atomics test that is CPU-bound and passes
+clean alone — took its place in the raw count), but the *genuine* diff is
+exactly `S06-multi/syntax.t` removed and nothing else changed.
+
+**Next lead for round N+1:** the other 13 `Got: X::Syntax::Confused` files are
+a real long tail — each expected class (`X::Syntax::CannotMeta` for `6 >==
+2`/`6 ~~= 2`, diffy comparison operators used as an assignment-metaop base;
+`X::Syntax::Comment::Embedded` for a malformed `#\`(...)` embedded comment;
+`X::Comp::Group` per the still-open role-membership design in
+`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`; …) needs its
+own parser-side diagnosis, and none of the remaining 13 shares a mechanism
+with another the way the `X::Anon::Multi` cluster did. Before picking one,
+re-run `grep -rn '"FATAL:' src/` **outside** `src/parser/` too (not done this
+round — the audit above was parser-scoped, since that's where every current
+`PError::fatal` call site lives, but worth a quick repeat check next round in
+case new call sites were added elsewhere). The other 76 of the 90 (the ones
+without an `Expected:`/`Got:` mismatch at all) are ordinary single-assertion
+gaps in the same long-tail shape the 2026-08-03/04 entries already describe —
+no new dominant cluster found there this round; `roast/S02-types/array.t`
+looked like a second `TODO`/exit-status mechanism at first glance (all its
+`not ok` lines are `# TODO`-marked yet the file still exits non-zero) but
+turned out to be a `Died` mid-file in an unrelated `lives-ok` subtest
+("reification of zen and whatever slices"), not a TODO-handling bug — false
+lead, ruled out.
+
 ## Stop concluding "from here it is one at a time" (2026-08-04)
 
 That sentence has been written into this file three times, from three separate
