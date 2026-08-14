@@ -31,13 +31,19 @@ impl Interpreter {
     /// in the *caller* (the line/file where this function was called from);
     /// `def_file` is the file the routine's body lives in (None = main
     /// script), used by backtrace rendering.
+    ///
+    /// Takes `Symbol`s (`RoutineFrame`'s fields are all interned) so the push
+    /// itself never allocates; a caller holding only a `&str`/`String` should
+    /// intern via `Symbol::intern` (a thread-local cache hit after the first
+    /// call for a given call site, since the same name/package is reused on
+    /// every repeat call).
     pub(crate) fn push_routine_with_location(
         &mut self,
-        package: String,
-        name: String,
+        package: Symbol,
+        name: Symbol,
         line: Option<u32>,
-        file: Option<String>,
-        def_file: Option<String>,
+        file: Option<Symbol>,
+        def_file: Option<Symbol>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -61,12 +67,12 @@ impl Interpreter {
     /// reverted to the main script by the time the method ran.
     pub(crate) fn push_method_routine_with_location(
         &mut self,
-        package: String,
-        lexical_package: String,
-        name: String,
+        package: Symbol,
+        lexical_package: Symbol,
+        name: Symbol,
         line: Option<u32>,
-        file: Option<String>,
-        def_file: Option<String>,
+        file: Option<Symbol>,
+        def_file: Option<Symbol>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -87,11 +93,11 @@ impl Interpreter {
     /// attributed to the routine that lexically encloses it.
     pub(crate) fn push_block_routine_with_location(
         &mut self,
-        package: String,
-        name: String,
+        package: Symbol,
+        name: Symbol,
         line: Option<u32>,
-        file: Option<String>,
-        def_file: Option<String>,
+        file: Option<Symbol>,
+        def_file: Option<Symbol>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -123,7 +129,7 @@ impl Interpreter {
     pub(crate) fn caller_frame_package(&self) -> String {
         let len = self.routine_stack.len();
         if len >= 2 {
-            return self.routine_stack[len - 2].package.clone();
+            return self.routine_stack[len - 2].package.resolve();
         }
         "GLOBAL".to_string()
     }
@@ -145,8 +151,8 @@ impl Interpreter {
     /// in the caller's file attributed there even while a module invokes it.
     pub(crate) fn executing_source_file(&self) -> Option<String> {
         for frame in self.routine_stack.iter().rev() {
-            match &frame.def_file {
-                Some(file) => return Some(file.clone()),
+            match frame.def_file {
+                Some(file) => return Some(file.resolve()),
                 None if frame.is_block => continue,
                 None => break,
             }
@@ -366,7 +372,8 @@ impl Interpreter {
         let lexical = self
             .routine_stack
             .last()
-            .and_then(|frame| frame.lexical_package.as_deref());
+            .and_then(|frame| frame.lexical_package)
+            .map(|s| s.as_str());
         if cur == "GLOBAL" {
             return match lexical {
                 Some(pkg) if pkg != "GLOBAL" => vec![pkg.to_string(), cur],

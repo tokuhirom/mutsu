@@ -462,7 +462,7 @@ impl Interpreter {
         };
         !frame.is_block
             && frame.package == "GLOBAL"
-            && self.mainline_lexical_subs.contains(&frame.name)
+            && self.mainline_lexical_subs.contains(frame.name.as_str())
     }
 
     /// The store entry `name` names from the frame that is running, or `None`.
@@ -516,7 +516,7 @@ impl Interpreter {
         }
         let frame = self.routine_stack().last();
         let candidates = [
-            frame.and_then(|f| f.lexical_package.as_deref()),
+            frame.and_then(|f| f.lexical_package).map(|s| s.as_str()),
             self.method_class_stack_top_str(),
             frame
                 .map(|f| f.package.as_str())

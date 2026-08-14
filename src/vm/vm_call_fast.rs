@@ -3,17 +3,33 @@ use super::*;
 impl Interpreter {
     /// Fast path for calling simple compiled functions.
     /// Eligible when: zero args, no params, no return type spec, not a test assertion,
-    /// package is GLOBAL. Skips block_stack, routine_stack, caller_env, readonly vars,
-    /// and callframe bookkeeping for significant performance gains in tight loops.
+    /// package is GLOBAL. Skips block_stack, caller_env, readonly vars, and
+    /// callframe bookkeeping for significant performance gains in tight loops.
     ///
     /// Unlike `call_compiled_function_named`, this does NOT save/restore the env via
     /// Arc clone. Instead, it runs the function in-place and cleans up the function's
     /// local variables from env afterward. This avoids the expensive deep clone
     /// triggered by Arc::make_mut when the function body mutates env.
+    ///
+    /// DOES push a `RoutineFrame` (see `RoutineFrame`'s doc comment): this used
+    /// to be skipped here specifically to avoid several `String` allocations
+    /// per call, which silently dropped the `in sub <name>` backtrace frame
+    /// (and every other `routine_stack` consumer — `&?ROUTINE`, `CALLER::`)
+    /// on every call PAST THE FIRST to the same routine, since a call site is
+    /// only routed through this fast path once it has already been seen
+    /// (`todo/tickets/repeat-call-loses-backtrace-frame.md`). Now that
+    /// `RoutineFrame`'s fields are interned `Symbol`s, the push is a plain
+    /// `Vec::push` (worst case one thread-local intern-cache lookup per
+    /// field, no allocation on a repeat call), cheap enough to do
+    /// unconditionally like every other call path. `callframe()`/`caller()`
+    /// still need the full `call_compiled_function_named` path (they read a
+    /// separate `callframe_stack`, not `routine_stack`) — `is_fast_call_eligible`
+    /// already excludes `cf.code.uses_callframe`, so that is unaffected here.
     pub(super) fn call_compiled_function_fast(
         &mut self,
         cf: &CompiledFunction,
         fn_name: &str,
+        fn_name_sym: Symbol,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
@@ -144,6 +160,18 @@ impl Interpreter {
         // `use newline`) are scoped to the compilation unit where they appear.
         // Save and restore around the body so callee's `use fatal` never leaks.
         let saved_pragmas = self.save_pragma_state();
+        // Push a routine frame for the duration of the body so backtraces
+        // (`die`/`fail`/type errors), `&?ROUTINE`, `CALLER::`, and `callframe`
+        // see this call — see the doc comment above and `RoutineFrame`'s own.
+        // `line`/`file` are the CALLER's current position (the call-site);
+        // `def_file` is where this routine's body was declared.
+        self.push_routine_with_location(
+            Symbol::intern(&cf.package),
+            fn_name_sym,
+            self.current_source_line(),
+            self.current_source_file_sym(),
+            cf.source_file.as_deref().map(Symbol::intern),
+        );
         let let_mark = self.let_saves_len();
         // Frame-less path: roll back the line the body's ops advanced to manually.
         let saved_line = self.cur_source_line;
@@ -214,6 +242,7 @@ impl Interpreter {
         };
 
         self.stack.truncate(saved_stack_depth);
+        self.pop_routine();
 
         self.cur_source_line = saved_line;
         // Sync state variables back to persistent storage. Prefer the env

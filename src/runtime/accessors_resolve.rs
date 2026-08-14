@@ -340,11 +340,7 @@ impl Interpreter {
                     }
                     return Value::NIL;
                 }
-                return Value::routine_parts(
-                    Symbol::intern(&frame.package),
-                    Symbol::intern(&frame.name),
-                    false,
-                );
+                return Value::routine_parts(frame.package, frame.name, false);
             }
             return Value::NIL;
         }

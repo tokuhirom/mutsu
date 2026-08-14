@@ -177,18 +177,18 @@ impl Interpreter {
 
     fn build_caller_frame(&self, frame: &RoutineFrame, callsite_line: Option<i64>) -> Value {
         let mut attrs = HashMap::new();
-        let pkg = if frame.package.is_empty() || frame.package == "GLOBAL" {
-            "Main".to_string()
+        let pkg: &str = if frame.package.is_empty() || frame.package == "GLOBAL" {
+            "Main"
         } else {
-            frame.package.clone()
+            frame.package.as_str()
         };
         let subname = format!("&{}::{}", pkg, frame.name);
         attrs.insert("subname".to_string(), Value::str(subname));
-        attrs.insert("package".to_string(), Value::str(pkg));
+        attrs.insert("package".to_string(), Value::str(pkg.to_string()));
 
         let file = frame
             .file
-            .clone()
+            .map(|s| s.resolve())
             .or_else(|| self.env.get("?FILE").map(|v| v.to_string_value()))
             .unwrap_or_default();
         attrs.insert("file".to_string(), Value::str(file));
@@ -224,14 +224,14 @@ impl Interpreter {
                     _ => None,
                 };
                 let Some(sd) = sd else { return false };
-                sd.name.resolve() == frame.name
-                    && (sd.package.resolve() == frame.package
-                        || (frame.package == "GLOBAL" && sd.package.resolve().is_empty())
-                        || (sd.package.resolve() == "GLOBAL" && frame.package.is_empty()))
+                sd.name == frame.name
+                    && (sd.package == frame.package
+                        || (frame.package == "GLOBAL" && sd.package.is_empty())
+                        || (sd.package == "GLOBAL" && frame.package.is_empty()))
             })
             .cloned()
             .or_else(|| self.env.get(&format!("&{}", frame.name)).cloned())
-            .or_else(|| self.env.get(&frame.name).cloned())
+            .or_else(|| self.env.get_sym(frame.name).cloned())
             .unwrap_or(Value::NIL);
         attrs.insert("sub".to_string(), sub_val);
         attrs.insert("inline".to_string(), Value::FALSE);

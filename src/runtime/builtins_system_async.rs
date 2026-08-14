@@ -175,7 +175,7 @@ impl Interpreter {
         let stack = self.routine_stack();
         let mut lines = Vec::new();
         for frame in stack.iter().rev() {
-            let loc = match (frame.file.as_deref(), frame.line) {
+            let loc = match (frame.file.map(|s| s.as_str()), frame.line) {
                 (Some(f), Some(l)) => format!(" at {} line {}", f, l),
                 (Some(f), None) => format!(" at {}", f),
                 _ => String::new(),

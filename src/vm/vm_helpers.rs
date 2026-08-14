@@ -142,11 +142,11 @@ impl Interpreter {
                 // Outer frame: the line where this frame called the next inner frame.
                 // That info is stored in the next-inner frame's call-site.
                 let inner_frame = reversed[i - 1];
-                (inner_frame.line, inner_frame.file.clone())
+                (inner_frame.line, inner_frame.file.map(|s| s.resolve()))
             };
             // A routine defined in another file (a `use`d module) displays at
             // its defining file; the call-site line is within that file.
-            let file = frame.def_file.clone().or(file);
+            let file = frame.def_file.map(|s| s.resolve()).or(file);
             let location = Self::format_location(file.as_deref(), line);
             if frame.name.is_empty() || frame.name == "<unit>" || frame.name == "<pointy-block>" {
                 lines.push(format!("  in block <unit>{}", location));
@@ -166,7 +166,8 @@ impl Interpreter {
             // The outermost routine frame's stored call-site is where
             // <unit> called it.
             let outermost = &stack[0];
-            let location = Self::format_location(outermost.file.as_deref(), outermost.line);
+            let location =
+                Self::format_location(outermost.file.map(|s| s.as_str()), outermost.line);
             lines.push(format!("  in block <unit>{}", location));
         }
         lines.join("\n")
@@ -230,11 +231,11 @@ impl Interpreter {
                 (current_line, current_file.clone())
             } else {
                 let inner_frame = reversed[i - 1];
-                (inner_frame.line, inner_frame.file.clone())
+                (inner_frame.line, inner_frame.file.map(|s| s.resolve()))
             };
             // Module routines display at their defining file (see
             // `build_backtrace_string`).
-            let file = frame.def_file.clone().or(file);
+            let file = frame.def_file.map(|s| s.resolve()).or(file);
             // A genuine bare-block callframe (is_block + empty name) is an
             // anonymous block in Raku: its `.subname` is the empty string (so
             // `.is-routine` is False and `.code.name` is empty), distinct from
@@ -248,7 +249,7 @@ impl Interpreter {
             {
                 "<unit>".to_string()
             } else {
-                frame.name.clone()
+                frame.name.resolve()
             };
 
             let location = Self::format_location(file.as_deref(), line);
@@ -313,7 +314,8 @@ impl Interpreter {
             f.name == "<unit>" || (f.name.is_empty() && !f.is_block)
         }) {
             let outermost = &stack[0];
-            let location = Self::format_location(outermost.file.as_deref(), outermost.line);
+            let location =
+                Self::format_location(outermost.file.map(|s| s.as_str()), outermost.line);
             text_lines.push(format!("  in block <unit>{}", location));
 
             let mut frame_attrs = HashMap::new();
@@ -322,8 +324,7 @@ impl Interpreter {
                 "file".to_string(),
                 outermost
                     .file
-                    .clone()
-                    .map(Value::str)
+                    .map(|s| Value::str(s.resolve()))
                     .unwrap_or(Value::str(String::new())),
             );
             frame_attrs.insert(

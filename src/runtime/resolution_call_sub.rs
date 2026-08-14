@@ -622,9 +622,9 @@ impl Interpreter {
                 Value::int(data.id as i64),
             );
             self.routine_stack.push(RoutineFrame {
-                package: data.package.resolve(),
+                package: data.package,
                 lexical_package: None,
-                name: data.name.resolve(),
+                name: data.name,
                 line: None,
                 file: None,
                 is_method: false,

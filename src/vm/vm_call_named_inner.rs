@@ -83,16 +83,16 @@ impl Interpreter {
         // Always push a routine frame so that &?ROUTINE works inside anonymous
         // subs too. Use "<anon>" as a sentinel name when fn_name is empty.
         let routine_push_name = if fn_name.is_empty() {
-            "<anon>".to_string()
+            Symbol::intern("<anon>")
         } else {
-            fn_name.to_string()
+            Symbol::intern(fn_name)
         };
         self.push_routine_with_location(
-            fn_package.to_string(),
+            Symbol::intern(fn_package),
             routine_push_name,
             self.current_source_line(),
-            self.current_source_file(),
-            cf.source_file.clone(),
+            self.current_source_file_sym(),
+            cf.source_file.as_deref().map(Symbol::intern),
         );
         let mut callable_id: Option<u64> = None;
         if !fn_name.is_empty() {

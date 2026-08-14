@@ -16,6 +16,19 @@ impl Interpreter {
         })
     }
 
+    /// `Symbol` variant of [`Self::current_source_file`]: interns instead of
+    /// allocating a fresh `String`. `?FILE` is the same value for the whole
+    /// run of a compilation unit, so after the first call this is a
+    /// thread-local cache hit — no allocation — which is what makes it cheap
+    /// enough for `RoutineFrame` pushes on a hot call path (see
+    /// `vm_call_fast.rs`).
+    pub(crate) fn current_source_file_sym(&self) -> Option<Symbol> {
+        self.env().get("?FILE").and_then(|v| match v.view() {
+            ValueView::Str(s) => Some(Symbol::intern(s.as_str())),
+            _ => None,
+        })
+    }
+
     /// Attach the defining scope to an interpolating regex literal
     /// (`OpCode::LoadRegexClosure`).
     ///

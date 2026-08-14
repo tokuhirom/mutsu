@@ -614,12 +614,12 @@ impl Interpreter {
 
         // Push routine_stack so &?ROUTINE can find the current method
         self.push_method_routine_with_location(
-            owner_class.to_string(),
-            method_def.lexical_package.clone(),
-            method_name.to_string(),
+            Symbol::intern(owner_class),
+            Symbol::intern(&method_def.lexical_package),
+            Symbol::intern(method_name),
             self.current_source_line(),
-            self.current_source_file(),
-            method_def.source_file.clone(),
+            self.current_source_file_sym(),
+            method_def.source_file.as_deref().map(Symbol::intern),
         );
 
         // Execute bytecode
@@ -1562,12 +1562,12 @@ impl Interpreter {
         }
 
         self.push_method_routine_with_location(
-            owner_class.to_string(),
-            method_def.lexical_package.clone(),
-            method_name.to_string(),
+            Symbol::intern(owner_class),
+            Symbol::intern(&method_def.lexical_package),
+            Symbol::intern(method_name),
             self.current_source_line(),
-            self.current_source_file(),
-            method_def.source_file.clone(),
+            self.current_source_file_sym(),
+            method_def.source_file.as_deref().map(Symbol::intern),
         );
 
         // Execute bytecode (same as slow path)

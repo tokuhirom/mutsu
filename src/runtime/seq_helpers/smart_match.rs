@@ -426,9 +426,9 @@ impl Interpreter {
                     let text = self.regex_match_text(left);
                     // Push routine frame so &?ROUTINE resolves inside code blocks
                     self.routine_stack.push(super::super::RoutineFrame {
-                        package: package.resolve(),
+                        package,
                         lexical_package: None,
-                        name: name.resolve(),
+                        name,
                         line: None,
                         file: None,
                         is_method: false,

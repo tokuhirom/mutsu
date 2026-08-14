@@ -490,25 +490,26 @@ impl Interpreter {
         // behind, corrupting later backtraces.
         let routine_base = self.routine_stack_len();
         let call_line = self.current_source_line();
-        let call_file = self.current_source_file();
+        let call_file = self.current_source_file_sym();
+        let def_file = data.source_file.as_deref().map(Symbol::intern);
         if cc.is_pointy_block || data.is_bare_block {
             // Bare blocks and pointy blocks are NOT routine boundaries.
             // Push a marker name so &?ROUTINE skips them and finds the
             // enclosing sub/method.
             self.push_block_routine_with_location(
-                data.package.resolve(),
-                "<pointy-block>".to_string(),
+                data.package,
+                Symbol::intern("<pointy-block>"),
                 call_line,
                 call_file,
-                data.source_file.clone(),
+                def_file,
             );
         } else {
             self.push_block_routine_with_location(
-                data.package.resolve(),
-                data.name.resolve(),
+                data.package,
+                data.name,
                 call_line,
                 call_file,
-                data.source_file.clone(),
+                def_file,
             );
         }
         self.env_mut().insert_sym(
