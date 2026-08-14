@@ -6,33 +6,29 @@
 //! decision 4 in `todo/deep/adr0019-e2-e4-resolver-core.md`. Nothing in the VM or
 //! the interpreter's real dispatch reads a sequence today: E4a only builds one
 //! beside the existing resolver, at the two `resolve_method_cached` boundaries, and
-//! compares the winner ([`Interpreter::pick_method_winner`], extracted from
-//! `resolve_method_with_owner_impl` unchanged) against the real resolution under
-//! `MUTSU_VM_STATS` counters (`resolver_shadow_checks`/`_mismatches`).
+//! compares the winner against the real resolution under `MUTSU_VM_STATS` counters
+//! (`resolver_shadow_checks`/`_mismatches`).
 //!
-//! **Known, accepted divergence** (not yet modeled — E8's job per the design doc):
+//! **The non-multi early-stopping rule, modeled (ADR-0019 E3).**
 //! `resolve_method_with_owner_impl` treats a non-multi method's lookup as independent
 //! of whether the call's arguments actually bind it — Raku itself resolves a plain
 //! (non-multi) method purely by name; a signature mismatch (an `is rw` param fed a
 //! literal, a typed param fed the wrong type) is a bind-time error raised *after*
 //! resolution, not a lookup failure that falls through to a differently-shaped
-//! candidate. Two concrete instances of that rule, both load-bearing for
-//! `resolve_method_with_owner_impl`'s early-stopping MRO walk:
-//! - a single visible non-multi candidate is returned even when its own signature
-//!   does not match the call (`first_visible_non_multi` in the real resolver);
-//! - a non-multi override on a more-derived class hides same-named candidates on
-//!   every ancestor the same way, regardless of match, while a pure-submethod level
-//!   does not count as such an override.
-//!
-//! The E4a shadow winner only ranks candidates that already passed
-//! `method_args_match_for_invocant`, so it has no notion of either case: it answers
-//! `None` where the real resolver still returns the sole non-matching candidate.
-//! Confirmed empirically (2026-08-10 sweep, see the landed PR note) — every
-//! observed mismatch was exactly this shape (`real=Some(..) shadow=None` for a
-//! single-candidate class, e.g. `method assign-rw($a is rw)` called with a
-//! literal). Expected on the sweep and bucketed (like E1a's ledger) rather than
-//! blocking the box; unifying it is E8's job (candidates carry `level`/`stored_idx`
-//! so this exact rule becomes representable in the sequence itself).
+//! candidate. [`Interpreter::pick_method_winner_from_sequence`] reproduces this
+//! exactly by walking the sequence's `(level, stored_idx)`-ordered `User` candidates
+//! grouped by level: the first level with no multi candidate and no matches
+//! accumulated yet from a more-derived level is a *decision level* — it returns the
+//! first stored-order match, or (mirroring `first_visible_non_multi`) the first
+//! visible candidate at all when none match. A level whose only candidates are
+//! ancestor submethods contributes zero entries to the sequence in the first place
+//! ([`Interpreter::resolve_sequence`]'s own `is_my && is_ancestor` filter), so it is
+//! transparently skipped exactly like `resolve_method_with_owner_impl`'s
+//! `submethod_blocks` continue. Once any level contributes a match to the running
+//! multi-candidate set, every subsequent level (multi or not) only ever contributes
+//! matches to that set — the walk never single-candidate-early-returns again — and
+//! the final winner is [`Interpreter::pick_method_winner`]'s existing tie-break
+//! ladder, unchanged.
 //!
 //! **E8a's own accepted divergence, found by the new deferral-list shadow check**
 //! ([`Interpreter::shadow_check_deferral_sequence`]): [`Self::resolve_sequence`]'s
@@ -307,6 +303,90 @@ impl Interpreter {
         });
     }
 
+    /// ADR-0019 E3: reproduce `resolve_method_with_owner_impl`'s exact
+    /// non-multi/multi decision algorithm — see the module doc — over a
+    /// [`ResolvedSequence`]'s flat, `(level, stored_idx)`-ordered `User`
+    /// candidates, instead of a live per-call MRO walk. `Native`/
+    /// `NativeCallBinding` candidates never participate in this ranking (the
+    /// same rule [`Self::match_sequence_candidates`] already applies).
+    ///
+    /// Same `where`-clause care point as the deferral-sequence probe: a
+    /// `where` clause is user code whose dynamic-variable writes are an
+    /// observable side effect of `method_args_match_for_invocant` — the
+    /// caller is responsible for skipping this call entirely when any
+    /// candidate carries one (both current callers already do, via their own
+    /// `has_where_candidate` guard, so this function does not re-check it).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn pick_method_winner_from_sequence(
+        &mut self,
+        mro: &[Symbol],
+        class_name: &str,
+        candidates: &[ResolvedCandidate],
+        arg_values: &[Value],
+        invocant: Option<&Value>,
+        role_bindings: Option<&rustc_hash::FxHashMap<String, Value>>,
+    ) -> Option<(Symbol, MethodDef)> {
+        let mut all_matches: Vec<(Symbol, MethodDef)> = Vec::new();
+        let mut idx = 0;
+        while idx < candidates.len() {
+            let ResolvedCandidate::User { level, .. } = &candidates[idx] else {
+                idx += 1;
+                continue;
+            };
+            let this_level = *level;
+            let start = idx;
+            while idx < candidates.len()
+                && matches!(&candidates[idx], ResolvedCandidate::User { level, .. } if *level == this_level)
+            {
+                idx += 1;
+            }
+            let group = &candidates[start..idx];
+            let any_multi = group
+                .iter()
+                .any(|c| matches!(c, ResolvedCandidate::User { def, .. } if def.is_multi));
+            if !any_multi && all_matches.is_empty() {
+                let mut first_visible: Option<(Symbol, MethodDef)> = None;
+                for c in group {
+                    let ResolvedCandidate::User { owner, def, .. } = c else {
+                        unreachable!("group only contains User candidates")
+                    };
+                    if first_visible.is_none() {
+                        first_visible = Some((owner.symbol(), (**def).clone()));
+                    }
+                    if self.method_args_match_for_invocant(
+                        class_name,
+                        def,
+                        arg_values,
+                        role_bindings,
+                        invocant,
+                    ) {
+                        return Some((owner.symbol(), (**def).clone()));
+                    }
+                }
+                return first_visible;
+            }
+            for c in group {
+                let ResolvedCandidate::User { owner, def, .. } = c else {
+                    unreachable!("group only contains User candidates")
+                };
+                if self.method_args_match_for_invocant(
+                    class_name,
+                    def,
+                    arg_values,
+                    role_bindings,
+                    invocant,
+                ) {
+                    all_matches.push((owner.symbol(), (**def).clone()));
+                }
+            }
+        }
+        if all_matches.is_empty() {
+            None
+        } else {
+            self.pick_method_winner(mro, arg_values, invocant, all_matches)
+        }
+    }
+
     /// ADR-0019 E8a: "ranker extracted to consume a candidate slice" — the
     /// per-call signature-match filtering step both
     /// [`Self::shadow_check_resolver_chain`] (E4a's winner probe) and
@@ -452,14 +532,14 @@ impl Interpreter {
         }
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
-        let matched = self.match_sequence_candidates(
+        let shadow = self.pick_method_winner_from_sequence(
+            &mro,
             class_name,
             &seq.candidates,
             arg_values,
             invocant,
             role_bindings.as_ref(),
         );
-        let shadow = self.pick_method_winner(&mro, arg_values, invocant, matched);
         self.dispatch_ambiguous = saved_ambiguous;
         let matched_ok = match (real, shadow.as_ref()) {
             (None, None) => true,
@@ -932,6 +1012,77 @@ mod tests {
             owners,
             vec!["C"],
             "only the class-level flattened copy should remain; the role's own raw copy is dropped"
+        );
+    }
+
+    /// ADR-0019 E3: a non-multi override on a more-derived class must win
+    /// even when its own signature does not match the call — the ancestor's
+    /// (matching) candidate must NOT be reached. This is the exact rule the
+    /// original E4a shadow probe did not model (see the module doc).
+    #[test]
+    fn pick_method_winner_from_sequence_non_multi_override_wins_without_matching() {
+        let mut i = interp();
+        i.run(
+            "class Base { method greet($x) { 'base' } }\n\
+             class Child is Base { method greet() { 'child' } }",
+        )
+        .unwrap();
+        let real = i
+            .resolve_method_with_owner("Child", "greet", &[Value::int(1)])
+            .expect("real resolver should still return the sole non-matching candidate");
+        assert_eq!(real.0.as_str(), "Child");
+        let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("greet"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
+        let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
+        let shadow = i.pick_method_winner_from_sequence(
+            &mro,
+            "Child",
+            &seq.candidates,
+            &[Value::int(1)],
+            None,
+            None,
+        );
+        let shadow = shadow.expect("shadow winner must also return Child.greet");
+        assert_eq!(shadow.0.as_str(), "Child");
+    }
+
+    /// ADR-0019 E3: multi candidates across two MRO levels still rank by the
+    /// existing `pick_method_winner` tie-break ladder (type-distance here).
+    #[test]
+    fn pick_method_winner_from_sequence_ranks_multi_across_levels() {
+        let mut i = interp();
+        i.run(
+            "class Base { multi method greet(Any $x) { 'base-any' } }\n\
+             class Child is Base { multi method greet(Int $x) { 'child-int' } }",
+        )
+        .unwrap();
+        let chain = vec![TypeId::intern("Child"), TypeId::intern("Base")];
+        let seq = i.resolve_sequence(
+            &chain,
+            Symbol::intern("greet"),
+            default_shape(),
+            MethodVisibility::Public,
+        );
+        let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
+        let shadow = i
+            .pick_method_winner_from_sequence(
+                &mro,
+                "Child",
+                &seq.candidates,
+                &[Value::int(1)],
+                None,
+                None,
+            )
+            .expect("Int arg should match both candidates");
+        assert_eq!(
+            shadow.0.as_str(),
+            "Child",
+            "the more specific Int candidate must win over the Any one"
         );
     }
 
