@@ -117,8 +117,8 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
 optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
-E1, E3-E11 are all closed). Phase F and the completion gates (G1-G4) have not started. See each
-box's entry below for its own status, and
+E1, E3-E11 are all closed). Phase F has started: F5 is closed; F1-F4, F6, F7, and the completion
+gates (G1-G4) remain open. See each box's entry below for its own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
 `d4-parent-expr-chunks.md`, `d5-plan-driven-how-ops.md`, `d6-d9-legacy-body-removal.md`,
 `d7-d8-role-plan-encoding.md`, `d3-8-method-body-main-pass-compilation.md` for Phase D, and
@@ -840,7 +840,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   still untouched — that remains the real blocker before the actual cutover (step 3).
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
-- [ ] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
+- [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
   generation-keyed resolved-call cache plus data caches that type mutation cannot invalidate.
   The inventory this box retires: ~72 manual clear sites across 12 files (the 32 in
   `vm_module_ops.rs` are four copies of one block and are a trivial first PR), the `String`-keyed
@@ -1001,10 +1001,30 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   sub" event, with no method-cache clear at all. The call is replaced with a bare `fn_resolve_gen +=
   1`. `make test` (3164 files, all green) and `make roast` (1436 files, all green) confirm no
   behavior change.
-  **Still open:** `accessors_misc.rs:351` (block-scope-exit routine-registry restore) stays --
-  traced and confirmed load-bearing earlier in this box (restores `token_defs`, which changes a
-  block-scoped grammar's method set without bumping `Registry::method_generation`). With the module
-  and sub sites now closed, this is F5's only remaining eager-clear call site.
+  **Progress (`accessors_misc.rs:351` cutover, block-scope-exit routine-registry restore):** this
+  was the one site earlier progress notes confirmed genuinely load-bearing -- it restores
+  `token_defs`, and grammar `token`/`rule` bodies are methods, so a block-scoped grammar's token set
+  changing must invalidate method caches, but the site never bumped `Registry::method_generation`.
+  Rather than leave the eager `invalidate_method_dispatch_caches()` call as a permanent residual,
+  the restore now calls the newly-`pub(crate)` `Registry::bump_method_generation()` unconditionally
+  at the same point it already unconditionally bumps `regex_parse::TOKEN_DEFS_GEN` (both fire on
+  every wholesale `token_defs` rewrite, changed or not) and separately bumps `fn_resolve_gen` for
+  the function/sub-namespace half of the restore. This is a by-construction cutover, the same
+  reasoning as `exec_register_sub_op`'s: `invalidate_method_dispatch_caches()` used to clear every
+  cache in both namespaces unconditionally at this call site, and both namespaces' caches already
+  self-refresh off their own generation counter at their own read sites (established earlier in
+  this box for the method-namespace caches, and by `func_multi_resolve_cache`/
+  `func_multi_type_cacheable`'s existing `fn_resolve_gen`-keyed refresh for the function-namespace
+  ones) -- splitting one unconditional clear into two unconditional generation bumps cannot
+  introduce staleness. `invalidate_method_dispatch_caches()` itself had no remaining callers after
+  this cutover and was deleted outright (`src/vm/vm_dispatch_cache_invalidate.rs`), closing F5's
+  entire eager-clear inventory. Verified with the full `t/` suite (3166 files) and a 169-file
+  class/role/multi/grammar/eval roast subset, both green. **This closes ADR-0019's F5 box**: the
+  box's own inventory (~72 duplicated manual clear sites, the `String`-keyed
+  `private_zeroarg_method_cache`'s nine hand-clear sites, and the `native_ctor_plan_cache` lockstep
+  gap) is fully accounted for -- every eager manual-invalidation call site this box named has either
+  been proven redundant and removed, or converted to a generation bump consumed by a self-refreshing
+  read site. No manual cache-clear call site remains anywhere in the method/function dispatch path.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
@@ -1074,8 +1094,9 @@ each instruction.
 ## Implementation status
 
 The checklist above ("Execution plan and progress") is the authoritative, currently-maintained
-record of what has landed. Phases A-D and E1, E3-E11 are closed; E2 (open cleanup, no longer
-gating) and Phase F/the completion gates are the remaining open work — see their entries above for
+record of what has landed. Phases A-D and E1, E3-E11, F5 are closed; E2 (open cleanup, no longer
+gating), the rest of Phase F (F1-F4, F6, F7), and the completion gates are the remaining open work —
+see their entries above for
 current status and the linked `todo/deep/adr0019-*.md` design docs for full design and slice
 history. Individual accomplishments
 are additionally recorded per-PR under `news/2026-08/`.
