@@ -114,6 +114,9 @@ impl Interpreter {
         // the new one. (The multi-resolution cache made this observable:
         // S12-methods/multi.t reuses `my class A`/`B` with multi submethods.)
         self.invalidate_method_dispatch_caches();
+        // ADR-0019 Phase F box F5 shadow check: see
+        // `record_class_reg_gen_shadow_check`'s doc comment.
+        let f5_gen_before = self.registry().method_generation;
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_chunk,
@@ -274,6 +277,18 @@ impl Interpreter {
                     },
                 )
             )?;
+            // ADR-0019 Phase F box F5 shadow check: confirm this successful
+            // registration bumped `Registry::method_generation` (see
+            // `record_class_reg_gen_shadow_check`'s doc comment). Shadow-only
+            // -- does not affect the eager `invalidate_method_dispatch_caches()`
+            // call above.
+            {
+                let f5_gen_after = self.registry().method_generation;
+                crate::vm::vm_stats::record_class_reg_gen_shadow_check(
+                    f5_gen_after != f5_gen_before,
+                    || format!("class={qualified_name} is_stub={is_stub}"),
+                );
+            }
             // Check for assignment to native read-only params before
             // compiling (X::Assignment::RO::Comp).
             if let Some(err) = self.check_class_native_readonly_param_errors(&storage_name) {

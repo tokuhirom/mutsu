@@ -613,6 +613,47 @@ pub(crate) fn record_deferral_shadow_check(matched: bool, detail: impl FnOnce() 
     }
 }
 
+// ADR-0019 Phase F box F5 (`vm_typedecl_ops.rs`'s `exec_register_class_op`):
+// shadow check for the claim documented in the ADR's F5 progress notes --
+// that the preemptive `invalidate_method_dispatch_caches()` call at class
+// registration is redundant because every live path through
+// `register_class_decl` that actually changes the class unconditionally
+// bumps `Registry::method_generation` via `sync_user_method_entries` before
+// the opcode returns (so the three read-site-refreshed caches would pick up
+// the change on their own). Compares `method_generation` before/after a
+// successful `register_class_decl` call; `matched` is `gen_after !=
+// gen_before`. A mismatch is *expected and benign* for the one traced no-op
+// path (`is_stub_body` re-declaring an already-non-stub class, which returns
+// `Ok(Vec::new())` with the class left completely unchanged) -- the by-key
+// detail lets a real corpus run confirm every mismatch is that case before
+// cutover. Nothing reads this counter to make a dispatch decision: shadow-
+// only, zero behavior change. See
+// `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` box F5.
+static CLASS_REG_GEN_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static CLASS_REG_GEN_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn class_reg_gen_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one F5 class-registration generation-bump shadow comparison.
+/// `detail` is only evaluated on a mismatch, mirroring
+/// [`record_deferral_shadow_check`].
+#[inline]
+pub(crate) fn record_class_reg_gen_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    CLASS_REG_GEN_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        CLASS_REG_GEN_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = class_reg_gen_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1139,6 +1180,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e8a deferral-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let class_reg_gen_shadow_checks = CLASS_REG_GEN_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let class_reg_gen_shadow_mismatches = CLASS_REG_GEN_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-f5: class_reg_gen_shadow_checks={class_reg_gen_shadow_checks} class_reg_gen_shadow_mismatches={class_reg_gen_shadow_mismatches}"
+    );
+    if let Ok(map) = class_reg_gen_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-f5 class-reg-gen-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );

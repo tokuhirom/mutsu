@@ -924,6 +924,16 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   out of scope for this specific box regardless). Removing the line is deliberately deferred to a
   dedicated shadow-check slice rather than done on trace evidence alone. `vm_module_ops.rs`'s four
   sites (module load/import/no/need) remain fully untraced.
+  **Progress (shadow-check landed):** `exec_register_class_op` now runs the actual verification
+  the trace above called for, `MUTSU_VM_STATS`-gated and zero behavior change: it snapshots
+  `Registry::method_generation` before the eager `invalidate_method_dispatch_caches()` call and
+  again right after a successful `register_class_decl` returns, and records a mismatch (via
+  `record_class_reg_gen_shadow_check`, mirroring `record_deferral_shadow_check`) whenever the
+  generation did *not* advance. The eager clear itself is untouched — this only measures whether
+  it would have been safe to remove. A `t/*.t` sweep (`MUTSU_VM_STATS=1` per file, debug build)
+  is the next step to accumulate corpus evidence before cutover; see the counter's doc comment
+  in `src/vm/vm_stats.rs` for the one known-benign mismatch shape (the `is_stub_body` re-declare
+  no-op).
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
