@@ -96,3 +96,37 @@ Given the size of step 2 (raku-verifying ~90+ names across 18 owners), this is c
 F1's own "dedicated raku ground-truth session" than to a mechanical plumbing change. Filed here so
 the finding isn't lost; not started. Suggest treating this as its own dedicated slice/session rather
 than folding into whatever slice picks F3 up next.
+
+## Progress (2026-08-14): step 1 done, and the "`Sub` has ZERO rows" claim above was a probe artifact
+
+Ran step 1 for real instead of trusting the ad hoc diff above: added a permanent test,
+`raw_rows_cover_every_introspection_name_in_order` (`src/builtins/native_method_row.rs`), that for
+every owner in `BUILTIN_METHOD_OWNERS` (a) asserts every introspection-array name has a matching
+`RAW_ROWS` row under the *folded* owner (`canonical_builtin_owner`) and (b) asserts `RAW_ROWS`'s
+relative order of the names the two sources share matches the introspection array's order.
+
+**Finding: nothing was actually missing.** The "`Sub` has ZERO rows in `RAW_ROWS`" claim above came
+from filtering `RAW_ROWS` by the literal string `"Sub"` and comparing against
+`builtin_method_entries("Sub")` — but `builtin_method_entries` already returns `owner: "Code"` (the
+folded owner) for every `Sub`/`Method`/`Block`/`Routine`/`Code` entry, and `RAW_ROWS` already stores
+all 10 `CODE_METHODS` rows under the key `"Code"` (`name`, `signature`, `arity`, `count`, `of`,
+`returns`, `Bool`, `Str`, `gist`, `raku`) in the right order. Filtering the raw table by the
+*unfolded* `"Sub"` string and diffing that against the *folded* `builtin_method_entries("Sub")`
+output was comparing rows keyed two different ways — a bug in the ad hoc probe script, not a real
+gap. Re-running the diff with folding applied on both sides (the permanent test above) found
+**zero missing names for all 18 owners**, not just `Sub`.
+
+**Order did diverge for real, for two owners**: `Signature` (its `gist`/`raku` rows were interleaved
+into an unrelated hand-added block far from its other six rows) and `Any` (`so`/`not`/`defined`,
+`WHERE`, and `gist`/`raku` were similarly scattered into unrelated E2b hand-added blocks). Both
+fixed by moving the misplaced rows to the position their introspection array implies
+(`native_method_row_table.rs`); no row content changed, order only. The new test now passes for all
+18 owners and is a permanent regression guard (previously only 5 owners had even a length check,
+`native_method_rows_matches_builtin_entry_count`).
+
+**What step 1 does NOT resolve**: the ~90+ extra `RAW_ROWS` names per owner beyond what the
+introspection arrays list (step 2's job) are untouched by this pass — those still need per-name raku
+verification before F3 can decide "genuine `.^methods` gap" vs. "deliberately internal/protocol,
+dispatch-only" for each one. Step 1 only closes the "is `RAW_ROWS` even a safe superset, in the right
+order" question, and the answer for the *introspection-array* side is now yes, permanently enforced.
+Step 3 (the actual cutover) still needs step 2 first.

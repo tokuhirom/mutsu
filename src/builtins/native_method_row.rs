@@ -412,6 +412,47 @@ mod tests {
         }
     }
 
+    /// ADR-0019 F3 scoping (`todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`):
+    /// every introspection-array name must have a matching `RAW_ROWS` entry
+    /// under the *folded* owner (`canonical_builtin_owner`), and among the
+    /// names the two sources share, `RAW_ROWS`'s relative order must match
+    /// the introspection array's -- a future F3 cutover that enumerates
+    /// straight from `RAW_ROWS` would otherwise silently drop or reorder
+    /// `.^methods` output. `RAW_ROWS` is allowed to carry EXTRA
+    /// dispatch-recognized names the introspection arrays omit (tracked
+    /// separately, not this test's job -- see the doc's step 2 triage).
+    #[test]
+    fn raw_rows_cover_every_introspection_name_in_order() {
+        use super::super::builtin_type_methods::BUILTIN_METHOD_OWNERS;
+        for &owner in BUILTIN_METHOD_OWNERS {
+            let folded = super::super::builtin_type_methods::canonical_builtin_owner(owner);
+            let introspection: Vec<&str> = builtin_method_entries(owner)
+                .into_iter()
+                .map(|e| e.name)
+                .collect();
+            let raw: Vec<&str> = RAW_ROWS
+                .iter()
+                .filter(|&&(o, _, _, _)| o == folded)
+                .map(|&(_, n, _, _)| n)
+                .collect();
+            for name in &introspection {
+                assert!(
+                    raw.contains(name),
+                    "{owner} (folded {folded}): introspection name {name:?} has no RAW_ROWS entry"
+                );
+            }
+            let raw_common: Vec<&str> = raw
+                .iter()
+                .filter(|n| introspection.contains(n))
+                .copied()
+                .collect();
+            assert_eq!(
+                introspection, raw_common,
+                "{owner} (folded {folded}): RAW_ROWS order of shared names diverges from the introspection array"
+            );
+        }
+    }
+
     /// The inverse probe from the design doc (decision 2): for every row that
     /// claims a pure arity bit and is not flagged `SPECIAL`/`MUTATES_RECEIVER`,
     /// actually call the corresponding cascade with a representative receiver
