@@ -16,7 +16,7 @@ impl Interpreter {
         // First add accessor methods for public attributes (in order)
         for attr in &class_def.attributes {
             if attr.is_public && !class_def.methods.contains_key(&attr.name) {
-                result.push(self.make_native_method_object(&attr.name));
+                result.push(self.make_native_method_object(&attr.name, class_name));
             }
         }
         // Then add explicit methods. `ClassDef::methods` drives the name
@@ -52,7 +52,7 @@ impl Interpreter {
         }
         // Also include native (built-in) methods
         for native_name in &class_def.native_methods {
-            let method_obj = self.make_native_method_object(native_name);
+            let method_obj = self.make_native_method_object(native_name, class_name);
             result.push(method_obj);
         }
     }
@@ -71,7 +71,10 @@ impl Interpreter {
         // `.^methods(:local)` by deriving both from the same model metadata.
         if let Some(names) = crate::rakuast::local_method_names(class_name) {
             for name in names {
-                table.insert(name.to_string(), self.make_native_method_object(name));
+                table.insert(
+                    name.to_string(),
+                    self.make_native_method_object(name, class_name),
+                );
             }
             return table;
         }
@@ -83,7 +86,7 @@ impl Interpreter {
             if attr.is_public && !class_def.methods.contains_key(&attr.name) {
                 table.insert(
                     attr.name.clone(),
-                    self.make_native_method_object(&attr.name),
+                    self.make_native_method_object(&attr.name, class_name),
                 );
             }
         }
@@ -112,7 +115,7 @@ impl Interpreter {
         for native_name in &class_def.native_methods {
             table.insert(
                 native_name.clone(),
-                self.make_native_method_object(native_name),
+                self.make_native_method_object(native_name, class_name),
             );
         }
         table
@@ -129,7 +132,7 @@ impl Interpreter {
             // Add accessor methods for public attributes
             for attr in &role_def.attributes {
                 if attr.is_public && !role_def.methods.contains_key(&attr.name) {
-                    result.push(self.make_native_method_object(&attr.name));
+                    result.push(self.make_native_method_object(&attr.name, role_name));
                 }
             }
             // Add explicit methods
@@ -143,22 +146,30 @@ impl Interpreter {
                 }
                 let is_multi = overloads.len() > 1;
                 let return_type = first.return_type.clone();
-                let method_obj = self.make_method_object_with_candidates(
+                let method_obj = self.make_method_object_with_owner(
                     method_name,
                     first,
                     is_multi,
                     return_type,
                     Some(overloads),
+                    Some(role_name),
                 );
                 result.push(method_obj);
             }
         }
     }
 
-    pub(super) fn make_native_method_object(&self, name: &str) -> Value {
+    /// `owner` is the catalog type this native method is being reported for --
+    /// ADR-0019 Phase F box F1's mechanism slice: `.package` defaults to it.
+    /// This is not always Rakudo's true declaring type (e.g. `Str.uc`'s real
+    /// `.package` is `Cool`, not `Str`) -- that per-method fidelity data is a
+    /// later, separate slice (see
+    /// `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
+    pub(super) fn make_native_method_object(&self, name: &str, owner: &str) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
+        attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
         let sig_attrs = {
             let mut sa = std::collections::HashMap::new();
             sa.insert("params".to_string(), Value::array(Vec::new()));
@@ -173,41 +184,10 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Method"), attrs)
     }
 
-    pub(super) fn make_method_object(
-        &self,
-        name: &str,
-        method_def: &MethodDef,
-        is_dispatcher: bool,
-        return_type: Option<String>,
-    ) -> Value {
-        self.make_method_object_with_candidates(name, method_def, is_dispatcher, return_type, None)
-    }
-
-    /// Build a Method object. When `is_dispatcher` is true and `overloads`
-    /// is supplied, a `candidates` attribute holding a Method object per
-    /// overload is attached so that `.candidates` works on a multi method.
-    pub(super) fn make_method_object_with_candidates(
-        &self,
-        name: &str,
-        method_def: &MethodDef,
-        is_dispatcher: bool,
-        return_type: Option<String>,
-        overloads: Option<&[MethodDef]>,
-    ) -> Value {
-        self.make_method_object_with_owner(
-            name,
-            method_def,
-            is_dispatcher,
-            return_type,
-            overloads,
-            None,
-        )
-    }
-
-    /// As `make_method_object_with_candidates`, but records the owning class so
-    /// a `.wrap` on the returned Method object (e.g. from `.^methods(:local)` in
-    /// a custom metaclass `compose`, `advent2011-day14`) can register into the
-    /// class-keyed `method_wrap_chains` and take effect for later dispatch.
+    /// Records the owning class/role so a `.wrap` on the returned Method
+    /// object (e.g. from `.^methods(:local)` in a custom metaclass `compose`,
+    /// `advent2011-day14`) can register into the class-keyed
+    /// `method_wrap_chains` and take effect for later dispatch.
     pub(super) fn make_method_object_with_owner(
         &self,
         name: &str,
@@ -231,6 +211,11 @@ impl Interpreter {
         // object can register a class-keyed wrap chain (see `wrap` dispatch for
         // Method instances). Single (non-multi) methods are candidate 0; multi
         // methods are wrapped through their `.candidates[N]` entries instead.
+        // `.package` shares the same gate: a real Rakudo multi *dispatcher*'s
+        // own `.package` is an internal synthetic type (`(Dummy)`), not the
+        // declaring class, so it is deliberately left unset here rather than
+        // guessed -- but each individual (non-dispatcher) candidate's
+        // `.package` is exactly `owner_class`, verified against `raku`.
         if let Some(owner) = owner_class
             && !is_dispatcher
         {
@@ -243,6 +228,7 @@ impl Interpreter {
                 Value::str(name.to_string()),
             );
             attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
+            attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
         }
 
         // Build a Signature object for this method, threading the return type
@@ -266,7 +252,16 @@ impl Interpreter {
         let candidates: Vec<Value> = match overloads {
             Some(defs) if is_dispatcher => defs
                 .iter()
-                .map(|def| self.make_method_object(name, def, false, def.return_type.clone()))
+                .map(|def| {
+                    self.make_method_object_with_owner(
+                        name,
+                        def,
+                        false,
+                        def.return_type.clone(),
+                        None,
+                        owner_class,
+                    )
+                })
                 .collect(),
             _ => Vec::new(),
         };

@@ -37,7 +37,7 @@ impl Interpreter {
         // model layer really implements so `.^methods(:local)` is useful (and
         // does not fall through to an empty built-in method list).
         if local && let Some(names) = crate::rakuast::local_method_names(&class_name) {
-            self.push_native_method_objects(&names, &mut result);
+            self.push_native_method_objects(&names, &class_name, &mut result);
             return Ok(Value::array(result));
         }
 
@@ -63,7 +63,7 @@ impl Interpreter {
             if result.is_empty() && !self.registry().classes.contains_key(&class_name) {
                 let names =
                     crate::builtins::builtin_type_methods::builtin_type_method_names(&class_name);
-                self.push_native_method_objects(&names, &mut result);
+                self.push_native_method_objects(&names, &class_name, &mut result);
             }
         } else {
             // Runtime-mixed-in role methods sit ahead of the base class in the
@@ -125,12 +125,17 @@ impl Interpreter {
         // construction is static and introspection does not construct or probe
         // a parallel entry set on every query.
         let methods = self.registry().builtin_method_names(type_name);
-        self.push_native_method_objects(&methods, result);
+        self.push_native_method_objects(&methods, type_name, result);
     }
 
     /// Append a native Method object for each name not already present in
-    /// `result` (dedup by the Method object's `name` attribute).
-    fn push_native_method_objects(&self, names: &[&str], result: &mut Vec<Value>) {
+    /// `result` (dedup by the Method object's `name` attribute). `owner` is the
+    /// catalog type these names were collected for -- ADR-0019 Phase F box F1's
+    /// mechanism slice: the resulting `Method` object's `.package` defaults to
+    /// it. This is not always Rakudo's true declaring type (e.g. `Str.uc`'s
+    /// real `.package` is `Cool`, not `Str`) -- that per-method fidelity data
+    /// is a later, separate slice (see `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
+    fn push_native_method_objects(&self, names: &[&str], owner: &str, result: &mut Vec<Value>) {
         for name in names {
             if !result.iter().any(|v| {
                 if let ValueView::Instance { attributes, .. } = v.view() {
@@ -144,7 +149,7 @@ impl Interpreter {
                     false
                 }
             }) {
-                result.push(self.make_native_method_object(name));
+                result.push(self.make_native_method_object(name, owner));
             }
         }
     }
