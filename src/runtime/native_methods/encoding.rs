@@ -101,6 +101,13 @@ fn decode_available(bytes: &[u8], encoding: &str) -> (String, Vec<u8>) {
     (s, bytes[end..].to_vec())
 }
 
+/// One `run_supply_act_loop` dispatch: the value to pass to the plain
+/// callback (unused when `end_cb` is set), an optional `(callback, args)` to
+/// call instead (the tap's `done =>`/`quit =>` handler), and whether that
+/// handler is a done-group marker/`__SupplyDoneChain` that needs
+/// `invoke_done_callback` rather than a plain call.
+type ActLoopDispatchUnit = (Value, Option<(Value, Vec<Value>)>, bool);
+
 impl Interpreter {
     pub(in crate::runtime) fn native_encoding_builtin(
         attributes: &AttrMap,
@@ -450,6 +457,17 @@ impl Interpreter {
     /// flag-driven exit is a *close*, not a `done` — it must not run the
     /// done chain (raku does not fire LAST phasers on `.close`; CLOSE phasers
     /// are fired separately by `native_tap`).
+    ///
+    /// `is_lines`/`line_chomp` mirror the `.lines`-derived Supply's own
+    /// attributes: when set, a received chunk is appended to a carry-over
+    /// buffer and split into complete lines (`take_complete_lines_from_buffer`,
+    /// the same splitter the react/whenever drive loop uses) instead of being
+    /// forwarded to `cb` verbatim — a TCP read boundary can land mid-line, so
+    /// a per-chunk split with no carry-over would emit truncated lines. Any
+    /// partial trailing line is flushed once as its own line when the source
+    /// signals `Done`/`Quit` (see
+    /// `todo/tickets/supply-lines-drops-channel-backed-supplies.md`).
+    #[allow(clippy::too_many_arguments)]
     pub(in crate::runtime) fn run_supply_act_loop(
         interp: &mut Interpreter,
         rx: &super::supply_channel::SupplyReceiver,
@@ -458,10 +476,14 @@ impl Interpreter {
         done_cb: Option<Value>,
         quit_cb: Option<Value>,
         close_flag: Option<(u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
+        is_lines: bool,
+        line_chomp: bool,
     ) {
+        use super::state::take_complete_lines_from_buffer;
         use std::io::Write;
         use std::sync::atomic::Ordering;
-        loop {
+        let mut line_buffer = String::new();
+        'outer: loop {
             let received = match &close_flag {
                 None => rx.recv().map_err(|_| ()),
                 Some((_, flag)) => loop {
@@ -496,84 +518,122 @@ impl Interpreter {
             // enclosing supply's group marker), which only that dispatcher
             // understands. It falls through to a plain call for an ordinary
             // callable, so the other callers are unaffected.
-            let (value, end_cb, is_done_marker) = match received {
-                Ok(SupplyEvent::Emit(value)) => (value, None, false),
-                Ok(SupplyEvent::Done) => match done_cb {
-                    Some(ref cb) => (Value::NIL, Some((cb.clone(), Vec::new())), true),
-                    None => break,
-                },
-                Ok(SupplyEvent::Quit(reason)) => match quit_cb {
-                    Some(ref cb) => (Value::NIL, Some((cb.clone(), vec![reason])), false),
-                    None => break,
-                },
+            //
+            // A single received event can expand into several dispatch units
+            // when `is_lines`: a chunk may complete more than one line (or
+            // none, if the buffer still holds a partial line), and a
+            // Done/Quit flushes any trailing partial line as one more unit
+            // before its done/quit callback. `outer_should_break` tracks
+            // whether the whole batch ends the loop (Done/Quit always do,
+            // whether or not their callback is actually present — matching
+            // the plain-value path's break-on-no-callback below).
+            let mut units: Vec<ActLoopDispatchUnit> = Vec::new();
+            let mut outer_should_break = false;
+            match received {
+                Ok(SupplyEvent::Emit(value)) => {
+                    if is_lines {
+                        line_buffer.push_str(&value.to_string_value());
+                        for line in
+                            take_complete_lines_from_buffer(&mut line_buffer, line_chomp, false)
+                        {
+                            units.push((Value::str(line), None, false));
+                        }
+                    } else {
+                        units.push((value, None, false));
+                    }
+                }
+                Ok(SupplyEvent::Done) => {
+                    outer_should_break = true;
+                    if is_lines && !line_buffer.is_empty() {
+                        units.push((Value::str(std::mem::take(&mut line_buffer)), None, false));
+                    }
+                    if let Some(ref cb) = done_cb {
+                        units.push((Value::NIL, Some((cb.clone(), Vec::new())), true));
+                    }
+                }
+                Ok(SupplyEvent::Quit(reason)) => {
+                    outer_should_break = true;
+                    if is_lines && !line_buffer.is_empty() {
+                        units.push((Value::str(std::mem::take(&mut line_buffer)), None, false));
+                    }
+                    if let Some(ref cb) = quit_cb {
+                        units.push((Value::NIL, Some((cb.clone(), vec![reason])), false));
+                    }
+                }
                 Err(()) => break,
             };
-            let is_end = end_cb.is_some();
-            Self::sleep_for_supply_delay(delay_seconds);
-            let result = match end_cb {
-                Some((end, _)) if is_done_marker => interp.invoke_done_callback(end),
-                Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
-                None => interp
-                    .call_sub_value(cb.clone(), vec![value], true)
-                    .map(|_| ()),
-            };
-            // Flush stdout (check both the per-interpreter buffer and the
-            // shared thread output buffer used by thread clones).
-            if !interp.output_sink().output.is_empty() {
-                print!("{}", interp.output_sink().output);
-                let _ = std::io::stdout().flush();
-                interp.output_sink_mut().output.clear();
+            if units.is_empty() && !outer_should_break {
+                // Buffer absorbed a chunk with no complete line yet: wait for
+                // the next chunk (or Done, which flushes it).
+                continue;
             }
-            if let Some(ref shared) = interp.output_sink().shared_thread_output {
-                let drained = std::mem::take(&mut *shared.lock().unwrap());
-                if !drained.is_empty() {
-                    print!("{}", drained);
+            for (value, end_cb, is_done_marker) in units {
+                Self::sleep_for_supply_delay(delay_seconds);
+                let result = match end_cb {
+                    Some((end, _)) if is_done_marker => interp.invoke_done_callback(end),
+                    Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
+                    None => interp
+                        .call_sub_value(cb.clone(), vec![value], true)
+                        .map(|_| ()),
+                };
+                // Flush stdout (check both the per-interpreter buffer and the
+                // shared thread output buffer used by thread clones).
+                if !interp.output_sink().output.is_empty() {
+                    print!("{}", interp.output_sink().output);
                     let _ = std::io::stdout().flush();
+                    interp.output_sink_mut().output.clear();
                 }
-            }
-            // Flush stderr
-            if !interp.output_sink().stderr_output.is_empty() {
-                eprint!("{}", interp.output_sink().stderr_output);
-                let _ = std::io::stderr().flush();
-                interp.output_sink_mut().stderr_output.clear();
-            }
-            if let Some(ref shared) = interp.output_sink().shared_thread_stderr {
-                let drained = std::mem::take(&mut *shared.lock().unwrap());
-                if !drained.is_empty() {
-                    eprint!("{}", drained);
+                if let Some(ref shared) = interp.output_sink().shared_thread_output {
+                    let drained = std::mem::take(&mut *shared.lock().unwrap());
+                    if !drained.is_empty() {
+                        print!("{}", drained);
+                        let _ = std::io::stdout().flush();
+                    }
+                }
+                // Flush stderr
+                if !interp.output_sink().stderr_output.is_empty() {
+                    eprint!("{}", interp.output_sink().stderr_output);
                     let _ = std::io::stderr().flush();
+                    interp.output_sink_mut().stderr_output.clear();
+                }
+                if let Some(ref shared) = interp.output_sink().shared_thread_stderr {
+                    let drained = std::mem::take(&mut *shared.lock().unwrap());
+                    if !drained.is_empty() {
+                        eprint!("{}", drained);
+                        let _ = std::io::stderr().flush();
+                    }
+                }
+                // If the callback called exit, terminate the process
+                if interp.halted {
+                    std::process::exit(interp.exit_code as i32);
+                }
+                // If the callback threw an unhandled exception, terminate — but a
+                // `done`/`last` is a control signal the supply machinery owns, not a
+                // failure. It reaches here whenever the body (or the tap's `done =>`
+                // chain, which carries the enclosing supply's LAST phasers and its
+                // done-group marker) completes the supply from this reader thread.
+                // Treating it as an unhandled exception killed the whole process
+                // mid-file. Every other supply drive loop absorbs it the same way —
+                // see the `is_react_done() || is_last()` arms in
+                // `native_supply_mut_methods` and `vm_react_subscriptions`.
+                // `is_supply_body_done()` is the same story for a `whenever` body
+                // written directly inside a `supply { }` block (its `done` desugars
+                // to this signal, see `ast::Stmt::SupplyBodyDone`) that fires from
+                // *this* reader thread — e.g. a `whenever Supply.interval(...) {
+                // done if ... }` nested in a `supply { }`.
+                if let Err(err) = result {
+                    if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                        break 'outer;
+                    }
+                    eprintln!(
+                        "Unhandled exception in code scheduled on thread\n{}",
+                        err.message
+                    );
+                    let _ = std::io::stderr().flush();
+                    std::process::exit(1);
                 }
             }
-            // If the callback called exit, terminate the process
-            if interp.halted {
-                std::process::exit(interp.exit_code as i32);
-            }
-            // If the callback threw an unhandled exception, terminate — but a
-            // `done`/`last` is a control signal the supply machinery owns, not a
-            // failure. It reaches here whenever the body (or the tap's `done =>`
-            // chain, which carries the enclosing supply's LAST phasers and its
-            // done-group marker) completes the supply from this reader thread.
-            // Treating it as an unhandled exception killed the whole process
-            // mid-file. Every other supply drive loop absorbs it the same way —
-            // see the `is_react_done() || is_last()` arms in
-            // `native_supply_mut_methods` and `vm_react_subscriptions`.
-            // `is_supply_body_done()` is the same story for a `whenever` body
-            // written directly inside a `supply { }` block (its `done` desugars
-            // to this signal, see `ast::Stmt::SupplyBodyDone`) that fires from
-            // *this* reader thread — e.g. a `whenever Supply.interval(...) {
-            // done if ... }` nested in a `supply { }`.
-            if let Err(err) = result {
-                if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
-                    break;
-                }
-                eprintln!(
-                    "Unhandled exception in code scheduled on thread\n{}",
-                    err.message
-                );
-                let _ = std::io::stderr().flush();
-                std::process::exit(1);
-            }
-            if is_end {
+            if outer_should_break {
                 break;
             }
         }

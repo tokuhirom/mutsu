@@ -251,14 +251,19 @@ impl Interpreter {
                 // For live/async supplies (e.g., signal), spawn a background thread
                 // to consume events from the channel and call the callback.
                 if !is_proc_output
-                    && let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
-                    && let Some(rx) = take_supply_channel(sid as u64)
+                    && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
+                    && let Some(rx) = take_supply_channel(sid)
                 {
                     let mut thread_interp = self.clone_for_thread();
                     let cb = tap_cb.clone();
                     let delay = delay_seconds;
                     let done = done_cb.clone();
                     let quit = quit_cb.clone();
+                    let is_lines = matches!(
+                        attrs.get("is_lines").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    );
+                    let line_chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
                     // Record a close handle on the Tap so `.close` can stop
                     // this worker — without it the act loop (and an interval
                     // source feeding it) ran until process exit.
@@ -274,6 +279,8 @@ impl Interpreter {
                             done,
                             quit,
                             Some((close_id, close_flag)),
+                            is_lines,
+                            line_chomp,
                         );
                     });
                     let mut tap_handle_attrs = HashMap::new();
@@ -286,13 +293,29 @@ impl Interpreter {
                     return Ok((tap_instance, attrs));
                 }
                 if !is_proc_output
-                    && let Some(ValueView::Int(sid)) = attrs.get("supply_id").map(Value::view)
-                    && let Some(collected) = get_supply_collected_output(sid as u64)
+                    && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
+                    && let Some(collected) = get_supply_collected_output(sid)
                     && !collected.is_empty()
                 {
                     if Self::supply_has_active_callback(&tap_cb) {
-                        let _ =
-                            self.call_sub_value(tap_cb.clone(), vec![Value::str(collected)], true);
+                        let is_lines = matches!(
+                            attrs.get("is_lines").map(Value::view),
+                            Some(ValueView::Bool(true))
+                        );
+                        if is_lines {
+                            let chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
+                            for line in
+                                split_supply_chunks_into_lines(&[Value::str(collected)], chomp)
+                            {
+                                let _ = self.call_sub_value(tap_cb.clone(), vec![line], true);
+                            }
+                        } else {
+                            let _ = self.call_sub_value(
+                                tap_cb.clone(),
+                                vec![Value::str(collected)],
+                                true,
+                            );
+                        }
                     }
                     let tap_instance = Value::make_instance(Symbol::intern("Tap"), HashMap::new());
                     return Ok((tap_instance, attrs));
@@ -607,9 +630,9 @@ impl Interpreter {
                                 attributes: inner_attrs,
                                 ..
                             } = inner_supply.view()
-                                && let Some(ValueView::Int(chan_sid)) =
-                                    inner_attrs.as_map().get("supply_id").map(Value::view)
-                                && let Some(rx) = take_supply_channel(chan_sid as u64)
+                                && let Some(chan_sid) =
+                                    Self::resolve_tap_channel_supply_id(&inner_attrs.as_map())
+                                && let Some(rx) = take_supply_channel(chan_sid)
                             {
                                 // Live channel-backed whenever source (e.g.
                                 // `whenever IO::Socket::Async.listen(...)` inside a
@@ -670,6 +693,15 @@ impl Interpreter {
                                 let close_flag = rx.close_flag();
                                 let close_id = register_act_loop_close(close_flag.clone());
                                 act_loop_close_ids.push(Value::int(close_id as i64));
+                                let inner_attrs_map = inner_attrs.as_map();
+                                let is_lines = matches!(
+                                    inner_attrs_map.get("is_lines").map(Value::view),
+                                    Some(ValueView::Bool(true))
+                                );
+                                let line_chomp = inner_attrs_map
+                                    .get("line_chomp")
+                                    .map(Value::truthy)
+                                    .unwrap_or(true);
                                 // Pooled (ADR-0020 slice 3): whenever-source
                                 // reader, lives until the channel closes (or
                                 // the Tap is closed via the flag).
@@ -682,6 +714,8 @@ impl Interpreter {
                                         chain_done_cb,
                                         None,
                                         Some((close_id, close_flag)),
+                                        is_lines,
+                                        line_chomp,
                                     );
                                 });
                             } else if let ValueView::Instance {
@@ -1272,6 +1306,28 @@ impl Interpreter {
         }
     }
 
+    /// Resolve the `supply_id` whose channel should be drained for `attrs`.
+    /// A `.lines`/`.words`/etc. derived Supply (`native_supply_dispatch.rs`'s
+    /// `"lines"` arm) carries a fresh `supply_id` of its own but no channel —
+    /// its values still arrive on the *source* Supply's channel, referenced
+    /// via `parent_supply_id`. Channel lookups must follow that link or a
+    /// direct `.tap()` on a channel-backed `.lines` Supply silently drains
+    /// nothing (see
+    /// `todo/tickets/supply-lines-drops-channel-backed-supplies.md`).
+    ///
+    /// Duplicates `vm::Interpreter::resolve_supply_channel_id` /
+    /// `react_died::resolve_supply_channel_id_for_react` (module-private, so
+    /// not reachable from here) rather than widening their visibility.
+    fn resolve_tap_channel_supply_id(attrs: &AttrMap) -> Option<u64> {
+        if let Some(ValueView::Int(parent_id)) = attrs.get("parent_supply_id").map(Value::view) {
+            return Some(parent_id as u64);
+        }
+        if let Some(ValueView::Int(id)) = attrs.get("supply_id").map(Value::view) {
+            return Some(id as u64);
+        }
+        None
+    }
+
     /// ADR-0028 Slice 2: classify `attrs`'s `"scheduler"` (if any, and not a
     /// `"scheduler_interval"` tick wiring — see the chokepoint comment) and
     /// substitute the emit/done/quit callbacks so delivery genuinely defers,
@@ -1327,6 +1383,12 @@ impl Interpreter {
                     // No close flag: `Tap.close` drops the pump's sender
                     // (`drop_scheduled_pump`), so the blocking recv observes
                     // the disconnect and this drain worker exits.
+                    //
+                    // `is_lines: false` — values reaching the pump are
+                    // whatever the substituted shim callback forwarded, which
+                    // for a `.lines` tap is already the *split* per-line
+                    // values (`register_supplier_lines_tap` splits before
+                    // calling the shim); re-splitting here would be wrong.
                     crate::runtime::worker_pool::submit(move || {
                         Self::run_supply_act_loop(
                             &mut thread_interp,
@@ -1336,6 +1398,8 @@ impl Interpreter {
                             real_done,
                             real_quit,
                             None,
+                            false,
+                            true,
                         );
                     });
                     scheduled_pump_id = Some(pump_id);
