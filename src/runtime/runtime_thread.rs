@@ -166,6 +166,39 @@ impl Interpreter {
         if self.env.is_scoped() {
             self.env = self.env.flattened();
         }
+        // Publish this frame's CURRENT local-slot values into env before the
+        // clone below snapshots it. The (B) per-store env-write gate lets a
+        // plain lexical's store skip its env mirror when nothing in THIS frame
+        // reads it by name (`needs_env_sync` — see `compute_needs_env_sync`),
+        // which is the common case for a loop-body local only ever touched via
+        // a NAME-KEYED builtin resolved from a NESTED closure (`⚛`-ops, and
+        // especially `cas`, which is deliberately excluded from the
+        // free-var-write fold that would otherwise force the mirror — see the
+        // comment on the `n != "__mutsu_cas_var"` guard in
+        // `compiler/expr_call.rs`). Without this, `env` can carry a stale value
+        // from a PREVIOUS loop iteration (last synced back from a finished
+        // spawn's cross-thread write) forward into a caller-side declaration
+        // this local's OWN redeclaration never overwrote — so a freshly reset
+        // `my $a = 0` before spawning a new thread starts back where the last
+        // one left off (`todo/tickets/cue-loop-lexical-shared-lane-residue.md`).
+        // `start` had a narrow, function-name-hardcoded copy of this exact call
+        // (`if name == "start" { self.sync_env_from_locals(code) }` in
+        // `vm/vm_call_func_ops.rs`) which is why only `start` was immune; any
+        // OTHER thread-spawning construct that clones through this function —
+        // `$scheduler.cue(...)`, `Thread.start`, `Promise.start`, a
+        // `supply`/`react` `whenever` worker — reached this method with no
+        // such refresh and inherited the same staleness. Centralizing the sync
+        // here (using the live frame's `current_code`, the same pointer
+        // `atomic_scalar_cell` already trusts for the same lifetime reason)
+        // fixes every spawner uniformly instead of special-casing each one.
+        if self.current_code != 0 {
+            // SAFETY: `current_code` is the address of the live bytecode
+            // frame's `CompiledCode`, kept alive for the whole frame by the
+            // `vm_call_*` machinery — the same invariant `atomic_scalar_cell`
+            // and friends already rely on.
+            let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+            self.sync_env_from_locals(code);
+        }
         // Copy user variables into shared_vars so both parent and child see mutations.
         // The compiler stores locals with bare names (no sigil), so we share everything
         // except internal/special variables that should remain thread-local.
