@@ -126,9 +126,31 @@ resolution / `inherit_enclosing_scopes` / `constant_vars_in_scope`) and why
 it needs a design pass rather than a quick patch:
 [todo/tickets/sigilless-constant-invisible-in-nested-sub-inside-module.md](sigilless-constant-invisible-in-nested-sub-inside-module.md).
 
+### `Math::Interval` — triaged, one general bug fixed, one remains (needs a design pass)
+
+A sigilless `\name := $var` bind (used by the 2D-interval `TWEAK`, minimally:
+`my $x1 = 5; my \x1 := $x1; x1 = 10; say $x1;`) was wrongly treated as
+readonly, because mutsu decided mutability purely from whether a type
+constraint was written on the sigilless declaration, never looking at what
+the RHS actually was — the sigilled `$b := expr` path already had the right
+rule (writable alias when the RHS is a plain variable, readonly otherwise)
+but the sigilless path didn't share it. Fixed generally in
+`src/parser/stmt/decl/my_decl_helpers.rs` (a shared `build_sigilless_bind_stmt`
+helper now applies the same RHS-shape rule to all three sigilless bind forms:
+`:=`, `::=`, plain `=`); pinned by `t/sigilless-bind-writable-alias.t`. See
+`news/2026-08/sigilless-bind-writable-alias.md`.
+
+The dist's own `TWEAK` actually binds four names from one **list
+destructuring** (`my (\x1, \x2, \y1, \y2) := my ($x1, $x2, $y1, $y2);`),
+which still fails: mutsu's destructuring-bind desugaring reads each element
+back out of a temp array by index, losing per-element container identity —
+the same class of gap as
+[todo/deep/element-itemization-lost-in-scalar-binding.md](../deep/element-itemization-lost-in-scalar-binding.md),
+tracked there.
+
 ## Un-triaged `test_die` / `test_fail`
 
-`Math::Interval`, `Native::Overflow`, `App::SudokuHelper`, `P5tie`,
+`Native::Overflow`, `App::SudokuHelper`, `P5tie`,
 `Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
 `Random::Choice` (die).
 
