@@ -613,6 +613,42 @@ pub(crate) fn record_deferral_shadow_check(matched: bool, detail: impl FnOnce() 
     }
 }
 
+// ADR-0019 Phase F box F1 item 1 (`todo/deep/adr0019-f1-f2-introspection-
+// canonical-source.md`): shadow comparison between `ClassDef::methods` (the
+// source `collect_class_methods`/`class_method_table` read directly today)
+// and `Registry::method_entries[(owner, name)].user_candidates` (the
+// canonical table Phase E's dispatch path already reads exclusively, kept in
+// sync by `Registry::sync_user_method_entries`). Proves the write-side sync
+// never drifts from `ClassDef::methods` before either reader is cut over to
+// the canonical table. A dedicated counter pair, not the shared
+// `RESOLVER_SHADOW_*` infra: this compares a per-class candidate LIST (one
+// row's overload vector), the same reasoning that gave E7 steps 4/6/7 and
+// E8a's list/chain comparisons their own pairs. Nothing reads these counters
+// to make a dispatch decision: shadow-only, zero behavior change.
+static USER_CANDIDATES_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static USER_CANDIDATES_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn user_candidates_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one F1-item-1 `user_candidates` shadow comparison. `detail` is
+/// only evaluated on a mismatch, mirroring [`record_deferral_shadow_check`].
+#[inline]
+pub(crate) fn record_user_candidates_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    USER_CANDIDATES_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        USER_CANDIDATES_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = user_candidates_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1139,6 +1175,28 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e8a deferral-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let user_candidates_shadow_checks = USER_CANDIDATES_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let user_candidates_shadow_mismatches =
+        USER_CANDIDATES_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-f1: user_candidates_shadow_checks={user_candidates_shadow_checks} user_candidates_shadow_mismatches={user_candidates_shadow_mismatches}"
+    );
+    if let Ok(map) = user_candidates_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-f1 user-candidates-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );
