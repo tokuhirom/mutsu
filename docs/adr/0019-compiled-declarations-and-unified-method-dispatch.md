@@ -792,6 +792,17 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   signature, multi/submethod, wrap, and native metadata needed by introspection.
 - [ ] **F2 — Derive `.^methods`, `.^can`, and method MRO views from the resolver/table.** Use the
   same TypeId MRO and visibility rules as calls.
+
+  **Progress (2026-08-14):** the user-method half of F1/F2 is done, in the shadow-then-cutover
+  style E1a set. All three MRO/table readers that used to walk `ClassDef::methods` directly now
+  build every candidate list from the canonical `Registry::method_entries[(owner,
+  name)].user_candidates` table: `.^methods`/`.^method_table` (#6399/#6400) and `.^can`/`.can`
+  (#6402/#6406). Native/builtin method metadata (F1's "native metadata" clause) and full
+  `Method`-object fidelity (F2's "visibility rules") remain open — see
+  `todo/deep/adr0019-f1-f2-introspection-canonical-source.md` for the raku ground truth gathered so
+  far and why it needs a dedicated verification pass before a design. That pass also surfaced a
+  distinct bug, `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`: `.^lookup`
+  builds a `Sub`-shaped value instead of the same `Method` `Instance` these readers now share.
 - [ ] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
