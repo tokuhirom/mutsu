@@ -47,6 +47,43 @@ At least two distinct gaps bundled together in the failures:
 3. Triage `01`–`05` individually — likely several unrelated general bugs
    bundled into one ticket; split into separate tickets once diagnosed.
 
+## Update (2026-08-14): forward-captured-code-var-snapshot fixed, one more
+## gap found in `01`
+
+`todo/tickets/forward-captured-code-var-snapshot.md` (a `&`-sigil lexical
+read bare, e.g. `.map(&decode)`, before its own `my &decode = ...`
+declaration compiles — the exact shape `cbor-decode`'s `decode-array` /
+`decode-map` / `decode-tag` use to call the not-yet-declared `&decode`) is
+now fixed (`news/2026-08/forward-captured-code-var-snapshot.md`). Manually
+verified with `mutsu -I modules/CBOR-Simple/lib`: int/string/array/nested-map
+`cbor-encode` → `cbor-decode` round-trips now work correctly, including the
+mutually-recursive `decode-array`/`decode-map`/`decode` dispatch that was
+previously blocked ("Cannot map a Nil to a Range").
+
+The full round-trip (all of `Simple.rakumod`'s decode paths) is still blocked
+by a **separate, unrelated** parser bug: `decode-sval` (`Simple.rakumod:734`)
+opens with `my constant %svals = 20 => False, 21 => True, 22 => Any, 23 =>
+Mu;` immediately followed by an `if / elsif / elsif ... / else` chain, and
+mutsu's parser fails the first `elsif` with `Undeclared routine: elsif used`.
+Minimal repro (nothing CBOR-specific — reproduces standalone):
+
+```raku
+if 1 == 1 {
+    my constant %svals = 20 => False, 21 => True;
+    if 1 == 2 { say "a" }
+    elsif 1 == 1 { say "b" }
+}
+```
+
+Expected (raku): `b`. mutsu: parse error, `elsif` misparsed as a bareword
+function call. Removing the `my constant ...;` line makes the identical
+`if`/`elsif`/`else` chain parse fine, so the trigger is specifically a `my
+constant` declaration statement immediately preceding a following
+`if`/`elsif` at the same block nesting level. Not yet root-caused past that;
+next step is `--dump-ast` on the minimal repro to see how the parser's
+statement-boundary detection after `my constant` differs from after a plain
+`my`.
+
 ## Reproduce
 
 ```sh

@@ -5172,13 +5172,39 @@ impl CompiledCode {
             // integration/man-or-boy.t). Non-lexical forms (`&!attr`, `&?ROUTINE`,
             // `&*dyn`, package-qualified and operator names) keep resolving
             // against the live env by design.
+            //
+            // Gated on `outer_code_var_names` — the same "declared by this point
+            // in source order" table the bare-call-name branch below already
+            // requires — so a `&name` referenced BEFORE its own `my &name = ...`
+            // declaration has compiled is deliberately left OUT of `free_var_syms`
+            // (forward-captured-code-var-snapshot fix). CBOR::Simple's
+            // mutually-ordered decoders rely on this: `my &decode-array = { ...
+            // &decode... }; ...; my &decode = {...};` — `decode-array`'s closure
+            // literal is created (and its free vars baked) before `&decode` is
+            // even declared, so unconditionally capturing `&decode` here would
+            // freeze its pre-declaration local slot (still Nil at that point)
+            // into `decode-array`'s closure forever. Leaving a genuine forward
+            // reference out of `free_var_syms` instead lets `GetCodeVar`'s
+            // `resolve_code_var` fall through to the live env-chain lookup at
+            // CALL time — by which point the enclosing `my &decode = ...` has
+            // run — exactly like a bare call `decode(...)` in the same forward
+            // position already resolves (that path was never gated on eager
+            // capture in the first place). A capture that IS available at this
+            // point (a `&`-sigiled parameter, or an already-declared `my &f`)
+            // is unaffected: `outer_code_var_names` is populated from every
+            // enclosing scope's `&`-locals up to and including its own
+            // parameters (declared before the body starts compiling), so
+            // man-or-boy.t's captured `&x1` parameter is still recognized here.
             if let Some(idx) = Self::op_code_var_read_const_idx(op)
                 && let Some(ValueView::Str(name)) =
                     self.constants.get(idx as usize).map(Value::view)
                 && !name.contains(':')
             {
                 let key = format!("&{}", name.as_str());
-                if crate::env::is_plain_user_lexical(&key) && !own.contains(key.as_str()) {
+                if crate::env::is_plain_user_lexical(&key)
+                    && !own.contains(key.as_str())
+                    && self.outer_code_var_names.contains(&key)
+                {
                     free.insert(Symbol::intern(&key));
                 }
             }
