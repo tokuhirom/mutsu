@@ -924,16 +924,28 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   out of scope for this specific box regardless). Removing the line is deliberately deferred to a
   dedicated shadow-check slice rather than done on trace evidence alone. `vm_module_ops.rs`'s four
   sites (module load/import/no/need) remain fully untraced.
-  **Progress (shadow-check landed):** `exec_register_class_op` now runs the actual verification
-  the trace above called for, `MUTSU_VM_STATS`-gated and zero behavior change: it snapshots
+  **Progress (shadow-check landed, #6448):** `exec_register_class_op` ran the actual verification
+  the trace above called for, `MUTSU_VM_STATS`-gated and zero behavior change: it snapshotted
   `Registry::method_generation` before the eager `invalidate_method_dispatch_caches()` call and
-  again right after a successful `register_class_decl` returns, and records a mismatch (via
+  again right after a successful `register_class_decl` returns, and recorded a mismatch (via
   `record_class_reg_gen_shadow_check`, mirroring `record_deferral_shadow_check`) whenever the
-  generation did *not* advance. The eager clear itself is untouched — this only measures whether
-  it would have been safe to remove. A `t/*.t` sweep (`MUTSU_VM_STATS=1` per file, debug build)
-  is the next step to accumulate corpus evidence before cutover; see the counter's doc comment
-  in `src/vm/vm_stats.rs` for the one known-benign mismatch shape (the `is_stub_body` re-declare
-  no-op).
+  generation did *not* advance.
+  **Progress (corpus evidence + cutover, #6452):** a `MUTSU_VM_STATS=1` sweep of the full `t/`
+  suite (debug build, one process per file) recorded 1296 shadow checks with exactly **1**
+  mismatch (`t/eval-private-and-stubs.t`, `class=Base is_stub=true`); a second sweep over the
+  class/role/multi-heavy roast whitelist subset (`S12-*`, `S14-*`, `S06-multi`, `S02-types`,
+  `S04-declarations`) recorded **5** mismatches, all `is_stub=true`. Every mismatch across both
+  sweeps was the one known-benign shape traced above (a stub re-declaring an already-non-stub
+  class of the same name — a true no-op, so no invalidation was needed for it either). With that
+  corpus evidence in hand, the eager `invalidate_method_dispatch_caches()` call at
+  `vm_typedecl_ops.rs:116` is removed for the class-registration path (`exec_register_class_op`
+  only — role/enum registration and `vm_module_ops.rs`'s four module sites are untouched and
+  still out of scope per the trace above). The shadow check itself is kept in place as a
+  standing regression guard (same pattern as other ADR-0019 boxes' post-cutover assertions):
+  it still fires on every class registration under `MUTSU_VM_STATS=1` and would flag any future
+  change that lets a real class mutation through without bumping the generation.
+  **Still open:** `vm_module_ops.rs`'s four sites (module load/import/no/need) remain fully
+  untraced and are a separate future slice.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
