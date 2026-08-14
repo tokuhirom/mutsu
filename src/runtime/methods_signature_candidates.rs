@@ -120,8 +120,7 @@ impl Interpreter {
         let exact_global = format!("GLOBAL::{name}");
         let prefix_local = format!("{package}::{name}/");
         let prefix_global = format!("GLOBAL::{name}/");
-        let mut seen = std::collections::HashSet::new();
-        let mut defs = Vec::new();
+        let mut candidates = Vec::new();
         let registry = self.registry();
         for (key, def) in &registry.functions {
             let key_s = key.resolve();
@@ -130,18 +129,41 @@ impl Interpreter {
                 || key_s.starts_with(&prefix_local)
                 || key_s.starts_with(&prefix_global)
             {
-                let fp = def.body_fingerprint();
-                if seen.insert(fp) {
-                    defs.push(def);
-                }
+                candidates.push(def);
             }
         }
-        // NOTE: this order is not Rakudo's. The candidates live in a hash keyed by
-        // mangled name, so the scan above visits them in bucket order, and sorting
-        // by `decl_order` does not fix it either — a `multi` is registered twice
-        // (hoist pass, then source order) and the second pass can stamp the two
-        // candidates in the opposite order. See
+        // Rakudo returns `.candidates` in DECLARATION order. Each candidate is
+        // registered TWICE — once by the forward-declaration/hoist pre-pass,
+        // once by the in-sequence pass that runs when execution reaches the
+        // statement — and the second registration cannot reuse the hoisted
+        // registry key (it is keyed by mangled type signature, e.g.
+        // `GLOBAL::mm/1:Int`, which the hoist pass already occupied), so it
+        // falls back to a `__m{N}`-suffixed key. That leaves TWO registry rows
+        // per candidate with the SAME body (`body_fingerprint`) but DIFFERENT
+        // `decl_order` stamps. The scan above visits the registry's `HashMap`
+        // in bucket order, which is arbitrary and unstable against unrelated
+        // statements elsewhere in the file — so naively keeping "whichever row
+        // is seen first" per body fingerprint reproduced that instability.
+        //
+        // Fix: sort ALL rows (both copies of every candidate) by `decl_order`
+        // first, then dedupe by body fingerprint keeping the smallest
+        // `decl_order` — always the hoist-pass row, since hoisting walks the
+        // block's statements top-to-bottom (`Compiler::hoist_sub_decls`) and so
+        // stamps candidates in true declaration order, chronologically before
+        // any in-sequence stamp. This mirrors the established `decl_order`
+        // min-per-key dedup pattern already used for token/grammar proto
+        // candidates (`token_key_decl_order`, `sort_sym_keys_by_decl_order` in
+        // `resolution.rs`). See
         // todo/tickets/multi-candidates-declaration-order.md.
+        candidates.sort_by_key(|def| def.decl_order);
+        let mut seen = std::collections::HashSet::new();
+        let mut defs = Vec::new();
+        for def in candidates {
+            let fp = def.body_fingerprint();
+            if seen.insert(fp) {
+                defs.push(def);
+            }
+        }
         defs.into_iter()
             .enumerate()
             .map(|(multi_idx, def)| {
