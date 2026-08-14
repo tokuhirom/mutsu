@@ -365,10 +365,13 @@ impl Interpreter {
         let mro = self.classhow_mro_unhidden_names(target);
         let mut results = Vec::new();
         for cn in &mro {
-            if let Some(class_def) = self.registry().classes.get(cn)
-                && let Some(defs) = class_def.methods.get(method_name)
-            {
-                self.shadow_check_can_methods(cn, method_name, defs);
+            // The candidate list comes from the canonical `Registry::method_
+            // entries[(owner, name)].user_candidates` table (ADR-0019 Phase F
+            // box F1 item 2) rather than `ClassDef::methods` directly --
+            // `sync_user_method_entries` keeps the two in lockstep, verified
+            // with zero mismatches across a full `t/`+roast sweep by the
+            // shadow check this cutover retires (#6402).
+            if let Some(defs) = self.registry().user_method_overloads(cn, method_name) {
                 let visible: Vec<&MethodDef> = defs
                     .iter()
                     .filter(|def| !def.is_my || cn == &class_name)
@@ -563,39 +566,5 @@ impl Interpreter {
             ));
         }
         results
-    }
-
-    /// ADR-0019 Phase F box F1 item 2 (`todo/deep/adr0019-f1-f2-
-    /// introspection-canonical-source.md`): shadow comparison between
-    /// `ClassDef::methods` (the source `collect_can_methods`'s MRO walk
-    /// reads directly today for `.^can`/`.can`) and `Registry::method_
-    /// entries[(owner, name)].user_candidates` (`Registry::user_method_
-    /// overloads`) -- the canonical table Phase E's dispatch path already
-    /// reads exclusively, kept in sync by `Registry::sync_user_method_
-    /// entries`. `Arc::ptr_eq` on each candidate's body is enough to prove
-    /// identity, the same reasoning F1 item 1's (now-retired)
-    /// `shadow_check_user_candidates` used. Shadow-only, zero behavior
-    /// change -- `collect_can_methods` still builds every Sub from `defs`
-    /// (the `ClassDef::methods` value).
-    fn shadow_check_can_methods(&self, class_name: &str, method_name: &str, defs: &[MethodDef]) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
-        }
-        let canonical = self
-            .registry()
-            .user_method_overloads(class_name, method_name);
-        let matched = match &canonical {
-            Some(candidates) => {
-                candidates.len() == defs.len()
-                    && candidates
-                        .iter()
-                        .zip(defs.iter())
-                        .all(|(a, b)| std::sync::Arc::ptr_eq(&a.body, &b.body))
-            }
-            None => false,
-        };
-        crate::vm::vm_stats::record_can_methods_shadow_check(matched, || {
-            format!("{class_name}::{method_name}")
-        });
     }
 }
