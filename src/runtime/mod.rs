@@ -2663,11 +2663,17 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) classes: HashSet<String>,
     pub(crate) proto_subs: HashSet<String>,
     pub(crate) proto_functions: HashSet<Symbol>,
-    /// `env` keys present before the `use`. An import writes the aliased
-    /// name (e.g. `&ok`, `$CONST`) straight into `env` alongside the
-    /// registry entry, so this has to be diffed on pop the same way the
-    /// registry key sets above are — see `pop_import_scope`.
-    pub(crate) env: HashSet<Symbol>,
+    /// Exact `env` keys `import_module` wrote as an imported alias while
+    /// this scope was on top of `import_scope_stack` (e.g. `&ok`, `$CONST`,
+    /// or the importing-package-qualified `&GLOBAL::ok` the trait-value
+    /// path also writes). Recorded explicitly at the write site
+    /// (`record_import_env_key`) rather than diffed from a before/after
+    /// snapshot: `env` also carries ordinary statement-level state that has
+    /// nothing to do with imports (`$!`, `$_`, a plain `my` local, ...), and
+    /// diffing would drop those too just because they happened to be
+    /// written for the first time inside a `use`-containing block — see
+    /// `pop_import_scope`'s doc comment for the regression that caused.
+    pub(crate) imported_env_keys: HashSet<Symbol>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,

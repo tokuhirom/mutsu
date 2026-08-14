@@ -459,8 +459,12 @@ impl Interpreter {
                 .and_then(|m| m.get(&name))
                 .cloned()
             {
-                self.env.insert(format!("&{name}"), val.clone());
-                self.env.insert(format!("&{target_pkg}::{name}"), val);
+                let bare_key = format!("&{name}");
+                let qualified_key = format!("&{target_pkg}::{name}");
+                self.record_import_env_key(&bare_key);
+                self.record_import_env_key(&qualified_key);
+                self.env.insert(bare_key, val.clone());
+                self.env.insert(qualified_key, val);
             }
         }
 
@@ -500,6 +504,7 @@ impl Interpreter {
                     self.module_imported_names
                         .push((target.clone(), value.clone()));
                 }
+                self.record_import_env_key(&target);
                 self.env.insert(target, value);
             }
         }
