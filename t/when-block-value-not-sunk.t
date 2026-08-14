@@ -1,5 +1,6 @@
 use v6;
 use Test;
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test::Util;
 
 # A `when`/`default` block's final statement is the block's *value* (`when`

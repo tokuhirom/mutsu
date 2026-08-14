@@ -21,8 +21,9 @@ is_run
     'is-deeply diagnostic honors a user-defined .raku override';
 
 is_run
-    'use Test; class Bar { has $.y; method raku { "MyBar(" ~ $.y ~ ")" } };'
-    ~ 'is-eqv Bar.new(y=>1), Bar.new(y=>2);',
+    'use Test; use lib "roast/packages/Test-Helpers/lib"; use Test::Util;'
+    ~ 'class Bar { has $.y; method raku { "MyBar(" ~ $.y ~ ")" } };'
+    ~ 'is-eqv Bar.new(y=>1), Bar.new(y=>2), "eqv check";',
     {
         :out(/'expected: MyBar(2)' .+ 'got: MyBar(1)'/),
         :1status,

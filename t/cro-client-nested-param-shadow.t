@@ -1,5 +1,5 @@
 use Test;
-use lib $*PROGRAM.parent(1).add("roast/packages/Test-Helpers/lib");
+use lib $*PROGRAM.parent(2).add("roast/packages/Test-Helpers/lib");
 use Test::Util;
 
 # Regression test for a cross-thread shared-variable clobber: a method's own

@@ -26,7 +26,7 @@ use Test;
 # Run in a subprocess: importing the fixture here would shadow the very `ok`
 # this file's own assertions use.
 
-plan 6;
+plan 7;
 
 my $exe = $*EXECUTABLE;
 
@@ -62,3 +62,12 @@ is run-snippet('use Test; plan 2; ok 1, "native"; is 3, 3, "native too"'),
 is run-snippet('use Test; plan 1; ok 1, "still numbered from the native counter"'),
     "1..1\nok 1 - still numbered from the native counter",
     'and keeps numbering its own tests';
+
+# Regression guard: the `Test::Util`/`Test::Tap`-only names (`is_run`,
+# `make-temp-dir`, `group-of`, ...) have no native fallback anymore
+# (`todo/tickets/retire-native-test-util-overrides.md`) -- calling one
+# without importing the real module must fail to resolve, not silently
+# answer through a Rust implementation.
+like run-snippet('make-temp-dir()'),
+    /'Undeclared routine' .+ 'make-temp-dir'/,
+    'a retired Test::Util-only name has no native fallback left';

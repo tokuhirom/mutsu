@@ -2,10 +2,8 @@ mod basic;
 mod comparison;
 mod eval_exception;
 mod fails_like;
-mod subprocess;
 mod tap_subtest;
 mod throws_like;
-mod util;
 
 use super::*;
 use crate::value::ValueView;
@@ -139,33 +137,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) fn program_mentions_qx(program: &str) -> bool {
-        for marker in ["qx", "qqx"] {
-            let mut search_from = 0usize;
-            while let Some(offset) = program[search_from..].find(marker) {
-                let idx = search_from + offset;
-                let before_ok = if idx == 0 {
-                    true
-                } else {
-                    !program[..idx]
-                        .chars()
-                        .next_back()
-                        .is_some_and(|c| c.is_alphanumeric() || matches!(c, '_' | '\'' | '-'))
-                };
-                let after = &program[idx + marker.len()..];
-                let after_ok = after
-                    .chars()
-                    .next()
-                    .is_some_and(|c| !c.is_alphanumeric() && !matches!(c, '_' | '\'' | '-'));
-                if before_ok && after_ok {
-                    return true;
-                }
-                search_from = idx + marker.len();
-            }
-        }
-        false
-    }
-
     /// Returns true when the Test module has been loaded (plan or test
     /// state exists), indicating that test function names should be resolved
     /// as function calls rather than bare words.
@@ -230,26 +201,13 @@ impl Interpreter {
                 | "eval-lives-ok"
                 | "eval-dies-ok"
                 | "throws-like"
-                | "throws-like-any"
                 | "fails-like"
-                | "is_run"
-                | "Test::Util::run"
-                | "get_out"
                 | "use-ok"
                 | "does-ok"
                 | "can-ok"
                 | "todo"
                 | "subtest"
                 | "warns-like"
-                | "doesn't-warn"
-                | "is-eqv"
-                | "group-of"
-                | "doesn't-hang"
-                | "make-temp-file"
-                | "make-temp-path"
-                | "make-temp-dir"
-                | "is-deeply-junction"
-                | "is-path"
         )
     }
 
@@ -303,25 +261,13 @@ impl Interpreter {
             "eval-lives-ok" => self.test_fn_eval_lives_ok(args).map(Some),
             "eval-dies-ok" => self.test_fn_eval_dies_ok(args).map(Some),
             "throws-like" => self.test_fn_throws_like(args).map(Some),
-            "throws-like-any" => self.test_fn_throws_like_any(args).map(Some),
             "fails-like" => self.test_fn_fails_like(args).map(Some),
-            "is_run" => self.test_fn_is_run(args).map(Some),
-            "Test::Util::run" => self.test_fn_run(args).map(Some),
-            "get_out" => self.test_fn_get_out(args).map(Some),
             "use-ok" => self.test_fn_use_ok(args).map(Some),
             "does-ok" => self.test_fn_does_ok(args).map(Some),
             "can-ok" => self.test_fn_can_ok(args).map(Some),
             "todo" => self.test_fn_todo(args).map(Some),
             "subtest" => self.test_fn_subtest(args).map(Some),
             "warns-like" => self.test_fn_warns_like(args).map(Some),
-            "doesn't-warn" => self.test_fn_doesnt_warn(args).map(Some),
-            "is-eqv" => self.test_fn_is_eqv(args).map(Some),
-            "group-of" => self.test_fn_group_of(args).map(Some),
-            "doesn't-hang" => self.test_fn_doesnt_hang(args).map(Some),
-            "make-temp-file" | "make-temp-path" => self.test_fn_make_temp_file(args).map(Some),
-            "make-temp-dir" => self.test_fn_make_temp_dir(args).map(Some),
-            "is-deeply-junction" => self.test_fn_is_deeply_junction(args).map(Some),
-            "is-path" => self.test_fn_is_path(args).map(Some),
             _ => Ok(None),
         }
     }

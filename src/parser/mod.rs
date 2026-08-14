@@ -510,21 +510,6 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
 
 /// Like `parse_program`, but pre-registers operator sub names so the parser
 /// recognizes them during EVAL.
-pub(crate) fn parse_program_with_operators(
-    input: &str,
-    operator_names: &[String],
-    operator_assoc: &std::collections::HashMap<String, String>,
-    imported_function_names: &[String],
-) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
-    parse_program_with_operators_and_user_subs(
-        input,
-        operator_names,
-        operator_assoc,
-        imported_function_names,
-        &[],
-    )
-}
-
 pub(crate) fn parse_program_with_operators_and_user_subs(
     input: &str,
     operator_names: &[String],

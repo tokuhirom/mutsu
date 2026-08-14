@@ -160,41 +160,4 @@ impl Interpreter {
         self.finish_subtest(ctx, &label, run_result.map(|_| ()))?;
         Ok(Value::TRUE)
     }
-
-    pub(crate) fn test_fn_group_of(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        // group-of $plan => $desc => { ... }
-        // Accept both `Pair` and `ValuePair` keys for compatibility with non-string keys.
-        let to_pair_parts = |value: &Value| -> Option<(Value, Value)> {
-            match value.view() {
-                ValueView::Pair(k, v) => Some((Value::str(k.clone()), v.clone())),
-                ValueView::ValuePair(k, v) => Some((k.clone(), v.clone())),
-                _ => None,
-            }
-        };
-        let Some((plan_key, inner)) = args.first().and_then(to_pair_parts) else {
-            return Err(RuntimeError::new("group-of expects a Pair argument"));
-        };
-        let Some((desc_key, block)) = to_pair_parts(&inner) else {
-            return Err(RuntimeError::new(
-                "group-of expects $plan => $desc => { ... }",
-            ));
-        };
-        let plan: i64 = match plan_key.as_int() {
-            Some(i) => i,
-            None => plan_key
-                .to_string_value()
-                .parse()
-                .map_err(|_| RuntimeError::new("group-of: plan must be an integer"))?,
-        };
-        let desc = desc_key.to_string_value();
-        let ctx = self.begin_subtest();
-        let saved_env = self.env.clone();
-        let saved_decls = self.snapshot_subtest_decls();
-        self.test_fn_plan(&[Value::int(plan)])?;
-        let run_result = self.call_sub_value(block, vec![], true);
-        self.env = saved_env;
-        self.restore_subtest_decls(saved_decls);
-        self.finish_subtest(ctx, &desc, run_result.map(|_| ()))?;
-        Ok(Value::TRUE)
-    }
 }
