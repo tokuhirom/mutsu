@@ -913,7 +913,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 let after_sub_ws = ws(after_sub).map(|(r2, _)| r2).unwrap_or(after_sub);
                 if after_sub_ws.starts_with('{') || after_sub_ws.starts_with('(') {
                     return Err(PError::fatal(
-                        "FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator"
+                        "X::Anon::Multi: An anonymous routine may not take a multi declarator"
                             .to_string(),
                     ));
                 }
@@ -921,7 +921,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // multi { } — anonymous multi with block, always invalid
             if r.starts_with('{') {
                 return Err(PError::fatal(
-                    "FATAL:X::Anon::Multi: An anonymous routine may not take a multi declarator"
+                    "X::Anon::Multi: An anonymous routine may not take a multi declarator"
                         .to_string(),
                 ));
             }
