@@ -24,6 +24,7 @@ throws-like '1!foo()',
 # A legitimate trusted call still works.
 lives-ok {
     EVAL q:to/CODE/;
+        class Caller {...}
         class Safe {
             trusts Caller;
             has $!secret = 42;

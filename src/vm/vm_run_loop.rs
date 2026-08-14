@@ -67,15 +67,22 @@ impl Interpreter {
         // Save/restore the flag so nested boundaries (EVAL, sub-VMs) don't
         // clobber an outer boundary's state.
         let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+        // Snapshot the call-frame/stack depth so a panic caught below can be
+        // recovered from — see `recover_call_frames_after_panic`.
+        let entry_call_frame_depth = self.call_frames.len();
+        let entry_stack_depth = self.stack.len();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_inner(code, compiled_fns)
         }));
         IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
         match caught {
             Ok(r) => r,
-            Err(payload) => Err(Self::vm_panic_error(panic_payload_message(
-                payload.as_ref(),
-            ))),
+            Err(payload) => {
+                self.recover_call_frames_after_panic(entry_call_frame_depth, entry_stack_depth);
+                Err(Self::vm_panic_error(panic_payload_message(
+                    payload.as_ref(),
+                )))
+            }
         }
     }
 
@@ -111,6 +118,16 @@ impl Interpreter {
         self.load_state_locals(code);
         let root_once_scope = self.next_once_scope_id();
         self.push_once_scope(root_once_scope);
+        // CheckPhaserStart/CheckPhaserEnd are ops inlined into `code` around a
+        // CHECK/BEGIN phaser body (`compile_check_phaser`); a normal run pairs
+        // every Start with a matching End. When the phaser body throws, the
+        // error short-circuits this loop below and the End op is never
+        // reached, so `check_phaser_depth` would otherwise leak past this
+        // call — wrapping an unrelated LATER error (e.g. a die in an INIT
+        // phaser evaluated by a subsequent EVAL sharing this Interpreter) in
+        // X::Comp::BeginTime too. Snapshot the entry depth so every error
+        // exit below can restore it after deciding whether to wrap.
+        let entry_check_phaser_depth = self.check_phaser_depth;
         let mut ip = 0;
         while ip < code.ops.len() {
             // GC safepoint (design doc §1.2): the dispatch backward edge holds no
@@ -158,13 +175,19 @@ impl Interpreter {
                 if e.is_return() && self.routine_stack().is_empty() && self.nested_run_depth == 0 {
                     let inner_err = RuntimeError::controlflow_return(true);
                     if self.check_phaser_depth > 0 {
-                        return Err(Self::wrap_in_begin_time(inner_err));
+                        let wrapped = Self::wrap_in_begin_time(inner_err);
+                        self.check_phaser_depth = entry_check_phaser_depth;
+                        return Err(wrapped);
                     }
+                    self.check_phaser_depth = entry_check_phaser_depth;
                     return Err(inner_err);
                 }
                 if self.check_phaser_depth > 0 {
-                    return Err(Self::wrap_in_begin_time(e));
+                    let wrapped = Self::wrap_in_begin_time(e);
+                    self.check_phaser_depth = entry_check_phaser_depth;
+                    return Err(wrapped);
                 }
+                self.check_phaser_depth = entry_check_phaser_depth;
                 return Err(e);
             }
             if self.is_halted() {
@@ -683,15 +706,22 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         install_vm_panic_hook();
         let prev = IN_VM_PANIC_BOUNDARY.with(|f| f.replace(true));
+        // Snapshot the call-frame/stack depth so a panic caught below can be
+        // recovered from — see `recover_call_frames_after_panic`.
+        let entry_call_frame_depth = self.call_frames.len();
+        let entry_stack_depth = self.stack.len();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_range(code, start, end, compiled_fns)
         }));
         IN_VM_PANIC_BOUNDARY.with(|f| f.set(prev));
         match caught {
             Ok(r) => r,
-            Err(payload) => Err(Self::vm_panic_error(panic_payload_message(
-                payload.as_ref(),
-            ))),
+            Err(payload) => {
+                self.recover_call_frames_after_panic(entry_call_frame_depth, entry_stack_depth);
+                Err(Self::vm_panic_error(panic_payload_message(
+                    payload.as_ref(),
+                )))
+            }
         }
     }
 

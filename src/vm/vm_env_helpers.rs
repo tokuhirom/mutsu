@@ -116,6 +116,44 @@ impl Interpreter {
         frame
     }
 
+    /// Recover `self.call_frames` (and the per-frame registers `pop_call_frame`
+    /// restores: `locals`, `upvalues`, `env`, ...) after a Rust panic was caught
+    /// at a `catch_unwind` boundary (`run_inner_guarded`/`run_range_guarded`).
+    ///
+    /// A nested call (`call_compiled_closure`, `call_compiled_function_named_inner`,
+    /// ...) pushes a call frame, runs the callee body, and only calls
+    /// `pop_call_frame` on its normal return path. When the callee body panics,
+    /// the unwind skips straight past that `pop_call_frame` call — Rust does not
+    /// run non-`Drop` cleanup code on unwind — so `self.call_frames` is left
+    /// holding every frame pushed since the boundary was entered, and
+    /// `self.locals`/`self.upvalues`/`self.env` still belong to the deepest
+    /// panicking callee. Left alone, the code that resumes at the boundary (the
+    /// `try` body's next statement, or the top-level program after an `EVAL`)
+    /// indexes `self.locals` with slot numbers valid for ITS OWN locals array,
+    /// not the leftover callee one — an immediate out-of-bounds panic on the
+    /// very next `GetLocal`, observed via `t/vm-panic-boundary.t`'s `dies-ok {
+    /// @a[2**64-1] = 1 }` (invoking the block through `$code()` pushes exactly
+    /// one such frame before the array-index panic).
+    ///
+    /// Pop every frame pushed since `entry_depth` (LIFO, so each `pop_call_frame`
+    /// naturally restores its caller's state) and truncate the value stack back
+    /// to `entry_stack_depth` for the same reason.
+    pub(super) fn recover_call_frames_after_panic(
+        &mut self,
+        entry_depth: usize,
+        entry_stack_depth: usize,
+    ) {
+        let mut restored_env = None;
+        while self.call_frames.len() > entry_depth {
+            let frame = self.pop_call_frame();
+            restored_env = Some(frame.saved_env);
+        }
+        if let Some(env) = restored_env {
+            self.set_env(env);
+        }
+        self.stack.truncate(entry_stack_depth.min(self.stack.len()));
+    }
+
     fn twigil_dynamic_alias(name: &str) -> Option<String> {
         if let Some(rest) = name.strip_prefix("$*") {
             return Some(format!("*{}", rest));
