@@ -11,6 +11,7 @@ pub(crate) mod method_signature_shared;
 mod opcode;
 mod parse_dispatch;
 mod parser;
+mod placeholder_order;
 pub(crate) mod precomp;
 mod rakuast;
 #[cfg(feature = "native")]

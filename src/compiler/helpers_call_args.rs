@@ -553,7 +553,10 @@ impl Compiler {
         body: &[Stmt],
         decl_kind: Option<&str>,
     ) -> Option<Value> {
-        use crate::ast::{bare_precedes_placeholder, has_var_decl};
+        use crate::ast::has_var_decl;
+        use crate::placeholder_order::{
+            bare_name_shadowed_by_nested_placeholder, bare_precedes_placeholder,
+        };
         for param in params {
             let bare_name = if let Some(b) = param.strip_prefix("&^") {
                 b
@@ -603,6 +606,31 @@ impl Compiler {
                     )));
                 }
             }
+        }
+        // A bare `$name` used in THIS block's own scope, where `$^name` is
+        // declared only by a block STRICTLY NESTED inside this one (a nested
+        // `if`/`for`/`given` BLOCK body, `whenever`, or closure) — e.g.
+        // `{ for 1 { $^b }; say $b }`. The inner block owns that placeholder;
+        // it does not make `$b` this block's parameter, so `$b` here was
+        // simply never declared — the same generic X::Undeclared rakudo
+        // raises for any undeclared bare variable (unrelated to the nested
+        // `$^name`, which is why the message does not mention it).
+        if let Some(bare_name) = bare_name_shadowed_by_nested_placeholder(body, params)
+            && !has_var_decl(body, &bare_name)
+            && !self.local_map.contains_key(bare_name.as_str())
+            // `bare_name` may also be legitimately declared as THIS block's own
+            // (non-placeholder) signature parameter, e.g. `-> $b, $i { ... }`
+            // where a totally separate nested closure happens to use `$^b` —
+            // that inner closure's placeholder does not conflict with the
+            // outer pointy block's own `$b` (see
+            // `t/placeholder-nested-block-scope.t`'s "bitwise placeholder
+            // blocks, slipped arguments" case).
+            && !params.iter().any(|p| p == &bare_name)
+        {
+            return Some(Value::str(format!(
+                "X::Undeclared: Variable '${}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?",
+                bare_name
+            )));
         }
         None
     }
