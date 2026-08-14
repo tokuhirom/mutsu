@@ -3,6 +3,11 @@
 Extracted from PLAN.md §1 B4 (2026-08-02) and re-verified on `main` the same day. Originally found
 while running the (now-retired) Tubu web framework; it is a general interpreter bug on its own axis.
 
+**Status (2026-08-14): Bug 1 is SHIPPED** — see "Fix plan — bug 1 (PR 1)" below, all six steps
+implemented, `t/regex-stored-closure-scope.t` added (13 subtests, bug-1 subset), all regression
+hazards verified green. **Bug 2 (the `<$var>` capture leak) is still open** — its fix plan is
+unchanged below; a future session should pick it up as its own PR.
+
 ## Repro
 
 ```raku
@@ -143,7 +148,13 @@ Repro scripts kept the session: `tmp/rx-variants.raku`, `tmp/rx-variants2.raku`.
 
 ### Fix plan — bug 1 (PR 1): regex literals capture their defining scope as shared cells
 
-Everything reuses the `b07ee6627` machinery; no new Value variant, no new opcode.
+**Shipped 2026-08-14.** All six steps below were implemented as designed, with two small
+audit-driven additions to step 5 (`.split`/`.comb`, found to be actual stored-regex entry points;
+`s///`/`TR///` were audited and confirmed to need no change — their pattern is always compiled
+inline via `OpCode::Subst`/`Transliterate` with the literal pattern text baked into the frame that
+executes it, never as a `Value::RegexCaptured` that could escape, so they structurally cannot reach
+`install_regex_closure_scope`). Everything reuses the `b07ee6627` machinery; no new Value variant,
+no new opcode.
 
 1. **Widen the compiler trigger** — `src/compiler/expr_helpers.rs:717`: delete the code-bearing
    gate (`if !pattern.contains('{') && … return None;`). Any pattern whose

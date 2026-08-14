@@ -3642,6 +3642,20 @@ pub(crate) struct CompiledCode {
     /// call args / control blocks) non-boxed, avoiding the broad-boxing
     /// perf/correctness regression (see #2749).
     pub(crate) needs_cell_locals: Vec<Symbol>,
+    /// Own locals interpolated into a regex constant of this same frame
+    /// (`rx/ $word /`) AND mutated after the regex is constructed. A regex
+    /// literal loaded via `OpCode::LoadRegexClosure` closes over its defining
+    /// scope's *bindings*, not a value snapshot (`my $x = 1; my $re = rx/ abc
+    /// <?{ $x == 2 }> /; $x = 2; "abc" ~~ $re` must match — see
+    /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`). Only a
+    /// name in this set is boxed into a shared `ContainerRef` cell at capture
+    /// time (`capture_regex_closure`); an unmutated capture stays a cheap
+    /// by-value snapshot, since nothing can ever change it. Deliberately kept
+    /// separate from `needs_cell_locals` (closure-escape driven) and
+    /// `needs_cell_named_sub` (named-sub-write driven) — over-boxing an
+    /// unrelated same-named local through the wrong signal is the historical
+    /// bug class in this area (see the `needs_cell_locals` doc comment above).
+    pub(crate) needs_cell_regex: Vec<Symbol>,
     /// Frame lexicals that a `class`/`role` body's methods WRITE. A method is
     /// installed by `RegisterClass`/`RegisterRole` and is invoked with no
     /// closure-creation op, so the capture analysis behind
@@ -4113,6 +4127,7 @@ impl CompiledCode {
             needs_cell_escaping_our_sub_free: Vec::new(),
             captured_mutated_locals: Vec::new(),
             needs_cell_locals: Vec::new(),
+            needs_cell_regex: Vec::new(),
             type_body_written_lexicals: Vec::new(),
             thread_escaping: false,
             authoritative_free_vars: Vec::new(),
@@ -5452,6 +5467,17 @@ impl CompiledCode {
         // such a regex (e.g. `-> $r { * ~~ /<$r>/ }`) must still capture `$r`, so
         // scan every regex constant for sigil'd variable references and treat them
         // as free vars (unless this body declares them).
+        //
+        // A name that IS one of `own`'s locals is an own capture instead: the
+        // regex literal (loaded via `OpCode::LoadRegexClosure`, see
+        // `regex_literal_closure_captures`) closes over the name out of THIS
+        // frame's own locals rather than a parent's. Track those separately
+        // (`regex_captured_own`) so, once `self_mutated` is fully known below,
+        // we can compute which own regex-captured names are also mutated after
+        // the regex is constructed — those need a shared cell (bug 1 of
+        // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`).
+        let mut regex_captured_own: std::collections::HashSet<Symbol> =
+            std::collections::HashSet::new();
         for c in &self.constants {
             let pattern = match c.view() {
                 ValueView::Regex(s) => Some(s.clone()),
@@ -5460,7 +5486,9 @@ impl CompiledCode {
             };
             if let Some(pattern) = pattern {
                 for name in Self::regex_interpolated_var_names(&pattern) {
-                    if !own.contains(name.as_str()) {
+                    if own.contains(name.as_str()) {
+                        regex_captured_own.insert(Symbol::intern(&name));
+                    } else {
                         free.insert(Symbol::intern(&name));
                     }
                 }
@@ -5492,6 +5520,18 @@ impl CompiledCode {
                 }
             }
         }
+        // `self_mutated` is fully known now (nothing below this point adds to
+        // it — the loops that follow only read it). An own local interpolated
+        // into one of our own regex constants AND mutated after declaration
+        // needs a shared cell so the stored regex observes later writes
+        // (raku-verified: `my $x = 1; my $re = rx/ abc <?{ $x == 2 }> /; $x =
+        // 2; "abc" ~~ $re` matches). Purely additive — does not touch `free`,
+        // `free_var_writes`, `captured_mutated`, or `needs_cell_locals`.
+        let needs_cell_regex: std::collections::HashSet<Symbol> = regex_captured_own
+            .iter()
+            .filter(|sym| self_mutated.contains(*sym))
+            .copied()
+            .collect();
         // Own locals captured by a nested closure AND mutated -> must be boxed
         // into a shared container at capture time. `captured_mutated` drives the
         // loop (path A) boxing and the VM's capture filter. `needs_cell` is the
@@ -5641,6 +5681,7 @@ impl CompiledCode {
         self.free_var_container_writes = free_container_writes.into_iter().collect();
         self.captured_mutated_locals = captured_mutated.into_iter().collect();
         self.needs_cell_locals = needs_cell.into_iter().collect();
+        self.needs_cell_regex = needs_cell_regex.into_iter().collect();
         // A self-capturing declaration only matters when the local actually gets a
         // cell — otherwise there is no cell for the declaration to preserve.
         self.self_capture_decl_locals = self_capture_decl

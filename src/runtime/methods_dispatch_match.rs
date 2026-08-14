@@ -240,7 +240,13 @@ impl Interpreter {
                     // Defer to native IO dispatch so file content is read first.
                     None
                 } else {
-                    self.dispatch_comb_with_args(target, &args)
+                    // The matcher argument may be a stored regex closed over
+                    // its defining scope; install it around the comb the same
+                    // way `~~`/`.match`/`.subst` do.
+                    let matcher = args.first().cloned();
+                    self.with_regex_closure_scope(matcher, |me| {
+                        me.dispatch_comb_with_args(target, &args)
+                    })
                 }
             }
             // `.IO` takes only named adverbs (`:CWD`, `:SPEC`); accept and IGNORE

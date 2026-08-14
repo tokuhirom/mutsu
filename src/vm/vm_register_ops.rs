@@ -16,7 +16,7 @@ impl Interpreter {
         })
     }
 
-    /// Attach the defining scope to a code-bearing regex literal
+    /// Attach the defining scope to an interpolating regex literal
     /// (`OpCode::LoadRegexClosure`).
     ///
     /// Reads each listed name out of the creating frame — its local slot when
@@ -26,14 +26,27 @@ impl Interpreter {
     /// value is byte-equivalent to today's plain constant when nothing is
     /// captured. A capture that is already a shared `ContainerRef` cell is kept
     /// AS the cell, so later writes through it stay visible to the regex.
+    ///
+    /// A name flagged in `code.needs_cell_regex` (own, and mutated after this
+    /// regex literal is constructed — see that field's doc comment) is boxed
+    /// into a shared cell via `box_decl_local_cell` BEFORE being read, so the
+    /// captured value IS the cell: later writes to the defining frame's local
+    /// flow through it, and the stored regex observes them at match time
+    /// (raku-verified same-scope mutation semantics; bug 1 of
+    /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`).
+    /// Unmutated captures stay cheap by-value snapshots.
     pub(super) fn capture_regex_closure(
         &mut self,
+        code: &CompiledCode,
         base: &Value,
         captures: &[(Symbol, u32)],
     ) -> Value {
         let mut scope: HashMap<String, Value> = HashMap::new();
         for (sym, slot) in captures {
             let name = sym.resolve();
+            if *slot != crate::opcode::NOT_A_LOCAL && code.needs_cell_regex.contains(sym) {
+                self.box_decl_local_cell(code, *slot as usize);
+            }
             let from_local = (*slot != crate::opcode::NOT_A_LOCAL)
                 .then(|| self.locals.get(*slot as usize))
                 .flatten()
