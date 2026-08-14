@@ -235,14 +235,43 @@ impl Interpreter {
         }
     }
 
+    /// Parse the currently-in-effect language version (`use v6.x`, default
+    /// `"6.d"`) into the `Version` `Value` `$*RAKU.version`/`$*PERL.version`
+    /// expose. Shared by [`Self::make_perl_instance`] — so a lazily-built
+    /// instance already reflects the compile unit's `use v6.x` at
+    /// construction time instead of the old hardcoded `Version.new(6)`
+    /// default (todo/tickets/magic-vars-should-be-built-lazily.md Slice 2:
+    /// under eager construction this default was always immediately
+    /// overwritten by [`Self::update_raku_version_from_parser`] before
+    /// execution began, so the two must agree) — and by
+    /// `update_raku_version_from_parser` (which mutates an
+    /// already-materialized instance in place for a later parse in the same
+    /// process, e.g. a nested `EVAL` with a different `use v6.x`).
+    fn language_version_value() -> Value {
+        let lang_version = crate::parser::current_language_version();
+        let parts: Vec<crate::value::VersionPart> = lang_version
+            .split('.')
+            .filter(|s| !s.is_empty())
+            .map(|s| {
+                if let Ok(n) = s.parse::<i64>() {
+                    crate::value::VersionPart::Num(n)
+                } else {
+                    crate::value::VersionPart::Str(s.to_string())
+                }
+            })
+            .collect();
+        if parts.is_empty() {
+            Value::version(vec![crate::value::VersionPart::Num(6)], false, false)
+        } else {
+            Value::version(parts, false, false)
+        }
+    }
+
     pub(super) fn make_perl_instance() -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str_from("Raku"));
         attrs.insert("auth".to_string(), Value::str_from("The Perl Foundation"));
-        attrs.insert(
-            "version".to_string(),
-            Value::version(vec![crate::value::VersionPart::Num(6)], false, false),
-        );
+        attrs.insert("version".to_string(), Self::language_version_value());
         attrs.insert(
             "signature".to_string(),
             Value::make_instance(Symbol::intern("Blob"), {
@@ -295,22 +324,21 @@ impl Interpreter {
     }
 
     /// Update `$*RAKU.version` to reflect `use v6.x` after parsing.
+    ///
+    /// Only mutates a `*RAKU`/`?RAKU`/`*PERL`/`?PERL` entry already present
+    /// in THIS interpreter's `env` overlay — i.e. only when a previous read
+    /// (in this same process) already materialized it via
+    /// [`Self::lazy_magic_dynamic_var`]. A not-yet-materialized instance
+    /// needs no fixup here: [`Self::make_perl_instance`] reads the current
+    /// language version directly at construction time, so its first build
+    /// (whenever that happens) already reflects whatever `use v6.x` was in
+    /// effect for the most recent completed parse.
     pub(super) fn update_raku_version_from_parser(&mut self) {
         let lang_version = crate::parser::current_language_version();
         if lang_version.is_empty() || lang_version == "6" {
             return;
         }
-        let parts: Vec<crate::value::VersionPart> = lang_version
-            .split('.')
-            .map(|s| {
-                if let Ok(n) = s.parse::<i64>() {
-                    crate::value::VersionPart::Num(n)
-                } else {
-                    crate::value::VersionPart::Str(s.to_string())
-                }
-            })
-            .collect();
-        let new_version = Value::version(parts, false, false);
+        let new_version = Self::language_version_value();
         for key in ["*RAKU", "?RAKU", "*PERL", "?PERL"] {
             if let Some(v) = self.env.get(key).cloned()
                 && let ValueView::Instance {
@@ -371,105 +399,41 @@ impl Interpreter {
         );
         Value::make_instance(Symbol::intern("VM"), attrs)
     }
+}
 
-    pub(super) fn make_kernel_instance() -> Value {
-        // One cached `uname(2)` covers release, hardware and hostname; see
-        // `io_sysinfo_host`. This used to be three `fork`/`exec`s per startup.
-        let host = super::io_sysinfo_host::host_info();
+#[cfg(test)]
+mod tests {
+    use super::Interpreter;
+    use crate::parser::{current_language_version, set_current_language_version};
 
-        let os = std::env::consts::OS;
-        let arch = std::env::consts::ARCH;
-
-        // Kernel name (e.g., "linux", "darwin", "win32")
-        let name = match os {
-            "macos" => "darwin".to_string(),
-            "windows" => "win32".to_string(),
-            _ => os.to_string(),
-        };
-
-        // Kernel release (e.g., "6.18.7-76061807-generic")
-        let release = host.release.clone();
-
-        // Hardware (e.g., "x86_64")
-        let hardware = if host.machine.is_empty() {
-            arch.to_string()
-        } else {
-            host.machine.clone()
-        };
-
-        // Architecture (mapped from Rust's ARCH constant)
-        let arch_str = match arch {
-            "x86_64" => "x86_64",
-            "x86" => "i386",
-            "aarch64" => "aarch64",
-            "arm" => "arm",
-            _ => arch,
+    /// `make_perl_instance`'s "version" attribute must reflect whatever
+    /// `use v6.x` is in effect at construction time (Slice 2 of
+    /// todo/tickets/magic-vars-should-be-built-lazily.md switched this from
+    /// a hardcoded `Version.new(6)` — see `language_version_value`'s doc
+    /// comment for why the two must agree). This is the Rust-level
+    /// equivalent of the roast-test-suite-unfriendly `t/` pin: an
+    /// `is_run`-based `t/` regression for the same property trips an
+    /// unrelated, pre-existing module-resolution/dispatch fragility (see
+    /// todo/deep/is-run-after-raku-read-swallows-child-spawn.md), so this
+    /// property is pinned here instead, directly against the function that
+    /// matters, with no subprocess involved.
+    #[test]
+    fn make_perl_instance_version_reflects_current_language_version() {
+        let saved = current_language_version();
+        for v in ["6.c", "6.d", "6.e"] {
+            set_current_language_version(v);
+            let perl = Interpreter::make_perl_instance();
+            let crate::value::ValueView::Instance { attributes, .. } = perl.view() else {
+                panic!("make_perl_instance() did not return an Instance");
+            };
+            let version = attributes.as_map().get("version").cloned().unwrap();
+            assert_eq!(
+                version.to_string_value(),
+                v,
+                "make_perl_instance()'s version attribute should reflect \
+                 current_language_version() = {v:?} at construction time"
+            );
         }
-        .to_string();
-
-        // Bits
-        let bits: i64 = if arch == "x86_64" || arch == "aarch64" || arch == "powerpc64" {
-            64
-        } else {
-            32
-        };
-
-        // Hostname (`uname -n`, the same string the `hostname` command prints)
-        let hostname = host.hostname.clone();
-
-        // Version from release string
-        let version = Self::parse_version_string(&release);
-
-        // Build signals list (first 32 standard POSIX signals)
-        let signal_names = [
-            "", "HUP", "INT", "QUIT", "ILL", "TRAP", "ABRT", "BUS", "FPE", "KILL", "USR1", "SEGV",
-            "USR2", "PIPE", "ALRM", "TERM", "STKFLT", "CHLD", "CONT", "STOP", "TSTP", "TTIN",
-            "TTOU", "URG", "XCPU", "XFSZ", "VTALRM", "PROF", "WINCH", "IO", "PWR", "SYS",
-        ];
-        let signals: Vec<Value> = (0..32)
-            .map(|i| {
-                if i < signal_names.len() && !signal_names[i].is_empty() {
-                    Value::str(format!("SIG{}", signal_names[i]))
-                } else {
-                    Value::NIL
-                }
-            })
-            .collect();
-
-        let mut attrs = HashMap::new();
-        attrs.insert("name".to_string(), Value::str(name));
-        attrs.insert("auth".to_string(), Value::str_from("unknown"));
-        attrs.insert("version".to_string(), version);
-        attrs.insert(
-            "signature".to_string(),
-            Value::make_instance(Symbol::intern("Blob"), HashMap::new()),
-        );
-        attrs.insert("desc".to_string(), Value::str_arc(String::new().into()));
-        attrs.insert("release".to_string(), Value::str(release));
-        attrs.insert("hardware".to_string(), Value::str(hardware));
-        attrs.insert("arch".to_string(), Value::str(arch_str));
-        attrs.insert("bits".to_string(), Value::int(bits));
-        attrs.insert("hostname".to_string(), Value::str(hostname));
-        attrs.insert("signals".to_string(), Value::array(signals));
-
-        // endian: Endian enum value matching the host system
-        let endian_val = if cfg!(target_endian = "little") {
-            Value::enum_parts(
-                crate::symbol::Symbol::intern("Endian"),
-                crate::symbol::Symbol::intern("LittleEndian"),
-                crate::value::EnumValue::Int(1),
-                1,
-            )
-        } else {
-            Value::enum_parts(
-                crate::symbol::Symbol::intern("Endian"),
-                crate::symbol::Symbol::intern("BigEndian"),
-                crate::value::EnumValue::Int(2),
-                2,
-            )
-        };
-        attrs.insert("endian".to_string(), endian_val);
-
-        Value::make_instance(Symbol::intern("Kernel"), attrs)
+        set_current_language_version(&saved);
     }
 }

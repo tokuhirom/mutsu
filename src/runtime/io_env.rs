@@ -137,29 +137,51 @@ impl Interpreter {
         );
         let exec_name = self.env.get("$*EXECUTABLE-NAME").cloned().unwrap();
         self.env.insert("*EXECUTABLE-NAME".to_string(), exec_name);
-        let distro = Self::cached_distro_instance();
-        self.env.insert("*DISTRO".to_string(), distro.clone());
-        self.env.insert("?DISTRO".to_string(), distro);
-        let perl = Self::cached_perl_instance();
-        self.env.insert("*PERL".to_string(), perl.clone());
-        self.env.insert("?PERL".to_string(), perl);
-        let raku = Self::cached_raku_instance();
-        self.env.insert("*RAKU".to_string(), raku.clone());
-        self.env.insert("?RAKU".to_string(), raku);
-        let vm = Self::cached_vm_instance();
-        self.env.insert("$*VM".to_string(), vm.clone());
-        self.env.insert("*VM".to_string(), vm.clone());
-        self.env.insert("?VM".to_string(), vm);
-        let kernel = Self::cached_kernel_instance();
-        self.env.insert("*KERNEL".to_string(), kernel.clone());
-        self.env.insert("?KERNEL".to_string(), kernel);
+        // $*DISTRO/$*PERL/$*RAKU/$*VM/$*KERNEL are intentionally NOT built or
+        // inserted here (todo/tickets/magic-vars-should-be-built-lazily.md
+        // Slice 2). They materialize on first read via
+        // `lazy_magic_dynamic_var`, called from the general dynamic-var read
+        // miss path (`Interpreter::get_env_with_main_alias_inner`), and are
+        // cached process-wide the same way as before (see the
+        // `cached_*_instance` OnceLocks below).
+    }
+
+    /// Construct-on-first-read for the five process-constant magic vars whose
+    /// `Instance` building (Version parses, a 32-element signal array, the
+    /// `vm_config` hash) is real CPU work: `$*DISTRO`/`$*PERL`/`$*RAKU`/
+    /// `$*VM`/`$*KERNEL` (todo/tickets/magic-vars-should-be-built-lazily.md
+    /// Slice 2). `name` is the env key exactly as compiled (sigil-and-twigil
+    /// forms: bare `*NAME` for a `$*NAME` read, `?NAME` for the rarer `$?NAME`
+    /// compile-time-twigil spelling, plus the literal `$*VM` key that a couple
+    /// of call sites still probe directly).
+    ///
+    /// Called from `Interpreter::get_env_with_main_alias_inner`'s final
+    /// fallback (`src/vm/vm_env_helpers.rs`) — the one chokepoint every other
+    /// per-instance/dynamic-var read path (the VM's `GetGlobal` fast path,
+    /// `get_dynamic_handle`, ...) already falls through to on a genuine miss,
+    /// so a single check here covers every reader without touching each of
+    /// them individually. Each underlying `Value` is still built at most once
+    /// per process (the `cached_*_instance` `OnceLock`s below do that part);
+    /// this only decides *when* that first build happens.
+    pub(crate) fn lazy_magic_dynamic_var(name: &str) -> Option<Value> {
+        Some(match name {
+            "*DISTRO" | "?DISTRO" => Self::cached_distro_instance(),
+            "*PERL" | "?PERL" => Self::cached_perl_instance(),
+            "*RAKU" | "?RAKU" => Self::cached_raku_instance(),
+            "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
+            "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
+            _ => return None,
+        })
     }
 
     /// Process-constant `Distro` instance (docs/per-task-clone-slimming.md
-    /// slice 3): built once via `make_distro_instance` (which shells out to
-    /// `sw_vers` on macOS and reads `/etc/os-release` on Linux) and shared by
-    /// `Value` clone (a cheap handle copy, see `Value`'s internal `Arc`/`Gc`
-    /// reprs) into every `Interpreter::new()` / thread-clone env thereafter.
+    /// slice 3; built lazily since Slice 2 of
+    /// todo/tickets/magic-vars-should-be-built-lazily.md — see
+    /// `lazy_magic_dynamic_var`): built once, on first read, via
+    /// `make_distro_instance` (which shells out to `sw_vers` on macOS and
+    /// reads `/etc/os-release` on Linux) and shared by `Value` clone (a cheap
+    /// handle copy, see `Value`'s internal `Arc`/`Gc` reprs) into every
+    /// interpreter/thread that reads it thereafter.
     fn cached_distro_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_distro_instance).clone()
@@ -176,13 +198,16 @@ impl Interpreter {
     }
 
     /// Process-constant `$*RAKU` instance (see [`Self::cached_perl_instance`]).
-    /// `update_raku_version_from_parser` mutates this in place via
+    /// `make_perl_instance`'s "version" attribute is read from
+    /// `current_language_version()` at construction time, so the first read
+    /// (whenever it happens, always after its compile unit's own parse)
+    /// already reflects that unit's `use v6.x`. `update_raku_version_from_parser`
+    /// additionally mutates an ALREADY-materialized instance in place via
     /// `Value::write_back_sharing` (commits into the same shared attrs cell,
-    /// does not rebind to a new object), so a `use v6.x` version bump on the
-    /// top-level interpreter is visible to every later thread clone's copy of
-    /// this cached singleton too — matching the pre-existing
-    /// `IMMUTABLE_BASE_DYNAMICS` assumption that `$*RAKU`/`$*PERL` hold one
-    /// process-wide value.
+    /// does not rebind to a new object) for a later parse in the same process
+    /// (e.g. a nested `EVAL` with a different version) — matching the
+    /// long-standing assumption that `$*RAKU`/`$*PERL` hold one process-wide
+    /// value.
     fn cached_raku_instance() -> Value {
         static CACHE: OnceLock<Value> = OnceLock::new();
         CACHE.get_or_init(Self::make_perl_instance).clone()

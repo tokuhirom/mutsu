@@ -285,6 +285,7 @@ mod io_pod_heredoc;
 mod io_pod_table;
 mod io_sysinfo;
 mod io_sysinfo_host;
+mod io_sysinfo_kernel;
 mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
@@ -2693,21 +2694,19 @@ pub(crate) const MAINLINE_UNIT_KEY: &str = "UNIT<mainline>";
 /// env base tier (see `Interpreter::new`). These hold the same value for the
 /// whole process and are never reassigned/removed by normal programs, so they
 /// need not live in every per-frame env overlay (docs/vm-dual-store.md 4c).
+///
+/// `$*VM`/`$*PERL`/`$*RAKU`/`$*KERNEL`/`$*DISTRO` are deliberately NOT listed
+/// here (todo/tickets/magic-vars-should-be-built-lazily.md Slice 2): building
+/// their `Instance` values (Version parses, a 32-element signal array, the
+/// `vm_config` hash) is real CPU work a program that never reads them
+/// shouldn't pay at every `Interpreter::new()`/thread-clone. They instead
+/// materialize on first read via `Interpreter::lazy_magic_dynamic_var`
+/// (`src/runtime/io_env.rs`), cached process-wide the same way as everything
+/// else here (a `OnceLock` per var).
 const IMMUTABLE_BASE_DYNAMICS: &[&str] = &[
     "*PID",
     "*TZ",
     "*INIT-INSTANT",
-    "$*VM",
-    "*VM",
-    "?VM",
-    "*PERL",
-    "?PERL",
-    "*RAKU",
-    "?RAKU",
-    "*KERNEL",
-    "?KERNEL",
-    "*DISTRO",
-    "?DISTRO",
     "$*EXECUTABLE",
     "*EXECUTABLE",
     "$*EXECUTABLE-NAME",
