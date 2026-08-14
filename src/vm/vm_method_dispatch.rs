@@ -619,6 +619,7 @@ impl Interpreter {
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),
+            method_def.source_file.clone(),
         );
 
         // Execute bytecode
@@ -1566,6 +1567,7 @@ impl Interpreter {
             method_name.to_string(),
             self.current_source_line(),
             self.current_source_file(),
+            method_def.source_file.clone(),
         );
 
         // Execute bytecode (same as slow path)

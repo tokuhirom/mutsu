@@ -31,3 +31,17 @@ sub walk-out() {
     } while $frame.defined && $frame.file eq $?FILE;
     $frame.defined ?? $frame.file !! 'walked off the stack';
 }
+
+# A *method's* own defining file must flow into its `RoutineFrame` too, the
+# same way a sub's or a block's already does. `push_method_routine_with_location`
+# used to hardcode `def_file: None`, so `executing_source_file()`'s frame walk
+# fell straight through a method frame to the dynamically-scoped `?FILE` --
+# which has already reverted to the *calling* script by the time the method
+# runs (module loading only scopes `?FILE` to the mainline). `callframe(0).line`
+# is unaffected (it is driven by the bytecode line table, not the frame walk),
+# so the pair silently split across two files: `.file` named the caller's
+# script while `.line` was a line number that only makes sense inside this
+# module. Keep `method probe` on this exact line (46) -- the test below pins it.
+class FixtureMethodProbe is export {
+    method probe() { callframe(0) }
+}

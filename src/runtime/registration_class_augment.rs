@@ -273,6 +273,7 @@ impl Interpreter {
                         deprecated_message: decl.deprecated_message.clone(),
                         is_submethod: decl.is_submethod,
                         captured_env: None,
+                        source_file: self.current_source_file(),
                     };
                     // ADR-0019 D3-5: `my method`/`our method` are not part of
                     // the class method table — only callable as functions,

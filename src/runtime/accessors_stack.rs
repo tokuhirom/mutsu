@@ -52,6 +52,13 @@ impl Interpreter {
         });
     }
 
+    /// Push a method routine frame. `line`/`file` record the call-site (as for
+    /// `push_routine_with_location`); `def_file` is the file the method body was
+    /// *declared* in (the class's `use`d module, or `None` for the main script
+    /// or a synthetic/native method) — see `MethodDef::source_file`. Without
+    /// this, `executing_source_file()`'s frame walk always fell through past a
+    /// method frame to the dynamically-scoped `?FILE`, which had already
+    /// reverted to the main script by the time the method ran.
     pub(crate) fn push_method_routine_with_location(
         &mut self,
         package: String,
@@ -59,6 +66,7 @@ impl Interpreter {
         name: String,
         line: Option<u32>,
         file: Option<String>,
+        def_file: Option<String>,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -68,7 +76,7 @@ impl Interpreter {
             file,
             is_method: true,
             is_block: false,
-            def_file: None,
+            def_file,
             invocation_id: crate::runtime::next_invocation_id(),
         });
     }

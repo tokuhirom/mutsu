@@ -137,6 +137,16 @@ pub(crate) struct MethodDef {
     /// merges these names into the body env (params/self take precedence) so a
     /// by-name read resolves the capture. `None` for ordinary declared methods.
     pub(crate) captured_env: Option<crate::env::Env>,
+    /// Source file the method body was declared in (None = main script or a
+    /// synthetic/native method with no real source). Flows into the pushed
+    /// `RoutineFrame::def_file` at call time (`push_method_routine_with_location`),
+    /// mirroring `FunctionDef::source_file` for subs and `SubData::source_file`
+    /// for closures — without it, `executing_source_file()`'s frame walk always
+    /// fell through past a method frame (which never carried a `def_file`) to
+    /// the dynamically-scoped `?FILE`, misattributing `callframe(N).file` for
+    /// any method defined in a `use`d module (see
+    /// `news/2026-08/method-frame-def-file.md`).
+    pub(crate) source_file: Option<String>,
 }
 
 /// Invocant context for an active `proto method` `{*}` dispatch.
