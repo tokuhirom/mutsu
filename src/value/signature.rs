@@ -62,28 +62,94 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
     guard.as_ref()?.get(&id).cloned()
 }
 
+/// Stable identity key for [`cached_sub_signature`]/[`cache_sub_signature`].
+/// Wraps whichever `Arc` a rebuilt `SubData` clones from the registry's own
+/// `FunctionDef` — see `Interpreter::sub_signature_cache_key`, which builds
+/// one of these — or a plain id when neither is available.
+///
+/// Holding the `Arc` itself (not just its pointer address as a `usize`/
+/// `String`) is required for CORRECTNESS, not just convenience: as long as a
+/// key lives inside the cache map, the `Arc` it holds cannot be dropped, so
+/// the allocation it points to can never be freed and its address reused by
+/// an unrelated LATER declaration. A bare pointer-address key does not have
+/// this property and aliased two different declarations together under
+/// `MUTSU_GC=on` (the gc-stress CI job): an earlier declaration's
+/// `CompiledFunction` was freed once nothing else referenced it, and a later,
+/// unrelated declaration's `CompiledFunction` was allocated at the exact same
+/// address, so both hashed to the same cache entry — `roast/S06-signature/
+/// arity.t` caught this (`&a.arity` read back `.assuming(1)`'s reduced arity
+/// after the primed clone's OWN key, sharing `compiled_routine`, had already
+/// evicted-by-alias the original's cached signature).
+// `CompiledFunction`/`CompiledCode` contain interior mutability (e.g. a
+// `OnceLock`), which clippy's `mutable_key_type` lint flags on any HashMap
+// key that reaches them. Sound here regardless: `Eq`/`Hash` below key
+// exclusively on the `Arc`'s pointer address, never on any interior-mutable
+// field, so mutating what a key's `Arc` points to cannot desync the map.
+#[allow(clippy::mutable_key_type)]
+pub(crate) enum SubSignatureKey {
+    Routine(std::sync::Arc<crate::opcode::CompiledFunction>),
+    Code(std::sync::Arc<crate::opcode::CompiledCode>),
+    Id(u64),
+}
+
+impl PartialEq for SubSignatureKey {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Routine(a), Self::Routine(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Self::Code(a), Self::Code(b)) => std::sync::Arc::ptr_eq(a, b),
+            (Self::Id(a), Self::Id(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for SubSignatureKey {}
+
+impl std::hash::Hash for SubSignatureKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        match self {
+            Self::Routine(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
+            Self::Code(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
+            Self::Id(id) => id.hash(state),
+        }
+    }
+}
+
+impl SubSignatureKey {
+    pub(crate) fn from_routine(arc: std::sync::Arc<crate::opcode::CompiledFunction>) -> Self {
+        Self::Routine(arc)
+    }
+    pub(crate) fn from_code(arc: std::sync::Arc<crate::opcode::CompiledCode>) -> Self {
+        Self::Code(arc)
+    }
+    pub(crate) fn from_id(id: u64) -> Self {
+        Self::Id(id)
+    }
+}
+
 /// Cache of the fully materialized `Signature` Value already built for a
-/// given callable, keyed by `Interpreter::sub_signature_cache_key` — see
-/// there for why that key (not `SubData::id`) is the stable one. Without this,
-/// every `.signature` read rebuilt a brand new `Signature` instance (and
-/// therefore a brand new `Parameter` array) from scratch, so
-/// `&f.signature.params[0]` had no stable identity:
+/// given callable. Without this, every `.signature` read rebuilt a brand new
+/// `Signature` instance (and therefore a brand new `Parameter` array) from
+/// scratch, so `&f.signature.params[0]` had no stable identity:
 /// `&f.signature.params[0] === &f.signature.params[0]` was False, and a mixin
 /// applied to one materialization vanished on the next read
 /// (`todo/tickets/parameter-objects-have-no-stable-identity.md`). Caching the
 /// whole `Signature` Value (not just its `params` array) matches raku, where
 /// `&f.signature === &f.signature` also holds.
-static SUB_SIGNATURE_CACHE: Mutex<Option<HashMap<String, Value>>> = Mutex::new(None);
+static SUB_SIGNATURE_CACHE: Mutex<Option<HashMap<SubSignatureKey, Value>>> = Mutex::new(None);
 
 /// Look up the cached `Signature` Value for a callable identified by `key`.
-pub(crate) fn cached_sub_signature(key: &str) -> Option<Value> {
+pub(crate) fn cached_sub_signature(key: &SubSignatureKey) -> Option<Value> {
     let guard = SUB_SIGNATURE_CACHE.lock().unwrap();
     guard.as_ref()?.get(key).cloned()
 }
 
 /// Cache `signature` as the `Signature` Value for the callable identified by
 /// `key`, so later reads return the same instance.
-pub(crate) fn cache_sub_signature(key: String, signature: Value) {
+// See `SubSignatureKey`'s own doc comment for why `mutable_key_type` is a
+// false positive here.
+#[allow(clippy::mutable_key_type)]
+pub(crate) fn cache_sub_signature(key: SubSignatureKey, signature: Value) {
     let mut guard = SUB_SIGNATURE_CACHE.lock().unwrap();
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(key, signature);

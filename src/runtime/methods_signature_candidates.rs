@@ -2,7 +2,7 @@
 //! candidate routine lookup, and arity/count Value builders.
 use super::*;
 use crate::value::signature::{
-    cache_sub_signature, cached_sub_signature, make_signature_value_with_owner,
+    SubSignatureKey, cache_sub_signature, cached_sub_signature, make_signature_value_with_owner,
     param_defs_to_sig_info,
 };
 
@@ -181,13 +181,13 @@ impl Interpreter {
     /// which intentionally builds a fresh identity per call) falls back to
     /// its own `id`, which IS stable for repeated reads of that one wrapper
     /// value.
-    fn sub_signature_cache_key(data: &crate::value::SubData) -> String {
+    fn sub_signature_cache_key(data: &crate::value::SubData) -> SubSignatureKey {
         if let Some(cr) = &data.compiled_routine {
-            format!("routine:{:p}", std::sync::Arc::as_ptr(cr))
+            SubSignatureKey::from_routine(cr.clone())
         } else if let Some(cc) = &data.compiled_code {
-            format!("code:{:p}", std::sync::Arc::as_ptr(cc))
+            SubSignatureKey::from_code(cc.clone())
         } else {
-            format!("id:{}", data.id)
+            SubSignatureKey::from_id(data.id)
         }
     }
 
