@@ -328,6 +328,12 @@ impl Interpreter {
                     "__mutsu_lookup_candidate_idx".to_string(),
                     Value::int(idx as i64),
                 );
+                // Real Raku: an individual `.candidates[N]` entry answers
+                // `.multi` True (it IS a declared multi candidate), unlike the
+                // dispatcher-shaped value `.^lookup`/`.^find_method` return for
+                // the family as a whole, which answers `.multi` falsy. See the
+                // `is_dispatcher`/`multi` handling in `methods_instance_ops.rs`.
+                env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
                 out.push(Value::make_sub(
                     crate::symbol::Symbol::intern(owner),
                     crate::symbol::Symbol::intern(method_name),

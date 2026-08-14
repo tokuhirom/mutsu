@@ -1912,6 +1912,31 @@ impl Interpreter {
                 ValueView::Routine { package, .. } => Ok(Value::package(package)),
                 _ => Ok(Value::NIL),
             },
+            // `.is_dispatcher`/`.multi` on a Method/Submethod value obtained from
+            // `.^lookup`/`.^find_method`/`.can` (a `Sub`-shaped callable, not the
+            // `Method` `Instance` `.^methods` builds -- see
+            // `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`).
+            // Real Raku: the dispatcher-shaped value for a multi method answers
+            // `is_dispatcher` True and `multi` falsy; each individual
+            // `.candidates[N]` entry answers `is_dispatcher` False and `multi`
+            // True; an ordinary (non-multi) method answers both False. Verified
+            // against `raku -e` ground truth 2026-08-14 (see the linked ticket).
+            "is_dispatcher" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
+                let ValueView::Sub(data) = target.view() else {
+                    unreachable!()
+                };
+                Ok(Value::truth(
+                    Self::sub_multi_method_dispatcher_name(&data).is_some(),
+                ))
+            }
+            "multi" if args.is_empty() && matches!(target.view(), ValueView::Sub(_)) => {
+                let ValueView::Sub(data) = target.view() else {
+                    unreachable!()
+                };
+                Ok(Value::truth(
+                    data.env.get("__mutsu_is_multi_candidate").is_some(),
+                ))
+            }
             "isa" if args.len() == 1 && matches!(target.view(), ValueView::Package(_)) => {
                 let pkg_name = match target.view() {
                     ValueView::Package(name) => name.resolve(),

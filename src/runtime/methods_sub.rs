@@ -321,6 +321,9 @@ impl Interpreter {
                     | "gist"
                     | "can"
                     | "dispatcher"
+                    | "is_dispatcher"
+                    | "multi"
+                    | "package"
             );
             return Some(Ok(Value::truth(can)));
         }
@@ -1049,6 +1052,9 @@ impl Interpreter {
                     | "wrap"
                     | "unwrap"
                     | "callwith"
+                    | "is_dispatcher"
+                    | "multi"
+                    | "package"
             );
             return Some(Ok(Value::truth(can)));
         }
