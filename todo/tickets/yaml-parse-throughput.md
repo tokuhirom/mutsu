@@ -1,5 +1,144 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-08-14, round 7): `basic.rakutest` is fixed (round 5's "barely
+improved" concern is resolved, ~7x faster now) and `MUTSU_VM_STATS` traces the
+post-P5 drift to a concrete, falsifiable mechanism — near-total loss of P5's
+Match laziness — but the exact call site that grew is not yet found.** This
+round picks up round 6's two open items ("Where to look next" item 5) with two
+isolated worktrees: `origin/main` tip (`96dbb964a`, later rebased to
+`744c0e340` for the doc-only PR) and the pinned P5-merge commit `fa2400a49`.
+
+**Item 1 — VM_STATS comparison.** Built `cargo build` (debug, per CLAUDE.md:
+these counters are optimization-level-independent) in both worktrees and ran
+`MUTSU_VM_STATS=1 target/debug/mutsu benchmarks/bench-yaml-parse.raku`
+identically in each (same script content in both trees, byte-identical). Key
+counters, P5-merge (`fa2400a49`) vs current (`96dbb964a`):
+
+| counter | P5-merge (`fa2400a49`) | current (`96dbb964a`) | delta |
+| --- | ---: | ---: | ---: |
+| `regex-captures: leaf_spans` | 26 | 19226 | **×739** |
+| `regex-captures: match_materializations` | *(counter didn't exist yet)* | 20951 | n/a |
+| `gc: collections` | 4 | 3 | -1 |
+| `gc: pause_ns_total` | 112958599 (113ms) | 232557240 (233ms) | ×2.06 |
+| `gc: pause_ns_max` | 61978635 (62ms) | 134062743 (134ms) | ×2.16 |
+| `dual-store: clone_env` | 40221 | 40221 | 0 |
+| `dual-store: env_deep_copies` | 41348 | 41388 | +0.1% |
+| `function-call opcodes` / fallback% | 40161 / 100.0% | 40161 / 100.0% | 0 |
+| `method-call opcodes` / fallback% | 5120 / 48.4% | 5120 / 48.4% | 0 |
+| `jit: entries` | 38689 | 38689 | 0 |
+| `opcodes executed total` | 74608 | 74943 | +0.4% |
+| resolver-path dispatch `space=` (leaf-token count) | 35328 | 35328 | 0 |
+
+The picture this narrows down: dual-store, JIT, opcode-execution volume, and
+the grammar engine's own subrule-dispatch workload (`space=35328` identical in
+both — the same document produces the exact same number of leaf-token match
+attempts) are all flat. The regression is **narrowly localized to the
+regex-captures/Match-laziness subsystem**: `leaf_spans` (a counter that
+existed at the P5-merge commit too, so this is a same-counter, not a
+newly-added-counter, comparison) exploded ×739 for the byte-identical
+benchmark, and the brand-new `match_materializations` counter (added after P5,
+so no baseline exists) shows 20951 forced materializations — i.e. nearly every
+leaf capture in the match tree is now being fully materialized into an
+eager `Instance`-shaped attribute map, which is exactly the behavior P5's
+"lazy Match" (`docs/adr/0016-span-based-captures-and-lazy-match.md`) was
+built to avoid. `gc: pause_ns_total`/`pause_ns_max` roughly doubling is
+consistent with (and plausibly downstream of) that much extra allocation —
+though pause-time counters are wall-clock-based, not pure op counts, so
+treat them as directional only, especially since the box was moderately
+loaded during this run (see below).
+
+**This is real, not a measurement artifact of turning `MUTSU_VM_STATS` on**:
+the counting itself (`record_regex_match_leaf`/`record_regex_match_materialization`
+in `src/vm/vm_stats.rs`) is gated behind `vm_stats::enabled()`, but the
+*counted event* — `MatchNode::force_attrs()`/`materialize_map()` in
+`src/value/match_lazy.rs` actually running — happens unconditionally in
+production; only the bookkeeping is skipped when stats are off.
+
+**Chasing the call site (partial, not concluded):** a `rust-gdb -batch`
+breakpoint at `match_lazy.rs:74` (inside `force_attrs()`'s memoizing closure)
+on the current build showed the first 3 hits all routing through
+`Value::view()` → `OpCode::GetGlobal`'s LazyThunk probe at
+`vm_exec_dispatch.rs:532` (`if let ValueView::LazyThunk(thunk_data) =
+val.view() { ... }`), called unconditionally on every `GetGlobal` read to
+check "is this a thunk" — forcing full Match materialization even when the
+value obviously isn't a thunk. Two sibling sites do the same thing:
+`exec_get_upvalue_op` (`vm_var_assign_local_get.rs:58`, `GetUpvalue`) and the
+SetLocal readonly-marking check (`vm_var_assign_set_local.rs:1817`). By
+contrast, `exec_get_local_op` (`GetLocal`, `vm_var_assign_local_get.rs:236`)
+already guards the same check behind the cheap `is_lazy_thunk_value()` tag
+probe first, with a comment explicitly noting "a `view()` would materialize a
+lazy Match" — i.e. someone already fixed this exact class of bug for
+`GetLocal` but not for `GetGlobal`/`GetUpvalue`/the `SetLocal` check.
+
+**However: this specific inconsistency predates the regression window.**
+Diffing all four call sites against the `fa2400a49` (P5-merge) tree shows them
+byte-identical — `GetLocal` was already guarded and `GetGlobal`/`GetUpvalue`/
+the `SetLocal` check were already unguarded *at the P5 merge itself*. So while
+this is a real, independently-worth-fixing inefficiency (any Match value read
+via `GetGlobal`/`GetUpvalue`, or stored via a guarded `SetLocal`, pays an
+unnecessary full materialization), it cannot by itself explain the
+26→19226 delta — the code paths did not change. `GetGlobal` itself also only
+executes 49 times total in this benchmark (per the opcode histogram, same in
+both builds), far too few to produce ~20000 materializations on its own; the
+3 gdb samples captured were just the first few hits, not a representative
+sample of the dominant contributor(s).
+
+**What actually changed is still open — the concrete next step for round 8:**
+something in the ~1700-commit window caused many more Match values to reach
+one of these unguarded (or another, not-yet-found) `.view()`-forcing site than
+before. The prime suspect, not yet verified: `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`
+(ADR-0019), whose E3/E4/F1 phases (generation-keyed resolved-sequence caches,
+`NativeCallBinding` resolution, `user_candidates` cutover for
+`class_method_table`/`collect_can_methods`) landed heavily in exactly this
+window and reworked method/dispatch resolution — precisely the kind of change
+that could add a new `.view()` call on a method receiver (a Match value, for
+`AT-KEY`/`.Str`/action dispatch on capture nodes) where none existed before.
+Round 8 should run a gdb hit-count *sweep* (not 3 samples: use `ignore N` to
+skip past the first batch, or an env-gated backtrace-on-every-Kth-hit) to find
+the call site(s) that actually dominate the 20951 total, then check whether
+they trace to an ADR-0019 landing.
+
+**Item 2 — `basic.rakutest` re-measurement.** Built `cargo build --release`
+in the current-main worktree and ran the file 4× (fetched copy at
+`tmp/battery-testsuite/YAMLish/t/basic.rakutest`, same file referenced by
+rounds 1-5):
+
+| run | wall time |
+| --- | ---: |
+| 1 | 6.881s |
+| 2 | 6.027s |
+| 3 | 6.032s |
+| 4 | 6.193s |
+
+All 4 runs: 7/7 subtests passing (clean TAP, `1..7`, zero `not ok`). Median
+~6.1s — down from round 1's **43.6s** baseline, a **~7.1x** wall-clock
+reduction. Against round 1's raku reference for this same file (1.2s), the
+mutsu/raku ratio on `basic.rakutest` is now ~5.1x, down from ~36x at round 1.
+**This resolves round 5's "barely improved" flag for this file** — nobody had
+re-measured it since ADR-0016 P1-P5 landed, and it turns out ADR-0016 fixed
+this file's dominant cost too, not just the synthetic benchmark.
+
+Caveat: the machine was moderately loaded during these runs (`uptime` load
+average 2.1-4.4 over the run window; a sibling worktree was concurrently
+running its own `cargo build && cargo test && prove t/` pipeline) — not the
+fully-idle box this ticket's own methodology asks for, and not a
+`bench-history.tsv` CI number. But the 4-run spread was tight (6.0-6.9s,
+~14%), giving reasonable confidence in the order of magnitude (7x, not e.g.
+2x or 15x) even without CI-grade precision.
+
+**Net assessment:** ticket stays open — item 1's drift is confirmed real and
+now has a much narrower localization (Match-laziness/regex-captures, ruling
+out dual-store/JIT/opcode-volume/grammar-dispatch-volume) plus a concrete,
+falsifiable next step, but the dominant call site is not yet identified. Item
+2's picture is now good news: the whole-upstream-file concern round 5 flagged
+is resolved, and the mutsu/raku ratio on real-world files (~5x) roughly
+matches the synthetic-benchmark ratio family, not the ~35x this ticket's title
+still says (title left as-is since the *synthetic microbenchmark* ratio via
+`bench-history.tsv`, per the round 6 table, is still ~35 post-drift — the
+title reflects the worst still-open number, not the best one).
+
+---
+
 **Update (2026-08-14, round 6): ADR-0016 landed and delivered a ~4x wall-clock
 win on `bench-yaml-parse`, confirmed from `bench-history.tsv` on `bench-data`
 — but a real, still-open gap remains, plus a smaller unexplained drift since
@@ -437,24 +576,49 @@ The `MUTSU_VM_STATS` counters are useless here: only ~25k opcodes run for a
    the top of this file. This item is done; the ADR itself is the record of
    what it fixed.
 
-5. **(New, round 6) Two items neither round 1-5 nor the ADR closed:**
-   - **Bisect the post-P5 drift.** `bench-yaml-parse`'s CI-measured raw median
-     rose from ~1.35s (2026-07-31, the P5-merge day) to ~1.55-1.80s
-     (2026-08-12 through 08-14) over ~1700 unrelated merged commits — see the
-     round 6 table above. Not yet profiled; candidates worth checking first
-     (in the spirit of items 1-4 above, i.e. count before guessing): whether
-     `MUTSU_VM_STATS` counters like `match_materializations` (the ADR's own
-     laziness-regression guard, per its "Standing consequence of P5" note) or
-     GC pause counts moved between a 07-31 and a current build on the same
-     idle box, before reaching for `perf`.
-   - **Re-measure `basic.rakutest` and the other whole-upstream-file numbers**
-     (see the table under "Measurement (2026-07-28...)" below) against the
-     post-ADR-0016 binary. Round 1-5's own numbers there predate P1-P5
-     entirely; round 5 explicitly flagged `basic.rakutest` as "barely
-     improved" by rounds 1-3 and pointed at exactly this structural work as
-     the next lever — nobody has actually re-run it since. Use an idle box
-     (see the measurement caveat below) or add it to `bench-data`, not an
-     ad-hoc contended local run.
+5. **(New, round 6; updated round 7) Two items neither round 1-5 nor the ADR
+   closed:**
+   - **Bisect the post-P5 drift — partially traced, not closed (round 7).**
+     `bench-yaml-parse`'s CI-measured raw median rose from ~1.35s
+     (2026-07-31, the P5-merge day) to ~1.55-1.80s (2026-08-12 through 08-14)
+     over ~1700 unrelated merged commits — see the round 6 table above. Round
+     7's `MUTSU_VM_STATS` comparison (P5-merge `fa2400a49` vs current) found
+     the driver's *neighborhood*: `leaf_spans` exploded ×739 (26→19226) and
+     the new `match_materializations` counter shows 20951 forced
+     materializations, while dual-store/JIT/opcode-volume/grammar-dispatch
+     counters are all flat — i.e. P5's lazy-Match win is being defeated
+     somewhere, not a broad diffuse overhead. A `rust-gdb` breakpoint at
+     `MatchNode::force_attrs()` (`src/value/match_lazy.rs:74`) found *a* real,
+     unguarded `Value::view()` call that forces materialization
+     unconditionally (`OpCode::GetGlobal` at `vm_exec_dispatch.rs:532`, and
+     siblings `GetUpvalue`/`SetLocal`-readonly-check) — contrasted with
+     `GetLocal`, which already guards the same check behind a cheap
+     `is_lazy_thunk_value()` tag probe. But diffing those exact sites against
+     `fa2400a49` shows them byte-identical, so this specific inconsistency
+     predates the regression window and is not (solely) the cause of the
+     delta. **Round 8: run a gdb hit-count sweep** (not 3 samples — `ignore N`
+     or an env-gated backtrace-on-every-Kth-hit) across all
+     `force_attrs()`/`materialize_map()` callers to find which one(s)
+     actually dominate the 20951 total, and check whether they trace to one
+     of the many ADR-0019 (`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`)
+     E3/E4/F1 dispatch-resolution PRs that landed in this exact window (see
+     the round 7 entry at the top of this file for the full reasoning).
+   - **Re-measure `basic.rakutest` and the other whole-upstream-file numbers —
+     done for `basic.rakutest` (round 7), resolved.** Round 1-5's own numbers
+     predated P1-P5 entirely; round 5 explicitly flagged `basic.rakutest` as
+     "barely improved" by rounds 1-3 and pointed at exactly this structural
+     work as the next lever. Round 7 re-ran it against a `cargo build
+     --release` of current `main` tip: 4 runs of 6.0-6.9s (median ~6.1s),
+     down from round 1's 43.6s baseline — a ~7.1x reduction, all 7/7 subtests
+     passing. See the round 7 entry at the top of this file for the full
+     numbers and the machine-load caveat (not a fully idle box, not a
+     `bench-history.tsv` CI number, but a tight enough 4-run spread to trust
+     the order of magnitude). The other whole-upstream files from the round-1
+     table (`anchor-alias.rakutest`, `p5-tests.rakutest`, `roundtrip.rakutest`,
+     `test-harness.rakutest`) were NOT re-measured this round — still open for
+     a future round if a fuller picture is wanted, though `basic.rakutest`
+     (the largest/most feature-dense file, and the one round 5 flagged) was
+     the one that mattered most.
 
 ## Why it matters
 
