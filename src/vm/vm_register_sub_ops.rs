@@ -313,7 +313,22 @@ impl Interpreter {
                         custom_traits,
                     )?;
                 }
-                self.invalidate_method_dispatch_caches();
+                // ADR-0019 Phase F box F5: a plain `sub` installation only needs
+                // to invalidate the *function*-namespace resolution caches
+                // (`func_multi_resolve_cache`/`func_multi_type_cacheable`, the
+                // light/otf/multi-candidates call caches) -- all guarded by
+                // `fn_resolve_gen` and self-refreshing at their own read site.
+                // The *method*-namespace caches this used to also eagerly clear
+                // (`method_resolve_cache`/`fast_method_cache`/
+                // `native_ctor_plan_cache`/`multi_resolve_cache`/
+                // `multi_type_cacheable`/`resolved_seq_cache`/
+                // `dispatch_multi_candidate`) are keyed on `(owner type, method
+                // name)` -- a bare `sub` is never a method-table entry under any
+                // key those caches use, so it can never make one of them stale.
+                // This mirrors the fast re-install path just above (the
+                // `prepared_fn_defs` branch), which already only bumps
+                // `fn_resolve_gen` for the identical "install a sub" event.
+                self.fn_resolve_gen += 1;
                 // Record `&`-sigil parameter names so calls to a same-named routine
                 // inside this sub bypass the name-keyed light-call caches (the param
                 // can shadow a package sub of the same name).

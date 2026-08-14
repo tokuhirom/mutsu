@@ -654,6 +654,46 @@ pub(crate) fn record_class_reg_gen_shadow_check(matched: bool, detail: impl FnOn
     }
 }
 
+// ADR-0019 Phase F box F5 (`vm_module_ops.rs`'s `exec_use_module_op` /
+// `exec_import_module_op` / `exec_no_module_op` / `exec_need_module_op`):
+// shadow check mirroring `record_class_reg_gen_shadow_check`, but for the
+// four module-op eager `invalidate_method_dispatch_caches()` sites the F5
+// box's progress notes left "fully untraced". Compares `method_generation`
+// before/after the module op; `matched` is `gen_after != gen_before`. Unlike
+// class registration, a module load/import/no/need only touches the method
+// registry indirectly (via any class/role the module defines), so a
+// non-bump is the COMMON case here (e.g. importing a module with no classes,
+// or a `no` that only toggles a pragma) -- the by-key detail exists to find
+// the shape of the *bumping* cases, not to confirm mismatches are benign.
+// Nothing reads this counter to make a dispatch decision: shadow-only, zero
+// behavior change. See
+// `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` box F5.
+static MODULE_REG_GEN_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static MODULE_REG_GEN_SHADOW_BUMPED: AtomicU64 = AtomicU64::new(0);
+
+fn module_reg_gen_shadow_bumped_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one F5 module-op generation-bump shadow comparison. `detail` is
+/// only evaluated when the generation DID bump (the interesting case here --
+/// see the static docs above), mirroring [`record_class_reg_gen_shadow_check`]
+/// but inverted since a bump, not a non-bump, is the rare signal.
+#[inline]
+pub(crate) fn record_module_reg_gen_shadow_check(bumped: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    MODULE_REG_GEN_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if bumped {
+        MODULE_REG_GEN_SHADOW_BUMPED.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = module_reg_gen_shadow_bumped_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1201,6 +1241,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-f5 class-reg-gen-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let module_reg_gen_shadow_checks = MODULE_REG_GEN_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let module_reg_gen_shadow_bumped = MODULE_REG_GEN_SHADOW_BUMPED.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-f5: module_reg_gen_shadow_checks={module_reg_gen_shadow_checks} module_reg_gen_shadow_bumped={module_reg_gen_shadow_bumped}"
+    );
+    if let Ok(map) = module_reg_gen_shadow_bumped_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-f5 module-reg-gen-shadow bumped (top {}): {}",
             top.len(),
             top.join(" ")
         );
