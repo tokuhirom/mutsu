@@ -76,3 +76,48 @@ questions above (signature shape, `.candidates` for multi natives, `.package`/`.
 own methods, wrap/multi/submethod flags), landing as pins under `t/`, before writing the F1 design
 doc. The user-method half (item 1 above) can proceed independently and sooner — it is a mechanical
 shadow-then-cutover slice once `user_candidates`'s sync fidelity is confirmed.
+
+## Progress (2026-08-14)
+
+Item 1's user-method cutover is done, across all three MRO/table readers that used to walk
+`ClassDef::methods` directly:
+
+- `collect_class_methods`/`class_method_table` (`.^methods`/`.^method_table`) — shadow-check
+  #6399, cutover #6400.
+- `collect_can_methods` (`.^can`/`.can`) — shadow-check #6402, cutover #6406, same
+  shadow-then-cutover pattern, zero mismatches across a full `t/` sweep plus the
+  `S12-introspection/{can,meta-class,walk}.t`, `S12-enums/thorough.t`, `S32-exceptions/misc2.t`
+  roast files.
+
+Item 2 (native/builtin method metadata) remains untouched and is still the real open work — the
+raku ground-truth pass below narrows it further but does not resolve the F3-tension question in
+item 2's option (a) vs (b).
+
+**Raku ground truth gathered while scoping item 2** (`raku -e`, not yet mutsu pins under `t/`):
+
+- Native-method `.signature.gist` is real Rakudo behavior, not a stub — but it is **not**
+  arity-derivable in general: `(42).^lookup("floor").signature.gist` is
+  `(Int:D $:: *%_ --> Int:D)` (generic named-catchall, no positional info at all despite `floor`
+  taking zero args beyond the invocant); `"abc".^lookup("substr").signature.gist` is
+  `(Cool $:: |)` (a raw capture, arity fully erased); `Array.^lookup("push").signature.gist` is
+  `($:: |)`; `Hash.^lookup("push").signature.gist` is `(Hash $:: +values, *%_)` (this one *does*
+  show a real slurpy-positional name). So Rakudo's own native signatures range from "fully generic
+  capture" to "one specific slurpy param name" with no discernible single pattern — confirms this
+  needs per-method hand data to match exactly (option (a)'s tension with F3 is real, not
+  hypothetical), or an intentionally-generic placeholder (option (b), accepting it won't match
+  Rakudo exactly since Rakudo itself isn't derivable from arity alone).
+- `.is_dispatcher` is a real accessor Rakudo exposes on any `Method` (`$m.is_dispatcher` → `False`
+  for `floor`, `True` for a multi's dispatcher Method) and `.multi` too (`True`/`False`). Checked
+  against mutsu: **`.is_dispatcher`/`.multi` are unreachable on any `Method`-shaped value returned
+  by `.^lookup`** (`(42).^lookup("floor").is_dispatcher` prints `<composed-method:is_dispatcher>`
+  instead of `False`) — this is not an item-2-only gap, it reproduces on `.^lookup` of a plain user
+  method too. Root cause found: `classhow_lookup`/`classhow_lookup_impl`
+  (`methods_classhow_lookup.rs`) builds its return value as a **`Sub`-shaped** `Value::make_sub`,
+  not the `Method`-`Instance`-shaped value `collect_can_methods`/`collect_class_methods` build via
+  `make_method_object_with_owner`. Calling an unknown method on a `Sub` value falls into the
+  callable-compose fallback in `methods_instance_ops.rs` (~line 2117), which silently returns a
+  bogus composed-callable instead of erroring — so `.^lookup(...).is_dispatcher` (or any other
+  `Method`-only accessor) never reaches a real answer. This is a distinct, smaller, well-scoped bug
+  (two representations of "a method" that don't interoperate) — separate from F1/F2's native-metadata
+  question and not blocked on the raku ground-truth session above. Filed as
+  `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`.
