@@ -814,6 +814,12 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   (~350 slots in `builtin_type_methods.rs`) that still feed `builtin_method_entries`. This is the
   explicit retirement of ANALYSIS §4-1's hand tables; retain only the generated native entry
   catalog that dispatch itself consumes.
+  **Scoping (2026-08-14):** this box's "generated native entry catalog" target
+  (`native_method_row.rs`'s `RAW_ROWS`) turns out to have drifted from the 14 arrays since its
+  2026-08-10 generation — missing an owner (`Sub`) entirely, with ~90+ extra dispatch-recognized
+  names across other owners not vetted for `.^methods` inclusion, and at least one owner
+  (`Signature`) in a different order. Not a mechanical cutover; needs its own raku-verification
+  pass first. See `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [ ] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
