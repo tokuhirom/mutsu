@@ -62,6 +62,33 @@ pub(crate) fn lookup_sig_info(id: u64) -> Option<SigInfo> {
     guard.as_ref()?.get(&id).cloned()
 }
 
+/// Cache of the fully materialized `Signature` Value already built for a
+/// given callable, keyed by `Interpreter::sub_signature_cache_key` — see
+/// there for why that key (not `SubData::id`) is the stable one. Without this,
+/// every `.signature` read rebuilt a brand new `Signature` instance (and
+/// therefore a brand new `Parameter` array) from scratch, so
+/// `&f.signature.params[0]` had no stable identity:
+/// `&f.signature.params[0] === &f.signature.params[0]` was False, and a mixin
+/// applied to one materialization vanished on the next read
+/// (`todo/tickets/parameter-objects-have-no-stable-identity.md`). Caching the
+/// whole `Signature` Value (not just its `params` array) matches raku, where
+/// `&f.signature === &f.signature` also holds.
+static SUB_SIGNATURE_CACHE: Mutex<Option<HashMap<String, Value>>> = Mutex::new(None);
+
+/// Look up the cached `Signature` Value for a callable identified by `key`.
+pub(crate) fn cached_sub_signature(key: &str) -> Option<Value> {
+    let guard = SUB_SIGNATURE_CACHE.lock().unwrap();
+    guard.as_ref()?.get(key).cloned()
+}
+
+/// Cache `signature` as the `Signature` Value for the callable identified by
+/// `key`, so later reads return the same instance.
+pub(crate) fn cache_sub_signature(key: String, signature: Value) {
+    let mut guard = SUB_SIGNATURE_CACHE.lock().unwrap();
+    let map = guard.get_or_insert_with(HashMap::new);
+    map.insert(key, signature);
+}
+
 /// The mixin type a custom parameter trait leaves on the `Parameter` it is
 /// handed, keyed by trait name.
 ///

@@ -1,7 +1,10 @@
 //! Signature/candidate introspection: named-param keys, call-arg matching,
 //! candidate routine lookup, and arity/count Value builders.
 use super::*;
-use crate::value::signature::{make_signature_value_with_owner, param_defs_to_sig_info};
+use crate::value::signature::{
+    cache_sub_signature, cached_sub_signature, make_signature_value_with_owner,
+    param_defs_to_sig_info,
+};
 
 impl Interpreter {
     pub(super) fn collect_named_param_keys(
@@ -162,7 +165,50 @@ impl Interpreter {
             .collect()
     }
 
+    /// The stable identity `sub_signature_value` caches a materialized
+    /// `Signature` Value under. `SubData::id` is NOT stable for this purpose:
+    /// a bareword lookup like `&f` (or `.candidates`, or a method MRO lookup)
+    /// builds a brand new `SubData` -- a fresh id -- on every evaluation, even
+    /// for the same declared sub/candidate (verified via `.WHERE` returning a
+    /// different address each time). What IS stable across those rebuilds is
+    /// the `Arc<CompiledFunction>` / `Arc<CompiledCode>` such a rebuild clones
+    /// from the registry's own `FunctionDef` (an `Arc::clone`, so the pointee
+    /// is the exact same allocation) -- and, crucially, that Arc is per
+    /// DECLARATION, so it also distinguishes between different `multi`
+    /// candidates that happen to share a name (a name-only key does not: it
+    /// collapsed every candidate's signature onto whichever was materialized
+    /// first). Only a callable with neither (e.g. an `.assuming()` wrapper,
+    /// which intentionally builds a fresh identity per call) falls back to
+    /// its own `id`, which IS stable for repeated reads of that one wrapper
+    /// value.
+    fn sub_signature_cache_key(data: &crate::value::SubData) -> String {
+        if let Some(cr) = &data.compiled_routine {
+            format!("routine:{:p}", std::sync::Arc::as_ptr(cr))
+        } else if let Some(cc) = &data.compiled_code {
+            format!("code:{:p}", std::sync::Arc::as_ptr(cc))
+        } else {
+            format!("id:{}", data.id)
+        }
+    }
+
     pub(super) fn sub_signature_value(&self, data: &crate::value::SubData) -> Value {
+        // `.assuming(...)` clones the primed sub's `SubData` verbatim --
+        // `id`, `compiled_routine`, `compiled_code` all unchanged -- and only
+        // mutates `assumed_positional`/`assumed_named` on the clone (see the
+        // `"assuming"` arm above). So two differently-primed wrappers of the
+        // SAME declaration share every field `sub_signature_cache_key` reads,
+        // and would collide on one cache entry despite having different
+        // effective signatures. Bypass the cache for a primed sub entirely;
+        // it is a one-off wrapper value, not something repeated `.signature`
+        // reads on the same identity are expected to return a stable object
+        // for.
+        let is_primed = !data.assumed_positional.is_empty() || !data.assumed_named.is_empty();
+        let cache_key = (!is_primed).then(|| Self::sub_signature_cache_key(data));
+        if let Some(key) = &cache_key
+            && let Some(cached) = cached_sub_signature(key)
+        {
+            return cached;
+        }
         let param_defs =
             Self::assumed_signature_param_defs(data, &data.assumed_positional, &data.assumed_named)
                 .unwrap_or_else(|| {
@@ -294,7 +340,7 @@ impl Interpreter {
         // Must match the key format used by collect_doc_comments:
         // - Subs use "&name" prefix
         // - Methods use "ClassName::name" format
-        let sub_key = if !data.name.is_empty() {
+        let owner_key = if !data.name.is_empty() {
             let name = data.name.resolve();
             // Check if the sub is a method (has a non-GLOBAL package context
             // and uses Class::method format in doc comments)
@@ -307,7 +353,11 @@ impl Interpreter {
         } else {
             None
         };
-        make_signature_value_with_owner(info, sub_key, Some(self))
+        let signature = make_signature_value_with_owner(info, owner_key, Some(self));
+        if let Some(key) = cache_key {
+            cache_sub_signature(key, signature.clone());
+        }
+        signature
     }
 
     pub(super) fn signature_required_positional_count(
