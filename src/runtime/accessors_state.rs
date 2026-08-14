@@ -540,6 +540,10 @@ impl Interpreter {
         class_name: &str,
         method_name: &str,
     ) -> bool {
+        // ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+        // `dispatch_multi_candidate` is generation-blind — it relied entirely
+        // on the manual clear blocks, not on `method_generation`.
+        self.refresh_method_caches_for_generation();
         let class_sym = crate::symbol::Symbol::intern(class_name);
         let method_sym = crate::symbol::Symbol::intern(method_name);
         if let Some(&c) = self.dispatch_multi_candidate.get(&(class_sym, method_sym)) {
