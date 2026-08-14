@@ -208,6 +208,14 @@ impl Interpreter {
         method: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        // ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+        // `resolve_private_method_any_owner`'s `private_zeroarg_method_cache`
+        // read is generation-blind — it relied entirely on the manual clear
+        // blocks (`clear_private_zeroarg_method_cache`'s call sites), not on
+        // `method_generation`. This is the one entry point both private-method
+        // resolvers share, so refreshing here covers the cache before it is
+        // ever consulted.
+        self.refresh_method_caches_for_generation();
         let private_rest = method.strip_prefix('!')?;
         let split = private_rest.split_once("::");
         let owner_class = split.map(|(o, _)| o);
