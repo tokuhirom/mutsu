@@ -261,28 +261,6 @@ impl Interpreter {
         Ok(Value::truth(ok))
     }
 
-    pub(crate) fn test_fn_is_deeply_junction(
-        &mut self,
-        args: &[Value],
-    ) -> Result<Value, RuntimeError> {
-        let left = Self::positional_value(args, 0);
-        let right = Self::positional_value(args, 1);
-        let desc = Self::positional_string(args, 2);
-        let todo = Self::named_bool(args, "todo");
-        let ok = match (left, right) {
-            (Some(left), Some(right)) => match (
-                Self::junction_guts_value(left),
-                Self::junction_guts_value(right),
-            ) {
-                (Some(lg), Some(rg)) => lg.eqv(&rg),
-                _ => false,
-            },
-            _ => false,
-        };
-        self.test_ok(ok, &desc, todo)?;
-        Ok(Value::truth(ok))
-    }
-
     /// Extract (left, right, desc) for is-deeply from raw args.
     /// The first two args are always the values being compared (even if they are Pairs).
     /// Only known internal named pairs (__mutsu_test_callsite_line, todo) are skipped.
@@ -303,20 +281,6 @@ impl Interpreter {
             .map(|v| v.to_string_value())
             .unwrap_or_default();
         (left, right, desc)
-    }
-
-    /// Convert Seq to List (Array) for is-deeply comparison, per Raku spec.
-    /// Drain a lazy IO words/lines iterator into an eager `Seq` so it compares
-    /// by contents (matching what `words($fh)`/`lines($fh)` conceptually yield).
-    /// Non-lazy values pass through unchanged.
-    fn force_lazy_io_to_seq(&mut self, v: Value) -> Value {
-        if let ValueView::LazyIoLines { handle, words, .. } = v.view()
-            && let Ok(forced) = self.force_lazy_io_lines(handle, words)
-        {
-            let items = crate::runtime::utils::value_to_list(&forced);
-            return Value::seq(items);
-        }
-        v
     }
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
@@ -355,44 +319,6 @@ impl Interpreter {
             }
             _ => v.clone(),
         }
-    }
-
-    pub(crate) fn junction_kind_name(kind: &JunctionKind) -> &'static str {
-        match kind {
-            JunctionKind::Any => "any",
-            JunctionKind::All => "all",
-            JunctionKind::One => "one",
-            JunctionKind::None => "none",
-        }
-    }
-
-    pub(crate) fn junction_sort_key(v: &Value) -> String {
-        match v.view() {
-            ValueView::Array(items, _) => {
-                let parts: Vec<String> = items.iter().map(Self::junction_sort_key).collect();
-                format!("[{}]", parts.join(","))
-            }
-            ValueView::Junction { .. } => {
-                Self::junction_sort_key(&Self::junction_guts_value(v).unwrap_or(Value::NIL))
-            }
-            _ => v.to_string_value(),
-        }
-    }
-
-    pub(crate) fn junction_guts_value(v: &Value) -> Option<Value> {
-        let ValueView::Junction { kind, values } = v.view() else {
-            return None;
-        };
-        // Normalize recursively so nested junction structures compare order-independently.
-        let mut guts: Vec<Value> = values
-            .iter()
-            .map(|value| Self::junction_guts_value(value).unwrap_or_else(|| value.clone()))
-            .collect();
-        guts.sort_by_key(Self::junction_sort_key);
-        Some(Value::array(vec![
-            Value::str(Self::junction_kind_name(&kind).to_string()),
-            Value::array(guts),
-        ]))
     }
 
     /// Perform `eq` (string) comparison that threads through Junctions,
@@ -552,29 +478,6 @@ impl Interpreter {
             },
         };
         self.test_ok(ok, &desc, todo)?;
-        Ok(Value::truth(ok))
-    }
-
-    pub(crate) fn test_fn_is_eqv(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let got = Self::positional_value(args, 0)
-            .cloned()
-            .unwrap_or(Value::NIL);
-        let got = self.force_lazy_io_to_seq(got);
-        let expected = Self::positional_value(args, 1)
-            .cloned()
-            .unwrap_or(Value::NIL);
-        let expected = self.force_lazy_io_to_seq(expected);
-        let desc = Self::positional_string(args, 2);
-        let ok = got.eqv(&expected);
-        self.test_ok(ok, &desc, false)?;
-        if !ok {
-            let got_raku = self.value_raku_repr(&got);
-            let expected_raku = self.value_raku_repr(&expected);
-            self.emit_output(&format!(
-                "# expected: {}\n#      got: {}\n",
-                expected_raku, got_raku
-            ));
-        }
         Ok(Value::truth(ok))
     }
 }

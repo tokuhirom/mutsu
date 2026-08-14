@@ -454,51 +454,6 @@ impl Interpreter {
         Ok(Value::truth(did_warn && matched))
     }
 
-    pub(crate) fn test_fn_doesnt_warn(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let program_val = Self::positional_value_required(args, 0, "doesn't-warn expects code")?;
-        let desc = Self::positional_string(args, 1);
-        match program_val.view() {
-            ValueView::Str(s) => {
-                let program = s.to_string();
-                let mut nested = Interpreter::new();
-                if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
-                    nested.set_pid(pid.saturating_add(1));
-                }
-                nested.set_program_path("<doesn't-warn>");
-                let _ = nested.run(&program);
-                let warn_message = nested.warn_output.clone();
-                let did_warn = !warn_message.is_empty();
-                if did_warn {
-                    let diag_msg = format!(
-                        "code must not warn but it produced a warning: {}",
-                        warn_message.trim_end()
-                    );
-                    self.emit_output(&format!("# {}\n", diag_msg));
-                }
-                self.test_ok(!did_warn, &desc, false)?;
-                Ok(Value::truth(!did_warn))
-            }
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
-                let saved_warn = std::mem::take(&mut self.warn_output);
-                let _ = self.call_sub_value(program_val.clone(), vec![], false);
-                let warn_message = std::mem::replace(&mut self.warn_output, saved_warn);
-                let did_warn = !warn_message.is_empty();
-                if did_warn {
-                    let diag_msg = format!(
-                        "code must not warn but it produced a warning: {}",
-                        warn_message.trim_end()
-                    );
-                    self.emit_output(&format!("# {}\n", diag_msg));
-                }
-                self.test_ok(!did_warn, &desc, false)?;
-                Ok(Value::truth(!did_warn))
-            }
-            _ => Err(RuntimeError::new(
-                "doesn't-warn expects string code or callable",
-            )),
-        }
-    }
-
     pub(crate) fn test_fn_use_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let module = Self::positional_string(args, 0);
         let todo = Self::named_bool(args, "todo");
