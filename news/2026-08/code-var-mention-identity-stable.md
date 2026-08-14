@@ -55,14 +55,32 @@ This gives exactly the right lifetime for free, with no new cache/side-table nee
 - A def with no visible registration record (synthesized, or looked up before its `RegisterSub`
   ran) falls back to the previous fresh-mint behavior, unchanged.
 
-Because every other subsystem that keys off `SubData::id` directly (`wrap_chains`,
-`closure_captured_state`, `protect_block_cache`, `nested_react_callbacks`,
-`eval_block_value_cached`) now sees a `data.id` with the correct scope baked in, the wrap-chain
-bypass above is also fixed as a natural consequence — no changes were needed to any of those
-consumers.
+## One consumer DID need a guard: `closure_captured_state`
 
-Pinned by the new `t/code-var-mention-identity-stable.t` (8 assertions, cross-checked against real
-`raku`, covering `.WHICH`/`.WHERE` stability, the wrap-through-a-different-mention case, and the
-nested-per-invocation-identity case). `make test` and the roast `wrap.t`/`state.t` suites (release
-build, `MUTSU_FUDGE=1`) stay green, including under `MUTSU_GC=on MUTSU_GC_EVERY_CANDIDATE=1024
-MUTSU_GC_VERIFY=1`.
+Every other subsystem keying off `SubData::id` directly (`wrap_chains`, `protect_block_cache`,
+`nested_react_callbacks`, `eval_block_value_cached`) inherits the corrected scope for free — no
+changes needed. `closure_captured_state` is the one exception, caught by CI's `test`/`gc-stress`/
+`jit-stress` jobs on the first push: `call_compiled_closure_with_topic` persists a free variable a
+closure body *writes* into `closure_captured_state`, keyed by `data.id`, and replays that persisted
+value on the next call sharing that id — correct for a genuine per-clone closure factory (two
+closures from the same factory keep independent state), but wrong once `data.id` is stabilized
+across repeated bareword mentions of the SAME routine: a captured variable reassigned from
+*outside* the routine between two mentions (`$runs = 0;` in `roast/S03-metaops/hyper.t`'s `sub
+elems is nodal { $runs⚛++; ... }`, dispatched via `».&elems`) was silently ignored by the next
+call, which replayed the stale persisted value instead of the live (just-reset) one — a real,
+deterministic regression (`hyper.t` test 408, call count `2, 4, 6, 8` instead of `2, 2, 2, 2`).
+
+The fix restricts stabilization to routines whose compiled body writes NO free variable
+(`CompiledCode::free_var_writes` and `free_var_container_writes` both empty; a def with no
+`compiled_routine` at all conservatively skips stabilization too). A routine that only *reads* a
+captured free var is unaffected by `closure_captured_state` (it is gated on writes) and still gets
+a stable identity; a routine that writes one keeps today's fresh-mint-per-mention behavior, so the
+`.wrap()`-through-a-different-mention fix above only applies to non-capturing-write routines (the
+common case, including the ticket's own repro).
+
+Pinned by the new `t/code-var-mention-identity-stable.t` (11 assertions, cross-checked against real
+`raku`), including two that reproduce the `hyper.t` shape directly (a `».&`-dispatched routine that
+writes a captured `atomicint`, reset between two dispatch rounds) to guard against this exact
+regression recurring. `make test`, the roast `hyper.t`/`wrap.t`/`state.t` suites (release build,
+`MUTSU_FUDGE=1`), and `cargo clippy`/`fmt` all stay green, including under `MUTSU_GC=on
+MUTSU_GC_EVERY_CANDIDATE=1024 MUTSU_GC_VERIFY=1`.

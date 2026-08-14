@@ -173,6 +173,21 @@ impl Interpreter {
     /// visible registration record (a synthesized/EVAL-installed def, or one
     /// looked up before its `RegisterSub` ran) falls back to today's
     /// fresh-mint behavior, unchanged.
+    ///
+    /// Stabilization is further restricted to routines whose compiled body
+    /// writes NO free variable (`CompiledCode::free_var_writes`/
+    /// `free_var_container_writes` both empty). `call_compiled_closure_with_topic`
+    /// persists a mutated free var into `Interpreter::closure_captured_state`,
+    /// keyed by `data.id`, and replays it on the NEXT call sharing that id
+    /// instead of the live value from the (possibly since-reassigned) outer
+    /// binding — correct for a genuine per-clone closure factory, but wrong
+    /// here: stabilizing the id let that persisted state leak ACROSS repeated
+    /// mentions of the very sub the ticket's fix was stabilizing, so a
+    /// reassignment of the captured variable between two `&f` mentions (e.g.
+    /// `$runs = 0;` between two `sub elems is nodal { $runs⚛++; ... }` uses in
+    /// `roast/S03-metaops/hyper.t`) was silently ignored by the next call.
+    /// A def with no `compiled_routine` at all (so the check cannot be made)
+    /// conservatively skips stabilization too.
     pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
         let mut captured_env = self.env.clone();
         if let Some(ref return_type) = def.return_type {
@@ -188,7 +203,14 @@ impl Interpreter {
             );
         }
         let empty_sig = def.empty_sig;
-        let stable_id = self.registration_clone_id(&def.package.resolve(), &def.name.resolve());
+        let writes_free_vars = def.compiled.as_ref().is_none_or(|cf| {
+            !cf.code.free_var_writes.is_empty() || !cf.code.free_var_container_writes.is_empty()
+        });
+        let stable_id = if writes_free_vars {
+            None
+        } else {
+            self.registration_clone_id(&def.package.resolve(), &def.name.resolve())
+        };
         // The routine's own bytecode rides along, so calling this code object runs
         // compiled code instead of re-compiling the AST body copied below
         // (ADR-0019 C6c).

@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 8;
+plan 11;
 
 # Repeated bareword mentions of a top-level sub must resolve to the SAME
 # object identity, matching raku (todo/tickets/code-var-mention-remakes-the-sub.md).
@@ -14,13 +14,17 @@ is &f.WHERE, &f.WHERE, 'repeated &f mentions share a stable .WHERE';
 # made by bareword name. Before the identity fix, `&f()` (a fresh mention,
 # invoked directly as a value) bypassed an active wrap chain even though
 # `f()` (a named call) saw it, because the wrap chain was keyed on the
-# mention's own (unstable) SubData id.
-my @seen;
-sub g() { @seen.push('original'); 'orig-result' }
+# mention's own (unstable) SubData id. `g` itself must write no free
+# variable (identity stabilization is gated on that -- see below), so the
+# wrapper closure (an anonymous sub, unaffected by that gate) records the
+# observation instead.
+sub g() { 'original' }
 my &h = &g;
+my @seen;
 &h.wrap(sub () { @seen.push('wrapped'); callsame });
-&g();
-is-deeply @seen, ['wrapped', 'original'],
+my $g-result = &g();
+is $g-result, 'original', 'wrapped call still returns the original result';
+is-deeply @seen, ['wrapped'],
     'a wrap chain installed via one &g mention fires for a call through another mention';
 
 # A nested named sub re-materializes fresh per invocation of its enclosing
@@ -56,3 +60,20 @@ k();
 k();
 my $id2 = &k.WHICH;
 is $id1, $id2, 'calling a sub does not perturb its own &-mention identity';
+
+# Identity stabilization must NOT apply to a routine whose body writes a
+# captured free variable (roast/S03-metaops/hyper.t's "sub elems is nodal"
+# pattern, hit via hyper dispatch on `&elems`): stabilizing such a routine's
+# id let `Interpreter::closure_captured_state` (keyed by id) replay a stale
+# persisted value on the NEXT `».&`-dispatched call instead of the live
+# value, so resetting the captured var externally between two mentions was
+# silently ignored -- a real regression this test pins.
+{
+    my atomicint $runs = 0;
+    sub counter is nodal { $runs⚛++; $^ignored }
+    (1, 2)».&counter;
+    is $runs, 2, 'first hyper dispatch through &counter calls it the right number of times';
+    $runs = 0;
+    (1, 2)».&counter;
+    is $runs, 2, 'resetting the captured var between dispatches is observed by the next mention';
+}
