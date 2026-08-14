@@ -113,15 +113,7 @@ impl Interpreter {
         // invalidated, or a cached resolution from the old class would be reused for
         // the new one. (The multi-resolution cache made this observable:
         // S12-methods/multi.t reuses `my class A`/`B` with multi submethods.)
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
             name_chunk,
