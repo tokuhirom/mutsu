@@ -134,6 +134,14 @@ impl Interpreter {
             "isge_i" => Ok(bool_int(iarg(args, 0) >= iarg(args, 1))),
             "not_i" => Ok(bool_int(iarg(args, 0) == 0)),
 
+            // -- native num arithmetic --
+            "add_n" => Ok(Value::num(narg(args, 0) + narg(args, 1))),
+            "sub_n" => Ok(Value::num(narg(args, 0) - narg(args, 1))),
+            "mul_n" => Ok(Value::num(narg(args, 0) * narg(args, 1))),
+            "div_n" => Ok(Value::num(narg(args, 0) / narg(args, 1))),
+            "neg_n" => Ok(Value::num(-narg(args, 0))),
+            "abs_n" => Ok(Value::num(narg(args, 0).abs())),
+
             // -- native num comparisons --
             "iseq_n" => Ok(bool_int(narg(args, 0) == narg(args, 1))),
             "isne_n" => Ok(bool_int(narg(args, 0) != narg(args, 1))),

@@ -148,11 +148,107 @@ the same class of gap as
 [todo/deep/element-itemization-lost-in-scalar-binding.md](../deep/element-itemization-lost-in-scalar-binding.md),
 tracked there.
 
-## Un-triaged `test_die` / `test_fail`
+## Triaged (round 2, 2026-08-14)
 
-`Native::Overflow`, `App::SudokuHelper`, `P5tie`,
-`Mathematica::Serializer::Encoder`, `Hash::Restricted`, `Crypt::RC4`,
-`Random::Choice` (die).
+### ~~`Random::Choice`~~ — FIXED
+
+`nqp::add_n`/`sub_n`/`mul_n`/`div_n`/`neg_n`/`abs_n` (native `num` arithmetic)
+were entirely unimplemented ("Unsupported nqp:: op") — only the `_i` (native
+int) family and `_n` comparisons existed in `src/runtime/nqp_ops.rs`. Added
+generally; pinned by `t/nqp-native-num-arith.t`. Full suite now 6/6.
+
+### ~~`App::SudokuHelper`~~ — not reproducible on current main
+
+Both `t/basic.t` (9/9) and `t/combo-multi.t` (3/3) pass cleanly already —
+fixed as a side effect of unrelated work between the original sweep and now.
+
+### ~~`Mathematica::Serializer::Encoder`~~ — FIXED
+
+`Nil ~~ UInt` wrongly returned `True` (`type_matching.rs`'s `UInt` branch had
+a stray `ValueView::Nil => true` arm), so `given $obj { when UInt {...} }`
+misclassified a `Nil` element and the encoder's `Pair["condo", Nil]` lost its
+`NULL` output. The arm was originally added to let `$u = Nil` reset a
+`UInt`-typed variable to its default (`d6fe2e3b7`, #851) — but that path is
+already handled generically by a `!value.is_nil()` guard *before*
+`type_matches_value` is even called (`vm_misc_typecheck.rs`), so the arm was
+dead for its original purpose and only caused this smart-match regression.
+Removed; `roast/S32-num/int.t` (its original motivating test, 165/165) still
+passes. Pinned by `t/nil-uint-smartmatch.t`. Full suite now 3/3.
+
+### `Crypt::RC4` — two bugs, one fixed, one deep
+
+1. **FIXED**: `Blob() :$key!`-style coercion of an Array (`submethod
+   TWEAK(Blob() :$key!)` called with a `uint8` array argument) raised
+   "Impossible coercion from 'Array' into 'Blob'" — the coercion fallback in
+   `try_coerce_value_with_method` only tries a target's `.new(positional)`
+   when the target is a *user*-registered class (`registry().classes`);
+   `Blob`/`Buf` are native types with no such registry entry, so the fallback
+   never reached them even though `Blob.new(@array)` works fine when called
+   directly. Fixed generally by also trying the native buf constructor for
+   any `is_native_buf_constructible` target.
+2. **Deep, not fixed**: after the coercion fix, the suite still dies with
+   "Cannot modify an immutable Range" inside `setup()`, called from `TWEAK`
+   via `@!state := setup($key)`. Root-caused to a VM-level "mark context"
+   flag (`self.bind_context`, set by `MarkBindContext`) leaking across a
+   *live function call* boundary — `setup()`'s own `my uint8 @state =
+   0..255;` wrongly inherits the caller's pending bind-context and skips
+   Range-to-array materialization. Full analysis, minimal repro, and why it
+   needs auditing every compiled-function call boundary (not a local patch):
+   [todo/deep/mark-context-flags-leak-across-live-call-boundary.md](../deep/mark-context-flags-leak-across-live-call-boundary.md).
+
+   A **related but distinct** compile-time version of the same flag-leak
+   class (the compiler's `bind_vardecl`, not the VM's `bind_context`) was
+   found and fixed in the same investigation: `my @x := do { ...; my
+   uint8 @y = 0..N; ...; @y }` leaked bind-context into the *nested* `@y`
+   declaration. Fixed in `src/compiler/stmt.rs` (snapshot-and-clear
+   `bind_vardecl` on entry to `Stmt::VarDecl`); pinned by
+   `t/bind-do-block-nested-vardecl-leak.t`.
+
+### `Hash::Restricted` — deep, not fixed
+
+`trait_mod:<does>` is not a callable sub, and there is no real `Variable` MOP
+object with a `.var` accessor to apply it to — `lib/Hash/Restricted.rakumod`
+dynamically mixes a role into a *declared variable's* type at `my %h is
+restricted = ...` time via `trait_mod:<is>(Variable:D \v, ...) {
+trait_mod:<does>(v, SomeRole); v.var.WHAT.^set_name(...) }`. Genuine MOP work
+per BATTERIES.md rung-2 (not a native stopgap). Full analysis:
+[todo/deep/trait-mod-does-not-callable-and-no-variable-mop.md](../deep/trait-mod-does-not-callable-and-no-variable-mop.md).
+
+### `P5tie` — deep, not fixed; two independent bugs
+
+`scalar.rakutest`/`hash.rakutest` die with `No such method 'BIND-KEY' for
+invocant of type 'Stash'` — P5tie's Perl-5-`tie()` emulation needs a real
+container-binding protocol mutsu doesn't implement at all.
+`array.rakutest` fails separately, at *parse* time, with
+`X::Syntax::NoSelf` — not yet bisected, likely unrelated to the `tie`
+gap. Full analysis:
+[todo/deep/p5tie-container-protocol-and-array-parse-bug.md](../deep/p5tie-container-protocol-and-array-parse-bug.md).
+
+### `Native::Overflow` — deep, not fixed
+
+Plans 30 tests, runs 0: every assertion lives inside a `CATCH` that never
+fires because the expected exception never gets thrown. Root cause: the dist
+lexically shadows native type names (`int8`, `uint16`, ...) with `subset ...
+where <range>` via its `EXPORT` sub — a real Raku feature that works fine in
+mutsu for a **direct** assignment (`$a = 1000;` IS correctly type-checked).
+The dist's actual test writes through a **sigilless bind alias** instead
+(`my \x := $a; ...; x = $value;`, produced by a `for LIST -> \x, $value {
+}` loop over a flattened variable/value list) — and assigning through such
+an alias skips the target's type constraint entirely, general and
+reproducible with no native-type involvement at all
+(`my SmallInt $a = 5; my \x := $a; x = 1000;` — raku dies, mutsu silently
+succeeds). Root cause and why a full fix needs the type constraint to live on
+the container rather than a compile-time name-keyed map:
+[todo/deep/sigilless-alias-assignment-skips-type-constraint.md](../deep/sigilless-alias-assignment-skips-type-constraint.md).
+
+## Status
+
+All dists from the original sweep's `test_die` bucket are now triaged (see
+"Triaged" sections above): `Random::Choice` and `Mathematica::Serializer::Encoder`
+fully fixed; `App::SudokuHelper` not reproducible; `Crypt::RC4` partially
+fixed (one bug fixed, one filed as deep); `Hash::Restricted`, `P5tie`, and
+`Native::Overflow` each filed as deep findings needing a design pass. None
+remain un-triaged.
 
 ## How to work this list
 
