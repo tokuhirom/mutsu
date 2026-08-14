@@ -702,21 +702,21 @@ impl Compiler {
     /// The lexicals a regex literal must close over, or `None` when it is an
     /// ordinary literal that can load as a plain constant.
     ///
-    /// Only *code-bearing* patterns qualify: without an embedded `{ … }` /
-    /// `<?{ … }>` block or a `:my`/`:let` initializer there is no code whose
-    /// free variables could be stranded, and the existing match-time
-    /// interpolation path already resolves a bare `/$x/`. Names are keyed the
-    /// way `locals`/`env` key them, and paired with the creating frame's local
-    /// slot when there is one.
+    /// Any pattern with at least one resolvable interpolated name qualifies —
+    /// plain interpolation (`/$x/`, `/<$pat>/`) closes over its defining
+    /// scope's *binding* exactly like a code-bearing pattern (`{ … }`,
+    /// `<?{ … }>`, `:my`/`:let`): a stored regex re-parses its pattern on
+    /// every match, so the match-site env is the wrong place to resolve a
+    /// name once the regex has escaped the frame that built it (see
+    /// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`, bug
+    /// 1). Names are keyed the way `locals`/`env` key them, and paired with
+    /// the creating frame's local slot when there is one.
     pub(super) fn regex_literal_closure_captures(&self, v: &Value) -> Option<Vec<(Symbol, u32)>> {
         let pattern = match v.view() {
             ValueView::Regex(p) => p.as_str().to_string(),
             ValueView::RegexWithAdverbs(a) => a.pattern.as_str().to_string(),
             _ => return None,
         };
-        if !pattern.contains('{') && !pattern.contains(":my ") && !pattern.contains(":let ") {
-            return None;
-        }
         let mut captures: Vec<(Symbol, u32)> = Vec::new();
         for name in crate::opcode::CompiledCode::regex_interpolated_var_names(&pattern) {
             // `$_`, `$/` and the numeric captures are match state, never a

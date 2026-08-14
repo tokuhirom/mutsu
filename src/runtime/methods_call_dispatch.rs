@@ -3277,7 +3277,12 @@ impl Interpreter {
             && !matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Supply" || class_name == "IO::Handle" || class_name == "IO::Pipe" || class_name == "IO::CatHandle")
             && !matches!(target.view(), ValueView::Package(name) if name.resolve().starts_with("IO::Spec"))
         {
-            return self.handle_split_method(target, args);
+            // The splitter argument may be a stored regex closed over its
+            // defining scope; install it around the split the same way `~~`
+            // and `.match`/`.subst` do.
+            let splitter = args.first().cloned();
+            return self
+                .with_regex_closure_scope(splitter, |me| me.handle_split_method(target, args));
         }
 
         // .of on Array/Hash

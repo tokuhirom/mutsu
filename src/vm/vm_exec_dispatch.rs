@@ -183,7 +183,11 @@ impl Interpreter {
                 const_idx,
                 captures,
             } => {
-                let v = self.capture_regex_closure(&code.constants[*const_idx as usize], captures);
+                let v = self.capture_regex_closure(
+                    code,
+                    &code.constants[*const_idx as usize],
+                    captures,
+                );
                 self.stack.push(v);
                 *ip += 1;
             }

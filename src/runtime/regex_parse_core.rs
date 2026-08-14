@@ -2581,9 +2581,20 @@ impl Interpreter {
                                     // assertion; the runtime `Match` path below resolves it.
                                     RegexAtom::Named(name.clone())
                                 } else if let Some(var_name) = trimmed.strip_prefix('$') {
-                                    // <$var> — look up scalar variable and compile as regex
-                                    let value = match self.env.get(var_name).cloned() {
-                                        Some(v) => v,
+                                    // <$var> — look up scalar variable and compile as regex.
+                                    // The `${name}` fallback and `.into_deref()` mirror the
+                                    // bare-`$name` interpolation path above: a defining-scope
+                                    // capture (`LoadRegexClosure`) may have boxed a mutated
+                                    // scalar into a shared `ContainerRef` cell (bug 1 of
+                                    // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`),
+                                    // which must be dereferenced before it is stringified.
+                                    let value = match self
+                                        .env
+                                        .get(var_name)
+                                        .cloned()
+                                        .or_else(|| self.env.get(&format!("${var_name}")).cloned())
+                                    {
+                                        Some(v) => v.into_deref(),
                                         None => {
                                             // Variable not declared — X::Undeclared
                                             let symbol = format!("${var_name}");
