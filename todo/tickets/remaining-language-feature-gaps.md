@@ -4,11 +4,11 @@ Extracted from PLAN.md §4 (2026-08-02). These are real spec gaps, but none of t
 file to passing on its own — which is why they never got picked up. Grouped here so they stay
 visible without occupying the plan outline.
 
-## 1. Multi-line feeds
+**Items 1 and 3 verified resolved 2026-08-14** (see below); only item 2 remains open.
 
-A feed spanning lines with a leading `==>` does not parse. The blocker is the
-`!ws_before.contains('\n')` guard in `parse_list_infix_loop`. Single-line feeds and `ff` / `fff` are
-done.
+## 1. Multi-line feeds — resolved, and the original repro was invalid feed syntax to begin with
+
+The repro this item shipped with,
 
 ```raku
 my @r = (1, 2, 3)
@@ -16,25 +16,63 @@ my @r = (1, 2, 3)
     ==> sort();
 ```
 
-`==>>` / `<<==` and `~<` / `~>` are unimplemented/unspecified **in Rakudo itself**, so they cannot be
-started (no oracle).
+is not actually valid feed usage in raku: `=` binds tighter than `==>`, so `my @r = (1, 2, 3)` is a
+complete assignment on its own, and the `==> map(...) ==> sort()` chain operates on — and then
+discards — the assignment expression's value. Verified against real `raku`: this exact snippet prints
+`[1 2 3]` (i.e. the feed never touches `@r`) in **both** `raku` and mutsu, single-line or multi-line —
+so there was never a discrepancy here, mutsu-vs-raku, for this shape.
 
-## 2. Typed-exception gaps needing compile-time scope analysis
+The correct feed form puts the target at the END of the chain (`SOURCE ==> STEP ==> ... ==> my
+@target;`), and that form works correctly across multiple lines in mutsu today:
+
+```raku
+(1, 2, 3)
+    ==> map({ $_ * 2 })
+    ==> sort()
+    ==> my @r;
+say @r;   # both raku and mutsu: [2 4 6]
+```
+
+Whether the `!ws_before.contains('\n')` guard this item originally named ever mattered for a *correct*
+multi-line feed is unclear from this round — the working case above didn't need bisecting once a valid
+repro was used. Closing as resolved; re-open with a genuine failing repro if one turns up.
+
+`==>>` / `<<==` and `~<` / `~>` are still unimplemented/unspecified **in Rakudo itself**, so they still
+cannot be started (no oracle) — unchanged from the original filing.
+
+## 2. Typed-exception gaps needing compile-time scope analysis — still open
 
 - strict-mode undeclared-variable detection
 - cross-`EVAL` detection of class redeclaration
 - `X::Redeclaration::Outer`
 
 All three need compile-time scope analysis that mutsu does not currently perform; each is
-non-trivial on its own.
+non-trivial on its own. Re-verified the first bullet 2026-08-14:
 
-## 3. `exits-ok($code, $exit, $reason)`
+```raku
+use strict; my $x = $y;
+```
 
-A `Test` routine documented in `raku-doc/doc/Type/Test.rakudoc` (effective with Rakudo 2026.01) that
-mutsu does not provide: passes if the code exits with the given exit code. Implement alongside the
-sibling `dies-ok` / `lives-ok` — in the **Test-module handler**, not as a core builtin (it is not in
-`perl-func.rakudoc`). No roast file uses it (not in upstream roast HEAD either), so this is
-Test-completeness / batteries polish.
+`raku`: compile-time `X::Undeclared` ("Variable '$y' is not declared..."). mutsu: exits 0, no error at
+all — `$y` is silently treated as an undeclared-but-tolerated read. Still open.
+
+## 3. `exits-ok($code, $exit, $reason)` — already implemented, ticket was stale
+
+Verified 2026-08-14: `Interpreter::test_fn_exits_ok`
+(`src/runtime/test_functions/eval_exception.rs`) already exists, is registered in
+`TEST_MODULE_EXPORTS` and `is_test_function_name`, and matches `raku`'s behavior exactly:
+
+```raku
+use Test;
+plan 3;
+exits-ok({ exit 4 }, 4, "exits with 4");   # ok
+exits-ok({ exit 5 }, 4, "wrong code");     # not ok, both raku and mutsu
+exits-ok({ 1 }, 4, "does not exit");       # not ok, both raku and mutsu
+```
+
+Not clear when this landed relative to the ticket's 2026-08-02 filing; no dedicated `news/` entry was
+found for it, so it may have shipped as an incidental part of a different Test-completeness slice.
+Nothing left to do here.
 
 ## 4. `:D` / `:U` DefiniteHow coercion
 
