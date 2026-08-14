@@ -107,6 +107,51 @@ The deeper fix (removing per-call env materialization) is the lexical-scope slot
 [docs/lexical-scope-slot-campaign.md](../../docs/lexical-scope-slot-campaign.md) and
 [needs-env-sync-blanket-removal.md](needs-env-sync-blanket-removal.md).
 
+## Re-measured 2026-08-14: rows A/B/C are now well-tuned; the real state.t cost lives elsewhere
+
+Re-ran the isolated repros above (release build, 1M iterations, taskset-pinned) after the
+intervening perf work (block-local-sub-call-path fix, closure-call setup slimming, mainline-lexical
+cell resolution, and others landed since 2026-08-03):
+
+| shape | mutsu | raku | ratio |
+| --- | --- | --- | --- |
+| A `$n = $n + 1` | ~170-220 ms | ~230-340 ms | mutsu **faster** |
+| B `$n = outer-fn($n)`, `outer-fn` declared at file scope | ~560-690 ms | ~230-340 ms | **~2×** |
+
+Row B went from **13.8×** (2026-08-03) to **~2×** — the general named-function-call path this
+ticket was originally opened for is no longer the dominant cost. `MUTSU_VM_STATS=1` on row B shows
+`jit: compiles=2 entries=1999802 bailouts=0` — the JIT enters the callee body every iteration; the
+remaining ~2× is the surrounding call-frame setup/teardown in
+`call_compiled_function_positional_light` (arity check, locals-pool take, scoped-overlay env child,
+readonly-frame, param bind), which is already the J4d-tuned target described above. No further easy
+win was found there in this pass; it is diminishing returns relative to what follows.
+
+**But `roast/S04-declarations/state.t` — the file that motivated the original 4.2×/13.8× numbers —
+is still ~8.3-8.5s vs raku's ~0.7s (~12×), because its actual hot loop is a DIFFERENT shape than
+rows A/B/C.** The file's slow subtest is:
+
+```raku
+lives-ok { sub foo () {$ = 42}; for ^2000000 { $ = foo } },
+    'Intensive use of state variable in inline-friendly sub does not hit problems';
+```
+
+`foo` is declared *inside* the `lives-ok { ... }` block, and the whole `for` loop runs *inside* that
+same block — i.e. inside a block VALUE invoked by a native Rust function
+(`test_fn_lives_ok` → `eval_test_callable_body` → `eval_block_value`), not inside ordinary compiled
+mainline/routine bytecode. That carrier path (`eval_block_value_inner`) recompiles the block's body
+from AST via the full compiler pipeline on every invocation (`compile_block_value_opts`), and
+`MUTSU_VM_STATS=1` on this exact shape shows `interpreter_fallbacks=50%` on the inner `foo()` calls
+and `jit: compiles=0 entries=0` — the JIT never even attempts this loop. **This is not the
+named-function-call-path problem rows A/B/C track — it is a separate mechanism.** Root-caused and
+written up in detail, including a first fix attempt that was measured to *regress* this exact file
+2.4x and was reverted, in
+[eval-block-value-recompiles-every-call.md](eval-block-value-recompiles-every-call.md). That document,
+not this one, is where the state.t-class slowdown should be attacked next.
+
+`S06-signature/named-parameters.t`'s `for ^1000000 { foo(:color($_)) }` shape was not re-isolated in
+this pass; row B's improvement plus the still-open named-args churn noted above make it worth a fresh
+measurement before assuming its 2.6× still holds.
+
 ## Measurement protocol
 
 Confirm with `perf` retired instructions (`instructions:u` + `taskset` core pinning — otherwise it
