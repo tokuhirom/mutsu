@@ -364,7 +364,7 @@ impl Interpreter {
         compiler.is_routine = !self.routine_stack.is_empty();
         compiler.lexically_in_routine = !self.routine_stack.is_empty();
         let scope = if let Some(frame) = self.routine_stack.last() {
-            compiler.enclosing_package = Some(frame.package.clone());
+            compiler.enclosing_package = Some(frame.package.resolve());
             format!("{}::&{}", frame.package, frame.name)
         } else {
             self.current_package()

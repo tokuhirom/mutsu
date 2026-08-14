@@ -714,7 +714,7 @@ impl Interpreter {
         // `$?PACKAGE`. `enclosing_package` only feeds `$?PACKAGE`/`$?MODULE`, so
         // this does not affect call/variable qualification.
         if let Some(frame) = self.routine_stack.last() {
-            compiler.enclosing_package = Some(frame.package.clone());
+            compiler.enclosing_package = Some(frame.package.resolve());
         }
         // Resolve distribution context: prefer the current one, then look up
         // by the current package name in case we're running a function body

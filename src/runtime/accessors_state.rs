@@ -182,9 +182,9 @@ impl Interpreter {
     /// so the walk keys on the NAME, not `is_block`.
     fn in_escaped_our_sub(&self) -> bool {
         for frame in self.routine_stack.iter().rev() {
-            if self.escaped_our_sub_names.contains(&frame.name)
-                || frame
-                    .name
+            let name = frame.name.as_str();
+            if self.escaped_our_sub_names.contains(name)
+                || name
                     .rsplit("::")
                     .next()
                     .is_some_and(|bare| self.escaped_our_sub_names.contains(bare))
@@ -193,7 +193,7 @@ impl Interpreter {
             }
             // A real (named) routine that is NOT an escaped our sub: its own
             // captures win — stop walking.
-            if !frame.name.is_empty() && !frame.name.starts_with('<') {
+            if !name.is_empty() && !name.starts_with('<') {
                 return false;
             }
         }

@@ -234,9 +234,9 @@ impl Interpreter {
                 }
             };
         self.routine_stack.push(RoutineFrame {
-            package: def.package.resolve(),
+            package: def.package,
             lexical_package: None,
-            name: def.name.resolve(),
+            name: def.name,
             line: None,
             file: None,
             is_method: false,

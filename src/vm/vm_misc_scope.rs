@@ -404,10 +404,10 @@ impl Interpreter {
         let routine_base = self.routine_stack_len();
         if is_bare_block {
             let call_line = self.current_source_line();
-            let call_file = self.current_source_file();
+            let call_file = self.current_source_file_sym();
             self.push_block_routine_with_location(
-                self.current_package(),
-                String::new(),
+                self.current_package_sym(),
+                Symbol::intern(""),
                 call_line,
                 call_file,
                 // An inlined bare block belongs to its enclosing routine.

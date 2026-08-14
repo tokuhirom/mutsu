@@ -377,9 +377,9 @@ impl Interpreter {
                 .is_ok()
             {
                 interp.routine_stack.push(super::super::RoutineFrame {
-                    package: def.package.resolve(),
+                    package: def.package,
                     lexical_package: None,
-                    name: def.name.resolve(),
+                    name: def.name,
                     line: None,
                     file: None,
                     is_method: false,

@@ -212,11 +212,8 @@ impl Interpreter {
                 }
                 return Err(RuntimeError::undeclared_symbols("Undeclared name"));
             }
-            self.stack.push(Value::routine_parts(
-                Symbol::intern(&frame.package),
-                Symbol::intern(&frame.name),
-                false,
-            ));
+            self.stack
+                .push(Value::routine_parts(frame.package, frame.name, false));
         } else {
             return Err(RuntimeError::undeclared_symbols("Undeclared name"));
         }

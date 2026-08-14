@@ -138,7 +138,7 @@ impl Interpreter {
             // Set enclosing_package to the clean package name so that
             // $?PACKAGE resolves to the package, not the mangled routine
             // scope (e.g., "PackageTest" instead of "PackageTest::&pkg").
-            compiler.enclosing_package = Some(frame.package.clone());
+            compiler.enclosing_package = Some(frame.package.resolve());
             format!("{}::&{}", frame.package, frame.name)
         } else {
             self.current_package()

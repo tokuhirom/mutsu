@@ -727,21 +727,22 @@ impl Interpreter {
                         loan_env!(self, set_pending_callsite_line(cl));
                     }
                 }
-                let result = match self.call_compiled_function_fast(cf, name_str, compiled_fns) {
-                    Ok(v) => v,
-                    Err(e) => {
-                        // Slice F (exception-escape coherence): an exceptional exit
-                        // (`die`/`fail`) still ran the callee's UNDO/LEAVE phasers,
-                        // which can mutate a captured-outer variable (e.g. `UNDO {
-                        // $ng ~= "U" }`). The body recorded those writes into
-                        // `pending_rw_writeback_sources`; drain them to this caller's
-                        // local slots *before* propagating the error, exactly as the
-                        // Ok path does, so the reverse `sync_locals_from_env` pull is
-                        // not required for coherence.
-                        self.apply_pending_rw_writeback(code);
-                        return Err(e);
-                    }
-                };
+                let result =
+                    match self.call_compiled_function_fast(cf, name_str, name_sym, compiled_fns) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            // Slice F (exception-escape coherence): an exceptional exit
+                            // (`die`/`fail`) still ran the callee's UNDO/LEAVE phasers,
+                            // which can mutate a captured-outer variable (e.g. `UNDO {
+                            // $ng ~= "U" }`). The body recorded those writes into
+                            // `pending_rw_writeback_sources`; drain them to this caller's
+                            // local slots *before* propagating the error, exactly as the
+                            // Ok path does, so the reverse `sync_locals_from_env` pull is
+                            // not required for coherence.
+                            self.apply_pending_rw_writeback(code);
+                            return Err(e);
+                        }
+                    };
                 self.stack.push(result);
                 // Slice F: write any captured-outer variables the callee mutated
                 // straight through to this caller's local slots, so they stay

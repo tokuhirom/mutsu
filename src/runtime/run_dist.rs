@@ -42,12 +42,12 @@ impl Interpreter {
             // caller-defined `sub` exported from its own distribution).
             // Resolving straight from the routine's own source file
             // sidesteps the shared-key collision entirely.
-            if let Some(file) = &frame.def_file
-                && let Some(dist) = Self::find_real_distribution_meta6(Path::new(file))
+            if let Some(file) = frame.def_file
+                && let Some(dist) = Self::find_real_distribution_meta6(Path::new(file.as_str()))
             {
                 return self.build_resources_from_dist(&dist);
             }
-            if let Some(dist) = self.package_distributions.get(&frame.package) {
+            if let Some(dist) = self.package_distributions.get(frame.package.as_str()) {
                 return self.build_resources_from_dist(&dist.clone());
             }
         }

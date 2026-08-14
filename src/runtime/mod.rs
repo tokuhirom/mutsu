@@ -877,14 +877,25 @@ pub(crate) struct CallFrameEntry {
 }
 
 /// Entry in the routine stack, tracking the call chain for backtraces.
-#[derive(Clone, Debug)]
+///
+/// `package`/`lexical_package`/`name`/`file`/`def_file` are interned
+/// `Symbol`s (not `String`s): they used to be several heap allocations per
+/// push, which made the fast repeat-call path (`call_compiled_function_fast`,
+/// see `vm/vm_call_fast.rs`) skip pushing a frame entirely to avoid the cost —
+/// the bug this fixes (`todo/tickets/repeat-call-loses-backtrace-frame.md`).
+/// `Symbol` is `Copy` and the strings are almost always already interned
+/// (constant-pool names, `SubData::package`/`name`), so a push is now a plain
+/// `Vec::push` with no allocation, and every call path can afford to push one
+/// unconditionally. Readers resolve back to `&str`/`String` via
+/// `Symbol::as_str()` / `Symbol::resolve()` at render time.
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct RoutineFrame {
-    pub package: String,
+    pub package: Symbol,
     /// Package whose compunit lexical routines are visible to this frame.
-    pub lexical_package: Option<String>,
-    pub name: String,
+    pub lexical_package: Option<Symbol>,
+    pub name: Symbol,
     pub line: Option<u32>,
-    pub file: Option<String>,
+    pub file: Option<Symbol>,
     pub is_method: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
@@ -892,7 +903,7 @@ pub(crate) struct RoutineFrame {
     /// main script). `line`/`file` above record the call-site; a backtrace
     /// displays each frame at its defining file (module subs report the
     /// module path, integration/error-reporting.t test 15).
-    pub def_file: Option<String>,
+    pub def_file: Option<Symbol>,
     /// Monotonic id of THIS invocation. Distinguishes one call of a routine
     /// from the next, which is what a per-call anonymous state (`$++` inside a
     /// block inside a routine) keys on — see `Interpreter::anon_state_key`.
