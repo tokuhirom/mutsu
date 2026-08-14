@@ -97,8 +97,15 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                 // form (`use Zef:ver($?DISTRIBUTION.meta<version>):auth(Zef.^auth)`,
                 // used throughout zef) must be consumed and discarded, instead of
                 // treating the name as an import tag (which produced `no such tag
-                // 'ver'` / `'auth'`).
-                let is_dist_selector = matches!(tag_name.as_str(), "ver" | "auth" | "api");
+                // 'ver'` / `'auth'`). `:v<...>` is Raku's short spelling of
+                // `:ver<...>` (confirmed equivalent via `raku -e`) and normalizes
+                // to the same canonical `ver` selector key.
+                let is_dist_selector = matches!(tag_name.as_str(), "ver" | "v" | "auth" | "api");
+                let canonical_tag_name = if tag_name == "v" {
+                    "ver"
+                } else {
+                    tag_name.as_str()
+                };
                 if is_dist_selector && (r.starts_with('<') || r.starts_with(":<")) {
                     // Accept both the plain `:ver<0.0.5>` form and the
                     // colon-separated `:ver:<0.0.5>` form (used by some lizmat
@@ -113,7 +120,7 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
                     // Keep the literal selector: it refines which installed
                     // distribution `use` resolves (`use JSON::Class:auth<...>`),
                     // carried to the runtime appended to the module name.
-                    dist_selectors.push_str(&format!(":{}<{}>", tag_name, value));
+                    dist_selectors.push_str(&format!(":{}<{}>", canonical_tag_name, value));
                     let (after, _) = ws(after)?;
                     let after = after.strip_prefix(',').unwrap_or(after);
                     let (after, _) = ws(after)?;

@@ -4,8 +4,14 @@ impl Compiler {
     pub(super) fn compile_do_block_expr(&mut self, body: &[Stmt], label: &Option<String>) {
         // A `do {}` block does not take a signature, so a placeholder variable
         // used directly inside it cannot be captured -> X::Placeholder::Block.
-        // Exception: inside a method, the legacy argument variables `%_` / `@_`
-        // refer to the method's implicit `*%_` / `*@_` slurpy and are valid here.
+        // Exception: inside a method, the legacy argument variable `%_` refers
+        // to the method's implicit `*%_` slurpy and is valid here. `@_` is NOT
+        // exempted: `raku` only auto-adds `*%_` to a method, never `*@_` —
+        // referencing `@_` anywhere in a method body (directly or nested in a
+        // `do {}`) is a compile-time error there too (`raku -e 'class A {
+        // method m { @_.raku.say } }'` => "Placeholder variables (eg. @_)
+        // cannot be used in a method. Please specify an explicit signature").
+        // Pin: t/placeholder-named-in-method-do.t.
         // Exception: a placeholder that is already a bound parameter of the
         // ENCLOSING block — its local exists in `local_map` — is attached, not
         // stray. The chained-comparison desugar (`{ 0 <= $^p <= 5 }`) wraps the
@@ -15,7 +21,7 @@ impl Compiler {
         if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
             .into_iter()
             .find(|ph| {
-                if self.lexically_in_method && (ph == "%_" || ph == "@_") {
+                if self.lexically_in_method && ph == "%_" {
                     return false;
                 }
                 // A CARET placeholder (`$^p`) already bound as the enclosing
