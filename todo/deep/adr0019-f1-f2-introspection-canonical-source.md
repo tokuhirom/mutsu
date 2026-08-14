@@ -194,14 +194,26 @@ Consulted and confirmed with the user. Resolution, adopted as the plan going for
    sweep of all ~350 native methods. A guard test ties every override to a live catalog row (fails
    loudly if a row is renamed/removed out from under its override), preventing the drift the
    rejected-alternative worried about.
-4. **The dispatcher/multi/candidates axis needs no hand data at all.** It is a uniform structural
-   rule (the `.^lookup` result is the dispatcher: `is_dispatcher=True`/`multi=False`; each element
-   of its `.candidates` is a candidate: `is_dispatcher=False`/`multi=True`; a non-multi method's own
-   `.candidates` is itself, one element) that generalized correctly across every case tested,
-   *including* the native-multi case (`Int.^lookup("Numeric")`) #6420's narrower env-tag patch does
-   not yet cover. F1's mechanism slice should implement this as general code in
-   `make_native_method_object`/`classhow_lookup`, replacing the tag-matching patch, not add more
-   tags.
+4. **Revised (2026-08-14): the dispatcher/multi/candidates *rule* needs no hand data, but *applying*
+   it to native methods does.** The structural rule itself (the `.^lookup` result is the dispatcher:
+   `is_dispatcher=True`/`multi=False`; each element of its `.candidates` is a candidate:
+   `is_dispatcher=False`/`multi=True`; a non-multi method's own `.candidates` is itself, one element)
+   generalized correctly across every *user*-method case tested — for a user method,
+   `MethodDef` overload count already tells mutsu whether a name is multi, so this needs no new
+   data. It does NOT extend to native methods for free: a wider raku sweep found
+   `is_dispatcher=True` is the *majority* case for Cool/Any-declared native methods (`round`,
+   `trim`, `substr`, `Str`, `chars`, `flip`, `uc`, `lc`, ... on `Int`/`Str` all answer `True`; only a
+   minority like `floor`/`ceiling`/`Int` answer `False`) — not the rare edge case earlier entries in
+   this file and the linked ticket assumed. A tried-and-reverted fix (default `False`/`False` for
+   any `ValueView::Routine` native lookup result, since mutsu tracks no native-method multiplicity
+   data) would have been wrong more often than right, which is worse than the current clean error
+   per this project's no-stubs convention — see the ticket's "Progress (2026-08-14, continued)"
+   entry. **So native `is_dispatcher`/`multi`/`.candidates` moves from "mechanism, no data needed"
+   into the fidelity slice**, at roughly the same per-native-method data-volume scale as
+   `.signature`/`.package` (point 3 above) — plausibly the SAME override column work, since knowing
+   a native method's real candidate list would answer signature, package, AND multiplicity together.
+   F1's mechanism slice therefore only covers the `Sub`-shaped (user-method) side cleanly; the
+   `Routine`-shaped (native) side waits for the fidelity slice's real data, not a guessed default.
 5. **Sequencing** (keeps F1 and F3 independently landable, F3 first since it has no F1 dependency):
    - **F3** (next slice): cut `builtin_type_method_names()`'s three call sites
      (`methods_classhow_method_obj.rs`, `vm_call_helpers.rs`, `methods_classhow_builtin_methods.rs`)
