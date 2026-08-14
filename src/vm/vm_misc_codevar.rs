@@ -323,7 +323,11 @@ impl Interpreter {
         self.stack.push(val);
     }
 
-    pub(super) fn exec_symbolic_deref_store_op(&mut self, code: &CompiledCode, sigil_idx: u32) {
+    pub(super) fn exec_symbolic_deref_store_op(
+        &mut self,
+        code: &CompiledCode,
+        sigil_idx: u32,
+    ) -> Result<(), RuntimeError> {
         let sigil = Self::const_str(code, sigil_idx).to_string();
         let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
@@ -348,6 +352,29 @@ impl Interpreter {
         } else {
             raw_value
         };
+        // Write THROUGH an existing `ContainerRef` cell instead of overwriting
+        // it with a plain value — the symbolic-deref counterpart of the
+        // `SetGlobal`/`SetLocal` `ContainerRef` write-through chokepoints. A
+        // plain `our $x` scalar (`OpCode::DeclareOurScalar`) installs one
+        // shared cell under both its lexical name and its package-qualified
+        // name; `$::('x') = v` reaches this op by the SAME (bare or
+        // qualified) name, so it must land on that cell too, or the two
+        // names go stale relative to each other again
+        // (`t/symbolic-deref-assign-expr.t`).
+        if let Some(existing) = self.env().get(&store_name).cloned()
+            && let ValueView::ContainerRef(arc) = existing.view()
+        {
+            self.check_container_cell_constraint(&arc, &value)?;
+            Self::cell_store_preserving_container_identity(&arc, &value);
+            self.note_caller_env_write(&store_name);
+            let result = if sigil == "$" {
+                Self::itemize_value(value)
+            } else {
+                value
+            };
+            self.stack.push(result);
+            return Ok(());
+        }
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
         // A package-qualified symbolic store (`$::('Foo::b') = v`) must reach the
@@ -374,9 +401,13 @@ impl Interpreter {
             value
         };
         self.stack.push(result);
+        Ok(())
     }
 
-    pub(super) fn exec_indirect_type_lookup_store_op(&mut self, code: &CompiledCode) {
+    pub(super) fn exec_indirect_type_lookup_store_op(
+        &mut self,
+        code: &CompiledCode,
+    ) -> Result<(), RuntimeError> {
         let name_val = self.stack.pop().unwrap_or(Value::NIL);
         let name = name_val.to_string_value();
         let value = self.stack.pop().unwrap_or(Value::NIL);
@@ -388,12 +419,25 @@ impl Interpreter {
         } else {
             name.to_string()
         };
+        // Write THROUGH an existing `ContainerRef` cell — see the matching
+        // comment in `exec_symbolic_deref_store_op`, which this mirrors for
+        // the `::('$x') = v` spelling.
+        if let Some(existing) = self.env().get(&store_name).cloned()
+            && let ValueView::ContainerRef(arc) = existing.view()
+        {
+            self.check_container_cell_constraint(&arc, &value)?;
+            Self::cell_store_preserving_container_identity(&arc, &value);
+            self.note_caller_env_write(&store_name);
+            self.stack.push(value);
+            return Ok(());
+        }
         self.env_mut().insert(store_name.clone(), value.clone());
         self.update_local_if_exists(code, &store_name, &value);
         // env_dirty substrate: same as exec_symbolic_deref_store_op — `::('$x') = v`
         // writes the target lexical by name, so log it for the carrier writeback.
         self.note_caller_env_write(&store_name);
         self.stack.push(value);
+        Ok(())
     }
 
     pub(super) fn exec_assign_expr_op(

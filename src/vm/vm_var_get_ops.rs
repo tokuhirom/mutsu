@@ -418,6 +418,11 @@ impl Interpreter {
         } else {
             Value::str(name.to_string())
         };
+        // Auto-deref ContainerRef for stack use (mirrors GetGlobal/GetOurVar):
+        // several branches above resolve to an `our`-scoped value via
+        // `get_our_var`, which can now return a shared cell for a plain
+        // scalar `our` (`OpCode::DeclareOurScalar`).
+        let val = val.into_deref();
         self.stack.push(val);
         Ok(())
     }

@@ -609,6 +609,23 @@ pub(crate) enum OpCode {
         slot: u32,
         explicit_init: bool,
     },
+    /// `our $x = <expr>` for a plain untyped scalar (no `:=` bind, no type
+    /// constraint, no container sigil, not a `constant`): installs ONE shared
+    /// `ContainerRef` cell under the lexical local slot, the bare env name,
+    /// and the package-qualified name (`qualified_idx`) — see
+    /// `Interpreter::exec_declare_our_scalar_op`. `our $x` and `$Pkg::x` (or
+    /// `$GLOBAL::x` at file scope) then name the SAME container, so a write
+    /// through either name is visible through the other via the existing
+    /// generic `ContainerRef` read/write-through chokepoints (`GetLocal`/
+    /// `SetLocal`/`GetGlobal`/`SetGlobal`) — no bespoke sync code needed.
+    /// Replaces the old two-store `Dup; SetLocalDecl(slot); SetGlobal(q)`
+    /// sequence for exactly this case; every other `our` shape (typed,
+    /// `@`/`%`/`&`-sigiled, `constant`, `:=` bound, or shadowing an outer
+    /// `constant`) keeps the old sequence unchanged.
+    DeclareOurScalar {
+        slot: u32,
+        qualified_idx: u32,
+    },
     GetGlobal(u32),
     /// Read a captured read-only scalar free variable by index from this frame's
     /// upvalue array (`self.upvalues`). Emitted in place of `GetGlobal` for a

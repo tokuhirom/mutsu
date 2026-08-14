@@ -1553,101 +1553,137 @@ impl Compiler {
                     }
                 } else {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");
-                    // For `our` we need a second copy of the value to store into the
-                    // global. Normally we `Dup` the raw initializer up front, but for
-                    // a constant the global store (`SetGlobalRaw`) coerces the value
-                    // (e.g. calling `.Map` on a `%`-sigil RHS) — coercing the raw
-                    // value a second time would invoke that side-effecting coercion
-                    // twice. Instead, for constants we re-read the already-coerced
-                    // value from the local slot via `GetLocal` after `SetLocal`.
-                    if *is_our && !is_constant {
-                        self.code.emit(OpCode::Dup);
-                    }
-                    if self.bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
-                        self.code.emit(OpCode::MarkBindContext);
-                        self.bind_vardecl = false;
-                    }
-                    // Mark constant context so SetLocal uses List coercion for @ and
-                    // skips Hash coercion for %, matching Raku's constant semantics.
-                    // Scalar constants and sigilless declarations (`my \x = ...`)
-                    // also carry the mark: both bind the value itself (no Scalar
-                    // container), so SetLocal must not itemize it.
-                    if is_constant || self.sigilless_locals.contains(name.as_str()) {
-                        self.code.emit(OpCode::MarkConstantContext);
-                    }
-                    // A default-trait decl suppresses the explicit-initializer
-                    // mark: its `is default(...)` is applied AFTER the store, so
-                    // SetLocal's untyped-Nil-to-Any reset would fire before the
-                    // default is registered and clobber a runtime-Nil value
-                    // (`my $foo is default(Nil) = do without ... { $_ }` must
-                    // keep Nil — S04-statements/with.t 49/56). The store keeps
-                    // Nil verbatim and the ApplyVarTrait that follows replaces a
-                    // still-Nil scalar with its default.
-                    if has_explicit_initializer && !has_default_trait {
-                        self.code.emit(OpCode::MarkExplicitInitializerContext);
-                    }
-                    // Mark this SetLocal as coming from a VarDecl so the VM
-                    // can allow overwriting immutable containers (e.g. Blob)
-                    // when the local slot is reused across loop iterations.
-                    self.code.emit(OpCode::MarkVarDeclContext);
-                    // A shaped declaration (`my @a[5] = ...`) keeps its declared
-                    // shape; mark it so SetLocal does not strip the shape the way
-                    // an unshaped value-copy (`my @u = @shaped`) does.
-                    if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
-                        self.code.emit(OpCode::MarkShapedDeclContext);
-                    }
-                    // For % variables with QuantHash `is` traits, skip hash coercion
-                    // so the trait handler gets the raw array/list value.
-                    let has_quant_hash_trait = name.starts_with('%')
-                        && custom_traits.iter().any(|(t, _)| {
-                            let base = t.split('[').next().unwrap_or(t);
-                            matches!(
-                                base,
-                                "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
-                            )
-                        });
-                    if has_quant_hash_trait {
-                        self.code.emit(OpCode::MarkBindContext);
-                    }
-                    if scalar_bind_decont {
-                        self.code.emit(OpCode::MarkScalarBindContext);
-                    }
-                    self.code.emit(OpCode::SetLocal(slot));
-                    // A `constant` that shadows an outer constant of the same name
-                    // (in an enclosing block or closure) is a fresh lexical binding,
-                    // not a reassignment of the outer package symbol. Compile it as
-                    // a pure `my` lexical: it lives only in its own local slot and
-                    // never touches the shared package store (`our_locals` /
-                    // `SetGlobalRaw`). Writing the package store would clobber the
-                    // outer constant for sibling scopes, and the writeback merge for
-                    // an `our` var declared inside a closure leaks the shadowing
-                    // value back to the caller.
-                    if *is_our && !shadows_outer_constant {
+                    // A plain untyped scalar `our $x = <expr>` (no `:=` bind, no
+                    // type constraint, no container sigil, no `constant`, no
+                    // trait besides the internal "has an initializer" marker):
+                    // install ONE shared `ContainerRef` cell under the lexical
+                    // local slot AND the package-qualified name instead of the
+                    // two-independent-stores sequence below. `our $x` and
+                    // `$Pkg::x` (`$GLOBAL::x` at file scope) then name the SAME
+                    // container — see `OpCode::DeclareOurScalar` and
+                    // `docs/adr/README.md`-style rationale in
+                    // news/2026-08/our-var-shared-cell.md. Every other `our`
+                    // shape keeps the old two-store sequence below unchanged.
+                    let use_our_cell = *is_our
+                        && !shadows_outer_constant
+                        && !is_constant
+                        && !is_scalar_colon_bind
+                        && !self.bind_vardecl
+                        && type_constraint.is_none()
+                        && !name.starts_with('@')
+                        && !name.starts_with('%')
+                        && !name.starts_with('&')
+                        && !self.sigilless_locals.contains(name.as_str())
+                        && !has_default_trait
+                        && !scalar_bind_decont
+                        && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
+                    if use_our_cell {
                         let qualified = self.qualify_variable_name(name);
-                        // Track this slot as `our`-scoped so BlockScope restoration
-                        // can sync the local from its global after block exit.
                         self.code
                             .our_locals
                             .push((slot as usize, qualified.clone()));
-                        let idx = self.code.add_constant(Value::str(qualified));
-                        // Constants should not have their values coerced by the
-                        // @/% container rules: `constant @x` stores a List,
-                        // `constant %x` stores a Map (not Array/Hash).
-                        if is_constant {
-                            // Re-read the value `SetLocal` already coerced (and
-                            // cached in the slot) so `SetGlobalRaw` does not run
-                            // the coercion — and its side effects — a second time.
-                            self.code.emit(OpCode::GetLocal(slot));
-                            self.code.emit(OpCode::SetGlobalRaw(idx));
-                        } else {
-                            // A `:=` bind of an `our` container var (`our %g := %h`)
-                            // marks the var readonly as the bind signal; re-mark the
-                            // bind context so the global store skips the readonly
-                            // check (the mark is a bind signal, not a real RO).
-                            if is_bound_container_vardecl {
-                                self.code.emit(OpCode::MarkBindContext);
+                        let qualified_idx = self.code.add_constant(Value::str(qualified));
+                        self.code.emit(OpCode::DeclareOurScalar {
+                            slot,
+                            qualified_idx,
+                        });
+                    } else {
+                        // For `our` we need a second copy of the value to store into the
+                        // global. Normally we `Dup` the raw initializer up front, but for
+                        // a constant the global store (`SetGlobalRaw`) coerces the value
+                        // (e.g. calling `.Map` on a `%`-sigil RHS) — coercing the raw
+                        // value a second time would invoke that side-effecting coercion
+                        // twice. Instead, for constants we re-read the already-coerced
+                        // value from the local slot via `GetLocal` after `SetLocal`.
+                        if *is_our && !is_constant {
+                            self.code.emit(OpCode::Dup);
+                        }
+                        if self.bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
+                            self.code.emit(OpCode::MarkBindContext);
+                            self.bind_vardecl = false;
+                        }
+                        // Mark constant context so SetLocal uses List coercion for @ and
+                        // skips Hash coercion for %, matching Raku's constant semantics.
+                        // Scalar constants and sigilless declarations (`my \x = ...`)
+                        // also carry the mark: both bind the value itself (no Scalar
+                        // container), so SetLocal must not itemize it.
+                        if is_constant || self.sigilless_locals.contains(name.as_str()) {
+                            self.code.emit(OpCode::MarkConstantContext);
+                        }
+                        // A default-trait decl suppresses the explicit-initializer
+                        // mark: its `is default(...)` is applied AFTER the store, so
+                        // SetLocal's untyped-Nil-to-Any reset would fire before the
+                        // default is registered and clobber a runtime-Nil value
+                        // (`my $foo is default(Nil) = do without ... { $_ }` must
+                        // keep Nil — S04-statements/with.t 49/56). The store keeps
+                        // Nil verbatim and the ApplyVarTrait that follows replaces a
+                        // still-Nil scalar with its default.
+                        if has_explicit_initializer && !has_default_trait {
+                            self.code.emit(OpCode::MarkExplicitInitializerContext);
+                        }
+                        // Mark this SetLocal as coming from a VarDecl so the VM
+                        // can allow overwriting immutable containers (e.g. Blob)
+                        // when the local slot is reused across loop iterations.
+                        self.code.emit(OpCode::MarkVarDeclContext);
+                        // A shaped declaration (`my @a[5] = ...`) keeps its declared
+                        // shape; mark it so SetLocal does not strip the shape the way
+                        // an unshaped value-copy (`my @u = @shaped`) does.
+                        if custom_traits.iter().any(|(t, _)| t == "__shaped_decl") {
+                            self.code.emit(OpCode::MarkShapedDeclContext);
+                        }
+                        // For % variables with QuantHash `is` traits, skip hash coercion
+                        // so the trait handler gets the raw array/list value.
+                        let has_quant_hash_trait = name.starts_with('%')
+                            && custom_traits.iter().any(|(t, _)| {
+                                let base = t.split('[').next().unwrap_or(t);
+                                matches!(
+                                    base,
+                                    "BagHash" | "SetHash" | "MixHash" | "Bag" | "Set" | "Mix"
+                                )
+                            });
+                        if has_quant_hash_trait {
+                            self.code.emit(OpCode::MarkBindContext);
+                        }
+                        if scalar_bind_decont {
+                            self.code.emit(OpCode::MarkScalarBindContext);
+                        }
+                        self.code.emit(OpCode::SetLocal(slot));
+                        // A `constant` that shadows an outer constant of the same name
+                        // (in an enclosing block or closure) is a fresh lexical binding,
+                        // not a reassignment of the outer package symbol. Compile it as
+                        // a pure `my` lexical: it lives only in its own local slot and
+                        // never touches the shared package store (`our_locals` /
+                        // `SetGlobalRaw`). Writing the package store would clobber the
+                        // outer constant for sibling scopes, and the writeback merge for
+                        // an `our` var declared inside a closure leaks the shadowing
+                        // value back to the caller.
+                        if *is_our && !shadows_outer_constant {
+                            let qualified = self.qualify_variable_name(name);
+                            // Track this slot as `our`-scoped so BlockScope restoration
+                            // can sync the local from its global after block exit.
+                            self.code
+                                .our_locals
+                                .push((slot as usize, qualified.clone()));
+                            let idx = self.code.add_constant(Value::str(qualified));
+                            // Constants should not have their values coerced by the
+                            // @/% container rules: `constant @x` stores a List,
+                            // `constant %x` stores a Map (not Array/Hash).
+                            if is_constant {
+                                // Re-read the value `SetLocal` already coerced (and
+                                // cached in the slot) so `SetGlobalRaw` does not run
+                                // the coercion — and its side effects — a second time.
+                                self.code.emit(OpCode::GetLocal(slot));
+                                self.code.emit(OpCode::SetGlobalRaw(idx));
+                            } else {
+                                // A `:=` bind of an `our` container var (`our %g := %h`)
+                                // marks the var readonly as the bind signal; re-mark the
+                                // bind context so the global store skips the readonly
+                                // check (the mark is a bind signal, not a real RO).
+                                if is_bound_container_vardecl {
+                                    self.code.emit(OpCode::MarkBindContext);
+                                }
+                                self.code.emit(OpCode::SetGlobal(idx));
                             }
-                            self.code.emit(OpCode::SetGlobal(idx));
                         }
                     }
                 }

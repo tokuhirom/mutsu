@@ -788,6 +788,18 @@ impl Interpreter {
                     .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
                     .unwrap_or(Value::NIL);
+                // Auto-deref ContainerRef for stack use (ContainerRef axis of
+                // the decont family — mirrors GetGlobal). `our_vars` can now
+                // hold a `ContainerRef` cell for a plain scalar `our`
+                // (`OpCode::DeclareOurScalar`); without this, an `our`
+                // REDECLARATION with no initializer (`our $foo;` after `our
+                // $foo = 3`, e.g. roast S04-declarations/our.t) — which reads
+                // via GetOurVar and re-stores what it read — would push the
+                // raw cell and re-store IT INTO ITSELF, making the cell hold a
+                // `ContainerRef` pointing at itself: any later deref of that
+                // cell locks its own Mutex twice on the same thread and hangs
+                // forever.
+                let val = val.into_deref();
                 self.stack.push(val);
                 *ip += 1;
             }
@@ -4406,11 +4418,11 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SymbolicDerefStore(sigil_idx) => {
-                self.exec_symbolic_deref_store_op(code, *sigil_idx);
+                self.exec_symbolic_deref_store_op(code, *sigil_idx)?;
                 *ip += 1;
             }
             OpCode::IndirectTypeLookupStore => {
-                self.exec_indirect_type_lookup_store_op(code);
+                self.exec_indirect_type_lookup_store_op(code)?;
                 *ip += 1;
             }
             OpCode::StateVarInit(slot, key_idx) => {
@@ -4702,6 +4714,13 @@ impl Interpreter {
                 self.vardecl_context = true;
                 self.exec_set_local_op(code, *slot)?;
                 self.publish_state_local(code, *slot);
+                *ip += 1;
+            }
+            OpCode::DeclareOurScalar {
+                slot,
+                qualified_idx,
+            } => {
+                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
                 *ip += 1;
             }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
