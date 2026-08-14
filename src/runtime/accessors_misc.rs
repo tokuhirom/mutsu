@@ -333,6 +333,14 @@ impl Interpreter {
         // have folded token content in.
         crate::runtime::regex_parse::TOKEN_DEFS_GEN
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // token_defs holds grammar token/rule bodies, which are methods (ADR-0019
+        // Phase E). Bump the canonical method generation unconditionally, exactly
+        // as unconditionally as the TOKEN_DEFS_GEN bump above, so every
+        // generation-keyed method cache (fast_method_cache, method_resolve_cache,
+        // native_ctor_plan_cache, multi_resolve_cache, resolved_seq_cache,
+        // private_zeroarg_method_cache, ...) self-invalidates through its own
+        // read-site refresh instead of depending on the separate eager clear below.
+        registry.bump_method_generation();
         // Re-apply only newly added our-scoped functions so they survive block scope exit.
         // In EVAL context, our-scoped functions should NOT leak into the outer lexical
         // scope — they remain accessible only via OUR:: pseudo-package resolution.
@@ -343,12 +351,21 @@ impl Interpreter {
         }
         drop(registry);
         // The routine registry just changed: a lexical (`my sub`) registered
-        // inside the block was removed. Invalidate the name-keyed resolution
-        // caches so a subsequent call to that name re-resolves against the
-        // restored registry rather than returning the now-out-of-scope
-        // CompiledFunction the first in-block call cached (the compiled-function
-        // map is program-global and still contains the lexical sub's body).
-        self.invalidate_method_dispatch_caches();
+        // inside the block was removed. Bump the function-namespace generation
+        // so a subsequent call to that name re-resolves against the restored
+        // registry rather than returning the now-out-of-scope CompiledFunction
+        // the first in-block call cached (the compiled-function map is
+        // program-global and still contains the lexical sub's body). The
+        // method-namespace caches are already covered by the
+        // `bump_method_generation()` call above (ADR-0019 F5) -- this used to
+        // be a single unconditional `invalidate_method_dispatch_caches()` call
+        // that cleared both namespaces' caches directly; splitting it into two
+        // generation bumps is behavior-preserving by construction (every cache
+        // `invalidate_method_dispatch_caches()` used to clear directly now
+        // self-refreshes off one of these two counters at its own read site,
+        // per the same by-construction reasoning as F5's `exec_register_sub_op`
+        // cutover), not a corpus-sampled cutover.
+        self.fn_resolve_gen += 1;
     }
 
     pub(crate) fn block_scope_depth(&self) -> usize {

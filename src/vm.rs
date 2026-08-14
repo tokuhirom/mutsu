@@ -155,7 +155,6 @@ mod vm_core_helpers;
 mod vm_data_io_ops;
 mod vm_data_ops;
 mod vm_data_push_ops;
-mod vm_dispatch_cache_invalidate;
 mod vm_dispatch_helpers;
 mod vm_env_helpers;
 mod vm_exec_dispatch;

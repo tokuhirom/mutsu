@@ -490,7 +490,7 @@ impl Registry {
             .and_then(|entry| entry.proto.clone())
     }
 
-    fn bump_method_generation(&mut self) {
+    pub(crate) fn bump_method_generation(&mut self) {
         self.method_generation = self.method_generation.wrapping_add(1);
         if self.method_generation == 0 {
             self.method_generation = 1;
