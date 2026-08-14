@@ -47,6 +47,7 @@ impl Interpreter {
                 classes: reg.classes.keys().cloned().collect(),
                 proto_subs: reg.proto_subs.iter().cloned().collect(),
                 proto_functions: reg.proto_functions.keys().copied().collect(),
+                imported_env_keys: HashSet::new(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
@@ -54,6 +55,18 @@ impl Interpreter {
             }
         };
         self.import_scope_stack.push(snapshot);
+    }
+
+    /// Record that `import_module` just wrote `key` into `env` as an
+    /// imported alias, so the innermost open import scope (if any) knows to
+    /// remove it again on pop. No-op outside any `use`-containing block —
+    /// a top-level `use` (or one inside a block with no `use` of its own)
+    /// has nothing on `import_scope_stack` to record against, and its
+    /// imports are meant to persist anyway.
+    pub(crate) fn record_import_env_key(&mut self, key: &str) {
+        if let Some(top) = self.import_scope_stack.last_mut() {
+            top.imported_env_keys.insert(Symbol::intern(key));
+        }
     }
 
     /// Restore function/class/proto registries to the last saved snapshot,
@@ -65,6 +78,7 @@ impl Interpreter {
                 classes: class_snapshot,
                 proto_subs: proto_sub_snapshot,
                 proto_functions: proto_fn_snapshot,
+                imported_env_keys,
                 newline_mode,
                 strict_mode,
                 fatal_mode,
@@ -117,6 +131,46 @@ impl Interpreter {
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
             });
+            // The `env` half of the same distinction: `import_module` writes
+            // an imported symbol's aliased name straight into `env` too (a
+            // bare `&ok`/`$CONST`, or the `GLOBAL::name`-qualified form under
+            // the importing package), alongside the registry entry handled
+            // above. Remove exactly the keys `record_import_env_key` recorded
+            // for THIS scope — never a before/after diff of the whole `env`.
+            // `env` also carries ordinary statement-level state with nothing
+            // to do with imports (`$!`, `$_`, a plain `my` local, a `package`
+            // type object, ...), and a block is not required to run through
+            // the general `BlockScope` restore that scopes those (a
+            // `use`-containing block takes this lighter path instead, purely
+            // so the registries above can be scoped) — so diffing dropped
+            // any of them that happened to be written for the first time
+            // inside a `use`-containing block. That silently erased `$!`
+            // itself the first time any block anywhere in the process wrote
+            // it while a `use` was in scope, breaking `$!.backtrace`'s
+            // identity across a later, unrelated block
+            // (`roast/integration/error-reporting.t` "Backtrace does not
+            // change on additional .backtrace").
+            //
+            // Same keep-rule as the registry for the keys we DO track: a
+            // module's own package-qualified entry (`Foo::name`, not
+            // `GLOBAL::name`) persists, because a sibling block's later
+            // `use` re-imports by reading that qualified env value (see the
+            // `vars` loop in `import_module`) — though in practice
+            // `import_module` never records one of those (it writes the
+            // module's own qualified form separately, at module-load time,
+            // never through `record_import_env_key`); the check is kept for
+            // symmetry with the registry-side rule above and to cover the
+            // trait-value path's `&{importing_pkg}::{name}` write. A sigil
+            // (`$@%&`) may prefix the qualifier, so strip it before checking.
+            for key in imported_env_keys {
+                let ks = key.resolve();
+                let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
+                let is_module_owned_qualified =
+                    unqualified.contains("::") && !unqualified.starts_with("GLOBAL::");
+                if !is_module_owned_qualified {
+                    self.env.remove_sym(key);
+                }
+            }
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
             self.fatal_mode = fatal_mode;

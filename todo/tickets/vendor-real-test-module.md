@@ -618,7 +618,12 @@ So step 3 needs the call path as well as the 185 correctness gaps.
   so that the *core* `skip` routine stays visible, and mutsu leaks a `use` inside
   a block into the enclosing scope, so `Test`'s `skip` answered instead. That is
   the general bug to fix (`use` is lexically scoped in raku); it is not on the
-  `skip` implementation at all.
+  `skip` implementation at all. The `env`-side half of that leak
+  (`todo/tickets/use-inside-a-block-leaks-to-the-enclosing-scope.md`) is now
+  fixed, but the file still does not reach the `skip()` call: with the leak
+  gone, `plan 55;` reaching for the popped `Test::plan` proto/multi through the
+  captured `&plan` reference stack-overflows instead — a separate, pre-existing
+  bug, `todo/tickets/routine-value-self-recursion-after-import-scope-pop.md`.
 
 ### Classifying the 145 assertion-losers, and the clusters it found (2026-08-03)
 
