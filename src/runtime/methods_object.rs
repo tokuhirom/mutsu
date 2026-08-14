@@ -261,11 +261,19 @@ impl Interpreter {
     /// pure functions of the registry's class shape, yet they were re-derived
     /// (with Vec/HashMap clones and multiple MRO walks) on EVERY construction.
     /// The cache is invalidated with the method-dispatch caches at every
-    /// registry/type mutation site plus the MOP class-shape mutators.
+    /// registry/type mutation site plus the MOP class-shape mutators, and (ADR-0019
+    /// F5) also self-refreshes here on `Registry::method_generation` — mirroring
+    /// `resolve_method_cached`/`try_compiled_method_or_interpret_inner`'s own
+    /// `refresh_method_caches_for_generation()` call, which this read site lacked.
+    /// Without it, a `Registry::method_generation` bump (e.g. `sync_user_method_entries`
+    /// from `.^add_method`) that is not paired with an explicit
+    /// `native_ctor_plan_cache.clear()` at its call site could serve a plan computed
+    /// from the class's pre-mutation shape.
     pub(crate) fn native_ctor_plan(
         &mut self,
         class_name: Symbol,
     ) -> std::sync::Arc<super::NativeCtorPlan> {
+        self.refresh_method_caches_for_generation();
         if let Some(plan) = self.native_ctor_plan_cache.get(&class_name) {
             return plan.clone();
         }

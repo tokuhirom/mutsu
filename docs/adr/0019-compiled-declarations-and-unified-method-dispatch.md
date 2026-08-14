@@ -885,6 +885,25 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   pairs above, unifying these needs auditing whether `Registry::method_generation` is actually
   bumped at all 7 of those sites (some, e.g. plain sub/module registration, are function-registry
   events that may not touch the method registry), not just adding a read-site refresh call.
+  **Progress:** `method_resolve_cache`/`fast_method_cache` already called
+  `refresh_method_caches_for_generation()` at their own read sites (`resolve_method_cached`,
+  `try_compiled_method_or_interpret_inner`'s fast-cache probe) — only `native_ctor_plan_cache`'s
+  read site (`native_ctor_plan`, `methods_object.rs`) was missing it, the same gap
+  `private_zeroarg_method_cache` had before #6420-adjacent work. Fixed: `native_ctor_plan` now
+  self-refreshes on `Registry::method_generation` first, same as the other two. This closes one
+  concrete staleness path (a `Registry::method_generation` bump — e.g. `.^add_method`'s
+  `sync_user_method_entries` — reaching `native_ctor_plan_cache` even at a call site with no
+  explicit `.clear()` of that cache) without yet answering the still-open audit question above:
+  the 7 `invalidate_method_dispatch_caches` call sites were separately traced by hand — module
+  load/import/no/need (`vm_module_ops.rs`) and class/role/enum registration
+  (`vm_typedecl_ops.rs:116`) plausibly reach `sync_user_method_entries` transitively for any
+  class/method content they carry, but plain `sub` registration (`vm_register_sub_ops.rs:316`) and
+  block-scope-exit routine-registry restore (`accessors_misc.rs:351`) confirmed do **not** bump
+  `Registry::method_generation` — and the latter is a genuine case where the eager clear is load
+  -bearing today (it restores `token_defs`, and grammar `token`/`rule` bodies are methods, so a
+  block-scoped grammar's token set changing must invalidate method caches, but nothing in that
+  restore path touches `Registry::method_generation`). The 7 eager clears therefore stay; only the
+  read-site gap closed above was safe to land without a wider generation-bump audit.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
