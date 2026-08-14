@@ -74,3 +74,26 @@ Unifying the two representations (making `.^lookup` return the same `Method`-`In
 Best done as part of the F1/F2 design once the native-metadata ground-truth pass
 (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`) lands, since both are about making
 introspection surfaces agree with each other and with the canonical dispatch table.
+
+## Progress (2026-08-14, #6420)
+
+The `.is_dispatcher`/`.multi` symptom is fixed with a scoped patch, not the representation
+unification this file describes. `methods_instance_ops.rs`'s general method-dispatch fallback now
+answers both accessors directly on the `Sub`-shaped value (keyed off the existing
+`__mutsu_lookup_*`/`__mutsu_callable_type` env tags, plus a new `__mutsu_is_multi_candidate` tag
+set only on `.candidates[N]` entries), matching `raku` ground truth: a non-multi method or
+submethod answers both `False`; a multi method's dispatcher-shaped value (what `.^lookup`/
+`.^find_method` return for the whole family) answers `is_dispatcher` `True` but `multi` falsy;
+each individual `.candidates[N]` entry answers `is_dispatcher` `False` but `multi` `True`. Pin:
+`t/classhow-lookup-method-is-dispatcher-multi.t` (byte-for-byte identical TAP output against
+`raku`).
+
+Note the exact repro at the top of this file (`(42).^lookup("floor")`, the *native*-method case)
+no longer reproduces the `<composed-method:NAME>` bug on current `main` — it now raises a clean
+"No such method 'is_dispatcher' for invocant of type 'Method'" error instead (unchanged by this
+patch; some other change fixed that path independently before this session). The user-defined-class
+case shown further down (`class A { method foo {} }; A.^lookup("foo").is_dispatcher`) DID still
+reproduce the bogus-callable bug and is what this patch fixes.
+
+The representation mismatch itself (Sub vs. Method Instance) — and everything in "Why this is deep,
+not a quick ticket" above — remains open.
