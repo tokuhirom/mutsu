@@ -16,7 +16,7 @@ mod set_ops;
 pub(super) use arith::{additive_expr, multiplicative_expr, power_expr, power_expr_tight};
 pub(super) use hyper_concat::concat_expr;
 pub(super) use meta_bracket::{
-    BracketInfix, op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_meta_op,
-    strip_sequence_op,
+    BracketInfix, cannot_meta_ternary_error, op_str_to_token_kind, parse_bracket_infix_op,
+    parse_infix_func_op, parse_meta_op, strip_sequence_op,
 };
 pub(super) use set_ops::structural_expr;

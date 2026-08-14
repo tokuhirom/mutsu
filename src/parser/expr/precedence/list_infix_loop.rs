@@ -70,6 +70,9 @@ fn parse_list_infix_loop_impl<'a>(
     let mut rest = input;
     loop {
         let (r, _) = ws(rest)?;
+        if let Some(err) = cannot_meta_ternary_error(r) {
+            return Err(err);
+        }
         if r.starts_with("X.") && !r.starts_with("X..") {
             let after = &r[2..];
             let after_trimmed = after.trim_start();
