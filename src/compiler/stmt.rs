@@ -1083,6 +1083,18 @@ impl Compiler {
                 custom_traits,
                 where_constraint,
             } => {
+                // Snapshot-and-clear `bind_vardecl` immediately: it is a
+                // one-shot signal meant for THIS declaration's own store
+                // (set by an enclosing `SyntheticBlock`/inline-block for a
+                // `:=` bind). Left set on `self` while the RHS below is
+                // compiled, it would leak into any nested `my`-declared
+                // variable inside that RHS (e.g. `@state` in `my @x := do {
+                // my uint8 @state = 0..255; ...; @state }`), wrongly giving
+                // that unrelated declaration bind-context treatment and
+                // skipping the array-from-Range materialization it needs
+                // ("Cannot modify an immutable Range").
+                let bind_vardecl = self.bind_vardecl;
+                self.bind_vardecl = false;
                 // `my &infix:<+> = ...` installs a user operator just like a
                 // `sub infix:<+>` does — disable constant folding (ADR-0006 §2.1).
                 self.note_operator_decl(name);
@@ -1247,7 +1259,7 @@ impl Compiler {
                 let is_plain_my = !*is_state
                     && !*is_our
                     && !is_constant_decl
-                    && !self.bind_vardecl
+                    && !bind_vardecl
                     && where_constraint.is_none();
                 if is_plain_my {
                     let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
@@ -1339,14 +1351,14 @@ impl Compiler {
                 // Used by the `our` global store to skip the readonly check (the
                 // var was marked readonly purely as a bind signal).
                 let is_bound_container_vardecl =
-                    self.bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
+                    bind_vardecl && (name.starts_with('@') || name.starts_with('%'));
                 // A scalar `:=` bind (`my $x := EXPR`). Captured before the RHS
                 // branches consume `bind_vardecl`; recorded on the CompiledCode so
                 // `compute_free_vars` can vouch for it despite it reaching a call as
                 // an argument (an immutable binding never goes stale). Both the
                 // MarkBind form (`my $x := $y`, sets `bind_vardecl`) and the inline
                 // `__scalar_bind` trait form (`my $x := my $y`) count.
-                let is_scalar_colon_bind = (self.bind_vardecl || scalar_bind_decont)
+                let is_scalar_colon_bind = (bind_vardecl || scalar_bind_decont)
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&');
@@ -1366,7 +1378,7 @@ impl Compiler {
                     let qualified = self.qualify_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
-                } else if self.bind_vardecl
+                } else if bind_vardecl
                     && (!name.starts_with('@') && !name.starts_with('%')
                         || Self::is_simple_var_expr(expr)
                         // `my @slice := @array[1,2]` (an `@`-sigil bind to an
@@ -1383,7 +1395,6 @@ impl Compiler {
                     // `:=` binding for VarDecl: use compile_call_arg so WrapVarRef
                     // is emitted and the VM can set up aliases.  For @/% targets,
                     // only emit WrapVarRef when the RHS is a simple variable.
-                    self.bind_vardecl = false;
                     self.scalar_bind_autovivify = true;
                     self.bind_terminal = true;
                     self.bind_target_direct = true;
@@ -1568,7 +1579,7 @@ impl Compiler {
                         && !shadows_outer_constant
                         && !is_constant
                         && !is_scalar_colon_bind
-                        && !self.bind_vardecl
+                        && !bind_vardecl
                         && type_constraint.is_none()
                         && !name.starts_with('@')
                         && !name.starts_with('%')
@@ -1598,9 +1609,8 @@ impl Compiler {
                         if *is_our && !is_constant {
                             self.code.emit(OpCode::Dup);
                         }
-                        if self.bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
+                        if bind_vardecl && (name.starts_with('@') || name.starts_with('%')) {
                             self.code.emit(OpCode::MarkBindContext);
-                            self.bind_vardecl = false;
                         }
                         // Mark constant context so SetLocal uses List coercion for @ and
                         // skips Hash coercion for %, matching Raku's constant semantics.

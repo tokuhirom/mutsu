@@ -484,7 +484,6 @@ impl Interpreter {
             return match value.view() {
                 ValueView::Int(i) => i >= 0,
                 ValueView::BigInt(n) => n.sign() != num_bigint::Sign::Minus,
-                ValueView::Nil => true,
                 ValueView::Package(name) => {
                     let name = name.resolve();
                     name == "UInt" || name == "Int"

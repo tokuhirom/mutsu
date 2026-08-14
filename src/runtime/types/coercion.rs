@@ -245,6 +245,20 @@ impl Interpreter {
             }
             return Err(coerce_impossible_error(target, &value));
         }
+        // Buf/Blob (and their typed variants) are native types with no
+        // registry::classes entry, so the user-class `new` fallback below
+        // never reaches them. `Blob() :$key!`-style coercion of a list of
+        // integers (e.g. Crypt::RC4's `submethod TWEAK(Blob() :$key!)`)
+        // needs the same construction `.new(@list)` already uses.
+        if Self::is_native_buf_constructible(base_target) {
+            let coerced = Self::build_native_buf_value(
+                Symbol::intern(base_target),
+                std::slice::from_ref(&value),
+            );
+            if self.type_matches_value(base_target, &coerced) {
+                return Ok(coerced);
+            }
+        }
         if self.registry().classes.contains_key(base_target) {
             // Wrap Pair values in a Scalar container so they are passed as
             // positional arguments to COERCE/new rather than being flattened
