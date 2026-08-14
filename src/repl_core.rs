@@ -230,6 +230,28 @@ mod tests {
         );
     }
 
+    /// A module's parse warning must not print twice for one `use`
+    /// (`module-parse-warning-reported-twice.md`), so the interpreter tracks
+    /// parse warnings already surfaced this top-level `run()` and skips a
+    /// repeat. The REPL calls `run()` once per line on the *same*
+    /// `Interpreter`, so each line is its own top-level run — that tracking
+    /// must reset between lines, or a warning that fired on an earlier line
+    /// would go silently missing on a later, unrelated line that happens to
+    /// trigger the identical warning text. This pins the reset: the same
+    /// "Duplicate 'is export' trait" warning must appear once per line, not
+    /// once total across the session.
+    #[test]
+    fn test_parse_warning_dedup_does_not_leak_across_repl_lines() {
+        let line = "sub dup-trait-repl() is export is export { 1 }";
+        let (_out, warnings) = repl_session_warnings(&[line, line]);
+        let occurrences = warnings.matches("Duplicate 'is export' trait").count();
+        assert_eq!(
+            occurrences, 2,
+            "each REPL line is a separate top-level run and should see its \
+             own warning independently, got: {warnings:?}"
+        );
+    }
+
     /// Helper: same as repl_session but with immediate_stdout enabled
     /// (matches actual REPL behavior). Display strings only include
     /// last_value output; say/print goes directly to stdout.

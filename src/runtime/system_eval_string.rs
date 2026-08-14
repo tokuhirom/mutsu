@@ -307,9 +307,7 @@ impl Interpreter {
         } else {
             self.parse_and_eval_with_operators(trimmed, &op_names, &op_assoc, &imported_names)
         };
-        for warning in crate::parser::take_parse_warnings() {
-            self.write_warn_to_stderr(&warning);
-        }
+        self.emit_parse_warnings(crate::parser::take_parse_warnings());
         // Fallback: parser still rejects forms like `~< foo bar >`.
         // Rewrite to an equivalent parenthesized form and try again.
         if !pod_failed

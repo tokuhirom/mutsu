@@ -294,7 +294,7 @@ fn find_and_scan_module(module: &str) -> Option<Rc<ModuleScanResult>> {
     }
     let source = std::fs::read_to_string(&path).ok()?;
     let skips_before = SCAN_GUARD_SKIPS.with(|c| c.get());
-    let result = Rc::new(scan_module_source(&source));
+    let result = Rc::new(scan_module_source(&source, &path));
     // Only a scan the recursion guard never truncated is complete enough to
     // cache (see SCAN_GUARD_SKIPS).
     if SCAN_GUARD_SKIPS.with(|c| c.get()) == skips_before {
@@ -369,7 +369,7 @@ fn find_module_file(module: &str) -> Option<String> {
 /// Kept as a thin wrapper over `scan_module_source` for unit tests.
 #[cfg(test)]
 pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
-    scan_module_source(source).exports
+    scan_module_source(source, "<test>").exports
 }
 
 /// Parse module source and collect its `is export` subs, declared type names,
@@ -377,7 +377,7 @@ pub(crate) fn extract_exported_names(source: &str) -> Vec<InlineModuleExport> {
 /// scope. Saves and restores the parser's scope state (and package path) so
 /// the nested parse cannot clobber the caller's, and so a cache hit (which
 /// skips the nested parse entirely) is indistinguishable from a miss.
-fn scan_module_source(source: &str) -> ModuleScanResult {
+fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // Save current scopes — parse_program_partial calls reset_user_subs which clears them
     let saved_scopes = SCOPES.with(|s| s.borrow().clone());
     // reset_user_subs also clears the package path; snapshot it too, or a `use`
@@ -396,7 +396,15 @@ fn scan_module_source(source: &str) -> ModuleScanResult {
     // activation is lexical to that module, and the importer's modes must
     // survive the nested parse's reset (ADR-0026 §2.1 scoping).
     let saved_slang_modes = super::slang_modes_snapshot();
+    // This is a scan of `path`, not of whatever file the importer is being
+    // parsed from — tag it so any warning this scan raises is attributed to
+    // the module, not the importer, and so a later re-parse of the same file
+    // (e.g. the run-time module load once the `use` actually executes) can
+    // be recognized as re-raising the same warning rather than a new one.
+    // See `add_parse_warning` / `todo/tickets/module-parse-warning-reported-twice.md`.
+    let saved_source_file = set_parser_source_file(Some(path.to_string()));
     let (stmts, _) = crate::parser::parse_program_partial(source);
+    set_parser_source_file(saved_source_file);
     // A `package X::Foo { }` block installs its contents into GLOBAL, so the
     // types it declares are visible to whoever loads the module — including
     // through an intermediate module that merely `use`d it. Those transitive

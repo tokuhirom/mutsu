@@ -1,6 +1,25 @@
 use super::*;
 use crate::value::ValueView;
 
+/// Normalize a parse-warning origin file for use as a dedup key.
+///
+/// The parser's own module resolver (used by the export scan) and the
+/// runtime's module resolver (used by the actual `use` load) are two
+/// independent implementations; they agree on which *file* a module is but
+/// are not guaranteed to render its path identically (relative vs.
+/// canonical, `./foo` vs. `foo`, ...). Canonicalizing before comparing makes
+/// the dedup robust to that instead of relying on the two resolvers
+/// happening to produce byte-identical strings. Falls back to the raw string
+/// when canonicalization fails (e.g. a synthetic tag like `<test>`, or a
+/// path that no longer exists).
+fn canonicalize_warning_file(file: Option<String>) -> Option<String> {
+    file.map(|f| {
+        std::fs::canonicalize(&f)
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or(f)
+    })
+}
+
 impl Interpreter {
     pub fn output(&self) -> String {
         self.output_sink().output.clone()
@@ -135,6 +154,45 @@ impl Interpreter {
     #[cfg(test)]
     pub(crate) fn warnings_emitted(&self) -> &str {
         &self.warn_output
+    }
+
+    /// Emit a batch of parse warnings (module export scan, module load, EVAL,
+    /// `require`, precompilation-cache replay, ...), skipping any `(file,
+    /// message)` pair already surfaced during the current top-level `run()`.
+    ///
+    /// mutsu's module system parses the same source more than once for a
+    /// single `use` (an export scan at the importer's parse time, then the
+    /// real load once the `use` executes; a precompilation-cache hit adds a
+    /// third replayed copy) — draining `PARSE_WARNINGS` naively at each of
+    /// those sites would print the same warning once per parse. The file tag
+    /// (see `parser::add_parse_warning`) keeps this from conflating two
+    /// *different* files that happen to produce identical warning text.
+    /// `self.surfaced_parse_warnings` is reset at the top of `run()`, so a
+    /// later, separate top-level program sharing this `Interpreter` (a new
+    /// REPL line, for instance) still sees its own warnings independently.
+    /// See `todo/tickets/module-parse-warning-reported-twice.md`.
+    pub(crate) fn emit_parse_warnings<I>(&mut self, warnings: I)
+    where
+        I: IntoIterator<Item = (Option<String>, String)>,
+    {
+        for (file, message) in warnings {
+            let key = (canonicalize_warning_file(file), message);
+            if self.surfaced_parse_warnings.insert(key.clone()) {
+                self.write_warn_to_stderr(&key.1);
+            }
+        }
+    }
+
+    /// Emit a batch of *untagged* parse warnings (plain message strings,
+    /// e.g. `precomp::ParseEffects::warnings` replayed from the on-disk
+    /// cache, which does not persist the origin-file tag) against a single
+    /// known origin file. See `emit_parse_warnings`.
+    pub(crate) fn emit_parse_warnings_for_file<I>(&mut self, file: &str, warnings: I)
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let file = Some(file.to_string());
+        self.emit_parse_warnings(warnings.into_iter().map(|w| (file.clone(), w)));
     }
 
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {

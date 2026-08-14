@@ -456,9 +456,14 @@ impl Interpreter {
             && let Some(unit) = crate::precomp::load_cached_unit(source_path, Some(&code))
         {
             crate::parser::set_current_language_version(&unit.effects.language_version);
-            for warning in &unit.effects.warnings {
-                self.write_warn_to_stderr(warning);
-            }
+            // The on-disk cache entry stores plain warning text (no per-warning
+            // origin tag, see `precomp::ParseEffects`); every warning in this
+            // batch was raised while parsing exactly this module, so tag them
+            // all with `source_path` here instead.
+            self.emit_parse_warnings_for_file(
+                &source_path.to_string_lossy(),
+                unit.effects.warnings.iter().cloned(),
+            );
             return Ok((unit.stmts, true));
         }
 
@@ -474,14 +479,18 @@ impl Interpreter {
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Capture exactly what a later cache hit will have to replay, before
-        // anything downstream can disturb it.
+        // anything downstream can disturb it. `take_parse_warnings()` tags
+        // each warning with its origin file (see `parser::add_parse_warning`)
+        // for immediate deduplicated emission below; the on-disk cache format
+        // (`ParseEffects::warnings`) only needs the message text, since a
+        // replay always tags the whole batch with `source_path` itself (see
+        // the cache-hit branch above).
+        let tagged_warnings = crate::parser::take_parse_warnings();
         let effects = crate::precomp::ParseEffects {
             language_version: crate::parser::current_language_version(),
-            warnings: crate::parser::take_parse_warnings(),
+            warnings: tagged_warnings.iter().map(|(_, m)| m.clone()).collect(),
         };
-        for warning in &effects.warnings {
-            self.write_warn_to_stderr(warning);
-        }
+        self.emit_parse_warnings(tagged_warnings);
         // `unit class`/`unit role`/`unit grammar` bodies are already merged at
         // parse time by the statement-list unit-capture (see
         // `parser::stmt::stmtlist`), so no post-parse surgery is needed here.

@@ -1016,6 +1016,19 @@ pub struct Interpreter {
     output_sink: Arc<RwLock<OutputSink>>,
     warn_output: String,
     warn_suppression_depth: usize,
+    /// Parse warnings (e.g. "Duplicate 'is export' trait") already surfaced
+    /// during the current top-level `run()` invocation, keyed by (origin
+    /// file, message text). A module's source can be parsed more than once
+    /// within a single run — once during the importer's export scan, once
+    /// more when the `use` actually loads it — and each parse's warnings are
+    /// drained and printed independently, so without this the same warning
+    /// prints once per parse. Reset at the top of `run()` (not left to
+    /// accumulate for the process lifetime), so a *separate* top-level
+    /// program sharing this Interpreter instance (a later REPL line, e.g.)
+    /// still sees its own warnings rather than having them silently
+    /// swallowed by a stale entry. See
+    /// `todo/tickets/module-parse-warning-reported-twice.md`.
+    surfaced_parse_warnings: std::collections::HashSet<(Option<String>, String)>,
     /// All TAP / `Test` module runtime state (counter, subtest stack, bail-out).
     /// See [`TapState`] — extracted out of this struct so its ownership can later
     /// move (lever B). Access only through `self.tap`'s methods.

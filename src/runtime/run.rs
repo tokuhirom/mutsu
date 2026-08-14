@@ -368,6 +368,12 @@ impl Interpreter {
     }
 
     pub fn run(&mut self, input: &str) -> Result<String, RuntimeError> {
+        // Fresh top-level program: forget which parse warnings were already
+        // surfaced by a previous `run()` on this Interpreter (REPL lines,
+        // `#[test]` helpers, ... — see `surfaced_parse_warnings`), so this
+        // run's warnings are not silently swallowed by a stale entry from an
+        // unrelated earlier program.
+        self.surfaced_parse_warnings.clear();
         // `MUTSU_GC_COLLECT_NOW=1` (§9.2): one collect right at program start.
         crate::gc::startup_collect_if_requested();
         let preprocessed = Self::maybe_preprocess_roast_directives(input);
@@ -393,9 +399,7 @@ impl Interpreter {
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Emit any parse warnings (e.g. duplicate traits)
-        for warning in crate::parser::take_parse_warnings() {
-            self.write_warn_to_stderr(&warning);
-        }
+        self.emit_parse_warnings(crate::parser::take_parse_warnings());
         let (mut stmts, finish_content) = parse_result?;
         if let Some(content) = finish_content {
             self.env.insert("=finish".to_string(), Value::str(content));
