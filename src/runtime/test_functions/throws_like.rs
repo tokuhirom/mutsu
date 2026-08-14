@@ -25,7 +25,7 @@ impl Interpreter {
                 // into the caller, where a subsequent `EVAL` would surface it as
                 // its own result. Save and restore the outer last_value.
                 let saved_last_value = self.last_value.take();
-                let r = self.eval_test_block_value(&data.body);
+                let r = self.eval_test_block_value(&data.body, Some(data.id));
                 self.last_value = saved_last_value;
                 r
             }
@@ -591,7 +591,7 @@ impl Interpreter {
         let result = match code_val.view() {
             ValueView::Sub(data) => {
                 let saved_last_value = self.last_value.take();
-                let r = self.eval_test_block_value(&data.body);
+                let r = self.eval_test_block_value(&data.body, Some(data.id));
                 self.last_value = saved_last_value;
                 r
             }
