@@ -871,6 +871,27 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   entirely on the nine eager `clear_private_zeroarg_method_cache()` call sites, same generation-blind
   shape the `func_multi_*` pair had before #6425. Those nine eager clears are now redundant for
   correctness (kept only to drop the map's capacity promptly, same as `func_multi_*`).
+  **Correction (verified 2026-08-14, do NOT act on the claim above without re-reading this):** the
+  "redundant for correctness" claim two sentences up is WRONG for at least three of the nine sites.
+  It silently assumed every site's enclosing operation reaches `sync_user_method_entries` (the only
+  thing that bumps `Registry::method_generation`, which the read-site refresh keys on) the way
+  class registration does. Read by hand: `register_role_decl` (`registration_role.rs:329`) never
+  calls `sync_user_method_entries` anywhere in its body -- a role's methods are never synced into
+  `method_entries` at declaration time, only later when a *class* composes/puns the role.
+  `ensure_role_punned_to_class` (`registration_class_augment.rs:1028`) likewise never calls it.
+  `augment_class` (`registration_class_augment.rs:71`) only reaches it conditionally, through
+  `compose_role_into_augmented_class`, and only when `does_roles` is non-empty -- the common case,
+  a plain `augment class C { method foo {...} }` with no `does`, never bumps the generation at all.
+  For these sites the eager `clear_private_zeroarg_method_cache()` is the ONLY invalidation the
+  private-zeroarg cache gets and is genuinely load-bearing; removing it would be a real staleness
+  bug (a stale private-method resolution served after a role declaration/pun/plain-method augment),
+  not a cleanup. The other sites in the original nine may or may not be safe -- `withdraw_role_pun`
+  (`methods_object_dispatch_new.rs:202`) calls `sync_user_method_entries` on the line immediately
+  before its clear, so that one specific call is provably redundant, but the remaining ones
+  (`registration_class_body_attr.rs:66`, `registration_class_augment.rs:611,773`,
+  `registration_class_decl.rs:114`, `types/role_mixin_class.rs:211`) still need the same per-site
+  trace this correction just did before any of them are touched. **Do not remove any of these nine
+  calls as a batch based on the earlier note.**
   **Correction:** the box text above describes `fn_resolve_cache_gen` as "the second generation
   scheme ... that drives block-scope-exit clears in `accessors_misc.rs`" — checked directly and this
   is stale/inaccurate. `fn_resolve_cache_gen` (`vm_call_resolve.rs`'s `find_compiled_function_inner`)
