@@ -227,6 +227,8 @@ impl Interpreter {
             .iter()
             .filter_map(|op| match op {
                 OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                // See the matching comment in `exec_block_scope_op`.
+                OpCode::DeclareOurScalar { slot, .. } => Some(*slot as usize),
                 _ => None,
             })
             .collect();

@@ -50,6 +50,68 @@ impl Interpreter {
         self.env_mut().insert(qualified, val);
     }
 
+    /// `our $x = <expr>` for a plain untyped scalar (see `OpCode::DeclareOurScalar`
+    /// for the exact eligibility gate): install ONE shared `ContainerRef` cell
+    /// under the lexical local slot AND every runtime-visible name this package
+    /// variable is addressed by, instead of two independent plain-value stores.
+    ///
+    /// This is the fix for `our $a = 1; $GLOBAL::a = 5;` leaving `$a` stale
+    /// (`todo/tickets/our-var-and-its-package-name-are-two-slots.md`): once both
+    /// names hold clones of the SAME cell, a write through either one is a
+    /// write-through-`ContainerRef` at the existing generic chokepoints
+    /// (`SetLocal`/`SetGlobal`'s `ContainerRef` fast paths, `GetLocal`/
+    /// `GetGlobal`'s auto-deref) — no bespoke sync code needed, and critically
+    /// no per-compilation-unit bookkeeping: `env`/`our_vars` are Interpreter-
+    /// level state, so a `$GLOBAL::x` write compiled by a LATER `EVAL` (a fresh
+    /// `CompiledCode` with no knowledge of this declaration's `our_locals`)
+    /// still lands on the exact same cell.
+    pub(super) fn exec_declare_our_scalar_op(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        qualified_idx: u32,
+    ) {
+        let idx = slot as usize;
+        let raw = self.stack.pop().unwrap_or(Value::NIL);
+        let local_name = code.locals[idx].clone();
+        let val = Self::itemize_scalar_store(&local_name, raw);
+        let qualified = Self::const_str(code, qualified_idx).to_string();
+        // A redeclaration of `our $x` (module re-eval'd, block re-entered,
+        // loop body) names the SAME package container in Raku — reuse the
+        // existing cell if the package store already has one under the
+        // qualified name, so any alias established by an earlier declaration
+        // (a closure, another compiled unit) keeps tracking this one instead
+        // of going stale.
+        let existing_cell = match self.env().get(&qualified).map(Value::view) {
+            Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+            _ => None,
+        };
+        let cell = match existing_cell {
+            Some(arc) => {
+                *arc.lock().unwrap() = val;
+                Value::container_ref(arc)
+            }
+            None => val.into_container_ref(),
+        };
+        self.locals[idx] = cell.clone();
+        self.env_mut().insert(local_name.clone(), cell.clone());
+        self.env_mut().insert(qualified.clone(), cell.clone());
+        // At GLOBAL/root scope `Compiler::qualify_variable_name` collapses to
+        // the bare name (a top-level `our $a` qualifies to plain "a", not
+        // "GLOBAL::a"), so an explicit `$GLOBAL::x` access — from this
+        // compilation unit or, importantly, a later `EVAL` — needs its own env
+        // key seeded with the SAME cell to be found by the generic
+        // write-through/read-deref chokepoints.
+        if qualified == local_name {
+            self.env_mut()
+                .insert(format!("GLOBAL::{local_name}"), cell.clone());
+        }
+        // Persist under the qualified key too, matching what every other
+        // `our`/package-qualified store already does (stash introspection,
+        // `::('name')` symbolic lookups).
+        self.set_our_var(qualified, cell);
+    }
+
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
         let init_val = self.stack.pop().unwrap_or(Value::NIL);
         let base_key = Self::const_str(code, key_idx);
@@ -266,6 +328,12 @@ impl Interpreter {
             .iter()
             .filter_map(|op| match op {
                 OpCode::SetLocalDecl { slot, .. } => Some(*slot as usize),
+                // A block-scoped `our $x` (see `OpCode::DeclareOurScalar`)
+                // owns its slot the same way `SetLocalDecl` does: the LEXICAL
+                // alias is scoped to this block (Nil'd on exit below), while
+                // the package-qualified cell it shares persists independently
+                // in `env`/`our_vars`.
+                OpCode::DeclareOurScalar { slot, .. } => Some(*slot as usize),
                 _ => None,
             })
             .collect();

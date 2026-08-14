@@ -4406,11 +4406,11 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::SymbolicDerefStore(sigil_idx) => {
-                self.exec_symbolic_deref_store_op(code, *sigil_idx);
+                self.exec_symbolic_deref_store_op(code, *sigil_idx)?;
                 *ip += 1;
             }
             OpCode::IndirectTypeLookupStore => {
-                self.exec_indirect_type_lookup_store_op(code);
+                self.exec_indirect_type_lookup_store_op(code)?;
                 *ip += 1;
             }
             OpCode::StateVarInit(slot, key_idx) => {
@@ -4702,6 +4702,13 @@ impl Interpreter {
                 self.vardecl_context = true;
                 self.exec_set_local_op(code, *slot)?;
                 self.publish_state_local(code, *slot);
+                *ip += 1;
+            }
+            OpCode::DeclareOurScalar {
+                slot,
+                qualified_idx,
+            } => {
+                self.exec_declare_our_scalar_op(code, *slot, *qualified_idx);
                 *ip += 1;
             }
             OpCode::SetVarDynamic { name_idx, dynamic } => {
