@@ -107,20 +107,31 @@ fn parse_prefix_listop_operand(input: &str) -> PResult<'_, Expr> {
 /// half of an infix (`^^`/`~~`), which is exactly the ambiguity rakudo's
 /// message describes. `!!` is not one — `!!1` is an ordinary double negation.
 ///
-/// rakudo also diagnoses `??` this way, and mutsu deliberately does not (yet):
-/// `Z??` has to be `X::Syntax::CannotMeta` (roast S03-operators/ternary.t), and
-/// mutsu's metaop scanner falls back to a *bare* `Z` there rather than
-/// recognising the attempted meta, so the `??` arrives here looking exactly
-/// like term position. Claiming it would trade one roast file for another. The
-/// same trap in reverse is why `^^` is safe only since the scanner started
-/// taking `Z^^`/`X^^`/`R^^` as single infix tokens.
+/// `?` joined this set once `Z??`/`X??`/`R??`/`S??` (an attempted meta-op over
+/// the ternary) got their own `X::Syntax::CannotMeta` diagnosis
+/// ([`cannot_meta_ternary_error`], checked upstream of every place `Z`/`X`
+/// falls back to a bare infix) — see
+/// `news/2026-08/metaop-ternary-cannot-meta.md`. Before that, mutsu's metaop
+/// scanner fell back to a *bare* `Z` for `Z??`, so the `??` arrived here
+/// looking exactly like term position and claiming it broke
+/// `roast/S03-operators/ternary.t`'s `Z??`/`X??` case. The same trap in
+/// reverse is why `^^` was safe only since the scanner started taking
+/// `Z^^`/`X^^`/`R^^` as single infix tokens.
 ///
-/// `???` (the warn-flavoured yada stub) would be the other wrinkle if `?` were
-/// included: it is a real term, so only a run of exactly two would count.
-/// Reports the first two characters even when the run is longer: rakudo's
-/// `prefixes` for `^^^1` is `"^^"`, not `"^^^"`.
+/// `???` (the warn-flavoured yada stub) is the wrinkle unique to `?`: it is a
+/// real term (rakudo greedily reads all three as the stub, e.g. `????1` is
+/// `???` followed by a bogus postfix `?1`, NOT a duplicated prefix), so only a
+/// run of *exactly* two `?` counts — unlike `^`/`~`, where any longer run
+/// still claims a duplicated prefix.
+///
+/// Reports the first two characters even when the run is longer (for `^`/`~`):
+/// rakudo's `prefixes` for `^^^1` is `"^^"`, not `"^^^"`.
 fn duplicated_prefix_run(input: &str) -> Option<&str> {
     let first = input.chars().next()?;
+    if first == '?' {
+        let len = input.chars().take_while(|&c| c == '?').count();
+        return (len == 2).then(|| &input[..2]);
+    }
     if !matches!(first, '^' | '~') {
         return None;
     }
@@ -139,7 +150,13 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     // This only became safe once the metaop scanner claimed `Z^^`/`X^^`/`R^^`
     // as single infix tokens: while it took only the `Z`, the `^^` arrived here
     // in what looked like term position and this check rejected valid code
-    // (`todo/tickets/duplicated-prefix-needs-metaop-aware-placement.md`).
+    // (`todo/tickets/duplicated-prefix-needs-metaop-aware-placement.md`). `??`
+    // needed the same care in reverse: `Z??`/`X??`/`R??`/`S??` are caught by
+    // `cannot_meta_ternary_error` inside the list-infix loop (as
+    // `X::Syntax::CannotMeta`, since the ternary can't be metaopped at all)
+    // BEFORE the meta letter is ever consumed as a bare `Z`/`X` infix — so a
+    // lone `??` never reaches here looking like term position in the first
+    // place, and `duplicated_prefix_run` below is free to claim it.
     if let Some(prefixes) = duplicated_prefix_run(input) {
         return Err(PError::from_typed(
             crate::value::RuntimeError::duplicated_prefix(prefixes),

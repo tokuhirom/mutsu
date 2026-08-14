@@ -184,6 +184,85 @@ fn parse_meta_set_op(input: &str) -> Option<(String, usize)> {
     None
 }
 
+/// Detect `Z??`, `X??`, `R??`, `S??` -- a meta-op letter immediately (no
+/// space) adjacent to the ternary's opening `??`. rakudo refuses to
+/// distribute the ternary conditional pairwise like an ordinary infix and
+/// diagnoses this by name: `X::Syntax::CannotMeta`, e.g. "Cannot zip with ??
+/// 2 !! because conditional operators are too fiddly"
+/// (`roast/S03-operators/ternary.t` "fiddly meta error indicates what
+/// operator is used").
+///
+/// `S` has no meaning as a meta-op letter anywhere else in Raku (there is no
+/// general `S`-prefixed metaop) -- it exists purely so this specific
+/// diagnostic can name it, matching rakudo's own grammar.
+///
+/// A *spaced* `Z ??`/`R ??`/... does NOT hit this path: `Z` there is either a
+/// complete bare zip (`Z`/`X`) or an incomplete `R`/`S` with its own separate
+/// diagnosis, and the `??` that follows starts its own term (raising
+/// `X::Syntax::DuplicatedPrefix` via `duplicated_prefix_run` once that lands).
+/// Adjacency is exactly how rakudo tells the two apart, mirroring `Z^^`
+/// (`news/2026-08/metaop-doubled-infix-base.md`).
+///
+/// Returns `None` when `input` doesn't start with one of the four adjacent
+/// spellings, so callers fall through to their normal parse attempts.
+pub(crate) fn cannot_meta_ternary_error(
+    input: &str,
+) -> Option<crate::parser::parse_result::PError> {
+    let meta_word = if input.starts_with("Z??") {
+        "zip with"
+    } else if input.starts_with("X??") {
+        "cross with"
+    } else if input.starts_with("R??") {
+        "reverse the args of"
+    } else if input.starts_with("S??") {
+        "sequence the args of"
+    } else {
+        return None;
+    };
+    let after_letter = &input[1..];
+    // The `operator` attribute is the ternary's `?? … !!` span -- up to and
+    // including the first `!!`, matching rakudo's own text. A malformed
+    // ternary with no `!!` at all falls back to the whole remainder; this
+    // only affects the diagnostic's cosmetic operand text.
+    let operand_text = match after_letter.find("!!") {
+        Some(idx) => &after_letter[..idx + 2],
+        None => after_letter,
+    };
+    let message =
+        format!("Cannot {meta_word} {operand_text} because conditional operators are too fiddly");
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert(
+        "message".to_string(),
+        crate::value::Value::str(message.clone()),
+    );
+    attrs.insert(
+        "meta".to_string(),
+        crate::value::Value::str(meta_word.to_string()),
+    );
+    attrs.insert(
+        "operator".to_string(),
+        crate::value::Value::str(operand_text.to_string()),
+    );
+    attrs.insert(
+        "reason".to_string(),
+        crate::value::Value::str("too fiddly".to_string()),
+    );
+    attrs.insert(
+        "dba".to_string(),
+        crate::value::Value::str("conditional".to_string()),
+    );
+    let exception = crate::value::Value::make_instance(
+        crate::symbol::Symbol::intern("X::Syntax::CannotMeta"),
+        attrs,
+    );
+    let mut err = crate::parser::parse_result::PError::raw(
+        format!("X::Syntax::CannotMeta: {message}"),
+        Some(input.len()),
+    );
+    err.exception = Some(Box::new(exception));
+    Some(err)
+}
+
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.
 pub(crate) fn parse_meta_op(input: &str) -> Option<(String, String, usize)> {
     let meta = if input.starts_with('R') {
