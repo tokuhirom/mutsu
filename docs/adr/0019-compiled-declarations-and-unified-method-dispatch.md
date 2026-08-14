@@ -116,9 +116,9 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
-optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating)
-and E3 (not started, scheduled after E4b/E5-E7's own conclusion). Phase F and the completion
-gates (G1-G4) have not started. See each box's entry below for its own status, and
+optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
+E1, E3-E11 are all closed). Phase F and the completion gates (G1-G4) have not started. See each
+box's entry below for its own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
 `d4-parent-expr-chunks.md`, `d5-plan-driven-how-ops.md`, `d6-d9-legacy-body-removal.md`,
 `d7-d8-role-plan-encoding.md`, `d3-8-method-body-main-pass-compilation.md` for Phase D, and
@@ -541,7 +541,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     misdispatching. `native_call_unmodeled` is now a monitoring signal (kept low, reviewed
     periodically, new clusters still fixed at the root cause), not a hard precondition. E2b itself
     stays open for opportunistic root-cause fixes but no longer blocks E3/E4b.
-- [ ] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
+- [x] **E3 — Add the generation-keyed resolved-call cache.** Key by receiver TypeId, method symbol,
   call shape, and method generation; cache the ordered candidate sequence, not a second resolver.
   **Design 2026-08-10** (same doc): lands after E4b. Key `(TypeId, Symbol, CallShape)` where
   CallShape packs arity bucket + has-named (named calls get sequence caching for the first
@@ -549,6 +549,25 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   sites that today bypass the generation refresh gain it. `fast_method_cache` survives as the
   monomorphic IC in front until F5 — retiring it inside Phase E would be an unmeasured perf
   cliff. Bench-CI parity evidence is part of this box's exit (G3's dispatch clause).
+  **Slice 1 (2026-08-14, #6395):** `pick_method_winner_from_sequence` models the non-multi
+  early-stopping rule against `ResolvedSequence`, byte-for-byte verified against
+  `resolve_method_with_owner_impl` with zero shadow-check mismatches across the full `t/` suite
+  and the dispatch-heaviest roast directories; the same PR also closed two pre-existing
+  generation-coverage gaps in the sound-multi-resolve and non-multi HashMap caches.
+  **Slice 2 (2026-08-14, #6395):** confirmed both of those caches gain the generation key.
+  **Cutover (2026-08-14, #6396):** added `resolved_seq_cache: FxHashMap<(TypeId, Symbol,
+  CallShape), Arc<ResolvedSequence>>` and `resolve_via_sequence_cache`; `resolve_method_cached`'s
+  two cache-miss paths (sound-multi-resolve miss, final "resolve fresh") now call it instead of
+  `resolve_method_with_owner_invocant`'s live MRO walk, and the now-redundant
+  `shadow_check_resolver` calls at those sites were removed. **Bench-CI parity (2026-08-14):** the
+  next bench-CI point after the cutover (`fe4a650b0`, vs. the pre-cutover point `5b030c516`) shows
+  `method-call` dropping from 0.185s to 0.146s raw (raku ratio 0.74→0.63) — but every other
+  benchmark moved by a similar ~15-20% too, including `bench-tak` (a no-dispatch control,
+  0.311s→0.265s), matching the PR's own local-A/B finding that shared-runner load noise dominates
+  interleaved-vs-back-to-back comparisons on this box. Read against that uniform shift,
+  `method-call`/`bench-class`/`poly-call` show no method-call-specific regression or outlier —
+  satisfying this box's bench-CI parity exit criterion (no regression), though the data does not
+  cleanly isolate a specific speedup either. **E3 is closed.**
 - [x] **E4 — Resolve native and user candidates in one MRO walk.** Preserve user shadowing,
   visibility, invocant definedness, arity/signature ordering, and native fallback in one result.
   **Design (2026-08-10):** `resolve_sequence(chain, name, shape, definedness)` returns a
@@ -848,7 +867,8 @@ each instruction.
 ## Implementation status
 
 The checklist above ("Execution plan and progress") is the authoritative, currently-maintained
-record of what has landed. Phases A-D and E1, E4-E11 are closed; E2/E3 and Phase F/the completion
-gates are the remaining open work — see their entries above for current status and the linked
-`todo/deep/adr0019-*.md` design docs for full design and slice history. Individual accomplishments
+record of what has landed. Phases A-D and E1, E3-E11 are closed; E2 (open cleanup, no longer
+gating) and Phase F/the completion gates are the remaining open work — see their entries above for
+current status and the linked `todo/deep/adr0019-*.md` design docs for full design and slice
+history. Individual accomplishments
 are additionally recorded per-PR under `news/2026-08/`.
