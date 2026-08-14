@@ -2277,6 +2277,22 @@ pub struct Interpreter {
     pub(crate) prepared_fn_defs: HashMap<Symbol, (u64, Arc<FunctionDef>)>,
     pub(crate) method_resolve_cache:
         rustc_hash::FxHashMap<(Symbol, Symbol), crate::vm::MethodResolveEntry>,
+    /// ADR-0019 E3: the generation-keyed resolved-sequence cache (design
+    /// decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`). Caches the
+    /// ordered candidate universe for `(receiver TypeId, method, call shape)`
+    /// — not a resolved winner, so unlike `multi_resolve_cache` an ambiguous
+    /// per-call ranking never disqualifies an entry from being cached; ranking
+    /// against fresh call args happens every time from the cached candidates.
+    /// Cleared with the other method caches on any registry generation change
+    /// ([`crate::vm::vm_call_method_compiled_cache::Interpreter::refresh_method_caches_for_generation`]).
+    pub(crate) resolved_seq_cache: rustc_hash::FxHashMap<
+        (
+            crate::type_id::TypeId,
+            Symbol,
+            resolution_sequence::CallShape,
+        ),
+        Arc<resolution_sequence::ResolvedSequence>,
+    >,
     /// Registry method generation observed when the method caches were last valid.
     pub(crate) method_cache_generation: u64,
     #[allow(clippy::type_complexity)]

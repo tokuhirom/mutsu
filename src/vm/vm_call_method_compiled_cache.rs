@@ -13,6 +13,7 @@ impl Interpreter {
         self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
+        self.resolved_seq_cache.clear();
         self.dispatch_multi_candidate.clear();
         self.clear_private_zeroarg_method_cache();
     }
@@ -222,21 +223,10 @@ impl Interpreter {
             if let Some(hit) = self.multi_resolve_cache.get(&mkey) {
                 return hit.clone();
             }
-            let resolved = loan_env!(
-                self,
-                resolve_method_with_owner_invocant(cn, method, args, target)
-            );
-            // ADR-0019 E4a shadow probe (zero behavior change): see
-            // `todo/deep/adr0019-e2-e4-resolver-core.md`.
-            self.shadow_check_resolver(
-                "resolve_method_cached:multi",
-                cn,
-                method,
-                method_sym,
-                args,
-                target,
-                resolved.as_ref(),
-            );
+            // ADR-0019 E3: resolve via the cached candidate sequence instead
+            // of a live per-call MRO walk. See
+            // `todo/deep/adr0019-e2-e4-resolver-core.md` design decision 5.
+            let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
             let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
             if !self.dispatch_ambiguous {
                 self.multi_resolve_cache.insert(mkey, resolved_arc.clone());
@@ -244,21 +234,10 @@ impl Interpreter {
             return resolved_arc;
         }
         // 4. Resolve fresh; cache the result when it is non-multi.
-        let resolved = loan_env!(
-            self,
-            resolve_method_with_owner_invocant(cn, method, args, target)
-        );
-        // ADR-0019 E4a shadow probe (zero behavior change): see
-        // `todo/deep/adr0019-e2-e4-resolver-core.md`.
-        self.shadow_check_resolver(
-            "resolve_method_cached:fresh",
-            cn,
-            method,
-            method_sym,
-            args,
-            target,
-            resolved.as_ref(),
-        );
+        // ADR-0019 E3: resolve via the cached candidate sequence instead of a
+        // live per-call MRO walk. See
+        // `todo/deep/adr0019-e2-e4-resolver-core.md` design decision 5.
+        let resolved = self.resolve_via_sequence_cache(cn, method_sym, args, target);
         let resolved_arc = resolved.map(|(o, d)| (o, std::sync::Arc::new(d)));
         if resolved_arc.as_ref().is_none_or(|(_, def)| !def.is_multi) {
             self.method_resolve_cache
