@@ -35,8 +35,32 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_default();
+        // ADR-0019 Phase F box F5 cutover: a module load can install classes
+        // and subs, but each such installation already invalidates dispatch
+        // caches at its OWN registration site (`exec_register_class_op`
+        // bumps `Registry::method_generation` unconditionally on every real
+        // change; `exec_register_sub_op` calls
+        // `invalidate_method_dispatch_caches()`, including its unconditional
+        // `fn_resolve_gen` bump, on every actual install). This USED to be
+        // reinforced by a second, redundant `invalidate_method_dispatch_caches()`
+        // call right here, after the module finished loading. Verified via the
+        // `MUTSU_VM_STATS`-gated shadow check below across the full `t/` suite
+        // (4049 checks, 164 generation bumps) and the roast whitelist (2479
+        // checks, 89 bumps): every bump traces to a module that genuinely
+        // installs a class (`use`/`need`), and no bump was ever needed for a
+        // module with nothing to install. See the box's progress notes in
+        // `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`.
+        let f5_gen_before = self.registry().method_generation;
         self.vm_use_module_with_tags(module, &tags)?;
-        self.invalidate_method_dispatch_caches();
+        // Shadow-only: confirms the claim above holds; does not affect
+        // dispatch (see `record_module_reg_gen_shadow_check`'s doc comment).
+        {
+            let f5_gen_after = self.registry().method_generation;
+            crate::vm::vm_stats::record_module_reg_gen_shadow_check(
+                f5_gen_after != f5_gen_before,
+                || format!("use module={module}"),
+            );
+        }
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -65,8 +89,16 @@ impl Interpreter {
                 _ => None,
             })
             .unwrap_or_default();
+        // ADR-0019 Phase F box F5 cutover: see `exec_use_module_op`'s comment.
+        let f5_gen_before = self.registry().method_generation;
         loan_env!(self, import_module(module, &tags))?;
-        self.invalidate_method_dispatch_caches();
+        {
+            let f5_gen_after = self.registry().method_generation;
+            crate::vm::vm_stats::record_module_reg_gen_shadow_check(
+                f5_gen_after != f5_gen_before,
+                || format!("import module={module}"),
+            );
+        }
         // Slice F: write imported symbols through to the caller's local slots
         // (import_module recorded their names); keeps an imported `constant c`
         // coherent without the reverse pull. This op holds the outer `code`.
@@ -86,8 +118,16 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
+        // ADR-0019 Phase F box F5 cutover: see `exec_use_module_op`'s comment.
+        let f5_gen_before = self.registry().method_generation;
         self.no_module(module)?;
-        self.invalidate_method_dispatch_caches();
+        {
+            let f5_gen_after = self.registry().method_generation;
+            crate::vm::vm_stats::record_module_reg_gen_shadow_check(
+                f5_gen_after != f5_gen_before,
+                || format!("no module={module}"),
+            );
+        }
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -103,8 +143,16 @@ impl Interpreter {
         name_idx: u32,
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
+        // ADR-0019 Phase F box F5 cutover: see `exec_use_module_op`'s comment.
+        let f5_gen_before = self.registry().method_generation;
         self.need_module(module)?;
-        self.invalidate_method_dispatch_caches();
+        {
+            let f5_gen_after = self.registry().method_generation;
+            crate::vm::vm_stats::record_module_reg_gen_shadow_check(
+                f5_gen_after != f5_gen_before,
+                || format!("need module={module}"),
+            );
+        }
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
