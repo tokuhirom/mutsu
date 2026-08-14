@@ -348,17 +348,7 @@ impl Interpreter {
         // restored registry rather than returning the now-out-of-scope
         // CompiledFunction the first in-block call cached (the compiled-function
         // map is program-global and still contains the lexical sub's body).
-        self.fn_resolve_gen += 1;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.resolved_seq_cache.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
     }
 
     pub(crate) fn block_scope_depth(&self) -> usize {

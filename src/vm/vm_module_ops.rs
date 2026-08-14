@@ -36,16 +36,7 @@ impl Interpreter {
             })
             .unwrap_or_default();
         self.vm_use_module_with_tags(module, &tags)?;
-        self.fn_resolve_gen += 1;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -75,16 +66,7 @@ impl Interpreter {
             })
             .unwrap_or_default();
         loan_env!(self, import_module(module, &tags))?;
-        self.fn_resolve_gen += 1;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
         // Slice F: write imported symbols through to the caller's local slots
         // (import_module recorded their names); keeps an imported `constant c`
         // coherent without the reverse pull. This op holds the outer `code`.
@@ -105,16 +87,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.no_module(module)?;
-        self.fn_resolve_gen += 1;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
@@ -131,16 +104,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let module = Self::const_str(code, name_idx);
         self.need_module(module)?;
-        self.fn_resolve_gen += 1;
-        self.method_resolve_cache.clear();
-        self.last_method_resolve = None;
-        self.fast_method_cache.clear();
-        self.native_ctor_plan_cache.clear();
-        self.multi_resolve_cache.clear();
-        self.multi_type_cacheable.clear();
-        self.func_multi_resolve_cache.clear();
-        self.func_multi_type_cacheable.clear();
-        self.dispatch_multi_candidate.clear();
+        self.invalidate_method_dispatch_caches();
         // A module load writes imported symbols into env by name; flag the env so
         // the next GetLocal barrier reconciles them into locals. (An eager
         // sync_locals_from_env here is unsafe: it can clobber a fresh in-place
