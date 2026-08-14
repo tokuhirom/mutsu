@@ -2663,6 +2663,11 @@ pub(crate) struct ImportScopeSnapshot {
     pub(crate) classes: HashSet<String>,
     pub(crate) proto_subs: HashSet<String>,
     pub(crate) proto_functions: HashSet<Symbol>,
+    /// `env` keys present before the `use`. An import writes the aliased
+    /// name (e.g. `&ok`, `$CONST`) straight into `env` alongside the
+    /// registry entry, so this has to be diffed on pop the same way the
+    /// registry key sets above are — see `pop_import_scope`.
+    pub(crate) env: HashSet<Symbol>,
     pub(crate) newline_mode: NewlineMode,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,

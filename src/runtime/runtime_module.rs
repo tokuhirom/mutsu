@@ -47,6 +47,7 @@ impl Interpreter {
                 classes: reg.classes.keys().cloned().collect(),
                 proto_subs: reg.proto_subs.iter().cloned().collect(),
                 proto_functions: reg.proto_functions.keys().copied().collect(),
+                env: self.env.keys().copied().collect(),
                 newline_mode: self.newline_mode,
                 strict_mode: self.strict_mode,
                 fatal_mode: self.fatal_mode,
@@ -65,6 +66,7 @@ impl Interpreter {
                 classes: class_snapshot,
                 proto_subs: proto_sub_snapshot,
                 proto_functions: proto_fn_snapshot,
+                env: env_snapshot,
                 newline_mode,
                 strict_mode,
                 fatal_mode,
@@ -116,6 +118,25 @@ impl Interpreter {
                 }
                 let ks = key.resolve();
                 ks.contains("::") && !ks.starts_with("GLOBAL::")
+            });
+            // The `env` half of the same distinction: `import_module` writes
+            // an imported symbol's aliased name straight into `env` too (a
+            // bare `&ok`/`$CONST`, or the `GLOBAL::name`-qualified form under
+            // the importing package), alongside the registry entry handled
+            // above. Drop everything added to `env` since the push UNLESS it
+            // is a module's own package-qualified entry (`Foo::name`, not
+            // `GLOBAL::name`) — same keep-rule as the registry, because a
+            // sibling block's later `use` re-imports by reading that
+            // qualified env value (see the `vars` loop in `import_module`).
+            // A sigil (`$@%&`) may prefix the qualifier, so strip it before
+            // checking.
+            self.env.retain(|key, _| {
+                if env_snapshot.contains(key) {
+                    return true;
+                }
+                let ks = key.resolve();
+                let unqualified = ks.strip_prefix(['$', '@', '%', '&']).unwrap_or(ks.as_str());
+                unqualified.contains("::") && !unqualified.starts_with("GLOBAL::")
             });
             self.newline_mode = newline_mode;
             self.strict_mode = strict_mode;
