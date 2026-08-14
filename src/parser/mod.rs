@@ -7,6 +7,7 @@ mod primary;
 mod sink_warn;
 mod stmt;
 pub(crate) mod stmt_ending_brace;
+pub(crate) mod term_boundary;
 mod whenever_scope;
 use std::sync::OnceLock;
 

@@ -379,6 +379,36 @@ fn handle_simple_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     } else {
         expression_no_word_logical(rest).map_err(|e| malformed_initializer(e, rhs_input))?
     };
+    // Detect "two terms in a row" in an initializer (`my $x = 1 1`, `my @a = 1
+    // 1`, `my %h = a=>1 2`): a pure-value RHS immediately followed on the same
+    // line by another unambiguous term with no infix operator between them.
+    // Mirrors the bare-statement check in `simple_expr_stmt/core.rs`; the
+    // legitimate continuations here are the same base set (statement end,
+    // block/paren/bracket close, a trailing comma list, a statement modifier)
+    // — an initializer has no `where`/trait continuation of its own once past
+    // the RHS (raku itself rejects `my $x = 1 where * > 0` the same way).
+    {
+        let rest_before_ws = rest;
+        let (rest_trimmed, _) = ws(rest)?;
+        let gap = &rest_before_ws[..rest_before_ws.len() - rest_trimmed.len()];
+        let separated_by_newline = gap.contains('\n') || gap.contains('\r');
+        if !separated_by_newline
+            && crate::parser::term_boundary::is_pure_value_expr(&expr)
+            && !rest_trimmed.is_empty()
+            && !rest_trimmed.starts_with(';')
+            && !rest_trimmed.starts_with('}')
+            && !rest_trimmed.starts_with(')')
+            && !rest_trimmed.starts_with(']')
+            && !rest_trimmed.starts_with(',')
+            && !crate::parser::stmt::modifier::is_stmt_modifier_keyword(rest_trimmed)
+            && crate::parser::term_boundary::starts_with_unambiguous_term(rest_trimmed)
+        {
+            return Err(PError::fatal_at(
+                "Confused. Two terms in a row".to_string(),
+                rest_trimmed,
+            ));
+        }
+    }
     // Capture a trailing word-logical tail, seeded by a re-read of the declared
     // variable. It is re-attached below as a scopeless `SyntheticBlock` second
     // statement: `my $x = 1 and 2` runs `my $x = 1`, then `$x and 2`.

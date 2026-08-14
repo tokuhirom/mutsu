@@ -144,6 +144,7 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     loop {
         let (r2, _) = ws(r)?;
         if !r2.starts_with(',') || r2.starts_with(",,") {
+            reject_two_terms_boundary(r, r2)?;
             break;
         }
         let r2 = &r2[1..];
@@ -182,6 +183,35 @@ pub(crate) fn parse_expr_listop_args(input: &str, name: String) -> PResult<'_, E
     // finalizer (and `try_parse_sequence_arg_list` for the sequence operator).
     let args = crate::parser::primary::lift_list_infix_in_arg_list(args);
     Ok((r, make_call_expr(name, input, args)))
+}
+
+/// Detect "two terms in a row" at the point a listop argument list is about
+/// to stop consuming (`f 1 1`, `f "a" "b"`): the just-finished argument is
+/// directly followed on the same line by another unambiguous term, with no
+/// comma, infix operator, or other legitimate continuation between them.
+/// `after_ws` is `before_ws` with leading whitespace stripped; the gap
+/// between them tells us whether a newline separated the two (a plausible
+/// new statement, not flagged here — mirrors the same exemption in
+/// `simple_expr_stmt/core.rs` and the `my`-initializer boundary check).
+fn reject_two_terms_boundary<'a>(before_ws: &'a str, after_ws: &'a str) -> PResult<'a, ()> {
+    let gap = &before_ws[..before_ws.len() - after_ws.len()];
+    let separated_by_newline = gap.contains('\n') || gap.contains('\r');
+    if !separated_by_newline
+        && !after_ws.is_empty()
+        && !after_ws.starts_with(';')
+        && !after_ws.starts_with('}')
+        && !after_ws.starts_with(')')
+        && !after_ws.starts_with(']')
+        && !is_stmt_modifier_ahead(after_ws)
+        && crate::parser::expr::parse_word_logical_op(after_ws).is_none()
+        && crate::parser::term_boundary::starts_with_unambiguous_term(after_ws)
+    {
+        return Err(PError::fatal_at(
+            "Confused. Two terms in a row".to_string(),
+            after_ws,
+        ));
+    }
+    Ok((before_ws, ()))
 }
 
 pub(crate) fn try_parse_no_paren_invocant_colon_call<'a>(
@@ -340,6 +370,7 @@ pub(crate) fn make_call_expr_from_listop_args<'a>(
             continue;
         }
         if !r2.starts_with(',') || r2.starts_with(",,") {
+            reject_two_terms_boundary(r, r2)?;
             break;
         }
         let r2 = &r2[1..];
