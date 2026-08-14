@@ -851,6 +851,21 @@ impl Interpreter {
         if let Some(val) = self.env().get(name) {
             return Some(val.clone());
         }
+        // $*DISTRO/$*PERL/$*RAKU/$*VM/$*KERNEL are not in env or the base
+        // tier at all (todo/tickets/magic-vars-should-be-built-lazily.md
+        // Slice 2) — materialize them here, right after the direct env miss
+        // and before the alias-cascade checks below. It must sit HERE, not at
+        // the bottom of this function: several of those checks (e.g.
+        // `twigil_dynamic_alias`) `return` unconditionally the moment they
+        // compute a candidate alias, even when that alias also misses, so a
+        // tail check would never be reached for a name any of them touch.
+        // None of them apply to these plain bareword keys anyway (no `::`
+        // qualifier, no `@`/`%` sigil), so checking first changes nothing for
+        // any other name and is cheap on the actual hot-hit path (only a
+        // handful of `&str` comparisons, paid only after a real env miss).
+        if let Some(v) = Self::lazy_magic_dynamic_var(name) {
+            return Some(v);
+        }
         // Anonymous scalar placeholders (from bare `$`) are invocation-local.
         if name.starts_with("__ANON_STATE_") {
             return None;
