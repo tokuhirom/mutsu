@@ -108,14 +108,30 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         // Registering a class can shadow a same-named earlier class (`my class A`
-        // in a fresh lexical scope) with different method bodies/candidates, so the
-        // method-resolution caches — keyed on the class NAME symbol — must be
-        // invalidated, or a cached resolution from the old class would be reused for
-        // the new one. (The multi-resolution cache made this observable:
-        // S12-methods/multi.t reuses `my class A`/`B` with multi submethods.)
-        self.invalidate_method_dispatch_caches();
-        // ADR-0019 Phase F box F5 shadow check: see
-        // `record_class_reg_gen_shadow_check`'s doc comment.
+        // in a fresh lexical scope) with different method bodies/candidates, so a
+        // cached resolution from the old class must not be reused for the new one.
+        // (The multi-resolution cache made this observable: S12-methods/multi.t
+        // reuses `my class A`/`B` with multi submethods.) This USED to be enforced
+        // by a preemptive `invalidate_method_dispatch_caches()` call right here,
+        // before `register_class_decl` ran. ADR-0019 Phase F box F5 cutover: that
+        // eager clear is redundant and removed. Every live path through
+        // `register_class_decl` that actually changes the class calls
+        // `sync_user_method_entries` unconditionally, which bumps
+        // `Registry::method_generation`; every cache the eager clear used to clear
+        // (`method_resolve_cache`/`fast_method_cache`/`native_ctor_plan_cache`/
+        // `multi_resolve_cache`/`multi_type_cacheable`/`resolved_seq_cache`/
+        // `dispatch_multi_candidate`/the private-zeroarg cache) already
+        // self-refreshes at its own read site keyed on that same generation
+        // (`refresh_method_caches_for_generation`), so by the time any of them is
+        // read again the new class's generation has already superseded the old
+        // one. The one path that does NOT bump the generation is a true no-op (a
+        // stub re-declaring an already-non-stub class of the same name, which
+        // leaves the class completely unchanged) and needs no invalidation either.
+        // Verified via the `MUTSU_VM_STATS`-gated shadow check below across the
+        // full `t/` suite (1296 checks, 1 mismatch) and a class/role/multi-heavy
+        // roast whitelist subset (5 mismatches): every mismatch was exactly that
+        // no-op shape. See the box's progress notes in
+        // `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`.
         let f5_gen_before = self.registry().method_generation;
         if let Some(crate::opcode::CompiledClassDeclPlan {
             name,
