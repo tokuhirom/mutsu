@@ -964,6 +964,26 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   module's class declarations. With that evidence, the eager `invalidate_method_dispatch_caches()`
   call is removed from all four sites; the shadow check remains as a standing regression guard.
   `make test` (3164 files, all green) and `make roast` confirm no behavior change.
+  **Progress (`exec_register_sub_op` cutover):** the remaining audited-but-unresolved call site,
+  `vm_register_sub_ops.rs:316` (plain `sub` installation), is also cut over -- by construction, not
+  by corpus sampling. Its eager `invalidate_method_dispatch_caches()` clears two disjoint cache
+  families: the *function*-namespace ones (`func_multi_resolve_cache`/`func_multi_type_cacheable`
+  and the light/otf/multi-candidates call caches), all guarded by `fn_resolve_gen`; and the
+  *method*-namespace ones (`method_resolve_cache`/`fast_method_cache`/`native_ctor_plan_cache`/
+  `multi_resolve_cache`/`multi_type_cacheable`/`resolved_seq_cache`/`dispatch_multi_candidate`),
+  all keyed on `(owner type, method name)`. A bare `sub` is never a method-table entry under any
+  key those caches use -- `register_compiled_sub_decl` is called only from this site and
+  `run_prelude.rs`'s prelude-sub bootstrap, never from method/class registration -- so it can never
+  make a method-namespace cache stale, unlike a class/method declaration. Direct precedent: the
+  fast re-install path just above this call (the `prepared_fn_defs` branch, for a `my sub`
+  re-entering its declaring block) already only bumps `fn_resolve_gen` for the identical "install a
+  sub" event, with no method-cache clear at all. The call is replaced with a bare `fn_resolve_gen +=
+  1`. `make test` (3164 files, all green) and `make roast` (1436 files, all green) confirm no
+  behavior change.
+  **Still open:** `accessors_misc.rs:351` (block-scope-exit routine-registry restore) stays --
+  traced and confirmed load-bearing earlier in this box (restores `token_defs`, which changes a
+  block-scoped grammar's method set without bumping `Registry::method_generation`). With the module
+  and sub sites now closed, this is F5's only remaining eager-clear call site.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
