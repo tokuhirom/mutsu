@@ -355,6 +355,7 @@ impl Interpreter {
         self.native_ctor_plan_cache.clear();
         self.multi_resolve_cache.clear();
         self.multi_type_cacheable.clear();
+        self.resolved_seq_cache.clear();
         self.func_multi_resolve_cache.clear();
         self.func_multi_type_cacheable.clear();
         self.dispatch_multi_candidate.clear();

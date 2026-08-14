@@ -173,7 +173,7 @@ pub(crate) struct ResolvedSequence {
 /// the same "DEFINITE" primitive `dispatch_core_coerce.rs`'s `.DEFINITE` arm
 /// implements, needed here to decide whether a `Native` candidate's row
 /// requires [`crate::builtins::native_method_row::NativeRowFlags::TYPE_OBJECT_OK`].
-fn value_is_definite(value: &Value) -> bool {
+pub(crate) fn value_is_definite(value: &Value) -> bool {
     match value.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::CustomType(..) => false,
         ValueView::Slip(items) if items.is_empty() => false,
@@ -181,7 +181,102 @@ fn value_is_definite(value: &Value) -> bool {
     }
 }
 
+/// ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+/// the call-shape component of `resolved_seq_cache`'s key
+/// `(TypeId, Symbol, CallShape)`. A [`ResolvedSequence`] only depends on the
+/// receiver's owner chain and the call's arity/named-ness (via
+/// [`NativeCallShape`]'s effect on which `Native` row, if any, is servable) —
+/// not on the concrete argument values — so this is a small, `Copy` hash key
+/// bucketing arity into `0 | 1 | 2 | 3+` and tracking whether any argument is
+/// a named pair.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub(crate) struct CallShape {
+    arity_bucket: u8,
+    has_named: bool,
+}
+
+impl CallShape {
+    pub(crate) fn for_args(args: &[Value]) -> CallShape {
+        let has_named = args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)));
+        CallShape {
+            arity_bucket: args.len().min(3) as u8,
+            has_named,
+        }
+    }
+
+    fn arg_count_for_native_shape(self) -> usize {
+        self.arity_bucket as usize
+    }
+}
+
 impl Interpreter {
+    /// ADR-0019 E3 (design decision 5, `todo/deep/adr0019-e2-e4-resolver-core.md`):
+    /// resolve `(cn, method)` for `args`/`target` via the cached
+    /// [`ResolvedSequence`], replacing the live per-call MRO walk
+    /// (`resolve_method_with_owner_impl`, reached via
+    /// `resolve_method_with_owner_invocant`) `resolve_method_cached` used to
+    /// perform at both of its cache-miss paths. The winner-selection algorithm
+    /// itself, [`Self::pick_method_winner_from_sequence`], was verified
+    /// (E3 slice 1) to reproduce `resolve_method_with_owner_impl` exactly —
+    /// zero shadow-check mismatches across the full `t/` suite and the
+    /// dispatch-heaviest roast directories — so this is authoritative, not a
+    /// shadow probe.
+    ///
+    /// The sequence itself is cached per `(receiver TypeId, method, call
+    /// shape)`: unlike `multi_resolve_cache` (which caches a resolved winner
+    /// and therefore must never cache an ambiguous outcome), caching the
+    /// candidate *universe* is safe regardless of ambiguity — ranking against
+    /// the call's actual args happens fresh on every call from the cached
+    /// candidates, exactly as it would from a freshly-walked one.
+    pub(crate) fn resolve_via_sequence_cache(
+        &mut self,
+        cn: &str,
+        method_sym: Symbol,
+        args: &[Value],
+        target: &Value,
+    ) -> Option<(Symbol, MethodDef)> {
+        // `resolve_method_with_owner_impl` resets this at the top of every
+        // call (`resolution_method.rs:164`) — `pick_method_winner` only ever
+        // sets it `true` on ambiguity, never clears it, so callers that check
+        // it right after resolving (multi-resolve-cache's "never cache an
+        // ambiguous outcome" rule) need it reset here too.
+        self.dispatch_ambiguous = false;
+        let owner = TypeId::intern(cn);
+        let shape = CallShape::for_args(args);
+        let mro_arc = self.class_mro(cn);
+        let mro: Vec<Symbol> = mro_arc.iter().copied().collect();
+        let seq = match self.resolved_seq_cache.get(&(owner, method_sym, shape)) {
+            Some(cached) => cached.clone(),
+            None => {
+                let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
+                let native_shape = NativeCallShape::new(
+                    shape.arg_count_for_native_shape(),
+                    value_is_definite(target),
+                );
+                let built = Arc::new(self.resolve_sequence(
+                    &chain,
+                    method_sym,
+                    native_shape,
+                    MethodVisibility::Public,
+                ));
+                self.resolved_seq_cache
+                    .insert((owner, method_sym, shape), built.clone());
+                built
+            }
+        };
+        let role_bindings = self.registry().get_role_param_bindings(cn);
+        self.pick_method_winner_from_sequence(
+            &mro,
+            cn,
+            &seq.candidates,
+            args,
+            Some(target),
+            role_bindings.as_ref(),
+        )
+    }
+
     /// Build the ordered user-candidate sequence for `chain` (an E1 TypeId MRO,
     /// most-derived first) and `name`: every non-private, non-submethod-shadowed
     /// candidate at every level, in stored declaration order. Mirrors the
