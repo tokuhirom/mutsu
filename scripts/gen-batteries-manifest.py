@@ -179,6 +179,10 @@ SIDECAR = {
         "slot": "Web framework",
         "record": "docs/batteries/cro-http.md",
     },
+    "JSON::Tiny": {
+        "slot": "JSON (reference / Grammar+Actions)",
+        "record": "docs/batteries/json-tiny.md",
+    },
 }
 
 

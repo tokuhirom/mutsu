@@ -130,6 +130,12 @@ IO::Path::ChildSecure	00-use.rakutest
 IO::Path::ChildSecure	01-operation.rakutest
 JSON::JWT	01-decode.rakutest
 JSON::JWT	02-encode.rakutest
+JSON::Tiny	01-parse.t
+JSON::Tiny	02-structure.t
+JSON::Tiny	03-unicode.t
+JSON::Tiny	04-roundtrip.t
+JSON::Tiny	05-utf16.t
+JSON::Tiny	06-meta-valid.t
 Log::Timeline	has-output.rakutest
 MIME::Base64	basic.rakutest
 MIME::Base64	binary-and-long-line.rakutest
