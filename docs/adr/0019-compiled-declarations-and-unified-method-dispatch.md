@@ -899,11 +899,31 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   (`vm_typedecl_ops.rs:116`) plausibly reach `sync_user_method_entries` transitively for any
   class/method content they carry, but plain `sub` registration (`vm_register_sub_ops.rs:316`) and
   block-scope-exit routine-registry restore (`accessors_misc.rs:351`) confirmed do **not** bump
-  `Registry::method_generation` — and the latter is a genuine case where the eager clear is load
-  -bearing today (it restores `token_defs`, and grammar `token`/`rule` bodies are methods, so a
+  `Registry::method_generation` — and the latter is a genuine case where the eager clear is
+  load-bearing today (it restores `token_defs`, and grammar `token`/`rule` bodies are methods, so a
   block-scoped grammar's token set changing must invalidate method caches, but nothing in that
   restore path touches `Registry::method_generation`). The 7 eager clears therefore stay; only the
   read-site gap closed above was safe to land without a wider generation-bump audit.
+  **Progress (class registration traced):** confirmed (by reading, not a shadow-check sweep)
+  that `vm_typedecl_ops.rs:116`'s preemptive clear — issued *before* `register_class_decl` runs,
+  precisely so a same-named class redeclaration cannot serve a stale resolution from the old
+  class — is followed, on every live code path through `register_class_decl`, by an unconditional
+  `sync_user_method_entries` call that bumps `Registry::method_generation`: `publish_class_shell`
+  calls it right after inserting the class (both the stub and non-stub branches), and
+  `finalize_class_registration` calls it again after the composed body lands. The only early
+  return that skips both (`is_stub_body` re-declaring an already-non-stub class) is a true no-op —
+  the class is left completely unchanged, so no invalidation is needed for it either way. So by
+  the time this opcode returns, `Registry::method_generation` has already advanced past whatever
+  the preemptive clear was defending against, and the three read-site-refreshed caches
+  (`method_resolve_cache`/`fast_method_cache`/`native_ctor_plan_cache`, now all three
+  self-refreshing per the progress note above) would pick that up on their own. This is a strong
+  signal the `vm_typedecl_ops.rs:116` clear is redundant for those three specifically — but it is
+  *traced*, not shadow-verified against the full corpus the way E1a/E4a's cutovers were, and role
+  registration (`exec_register_role_op`) and enum registration (`exec_register_enum_op`) were not
+  re-traced here (neither currently calls `invalidate_method_dispatch_caches` at all, so they are
+  out of scope for this specific box regardless). Removing the line is deliberately deferred to a
+  dedicated shadow-check slice rather than done on trace evidence alone. `vm_module_ops.rs`'s four
+  sites (module load/import/no/need) remain fully untraced.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
