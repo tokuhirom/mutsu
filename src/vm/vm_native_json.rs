@@ -43,6 +43,7 @@ impl Interpreter {
             "from-json" => Some(native_from_json(
                 &clean_args,
                 self.json_import_defaults.immutable,
+                self.json_tiny_exception_style(),
             )),
             _ => None,
         }
@@ -204,7 +205,9 @@ impl Interpreter {
         let (clean_args, _) = self.sanitize_call_args(args);
         Some(match method {
             "to-json" => native_to_json(&clean_args, self.base_to_json_opts()),
-            "from-json" => native_from_json(&clean_args, self.json_import_defaults.immutable),
+            "from-json" => {
+                native_from_json(&clean_args, self.json_import_defaults.immutable, false)
+            }
             _ => unreachable!(),
         })
     }
@@ -241,7 +244,11 @@ fn apply_to_json_named(opts: &mut ToJsonOpts, name: &str, val: &Value) {
     }
 }
 
-fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, RuntimeError> {
+fn native_from_json(
+    args: &[Value],
+    default_immutable: bool,
+    tiny_exception_style: bool,
+) -> Result<Value, RuntimeError> {
     let mut immutable = default_immutable;
     let mut allow_jsonc = false;
     let mut text = String::new();
@@ -263,6 +270,25 @@ fn native_from_json(args: &[Value], default_immutable: bool) -> Result<Value, Ru
         }
     }
     json::from_json(&text, immutable, allow_jsonc).map_err(|e| match e {
+        json::FromJsonError::Parse(_) if tiny_exception_style => {
+            // Mirror the real JSON::Tiny's `X::JSON::Tiny::Invalid`, which
+            // `from-json` throws (with the original source string, not the
+            // parser's diagnostic) whenever the grammar fails to parse.
+            let tiny_msg = format!(
+                "Input ({} characters) is not a valid JSON string",
+                text.chars().count()
+            );
+            let ex = Value::make_exception(
+                "X::JSON::Tiny::Invalid",
+                &[
+                    ("source", Value::str(text.clone())),
+                    ("message", Value::str(tiny_msg.clone())),
+                ],
+            );
+            let mut err = RuntimeError::new(tiny_msg);
+            err.exception = Some(Box::new(ex));
+            err
+        }
         json::FromJsonError::Parse(msg) => RuntimeError::new(msg),
         json::FromJsonError::AdditionalContent {
             parsed,

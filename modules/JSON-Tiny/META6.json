@@ -1,0 +1,15 @@
+{
+    "perl"        : "6.*",
+    "name"        : "JSON::Tiny",
+    "version"     : "1.0",
+    "description" : "A minimal JSON (de)serializer",
+    "depends"     : [ ],
+    "license":    "Artistic-2.0",
+    "provides"    : {
+        "JSON::Tiny"            : "lib/JSON/Tiny.pm",
+        "JSON::Tiny::Actions"   : "lib/JSON/Tiny/Actions.pm",
+        "JSON::Tiny::Grammar"   : "lib/JSON/Tiny/Grammar.pm"
+    },
+    "source-url"  : "git://github.com/moritz/json.git"
+}
+

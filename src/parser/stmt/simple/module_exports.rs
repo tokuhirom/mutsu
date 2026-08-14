@@ -81,10 +81,14 @@ pub(crate) fn register_module_exports(module: &str) {
         // Native modules: `to-json`/`from-json` are implemented in Rust
         // (runtime/json.rs), so there is no source file to scan for exports.
         // JSON::Fast also exports the X::JSON::AdditionalContent exception
-        // class; register it as a declared type so `when X::JSON::AdditionalContent {`
+        // class, and JSON::Tiny its own X::JSON::Tiny::Invalid; register
+        // whichever applies as a declared type so `when X::JSON::...Invalid {`
         // is not misread as an undeclared-bareword block gobble.
         if module == "JSON::Fast" {
             register_user_type("X::JSON::AdditionalContent");
+        }
+        if module == "JSON::Tiny" {
+            register_user_type("X::JSON::Tiny::Invalid");
         }
         let exports: Vec<InlineModuleExport> = ["to-json", "from-json"]
             .iter()

@@ -189,6 +189,17 @@ impl Interpreter {
         self.loaded_modules.contains("JSON::Fast") || self.loaded_modules.contains("JSON::Tiny")
     }
 
+    /// Whether a `from-json` parse failure should surface as
+    /// `X::JSON::Tiny::Invalid` (the real JSON::Tiny's exception) rather than
+    /// the plain `X::AdHoc` JSON::Fast produces via `die`. Both modules share
+    /// one native `from-json`, so this is a best-effort guess from which
+    /// module name(s) were `use`d — accurate for the common single-import
+    /// case; a program that loads both modules falls back to the
+    /// JSON::Fast-shaped error.
+    pub(crate) fn json_tiny_exception_style(&self) -> bool {
+        self.loaded_modules.contains("JSON::Tiny") && !self.loaded_modules.contains("JSON::Fast")
+    }
+
     /// Check if a name matches a known test function (Test or Test::Util).
     /// Used by the bare word resolver to dispatch zero-arg test function calls.
     pub(crate) fn is_test_function_name(name: &str) -> bool {

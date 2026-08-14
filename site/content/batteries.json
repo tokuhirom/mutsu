@@ -346,6 +346,24 @@
       "readme": "[![Actions Status](https://github.com/raku-community-modules/IO-Path-ChildSecure/actions/workflows/test.yml/badge.svg)](https://github.com/raku-community-modules/IO-Path-ChildSecure/actions)\n\nNAME\n====\n\nIO::Path::ChildSecure - Secure version of IO::Path.child\n\nSYNOPSIS\n========\n\n```raku\nuse IO::Path::ChildSecure;\n\n# good; you get IO::Path\n\"foo\".IO.&child-secure: 'meow';\n\n# still good if 'foo/meow/foo/bar/../' exists; Failure if it doesn't\n\"foo\".IO.&child-secure: 'meow/foo/bar/../meow';\n\n# bad; path isn't a child; you get Failure\n\"foo\".IO.&child-secure: '../';\n```\n\nDESCRIPTION\n===========\n\nIn the Raku Programming Language, [IO::Path.child](https://docs.raku.org/type/IO::Path#method_child) isn't secure, in a sense that it does no checks for whether the resultant path is actually a child of the original path.\n\nThis module provides a subroutine that can be used as an alternative that **will** check whether the resultant path is a child of the original path.\n\nEXPORTED SUBROUTINES\n====================\n\nchild-secure\n------------\n\n```raku\n\"foo\".IO.&child-secure: 'meow'; # good; you get IO::Path\n\"foo\".IO.&child-secure: 'meow/foo/bar/../meow'; # still good\n\"foo\".IO.&child-secure: '../';  # bad; path isn't a child; you get Failure\n\nchild-secure \"foo\".IO, '../';  # can also use as a proper sub\n```\n\nAppends the given path chunk to the invocant and ensures the resultant path is, in fact, a child of the invocant, by accessing the filesystem and fully-resolving the path. The last chunk of the resultant path does not have to exist for the resolution to succeed.\n\nWill [fail](https://docs.raku.org/routine/fail) with `X::IO::Resolve` if failed to fully resolve the resultant path or with `X::IO::NotAChild` if the resultant path is not a child of the invocant.\n\nSPECIAL NOTES\n=============\n\nIf you don't need to ensure secureness, use the much-faster core [`IO::Path.add` method](https://docs.raku.org/type/IO::Path#method_add)\n\nAUTHOR\n======\n\nZoffix Znet\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2017-2018 Zoffix Znet\n\nCopyright 2019-2022 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
     },
     {
+      "name": "JSON::Tiny",
+      "version": "1.0",
+      "description": "A minimal JSON (de)serializer",
+      "license": "Artistic-2.0",
+      "authors": [],
+      "auth": "",
+      "provides": [
+        "JSON::Tiny",
+        "JSON::Tiny::Actions",
+        "JSON::Tiny::Grammar"
+      ],
+      "depends": [],
+      "upstream": "git://github.com/moritz/json",
+      "slot": "JSON (reference / Grammar+Actions)",
+      "record": "docs/batteries/json-tiny.md",
+      "readme": "# Example\n\nA simple Perl 6 module for serializing and deserializing JSON.\n\n    use JSON::Tiny;\n    say from-json('{ \"a\": 42 }').perl;\n    say to-json { a => [1, 2, 'b'] };\n\n# Supported Standards\n\nJSON::Tiny implements RFC7159, which is a superset of ECMA-404, in that it\npermits any value as a top-level JSON string, not just arrays and objects.\n\n# License\n\nAll files (unless noted otherwise) can be used, modified and redistributed\nunder the terms of the Artistic License Version 2. Examples (in the\ndocumentation, in tests or distributed as separate files) can be considered\npublic domain.\n\n# Installation and Tests\n\nTo install this module, please use zef from https://github.com/ugexe/zef and\ntype\n\n    zef install JSON::Tiny\n\nor from a checkout of this source tree,\n\n    zef install .\n\nYou can run the test suite locally like this:\n\n    prove -e 'perl6 -Ilib' t/\n"
+    },
+    {
       "name": "Log::Timeline",
       "version": "0.5.2",
       "description": "Log tasks with start/end periods and phases, as well as individual events",
