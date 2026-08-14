@@ -12,6 +12,49 @@ use crate::value::Value;
 
 use super::parse_assign_expr_or_comma;
 
+/// Build the statement for a sigilless bind/declaration (`my \name := expr`,
+/// `my \name ::= expr`, or `my \name = expr` — all three bind the sigilless
+/// name to `expr` rather than assigning into a container, since a sigilless
+/// term has none).
+///
+/// Mirrors the sigilled `:=` logic in `my_decl_assign::handle_binding`: when
+/// `expr` is itself a plain variable reference (`Expr::Var`), the sigilless
+/// name becomes a writable ALIAS of that variable's container (raku:
+/// `my $a = 5; my \x := $a; x = 10; say $a` prints `10`) via the same
+/// `MarkBind`/`WrapVarRef`/`bind_source` machinery the sigilled case uses.
+/// Otherwise (binding to a literal or any other computed rvalue) the name
+/// stays genuinely readonly (raku: `my \x := 5; x = 10` dies).
+///
+/// This does NOT depend on whether a type constraint was written — `my Mu
+/// \a := $a` and `my \a := $a` behave the same way in raku; only the shape
+/// of the RHS decides mutability.
+fn build_sigilless_bind_stmt(
+    name: String,
+    expr: Expr,
+    type_constraint: Option<String>,
+    is_state: bool,
+    is_our: bool,
+) -> Stmt {
+    let bind_to_var = matches!(expr, Expr::Var(_));
+    let decl = Stmt::VarDecl {
+        name: name.clone(),
+        expr,
+        type_constraint,
+        is_state,
+        is_our,
+        is_dynamic: false,
+        is_export: false,
+        export_tags: Vec::new(),
+        custom_traits: Vec::new(),
+        where_constraint: None,
+    };
+    if bind_to_var {
+        Stmt::SyntheticBlock(vec![Stmt::MarkBind, decl, Stmt::MarkSigilless(name)])
+    } else {
+        Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
+    }
+}
+
 /// Parse a sigilless variable declaration: `my \name = expr`
 pub(super) fn parse_sigilless_decl(
     input: &str,
@@ -26,28 +69,7 @@ pub(super) fn parse_sigilless_decl(
     if let Some(r) = r.strip_prefix("::=").or_else(|| r.strip_prefix(":=")) {
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let decl = Stmt::VarDecl {
-            name: name.clone(),
-            expr,
-            type_constraint: type_constraint.clone(),
-            is_state,
-            is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        };
-        // Sigilless variables without type constraint are always readonly.
-        // With a type constraint (e.g. `my Mu \a := $a`), the variable
-        // binds to the container, preserving mutability — but it must still be
-        // registered as a sigilless local so a bare-word read resolves to its
-        // slot (not `env`), so wrap it with the non-readonly `MarkSigilless`.
-        let stmt = if type_constraint.is_none() {
-            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
-        } else {
-            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
-        };
+        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }
@@ -109,23 +131,7 @@ pub(super) fn parse_sigilless_decl(
         let r = &r[1..];
         let (r, _) = ws(r)?;
         let (r, expr) = parse_assign_expr_or_comma(r)?;
-        let decl = Stmt::VarDecl {
-            name: name.clone(),
-            expr,
-            type_constraint: type_constraint.clone(),
-            is_state,
-            is_our,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: Vec::new(),
-            where_constraint: None,
-        };
-        let stmt = if type_constraint.is_none() {
-            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigillessReadonly(name)])
-        } else {
-            Stmt::SyntheticBlock(vec![decl, Stmt::MarkSigilless(name)])
-        };
+        let stmt = build_sigilless_bind_stmt(name, expr, type_constraint.clone(), is_state, is_our);
         if apply_modifier {
             return parse_statement_modifier(r, stmt);
         }

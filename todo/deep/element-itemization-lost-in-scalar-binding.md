@@ -54,6 +54,15 @@ just not as a drive-by.
 - Implicit-topic iteration over `@`-arrays whose body relies on the element
   being ONE item in list context (the sprintf shape, now only reachable via
   `for @c { ... $_ ... }` — the `-> $v` form is fixed).
+- List-destructuring bind write-through: `my (\a, \b) := my ($x, $y); a = 10;`
+  (or the sigilled `my ($a, $b) := ($x, $y);`) never propagates to `$x`,
+  because the destructuring desugar reads each target's RHS out of a temp
+  array by index (`Expr::Index { target: ArrayVar("__destructure_tmp__"),
+  index: i }`), which has no per-element container to alias. Found triaging
+  `Math::Interval`'s `TWEAK` (`todo/tickets/dist-test-suite-failures-batch.md`);
+  the single-variable case (`my \a := $x`) was fixed separately in
+  `news/2026-08/sigilless-bind-writable-alias.md`, but the list-bind form
+  needs this store-side fix.
 
 ## Verification once fixed
 
