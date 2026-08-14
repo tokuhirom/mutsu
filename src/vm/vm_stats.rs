@@ -613,6 +613,40 @@ pub(crate) fn record_deferral_shadow_check(matched: bool, detail: impl FnOnce() 
     }
 }
 
+// ADR-0019 Phase F box F1 item 2 (`todo/deep/adr0019-f1-f2-introspection-
+// canonical-source.md`): shadow comparison between `ClassDef::methods` (the
+// source `collect_can_methods`'s MRO walk reads directly today for `.^can`/
+// `.can`) and `Registry::method_entries[(owner, name)].user_candidates`
+// (`Registry::user_method_overloads`) -- the canonical table Phase E's
+// dispatch path already reads exclusively. Same reasoning as F1 item 1's
+// (now-removed) `user_candidates` shadow pair, kept as its own counter
+// because it compares a different reader's per-(class, method) candidate
+// list. Nothing reads these counters to make a dispatch decision:
+// shadow-only, zero behavior change.
+static CAN_METHODS_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static CAN_METHODS_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn can_methods_shadow_mismatch_by_key() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_KEY: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_KEY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one F1-item-2 `collect_can_methods` shadow comparison. `detail` is
+/// only evaluated on a mismatch, mirroring [`record_deferral_shadow_check`].
+#[inline]
+pub(crate) fn record_can_methods_shadow_check(matched: bool, detail: impl FnOnce() -> String) {
+    if !enabled() {
+        return;
+    }
+    CAN_METHODS_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        CAN_METHODS_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = can_methods_shadow_mismatch_by_key().lock() {
+            *map.entry(detail()).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0024: mainline named subs resolving free variables through
 // unit-lexical cells. `MAINLINE_LEXICAL_BOXES` counts every NEW `ContainerRef`
 // cell created by `exec_register_sub_op`'s mainline capture (registration
@@ -1139,6 +1173,27 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e8a deferral-shadow mismatches (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let can_methods_shadow_checks = CAN_METHODS_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let can_methods_shadow_mismatches = CAN_METHODS_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-f1-item2: can_methods_shadow_checks={can_methods_shadow_checks} can_methods_shadow_mismatches={can_methods_shadow_mismatches}"
+    );
+    if let Ok(map) = can_methods_shadow_mismatch_by_key().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-f1-item2 can-methods-shadow mismatches (top {}): {}",
             top.len(),
             top.join(" ")
         );
