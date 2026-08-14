@@ -803,6 +803,11 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   far and why it needs a dedicated verification pass before a design. That pass also surfaced a
   distinct bug, `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`: `.^lookup`
   builds a `Sub`-shaped value instead of the same `Method` `Instance` these readers now share.
+  **Update (#6420):** the sharpest symptom of that bug — `.is_dispatcher`/`.multi` silently
+  returning a bogus `<composed-method:NAME>` callable instead of a real answer — is fixed with
+  targeted handling on the `Sub`-shaped value, verified against `raku` ground truth (pin:
+  `t/classhow-lookup-method-is-dispatcher-multi.t`). The underlying representation mismatch (Sub
+  vs. Method Instance) remains open; this was a scoped patch, not the unification.
 - [ ] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
@@ -819,6 +824,16 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   generation scheme `fn_resolve_cache_gen` that drives block-scope-exit clears in
   `accessors_misc.rs`. `native_ctor_plan_cache` is not "unrelated": it is cleared in lockstep
   with `fast_method_cache` at every one of those sites and must adopt the same generation.
+
+  **Progress (#6422):** the trivial-first-PR slice this box called out is done — the duplicated
+  clear block at all 7 non-generation-gated sites (module load/import/no/need, block-scope exit,
+  sub registration, class/role/enum registration) is now one shared
+  `Interpreter::invalidate_method_dispatch_caches()` (`src/vm/vm_dispatch_cache_invalidate.rs`).
+  This is pure dedup, not the generation migration: `func_multi_resolve_cache`/
+  `func_multi_type_cacheable` (plain multi *sub* dispatch, read by `resolve_function_multi_cached`)
+  have no generation guard at their read site, so the eager clears stay load-bearing. The
+  remaining work — extending the generation scheme to cover that pair (and everything else this
+  box lists) so the eager calls can be deleted rather than merely deduplicated — is still open.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
