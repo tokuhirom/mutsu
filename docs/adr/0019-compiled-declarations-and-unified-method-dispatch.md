@@ -871,11 +871,20 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   entirely on the nine eager `clear_private_zeroarg_method_cache()` call sites, same generation-blind
   shape the `func_multi_*` pair had before #6425. Those nine eager clears are now redundant for
   correctness (kept only to drop the map's capacity promptly, same as `func_multi_*`).
-  **Still open:** the second generation scheme `fn_resolve_cache_gen` (`accessors_misc.rs`) has not
-  been unified with `Registry::method_generation`/`fn_resolve_gen`; `method_resolve_cache`/
-  `fast_method_cache`/`native_ctor_plan_cache` remain eager-cleared at
-  `invalidate_method_dispatch_caches`'s 7 call sites (not yet audited as safe to drop, per that
-  function's own doc comment).
+  **Correction:** the box text above describes `fn_resolve_cache_gen` as "the second generation
+  scheme ... that drives block-scope-exit clears in `accessors_misc.rs`" — checked directly and this
+  is stale/inaccurate. `fn_resolve_cache_gen` (`vm_call_resolve.rs`'s `find_compiled_function_inner`)
+  is not a second scheme at all: it's compared against the *same* `fn_resolve_gen` counter
+  `invalidate_method_dispatch_caches` bumps, `fn_resolve_cache` has zero eager manual clear sites
+  anywhere in the codebase, and nothing named `fn_resolve_cache_gen` exists in `accessors_misc.rs`.
+  This pair is already fully sound; nothing to migrate here.
+  **Still open:** `method_resolve_cache`/`fast_method_cache`/`native_ctor_plan_cache` remain
+  eager-cleared at `invalidate_method_dispatch_caches`'s 7 call sites, guarded by a *different*
+  counter (`fn_resolve_gen`) than the one their own read-site refresh
+  (`refresh_method_caches_for_generation`) uses (`Registry::method_generation`) — unlike the two
+  pairs above, unifying these needs auditing whether `Registry::method_generation` is actually
+  bumped at all 7 of those sites (some, e.g. plain sub/module registration, are function-registry
+  events that may not touch the method registry), not just adding a read-site refresh call.
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
