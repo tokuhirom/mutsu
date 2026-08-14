@@ -853,11 +853,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   clear block at all 7 non-generation-gated sites (module load/import/no/need, block-scope exit,
   sub registration, class/role/enum registration) is now one shared
   `Interpreter::invalidate_method_dispatch_caches()` (`src/vm/vm_dispatch_cache_invalidate.rs`).
-  This is pure dedup, not the generation migration: `func_multi_resolve_cache`/
-  `func_multi_type_cacheable` (plain multi *sub* dispatch, read by `resolve_function_multi_cached`)
-  have no generation guard at their read site, so the eager clears stay load-bearing. The
-  remaining work — extending the generation scheme to cover that pair (and everything else this
-  box lists) so the eager calls can be deleted rather than merely deduplicated — is still open.
+  This is pure dedup, not the generation migration.
+  **Progress (#6425):** `func_multi_resolve_cache`/`func_multi_type_cacheable` (plain multi *sub*
+  dispatch, read by `resolve_function_multi_cached`) are now generation-guarded at their own read
+  site (`refresh_func_multi_caches_for_generation`, keyed on `fn_resolve_gen`, mirroring
+  `refresh_method_caches_for_generation`) — closing a real staleness gap the eager clear alone did
+  not cover (`fn_resolve_gen` is bumped at ~15 sub/multi-registration sites that never called
+  `invalidate_method_dispatch_caches`). Their `.clear()` calls in that function are now redundant
+  for correctness and kept only to drop the maps' allocated capacity promptly.
+  **Progress:** `private_zeroarg_method_cache` now also refreshes at its own read site
+  (`resolve_private_method_any_owner`, via the existing `refresh_method_caches_for_generation`,
+  keyed on `Registry::method_generation` — the same one `#[6420]`'s `.wrap`/`.is_dispatcher` work and
+  the class/role/augment registration paths already bump). This closed a real gap: only one of the
+  five call sites that read the cache (`resolve_private_method_for_vm`) went through the refreshing
+  entry point; the other four (`methods_call_dispatch.rs`, `methods_signature_shaped.rs`,
+  `methods_instance_ops.rs` ×2) called `resolve_private_method_any_owner` directly and depended
+  entirely on the nine eager `clear_private_zeroarg_method_cache()` call sites, same generation-blind
+  shape the `func_multi_*` pair had before #6425. Those nine eager clears are now redundant for
+  correctness (kept only to drop the map's capacity promptly, same as `func_multi_*`).
+  **Still open:** the second generation scheme `fn_resolve_cache_gen` (`accessors_misc.rs`) has not
+  been unified with `Registry::method_generation`/`fn_resolve_gen`; `method_resolve_cache`/
+  `fast_method_cache`/`native_ctor_plan_cache` remain eager-cleared at
+  `invalidate_method_dispatch_caches`'s 7 call sites (not yet audited as safe to drop, per that
+  function's own doc comment).
 - [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —

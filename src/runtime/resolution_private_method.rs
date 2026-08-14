@@ -55,6 +55,16 @@ impl Interpreter {
         method_name: &str,
         arg_values: &[Value],
     ) -> Option<(String, MethodDef)> {
+        // ADR-0019 Phase F box F5: refresh here, at the cache's own read site,
+        // rather than relying on every caller to have gone through
+        // `resolve_private_method_for_vm` first -- `methods_call_dispatch.rs`,
+        // `methods_signature_shaped.rs`, and `methods_instance_ops.rs` (two
+        // sites) all call this function directly and previously depended
+        // entirely on the eager `clear_private_zeroarg_method_cache()` calls at
+        // class/role/augment registration sites, the same generation-blind gap
+        // `func_multi_resolve_cache` had (#6425) before it gained its own
+        // read-site refresh.
+        self.refresh_method_caches_for_generation();
         let role_bindings = self.registry().get_role_param_bindings(class_name);
         if arg_values.is_empty()
             && let Some(cached) = self
