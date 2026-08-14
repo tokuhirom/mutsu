@@ -826,10 +826,18 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   catalog that dispatch itself consumes.
   **Scoping (2026-08-14):** this box's "generated native entry catalog" target
   (`native_method_row.rs`'s `RAW_ROWS`) turns out to have drifted from the 14 arrays since its
-  2026-08-10 generation — missing an owner (`Sub`) entirely, with ~90+ extra dispatch-recognized
-  names across other owners not vetted for `.^methods` inclusion, and at least one owner
-  (`Signature`) in a different order. Not a mechanical cutover; needs its own raku-verification
-  pass first. See `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`.
+  2026-08-10 generation — apparently missing an owner (`Sub`) entirely, with ~90+ extra
+  dispatch-recognized names across other owners not vetted for `.^methods` inclusion, and at least
+  one owner (`Signature`) in a different order. Not a mechanical cutover; needs its own
+  raku-verification pass first. See `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`.
+  **Progress (2026-08-14, step 1):** the "`Sub` missing entirely" claim was a probe artifact (an
+  owner-folding mismatch in the ad hoc diff, not a real gap — `RAW_ROWS` already carries all 10
+  `Code`-folded rows `Sub` needs). Verified for real with a new permanent test,
+  `raw_rows_cover_every_introspection_name_in_order`: **zero missing names for all 18 owners.**
+  Fixed the two owners (`Signature`, `Any`) whose `RAW_ROWS` order genuinely diverged from their
+  introspection array (rows were scattered into unrelated hand-added blocks); order now matches for
+  all 18. The ~90+ extra dispatch-recognized names per owner (step 2's raku-verification triage) are
+  still untouched — that remains the real blocker before the actual cutover (step 3).
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [ ] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
