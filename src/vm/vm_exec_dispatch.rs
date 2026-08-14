@@ -788,6 +788,18 @@ impl Interpreter {
                     .cloned()
                     .or_else(|| self.get_env_with_main_alias(name))
                     .unwrap_or(Value::NIL);
+                // Auto-deref ContainerRef for stack use (ContainerRef axis of
+                // the decont family — mirrors GetGlobal). `our_vars` can now
+                // hold a `ContainerRef` cell for a plain scalar `our`
+                // (`OpCode::DeclareOurScalar`); without this, an `our`
+                // REDECLARATION with no initializer (`our $foo;` after `our
+                // $foo = 3`, e.g. roast S04-declarations/our.t) — which reads
+                // via GetOurVar and re-stores what it read — would push the
+                // raw cell and re-store IT INTO ITSELF, making the cell hold a
+                // `ContainerRef` pointing at itself: any later deref of that
+                // cell locks its own Mutex twice on the same thread and hangs
+                // forever.
+                let val = val.into_deref();
                 self.stack.push(val);
                 *ip += 1;
             }

@@ -47,4 +47,20 @@ use Test;
     is $rt69460, 2, 'class compiled by EVAL can modify the our variable';
 }
 
+# `our $x` REDECLARED with no initializer (`our $x;` after `our $x = <val>`)
+# reads back the current value and must NOT store the raw ContainerRef cell
+# back into itself: doing so makes the cell hold a `ContainerRef` pointing at
+# itself, and any LATER read/write of it locks its own Mutex twice on the
+# same thread and hangs forever. See roast/S04-declarations/our.t tests
+# 28-29 (`is our $foo, 3, ...`), caught via a CI timeout while landing the
+# shared-cell fix.
+{
+    sub bar() { our $foo = 3 };
+    is bar(), 3, 'return value of sub call declaring our-scoped var';
+    is our $foo, 3, 'bare our redeclaration (expression position) reads back the value';
+    is $foo, 3, '... and the value stays';
+    $GLOBAL::foo = 42;
+    is $foo, 42, '... and the cell still write-throughs correctly afterward';
+}
+
 done-testing;
