@@ -232,3 +232,41 @@ Consulted and confirmed with the user. Resolution, adopted as the plan going for
    - **ADR edit**: fold point 1's definitional boundary into the ADR itself (near F1's box text or
      the "Build an introspection-only catalog" rejected alternative), so a future agent doesn't
      misread F3 as blocking this, or misread this as license to resurrect name lists.
+
+## Progress (2026-08-14): F1 mechanism slice, `.package` only
+
+Landed the `.package` half of the mechanism slice, ahead of F3 (F3's own scoping note found its
+"regenerate `RAW_ROWS`" step needs a real raku-verification triage pass of its own, not a
+mechanical cutover -- see `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md` -- so
+this was picked up first as the smaller, independently-safe piece).
+
+`make_native_method_object`/`make_method_object_with_owner` (`methods_classhow_method_obj.rs`)
+never set a `.package` attribute at all, so every `Method` `Instance` object `.^methods`/
+`.^method_table`/`collect_class_methods` build answered `.package` as `Nil` regardless of
+receiver -- confirmed by raku ground truth this was simply missing, not merely imprecise. Fixed:
+
+- **User methods and role methods**: `.package` is now exactly the declaring class/role, threaded
+  through the existing `owner_class`/`role_name` parameters already present at every call site.
+  Verified exact against `raku` (`class A { method foo{} }`, `role R { method bar{} }`) -- no
+  fidelity gap here, this is a plain missing-feature fix, not an approximation.
+- **Multi dispatchers**: raku's own dispatcher-shaped `Method` (what `.^lookup`/`.^methods` return
+  for the family as a whole) answers `.package` with `(Dummy)`, a Rakudo-internal synthetic type
+  mutsu does not model. Left deliberately unset (`Nil`) rather than guessed wrong -- gated behind
+  the same `!is_dispatcher` condition the existing `__mutsu_lookup_*` wrap-registration tags
+  already used, so no new conditional logic was needed. Each individual `.candidates[N]` entry
+  (itself non-dispatcher) still gets the correct owner.
+- **Native methods**: `.package` now defaults to the catalog `owner` threaded through
+  `push_native_method_objects`/`collect_builtin_type_methods` -- e.g. `Str.^methods`'s `chars`
+  entry now answers `(Str)`. This is the accepted imperfect mechanism-slice default per point 4/5
+  above (raku's real answer for `chars`/`uc`/etc. is `(Cool)`, `Array.push` is `(Any)`) --
+  strictly better than the prior universal `Nil`, not a claim of Rakudo parity. The fidelity slice
+  (per-method override column) is still open for closing this gap exactly.
+
+Also deleted `make_method_object`/`make_method_object_with_candidates`, which became fully dead
+once their only call sites (the multi-candidate builder loop, `collect_role_methods`) were changed
+to call `make_method_object_with_owner` directly with the owner threaded through.
+
+Not done in this slice (left for follow-up, per point 5's own sequencing): `.signature`'s
+synthesized-generic-shape default, and the `Method`-Instance-vs-`Sub` representation unification
+(`todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`) -- `.^lookup` still returns a
+`Sub`-shaped value untouched by this slice. Pinned: `t/classhow-methods-package.t`.

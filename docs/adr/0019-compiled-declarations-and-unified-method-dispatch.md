@@ -808,6 +808,16 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   targeted handling on the `Sub`-shaped value, verified against `raku` ground truth (pin:
   `t/classhow-lookup-method-is-dispatcher-multi.t`). The underlying representation mismatch (Sub
   vs. Method Instance) remains open; this was a scoped patch, not the unification.
+  **Update (2026-08-14, F1 mechanism slice, `.package` only):** `make_native_method_object`/
+  `make_method_object_with_owner` never set a `.package` attribute at all (always `Nil`, not just
+  imprecise). Fixed: exact for user/role methods (declaring class/role, raku-verified); a multi
+  dispatcher's own `.package` stays deliberately unset (real Rakudo answers a synthetic `(Dummy)`
+  mutsu does not model) while its candidates get the correct owner; native methods default to the
+  catalog owner (an accepted imperfect mechanism-slice default, e.g. `Str.uc` answers `(Str)` not
+  Rakudo's true `(Cool)` — the fidelity slice closes that gap later). `.signature`'s synthesized
+  default and the Sub-vs-Instance unification remain open. Pin: `t/classhow-methods-package.t`;
+  design detail in `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Progress
+  (2026-08-14): F1 mechanism slice, `.package` only".
 - [ ] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
