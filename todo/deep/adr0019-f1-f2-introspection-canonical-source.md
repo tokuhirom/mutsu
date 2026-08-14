@@ -163,3 +163,60 @@ data needed (roughly one declaring-type-and-signature-shape entry per native met
 100+ entries across the 14 catalog owners) is exactly the scale of table F3 wants to retire
 elsewhere in this same phase. This tension needs a user decision before a design doc is written;
 see the ADR-0019 execution-plan entry for F1/F2's current status.
+
+## Decision (2026-08-14): columns on the E2 catalog, not a second table
+
+Consulted and confirmed with the user. Resolution, adopted as the plan going forward:
+
+1. **Redefine what "hand table" means for this ADR's purposes.** The ban ANALYSIS §4-1 / this
+   ADR's "Build an introspection-only catalog" rejected-alternative describes is on a *second
+   source of truth about which methods exist and how they dispatch* — exactly what the 14
+   `builtin_type_methods.rs` `&[&str]` arrays are, and exactly why F3 retires them without
+   exception. `.package`/`.signature.gist` fidelity is a different category: **declaration
+   metadata with no in-repo derivation** — Rakudo's own hand-written core signatures have no Raku
+   source in mutsu to read them from, the same way `MethodDef::param_defs` is the only source for a
+   *user* method's signature. This doesn't duplicate a canonical answer; for native methods, it
+   *is* the canonical answer, expressed as data because Rust match arms can't carry it. F3's
+   principle stays intact — no second `(owner, name)` name/existence list — while F1 is allowed to
+   attach fidelity data to entries the *one* generated catalog already owns.
+2. **No new parallel table.** Extend `NativeMethodRow` (`src/builtins/native_method_row.rs`) — the
+   catalog E2 already generated once by probing real dispatch — with optional columns, e.g.
+   `declared_package: Option<&'static str>` (`None` = fall back to the row's own `owner`) and a
+   small `sig_shape` enum covering the handful of Rakudo signature-gist templates actually observed
+   (generic named-catchall, raw capture, named-slurpy-with-real-name, ...). One key, one row: an
+   entry introspection decorates is by construction an entry dispatch already resolves.
+3. **Volume stays small by construction, not by discipline.** The raku ground truth above shows
+   Rakudo's own native signatures are *mostly* the generic/arity-erased shapes already — a
+   synthesized generic template (built from `NativeArityMask` + a default `sig_shape`) is close to
+   correct for most rows without any override. Only the minority that diverge (`Hash.push`'s
+   `+values`, `.package` corrections like `uc`'s `Cool` or `push`'s `Any`) get an explicit override
+   entry, added lazily, one at a time, each backed by a raku-verified `t/` pin — not an upfront
+   sweep of all ~350 native methods. A guard test ties every override to a live catalog row (fails
+   loudly if a row is renamed/removed out from under its override), preventing the drift the
+   rejected-alternative worried about.
+4. **The dispatcher/multi/candidates axis needs no hand data at all.** It is a uniform structural
+   rule (the `.^lookup` result is the dispatcher: `is_dispatcher=True`/`multi=False`; each element
+   of its `.candidates` is a candidate: `is_dispatcher=False`/`multi=True`; a non-multi method's own
+   `.candidates` is itself, one element) that generalized correctly across every case tested,
+   *including* the native-multi case (`Int.^lookup("Numeric")`) #6420's narrower env-tag patch does
+   not yet cover. F1's mechanism slice should implement this as general code in
+   `make_native_method_object`/`classhow_lookup`, replacing the tag-matching patch, not add more
+   tags.
+5. **Sequencing** (keeps F1 and F3 independently landable, F3 first since it has no F1 dependency):
+   - **F3** (next slice): cut `builtin_type_method_names()`'s three call sites
+     (`methods_classhow_method_obj.rs`, `vm_call_helpers.rs`, `methods_classhow_builtin_methods.rs`)
+     and `builtin_method_entries()`'s registry-seeding caller over to read from the canonical
+     catalog/registry instead of the 14 arrays, then delete the arrays. No F1 dependency — this is
+     pure "stop reading the old source, read the one already-generated source" plumbing.
+   - **F1 mechanism slice** (no hand data): fix `make_native_method_object` per point 4, and merge
+     in the `Method`-Instance-vs-`Sub` representation unification
+     (`todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`) so `.^lookup`'s result is
+     the same shape `.^methods`/`.^can` already build. `.package` defaults to the row's `owner`;
+     `.signature` defaults to a synthesized generic shape from arity. Pin the cases this already
+     gets right without any override.
+   - **F1 fidelity slice**: add the two override columns from point 2, populate only the surveyed
+     mismatches above plus whatever a `t/`/roast assertion actually exercises, each raku-verified
+     and pinned, with the guard test from point 3.
+   - **ADR edit**: fold point 1's definitional boundary into the ADR itself (near F1's box text or
+     the "Build an introspection-only catalog" rejected alternative), so a future agent doesn't
+     misread F3 as blocking this, or misread this as license to resurrect name lists.
