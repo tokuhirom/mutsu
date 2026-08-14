@@ -1260,6 +1260,7 @@ mod tests {
             deprecated_message: None,
             is_submethod: false,
             captured_env: None,
+            source_file: None,
         };
         let mut class = ClassDef::default();
         class.methods.insert("chars".to_string(), vec![method]);

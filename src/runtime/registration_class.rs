@@ -148,6 +148,7 @@ pub(super) fn make_delegation_method(attr_var_name: &str, target_method: &str) -
         deprecated_message: None,
         is_submethod: false,
         captured_env: None,
+        source_file: None,
     }
 }
 
@@ -363,6 +364,7 @@ pub(super) fn substitute_type_params_in_method(
         deprecated_message: method.deprecated_message.clone(),
         is_submethod: method.is_submethod,
         captured_env: None,
+        source_file: method.source_file.clone(),
     }
 }
 

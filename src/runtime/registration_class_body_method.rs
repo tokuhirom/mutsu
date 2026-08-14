@@ -172,6 +172,7 @@ impl Interpreter {
             deprecated_message: decl.deprecated_message.clone(),
             is_submethod: decl.is_submethod,
             captured_env: None,
+            source_file: self.current_source_file(),
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.
