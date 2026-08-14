@@ -152,6 +152,27 @@ impl Interpreter {
     /// Build a first-class `Sub` value from a resolved `FunctionDef`, capturing
     /// the current env so the callable outlives its defining scope. Shared by the
     /// operator and ordinary code-var resolution paths.
+    ///
+    /// The returned `Sub`'s `id` is stabilized to the routine's REGISTRATION
+    /// clone id (`__mutsu_callable_id::Pkg::name`, the same env marker
+    /// `Self::sub_state_scope_id` already trusts for `state`-variable scoping)
+    /// when a registration record is visible, instead of always minting a
+    /// fresh id via `next_instance_id()`. Without this, every bareword mention
+    /// of `&f` built a brand-new `SubData` with a brand-new id, so `&f.WHICH`
+    /// changed on every read and a `.wrap()` chain keyed on one mention's id
+    /// (`resolution_call_sub.rs`'s `wrap_chains.get(&data.id)`) was invisible
+    /// to a direct call through any OTHER mention
+    /// (`todo/tickets/code-var-mention-remakes-the-sub.md`). The clone-id
+    /// marker already gives exactly the right granularity for free: it is set
+    /// once for a top-level/class-method sub (stable for the program's
+    /// lifetime, matching raku), and re-set on every `RegisterSub` execution
+    /// for a sub nested inside another routine's body (a fresh id per
+    /// invocation of the enclosing routine, also matching raku — verified
+    /// against `raku` directly: a nested `my sub` closes fresh per call even
+    /// when it captures nothing from the enclosing scope). A def with no
+    /// visible registration record (a synthesized/EVAL-installed def, or one
+    /// looked up before its `RegisterSub` ran) falls back to today's
+    /// fresh-mint behavior, unchanged.
     pub(crate) fn sub_value_from_function_def(&self, def: crate::runtime::FunctionDef) -> Value {
         let mut captured_env = self.env.clone();
         if let Some(ref return_type) = def.return_type {
@@ -167,6 +188,7 @@ impl Interpreter {
             );
         }
         let empty_sig = def.empty_sig;
+        let stable_id = self.registration_clone_id(&def.package.resolve(), &def.name.resolve());
         // The routine's own bytecode rides along, so calling this code object runs
         // compiled code instead of re-compiling the AST body copied below
         // (ADR-0019 C6c).
@@ -181,11 +203,16 @@ impl Interpreter {
             captured_env,
             compiled_routine,
         );
-        // Preserve empty_sig from the FunctionDef so that arity checks
-        // (e.g. sort rejecting 0-arity callables) work correctly.
-        if empty_sig && let ValueView::Sub(data) = sub_val.view() {
+        // Preserve empty_sig from the FunctionDef (arity checks, e.g. sort
+        // rejecting 0-arity callables) and stabilize the id, in one rewrap.
+        if (empty_sig || stable_id.is_some())
+            && let ValueView::Sub(data) = sub_val.view()
+        {
             let mut new_data = (**data).clone();
-            new_data.empty_sig = true;
+            new_data.empty_sig = empty_sig;
+            if let Some(id) = stable_id {
+                new_data.id = id;
+            }
             sub_val = Value::sub_value(crate::gc::Gc::new(new_data));
         }
         // Restore any role ever composed onto this routine (`.^mixin(Role)`,
@@ -194,6 +221,24 @@ impl Interpreter {
         // does not carry the role by itself. See
         // `Interpreter::materialize_routine_mixins_shared`.
         self.materialize_routine_mixins_shared(sub_val, &def.package.resolve(), &def.name.resolve())
+    }
+
+    /// The registration clone id for a named routine `package::name`, i.e. the
+    /// env marker `__mutsu_callable_id::package::name` that `RegisterSub`
+    /// refreshes on every execution (see `Self::sub_state_scope_id`, which
+    /// performs the identical lookup keyed off an already-built `SubData`).
+    /// `None` when `name` is empty or no registration record is visible from
+    /// the current env.
+    fn registration_clone_id(&self, package: &str, name: &str) -> Option<u64> {
+        if name.is_empty() {
+            return None;
+        }
+        let key = format!("__mutsu_callable_id::{}::{}", package, name);
+        self.env
+            .get(&key)
+            .and_then(|v| v.as_int())
+            .filter(|i| *i != 0)
+            .map(|i| i as u64)
     }
 
     pub(crate) fn resolve_code_var(&self, name: &str) -> Value {
