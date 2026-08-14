@@ -19,12 +19,20 @@ impl Interpreter {
                 result.push(self.make_native_method_object(&attr.name));
             }
         }
-        // Then add explicit methods
-        for (method_name, overloads) in &class_def.methods {
+        // Then add explicit methods. `ClassDef::methods` drives the name
+        // enumeration; the overload data itself comes from the canonical
+        // `Registry::method_entries[(owner, name)].user_candidates` table
+        // (ADR-0019 Phase F box F1 item 1) rather than `ClassDef::methods`
+        // directly -- `sync_user_method_entries` keeps the two in lockstep,
+        // verified with zero mismatches across a full `t/`+roast sweep by
+        // the shadow check this cutover retires (#6399).
+        for method_name in class_def.methods.keys() {
+            let Some(overloads) = registry.user_method_overloads(class_name, method_name) else {
+                continue;
+            };
             if overloads.is_empty() {
                 continue;
             }
-            self.shadow_check_user_candidates(&registry, class_name, method_name, overloads);
             // Skip private methods unless :private
             let first = &overloads[0];
             if first.is_private && !include_private {
@@ -37,7 +45,7 @@ impl Interpreter {
                 first,
                 is_multi,
                 return_type,
-                Some(overloads),
+                Some(&overloads),
                 Some(class_name),
             );
             result.push(method_obj);
@@ -47,48 +55,6 @@ impl Interpreter {
             let method_obj = self.make_native_method_object(native_name);
             result.push(method_obj);
         }
-    }
-
-    /// ADR-0019 Phase F box F1 item 1 (`todo/deep/adr0019-f1-f2-
-    /// introspection-canonical-source.md`): shadow comparison between
-    /// `ClassDef::methods` (the source `collect_class_methods`/
-    /// `class_method_table` read directly today) and
-    /// `Registry::method_entries[(owner, name)].user_candidates`
-    /// (`Registry::user_method_overloads`) -- the canonical table Phase E's
-    /// dispatch path already reads exclusively, kept in sync by
-    /// `Registry::sync_user_method_entries`. `Arc::ptr_eq` on each
-    /// candidate's body is enough to prove identity: `sync_user_method_
-    /// entries` writes `user_candidates` via a full clone of `class_def.
-    /// methods`, and `MethodDef::body` is an `Arc` that clone only bumps the
-    /// refcount of, so a match here proves the two rows share the same
-    /// clone lineage (i.e. the last sync call actually ran against this
-    /// exact `ClassDef::methods` state) rather than merely looking similar.
-    /// Shadow-only, zero behavior change -- callers still build every
-    /// `Method` object from `overloads` (the `ClassDef::methods` value).
-    fn shadow_check_user_candidates(
-        &self,
-        registry: &Registry,
-        class_name: &str,
-        method_name: &str,
-        overloads: &[MethodDef],
-    ) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
-        }
-        let canonical = registry.user_method_overloads(class_name, method_name);
-        let matched = match &canonical {
-            Some(candidates) => {
-                candidates.len() == overloads.len()
-                    && candidates
-                        .iter()
-                        .zip(overloads.iter())
-                        .all(|(a, b)| std::sync::Arc::ptr_eq(&a.body, &b.body))
-            }
-            None => false,
-        };
-        crate::vm::vm_stats::record_user_candidates_shadow_check(matched, || {
-            format!("{class_name}::{method_name}")
-        });
     }
 
     /// Build the class's own method table (`.^method_table`): the methods
@@ -121,11 +87,13 @@ impl Interpreter {
                 );
             }
         }
-        for (method_name, overloads) in &class_def.methods {
+        for method_name in class_def.methods.keys() {
+            let Some(overloads) = registry.user_method_overloads(class_name, method_name) else {
+                continue;
+            };
             let Some(first) = overloads.first() else {
                 continue;
             };
-            self.shadow_check_user_candidates(&registry, class_name, method_name, overloads);
             if first.is_private || first.is_submethod {
                 continue;
             }
@@ -136,7 +104,7 @@ impl Interpreter {
                     first,
                     overloads.len() > 1,
                     first.return_type.clone(),
-                    Some(overloads),
+                    Some(&overloads),
                     Some(class_name),
                 ),
             );
