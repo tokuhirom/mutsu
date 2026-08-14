@@ -97,3 +97,16 @@ reproduce the bogus-callable bug and is what this patch fixes.
 
 The representation mismatch itself (Sub vs. Method Instance) — and everything in "Why this is deep,
 not a quick ticket" above — remains open.
+
+## Progress (2026-08-14): the scoped patch's coverage is narrower than "any Method value"
+
+While gathering more F1 raku ground truth (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`),
+found `#6420`'s fix does not cover every case its own description implies. `Int.^lookup("Numeric")`
+— a real *multi* native method — still raises `No such method 'is_dispatcher' for invocant of type
+'Method'` on current `main`, instead of raku's `True` (raku: `Int.^lookup("Numeric").is_dispatcher`
+→ `True`, since `Numeric` is multi with 3 candidates). #6420's fix keys off env tags
+(`__mutsu_lookup_*`/`__mutsu_is_multi_candidate`) set only at the call sites its own pin exercised;
+a native multi method's `.^lookup` result never gets those tags set, so it falls through to the
+still-open "no such method" error rather than the bogus `<composed-method:NAME>` the original repro
+showed. Same root cause, different symptom, not yet pinned. Confirms this is best fixed by the
+representation unification, not another tag-based patch.

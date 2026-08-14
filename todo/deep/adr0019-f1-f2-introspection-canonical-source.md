@@ -121,3 +121,45 @@ item 2's option (a) vs (b).
   (two representations of "a method" that don't interoperate) — separate from F1/F2's native-metadata
   question and not blocked on the raku ground-truth session above. Filed as
   `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`.
+
+## Progress (2026-08-14, second pass): `.package`, `.candidates`, and a gap #6420 didn't cover
+
+More raku ground truth gathered for item 2, continuing the ~10-15-question list this file's
+"Suggested next step" called for. No code changed this pass; findings only.
+
+- **`.package` is not the concrete receiver's own type — it's wherever Rakudo core actually
+  declares the method**, which is not mechanically derivable from a `(owner, name)` catalog row
+  any more than `.signature` is: `"abc".^lookup("uc").package` is `(Cool)` (not `Str`);
+  `Array.^lookup("push").package` and `Array.^find_method("elems").package` are both `(Any)` (not
+  `Array`/`List`). This is the same option-(a)-vs-(b) tension `.signature` already showed, on a
+  second axis — a hand-authored "true declaring type" table would need one entry per native
+  method, independent of the arity/signature data.
+- **`.candidates` is not just "vector of length > 1 when multi"**: even a non-multi method like
+  `floor` answers `.candidates` with a *one*-element list containing itself
+  (`Int.^lookup("floor").candidates.gist` → `(floor)`). A genuinely multi native method (built-in
+  `Numeric` coercion, `Int.^lookup("Numeric")`) answers a 3-element `.candidates` list, and per
+  earlier findings each element has `is_dispatcher=False`/`multi=True` while the dispatcher itself
+  (the `.^lookup` return value) has `is_dispatcher=True`/`multi=False` — confirming #6420's fix
+  shape (dispatcher vs. candidate-entry tags) is the right model, not specific to the cases #6420
+  pinned.
+- **A confirmed gap #6420 did not cover**: `Int.^lookup("Numeric")` (a real multi native method,
+  unlike #6420's pins which were all non-multi or user-defined) still raises `No such method
+  'is_dispatcher' for invocant of type 'Method'` on current `main`, instead of raku's `True`.
+  #6420's fix is keyed off env tags (`__mutsu_lookup_*`/`__mutsu_is_multi_candidate`) set only at
+  the specific call sites its own pins exercised; a native multi method's `.^lookup` result never
+  gets those tags set, so it falls through to the still-open "no such method" error rather than the
+  bogus `<composed-method:NAME>` the ticket's original repro showed. This reproduces the
+  representation-mismatch root cause the ticket already describes (Sub-shaped vs. Method-Instance-
+  shaped `.^lookup` result) on a case its own pin suite doesn't cover — not a new bug, but evidence
+  the scoped patch's coverage is narrower than "any Method value answers `.is_dispatcher`/`.multi`
+  correctly." Left unfixed here per the ticket's own guidance (best done as part of the unification,
+  not another scoped patch) — repro is `Int.^lookup("Numeric").is_dispatcher`.
+
+**Where this leaves the option (a) vs (b) decision:** two independent axes (`.signature`,
+`.package`) both turn out to need hand-authored per-native-method data to match Rakudo exactly, not
+just one. This makes option (a) (hand tables) more clearly the "faithful" choice and option (b)
+(generic placeholder) more clearly the "cheap but visibly wrong" choice — but the *volume* of hand
+data needed (roughly one declaring-type-and-signature-shape entry per native method name, likely
+100+ entries across the 14 catalog owners) is exactly the scale of table F3 wants to retire
+elsewhere in this same phase. This tension needs a user decision before a design doc is written;
+see the ADR-0019 execution-plan entry for F1/F2's current status.
