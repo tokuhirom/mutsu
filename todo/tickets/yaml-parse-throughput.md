@@ -1,5 +1,96 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-08-14, round 6): ADR-0016 landed and delivered a ~4x wall-clock
+win on `bench-yaml-parse`, confirmed from `bench-history.tsv` on `bench-data`
+— but a real, still-open gap remains, plus a smaller unexplained drift since
+the ADR merged.** This round did not change any code; it re-reads the CI bench
+history (per "Benchmark numbers in documents come from the bench CI" in
+`CLAUDE.md`) to check what round 5's prediction ("the next round is
+structural, not another call-site fix... exactly ADR-0016 P2/P5 territory")
+actually bought, now that all five ADR-0016 phases have landed (see
+`docs/adr/0016-span-based-captures-and-lazy-match.md`, whose own §Phasing
+already contains the P1-P5 measurements up to the P5-merge commit
+`fa2400a49`; this entry extends that history two more weeks).
+
+Joining `bench-yaml-parse`/`bench-yaml-parse+jit` against `int-arith`/
+`int-arith+jit` on commit (the same int-arith-normalization method the ADR
+itself used, since this benchmark has no direct raku column in
+`bench-history.tsv` — `raku_median_s` is `NA` on every row, presumably because
+CI's raku environment does not have YAMLish installed) reproduces the ADR's
+own numbers exactly for the commits it cites (`0eb479d9`/`17af2292`/
+`afc3475e` at 117.4/116.9/121.5; `fa2400a49` — the P5 merge — at 25.65), which
+is a good sanity check that this method is sound. Extending it from there
+(plain/`MUTSU_JIT=off` series, daily median of the joined ratio and raw
+`mutsu_median_s`):
+
+| date (2026-08) | commit (representative) | raw median (s) | ratio ÷ int-arith |
+| --- | --- | ---: | ---: |
+| 07-28 (pre-P2) | `0eb479d9` | 5.59 | 117 |
+| 07-30 13:16 (P2 lands) | `22fb3ece8d` | 3.71 | 64 |
+| 07-30 15:25 (P3a lands) | `acf00cf006` | 1.96 | 41 |
+| 07-31 00:13 (P4 lands, pre-P5) | `d74fdf2e52` | 2.24 | 38 |
+| 07-31 01:28 (**P5 merge**) | `fa2400a49` | **1.39** | **25.65** |
+| 07-31 (day median, post-P5) | — | 1.35 | 25.4 |
+| 08-01 | — | 1.38 | 25.6 |
+| 08-02 | — | 1.42 | 26.6 |
+| 08-03 | — | 1.41 | 31.9 |
+| 08-08 | — | 1.54 | 30.8 |
+| 08-12 | — | 1.56 | 32.3 |
+| 08-13 | — | 1.60 | 34.4 |
+| 08-14 (today, tip of `main`) | `ed3d40f59` | 1.60 | 35.1 |
+
+(All rows above are the plain/`MUTSU_JIT=off` series. The `+jit`/default-config
+series tracks the same trend but runs ~10-15% higher throughout — e.g. on
+`ed3d40f59` itself, `bench-yaml-parse+jit` is 1.795s/ratio 46.4 versus the
+plain row's 1.60s/35.1 — plausibly JIT compile/warmup overhead not amortized
+over a single-shot parse; not investigated further here.)
+
+Two conclusions, both grounded in `bench-history.tsv`, not a local run:
+
+1. **The structural fix round 5 predicted was correct and large.** P2
+   (`CapNode` split) and P3a (spans, not text) each cut the ratio roughly in
+   half in sequence (117 → 64 → 41), P4 held that gain, and P5 (lazy `Match`)
+   cut it again by another third (38 → 25.65). Peak-to-trough this is a
+   **~4.5x wall-clock reduction** (5.5-6.8s down to ~1.35s), landed and
+   verified the same day the ADR's own P5 entry claims (2026-07-31), not just
+   a local A/B.
+2. **Since the P5 merge, the ratio has drifted back up from ~25 to ~34-46 over
+   the following two weeks**, and — importantly — this is not purely an
+   `int-arith` normalization artifact: the *raw* `bench-yaml-parse` median
+   also crept from ~1.35s (07-31) to ~1.55-1.60s (08-12 to 08-14), a genuine
+   ~15-20% wall-clock regression on top of the post-P5 number, even before
+   accounting for `int-arith` itself getting a bit faster over the same
+   window (which inflates the *ratio*'s apparent growth beyond the raw-time
+   growth). No single commit stands out as the cause: `git log --oneline
+   origin/main --since=2026-07-31 --until=2026-08-14` on this repo counts
+   **~1700 merged commits** in that window, spanning many unrelated
+   interpreter subsystems (dispatch caches, GC, new opcodes, ADR-0019/ADR-0021
+   /ADR-0022 work, etc.) — a diffuse few-percent overhead compounding across
+   call/dispatch paths on a tight parse loop is a more likely explanation than
+   a single regex-specific regression, but this is *not confirmed* by
+   profiling. Bisecting it would need the same idle-box care as the
+   measurement caveat below (this session did not attempt it — see "Where to
+   look next" item 5, added this round).
+
+**Net assessment: still open, not closeable.** The ~4.5x structural win is
+real and durable (every daily median since 07-31 is at or below ~35, versus
+~110-140 before ADR-0016), but the gap to raku has not closed to
+"diminishing returns" — round 4 measured raku at 0.25s on the same document
+shape when mutsu was 1.73s (~7x), and round 5's 1.27s (~5x); mutsu's current
+CI-measured ~1.55-1.80s is *worse in absolute terms* than round 5's local
+1.27s, even though the underlying representation is now the ADR-0016 one.
+Until either a fresh idle-box local A/B against `raku` is taken, or CI grows a
+raku column for this benchmark, the live ratio-to-raku is not precisely
+known — but "close enough to stop" is not supported by any number gathered
+this round. This ticket stays open under `todo/tickets/`.
+
+The whole-upstream-file table below (`basic.rakutest`, unmoved by rounds 1-5
+per round 5's own admission) has not been re-measured post-ADR-0016 either —
+doing that (on an idle box, or via a future `bench-data` addition) is the
+other open item.
+
+---
+
 **Update (2026-07-31, round 5): ~5x now.** The action-walk call ceremony named
 by round 4 broke down into three independent per-call costs, all removed
 (`benchmarks/bench-yaml-parse.raku`, release, clean idle box: 1.70s → **1.27s**,
@@ -339,6 +430,31 @@ The `MUTSU_VM_STATS` counters are useless here: only ~25k opcodes run for a
      record (P4: intern them as `Symbol`).
 
    Remaining phases are tracked in the ADR, not here.
+
+   **Update (2026-08-14, round 6): all five phases (P1-P5) have now landed**
+   (`docs/adr/0016-span-based-captures-and-lazy-match.md`'s own status line),
+   confirmed independently from `bench-history.tsv` — see the round 6 entry at
+   the top of this file. This item is done; the ADR itself is the record of
+   what it fixed.
+
+5. **(New, round 6) Two items neither round 1-5 nor the ADR closed:**
+   - **Bisect the post-P5 drift.** `bench-yaml-parse`'s CI-measured raw median
+     rose from ~1.35s (2026-07-31, the P5-merge day) to ~1.55-1.80s
+     (2026-08-12 through 08-14) over ~1700 unrelated merged commits — see the
+     round 6 table above. Not yet profiled; candidates worth checking first
+     (in the spirit of items 1-4 above, i.e. count before guessing): whether
+     `MUTSU_VM_STATS` counters like `match_materializations` (the ADR's own
+     laziness-regression guard, per its "Standing consequence of P5" note) or
+     GC pause counts moved between a 07-31 and a current build on the same
+     idle box, before reaching for `perf`.
+   - **Re-measure `basic.rakutest` and the other whole-upstream-file numbers**
+     (see the table under "Measurement (2026-07-28...)" below) against the
+     post-ADR-0016 binary. Round 1-5's own numbers there predate P1-P5
+     entirely; round 5 explicitly flagged `basic.rakutest` as "barely
+     improved" by rounds 1-3 and pointed at exactly this structural work as
+     the next lever — nobody has actually re-run it since. Use an idle box
+     (see the measurement caveat below) or add it to `bench-data`, not an
+     ad-hoc contended local run.
 
 ## Why it matters
 
