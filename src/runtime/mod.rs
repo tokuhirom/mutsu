@@ -2416,6 +2416,13 @@ pub struct Interpreter {
     /// deterministic` (i.e. cacheable in `func_multi_resolve_cache`). The
     /// function analogue of `multi_type_cacheable`.
     pub(crate) func_multi_type_cacheable: rustc_hash::FxHashMap<(Symbol, Symbol), bool>,
+    /// The `fn_resolve_gen` value `func_multi_resolve_cache`/`func_multi_type_cacheable`
+    /// were last cleared for (see `refresh_func_multi_caches_for_generation`, ADR-0019
+    /// Phase F box F5). Mirrors `method_cache_generation`'s role for the method-side
+    /// caches: a mismatch means a sub/multi registration happened since these caches
+    /// were built, so they are cleared lazily on next read instead of at every one of
+    /// `fn_resolve_gen`'s many bump sites.
+    pub(crate) func_multi_cache_generation: u64,
     /// Names of classes the user declared with a `class`/`role`/`grammar`/`enum`
     /// statement (`register_class_decl`). For such a class the collected public-
     /// attribute list is authoritative: a `.name` accessor resolves ONLY for a
