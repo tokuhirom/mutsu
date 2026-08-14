@@ -110,3 +110,43 @@ a native multi method's `.^lookup` result never gets those tags set, so it falls
 still-open "no such method" error rather than the bogus `<composed-method:NAME>` the original repro
 showed. Same root cause, different symptom, not yet pinned. Confirms this is best fixed by the
 representation unification, not another tag-based patch.
+
+## Progress (2026-08-14, continued): native `is_dispatcher=True` is the COMMON case, not a rare edge
+
+Attempted a narrow, non-representation-unifying fix: extend the `is_dispatcher`/`multi` match arms
+in `methods_instance_ops.rs` to also handle `ValueView::Routine` (the shape `.^lookup` returns for a
+*native* method, distinct from the `ValueView::Sub` shape `#6420`'s tags live on), defaulting to
+`False`/`False` since mutsu has no data on which native methods are Rakudo-core multis. Before
+committing this, checked how often that default would actually be wrong via a wider raku sweep —
+and it is wrong far more often than expected:
+
+```
+$ raku -e 'for <floor ceiling round trim substr Str Int> -> $m { say "$m (Int): " ~ 42.^lookup($m).is_dispatcher }'
+floor (Int): False
+ceiling (Int): False
+round (Int): True
+trim (Int): True
+substr (Int): True
+Str (Int): True
+Int (Int): False
+$ raku -e 'for <chars flip uc lc trim substr Str Int> -> $m { say "$m (Str): " ~ "abc".^lookup($m).is_dispatcher }'
+chars (Str): True
+flip (Str): True
+uc (Str): True
+lc (Str): True
+trim (Str): True
+substr (Str): True
+Str (Str): True
+Int (Str): False
+```
+
+**`is_dispatcher = True` is the majority case for Cool/Any-declared native methods in real Rakudo**
+(most core methods are declared `multi method` for invocant-type-flexibility reasons), not the rare
+exception this ticket's earlier entries assumed. A blanket `False` default would therefore be wrong
+*more often than right* for this accessor — silently wrong, not just incomplete. Per this project's
+"no stubs/hardcoded outputs to fake a result" convention, that is worse than the current clean error,
+not better, so **the narrow fix was reverted, not committed**. This sharpens (does not resolve) the
+F1 fidelity-slice scope: `is_dispatcher`/`multi`/`.candidates` for native methods is not a rarely-hit
+corner needing a handful of hand overrides — it needs real per-native-method multiplicity data across
+most of the catalog, on the same order of effort as the `.signature`/`.package` fidelity work already
+scoped. See `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`.
