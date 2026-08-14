@@ -755,7 +755,7 @@ impl Interpreter {
             // across `run_nested`'s register reset via `pending_nested_state_scope`,
             // which is what actually installs it (see `with_nested_registers`).
             self.pending_nested_state_scope = Some(self.sub_state_scope_id(&data));
-            let body_result = self.eval_block_value(&data.body);
+            let body_result = self.eval_block_value_cached(&data.body, data.id);
             self.pending_nested_state_scope = None;
             self.pending_supply_block_body = false;
             self.pending_supply_emitter_sym = None;

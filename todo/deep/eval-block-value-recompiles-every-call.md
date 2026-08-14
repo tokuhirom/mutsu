@@ -205,6 +205,187 @@ existing, narrower precedents that already reuse `data.compiled_code` for
 their specific carrier shape — worth checking whether either has quietly
 hit (or avoided) the same trap.
 
+## 2026-08-14 re-investigation: the "larger fix" audited, not yet attempted
+
+Re-verified the reverted attempt's numbers on the exact doc repro (`sub foo ()
+{$ = 42}; for ^2_000_000 { $ = foo }` wrapped in `lives-ok { ... }`, release
+build): baseline recompile-every-call runs in ~7.6s with
+`interpreter_fallbacks=0`, `jit: compiles=0 bailouts=2
+(StateVarInitGuard)` — matches the numbers already recorded above.
+
+Pursued the "recommended next step" above: is `compile_block_value_opts`'s
+call-site-context-sensitivity itself the bug, fixable by capturing the right
+context explicitly at `exec_make_anon_sub_op` time instead of re-deriving it
+from ambient state? **No — this framing undersold the problem.**
+`compile_block_value_opts` (`resolution_eval.rs:99-154`) is not "almost the
+same compile with one flag wrong": the real per-closure compile
+(`compile_closure_body_with_routine_flag`,
+`compiler/helpers_sub_body.rs:855-913`) inherits the *entire* parent-compiler
+state into the child compiler — `fold_ctx` (constant-folding context),
+`outer_code_var_names`, `enclosing_scopes`/`enclosing_sigilless`/
+`enclosing_local_names` (the full lexical scope chain),
+`user_listop_shadows`, `outer_constant_names`, `lexically_in_method`. None of
+that exists anywhere at `eval_block_value` call time — the original
+`Compiler` instance that held it is long gone. `compile_block_value_opts`
+re-derives only a handful of scalar flags (`is_routine`, package scope,
+sigilless/placeholder seeds) from ambient interpreter state and otherwise
+starts from a bare `Compiler::new()`. So a block's compiled shape is NOT
+"context-free apart from a couple of flags" — reusing `data.compiled_code`
+(the properly-context-inherited compile) is therefore not just a different
+recompile, it can be a *more complete* one, which is consistent with why the
+reverted attempt's "fixed" version differed in shape (an extra `RoutineScope`
+opcode) even though `self.routine_stack` was independently confirmed (via
+`rust-gdb` breakpoints, no rebuild) to be empty in both the ambient recompile
+AND the real compile at the point `sub foo` is declared — i.e. the divergence
+is not a simple `is_routine` flag mismatch as originally suspected; it comes
+from the missing scope-chain/fold-context inheritance, which the ambient path
+cannot reconstruct at call time even in principle (the information doesn't
+exist to reconstruct — it was never generated). **Conclusion: a narrow "make
+`compile_block_value_opts` context-aware enough" fix is not tractable.** The
+tractable direction really is the "larger fix" below (prefer
+`data.compiled_code` via `call_compiled_closure`, not a smarter ambient
+recompile).
+
+Tried to pin down *why* the reused-`compiled_code` version regressed 2.4x
+(the extra `RoutineScope` opcode / `light_call_blocked_by_mainline_capture`
+categorization) by checking whether `sub foo`'s `RegisterSub` op was getting
+wrongly added to `self.mainline_lexical_subs` (`vm_register_sub_ops.rs:429`,
+gated on `self.block_scope_depth() == 0 && self.routine_stack().is_empty() &&
+...`) — the theory being that `call_compiled_closure` never calls
+`push_block_scope_depth`/`pop_block_scope_depth` (confirmed: no match for
+`block_scope_depth` anywhere in `vm_closure_dispatch.rs`), so running the
+reused block through it instead of through `eval_block_value_inner` (which
+does `self.block_scope_depth += 1` around every nested block, including this
+one) could make `RegisterSub(foo)` see `block_scope_depth() == 0` and
+wrongly qualify as a mainline-lexical sub. **This hypothesis was tested and
+ruled out**: a `rust-gdb` breakpoint at `vm_register_sub_ops.rs:430` never
+fired at all for this exact repro shape (`sub foo () {$ = 42}`) — the state
+variable `$` is an anonymous `state`, and `state`-declared names are
+excluded from `code.my_declared_sym` (`vm_register_sub_ops.rs:465-469`,
+"`our`/`state`/`dynamic`-declared names are excluded"), so `foo` has no
+`my`-declared free var to trigger this boxing path in the first place. **The
+actual mechanism behind the `RoutineScope`/`light_call_blocked_by_mainline_
+capture` categorization for this specific repro remains unidentified** —
+worth checking next time before attempting another reuse: instrument
+`light_call_blocked_by_mainline_capture`'s call sites
+(`vm_call_func_ops.rs:19,589,717,1168,1213`) directly to see which one
+actually rejects `foo`'s calls, rather than assuming the
+`mainline_lexical_subs` path from first principles again.
+
+Separately audited whether `call_sub_value`'s general
+`ValueView::Sub(data)` branch (the actual "larger fix" target — not just
+the Test-module `eval_test_callable_body` entry point the reverted attempt
+touched) could safely be routed through `call_compiled_closure` whenever
+`data.compiled_code.is_some()`, the same fork that already exists for
+`data.compiled_routine` (`resolution_call_sub.rs:417-431`). **Not a strict
+superset relationship** — two structural gaps and two smaller concrete bugs
+were found, filed separately so they can be fixed/attempted independently of
+this ticket's larger question:
+
+- `todo/deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md`
+  — `call_compiled_closure` has no equivalent of `call_sub_value`'s
+  `merge_all` parameter (which ~97 call sites depend on), and per-closure
+  persisted state lives in two independent stores (`closure_env_overrides`
+  vs `closure_captured_state`) depending on which path a given closure
+  instance is invoked through. This is the main blocker for an unconditional
+  general fork.
+- `todo/tickets/call-compiled-closure-underscore-arg-binding-bug.md` — a
+  live, already-present bug: `call_compiled_closure` binds `$_` for a bare
+  block even when the body reads `@_` instead (confirmed via `.()` vs
+  `Promise.then` giving different, and differently-correct, results today).
+- `todo/tickets/call-compiled-closure-missing-rw-lazylist-tail.md` — the
+  tree-walk branch's `is rw`/`LazyList` return-value post-processing has no
+  equivalent in `call_compiled_closure` (already affects the existing
+  `compiled_routine` fork, not just a hypothetical future one).
+
+None of these are fundamental blockers on their own, but together they mean
+the general fork is not a small patch — it needs `call_compiled_closure` to
+grow a `merge_all`-equivalent mode (or the two persistence stores unified)
+before it can be attempted safely across all ~265 call sites the fork would
+affect (97 `merge_all: true` + the larger `merge_all: false` population).
+
+## 2026-08-14 Fable design consultation: recommended sequencing
+
+Consulted for advice given the two blockers found in the same-day
+re-investigation above. Full reasoning is in the session; key conclusions
+recorded here for whoever picks this up next:
+
+1. **The "cache `compile_block_value_opts`'s result" option (option C, a
+   `HashMap<(u64, CompileCtxFingerprint), (Arc<CompiledCode>,
+   Arc<CompiledFns>)>` keyed by `data.id`) is NOT a lesser option that only
+   fixes "wasted compile work" while leaving "JIT never gets a chance"
+   unaddressed** — both costs are the same underlying cause. `JitCodeState`
+   (`opcode.rs:3798`) is embedded per-`CompiledCode` object; its own doc
+   comment says cloning a chunk resets hotness tracking because "a clone is a
+   distinct compilation identity." A cache that returns the same `Arc` on
+   every call lets the hotness counter accumulate across calls and JIT-compile
+   — for free, as a side effect of caching. This makes C worth doing
+   regardless of what happens with the larger `call_sub_value` fork.
+2. **The cache-key soundness worry (pointer/GC-address reuse) is moot**:
+   `SubData.id` is a monotonic `u64` from `next_instance_id()`
+   (`value/mod.rs:730`), never reused, and is already the established key for
+   exactly this shape of cache — `protect_block_cache`
+   (`resolution_eval.rs:559-670`, used by `Lock::Async.protect`) already
+   caches compiled code per `data.id`. C is a third instance of an existing
+   pattern, not a novel mechanism.
+3. **`state.t`'s 12x-vs-raku gap is caused by neither of this ticket's two
+   costs.** See `todo/tickets/state-var-init-guard-jit-bailout-blocks-hot-loop.md`
+   — `lives-ok` runs its block once, so recompilation cost is negligible, and
+   `interpreter_fallbacks=0` at baseline. The actual cause is the JIT bailing
+   on `StateVarInitGuard` and running the `for` loop interpreted. **Stop
+   measuring this ticket's success against `state.t`** — use a
+   repeatedly-invoked carrier block instead (e.g. 100,000x `lives-ok { ... }`
+   in a loop).
+4. **Reframing the 2.4x regression**: the creation-time compile
+   (`data.compiled_code`) is the MORE correct one — it emits `RoutineScope`
+   (`compiler/helpers_sub_body.rs:962`) because a `sub` declared inside a
+   block is genuinely block-lexical, and needs a registry save/restore
+   bracket. The ambient recompile skips `RoutineScope` only because
+   `routine_stack` happens to be non-empty at invocation time, and gets
+   correct block-lexicality *for free* from the carrier's own registry
+   snapshot/restore in `eval_block_value_inner`. So baseline being fast is
+   "borrowing" correctness from the carrier rather than the compile itself.
+   The durable fix is a **separate, standalone perf bug**: make calls to a
+   `RoutineScope`-registered sub eligible for fast compiled dispatch, instead
+   of falling to `record_function_fallback` ~50% of the time. Next debugging
+   step: break on `vm_stats::record_function_fallback` (`vm_stats.rs:782`,
+   4 call sites: `vm_call_dispatch.rs:131`,
+   `vm_call_func_ops.rs:1345/1408/1513`) with `bt`, NOT on
+   `light_call_blocked_by_mainline_capture`'s 5 call sites (already proven
+   irrelevant — `mainline_lexical_subs` stays empty for this repro). Prime
+   suspect: `RoutineScope`'s `snapshot_routine_registry`/
+   `restore_routine_registry` (`vm_misc_scope.rs:218-234`) bumping a
+   registry generation that invalidates a resolution cache
+   (`fn_resolve_gen`/`otf_call_cache_gen`, see the eligibility chain at
+   `vm_call_func_ops.rs:704-719`) — unverified, check with the breakpoint
+   before trusting it.
+5. **Recommended sequencing**:
+   - Now: land `todo/tickets/call-compiled-closure-underscore-arg-binding-bug.md`
+     and `todo/tickets/call-compiled-closure-missing-rw-lazylist-tail.md`
+     (independent, small), and implement option C (the compile-result cache)
+     per the design above — safe, mechanical, reuses the `protect_block_cache`
+     pattern.
+   - Next: the `record_function_fallback` breakpoint session; fix the
+     `RoutineScope` dispatch-eligibility bug. Standalone perf win, and a
+     prerequisite for the larger fork (without it, the fork re-imports the
+     2.4x cliff for any nested-sub-in-block shape).
+   - Then: attempt `todo/deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md`'s
+     fork, under a `Proposed` ADR written first. Recommended ADR framing:
+     "`call_compiled_closure` is the canonical closure-invocation mechanism;
+     the `call_sub_value` tree-walk branch is transitional debt, retired via:
+     bug-parity fixes → `CapturePriority` mode (see that ticket) →
+     `RoutineScope` dispatch-eligibility fix → unconditional fork on
+     `compiled_code.is_some()` → delete the branch and
+     `closure_env_overrides`." Key simplification: gate the fork ONLY on
+     `data.compiled_code.is_some()` (a stable per-instance property), never on
+     `merge_all` — that avoids the dual-persistence-store split hazard
+     entirely, since a given closure instance then always uses the same store
+     regardless of which call site invokes it.
+   - The C cache remains useful even after the fork lands — it stays the
+     carrier-level mechanism for `eval_block_value`'s surviving callers with
+     no `SubData` in hand (EVAL, regex code blocks, phasers, class/role
+     bodies).
+
 ## Verification protocol for a future attempt
 
 - `MUTSU_VM_STATS=1` before/after on a loop-in-block-argument repro: confirm

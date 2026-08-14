@@ -44,7 +44,7 @@ impl Interpreter {
         let saved_topic = self.env.get("_").cloned();
         let saved_dollar_topic = self.env.get("$_").cloned();
         let result = match code_val.view() {
-            ValueView::Sub(data) => self.eval_test_block_value(&data.body),
+            ValueView::Sub(data) => self.eval_test_block_value(&data.body, Some(data.id)),
             ValueView::Str(code) => {
                 let mut nested = Interpreter::new();
                 nested.strict_mode = self.strict_mode;

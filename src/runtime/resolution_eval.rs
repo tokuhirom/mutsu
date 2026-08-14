@@ -157,6 +157,22 @@ impl Interpreter {
         self.eval_block_value_opts(body, false)
     }
 
+    /// `eval_block_value`, but for a body that belongs to a specific,
+    /// stable `SubData` instance (`cache_id`, its `.id`) — reuses a compiled
+    /// chunk from a previous call with the same ambient compile context
+    /// instead of recompiling the AST every time (see
+    /// `todo/deep/eval-block-value-recompiles-every-call.md`). Safe to call
+    /// repeatedly on the same `data.id`/`body` pair: a mismatched context
+    /// (rare — the same block invoked from a differently-scoped call site)
+    /// falls back to a fresh compile rather than serving a wrong result.
+    pub(crate) fn eval_block_value_cached(
+        &mut self,
+        body: &[Stmt],
+        cache_id: u64,
+    ) -> Result<Value, RuntimeError> {
+        self.eval_block_value_inner(body, false, false, Some(cache_id))
+    }
+
     /// `eval_block_value`, additionally recording the block's compile-time
     /// `free_var_writes` for the caller-slot writeback (retain-on-miss list).
     ///
@@ -172,7 +188,7 @@ impl Interpreter {
         &mut self,
         body: &[Stmt],
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, false, true)
+        self.eval_block_value_inner(body, false, true, None)
     }
 
     /// `eval_block_value`, with `is_eval_unit` marking `body` as an EVAL'd
@@ -182,7 +198,73 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
     ) -> Result<Value, RuntimeError> {
-        self.eval_block_value_inner(body, is_eval_unit, false)
+        self.eval_block_value_inner(body, is_eval_unit, false, None)
+    }
+
+    /// The ambient compile context `compile_block_value_opts` folds into a
+    /// fresh `Compiler` for `body`, WITHOUT actually compiling — used as the
+    /// carrier-compile cache's lookup/store key. Must stay in exact sync
+    /// with `compile_block_value_opts`'s own derivation of `in_routine`,
+    /// `scope`, and `compiler.current_distribution`; a divergence here would
+    /// only cause spurious cache misses (safe), never a wrong cache hit,
+    /// since a genuine wrong-key situation just means the two computations
+    /// disagree and this key stops matching future identical calls — but
+    /// keep them matching so the cache actually helps.
+    fn carrier_compile_ctx_key(&self, is_eval_unit: bool) -> CarrierCompileCtxKey {
+        let in_routine = if is_eval_unit {
+            self.enclosing_routine_exists()
+        } else {
+            !self.routine_stack.is_empty()
+        };
+        let scope = if let Some(frame) = self.routine_stack.last() {
+            format!("{}::&{}", frame.package, frame.name)
+        } else {
+            self.current_package()
+        };
+        let distribution = self.current_distribution.clone().or_else(|| {
+            self.package_distributions
+                .get(&self.current_package())
+                .cloned()
+        });
+        CarrierCompileCtxKey {
+            is_eval_unit,
+            in_routine,
+            scope,
+            sigilless: self.pending_eval_sigilless.clone(),
+            placeholder_params: self.pending_eval_placeholder_params.clone(),
+            distribution,
+        }
+    }
+
+    /// Compile `body` for `eval_block_value_inner`, reusing a previous
+    /// compile for the same `(cache_id, ambient context)` pair when one
+    /// exists. See `CarrierCompileCache`'s doc comment for why this is sound
+    /// and why the `Arc` is what re-enables JIT hotness tracking (cloning a
+    /// `CompiledCode` resets its `JitCodeState`; cloning the `Arc` does not).
+    fn compile_block_value_cached(
+        &mut self,
+        body: &[Stmt],
+        is_eval_unit: bool,
+        cache_id: u64,
+    ) -> (
+        std::sync::Arc<crate::opcode::CompiledCode>,
+        std::sync::Arc<crate::opcode::CompiledFns>,
+    ) {
+        let key = self.carrier_compile_ctx_key(is_eval_unit);
+        if let Some(entries) = self.carrier_compile_cache.get(&cache_id)
+            && let Some((_, code, fns)) = entries.iter().find(|(k, ..)| *k == key)
+        {
+            return (code.clone(), fns.clone());
+        }
+        let (code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+        let code = std::sync::Arc::new(code);
+        let fns = std::sync::Arc::new(fns);
+        let entries = self.carrier_compile_cache.entry(cache_id).or_default();
+        if entries.len() >= CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID {
+            entries.remove(0);
+        }
+        entries.push((key, code.clone(), fns.clone()));
+        (code, fns)
     }
 
     fn eval_block_value_inner(
@@ -190,6 +272,7 @@ impl Interpreter {
         body: &[Stmt],
         is_eval_unit: bool,
         record_free_var_writes: bool,
+        cache_id: Option<u64>,
     ) -> Result<Value, RuntimeError> {
         if body.is_empty() {
             return Ok(Value::NIL);
@@ -233,15 +316,31 @@ impl Interpreter {
             .filter(|(k, _)| k.starts_with("&") || k.starts_with("__mutsu_callable_id::"))
             .map(|(k, v)| (*k, v.clone()))
             .collect();
-        let (mut code, compiled_fns) = self.compile_block_value_opts(body, is_eval_unit);
-        code.is_supply_block_body = is_supply_block_body;
-        code.supply_emitter_sym = supply_emitter_sym;
-        code.inherited_owned_lexicals = whenever_inherited_owned;
-        for sym in supply_authoritative_free_vars {
-            if !code.authoritative_free_vars.contains(&sym) {
-                code.authoritative_free_vars.push(sym);
+        // The compiled chunk can be reused across calls to the SAME `SubData`
+        // (cache_id) only when nothing below would mutate it per-call — a
+        // cached `Arc` must stay byte-identical to what a fresh compile would
+        // have produced every time it is served, and these four fields are
+        // exactly what the plain (uncached) path below mutates post-compile.
+        // Bypass the cache (compile fresh, don't store) rather than caching a
+        // wrong/stale mutation.
+        let needs_fresh_mutation = is_supply_block_body
+            || supply_emitter_sym.is_some()
+            || !supply_authoritative_free_vars.is_empty()
+            || !whenever_inherited_owned.is_empty();
+        let (code, compiled_fns) = if !needs_fresh_mutation && let Some(id) = cache_id {
+            self.compile_block_value_cached(body, is_eval_unit, id)
+        } else {
+            let (mut code, fns) = self.compile_block_value_opts(body, is_eval_unit);
+            code.is_supply_block_body = is_supply_block_body;
+            code.supply_emitter_sym = supply_emitter_sym;
+            code.inherited_owned_lexicals = whenever_inherited_owned;
+            for sym in supply_authoritative_free_vars {
+                if !code.authoritative_free_vars.contains(&sym) {
+                    code.authoritative_free_vars.push(sym);
+                }
             }
-        }
+            (std::sync::Arc::new(code), std::sync::Arc::new(fns))
+        };
         // Multi-frame coherence (env_dirty-deletion path): box any captured-outer
         // scalar this carrier body writes into a shared cell across env + saved
         // frames, so the by-name write survives the owner frame's env restore.
@@ -401,10 +500,20 @@ impl Interpreter {
         if data.body.is_empty() && data.compiled_routine.is_some() {
             return self.call_sub_value(Value::sub_value(data.clone()), Vec::new(), false);
         }
-        self.eval_test_block_value(&data.body)
+        self.eval_test_block_value(&data.body, Some(data.id))
     }
 
-    pub(crate) fn eval_test_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {
+    /// `cache_id`: the invoking `SubData.id`, when known, so repeated calls
+    /// to the SAME test-assertion block (e.g. `lives-ok { ... }` inside a
+    /// loop) reuse a compiled chunk instead of recompiling the AST every
+    /// call — see `eval_block_value_cached`. `None` for callers that only
+    /// have a bare `body: &[Stmt]` with no associated `SubData` (rare for
+    /// this entry point in practice, but keeps the signature honest).
+    pub(crate) fn eval_test_block_value(
+        &mut self,
+        body: &[Stmt],
+        cache_id: Option<u64>,
+    ) -> Result<Value, RuntimeError> {
         let pre_lexicals: std::collections::HashSet<Symbol> = self
             .env
             .keys()
@@ -428,7 +537,10 @@ impl Interpreter {
         // an already-on fatal keeps it off (roast S04-exceptions/fail.t, where an
         // earlier sub leaked fatal on and a later subtest turns it back off).
         let saved_fatal_mode = self.fatal_mode;
-        let result = self.eval_block_value(body);
+        let result = match cache_id {
+            Some(id) => self.eval_block_value_cached(body, id),
+            None => self.eval_block_value(body),
+        };
         // Whether `use fatal` was in effect at the block's end (before the
         // scope-restore below) drives the trailing-Failure check further down.
         let block_fatal_mode = self.fatal_mode;

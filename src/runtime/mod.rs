@@ -157,6 +157,47 @@ type ProtectBlockCacheEntry = (
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
+/// The ambient interpreter state `compile_block_value_opts` folds into a
+/// fresh `Compiler` before compiling a carrier block's body (`is_routine`/
+/// `lexically_in_routine`, the enclosing package scope, sigilless/placeholder
+/// seeding, `$?DISTRIBUTION`). A block invoked repeatedly from the SAME call
+/// site (the overwhelmingly common shape — a `lives-ok { ... }` in a loop, a
+/// comparator called many times) has an identical context on every call, so
+/// this is the key `carrier_compile_cache` matches on to decide whether a
+/// cached compile from a previous call is reusable. `PartialEq`, not `Eq`/
+/// `Hash`: `distribution` is a `Value` (no `Hash` impl, and its `PartialEq`
+/// is Raku's semantic equality) — see the doc comment on `CarrierCompileCache`
+/// for why this rules out a plain `HashMap<Key, _>`.
+#[derive(Clone, PartialEq)]
+struct CarrierCompileCtxKey {
+    is_eval_unit: bool,
+    in_routine: bool,
+    /// The fully-resolved package scope string `compile_block_value_opts`
+    /// passes to `compiler.set_current_package` — already encodes whether an
+    /// enclosing routine frame was present (`"{pkg}::&{name}"`) or not (bare
+    /// `self.current_package()`), so no separate `enclosing_package` field is
+    /// needed.
+    scope: String,
+    sigilless: Vec<String>,
+    placeholder_params: Vec<String>,
+    distribution: Option<Value>,
+}
+
+/// Per-`SubData.id` cache of `(context, compiled)` pairs for
+/// `eval_block_value_inner`'s carrier-block compile (see
+/// `todo/deep/eval-block-value-recompiles-every-call.md`). A `Vec` rather
+/// than a nested `HashMap` because `CarrierCompileCtxKey` cannot implement
+/// `Hash`/`Eq` (it embeds a `Value`, compared by Raku's semantic `PartialEq`,
+/// not a total order) — and because the realistic size is 1 entry per id
+/// (the same block invoked from the same call site every time), so a linear
+/// scan against `CarrierCompileCtxKey::eq` costs nothing. Capped at
+/// `CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID` entries per id to bound memory
+/// for the rare block invoked from many distinct contexts.
+type CarrierCompileCache =
+    HashMap<u64, Vec<(CarrierCompileCtxKey, Arc<CompiledCode>, Arc<CompiledFns>)>>;
+
+const CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID: usize = 4;
+
 mod accessors;
 mod accessors_misc;
 mod accessors_resolve;
@@ -1317,6 +1358,12 @@ pub struct Interpreter {
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
     predictive_seq_iters: HashMap<usize, Value>,
     protect_block_cache: ProtectBlockCache,
+    /// See `CarrierCompileCache`: reuses `eval_block_value_inner`'s carrier
+    /// compile across repeated calls to the same `SubData` id instead of
+    /// recompiling its AST every time. Opt-in per call site via
+    /// `eval_block_value_cached`/`eval_test_block_value`'s `cache_id`
+    /// parameter — starts empty per thread (pure recomputable optimization).
+    carrier_compile_cache: CarrierCompileCache,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire
