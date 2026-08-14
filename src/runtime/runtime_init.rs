@@ -1897,6 +1897,7 @@ impl Interpreter {
             output_sink: Arc::new(RwLock::new(OutputSink::new())),
             warn_output: String::new(),
             warn_suppression_depth: 0,
+            surfaced_parse_warnings: std::collections::HashSet::new(),
             tap: TapState::default(),
             halted: false,
             exit_code: 0,

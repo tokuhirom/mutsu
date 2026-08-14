@@ -84,15 +84,22 @@ impl Interpreter {
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
+        // `$?FILE` inside the required file is its own file, not the
+        // requirer's — mirrors `run_modules::parse_module_source`.
+        let saved_source_file =
+            crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
         let result = parse_dispatch::parse_compilation_unit(&preprocessed);
+        crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
+        // See the parallel comment in `run_modules::parse_module_source`: the
+        // tagged form is used for immediate deduplicated emission, the
+        // flattened form for the on-disk cache entry.
+        let tagged_warnings = crate::parser::take_parse_warnings();
         let effects = crate::precomp::ParseEffects {
             language_version: crate::parser::current_language_version(),
-            warnings: crate::parser::take_parse_warnings(),
+            warnings: tagged_warnings.iter().map(|(_, m)| m.clone()).collect(),
         };
-        for warning in &effects.warnings {
-            self.write_warn_to_stderr(warning);
-        }
+        self.emit_parse_warnings(tagged_warnings);
         let stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
             err.message = format!("Failed to parse module '{}': {}", file, err.message);
             err
@@ -117,9 +124,10 @@ impl Interpreter {
         let stmts = if self.precomp_enabled {
             if let Some(unit) = crate::precomp::load_cached_unit(&path, None) {
                 crate::parser::set_current_language_version(&unit.effects.language_version);
-                for warning in &unit.effects.warnings {
-                    self.write_warn_to_stderr(warning);
-                }
+                self.emit_parse_warnings_for_file(
+                    &path.to_string_lossy(),
+                    unit.effects.warnings.iter().cloned(),
+                );
                 unit.stmts
             } else {
                 let (parsed, effects) = self.parse_require_source(file, &path)?;
