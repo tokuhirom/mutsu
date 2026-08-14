@@ -911,7 +911,7 @@ impl Interpreter {
         None
     }
 
-    pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+    pub(crate) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
         self.set_env_with_main_alias_sym(name, None, value);
     }
 
@@ -1384,7 +1384,7 @@ impl Interpreter {
     /// `S17-channel/stress.t`'s `sub bogosort_concurrent(@list)` reaches its
     /// `@list` from inside a `start` block through this lane, and without the
     /// publish it read the *previous* sub's same-named parameter instead.
-    pub(crate) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
+    pub(super) fn sync_env_from_locals(&mut self, code: &CompiledCode) {
         for (i, name) in code.locals.iter().enumerate() {
             // §1.4 shadow slots: a name occupying several slots (an inner-block
             // shadow under MUTSU_SHADOW_SLOTS) cannot be broadcast — env holds

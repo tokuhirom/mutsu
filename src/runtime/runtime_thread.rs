@@ -114,6 +114,46 @@ impl Interpreter {
         out
     }
 
+    /// Publish the CURRENT value of every local slot in `code` whose shape is
+    /// plain-value (a scalar, an Array, a Hash, or a `ContainerRef`) into
+    /// `env`, ahead of a spawn that is about to snapshot `env` for a cloned
+    /// thread. Never touches a slot holding anything else — in particular
+    /// never an `Instance`/`Package`/`Sub`/`Proxy` (see the doc comment at the
+    /// call site in `clone_for_thread_for_block` for why that exclusion is
+    /// load-bearing). Mirrors `sync_env_from_locals`'s own care around
+    /// `dup_named_locals` (an inner-block shadow slot must not broadcast) and
+    /// not resurrecting a dropped name from a `Nil` slot.
+    fn sync_plain_locals_to_env(&mut self, code: &CompiledCode) {
+        for i in 0..code.locals.len() {
+            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            let ok = matches!(
+                self.locals[i].view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Str(_)
+                    | ValueView::Bool(_)
+                    | ValueView::Rat(..)
+                    | ValueView::FatRat(..)
+                    | ValueView::BigRat(..)
+                    | ValueView::Complex(..)
+                    | ValueView::ContainerRef(_)
+                    | ValueView::Array(..)
+                    | ValueView::Hash(_)
+            );
+            if !ok {
+                continue;
+            }
+            let name = code.locals[i].clone();
+            if self.locals[i].is_nil() && !self.env().contains_key(&name) {
+                continue;
+            }
+            self.set_env_with_main_alias(&name, self.locals[i].clone());
+        }
+    }
+
     /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
     /// set. Called at `RegisterClass` / `RegisterRole`, which always run before
     /// the type can be instantiated (and so before any of its methods can run).
@@ -128,7 +168,40 @@ impl Interpreter {
     /// [`clone_for_thread`] for a spawn that runs a known block (`start { ... }`,
     /// `Promise.start`, `Thread.start`): the block's own captured scalars are
     /// excluded from the name-keyed shared store. See `block_captured_scalars`.
+    ///
+    /// Also publishes this frame's CURRENT plain-value local-slot values into
+    /// `env` before the clone below snapshots it — see the long comment on
+    /// `sync_plain_locals_to_env` for why, and why it is scoped to THIS
+    /// function rather than the shared `clone_for_thread_excluding` (which
+    /// `clone_for_thread()` also reaches, from many more, not all
+    /// equally-audited, call sites).
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
+        // `clone_for_thread_for_block` has exactly two callers, both of which
+        // dispatch synchronously off a live VM opcode (`CallFunc`/
+        // `CallMethodMut`) within the SAME `exec_one` call that set
+        // `current_code`: `spawn_callable_promise` (`start`/`Promise.start`/
+        // `Thread.start`) and `cue_every_timer` (`$scheduler.cue(:every)`).
+        // Neither crosses a thread/callback boundary before reaching here, so
+        // `current_code` is guaranteed live — unlike the many OTHER
+        // `clone_for_thread()` call sites (supply/socket/hyper/race workers,
+        // a spawned block's OWN nested uncaught-handler respawn, …), several
+        // of which run from inside an ALREADY-DETACHED worker closure with no
+        // such guarantee. An earlier version of this fix put the refresh in
+        // `clone_for_thread_excluding` itself, reaching those unaudited sites
+        // too, and use-after-freed a stale `current_code` pointer into a
+        // SIGSEGV partway through `Cro::Core/tcp.rakutest`'s service
+        // start/stop lifecycle (tests 23-32) — confirming the invariant does
+        // NOT hold universally. Do not move this call without re-auditing
+        // every `clone_for_thread`/`clone_for_thread_for_block` caller.
+        if self.current_code != 0 {
+            // SAFETY: see the comment above — this function's two callers are
+            // both reached synchronously from the live bytecode frame that
+            // `current_code` names, which the `vm_call_*` machinery keeps
+            // alive for the whole frame (the same invariant
+            // `atomic_scalar_cell` and friends already rely on).
+            let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+            self.sync_plain_locals_to_env(code);
+        }
         let captured = self.block_captured_scalars(block);
         self.clone_for_thread_excluding(&captured)
     }
@@ -165,39 +238,6 @@ impl Interpreter {
         // overlay-only, which would miss parent-chain lexicals on a scoped env.
         if self.env.is_scoped() {
             self.env = self.env.flattened();
-        }
-        // Publish this frame's CURRENT local-slot values into env before the
-        // clone below snapshots it. The (B) per-store env-write gate lets a
-        // plain lexical's store skip its env mirror when nothing in THIS frame
-        // reads it by name (`needs_env_sync` — see `compute_needs_env_sync`),
-        // which is the common case for a loop-body local only ever touched via
-        // a NAME-KEYED builtin resolved from a NESTED closure (`⚛`-ops, and
-        // especially `cas`, which is deliberately excluded from the
-        // free-var-write fold that would otherwise force the mirror — see the
-        // comment on the `n != "__mutsu_cas_var"` guard in
-        // `compiler/expr_call.rs`). Without this, `env` can carry a stale value
-        // from a PREVIOUS loop iteration (last synced back from a finished
-        // spawn's cross-thread write) forward into a caller-side declaration
-        // this local's OWN redeclaration never overwrote — so a freshly reset
-        // `my $a = 0` before spawning a new thread starts back where the last
-        // one left off (`todo/tickets/cue-loop-lexical-shared-lane-residue.md`).
-        // `start` had a narrow, function-name-hardcoded copy of this exact call
-        // (`if name == "start" { self.sync_env_from_locals(code) }` in
-        // `vm/vm_call_func_ops.rs`) which is why only `start` was immune; any
-        // OTHER thread-spawning construct that clones through this function —
-        // `$scheduler.cue(...)`, `Thread.start`, `Promise.start`, a
-        // `supply`/`react` `whenever` worker — reached this method with no
-        // such refresh and inherited the same staleness. Centralizing the sync
-        // here (using the live frame's `current_code`, the same pointer
-        // `atomic_scalar_cell` already trusts for the same lifetime reason)
-        // fixes every spawner uniformly instead of special-casing each one.
-        if self.current_code != 0 {
-            // SAFETY: `current_code` is the address of the live bytecode
-            // frame's `CompiledCode`, kept alive for the whole frame by the
-            // `vm_call_*` machinery — the same invariant `atomic_scalar_cell`
-            // and friends already rely on.
-            let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
-            self.sync_env_from_locals(code);
         }
         // Copy user variables into shared_vars so both parent and child see mutations.
         // The compiler stores locals with bare names (no sigil), so we share everything
