@@ -22,7 +22,7 @@ pub(in crate::parser::stmt) use use_decl::{import_stmt, need_stmt, no_stmt, use_
 
 use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
-use super::super::parse_result::{PResult, parse_char, take_while1};
+use super::super::parse_result::{PError, PResult, parse_char, take_while1};
 
 use crate::ast::{Expr, PhaserKind, Stmt};
 use crate::token_kind::TokenKind;
@@ -183,6 +183,34 @@ fn parse_comma_chained_decls<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stm
     Ok((rest, Stmt::SyntheticBlock(stmts)))
 }
 
+/// Detect "two terms in a row" right after a sink expression parsed inside a
+/// scalar declaration's trailing comma list (`my $x = 1, 2 3;`): a pure-value
+/// sink item immediately followed on the same line by another unambiguous
+/// term, with neither a comma nor a statement end/modifier between them.
+/// Mirrors the initializer-level check in `my_decl_assign.rs`; the legitimate
+/// continuations here are a further comma item, the statement end, or a
+/// trailing statement modifier (`my $x = 1, 2 if True;` is valid Raku).
+fn check_sink_expr_two_terms_boundary<'a>(sink_expr: &Expr, rest: &'a str) -> PResult<'a, ()> {
+    let (rest_trimmed, _) = ws(rest)?;
+    let gap = &rest[..rest.len() - rest_trimmed.len()];
+    let separated_by_newline = gap.contains('\n') || gap.contains('\r');
+    if !separated_by_newline
+        && crate::parser::term_boundary::is_pure_value_expr(sink_expr)
+        && !rest_trimmed.is_empty()
+        && !rest_trimmed.starts_with(';')
+        && !rest_trimmed.starts_with('}')
+        && !rest_trimmed.starts_with(',')
+        && !super::modifier::is_stmt_modifier_keyword(rest_trimmed)
+        && crate::parser::term_boundary::starts_with_unambiguous_term(rest_trimmed)
+    {
+        return Err(PError::fatal_at(
+            "Confused. Two terms in a row".to_string(),
+            rest_trimmed,
+        ));
+    }
+    Ok((rest, ()))
+}
+
 /// Consume trailing comma-separated sink expressions after a scalar declaration.
 /// In Raku, `my $c = 1, 2, 3;` is valid: `$c` gets `1`, and `2, 3` are in sink context.
 fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResult<'a, Stmt> {
@@ -210,6 +238,7 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
         return Ok((r_inner, Stmt::SyntheticBlock(stmts)));
     }
     let (r2, sink_expr) = expression(r_inner)?;
+    check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
     stmts.push(Stmt::Expr(sink_expr));
     r_inner = r2;
     loop {
@@ -225,6 +254,7 @@ fn consume_scalar_decl_trailing_comma<'a>(input: &'a str, first: Stmt) -> PResul
             break;
         }
         let (r2, sink_expr) = expression(r2)?;
+        check_sink_expr_two_terms_boundary(&sink_expr, r2)?;
         stmts.push(Stmt::Expr(sink_expr));
         r_inner = r2;
     }

@@ -16,6 +16,7 @@ use crate::parser::stmt::modifier::{is_stmt_modifier_keyword, parse_statement_mo
 use crate::parser::stmt::simple::{
     TMP_INDEX_COUNTER, add_xor_sink_warnings, parse_hyper_assign_op,
 };
+use crate::parser::term_boundary::{is_pure_value_expr, starts_with_unambiguous_term};
 use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::ValueView;
@@ -26,8 +27,8 @@ use super::lvalue::{
     single_target_list_lvalue_stmt,
 };
 use super::predicates::{
-    index_bind_target_is_immutable, is_literal_expr, is_pseudo_package, is_pure_value_expr,
-    starts_with_postfix_ambiguous_term, starts_with_term_token, starts_with_unambiguous_term,
+    index_bind_target_is_immutable, is_literal_expr, is_pseudo_package,
+    starts_with_postfix_ambiguous_term, starts_with_term_token,
 };
 use super::sig_info::{SigParamInfo, extract_signature_param_infos, extract_static_named_map};
 
@@ -225,7 +226,10 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && !is_stmt_modifier_keyword(rest)
         && starts_with_unambiguous_term(rest)
     {
-        return Err(PError::fatal("Confused. Two terms in a row".to_string()));
+        return Err(PError::fatal_at(
+            "Confused. Two terms in a row".to_string(),
+            rest,
+        ));
     }
     // Detect "two terms in a row" after a postfix increment/decrement: a postfix
     // `++`/`--` (whether written as `$n++`, `$n.++`, or via an unspace such as
@@ -246,14 +250,18 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         && !is_stmt_modifier_keyword(rest)
         && starts_with_postfix_ambiguous_term(rest)
     {
-        return Err(PError::fatal("Confused. Two terms in a row".to_string()));
+        return Err(PError::fatal_at(
+            "Confused. Two terms in a row".to_string(),
+            rest,
+        ));
     }
     // Detect "unexpected block in infix position": a completed expression followed
     // by `{` on the same line without an infix operator is an error in Raku.
     // e.g., `(1) { $foo = 2 }` — parens do not eat spaces after them.
     if !separated_by_newline && is_pure_value_expr(&expr) && rest.starts_with('{') {
-        return Err(PError::fatal(
+        return Err(PError::fatal_at(
             "Unexpected block in infix position (missing statement control word before the expression?)".to_string(),
+            rest,
         ));
     }
     if let Some(stripped) = rest

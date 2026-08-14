@@ -169,13 +169,29 @@ pub(crate) fn parse_expr_list(input: &str) -> PResult<'_, Vec<Expr>> {
         let (r, _) = ws(rest)?;
         if !r.starts_with(',') {
             let gap = &rest[..rest.len() - r.len()];
-            if !gap.contains('\n')
-                && !r.is_empty()
-                && !r.starts_with(';')
-                && !r.starts_with('}')
-                && !r.starts_with(')')
-                && !is_stmt_modifier_keyword(r)
-                && crate::parser::expr::parse_word_logical_op(r).is_none()
+            let is_legitimate_continuation = gap.contains('\n')
+                || r.is_empty()
+                || r.starts_with(';')
+                || r.starts_with('}')
+                || r.starts_with(')')
+                || is_stmt_modifier_keyword(r)
+                || crate::parser::expr::parse_word_logical_op(r).is_some();
+            // A completed argument directly followed by another unambiguous
+            // term on the same line (`say 1 1`, `say "a" "b"`), with no
+            // infix operator between them and no legitimate continuation
+            // (comma, statement end, modifier, ...): "Two terms in a row".
+            // Digits/quotes can never start an infix or a legitimate
+            // continuation, so this is always fatal, unlike the softer
+            // "missing comma" guess below.
+            if !is_legitimate_continuation
+                && crate::parser::term_boundary::starts_with_unambiguous_term(r)
+            {
+                return Err(PError::fatal_at(
+                    "Confused. Two terms in a row".to_string(),
+                    r,
+                ));
+            }
+            if !is_legitimate_continuation
                 && r.chars()
                     .next()
                     .is_some_and(crate::parser::helpers::is_raku_identifier_start)
