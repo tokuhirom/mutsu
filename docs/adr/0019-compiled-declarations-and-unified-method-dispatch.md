@@ -930,7 +930,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   again right after a successful `register_class_decl` returns, and recorded a mismatch (via
   `record_class_reg_gen_shadow_check`, mirroring `record_deferral_shadow_check`) whenever the
   generation did *not* advance.
-  **Progress (corpus evidence + cutover, #6449):** a `MUTSU_VM_STATS=1` sweep of the full `t/`
+  **Progress (corpus evidence + cutover, #6452):** a `MUTSU_VM_STATS=1` sweep of the full `t/`
   suite (debug build, one process per file) recorded 1296 shadow checks with exactly **1**
   mismatch (`t/eval-private-and-stubs.t`, `class=Base is_stub=true`); a second sweep over the
   class/role/multi-heavy roast whitelist subset (`S12-*`, `S14-*`, `S06-multi`, `S02-types`,
