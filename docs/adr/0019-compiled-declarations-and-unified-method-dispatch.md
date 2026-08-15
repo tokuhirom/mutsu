@@ -838,6 +838,50 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   introspection array (rows were scattered into unrelated hand-added blocks); order now matches for
   all 18. The ~90+ extra dispatch-recognized names per owner (step 2's raku-verification triage) are
   still untouched — that remains the real blocker before the actual cutover (step 3).
+  **Progress (2026-08-15, step 2, first name):** raku-verified the first of the ~90+ extra names —
+  `Mu`'s single extra, `DEFINITE` (`RAW_ROWS` had it via E2b; `MU_METHODS` did not). Confirmed a
+  genuine gap, not dispatch-only noise: `raku -e 'say 5.DEFINITE'` works and real Rakudo's
+  `Mu.^methods` lists `DEFINITE` (mutsu's `Mu.DEFINITE` already dispatched correctly before this
+  fix — only introspection was missing it). Added to `MU_METHODS` at the position matching its
+  `RAW_ROWS`-relative order (first, ahead of `defined`), keeping
+  `raw_rows_cover_every_introspection_name_in_order` green, and pinned in
+  `t/can-methods-drift.t`. Step 2 remains open for the other ~89+ names across the other 17 owners —
+  this is one triaged name, not a batch.
+  **Progress (2026-08-15, step 2, `Any` and `Hash`):** triaged `Any`'s 7 extras and `Hash`'s 11.
+  For `Any`: `serial` and `hash` are genuine `.^methods` gaps (real Rakudo's `Any.^methods` lists
+  both, and mutsu already dispatches both correctly); `self`/`clone`/`WHICH`/`sink`/`item` are
+  confirmed dispatch-only/internal (real Rakudo's `Any.^methods` does not list any of them —
+  `WHICH` is a `Mu`-declared method appearing on `Any`'s inherited view, not `Any`'s own). Added
+  `serial`/`hash` to `ANY_METHODS`. For `Hash`: `pick`/`EXISTS-KEY`/`AT-KEY`/`List`/`invert`/`flat`/
+  `dynamic`/`roll` are genuine gaps (all confirmed present on real Rakudo's `Hash.^methods` and
+  already dispatch correctly on mutsu); `Array`/`AT-POS`/`EXISTS-POS`/`perl` are confirmed
+  dispatch-only (not on real Rakudo's `Hash.^methods`). Added the 8 genuine names to
+  `HASH_METHODS`, in `RAW_ROWS`-relative order (both owners' rows arrive in two separate blocks in
+  `native_method_row_table.rs`, an artifact of how E2b originally landed them; the newly-added
+  names had to be appended after the array's existing tail to keep
+  `raw_rows_cover_every_introspection_name_in_order` green, since that test only requires the
+  *shared* names' relative order to match, not raku's true `.^methods` order). All raku-verified
+  and pinned in `t/can-methods-drift.t`. Running total: 3 of 18 owners triaged (`Mu`, `Any`,
+  `Hash`); `Str` (25 extras), `Int`/`Num`/`Rat`/`Complex` (25), `Cool` (11) remain the largest
+  untriaged owners.
+  **Progress (2026-08-15, step 2, `Cool`):** triaged `Cool`'s 11 extras — the native-sized-integer
+  coercion methods (`int8`..`uint64`, `byte`, `int`, `uint`). All 11 raku-verified as genuine
+  `Cool.^methods` entries and confirmed to already dispatch correctly on mutsu. Added a new
+  `COOL_NATIVE_INT_COERCE_TAIL` array (appended after `NUMERIC_COERCIONS` in `builtin_type_
+  method_names`'s `"Cool"` arm, matching the block's position in `RAW_ROWS`). **Found and fixed a
+  real bug this exposed**, not just a list gap: `is_builtin_type_method`
+  (`methods_classhow_lookup.rs`, feeding `.^find_method`/`.can` on a `Package` receiver) checked
+  `["type_name", "Cool", "Any", "Mu"]` as a hardcoded ancestor list for *every* type regardless of
+  whether `Cool` was actually an ancestor — harmless while `Cool`'s own list had no name likely to
+  collide, but once `int8` etc. joined `Cool`'s list, `Pair.^can('int8')` (`Pair`'s real MRO is
+  `[Pair, Any, Mu]`, no `Cool`) went from correctly `False` to a false-positive `True`. Fixed by
+  reading the receiver type's real MRO from `registry().class_mro_readonly()` (the builtin type
+  catalog's own authoritative source) instead of guessing, with the old hardcoded list kept only as
+  a fallback for a type the catalog doesn't recognize. Regression-pinned (`Pair cannot int8`) in
+  `t/can-methods-drift.t` alongside the new `Cool` names. Full local `t/` suite (3166 files) and the
+  targeted `S12-introspection`/`S02-types/hash.t`/`S09-typed-arrays/hashes.t` roast files stay
+  green. Running total: 4 of 18 owners triaged (`Mu`, `Any`, `Hash`, `Cool`); `Str` (25 extras) and
+  `Int`/`Num`/`Rat`/`Complex` (25, likely shared) remain the largest untriaged owners.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the

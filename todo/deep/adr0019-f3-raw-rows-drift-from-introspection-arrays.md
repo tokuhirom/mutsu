@@ -130,3 +130,78 @@ verification before F3 can decide "genuine `.^methods` gap" vs. "deliberately in
 dispatch-only" for each one. Step 1 only closes the "is `RAW_ROWS` even a safe superset, in the right
 order" question, and the answer for the *introspection-array* side is now yes, permanently enforced.
 Step 3 (the actual cutover) still needs step 2 first.
+
+## Progress (2026-08-15): step 2 started, one name (`Mu`'s `DEFINITE`)
+
+Triaged the smallest owner first (`Mu` had exactly one extra name per the survey above). Raku
+ground truth: `Mu.^methods` lists `DEFINITE` in real Rakudo, and mutsu already dispatches
+`.DEFINITE` correctly (`RAW_ROWS` picked it up via an earlier E2b slice) — introspection was simply
+missing it, a genuine gap, not one of the deliberately-internal/protocol names this step also needs
+to identify. Added `"DEFINITE"` to `MU_METHODS` (`builtin_type_methods.rs`) at the position
+matching its `RAW_ROWS`-relative order (ahead of `defined`), keeping
+`raw_rows_cover_every_introspection_name_in_order` green, and pinned with a `works-and-can`/
+`.^methods` pair in `t/can-methods-drift.t` (verified against real `raku` output too).
+
+Remaining for step 2: ~89+ names across the other 17 owners (`Any` has 7, `Str` 25, `Int` 25,
+`Cool` 11, `Hash` 11, plus smaller counts elsewhere per the survey table above), each needing the
+same raku-verify-then-classify treatment (genuine `.^methods` gap vs. deliberately-internal
+dispatch-only name). Suggest continuing owner-by-owner in ascending extra-name-count order (small,
+independently-landable slices, same pattern as this one), rather than a single large sweep.
+
+## Progress (2026-08-15, continued): `Any` (7 extras) and `Hash` (11 extras) triaged
+
+`Any`: `serial` and `hash` confirmed as genuine `.^methods` gaps (`raku -e 'say
+Any.^methods.grep(*.name eq "serial").elems'` → 1, same for `hash`; both already dispatch
+correctly on mutsu, e.g. `(1,2,3).serial`, `(a=>1,b=>2).hash`). `self`, `clone`, `WHICH`, `sink`,
+`item` confirmed dispatch-only/internal — raku's `Any.^methods` does not list any of them (`elems`
+0 for each); these stay unlisted in `ANY_METHODS` by design, not oversight. Added `serial`/`hash`
+to `ANY_METHODS`, ahead of `say` (their `RAW_ROWS`-relative position).
+
+`Hash`: of the 11 extras (`pick`, `EXISTS-KEY`, `AT-KEY`, `List`, `invert`, `flat`, `Array`,
+`AT-POS`, `EXISTS-POS`, `dynamic`, `roll`, `perl` — 12 listed in the original survey, one,
+`perl`, was miscounted as one of the "11"), 8 are genuine gaps (`pick`, `EXISTS-KEY`, `AT-KEY`,
+`List`, `invert`, `flat`, `dynamic`, `roll` — each confirmed present on real `Hash.^methods` and
+already dispatching correctly, e.g. `%h.pick`, `%h.EXISTS-KEY('a')`, `%h.List`, `%h.invert`).
+`Array`, `AT-POS`, `EXISTS-POS`, `perl` confirmed dispatch-only (not on real `Hash.^methods`).
+Added the 8 genuine names to `HASH_METHODS`, appended after the array's existing tail (their
+`RAW_ROWS` rows arrive in a second block, after `Int`) to keep
+`raw_rows_cover_every_introspection_name_in_order` green. All raku-verified and pinned in
+`t/can-methods-drift.t`.
+
+Running total: 3 of 18 owners fully triaged (`Mu`, `Any`, `Hash`). Largest remaining: `Str` (25
+extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`), `Cool` (11).
+
+## Progress (2026-08-15, continued): `Cool` (11 extras) triaged, plus a real bug found
+
+`Cool`'s 11 extras are the native-sized-integer coercion methods (`int8`, `int16`, `int32`,
+`int64`, `uint8`, `uint16`, `uint32`, `uint64`, `byte`, `int`, `uint`). All 11 raku-verified as
+genuine `Cool.^methods` entries (`raku -e 'say Cool.^methods.grep(*.name eq "int8").elems'` → 1,
+same for the rest) and already dispatch correctly on mutsu (`300.int8` → 44, etc.) — the
+`native_method_row_table.rs` comment above these rows previously claimed they were "deliberately
+excluded from `.^methods`/`.^can`-by-list", but that conflated two different concerns: the actual
+exclusion (`NATIVE_INT_TYPES` vs. `NATIVE_INT_COERCE_METHODS` in `runtime/native_types.rs`) is
+about *type-alias* names (`bool`, `long`, `ulong`, ...) that name a type but are not methods, which
+is unrelated to whether the 11 real coercion methods belong in `COOL_OWN`. Corrected that comment
+in place. Added a new `COOL_NATIVE_INT_COERCE_TAIL` array, appended after `NUMERIC_COERCIONS` in
+the `"Cool"` match arm (matching the block's position in `RAW_ROWS`, required to keep
+`raw_rows_cover_every_introspection_name_in_order` green).
+
+**This surfaced a real, previously-latent bug**: `is_builtin_type_method`
+(`methods_classhow_lookup.rs`), which backs `.^find_method`/`.can` on a `Package` receiver via
+`classhow_find_method`, unconditionally checked `["type_name", "Cool", "Any", "Mu"]` as the
+ancestor list for every type, regardless of whether `Cool` was genuinely an ancestor. This was
+harmless while `Cool`'s own introspection list had no method name likely to collide with a
+non-Cool type's probe, but the moment `int8` etc. joined `Cool`'s list, `Pair.^can('int8')`
+(`Pair`'s real MRO is `[Pair, Any, Mu]` per `builtin_type_catalog.rs` — no `Cool`) flipped from
+correctly `False` to a false-positive `True`, caught immediately by the existing
+`t/native-int-coerce-methods-are-cool-only.t` pin ("Pair is not Cool, so it cannot int8"). Fixed by
+reading the receiver type's real MRO via `registry().class_mro_readonly()` (the same authoritative
+builtin-type-catalog source `classhow_lookup_impl` already uses a few lines above) instead of the
+hardcoded guess, falling back to the old `[type_name, "Cool", "Any", "Mu"]` heuristic only when the
+catalog doesn't recognize the type name at all. Added a matching regression pin to
+`t/can-methods-drift.t`. Full local `t/` suite (3166 files, all green) plus the targeted
+`S12-introspection/*`, `S02-types/hash.t`, `S09-typed-arrays/hashes.t` roast files confirm no other
+regression.
+
+Running total: 4 of 18 owners fully triaged (`Mu`, `Any`, `Hash`, `Cool`). Largest remaining: `Str`
+(25 extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`).

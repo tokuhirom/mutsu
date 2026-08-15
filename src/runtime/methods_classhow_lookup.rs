@@ -351,8 +351,25 @@ impl Interpreter {
     /// Check if a method name belongs to a built-in type (Str, Int, etc.)
     /// by checking the hardcoded method lists for the type and its ancestors.
     fn is_builtin_type_method(&self, type_name: &str, method_name: &str) -> bool {
-        // Check the type itself and common ancestors (Cool, Any, Mu)
-        for tn in &[type_name, "Cool", "Any", "Mu"] {
+        // Check the type itself and its real ancestors, per the builtin type
+        // catalog's own MRO -- NOT an unconditional ["Cool", "Any", "Mu"]
+        // guess. `Pair`'s real MRO is `[Pair, Any, Mu]` (no `Cool`); blindly
+        // probing `Cool`'s method list here made `Pair.^can($any_cool_
+        // coercion_method)` a false positive once `Cool`'s own list grew
+        // past the handful of names that happened not to collide (ADR-0019
+        // Phase F box F3 step 2, `t/native-int-coerce-methods-are-cool-
+        // only.t`'s "Pair cannot int8" pin).
+        let ancestors = self
+            .registry()
+            .class_mro_readonly(type_name)
+            .map(|mro| mro.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+            .unwrap_or_else(|| {
+                [type_name, "Cool", "Any", "Mu"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect()
+            });
+        for tn in &ancestors {
             let mut methods = Vec::new();
             self.collect_builtin_type_methods(tn, &mut methods);
             if methods.iter().any(|m| m.to_string_value() == method_name) {
