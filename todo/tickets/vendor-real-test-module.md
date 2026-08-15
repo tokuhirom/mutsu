@@ -1091,3 +1091,22 @@ correctly is necessary but not sufficient — always re-check the class's
 `register_x` entry exists too, since `runtime_init.rs`'s X::Syntax family has
 several gaps of exactly this shape (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`
 already covers the general problem; this was one concrete instance of it).
+
+## `X::Syntax::Signature::InvocantNotAllowed` and `X::Syntax::NoSelf` (2026-08-15)
+
+Same shape again, found via `roast/S06-signature/errors.t` (not itself in the
+"14 files" cluster list, but the same mechanism): both classes already had
+correctly-named exceptions built in `src/parser/stmt/sub/traits.rs`, but
+neither was registered under `X::Syntax` in `runtime_init.rs`, so `~~
+X::Comp` failed. Also fixed a `.message`-attribute bug found on the way (both
+sites stored the full `"X::Type: text"` string in the `message` attribute
+instead of just `text`) and corrected `InvocantNotAllowed`'s wording to
+rakudo's actual text. `news/2026-08/invocant-marker-exception-classes.md`,
+pin `t/invocant-marker-exception-classes.t`. `errors.t` goes from 4 to 2
+remaining failures under `MUTSU_REAL_TEST=1` — the other 2
+(`-> $a: { }` / `-> $a: $b { }`) are a distinct, unfixed gap: pointy-block
+signatures don't parse the `:` invocant marker at all (a parse-level gap, not
+a missing semantic check — `reject_invocant_in_sub` is only wired into `sub`
+declarations, not the pointy-block param parser in
+`src/parser/stmt/control/pointy_param.rs`), so the diagnosis is lost to
+generic "Confused." before any check can run. Left open for a future round.
