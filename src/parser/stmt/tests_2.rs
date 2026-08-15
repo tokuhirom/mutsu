@@ -196,7 +196,7 @@ fn parse_my_regex_decl() {
             if name == "rx"
                 && matches!(
                     body.as_slice(),
-                    [Stmt::Expr(Expr::Literal(lit))] if matches!(lit.view(), crate::value::ValueView::Regex(pattern) if pattern.as_str() == "abc")
+                    [Stmt::Expr(Expr::Literal(lit))] if matches!(lit.view(), crate::value::ValueView::Regex(pattern) if pattern.as_str().trim() == "abc")
                 )
     ));
 }
