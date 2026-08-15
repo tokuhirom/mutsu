@@ -88,6 +88,30 @@ impl Interpreter {
         self.restore_var_type_constraints(var_type_constraints);
     }
 
+    /// Run a subtest body callable.
+    ///
+    /// Reverted from a compiled-first attempt
+    /// (`vm_call_on_value`/`call_compiled_closure`, see
+    /// todo/deep/subtest-compiled-dispatch-breaks-class-registry-restore.md):
+    /// that path let a `my class`/`my role` declared inside the subtest body
+    /// escape `test_fn_subtest`'s post-subtest `restore_subtest_decls`
+    /// registry rollback and remain constructible from outside the subtest
+    /// after a request routed through Cro::HTTP async machinery — but the
+    /// SAME dispatch also broke the *intended* case (a transform class used
+    /// entirely within its own declaring subtest, invoked later from an
+    /// async `whenever`/`supply` pipeline on another thread/task):
+    /// `roast`'s bundled-library gate caught a real regression in
+    /// `Cro::HTTP`'s `http-middleware.rakutest` (before/after-parse
+    /// transforms silently became no-ops). The AST carrier
+    /// (`call_sub_value` -> `eval_block_value` -> a fresh
+    /// `Compiler::compile()` call) is slower — it recompiles the block's AST
+    /// on every subtest call — but its class/registry lifecycle interacts
+    /// correctly with `restore_subtest_decls`, so it stays the default until
+    /// that interaction is understood well enough to fix properly.
+    fn subtest_call_block(&mut self, block: &Value) -> Result<Value, RuntimeError> {
+        self.call_sub_value(block.clone(), vec![], true)
+    }
+
     pub(crate) fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // subtest 'name' => { ... } (Pair arg) or subtest 'name', { ... } (two args)
         // Pairs are treated as named args by positional_value, so check raw args first
@@ -130,7 +154,7 @@ impl Interpreter {
         self.tap.set_subtest_callable_is_sub_last(callable_is_sub);
         let saved_env = self.env.clone();
         let saved_decls = self.snapshot_subtest_decls();
-        let run_result = self.call_sub_value(block, vec![], true);
+        let run_result = self.subtest_call_block(&block);
         // If `plan skip-all` was used inside a Block callable, the error is fatal
         // and should propagate out of the subtest entirely (matching Raku behavior).
         if let Err(ref e) = run_result

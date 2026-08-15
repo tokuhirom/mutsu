@@ -246,7 +246,19 @@ impl Interpreter {
                     }
                     map.insert(str_key, v.clone());
                 }
-                runtime::utils::set_hash_original_keys(Value::hash(map), orig)
+                let value_type = h.value_type.clone();
+                let key_type = h.key_type.clone();
+                let declared_type = h.declared_type.clone();
+                let default = h.default.clone();
+                let mut rebuilt = runtime::utils::set_hash_original_keys(Value::hash(map), orig);
+                rebuilt.with_hash_mut(|arc| {
+                    let data = crate::gc::Gc::make_mut(arc);
+                    data.value_type = value_type;
+                    data.key_type = key_type;
+                    data.declared_type = declared_type;
+                    data.default = default;
+                });
+                rebuilt
             }
             _ => value,
         };
