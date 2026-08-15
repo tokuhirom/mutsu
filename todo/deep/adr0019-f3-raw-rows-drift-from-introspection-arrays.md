@@ -170,3 +170,38 @@ Added the 8 genuine names to `HASH_METHODS`, appended after the array's existing
 
 Running total: 3 of 18 owners fully triaged (`Mu`, `Any`, `Hash`). Largest remaining: `Str` (25
 extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`), `Cool` (11).
+
+## Progress (2026-08-15, continued): `Cool` (11 extras) triaged, plus a real bug found
+
+`Cool`'s 11 extras are the native-sized-integer coercion methods (`int8`, `int16`, `int32`,
+`int64`, `uint8`, `uint16`, `uint32`, `uint64`, `byte`, `int`, `uint`). All 11 raku-verified as
+genuine `Cool.^methods` entries (`raku -e 'say Cool.^methods.grep(*.name eq "int8").elems'` → 1,
+same for the rest) and already dispatch correctly on mutsu (`300.int8` → 44, etc.) — the
+`native_method_row_table.rs` comment above these rows previously claimed they were "deliberately
+excluded from `.^methods`/`.^can`-by-list", but that conflated two different concerns: the actual
+exclusion (`NATIVE_INT_TYPES` vs. `NATIVE_INT_COERCE_METHODS` in `runtime/native_types.rs`) is
+about *type-alias* names (`bool`, `long`, `ulong`, ...) that name a type but are not methods, which
+is unrelated to whether the 11 real coercion methods belong in `COOL_OWN`. Corrected that comment
+in place. Added a new `COOL_NATIVE_INT_COERCE_TAIL` array, appended after `NUMERIC_COERCIONS` in
+the `"Cool"` match arm (matching the block's position in `RAW_ROWS`, required to keep
+`raw_rows_cover_every_introspection_name_in_order` green).
+
+**This surfaced a real, previously-latent bug**: `is_builtin_type_method`
+(`methods_classhow_lookup.rs`), which backs `.^find_method`/`.can` on a `Package` receiver via
+`classhow_find_method`, unconditionally checked `["type_name", "Cool", "Any", "Mu"]` as the
+ancestor list for every type, regardless of whether `Cool` was genuinely an ancestor. This was
+harmless while `Cool`'s own introspection list had no method name likely to collide with a
+non-Cool type's probe, but the moment `int8` etc. joined `Cool`'s list, `Pair.^can('int8')`
+(`Pair`'s real MRO is `[Pair, Any, Mu]` per `builtin_type_catalog.rs` — no `Cool`) flipped from
+correctly `False` to a false-positive `True`, caught immediately by the existing
+`t/native-int-coerce-methods-are-cool-only.t` pin ("Pair is not Cool, so it cannot int8"). Fixed by
+reading the receiver type's real MRO via `registry().class_mro_readonly()` (the same authoritative
+builtin-type-catalog source `classhow_lookup_impl` already uses a few lines above) instead of the
+hardcoded guess, falling back to the old `[type_name, "Cool", "Any", "Mu"]` heuristic only when the
+catalog doesn't recognize the type name at all. Added a matching regression pin to
+`t/can-methods-drift.t`. Full local `t/` suite (3166 files, all green) plus the targeted
+`S12-introspection/*`, `S02-types/hash.t`, `S09-typed-arrays/hashes.t` roast files confirm no other
+regression.
+
+Running total: 4 of 18 owners fully triaged (`Mu`, `Any`, `Hash`, `Cool`). Largest remaining: `Str`
+(25 extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`).

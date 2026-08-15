@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 53;
+plan 57;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -46,6 +46,15 @@ works-and-can %h, 'flat',        { %h.flat };
 works-and-can %h, 'dynamic',     { %h.dynamic };
 works-and-can %h, 'roll',        { %h.roll };
 
+# --- Cool (native-sized-integer coercion methods) ---
+works-and-can 300, 'int8', { 300.int8 };
+
+# A type that is NOT Cool-derived must not spuriously pick up Cool's own
+# coercion methods -- regression pin for the `is_builtin_type_method`
+# ancestor-list bug this Cool-list growth exposed (it used to hardcode
+# ["Cool", "Any", "Mu"] as ancestors for every type, unconditionally).
+nok (a => 1).^can('int8').Bool, 'Pair is not Cool, so it cannot int8';
+
 # The fixed names also appear in `.^methods`.
 ok 'x'.^methods.map(*.Str).grep('trans'),        'Str.^methods includes trans';
 ok 'x'.^methods.map(*.Str).grep('substr-rw'),    'Str.^methods includes substr-rw';
@@ -61,6 +70,7 @@ ok %h.^methods.map(*.Str).grep('invert'),        'Hash.^methods includes invert'
 ok %h.^methods.map(*.Str).grep('flat'),          'Hash.^methods includes flat';
 ok %h.^methods.map(*.Str).grep('dynamic'),       'Hash.^methods includes dynamic';
 ok %h.^methods.map(*.Str).grep('roll'),          'Hash.^methods includes roll';
+ok Cool.^methods.map(*.Str).grep('int8'),        'Cool.^methods includes int8';
 
 # Methods that mutsu does NOT implement must still report False (no over-claim).
 nok 'abc'.^can('samespace').Bool, 'unimplemented samespace is not over-claimed';

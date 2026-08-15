@@ -132,6 +132,22 @@ const COOL_OWN: &[&str] = &[
     "polymod",
 ];
 
+/// The native-sized-integer coercion methods (`42.int8`, `"42".byte`, ...)
+/// declared on `Cool` — same 11 names, same order, as
+/// `runtime::native_types::NATIVE_INT_COERCE_METHODS`. Kept as a separate
+/// tail (appended after `NUMERIC_COERCIONS` in `builtin_type_method_names`,
+/// not folded into `COOL_OWN`) because `RAW_ROWS` lists them after `Cool`'s
+/// `gist`/`raku` rows, and `raw_rows_cover_every_introspection_name_in_order`
+/// requires the introspection array's order to match. Confirmed a genuine
+/// `.^methods` gap (real Rakudo's `Cool.^methods` lists all 11) rather than
+/// dispatch-only noise, ADR-0019 Phase F box F3 step 2 (`todo/deep/
+/// adr0019-f3-raw-rows-drift-from-introspection-arrays.md`); dispatch and
+/// `.^can` already worked before this list existed (`t/native-int-coerce-
+/// methods-are-cool-only.t`), only `.^methods` enumeration was missing them.
+const COOL_NATIVE_INT_COERCE_TAIL: &[&str] = &[
+    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
+];
+
 const LIST_METHODS: &[&str] = &[
     "elems",
     "end",
@@ -470,7 +486,7 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
         "Signature" => SIGNATURE_METHODS.to_vec(),
         "IO::Path" => IO_PATH_METHODS.to_vec(),
         "IO::Handle" => IO_HANDLE_METHODS.to_vec(),
-        "Cool" => [COOL_OWN, NUMERIC_COERCIONS].concat(),
+        "Cool" => [COOL_OWN, NUMERIC_COERCIONS, COOL_NATIVE_INT_COERCE_TAIL].concat(),
         "Any" => ANY_METHODS.to_vec(),
         "Mu" => MU_METHODS.to_vec(),
         _ => Vec::new(),

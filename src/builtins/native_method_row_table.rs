@@ -1190,21 +1190,34 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "gist", 1, 1),
     ("Cool", "raku", 1, 1),
     // ADR-0019 E11 slice 2 (2026-08-14, follow-up): the native-int-coercion
-    // method family (`42.int8`, `"42".byte`, ...) -- NOT in `COOL_OWN`
-    // (`is_native_int_coerce_method`'s doc comment explains why: they are
-    // deliberately excluded from `.^methods`/`.^can`-by-list to avoid making
-    // every value spuriously "can" a C-width alias like `bool`), but
-    // genuinely dispatched via `target.isa_check("Cool")` for the eleven
-    // real coercion names, unconditionally for the whole `Cool` family
-    // (`methods_0arg/mod.rs`). Found via a `MUTSU_VM_STATS=1` sweep of the
-    // full `t/` suite after the rest of this slice landed: one can-shadow
-    // mismatch remained (`class=List method=int8 real=true shadow=false`,
-    // `t/native-int-coerce-methods-are-cool-only.t`) alongside the
-    // known-and-out-of-scope `class=Cancellation method=cancel` (see the ADR
-    // E11 progress note). Hand-probed against the same `Int(2)`/`Str("5")`
-    // pair as the rest of the `Cool` rows above, plus the bare `Cool` type
-    // object (all eleven recognize at arity 0 there too, unlike most of the
-    // `Cool` block).
+    // method family (`42.int8`, `"42".byte`, ...), genuinely dispatched via
+    // `target.isa_check("Cool")` for the eleven real coercion names,
+    // unconditionally for the whole `Cool` family (`methods_0arg/mod.rs`).
+    // Found via a `MUTSU_VM_STATS=1` sweep of the full `t/` suite after the
+    // rest of this slice landed: one can-shadow mismatch remained
+    // (`class=List method=int8 real=true shadow=false`, `t/native-int-
+    // coerce-methods-are-cool-only.t`) alongside the known-and-out-of-scope
+    // `class=Cancellation method=cancel` (see the ADR E11 progress note).
+    // Hand-probed against the same `Int(2)`/`Str("5")` pair as the rest of
+    // the `Cool` rows above, plus the bare `Cool` type object (all eleven
+    // recognize at arity 0 there too, unlike most of the `Cool` block).
+    //
+    // **Correction (ADR-0019 Phase F box F3 step 2, 2026-08-15):** this
+    // comment used to say these were "NOT in `COOL_OWN` ... deliberately
+    // excluded from `.^methods`/`.^can`-by-list to avoid making every value
+    // spuriously 'can' a C-width alias like `bool`". That conflated two
+    // different lists: `is_native_int_coerce_method`'s exclusion concern is
+    // about `NATIVE_INT_TYPES` (`bool`/`long`/`ulong`/... name a *type*, not
+    // a method, and must never be dispatched as one) and is unrelated to
+    // whether the eleven real coercion methods appear in `COOL_OWN`. `.^can`
+    // already answered correctly for these eleven via this row's own arity
+    // cascade regardless of `COOL_OWN` membership (`t/native-int-coerce-
+    // methods-are-cool-only.t` pins exactly that). Only `.^methods`
+    // enumeration was missing them, confirmed a genuine gap against real
+    // Rakudo's `Cool.^methods` (F3 step 2's raku-verification triage) and
+    // now closed via `COOL_NATIVE_INT_COERCE_TAIL` (`builtin_type_
+    // methods.rs`), appended after `NUMERIC_COERCIONS` to match this block's
+    // own position in `RAW_ROWS`.
     ("Cool", "int8", 1, 1),
     ("Cool", "int16", 1, 1),
     ("Cool", "int32", 1, 1),

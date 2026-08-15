@@ -1,4 +1,4 @@
-# ADR-0019 F3 step 2: `Mu`, `Any`, and `Hash` introspection gaps
+# ADR-0019 F3 step 2: `Mu`, `Any`, `Hash`, `Cool` introspection gaps (plus a real `.^can` bug)
 
 ADR-0019 Phase F box F3 ("delete the per-type method-name lists, retain only the generated native
 entry catalog") found in an earlier scoping pass that its target catalog, `native_method_row.rs`'s
@@ -24,7 +24,19 @@ were confirmed as deliberately dispatch-only names real Rakudo's `.^methods` cor
 Added the genuine names to `ANY_METHODS`/`HASH_METHODS` and pinned all of them in
 `t/can-methods-drift.t`.
 
-3 of 18 catalog owners are now fully triaged (`Mu`, `Any`, `Hash`). Step 2 remains open for the
-~80+ names across the other 15 owners (`Str` has 25, `Int`/`Num`/`Rat`/`Complex` 25, `Cool` 11
-being the largest); see `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md` for the
-running list and suggested owner-by-owner ordering.
+Then triaged `Cool`'s 11 extras — the native-sized-integer coercion methods (`int8`..`uint64`,
+`byte`, `int`, `uint`). All 11 raku-verified as genuine `Cool.^methods` entries that already
+dispatch correctly on mutsu. Adding them surfaced a real bug, not just a list gap:
+`is_builtin_type_method` (backing `.^find_method`/`.can` on a `Package` receiver) unconditionally
+checked `["type_name", "Cool", "Any", "Mu"]` as every type's ancestor list, regardless of whether
+`Cool` genuinely was one. That was harmless until `Cool`'s own list grew to include a name likely
+to collide — once `int8` joined it, `Pair.^can('int8')` (`Pair`'s real MRO has no `Cool`) flipped
+from correctly `False` to a false-positive `True`, caught immediately by the pre-existing
+`t/native-int-coerce-methods-are-cool-only.t` pin. Fixed by reading the receiver type's real MRO
+from the builtin type catalog instead of guessing, with a new regression pin added alongside the
+`Cool` names.
+
+4 of 18 catalog owners are now fully triaged (`Mu`, `Any`, `Hash`, `Cool`). Step 2 remains open for
+the largest remaining owners, `Str` (25 extras) and `Int`/`Num`/`Rat`/`Complex` (25, likely shared
+via `NUMERIC_OWN`); see `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md` for the
+running list.

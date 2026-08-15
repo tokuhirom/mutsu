@@ -864,6 +864,24 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   and pinned in `t/can-methods-drift.t`. Running total: 3 of 18 owners triaged (`Mu`, `Any`,
   `Hash`); `Str` (25 extras), `Int`/`Num`/`Rat`/`Complex` (25), `Cool` (11) remain the largest
   untriaged owners.
+  **Progress (2026-08-15, step 2, `Cool`):** triaged `Cool`'s 11 extras — the native-sized-integer
+  coercion methods (`int8`..`uint64`, `byte`, `int`, `uint`). All 11 raku-verified as genuine
+  `Cool.^methods` entries and confirmed to already dispatch correctly on mutsu. Added a new
+  `COOL_NATIVE_INT_COERCE_TAIL` array (appended after `NUMERIC_COERCIONS` in `builtin_type_
+  method_names`'s `"Cool"` arm, matching the block's position in `RAW_ROWS`). **Found and fixed a
+  real bug this exposed**, not just a list gap: `is_builtin_type_method`
+  (`methods_classhow_lookup.rs`, feeding `.^find_method`/`.can` on a `Package` receiver) checked
+  `["type_name", "Cool", "Any", "Mu"]` as a hardcoded ancestor list for *every* type regardless of
+  whether `Cool` was actually an ancestor — harmless while `Cool`'s own list had no name likely to
+  collide, but once `int8` etc. joined `Cool`'s list, `Pair.^can('int8')` (`Pair`'s real MRO is
+  `[Pair, Any, Mu]`, no `Cool`) went from correctly `False` to a false-positive `True`. Fixed by
+  reading the receiver type's real MRO from `registry().class_mro_readonly()` (the builtin type
+  catalog's own authoritative source) instead of guessing, with the old hardcoded list kept only as
+  a fallback for a type the catalog doesn't recognize. Regression-pinned (`Pair cannot int8`) in
+  `t/can-methods-drift.t` alongside the new `Cool` names. Full local `t/` suite (3166 files) and the
+  targeted `S12-introspection`/`S02-types/hash.t`/`S09-typed-arrays/hashes.t` roast files stay
+  green. Running total: 4 of 18 owners triaged (`Mu`, `Any`, `Hash`, `Cool`); `Str` (25 extras) and
+  `Int`/`Num`/`Rat`/`Complex` (25, likely shared) remain the largest untriaged owners.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
