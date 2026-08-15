@@ -130,6 +130,12 @@ pub(super) unsafe extern "C" fn meta_assign_identity_fallible(
 }
 
 /// `OpCode::SetLocal`
+///
+/// Publishes to the `state` store on the same terms as the interpreter's
+/// `SetLocal` dispatch arm (`vm_exec_dispatch.rs`) — `publish_state_local` is
+/// a free `is_empty` check for the overwhelmingly common state-free
+/// `CompiledCode`, now that `scoped_state_key` is a Copy tuple rather than a
+/// `format!`ed `String` (see `todo/tickets/state-write-through-is-skipped-in-a-jit-compiled-range.md`).
 pub(super) unsafe extern "C" fn set_local(
     interp: *mut Interpreter,
     code: *const CompiledCode,
@@ -137,13 +143,17 @@ pub(super) unsafe extern "C" fn set_local(
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
     panic_boundary(|| match interp.exec_set_local_op(code, idx) {
-        Ok(()) => JIT_STATUS_OK,
+        Ok(()) => {
+            interp.publish_state_local(code, idx);
+            JIT_STATUS_OK
+        }
         Err(e) => park_err(interp, e),
     })
 }
 
 /// `OpCode::SetLocalDecl` — the fused `my $x = <expr>` store (ADR-0006 §2.3).
 /// `marks` is 1 when the declaration had an explicit initializer.
+/// See `set_local` above for why the `publish_state_local` call is free.
 pub(super) unsafe extern "C" fn set_local_decl(
     interp: *mut Interpreter,
     code: *const CompiledCode,
@@ -154,7 +164,10 @@ pub(super) unsafe extern "C" fn set_local_decl(
     interp.explicit_initializer_context = explicit_init != 0;
     interp.vardecl_context = true;
     panic_boundary(|| match interp.exec_set_local_op(code, idx) {
-        Ok(()) => JIT_STATUS_OK,
+        Ok(()) => {
+            interp.publish_state_local(code, idx);
+            JIT_STATUS_OK
+        }
         Err(e) => park_err(interp, e),
     })
 }

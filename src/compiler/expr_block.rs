@@ -188,9 +188,9 @@ impl Compiler {
                     let slot = decl_slot.unwrap_or_else(|| self.alloc_local(name));
                     let ip = self.code.ops.len();
                     let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                    let key_idx = self.code.add_constant(Value::str(key.clone()));
-                    self.code.state_locals.push((slot as usize, key.clone()));
-                    self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                    let key_sym = crate::symbol::Symbol::intern(&key);
+                    self.code.state_locals.push((slot as usize, key_sym));
+                    self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
                     self.code.emit(OpCode::GetLocal(slot));
                 } else if name.starts_with('@') || name.starts_with('%') {
                     // A container decl WITH an explicit initializer (`my @o = $x`)

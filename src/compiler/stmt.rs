@@ -1328,9 +1328,9 @@ impl Compiler {
                         "__state_{}::{}@{}",
                         self.current_package, name, placeholder_ip
                     );
-                    let key_idx = self.code.add_constant(Value::str(key.clone()));
-                    let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_idx, 0));
-                    Some((guard_idx, key, key_idx))
+                    let key_sym = Symbol::intern(&key);
+                    let guard_idx = self.code.emit(OpCode::StateVarInitGuard(key_sym.id(), 0));
+                    Some((guard_idx, key_sym))
                 } else {
                     None
                 };
@@ -1546,21 +1546,21 @@ impl Compiler {
                     }
                 }
                 if *is_state {
-                    if let Some((guard_idx, key, key_idx)) = state_guard_idx {
+                    if let Some((guard_idx, key_sym)) = state_guard_idx {
                         // Patch the guard jump target to the StateVarInit instruction
                         let state_init_ip = self.code.ops.len();
                         self.code.ops[guard_idx] =
-                            OpCode::StateVarInitGuard(key_idx, state_init_ip as u32);
-                        self.code.state_locals.push((slot as usize, key.clone()));
-                        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                            OpCode::StateVarInitGuard(key_sym.id(), state_init_ip as u32);
+                        self.code.state_locals.push((slot as usize, key_sym));
+                        self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
                     } else {
                         // No guard (e.g., chained state declarations) — use the
                         // original approach where RHS is always evaluated.
                         let ip = self.code.ops.len();
                         let key = format!("__state_{}::{}@{}", self.current_package, name, ip);
-                        let key_idx = self.code.add_constant(Value::str(key.clone()));
-                        self.code.state_locals.push((slot as usize, key.clone()));
-                        self.code.emit(OpCode::StateVarInit(slot, key_idx));
+                        let key_sym = Symbol::intern(&key);
+                        self.code.state_locals.push((slot as usize, key_sym));
+                        self.code.emit(OpCode::StateVarInit(slot, key_sym.id()));
                     }
                 } else {
                     let is_constant = custom_traits.iter().any(|(t, _)| t == "__constant");

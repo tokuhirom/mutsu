@@ -497,11 +497,12 @@ impl Interpreter {
 
     pub(super) fn anon_state_value(&self, name: &str) -> Option<Value> {
         let key = self.anon_state_key(name)?;
-        self.get_state_var(&key).cloned()
+        self.get_state_var((Symbol::intern(&key), None)).cloned()
     }
 
     pub(super) fn sync_anon_state_value(&mut self, name: &str, value: &Value) {
         if let Some(key) = self.anon_state_key(name) {
+            let key = (Symbol::intern(&key), None);
             loan_env!(self, set_state_var(key, value.clone()));
         }
     }

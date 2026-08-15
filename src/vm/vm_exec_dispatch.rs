@@ -4437,9 +4437,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::StateVarInitGuard(key_idx, jump_to) => {
-                let base_key = Self::const_str(code, *key_idx);
+                let base_key = crate::symbol::Symbol::from_id(*key_idx);
                 let scoped_key = self.scoped_state_key(base_key);
-                if self.get_state_var(&scoped_key).is_some() {
+                if self.get_state_var(scoped_key).is_some() {
                     // State already initialized: push a placeholder value on the
                     // stack (StateVarInit will discard it and use the stored value)
                     // and skip the RHS initializer.

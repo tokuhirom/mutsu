@@ -1586,7 +1586,11 @@ pub struct Interpreter {
     /// one of these subs — a plain `my sub` that merely shares a captured
     /// variable's name must keep resolving through its own live env capture.
     pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
-    state_vars: HashMap<String, Value>,
+    /// Keyed by `(base key symbol, closure scope id)` instead of a formatted
+    /// `String` — see `scoped_state_key`/`state_key_display`. The `Option<u64>`
+    /// distinguishes an un-scoped (named-sub/module-level) `state` var from one
+    /// scoped to a specific closure clone.
+    state_vars: HashMap<(Symbol, Option<u64>), Value>,
     /// Names re-declared (`my $x` / `if ... -> $x`) in THIS thread while the
     /// cross-thread shared store is active. A re-declaration is a fresh
     /// binding shadowing the captured outer lexical, so subsequent writes to

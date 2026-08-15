@@ -114,7 +114,7 @@ impl Interpreter {
 
     pub(super) fn exec_state_var_init_op(&mut self, code: &CompiledCode, slot: u32, key_idx: u32) {
         let init_val = self.stack.pop().unwrap_or(Value::NIL);
-        let base_key = Self::const_str(code, key_idx);
+        let base_key = crate::symbol::Symbol::from_id(key_idx);
         let scoped_key = self.scoped_state_key(base_key);
         let slot_idx = slot as usize;
         let name = &code.locals[slot_idx];
@@ -160,7 +160,7 @@ impl Interpreter {
             // holds (state mutated before the first thread spawned), else from
             // this declaration's initializer.
             let initial = self
-                .get_state_var(&scoped_key)
+                .get_state_var(scoped_key)
                 .cloned()
                 .unwrap_or(coerced_initial);
             // The cross-thread cell key must be stable across mutsu's two
@@ -170,13 +170,13 @@ impl Interpreter {
             // `scoped_key` alone differs between `start f()` and a direct `f()`).
             // Normalize away the `/<n>` candidate suffix and the trailing
             // `@<ip>` position so both paths share one cell.
-            let shared_key = Self::shared_state_cell_key(&scoped_key);
+            let shared_key = Self::shared_state_cell_key(scoped_key);
             let cell = self.get_or_init_shared_state_cell(&shared_key, initial);
             // Keep the local store pointing at the cell too, so the exit-time
             // writeback and any non-cell reader observe the same Arc.
-            self.set_state_var(scoped_key.clone(), cell.clone());
+            self.set_state_var(scoped_key, cell.clone());
             cell
-        } else if let Some(stored) = self.get_state_var(&scoped_key) {
+        } else if let Some(stored) = self.get_state_var(scoped_key) {
             let stored = stored.clone();
             // Track B slice 3: upgrade a plain stored value to a cell (a value
             // written by a pre-cell `set_state_var` plain insert), so every
@@ -191,7 +191,7 @@ impl Interpreter {
                 {
                     crate::value::register_container_constraint(&arc, tc);
                 }
-                self.set_state_var(scoped_key.clone(), cell.clone());
+                self.set_state_var(scoped_key, cell.clone());
                 cell
             } else {
                 stored
@@ -239,7 +239,7 @@ impl Interpreter {
                 }
                 cell
             };
-            self.set_state_var(scoped_key.clone(), val.clone());
+            self.set_state_var(scoped_key, val.clone());
             val
         };
         self.locals[slot_idx] = val.clone();
@@ -267,7 +267,7 @@ impl Interpreter {
         // Closures that capture this variable can use this to update state
         // storage when they modify the variable.
         let meta_key = format!("__mutsu_state_key::{}", name);
-        let scoped_key_val = Value::str(scoped_key.clone());
+        let scoped_key_val = Value::str(Self::state_key_display(scoped_key));
         let needs_meta_insert = self.env().get(&meta_key) != Some(&scoped_key_val);
         if needs_meta_insert {
             self.env_mut().insert(meta_key, scoped_key_val);

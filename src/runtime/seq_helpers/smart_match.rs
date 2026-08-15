@@ -347,6 +347,7 @@ impl Interpreter {
                     .get("key")
                     .map(Value::to_string_value)
                     .unwrap_or_else(|| "__mutsu_ff_matcher::default".to_string());
+                let key = (crate::symbol::Symbol::intern(&key), None);
                 let lhs_pat = map.get("lhs").cloned().unwrap_or(Value::NIL);
                 let rhs_pat = map.get("rhs").cloned().unwrap_or(Value::NIL);
                 let exclude_start = map.get("exclude_start").and_then(Value::as_bool) == Some(true);
@@ -354,7 +355,7 @@ impl Interpreter {
                 let is_fff = map.get("is_fff").and_then(Value::as_bool) == Some(true);
 
                 let seq = self
-                    .get_state_var(&key)
+                    .get_state_var(key)
                     .and_then(|v| match v.view() {
                         ValueView::Int(i) if i > 0 => Some(i),
                         _ => None,
@@ -377,26 +378,26 @@ impl Interpreter {
                 let out = if seq > 0 {
                     let current = seq;
                     if rhs_hit {
-                        self.set_state_var(key.clone(), Value::int(0));
+                        self.set_state_var(key, Value::int(0));
                         if exclude_end {
                             Value::NIL
                         } else {
                             Value::int(current)
                         }
                     } else {
-                        self.set_state_var(key.clone(), Value::int(current + 1));
+                        self.set_state_var(key, Value::int(current + 1));
                         Value::int(current)
                     }
                 } else if lhs_hit {
                     if !is_fff && rhs_hit {
-                        self.set_state_var(key.clone(), Value::int(0));
+                        self.set_state_var(key, Value::int(0));
                         if exclude_start || exclude_end {
                             Value::NIL
                         } else {
                             Value::int(1)
                         }
                     } else {
-                        self.set_state_var(key.clone(), Value::int(2));
+                        self.set_state_var(key, Value::int(2));
                         if exclude_start {
                             Value::NIL
                         } else {

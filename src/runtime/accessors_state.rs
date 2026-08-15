@@ -282,8 +282,8 @@ impl Interpreter {
         self.our_vars.insert(key, value);
     }
 
-    pub(crate) fn get_state_var(&self, key: &str) -> Option<&Value> {
-        self.state_vars.get(key)
+    pub(crate) fn get_state_var(&self, key: (Symbol, Option<u64>)) -> Option<&Value> {
+        self.state_vars.get(&key)
     }
 
     /// Drop a `state` variable's stored value so the next `StateVarInit`
@@ -299,20 +299,48 @@ impl Interpreter {
     /// counting up across later executions of its enclosing statement — Cro's
     /// `Cro.compose` recursed on a `state $split` that never restarted at 1 and
     /// blew the stack once a `Cro::Service.start` had run.
-    pub(crate) fn remove_state_var(&mut self, key: &str) {
-        self.state_vars.remove(key);
+    pub(crate) fn remove_state_var(&mut self, key: (Symbol, Option<u64>)) {
+        self.state_vars.remove(&key);
         self.shared_vars.remove(&Self::shared_state_cell_key(key));
     }
 
+    /// Reconstruct the pre-rekey display string for a `(Symbol, Option<u64>)`
+    /// state key — `{base}#c{id}` when scoped to a closure clone, else the bare
+    /// base key. Only the cross-thread cell-key derivation
+    /// (`normalize_state_key`) still needs a string; the store itself and every
+    /// hot-path read/write use the Copy tuple directly.
+    pub(crate) fn state_key_display(key: (Symbol, Option<u64>)) -> String {
+        match key.1 {
+            Some(id) => format!("{}#c{}", key.0.as_str(), id),
+            None => key.0.as_str().to_string(),
+        }
+    }
+
+    /// Reverse of `state_key_display`. Used only by the `__mutsu_state_key::*`
+    /// env metadata bridge (a closure's free-var state writeback path, see
+    /// `vm_closure_dispatch.rs`), which persists the key as a `Value::Str`
+    /// since `Env` is string-keyed.
+    pub(crate) fn state_key_from_display(s: &str) -> (Symbol, Option<u64>) {
+        if let Some(pos) = s.rfind("#c")
+            && !s[pos + 2..].is_empty()
+            && s[pos + 2..].bytes().all(|b| b.is_ascii_digit())
+        {
+            let id: u64 = s[pos + 2..].parse().unwrap_or(0);
+            (Symbol::intern(&s[..pos]), Some(id))
+        } else {
+            (Symbol::intern(s), None)
+        }
+    }
+
     /// The `shared_vars` key under which `key`'s cross-thread `state` cell lives.
-    pub(crate) fn shared_state_cell_key(scoped_key: &str) -> String {
+    pub(crate) fn shared_state_cell_key(scoped_key: (Symbol, Option<u64>)) -> String {
         format!(
             "__mutsu_shared_state::{}",
-            crate::runtime::Interpreter::normalize_state_key(scoped_key)
+            crate::runtime::Interpreter::normalize_state_key(&Self::state_key_display(scoped_key))
         )
     }
 
-    pub(crate) fn set_state_var(&mut self, key: String, value: Value) {
+    pub(crate) fn set_state_var(&mut self, key: (Symbol, Option<u64>), value: Value) {
         // Track C/Track B: once a `state` variable lives in a shared
         // `ContainerRef` cell (StateVarInit under an active thread context),
         // every writeback must go THROUGH the cell, not replace the store

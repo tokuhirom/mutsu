@@ -607,7 +607,9 @@ impl Interpreter {
         let saved_state_scope = self.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
-            if let Some(val) = self.get_state_var(key) {
+            // `state_scope_id` is `None` here (cleared just above), so this
+            // resolves the raw, unscoped key.
+            if let Some(val) = self.get_state_var(self.scoped_state_key(*key)) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -743,7 +745,8 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            loan_env!(self, set_state_var(key.clone(), val));
+            let scoped_key = self.scoped_state_key(*key);
+            loan_env!(self, set_state_var(scoped_key, val));
         }
         self.state_scope_id = saved_state_scope;
 
@@ -1525,7 +1528,9 @@ impl Interpreter {
         let saved_state_scope = self.state_scope_id.take();
         // Load persisted state variable values
         for (slot, key) in &cc.state_locals {
-            if let Some(val) = self.get_state_var(key) {
+            // `state_scope_id` is `None` here (cleared just above), so this
+            // resolves the raw, unscoped key.
+            if let Some(val) = self.get_state_var(self.scoped_state_key(*key)) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -1682,7 +1687,8 @@ impl Interpreter {
         // Sync state variables
         for (slot, key) in &cc.state_locals {
             let val = self.locals[*slot].clone();
-            loan_env!(self, set_state_var(key.clone(), val));
+            let scoped_key = self.scoped_state_key(*key);
+            loan_env!(self, set_state_var(scoped_key, val));
         }
         self.state_scope_id = saved_state_scope;
 

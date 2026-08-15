@@ -1954,15 +1954,18 @@ pub(crate) enum OpCode {
     SetPragma(u32),
 
     /// State variable initialization.
-    /// slot = local slot index, key_idx = constant index for unique state key.
+    /// slot = local slot index, key_idx = interned `Symbol` id (see
+    /// `Symbol::from_id`/`Symbol::id`) for the unique state key — not a
+    /// constant-pool index.
     /// Pops init value from stack.
     /// If state_vars has key: set locals[slot] = stored value (discard init).
     /// If not: set locals[slot] = init value, store in state_vars.
     StateVarInit(u32, u32),
     /// Guard for state variable initialization.
-    /// Check if state key (arg 0) exists.  If yes: push stored value and jump
-    /// to the absolute instruction offset (arg 1).  If no: fall through so the
-    /// RHS initializer can be compiled next.
+    /// Check if state key (arg 0, an interned `Symbol` id like `StateVarInit`)
+    /// exists. If yes: push stored value and jump to the absolute instruction
+    /// offset (arg 1). If no: fall through so the RHS initializer can be
+    /// compiled next.
     StateVarInitGuard(u32, u32),
     /// Mark whether a declared variable should report `.VAR.dynamic` true.
     SetVarDynamic {
@@ -3342,7 +3345,7 @@ pub(crate) struct CompiledCode {
     /// ...`).
     pub(crate) plain_locals: Vec<bool>,
     /// Maps local slot indices to persistent state keys for `state` variables.
-    pub(crate) state_locals: Vec<(usize, String)>,
+    pub(crate) state_locals: Vec<(usize, Symbol)>,
     /// Maps local slot indices to qualified package names for `our` variables.
     /// Used by BlockScope restoration to sync local slots from their global values.
     pub(crate) our_locals: Vec<(usize, String)>,
