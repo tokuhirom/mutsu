@@ -144,7 +144,14 @@ pub(crate) fn parse_raw_braced_regex_body(input: &str) -> PResult<'_, String> {
         .strip_prefix('{')
         .ok_or_else(|| PError::expected("regex body"))?;
     if let Some((body, rest)) = scan_to_delim(after_open, '{', '}', true) {
-        return Ok((rest, body.trim().to_string()));
+        // Trailing whitespace is preserved (only leading is dropped): a `rule`
+        // inserts an implicit `<.ws>` right up to the closing `}`
+        // (`inject_implicit_rule_ws` below), so trimming it away here would
+        // starve that pass of the whitespace run it needs to see. A plain
+        // `token`/`regex` (non-`rule`) is unaffected either way — its
+        // tokenizer treats inter-atom pattern whitespace as pure layout and
+        // silently skips a trailing run with no atom after it.
+        return Ok((rest, body.trim_start().to_string()));
     }
     Err(PError::expected("regex closing delimiter"))
 }
@@ -260,21 +267,30 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             }
             let prev = out.chars().rev().find(|ch| !ch.is_whitespace());
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
-            if let (Some(p), Some(n)) = (prev, next) {
+            if let Some(p) = prev {
                 // A `$` that begins a capture alias / variable (`$<name>=…`,
                 // `$0=…`, `$var`, `${…}`) is a term, not the end-of-string
                 // anchor, so whitespace before it IS significant and must
                 // become `<.ws>`. Normalize such a `$` to a plain term char so
                 // `should_insert`'s `(_, '$')` anchor suppression does not fire
                 // (while its prev-based rules — after `(`/`[`/`|` — still do).
-                let n = if n == '$'
-                    && chars
-                        .get(j + 1)
-                        .is_some_and(|c| c.is_alphanumeric() || *c == '_' || *c == '<' || *c == '{')
-                {
-                    'x'
-                } else {
-                    n
+                // A trailing whitespace run with no following atom (right
+                // before the closing `}`) maps to a sentinel that matches
+                // none of `should_insert`'s `(_, X)` arms, so only the
+                // prev-based restrictions apply — `rule r { 'a' 'b' }` must
+                // consume trailing input whitespace exactly like the `<.ws>`
+                // between 'a' and 'b' does.
+                let n = match next {
+                    Some(n)
+                        if n == '$'
+                            && chars.get(j + 1).is_some_and(|c| {
+                                c.is_alphanumeric() || *c == '_' || *c == '<' || *c == '{'
+                            }) =>
+                    {
+                        'x'
+                    }
+                    Some(n) => n,
+                    None => '\0',
                 };
                 if p == '^' {
                     if !out.ends_with(' ') && !out.is_empty() {
@@ -287,7 +303,9 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                         out.push(' ');
                     }
                     out.push_str("<.ws>");
-                    out.push(' ');
+                    if next.is_some() {
+                        out.push(' ');
+                    }
                 } else if !out.ends_with(' ') && !out.is_empty() {
                     out.push(' ');
                 }
@@ -465,6 +483,9 @@ pub(crate) fn normalize_token_pattern(pattern: &str) -> String {
     if trimmed.len() >= 2 && trimmed.starts_with('/') && trimmed.ends_with('/') {
         trimmed[1..trimmed.len() - 1].to_string()
     } else {
-        trimmed.to_string()
+        // Trailing whitespace is preserved here too (see
+        // `parse_raw_braced_regex_body`) — only the `/…/`-wrapped form above
+        // needs the fully-trimmed view, to detect and strip the delimiters.
+        pattern.trim_start().to_string()
     }
 }
