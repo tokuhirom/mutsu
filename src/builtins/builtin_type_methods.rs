@@ -83,6 +83,28 @@ const NUMERIC_OWN: &[&str] = &[
     "chr", "base", "polymod", "expmod", "pred", "succ",
 ];
 
+/// `Int`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail.
+/// ADR-0019 Phase F box F3 step 2 (`todo/deep/
+/// adr0019-f3-raw-rows-drift-from-introspection-arrays.md`): `RAW_ROWS` lists
+/// these 7 only under the `"Int"` owner (not `Num`/`Rat`/`Complex`), and all 7
+/// are raku-verified genuine `Int.^methods` entries that already dispatch
+/// correctly. `rand` is also real on `Num`/`Rat` in Rakudo, but `RAW_ROWS` has
+/// no row for it there either -- that's a separate, still-open introspection
+/// gap outside this array's scope (F3 tracks `RAW_ROWS` parity, not a full
+/// raku-fidelity sweep of the whole numeric family).
+const INT_EXTRA_TAIL: &[&str] = &["rand", "uniprop", "lsb", "msb", "int8", "Real", "Complex"];
+
+/// `Rat`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail
+/// (ADR-0019 Phase F box F3 step 2), raku-verified genuine `Rat.^methods`
+/// entries that already dispatch correctly.
+const RAT_EXTRA_TAIL: &[&str] = &["FatRat", "nude"];
+
+/// `Complex`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS`
+/// tail (ADR-0019 Phase F box F3 step 2). `RAW_ROWS` also lists `UInt` and
+/// `reverse` under `Complex`, but real Rakudo's `Complex.^methods` does not
+/// include either -- confirmed dispatch-only, left out.
+const COMPLEX_EXTRA_TAIL: &[&str] = &["isNaN", "re", "im", "reals", "conj", "Complex"];
+
 /// `Bool` methods, up to the coercion tail.
 const BOOL_OWN: &[&str] = &["pred", "succ", "pick", "roll"];
 
@@ -477,7 +499,10 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
     }
     match type_name {
         "Str" => [STR_OWN, NUMERIC_COERCIONS, &["elems", "fmt"]].concat(),
-        "Int" | "Num" | "Rat" | "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
+        "Int" => [NUMERIC_OWN, NUMERIC_COERCIONS, INT_EXTRA_TAIL].concat(),
+        "Rat" => [NUMERIC_OWN, NUMERIC_COERCIONS, RAT_EXTRA_TAIL].concat(),
+        "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS, COMPLEX_EXTRA_TAIL].concat(),
+        "Num" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
         "List" | "Array" => LIST_METHODS.to_vec(),
         "Hash" => HASH_METHODS.to_vec(),
         "Bool" => [BOOL_OWN, NUMERIC_COERCIONS].concat(),

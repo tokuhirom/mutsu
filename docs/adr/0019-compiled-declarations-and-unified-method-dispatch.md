@@ -882,6 +882,24 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   targeted `S12-introspection`/`S02-types/hash.t`/`S09-typed-arrays/hashes.t` roast files stay
   green. Running total: 4 of 18 owners triaged (`Mu`, `Any`, `Hash`, `Cool`); `Str` (25 extras) and
   `Int`/`Num`/`Rat`/`Complex` (25, likely shared) remain the largest untriaged owners.
+  **Progress (2026-08-15, step 2, `Int`/`Num`/`Rat`/`Complex`):** the "25 extras, likely shared"
+  guess above was wrong — checked `RAW_ROWS` directly per owner instead of assuming: only `Int` has
+  a real 25-name extras block; `Num` has none; `Rat` has 2 (`FatRat`, `nude`); `Complex` has 8. Of
+  `Int`'s 25, 7 are genuine `Int.^methods` gaps (`rand`, `uniprop`, `lsb`, `msb`, `int8`, `Real`,
+  `Complex`), all raku-verified and already dispatching correctly; the other 18 are confirmed
+  dispatch-only. `Rat`'s both extras are genuine (`FatRat`, `nude`). Of `Complex`'s 8, 6 are genuine
+  (`isNaN`, `re`, `im`, `reals`, `conj`, `Complex`); `UInt`/`reverse` are dispatch-only. Since
+  `NUMERIC_OWN` is one array shared by all four owners but these extras are NOT shared (e.g. `rand`
+  is `Int`-only per `RAW_ROWS`, even though real Rakudo also has `Num`/`Rat` `.rand` — a separate,
+  still-open gap `RAW_ROWS` itself doesn't cover, out of F3's own "match `RAW_ROWS`" scope), split
+  the `"Int" | "Num" | "Rat" | "Complex"` match arm into four, each with its own optional extra tail
+  (`INT_EXTRA_TAIL`, `RAT_EXTRA_TAIL`, `COMPLEX_EXTRA_TAIL`) appended after `NUMERIC_COERCIONS`,
+  matching each block's `RAW_ROWS` position. All raku-verified and pinned in
+  `t/can-methods-drift.t` (96 assertions total now). Full local `t/` suite (3167 files) and the
+  targeted `S12-introspection/*`/`S32-num/*` roast files stay green. Running total: 8 of 18 owners
+  now settled (`Mu`, `Any`, `Hash`, `Cool`, `Int`, `Num`, `Rat`, `Complex` — `Num` needed no
+  changes, its extras block was empty). `Str` (25 extras) is now the only large owner left
+  untriaged; the remaining 10 owners are the small-count ones the original survey table lists.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the

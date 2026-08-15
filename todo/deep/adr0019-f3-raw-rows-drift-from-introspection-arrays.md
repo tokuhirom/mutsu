@@ -205,3 +205,36 @@ regression.
 
 Running total: 4 of 18 owners fully triaged (`Mu`, `Any`, `Hash`, `Cool`). Largest remaining: `Str`
 (25 extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`).
+
+## Progress (2026-08-15, continued): `Int`/`Num`/`Rat`/`Complex` triaged -- the "shared" guess was wrong
+
+The earlier note above guessed `Int`/`Num`/`Rat`/`Complex` share the same 25 extras via the common
+`NUMERIC_OWN` array. Checked `RAW_ROWS` directly instead of assuming: only `Int` actually has a
+25-name extras block; `Num` has zero; `Rat` has 2 (`FatRat`, `nude`); `Complex` has 8
+(`UInt`, `isNaN`, `re`, `im`, `reals`, `conj`, `reverse`, `Complex`).
+
+`Int`: 7 of 25 genuine (`rand`, `uniprop`, `lsb`, `msb`, `int8`, `Real`, `Complex` -- all
+raku-verified present on `Int.^methods` and already dispatching, e.g. `5.rand`, `65.uniprop`,
+`5.lsb`, `5.msb`, `5.int8`, `5.Real`, `5.Complex`). The other 18 confirmed dispatch-only.
+
+`Rat`: both extras genuine (`(1/3).FatRat`, `(1/3).nude` both raku-verified and dispatch
+correctly).
+
+`Complex`: 6 of 8 genuine (`isNaN`, `re`, `im`, `reals`, `conj`, `Complex` -- raku-verified and
+dispatching, e.g. `(1+2i).isNaN`, `.re`, `.im`, `.reals`, `.conj`, `.Complex`). `UInt`/`reverse`
+confirmed dispatch-only (real `Complex.^methods` doesn't list either).
+
+Since `NUMERIC_OWN` is one array shared by all four owners but these extras are genuinely
+per-owner (not shared) -- `RAW_ROWS` itself only lists `rand` under `"Int"`, even though real
+Rakudo's `Num`/`Rat` also have a working `.rand` (a separate, still-open gap outside `RAW_ROWS`'s
+own claims, so outside F3's "match `RAW_ROWS`" scope) -- split the combined
+`"Int" | "Num" | "Rat" | "Complex"` match arm into four, each with its own optional extra tail
+(`INT_EXTRA_TAIL`, `RAT_EXTRA_TAIL`, `COMPLEX_EXTRA_TAIL`) appended after `NUMERIC_COERCIONS`,
+positioned to match each block's location in `RAW_ROWS`. All raku-verified and pinned in
+`t/can-methods-drift.t` (96 assertions total). Full local `t/` suite (3167 files) and the targeted
+`S12-introspection/*` plus every `S32-num/*.t` roast file stay green.
+
+Running total: 8 of 18 owners now settled (`Mu`, `Any`, `Hash`, `Cool`, `Int`, `Num`, `Rat`,
+`Complex` -- `Num` needed no changes, its `RAW_ROWS` extras block was empty). `Str` (25 extras) is
+now the only large owner left untriaged; the rest are the smaller-count owners from the original
+survey.

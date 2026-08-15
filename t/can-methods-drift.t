@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 57;
+plan 96;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -22,7 +22,24 @@ works-and-can 'abc', 'substr-rw',    { my $s = 'abc'; $s.substr-rw(0, 1) = 'Z' }
 works-and-can 'abc', 'substr-eq',    { 'abc'.substr-eq('bc', 1) };
 
 # --- Int ---
-works-and-can 5, 'expmod', { 4.expmod(2, 5) };
+works-and-can 5, 'expmod',  { 4.expmod(2, 5) };
+works-and-can 5, 'rand',    { 5.rand };
+works-and-can 65, 'uniprop', { 65.uniprop('Alpha') };
+works-and-can 5, 'lsb',     { 5.lsb };
+works-and-can 5, 'msb',     { 5.msb };
+works-and-can 5, 'Real',    { 5.Real };
+
+# --- Rat ---
+works-and-can (1/3), 'FatRat', { (1/3).FatRat };
+works-and-can (1/3), 'nude',   { (1/3).nude };
+
+# --- Complex ---
+works-and-can (1+2i), 'isNaN', { (1+2i).isNaN };
+works-and-can (1+2i), 're',    { (1+2i).re };
+works-and-can (1+2i), 'im',    { (1+2i).im };
+works-and-can (1+2i), 'reals', { (1+2i).reals };
+works-and-can (1+2i), 'conj',  { (1+2i).conj };
+works-and-can (1+2i), 'Complex', { (1+2i).Complex };
 
 # --- List / Array ---
 works-and-can (1, 2, 3), 'minpairs', { (1, 2, 3).minpairs };
@@ -71,6 +88,19 @@ ok %h.^methods.map(*.Str).grep('flat'),          'Hash.^methods includes flat';
 ok %h.^methods.map(*.Str).grep('dynamic'),       'Hash.^methods includes dynamic';
 ok %h.^methods.map(*.Str).grep('roll'),          'Hash.^methods includes roll';
 ok Cool.^methods.map(*.Str).grep('int8'),        'Cool.^methods includes int8';
+ok 5.^methods.map(*.Str).grep('rand'),           'Int.^methods includes rand';
+ok 5.^methods.map(*.Str).grep('uniprop'),        'Int.^methods includes uniprop';
+ok 5.^methods.map(*.Str).grep('lsb'),            'Int.^methods includes lsb';
+ok 5.^methods.map(*.Str).grep('msb'),            'Int.^methods includes msb';
+ok 5.^methods.map(*.Str).grep('Real'),           'Int.^methods includes Real';
+ok 5.^methods.map(*.Str).grep('int8'),           'Int.^methods includes int8';
+ok (1/3).^methods.map(*.Str).grep('FatRat'),     'Rat.^methods includes FatRat';
+ok (1/3).^methods.map(*.Str).grep('nude'),       'Rat.^methods includes nude';
+ok (1+2i).^methods.map(*.Str).grep('isNaN'),     'Complex.^methods includes isNaN';
+ok (1+2i).^methods.map(*.Str).grep('re'),        'Complex.^methods includes re';
+ok (1+2i).^methods.map(*.Str).grep('im'),        'Complex.^methods includes im';
+ok (1+2i).^methods.map(*.Str).grep('reals'),     'Complex.^methods includes reals';
+ok (1+2i).^methods.map(*.Str).grep('conj'),      'Complex.^methods includes conj';
 
 # Methods that mutsu does NOT implement must still report False (no over-claim).
 nok 'abc'.^can('samespace').Bool, 'unimplemented samespace is not over-claimed';
