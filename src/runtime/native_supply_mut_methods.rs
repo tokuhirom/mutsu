@@ -271,6 +271,15 @@ impl Interpreter {
                         Some(ValueView::Bool(true))
                     );
                     let line_chomp = attrs.get("line_chomp").map(Value::truthy).unwrap_or(true);
+                    // `.head(N)` on this channel-backed Supply (see the "head"
+                    // arm in native_supply_dispatch.rs) — bounds how many
+                    // plain-value units the act loop dispatches before it
+                    // fires `done` itself, since an infinite source like
+                    // `Supply.interval` never signals one on its own.
+                    let head_limit = match attrs.get("head_limit").map(Value::view) {
+                        Some(ValueView::Int(n)) if n >= 0 => Some(n as usize),
+                        _ => None,
+                    };
                     // Record a close handle on the Tap so `.close` can stop
                     // this worker — without it the act loop (and an interval
                     // source feeding it) ran until process exit.
@@ -288,6 +297,7 @@ impl Interpreter {
                             Some((close_id, close_flag)),
                             is_lines,
                             line_chomp,
+                            head_limit,
                         );
                     });
                     let mut tap_handle_attrs = HashMap::new();
@@ -723,6 +733,7 @@ impl Interpreter {
                                         Some((close_id, close_flag)),
                                         is_lines,
                                         line_chomp,
+                                        None,
                                     );
                                 });
                             } else if let ValueView::Instance {
@@ -1407,6 +1418,7 @@ impl Interpreter {
                             None,
                             false,
                             true,
+                            None,
                         );
                     });
                     scheduled_pump_id = Some(pump_id);

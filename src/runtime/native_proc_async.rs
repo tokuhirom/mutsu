@@ -537,6 +537,7 @@ impl Interpreter {
                                 Some((close_id, close_flag)),
                                 false,
                                 true,
+                                None,
                             );
                         },
                     ));
