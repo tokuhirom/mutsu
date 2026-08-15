@@ -403,7 +403,7 @@ impl Interpreter {
                 // `.wrap` already reads, so `Class.^find_method(name).WHY`
                 // keeps finding the `#|` comment on the method declaration
                 // (roast integration/advent2011-day10.t).
-                if class_name == "Method" || class_name == "Submethod" {
+                if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") {
                     let am = attributes.as_map();
                     let method_name = am.get("__mutsu_lookup_method").map(|v| v.to_string_value());
                     let owner = am
@@ -416,6 +416,22 @@ impl Interpreter {
                             })
                         });
                     let mut k = Vec::new();
+                    // A specific multi candidate (`.candidates[N]`) has its
+                    // own `#|` comment, distinct from its sibling candidates
+                    // and the dispatcher itself -- try the
+                    // `/multi.{idx}`-suffixed key first, mirroring the
+                    // `ValueView::Sub` arm's `multi_idx` handling above. A
+                    // non-multi method also carries `candidate_idx=0` (see
+                    // `make_method_object_with_owner_ex`), but no doc comment
+                    // is ever recorded under that suffixed key, so the lookup
+                    // below just falls through to the plain key for it.
+                    if let Some(ValueView::Int(idx)) =
+                        am.get("__mutsu_lookup_candidate_idx").map(Value::view)
+                        && let (Some(owner), Some(name)) = (&owner, &method_name)
+                    {
+                        k.push(format!("{}::{}/multi.{}", owner, name, idx));
+                        k.push(format!("&{}/multi.{}", name, idx));
+                    }
                     if let (Some(owner), Some(name)) = (&owner, &method_name) {
                         k.push(format!("{}::{}", owner, name));
                     }

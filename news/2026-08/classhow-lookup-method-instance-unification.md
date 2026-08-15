@@ -70,6 +70,34 @@ As a side effect this also fixes `.^methods()[N](...)` — the SAME `CALL-ME` ga
   first candidate as the carrier body when the `Instance` itself has no direct callable), pinned by
   `t/addmethod-multi-alias.t` and `t/can-multi-dispatcher.t`.
 
+A second, wider roast sweep (`S02`/`S03`/`S04`/`S05`/`S06`/`S12`/`S14`/`S16`/`S17`/`S26`/`S32`/
+`integration`, via `scripts/run-roast-test.sh` — the CI-equivalent wrapper) found four more real
+regressions, all confirmed against real `raku` before fixing:
+
+- **A grammar `token`/`rule`/`regex`'s `.^lookup`/`.^name` is `Regex`, not `Method`.** Real Rakudo:
+  `G.^lookup('X').^name` for `regex X {}` is `Regex` (verified for `token`/`rule`/`regex` alike), a
+  distinct class name from a plain method's `Method`/`Submethod` — every `class_name == "Method" ||
+  class_name == "Submethod"` guard added by this unification (`CALL-ME`, `.WHY`, the multi-family
+  unwrap, and the hyper-dispatch callable-name check) had to grow a third `"Regex"` case
+  (`roast/S26-documentation/why-leading.t`'s "regex" subtest, whose self-referential `$thing.^name ==
+  WHEREFORE.^name` check went inconsistent once `$thing.^name` became `Method`).
+- **A submethod's `.^lookup` result reported `.^name` as `Method`, not `Submethod`.** A pre-existing
+  gap in `make_method_object_with_owner`, invisible before this unification because its other callers
+  (`.^methods`/`.^method_table`) explicitly filter submethods out before ever reaching it — `.^lookup`
+  does not (real Raku surfaces an ancestor's submethod through `.^lookup`).
+- **A parameter's own `#=`/`#|` doc comment was unreachable through `.signature.params[N].WHY`.**
+  `make_method_object_with_owner`'s signature build called the plain `make_signature_value` instead of
+  `make_signature_value_with_owner`, so `__mutsu_owner_sub` (the key `Parameter`'s own `.WHY` lookup
+  needs) was never set — fixed by threading the same `"{owner}::{name}"` key `sub_signature_value`
+  already uses.
+- **A bareword call on a lexically-bound `&name` variable (`SPURT($file, $data)` after `my &SPURT =
+  IO::Path.^lookup('spurt')`) died "Unknown function: SPURT".** `lexical_amp_var_callable` — the
+  resolver a plain (no-`&`-sigil) function-call site uses to check "is this actually a lexical `&`-var
+  binding" — filtered candidates to `ValueView::Sub | WeakSub` only, excluding even the pre-existing
+  `Routine` shape (a latent gap this unification's new `Instance` shape also fell into). Extended to
+  recognize `Routine` and the `Method`/`Submethod`/`Regex` `Instance` shapes
+  (`roast/S32-io/spurt.t`'s `:meth` variant, called from inside a `subtest {...}` closure).
+
 ## Verification
 
 New pin: `t/classhow-lookup-method-instance-callable.t` (9 assertions, byte-for-byte matched against
@@ -84,7 +112,10 @@ hyper.t`'s nodal dynamic-hyper dispatch, `roast/S06-advanced/wrap.t`'s cross-cla
 all confirmed fixed, and every other failure in that sweep (`S12-attributes/trusts.t`, `S12-class/
 open_closed.t`, `S02-types/quanthash.t`, `S06-advanced/caller.t`, `S06-advanced/return_function.t`,
 `S12-meta/exporthow.t`, `S12-traits/basic.t`, `S12-traits/parameterized.t`) verified pre-existing on
-`main` via `git stash`, none of them whitelisted.
+`main` via `git stash`, none of them whitelisted. A second, wider sweep (`S02`-`S06`, `S12`, `S14`,
+`S16`, `S17`, `S26`, `S32`, `integration`, ~250 files, via `scripts/run-roast-test.sh`) found the four
+further regressions listed above; every other failure in that sweep was re-checked the same way
+(pre-existing on `main`, none whitelisted).
 
 ## What remains open
 

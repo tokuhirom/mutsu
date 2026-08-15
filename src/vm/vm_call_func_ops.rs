@@ -107,7 +107,15 @@ impl Interpreter {
         let candidate = code
             .and_then(|c| self.locals_get_by_name(c, &ampname))
             .or_else(|| self.env().get(&ampname).cloned());
-        candidate.filter(|v| matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_)))
+        candidate.filter(|v| {
+            matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                || matches!(v.view(), ValueView::Routine { .. })
+                || matches!(
+                    v.view(),
+                    ValueView::Instance { class_name, .. }
+                        if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+                )
+        })
     }
 
     /// Resolve a lexical `&infix:<op>` override (a `&infix:<op>` parameter or a

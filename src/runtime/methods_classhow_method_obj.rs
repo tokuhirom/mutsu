@@ -198,6 +198,19 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
+        // `.WHY` (`dispatch_why`'s `Instance` branch) builds its doc-comment
+        // lookup key from these two, the same way it does for a plain user
+        // method -- without them, a grammar token/rule/regex's `#|` comment
+        // was unreachable (roast S26-documentation/why-leading.t's "regex"
+        // case).
+        attrs.insert(
+            "__mutsu_lookup_class".to_string(),
+            Value::str(owner.to_string()),
+        );
+        attrs.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(name.to_string()),
+        );
         // ADR-0019 Phase F box F1: the Sub-vs-Instance unification. Carrying
         // the original Routine marker lets `CALL-ME` invoke this Instance
         // exactly as `.^lookup`/`.^find_method` used to return it directly.
@@ -205,7 +218,12 @@ impl Interpreter {
             "__mutsu_method_callable".to_string(),
             Value::routine_parts(Symbol::intern(owner), Symbol::intern(name), is_regex),
         );
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        // Real Raku: a grammar `token`/`rule`/`regex`'s `.^lookup`/`.^name` is
+        // `Regex`, not `Method` (`raku -e 'grammar G { regex X {} }; say
+        // G.^lookup("X").^name'` -> `Regex`) -- verified for all three
+        // declarators, which are otherwise indistinguishable at this point.
+        let class_name = if is_regex { "Regex" } else { "Method" };
+        Value::make_instance(Symbol::intern(class_name), attrs)
     }
 
     /// Records the owning class/role so a `.wrap` on the returned Method
@@ -350,9 +368,20 @@ impl Interpreter {
         full_param_defs.extend(method_def.param_defs.iter().cloned());
         let sig_info =
             crate::value::signature::param_defs_to_sig_info(&full_param_defs, return_type.clone());
+        // Thread an owner key so a parameter's own `#=`/`#|` doc comment is
+        // reachable through `.signature.params[N].WHY` -- mirrors
+        // `sub_signature_value`'s owner-key format exactly (`"ClassName::
+        // name"`), without which `__mutsu_owner_sub` was never set on the
+        // Parameter object and the comment was unreachable (roast
+        // S26-documentation/why-trailing.t's "invocant comment" case).
+        let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
         attrs.insert(
             "signature".to_string(),
-            crate::value::signature::make_signature_value(sig_info, Some(self)),
+            crate::value::signature::make_signature_value_with_owner(
+                sig_info,
+                owner_key,
+                Some(self),
+            ),
         );
 
         // Return type
@@ -390,7 +419,21 @@ impl Interpreter {
             attrs.insert("candidates".to_string(), Value::array(candidates));
         }
 
-        let method_obj = Value::make_instance(Symbol::intern("Method"), attrs);
+        // Real Raku: `.^lookup`/`.^find_method` walk the whole MRO and DO
+        // surface a submethod (`.^methods`/`.^method_table`, this function's
+        // other callers, filter submethods out before ever reaching here --
+        // see `collect_class_methods`'s doc comment -- so this case was
+        // previously unreachable); its `.^name` is `Submethod`, not `Method`
+        // (`raku -e 'class C { submethod BUILD {} }; say C.^lookup("BUILD")
+        // .^name'` -> `Submethod`). A multi dispatcher's own submethod-ness
+        // isn't modeled (Raku does not support `multi submethod`), so this
+        // only matters for the non-dispatcher/candidate case.
+        let instance_class_name = if method_def.is_submethod {
+            "Submethod"
+        } else {
+            "Method"
+        };
+        let method_obj = Value::make_instance(Symbol::intern(instance_class_name), attrs);
         // A non-multi (single) method's own `.candidates` is itself, a
         // one-element list -- verified against `raku`
         // (`Foo.^lookup('bar').candidates[0]` on a plain method, not just a

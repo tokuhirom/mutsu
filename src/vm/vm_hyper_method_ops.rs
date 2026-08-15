@@ -193,7 +193,7 @@ fn method_value_callable_name(v: &Value) -> Option<String> {
             class_name,
             attributes,
             ..
-        } if class_name == "Method" || class_name == "Submethod" => {
+        } if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") => {
             let am = attributes.as_map();
             am.get("__mutsu_lookup_method")
                 .map(|v| v.to_string_value())

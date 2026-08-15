@@ -2215,7 +2215,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = target.view()
-                    && (class_name == "Method" || class_name == "Submethod")
+                    && matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
                 {
                     let am = attributes.as_map();
                     if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
