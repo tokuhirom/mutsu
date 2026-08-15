@@ -325,12 +325,21 @@ impl Value {
                 if !a.eqv(b) {
                     return false;
                 }
-                // Compare mixin maps (e.g. Str part of allomorphs)
-                if a_mix.len() != b_mix.len() {
+                // Compare mixin maps (e.g. Str part of allomorphs), ignoring the
+                // `__mutsu_role_seq__` application-order bookkeeping entries
+                // (todo/tickets/mixin-role-order-not-tracked.md, closed): two
+                // separately-built `X but Role` values with otherwise identical
+                // composition are `eqv` regardless of which process-global
+                // instant each was stamped at.
+                let is_role_seq = |k: &str| k.starts_with("__mutsu_role_seq__");
+                let a_relevant = a_mix.iter().filter(|(k, _)| !is_role_seq(k));
+                let a_count = a_mix.keys().filter(|k| !is_role_seq(k)).count();
+                let b_count = b_mix.keys().filter(|k| !is_role_seq(k)).count();
+                if a_count != b_count {
                     return false;
                 }
-                a_mix
-                    .iter()
+                a_relevant
+                    .into_iter()
                     .all(|(k, v)| b_mix.get(k).is_some_and(|bv| v.eqv(bv)))
             }
             // Cross-type comparisons always return false for eqv

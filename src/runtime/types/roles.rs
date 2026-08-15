@@ -68,6 +68,12 @@ impl Interpreter {
         };
         for role_name in &roles {
             mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
+            // Preserve an already-stamped application order across rebuilds
+            // (a routine rebuilds its mixin markers on every call/`&name`
+            // mention); only stamp when this is the first time.
+            mixins
+                .entry(format!("__mutsu_role_seq__{role_name}"))
+                .or_insert_with(|| Value::int(crate::value::next_instance_id() as i64));
             let role_id = self
                 .registry()
                 .roles
@@ -469,6 +475,17 @@ impl Interpreter {
             (left, HashMap::new())
         };
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        // A monotonic application-order stamp: Rakudo resolves a method-name
+        // collision between two mixed-in roles by later-wins precedence
+        // (`(0 but A) but B).m` answers from B), not alphabetically. The
+        // mixin map has no inherent order, so record one at the point of
+        // application; `dispatch_mixin_method_call` / `mixin_chain` sort by
+        // this instead of by name. See
+        // todo/tickets/mixin-role-order-not-tracked.md.
+        mixins.insert(
+            format!("__mutsu_role_seq__{}", role_name),
+            Value::int(crate::value::next_instance_id() as i64),
+        );
         // Store the type arguments so that `.does(Role[args])` can check them.
         if !role_args.is_empty() {
             mixins.insert(

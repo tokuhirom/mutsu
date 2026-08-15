@@ -144,6 +144,14 @@ impl Interpreter {
         };
         let mut mixins = extra;
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        // See todo/tickets/mixin-role-order-not-tracked.md: stamp this
+        // application's order so a later `does`/`but` chained onto the
+        // resulting pun can resolve a method-name collision by later-wins,
+        // not alphabetically.
+        mixins.insert(
+            format!("__mutsu_role_seq__{}", role_name),
+            Value::int(crate::value::next_instance_id() as i64),
+        );
         for (name, attr) in attrs {
             mixins.insert(format!("__mutsu_attr__{}", name), attr);
         }
@@ -510,6 +518,10 @@ impl Interpreter {
                 let role_id = role.role_id;
                 let mut mixins = HashMap::new();
                 mixins.insert(format!("__mutsu_role__{}", base_name), Value::TRUE);
+                mixins.insert(
+                    format!("__mutsu_role_seq__{}", base_name),
+                    Value::int(crate::value::next_instance_id() as i64),
+                );
                 mixins.insert(
                     format!("__mutsu_role_typeargs__{}", base_name),
                     Value::array(type_args.clone()),
@@ -1434,6 +1446,10 @@ impl Interpreter {
                             {
                                 let mut mixins = HashMap::new();
                                 mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+                                mixins.insert(
+                                    format!("__mutsu_role_seq__{}", role_name),
+                                    Value::int(crate::value::next_instance_id() as i64),
+                                );
                                 for (name, value) in attributes.as_map().iter() {
                                     mixins.insert(
                                         format!("__mutsu_attr__{}", name.resolve()),

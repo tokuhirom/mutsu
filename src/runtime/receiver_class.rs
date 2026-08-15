@@ -265,15 +265,13 @@ impl Interpreter {
     /// (V4, mirroring `value_type_name`'s Mixin arm exactly) or the general role-mixin
     /// case (role TypeIds first, then the inner value's own chain).
     ///
-    /// V2 finding: raku's `(0 but A) but B` has the LATER-applied role (`B`) win, but
-    /// `MixinOverrides` (`crate::value::MixinOverrides`, a plain `HashMap<String,
-    /// Value>` keyed by role name) carries no application-order information at all —
-    /// only role names as map keys — so true "later wins" cannot be reconstructed from
-    /// a `Mixin` value today. This mirrors `dispatch_mixin_method_call`'s existing
-    /// order (alphabetical by role name) so the chain is at least deterministic, which
-    /// is all E1a requires; the representation gap is filed as its own ticket rather
-    /// than fixed here (fixing it means adding an order field to `MixinOverrides`, a
-    /// bigger change than this shadow-mode classifier should carry).
+    /// raku's `(0 but A) but B` has the LATER-applied role (`B`) win. Each
+    /// `__mutsu_role__{name}` marker is now paired with a
+    /// `__mutsu_role_seq__{name}` monotonic application-order stamp (every
+    /// `Value::mixin`-with-role construction site sets it — see
+    /// `todo/tickets/mixin-role-order-not-tracked.md`, closed), so the role
+    /// portion of the chain is ordered most-recently-applied first, mirroring
+    /// `dispatch_mixin_method_call`'s own precedence exactly.
     fn mixin_chain(
         &mut self,
         inner: &Arc<Value>,
@@ -293,12 +291,28 @@ impl Interpreter {
                 return self.catalog_chain_for_name(name);
             }
         }
-        let mut role_names: Vec<&str> = mixins
+        // Mirrors dispatch_mixin_method_call's application-order precedence
+        // (most-recently-applied role first) — see
+        // todo/tickets/mixin-role-order-not-tracked.md.
+        let mut role_names: Vec<(i64, &str)> = mixins
             .keys()
             .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+            .map(|name| {
+                let seq = mixins
+                    .get(&format!("__mutsu_role_seq__{}", name))
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(n) => Some(n),
+                        _ => None,
+                    })
+                    .unwrap_or(i64::MIN);
+                (seq, name)
+            })
             .collect();
-        role_names.sort_unstable();
-        let mut chain: Vec<TypeId> = role_names.into_iter().map(TypeId::intern).collect();
+        role_names.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
+        let mut chain: Vec<TypeId> = role_names
+            .into_iter()
+            .map(|(_, name)| TypeId::intern(name))
+            .collect();
         chain.extend(self.dispatch_mro(inner.as_ref()));
         chain
     }
