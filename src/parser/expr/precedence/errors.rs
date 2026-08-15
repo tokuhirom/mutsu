@@ -67,6 +67,39 @@ pub(crate) fn non_associative_pair_error(left: &str, right: &str) -> PError {
     PError::fatal_with_exception(message, Box::new(exception))
 }
 
+/// `X::Syntax::CannotMeta` for `OP=` where `OP` is a chaining or structural
+/// comparison operator (`6 >== 2`, `6 cmp= 2`, `6 ~~= 2`, `6 ..= 2`, ...).
+/// rakudo's METAOP_ASSIGN refuses to compose an assignment out of a diffy
+/// operator: `$x OP= $y` desugars to `$x = $x OP $y`, which only makes sense
+/// when `OP` combines exactly two operands into one result. A chaining
+/// comparison (`1 < 2 < 3`) and a non-associative structural one (`1 cmp 2`,
+/// which cannot itself be chained) aren't that, so rakudo rejects the metaop
+/// outright rather than silently picking a meaning. `dba` is rakudo's own
+/// vocabulary for the operator category ("chaining" / "structural infix")
+/// and appears verbatim in both the message and the `.dba` attribute;
+/// `.meta`/`.operator`/`.reason` mirror rakudo's own `X::Syntax::CannotMeta`
+/// attributes (verified against `raku -e '6 >== 2'`).
+pub(crate) fn cannot_meta_assign_diffy_error(op: &str, dba: &str, remaining_len: usize) -> PError {
+    let message =
+        format!("Cannot make assignment out of {op} because {dba} operators are too diffy");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert(
+        "meta".to_string(),
+        Value::str("make assignment out of".to_string()),
+    );
+    attrs.insert("operator".to_string(), Value::str(op.to_string()));
+    attrs.insert("reason".to_string(), Value::str("too diffy".to_string()));
+    attrs.insert("dba".to_string(), Value::str(dba.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::CannotMeta"), attrs);
+    let mut err = PError::raw(
+        format!("X::Syntax::CannotMeta: {message}"),
+        Some(remaining_len),
+    );
+    err.exception = Some(Box::new(exception));
+    err
+}
+
 pub(crate) fn conditional_precedence_too_loose_error() -> PError {
     syntax_exception(
         "X::Syntax::ConditionalOperator::PrecedenceTooLoose",

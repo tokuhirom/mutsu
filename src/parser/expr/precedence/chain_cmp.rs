@@ -247,6 +247,25 @@ fn reject_chained_range(after_rhs: &str, left_op: &'static str) -> Result<(), PE
     }
 }
 
+/// Range operators are structural (non-associative) per rakudo's own
+/// precedence table, so `OP=` over one is the same rejected assignment
+/// metaop as `cmp=`/`<=>=`: `Cannot make assignment out of .. because
+/// structural infix operators are too diffy` (verified against
+/// `raku -e '6 ..= 2'` and the `^..`/`..^`/`^..^` siblings). Unlike the
+/// comparison operators in `comparison.rs`, ranges are matched by literal
+/// spelling here rather than through `ComparisonOp`, so the check is a
+/// direct string peek instead of going through `reject_diffy_assign_meta`.
+fn reject_range_diffy_assign(after_op: &str, op_str: &'static str) -> Result<(), PError> {
+    if after_op.starts_with('=') && !after_op.starts_with("==") && !after_op.starts_with("=>") {
+        return Err(cannot_meta_assign_diffy_error(
+            op_str,
+            "structural infix",
+            after_op.len(),
+        ));
+    }
+    Ok(())
+}
+
 /// Range: ..  ..^  ^..  ^..^
 pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, left) = structural_expr(input)?;
@@ -254,6 +273,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
 
     if let Some(stripped) = r.strip_prefix("^..^") {
         check_range_precedence_worry(input)?;
+        reject_range_diffy_assign(stripped, "^..^")?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r).map_err(|err| {
             enrich_expected_error(err, "expected range RHS after '^..^'", r.len())
@@ -271,6 +291,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("^..") && !r.starts_with("^...") {
         check_range_precedence_worry(input)?;
         let stripped = &r[3..];
+        reject_range_diffy_assign(stripped, "^..")?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '^..'", r.len()))?;
@@ -286,6 +307,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     }
     if let Some(stripped) = r.strip_prefix("..^") {
         check_range_precedence_worry(input)?;
+        reject_range_diffy_assign(stripped, "..^")?;
         let (r, _) = ws(stripped)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..^'", r.len()))?;
@@ -302,6 +324,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
     if r.starts_with("..") && !r.starts_with("...") {
         check_range_precedence_worry(input)?;
         let r = &r[2..];
+        reject_range_diffy_assign(r, "..")?;
         let (r, _) = ws(r)?;
         let (r, right) = structural_expr(r)
             .map_err(|err| enrich_expected_error(err, "expected range RHS after '..'", r.len()))?;

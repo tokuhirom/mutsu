@@ -47,6 +47,7 @@ pub(super) use ternary::{ternary, ternary_mode, ternary_no_assign};
 pub(super) use chain_cmp::{parse_comparison_op, parse_negated_meta_comparison_op};
 pub(super) use feed::make_feed_node;
 pub(super) use ternary::is_structural_comparison_op;
+pub(super) use ternary::reject_diffy_assign_meta;
 
 pub(in crate::parser) use ternary::call_arg_expr;
 
@@ -64,8 +65,9 @@ pub(crate) use chain_cmp::{
 pub(crate) use comparison::comparison_expr_mode;
 pub(crate) use custom_infix::{ListInfixOperand, parse_flipflop_infix};
 pub(crate) use errors::{
-    check_range_precedence_worry, conditional_precedence_too_loose_error, non_associative_error,
-    non_associative_pair_error, non_list_associative_error, syntax_exception,
+    cannot_meta_assign_diffy_error, check_range_precedence_worry,
+    conditional_precedence_too_loose_error, non_associative_error, non_associative_pair_error,
+    non_list_associative_error, syntax_exception,
 };
 pub(crate) use list_infix::{sequence_expr, sequence_only_expr};
 pub(crate) use list_infix_loop::{
