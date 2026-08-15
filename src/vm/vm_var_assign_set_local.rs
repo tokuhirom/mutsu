@@ -1813,8 +1813,9 @@ impl Interpreter {
         }
         // Use the potentially fixed-up value for env/shared_vars.
         let val = self.locals[idx].clone();
-        // Mark variable as readonly when storing a LazyThunk
-        if matches!(val.view(), ValueView::LazyThunk(..)) {
+        // Mark variable as readonly when storing a LazyThunk. Tag-probed first:
+        // a `view()` would materialize a lazy Match (see `exec_get_local_op`).
+        if val.is_lazy_thunk_value() && matches!(val.view(), ValueView::LazyThunk(..)) {
             self.mark_readonly(name);
         }
         // `(B)` per-store env-write: a slot-authoritative plain lexical skips its

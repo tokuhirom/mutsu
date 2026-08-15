@@ -1,5 +1,25 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-08-15, round 9): the three round-7-identified-but-unfixed unguarded
+`Value::view()` sites are now fixed** — `OpCode::GetGlobal` (`vm_exec_dispatch.rs`),
+`exec_get_upvalue_op` (`OpCode::GetUpvalue`, `vm_var_assign_local_get.rs`), and the
+`SetLocal` readonly-marking check (`vm_var_assign_set_local.rs`) each now probe
+`is_lazy_thunk_value()` before calling `.view()`, mirroring the pattern already used by
+`exec_get_local_op`. As predicted in round 7/8, this benchmark's own
+`match_materializations` counter is unchanged (still 1749) — `GetGlobal` only fires 49
+times here, far too few to matter — since these three sites gate a *different* laziness
+mechanism (`LazyThunk`, not `Match`) from the round-8 fix; any Match value read via
+`GetGlobal`/`GetUpvalue`, or stored via a guarded `SetLocal`, now avoids an unnecessary
+full materialization on programs that DO exercise those ops on a lazy Match, which this
+synthetic benchmark does not. `cargo build`, `cargo clippy -- -D warnings`, and the full
+`t/` suite (3168 files, 29458 tests) all pass with no behavior change (expected — every
+fix is provably a no-op on the *decision*, only on whether `view()` is forced to reach
+it, same as round 8). This closes round 7/8's remaining named follow-up item; the ticket
+itself stays open for item 3 (candidate enumeration) and whatever `invoke_grammar_actions`
+work remains per round 8's item (b).
+
+---
+
 **Update (2026-08-15, round 8): the post-P5 drift's dominant call site is
 found and fixed — `match_materializations` drops from 20949 to 1749 on
 `benchmarks/bench-yaml-parse.raku` (matches the P5-merge-day baseline
