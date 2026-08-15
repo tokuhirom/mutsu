@@ -1950,6 +1950,7 @@ impl Interpreter {
             why_object_cache: HashMap::new(),
             type_metadata: HashMap::new(),
             when_matched: false,
+            when_nonmatch_value: None,
             gather_items: Vec::new(),
             gather_take_limits: Vec::new(),
             block_scope_depth: 0,

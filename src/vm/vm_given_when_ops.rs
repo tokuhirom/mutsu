@@ -452,6 +452,19 @@ impl Interpreter {
                 sig.set_container_name(self.take_container_ref_for(code).map(|(n, _)| n));
                 return Err(sig);
             }
+        } else {
+            // A failed `when` evaluates to the falsy result of its test
+            // (control.rakudoc: "the block is not abandoned since the
+            // comparison is false"). Rakudo boxes a type-object matcher's
+            // nqp::istype result as Int 0; everything else is Bool::False.
+            // Nothing is pushed (stack discipline unchanged); the inline
+            // map/grep/first fast paths read this to distinguish "tail
+            // when matched nothing" from "no value produced".
+            self.when_nonmatch_value = Some(if cond_val.is_package_value() {
+                Value::int(0)
+            } else {
+                Value::FALSE
+            });
         }
         *ip = end;
         Ok(())
