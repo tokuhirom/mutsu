@@ -1663,7 +1663,16 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     );
     if !is_keyword(&name)
         && !is_declarator_head
-        && !is_infix_word_op(&name)
+        // An infix word (`before`, `eq`, `and`, ...) is refused as a listop
+        // head UNLESS a `sub` of that exact name is declared and in scope —
+        // this is term position (a fresh term is being parsed), so a
+        // declared routine wins; the infix reading is unconditional at
+        // OPERATOR position (`{1} before {2}`, `@a min @b`), a structurally
+        // separate code path (the flat operator matchers in
+        // `expr/operators.rs`/`expr/precedence/`) this branch cannot reach
+        // either way.
+        && (!is_infix_word_op(&name)
+            || crate::parser::stmt::simple::is_user_declared_sub(&name))
         && !r.is_empty()
         && !r.starts_with(';')
         && !r.starts_with('}')
