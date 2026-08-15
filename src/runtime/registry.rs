@@ -361,78 +361,39 @@ impl Registry {
         entries.into_iter().map(|entry| entry.name).collect()
     }
 
+    /// Re-derives `method_entries`' user-owned columns for `class_name` from
+    /// `ClassDef::methods`/`ClassDef::attributes` — the sole writer of the
+    /// user/accessor columns until ADR-0019 F4c-3 starts moving individual
+    /// class-declaration write sites onto the mutator API directly. As of
+    /// F4c-2 this function is itself just a caller of that API (`clear_user_
+    /// methods_for_owner`, `set_user_methods`, `sync_accessor_entries`, all
+    /// in `registry_method_table.rs`) rather than inlining the retain/
+    /// re-populate logic — see the ADR-0019 F4c design note section (3).
+    /// `entry.proto` (ADR-0019 E8b) is untouched by any of these: unlike
+    /// `user_candidates`/`accessor` it has no `ClassDef`-backed source to
+    /// re-derive from (written once, directly, by `Registry::
+    /// set_proto_method`), and every mutator's liveness check already counts
+    /// it toward keeping a row alive, so a proto-only entry survives this
+    /// call exactly as before.
     pub(crate) fn sync_user_method_entries(&mut self, class_name: &str) {
         let owner = Symbol::intern(class_name);
-        self.method_entries.retain(|key, entry| {
-            if key.owner == owner {
-                entry.user_candidates.clear();
-                entry.accessor = None;
-            }
-            // `entry.proto` (ADR-0019 E8b) is NOT reset here even for a
-            // `key.owner == owner` row: unlike `user_candidates`/`accessor`,
-            // it has no `ClassDef`-backed source this function re-derives
-            // from below (it is written once, directly, by
-            // `Registry::set_proto_method` at proto-method declaration
-            // time) — clearing it here would just delete it with nothing to
-            // repopulate it. It must still count toward keeping the row
-            // alive, or a proto-only entry (no builtin/user_candidates/
-            // accessor) is silently dropped the next time ANY sync call
-            // touches this owner (composition, augmentation, re-declaration
-            // — all of `registration_class_body.rs`'s own call sites run
-            // this after the proto decl already landed), which is exactly
-            // what the E8b shadow probe caught during its first sweep.
-            entry.builtin.is_some()
-                || !entry.user_candidates.is_empty()
-                || entry.accessor.is_some()
-                || entry.proto.is_some()
-        });
+        self.clear_user_methods_for_owner(owner);
         let Some(class_def) = self.classes.get(class_name) else {
             // A pure clear (`withdraw_role_pun`, `rename_generic_composed_
             // class`'s old-name half, ...): `classes.get` misses, so there is
-            // nothing to re-derive rows from -- but the `retain` above may
-            // just have zeroed this owner's `user_candidates`, so the index
-            // must drop it too, or `owner_method_names` keeps listing a name
-            // whose row is now dead (caught by `MUTSU_CHECK_METHOD_INDEX`).
-            self.owner_method_names.remove(&owner);
-            self.bump_method_generation();
-            self.debug_verify_owner_method_names_index();
+            // nothing to re-derive rows from beyond the accessor clear below.
+            self.sync_accessor_entries(owner);
             return;
         };
         let methods = class_def.methods.clone();
-        let attributes = class_def.attributes.clone();
-        let mut names = Vec::with_capacity(methods.len());
         for (name, candidates) in methods {
-            let name = Symbol::intern(&name);
-            let is_empty = candidates.is_empty();
-            self.method_entries
-                .entry(MethodEntryKey { owner, name })
-                .or_default()
-                .user_candidates = candidates;
-            if !is_empty {
-                names.push(name);
-            }
+            self.set_user_methods(owner, Symbol::intern(&name), candidates);
         }
-        if names.is_empty() {
-            self.owner_method_names.remove(&owner);
-        } else {
-            self.owner_method_names.insert(owner, names);
-        }
-        // A later same-name declaration within the class overrides an earlier
-        // one (mirrors `collect_class_attributes`'/`has_public_accessor`'s
-        // former remove-then-push / rev().find() semantics): iterating in
-        // declaration order and letting each write clobber the last gives the
-        // same "most recent wins" result.
-        for attr in &attributes {
-            self.method_entries
-                .entry(MethodEntryKey {
-                    owner,
-                    name: Symbol::intern(&attr.name),
-                })
-                .or_default()
-                .accessor = Some(attr.is_public);
-        }
-        self.bump_method_generation();
-        self.debug_verify_owner_method_names_index();
+        // A later same-name declaration within the class overrides an
+        // earlier one; `sync_accessor_entries` iterates `ClassDef::
+        // attributes` in declaration order and lets each write clobber the
+        // last, giving the same "most recent wins" result as before.
+        self.sync_accessor_entries(owner);
     }
 
     pub(crate) fn user_method_overloads(
