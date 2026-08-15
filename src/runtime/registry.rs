@@ -983,6 +983,45 @@ impl Registry {
         self.user_method_overloads(class_name, method_name)
     }
 
+    /// Fallback source for a role's own methods when `owner` is a role that was
+    /// never `.new`-punned (ADR-0019 F4a): `Registry::method_entries` (and thus
+    /// `get_method_overloads`/`user_method_overloads`) has no row at all for such
+    /// a role — see `todo/deep/method-entries-never-covers-unpunned-roles.md`.
+    /// Reads `Registry::roles` directly, the raw composition-input storage that
+    /// is always populated regardless of punning. Role method definitions are
+    /// composition inputs, not dispatch entries: the dispatchable form is always
+    /// the flattened copy on the composing class, so this must only be consulted
+    /// as an explicit fallback by confirmed-safe non-winner-selection call sites,
+    /// never by `resolve_method_with_owner_impl`/`resolve_methods_per_mro_level`.
+    pub(crate) fn role_method_overloads(
+        &self,
+        role_name: &str,
+        method_name: &str,
+    ) -> Option<Vec<MethodDef>> {
+        self.roles
+            .get(role_name)
+            .and_then(|role_def| role_def.methods.get(method_name))
+            .filter(|overloads| !overloads.is_empty())
+            .cloned()
+    }
+
+    /// [`Self::get_method_overloads`] widened with the [`Self::role_method_overloads`]
+    /// fallback (ADR-0019 F4a). For the confirmed-safe, non-winner-selection call
+    /// sites this box names: a `MUTSU_VM_STATS=1` corpus probe (the full local `t/`
+    /// suite plus the entire roast whitelist) found the fallback would add
+    /// candidates at these sites in exactly zero of the cases where the plain
+    /// lookup came back empty, so the fallback is a documented no-op over that
+    /// corpus and a real gap-closer beyond it (e.g. a role whose only reachable
+    /// MRO entry is itself, un-punned).
+    pub(crate) fn get_method_overloads_with_role_fallback(
+        &self,
+        class_name: &str,
+        method_name: &str,
+    ) -> Option<Vec<MethodDef>> {
+        self.get_method_overloads(class_name, method_name)
+            .or_else(|| self.role_method_overloads(class_name, method_name))
+    }
+
     /// Bound role type parameters for `class_name` (e.g. the `::T` -> value map
     /// of a `class C does R[Int]`). Owned clone.
     pub(crate) fn get_role_param_bindings(
