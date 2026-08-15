@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 11;
+plan 12;
 
 # Three constructs rakudo diagnoses as X::Syntax::Malformed. mutsu had already
 # rejected all three, but each rejection was a *soft* parse error, so the
@@ -37,3 +37,17 @@ throws-like ":7\x[308]a", X::Syntax::Malformed, what => 'radix number';
 # The neighbouring forms these three must not swallow.
 is-deeply EVAL(':7a'), (a => 7), ':<digits><identifier> is still a numeric colonpair';
 is :16<ff>, 255, 'a radix literal with a body still parses';
+
+# `.message` must be the plain rakudo text, not `"X::Type: text"` — native
+# throws-like does not check the caught exception's own attributes, so this
+# needs a direct EVAL+CATCH pin (native throws-like's `what =>` matcher is not
+# checked either; see the campaign notes in todo/tickets/vendor-real-test-module.md).
+try {
+    EVAL('my $x =');
+    CATCH {
+        default {
+            is .message, 'Malformed initializer',
+                '.message has no leftover "X::Syntax::Malformed: " prefix';
+        }
+    }
+}

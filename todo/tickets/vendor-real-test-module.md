@@ -1243,3 +1243,53 @@ other classes — `X::Syntax::Malformed.message` currently reads
 `"Malformed initializer"` — not yet fixed since no roast assertion in the
 sweep currently reads `.message` on it, but worth doing alongside whichever of
 the two gaps above is picked up next (both raise `X::Syntax::Malformed`).
+
+## `PError::malformed()` double-prefix, and a caught stub error re-firing later (2026-08-15)
+
+Picked up both items the previous entry left open — they turned out to be
+independent, not the same fix.
+
+1. **`PError::malformed()`'s double-prefix bug, fixed.** Exactly the shape the
+   previous entry predicted:
+   `crate::value::Value::str(message.clone())` stored the whole
+   `"X::Syntax::Malformed: Malformed {what}"` string as the `.message`
+   attribute. Now builds `format!("Malformed {}", what)` directly for the
+   attribute, matching `raw_with_what`'s existing
+   `split_typed_message_convention` strip. Verified against `raku -e 'my $x
+   ='`'s actual `.message` ("Malformed initializer", confirmed via a direct
+   `raku` repro) — no roast assertion in the sweep reads `.message` on this
+   class yet, so this was found by re-deriving rakudo's wording by hand, not
+   by a newly-passing file. Pin: extended `t/malformed-syntax-classes.t` with
+   a direct `EVAL`+`CATCH` assertion (12th test) — native `throws-like` does
+   not check `.message` or its named matchers, per this file's own earlier
+   lesson, so a `throws-like` line alone would not have caught this.
+2. **The stubbed-role-parameterization abort was not a `Test` gap at all — it
+   was a stub double-report bug, fixed generally.** `Wine`'s
+   `X::Package::Stubbed` correctly raised inside the `EVAL` and was correctly
+   caught by the surrounding `try`/`CATCH` — but the registry entry for
+   `Wine` is only ever removed when the stub is actually *defined*
+   (`registration_class_validate.rs`/`vm_exec_dispatch.rs`), and a
+   deliberately-never-defined stub like `Wine` here never is. So the
+   top-level end-of-program `check_unresolved_stubs()` (`run.rs`,
+   unconditional) found the same still-registered `Wine` stub and raised the
+   identical error a **second time, uncaught**, well after the `CATCH` had
+   already handled it — aborting the whole file past line 93.
+   `check_unresolved_stubs_excluding` (`src/runtime/run_dist.rs`) now removes
+   every name it reports from `class_stubs`/`package_stubs` before returning
+   the error, so a stub is reported at most once per program — matching
+   rakudo's own "raised once per compilation unit at CHECK time" semantics.
+   Required widening `check_unresolved_stubs{,_excluding}` from `&self` to
+   `&mut self`; both call sites (`run.rs`'s end-of-program check, `system.rs`'s
+   EVAL check) already held `&mut self`. Pin: new
+   `t/eval-stub-error-not-reraised.t`, green under `raku` too.
+
+Both fixes: `news/2026-08/malformed-message-prefix-and-stub-error-not-reraised.md`.
+`roast/S32-exceptions/misc.t` progresses substantially further under
+`MUTSU_REAL_TEST=1` (past the stub-abort point) but is not yet fully clean —
+6 individual assertion gaps remain (`X::Inheritance::SelfInherit`,
+`X::TypeCheck::Argument`, an `X::Comp::Group` shape for an undeclared type in
+a `when` clause, `X::Parameter::BadType`, `X::ControlFlow::Return`, and the
+still-open `sub foo() returns !!!wtf??? { }` malformed-return-type gap named
+in the previous entry) — each its own individual diagnosis, not yet picked
+up. Full `t/` suite (3176 files, 29594 tests) and `cargo clippy -- -D
+warnings` both clean.

@@ -132,7 +132,7 @@ impl PError {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert(
             "message".to_string(),
-            crate::value::Value::str(message.clone()),
+            crate::value::Value::str(format!("Malformed {}", what)),
         );
         attrs.insert(
             "what".to_string(),
