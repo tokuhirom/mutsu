@@ -8,7 +8,7 @@ use Test;
 # tripped the out-of-scope-`whenever` compile check. Regression for the
 # SSH::LibSSH::Tunnel parse failure.
 
-plan 6;
+plan 8;
 
 # Typed pointy param binds and receives values.
 {
@@ -88,4 +88,27 @@ plan 6;
         }
     }
     is @got.join(','), '1,2', 'whenever with a subset pointy-param type parses';
+}
+
+# A `whenever` pointy param's declared type constraint IS enforced: a value
+# that fails it dies with X::TypeCheck::Binding::Parameter, exactly like an
+# ordinary typed block parameter (`.tap(-> Int $x { })`) already did.
+{
+    my $s = Supplier.new;
+    my $o = supply { whenever $s -> Int $x { emit $x } };
+    my $e;
+    $o.tap(-> $v { }, quit => -> $ex { $e = $ex });
+    $s.emit("nope");
+    isa-ok $e, X::TypeCheck::Binding::Parameter,
+        'whenever -> Int $x rejects a mismatched Str with a binding error';
+}
+
+# The correct type still binds and runs normally.
+{
+    my $s = Supplier.new;
+    my @got;
+    my $o = supply { whenever $s -> Int $x { emit $x * 2 } };
+    $o.tap(-> $v { @got.push($v) });
+    $s.emit(21);
+    is @got.join(','), '42', 'whenever -> Int $x still binds a matching value';
 }

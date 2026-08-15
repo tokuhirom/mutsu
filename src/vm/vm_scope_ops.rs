@@ -164,10 +164,12 @@ impl Interpreter {
         body_idx: u32,
         param_idx: &Option<u32>,
         target_var_idx: &Option<u32>,
+        param_type_idx: &Option<u32>,
     ) -> Result<(), RuntimeError> {
         let supply_val = self.stack.pop().unwrap_or(Value::NIL);
         let param = param_idx.map(|idx| Self::const_str(code, idx).to_string());
         let target_var = target_var_idx.map(|idx| Self::const_str(code, idx));
+        let param_type = param_type_idx.map(|idx| Self::const_str(code, idx).to_string());
         let stmt = &code.stmt_pool[body_idx as usize];
         if let Stmt::Block(body) = stmt {
             // Lexicals the enclosing `supply { … }` body declared with `my`. The
@@ -246,7 +248,14 @@ impl Interpreter {
             }
             loan_env!(
                 self,
-                run_whenever_with_value(supply_val, target_var, &param, body, &owned_lexicals)
+                run_whenever_with_value(
+                    supply_val,
+                    target_var,
+                    &param,
+                    &param_type,
+                    body,
+                    &owned_lexicals
+                )
             )?;
             // Slice F (env<->locals coherence): a `my $tap = do whenever $sup {…}`
             // binds the tap handle by writing `env[target_var]` directly (see

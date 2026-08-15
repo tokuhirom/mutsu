@@ -411,6 +411,7 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
             supply,
             param,
             body,
+            ..
         } => {
             walk_expr(supply, scan);
             if let Some(p) = param {

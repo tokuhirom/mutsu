@@ -974,6 +974,11 @@ pub(crate) enum Stmt {
     Whenever {
         supply: Expr,
         param: Option<String>,
+        /// The pointy param's declared type constraint, if any
+        /// (`whenever $s -> Int $x { }`). Enforced on the emitted value at
+        /// call time via the callback's `ParamDef`, same as an ordinary
+        /// typed block parameter.
+        param_type: Option<String>,
         body: Vec<Stmt>,
     },
     Last(Option<String>),
