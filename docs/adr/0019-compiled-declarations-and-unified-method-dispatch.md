@@ -1489,6 +1489,50 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     most of the extras are role-only reads, which (1) puts out of F4c entirely. "Augment
     rollback" as a distinct named mechanism does not exist — `registration_class_augment.rs` has
     no snapshot/restore path; there are five mechanisms and they are the ones enumerated in (4).
+
+    **Progress (F4c-1, #TBD):** added the reverse index (`Registry::owner_method_names`, a private
+    `HashMap<Symbol, Vec<Symbol>>` maintained only inside `sync_user_method_entries`) plus its
+    `#[cfg(debug_assertions)]` + `MUTSU_CHECK_METHOD_INDEX=1`-gated full-table verifier, per (2).
+    `replace_method_entries_from` (item (4)(c)) now copies the index alongside the table, or a
+    nested EVAL/`eval-lives-ok`/`throws-like`/`fails-like` interpreter would run the parent's
+    `method_entries` against its own empty index. A shared `Registry::shadow_check_owner_method_names`
+    helper (set comparison, `MUTSU_VM_STATS`-gated) was added and used to instrument all eight
+    enumeration sites named in (0)(i); a full local `t/` sweep (3179 files, 15127 checks) came back
+    clean at **seven** of the eight — `methods_classhow_dispatch::submethod_table`,
+    `methods_classhow_method_obj::collect_class_methods`/`class_method_table`,
+    `metamodel::declare_drive_how_protocol` (closing F4b's own deferral),
+    `registration_class::collect_type_method_names`,
+    `registration::resolve_class_stub_requirements`/`validate_private_method_existence` — which
+    were cut over to `owner_method_names` and verified with the full local `t/` suite (3179 files),
+    the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset, and `scripts/battery-testsuite.sh`
+    (GATE PASSED), all green; `cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+    The eighth, `class::detect_unresolved_role_method_conflicts`, showed 12 mismatches (all under
+    `Cro::HTTP`/`Cro::TCP`/`Cro::TLS`/`Log::Timeline`/local `t/` role fixtures) and was
+    **deliberately left on the old `class_def.methods` read** — this is exactly the kind of
+    ordering hazard R4 warns about, confirmed by reading, not assumed: `finalize_class_registration`
+    calls `resolve_class_stub_requirements` (which can *remove* a resolved-away stub's entry from
+    the in-flight `class_def.methods` in place) immediately before this site, and does not re-sync
+    the registry until after both calls return — so at this exact point `class_def.methods` can be
+    a proper subset of what `owner_method_names` (last synced before the stub-resolution mutation)
+    still lists. Every one of the 12 mismatches was `new ⊇ old`, matching that theory exactly (no
+    case of `old` containing a name `new` lacked). This is expected reader/writer skew from the
+    dual-representation window, not a bug in either side; the shadow check stays in place
+    (uninstrumented sites don't get silently dropped) and this site's cutover moves to F4c-9a,
+    after F4c-3's write-through machinery makes `class_def.methods` and the registry agree at every
+    point in `finalize_class_registration`, not just at statement boundaries.
+
+    Along the way, the verifier itself caught a real index/table desync before it shipped: the
+    early-return branch of `sync_user_method_entries` (taken when `classes.get(class_name)` misses
+    — the "pure clear" shape `withdraw_role_pun`/`rename_generic_composed_class`'s old-name half
+    use, per (0)(iii)) cleared the affected rows' `user_candidates` via the leading `retain` but
+    returned before the index update, leaving `owner_method_names` pointing at now-dead rows.
+    Caught by a `MUTSU_CHECK_METHOD_INDEX=1` sweep of the full local `t/` suite (6 crashes, all role-pun
+    tests: `role-instantiation.t`, `punned-role-container-attribute.t`, `role-pun-private-attribute.t`,
+    `role-body-composition-timing.t`, `role-diamond-stub-concrete.t`,
+    `positional-role-attr-writeback-coherence.t`) before any cutover read it, so the coverage gap
+    of (0)(iii)'s "pure clear" callers never reached production behavior. Fixed by clearing the
+    index in that branch too; the same sweep is clean (0 crashes) after the fix.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

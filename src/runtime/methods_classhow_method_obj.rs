@@ -19,15 +19,15 @@ impl Interpreter {
                 result.push(self.make_native_method_object(&attr.name, class_name));
             }
         }
-        // Then add explicit methods. `ClassDef::methods` drives the name
-        // enumeration; the overload data itself comes from the canonical
-        // `Registry::method_entries[(owner, name)].user_candidates` table
-        // (ADR-0019 Phase F box F1 item 1) rather than `ClassDef::methods`
-        // directly -- `sync_user_method_entries` keeps the two in lockstep,
-        // verified with zero mismatches across a full `t/`+roast sweep by
-        // the shadow check this cutover retires (#6399).
-        for method_name in class_def.methods.keys() {
-            let Some(overloads) = registry.user_method_overloads(class_name, method_name) else {
+        // Then add explicit methods. The overload data comes from the
+        // canonical `Registry::method_entries[(owner, name)].user_candidates`
+        // table (ADR-0019 Phase F box F1 item 1); the name enumeration itself
+        // is the canonical reverse index (F4c-1: `owner_method_names`,
+        // zero-mismatch shadow-checked against `ClassDef::methods.keys()`
+        // across the full local `t/` suite before this cutover).
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
                 continue;
             };
             if overloads.is_empty() {
@@ -41,7 +41,7 @@ impl Interpreter {
             let is_multi = overloads.len() > 1;
             let return_type = first.return_type.clone();
             let method_obj = self.make_method_object_with_owner(
-                method_name,
+                &method_name,
                 first,
                 is_multi,
                 return_type,
@@ -90,8 +90,12 @@ impl Interpreter {
                 );
             }
         }
-        for method_name in class_def.methods.keys() {
-            let Some(overloads) = registry.user_method_overloads(class_name, method_name) else {
+        // ADR-0019 F4c-1: enumerate via the canonical reverse index instead
+        // of `class_def.methods.keys()` (zero-mismatch shadow-checked across
+        // the full local `t/` suite before this cutover).
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
                 continue;
             };
             let Some(first) = overloads.first() else {
@@ -103,7 +107,7 @@ impl Interpreter {
             table.insert(
                 method_name.clone(),
                 self.make_method_object_with_owner(
-                    method_name,
+                    &method_name,
                     first,
                     overloads.len() > 1,
                     first.return_type.clone(),

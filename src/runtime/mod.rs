@@ -413,6 +413,7 @@ mod registration_role_decl;
 mod registration_role_method;
 pub(crate) mod registration_sub;
 mod registry;
+mod registry_method_table;
 pub(crate) mod resolution;
 mod resolution_call_sub;
 mod resolution_deferral;

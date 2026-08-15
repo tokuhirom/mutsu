@@ -482,9 +482,22 @@ impl Interpreter {
     /// Collect method names from a class or role by name.
     fn collect_type_method_names(&self, type_name: &str) -> Vec<String> {
         let mut names = Vec::new();
-        if let Some(class_def) = self.registry().classes.get(type_name) {
-            names.extend(class_def.methods.keys().cloned());
-        } else if let Some(role_def) = self.registry().roles.get(type_name) {
+        let registry = self.registry();
+        if registry.classes.contains_key(type_name) {
+            // ADR-0019 F4c-1: enumerate via the canonical reverse index
+            // instead of `class_def.methods.keys()` (zero-mismatch
+            // shadow-checked across the full local `t/` suite before this
+            // cutover). The existence check stays on `classes` -- an empty
+            // `owner_method_names(type_name)` cannot distinguish "no class of
+            // this name" from "a class with zero declared methods", and only
+            // the former should fall through to the role branch below.
+            names.extend(
+                registry
+                    .owner_method_names(type_name)
+                    .iter()
+                    .map(Symbol::resolve),
+            );
+        } else if let Some(role_def) = registry.roles.get(type_name) {
             names.extend(role_def.methods.keys().cloned());
             // Also include methods from composed roles
             if let Some(composed) = self.registry().class_composed_roles.get(type_name) {
