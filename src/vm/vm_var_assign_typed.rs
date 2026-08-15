@@ -19,7 +19,20 @@ impl Interpreter {
         if !name.starts_with('@') {
             return Ok(raw);
         }
-        let mut val = crate::runtime::coerce_to_array(raw);
+        // `coerce_to_array` on an ALREADY-Array value rebuilds it with kind
+        // `ArrayKind::Array` unconditionally (see its `ValueView::Array` arm),
+        // stripping a `Lazy` kind an earlier coercion (a caller's own
+        // `coerce_to_array` pass on the raw RHS, e.g. an infinite Range) may
+        // have already tagged it with. Since every caller of this function
+        // already hands in an array-shaped `raw`, only coerce non-Array
+        // inputs — re-coercing an Array here would silently make a native
+        // typed array accept an infinite Range instead of raising
+        // `X::Cannot::Lazy` below.
+        let mut val = if matches!(raw.view(), ValueView::Array(..)) {
+            raw
+        } else {
+            crate::runtime::coerce_to_array(raw)
+        };
         val = self.coerce_typed_container_assignment(name, val, false)?;
         // Prefer a declared constraint (`my int @a`); otherwise inherit the type
         // identity of the container currently held by the shared cell. A bound
