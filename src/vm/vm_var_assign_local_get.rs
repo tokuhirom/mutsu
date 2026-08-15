@@ -55,7 +55,11 @@ impl Interpreter {
                 }
             }
         };
-        let val = if let ValueView::LazyThunk(thunk_data) = val.view() {
+        // Tag-probed first: a `view()` would materialize a lazy Match (see
+        // `exec_get_local_op` below).
+        let val = if val.is_lazy_thunk_value()
+            && let ValueView::LazyThunk(thunk_data) = val.view()
+        {
             let thunk_data = thunk_data.clone();
             self.force_lazy_thunk(&thunk_data)?
         } else {
