@@ -744,12 +744,19 @@ impl Interpreter {
                     else {
                         return None;
                     };
+                    // ADR-0019 F4a: `src_class` can name a role directly
+                    // (`R.^find_method('m')` with `R` never `.new`-punned or
+                    // `does`-composed anywhere), which has no row in the
+                    // canonical method table -- the role fallback is required
+                    // here, not optional, confirmed against real Rakudo (a
+                    // role-owned multi aliased this way keeps every
+                    // candidate, not just the carrier's own signature).
                     self.registry()
-                        .classes
-                        .get(src_class.as_ref())
-                        .and_then(|cd| cd.methods.get(src_method.as_ref()))
+                        .get_method_overloads_with_role_fallback(
+                            src_class.as_ref(),
+                            src_method.as_ref(),
+                        )
                         .filter(|defs| defs.iter().any(|d| d.is_multi))
-                        .cloned()
                 })();
                 // Filter out invocant params from param_defs since MethodDef
                 // stores only the user-visible parameters (the invocant is

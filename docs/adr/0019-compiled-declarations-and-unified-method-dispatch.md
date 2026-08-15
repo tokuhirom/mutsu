@@ -1103,6 +1103,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     before this change and out of this box's scope. This closes every site F4a's own gap-ticket
     named; the informally-flagged sites above remain unconfirmed and out of scope per the box's own
     rule.
+
+    **Progress (informally-flagged sites, triaged):** read all six: `methods_qualified.rs`,
+    `methods_classhow_lookup.rs`, `accessors_state.rs`, `methods_walk.rs`, and
+    `class_introspection.rs:262` (`has_user_method_including_role`) each ALREADY implement their own
+    explicit class-then-role fallback (`registry().classes.get(cn)...methods.get(name)` followed by
+    a separate `registry().roles.get(cn)...methods.get(name)` check, the same shape `.^lookup`'s
+    unification already established) — none of them has the F4a gap; their remaining work is purely
+    reading the `class_def.methods`/`role_def.methods` fields directly instead of the canonical
+    table, which is F4c's "invert the write direction" scope, not F4a's. `methods_classhow_dispatch.
+    rs`, the sixth, does NOT have its own role fallback at the one flagged line (750, inside
+    `^add_method`'s "clone the whole multi candidate family when aliasing a `^find_method`/`^lookup`
+    carrier" helper) — and unlike the other five, this is a REAL, raku-confirmed gap, not just an
+    F4c-shaped field read: `role R { multi method m(Int $x){...}; multi method m(Str $x){...} };
+    class C {}; C.^add_method('n', R.^find_method('m'))` (the role never punned, never composed
+    anywhere) loses every multi candidate but the carrier's own on mutsu, while real Rakudo keeps
+    the whole family — confirmed by direct `raku` comparison. Fixed by swapping the site's
+    `classes.get(src_class).and_then(|cd| cd.methods.get(src_method))` to
+    `get_method_overloads_with_role_fallback(src_class, src_method)` (also moves it onto the
+    canonical table as a byproduct, matching the `vm_call_method_compiled_cache.rs` cutover above).
+    Regression-pinned in `t/add-method-alias-unpunned-role-multi.t`. Verified with the full local
+    `t/` suite (3176 files) and the same 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset, both
+    green. This closes F4a's entire informally-flagged list — one confirmed real gap fixed, five
+    confirmed already-safe and reclassified into F4c.
   - [ ] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
     role at all (`methods_object.rs`'s six BUILD/TWEAK existence checks, `metamodel.rs`,
     `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`) move from `class_def.methods` to
