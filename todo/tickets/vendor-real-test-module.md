@@ -1104,9 +1104,43 @@ instead of just `text`) and corrected `InvocantNotAllowed`'s wording to
 rakudo's actual text. `news/2026-08/invocant-marker-exception-classes.md`,
 pin `t/invocant-marker-exception-classes.t`. `errors.t` goes from 4 to 2
 remaining failures under `MUTSU_REAL_TEST=1` — the other 2
-(`-> $a: { }` / `-> $a: $b { }`) are a distinct, unfixed gap: pointy-block
-signatures don't parse the `:` invocant marker at all (a parse-level gap, not
-a missing semantic check — `reject_invocant_in_sub` is only wired into `sub`
+(`-> $a: { }` / `-> $a: $b { }`) are a distinct gap: pointy-block signatures
+don't parse the `:` invocant marker at all (a parse-level gap, not a missing
+semantic check — `reject_invocant_in_sub` is only wired into `sub`
 declarations, not the pointy-block param parser in
 `src/parser/stmt/control/pointy_param.rs`), so the diagnosis is lost to
-generic "Confused." before any check can run. Left open for a future round.
+generic "Confused." before any check can run. Fixed the same day, next entry.
+
+## `X::Syntax::Signature::InvocantNotAllowed` for a pointy block's `:` marker (2026-08-15)
+
+Picked up the gap the previous entry left open. `sub foo($a:) { }` already
+raised the right typed exception (the sub-signature parser's
+`reject_invocant_in_sub` handles it), but `-> $a: { }` / `-> $a: $b { }` fell
+through to the generic "Confused" parse error: `parse_pointy_param` (the
+pointy-block per-parameter parser,
+`src/parser/stmt/control/pointy_param.rs`) never looks for a trailing `:`
+invocant marker at all — every `ParamDef` it returns hardcodes
+`is_invocant: false` — so the arrow-lambda driver
+(`src/parser/primary/misc/lambda.rs::arrow_lambda_inner`) was left holding a
+literal `: { }` / `: $b { }` it had no branch for, and `parse_block_body`'s
+`parse_char(input, '{')` failed on the leading `:`.
+
+Fixed by checking for the marker directly in `arrow_lambda_inner`, both right
+after the first parameter and after each subsequent parameter in the
+multi-param comma loop, and raising the same
+`X::Syntax::Signature::InvocantNotAllowed` class the sub path already used
+(shared `invocant_not_allowed_error()` helper in
+`src/parser/stmt/sub/traits.rs` — raku uses the same wording, "Can only use
+the : invocant marker in the signature for a method", for both contexts, so
+no context parameter was needed). A pointy block can never declare an
+invocant (only a method can), so the check fires unconditionally. Verified
+the fix does not regress legitimate colon uses in pointy signatures
+(`:$named`, `where` clauses, `::T` type captures) — none of those reach this
+code path, since they're consumed inside `parse_pointy_param` itself before
+returning.
+
+Pin: extended the existing `t/invocant-marker.t` (which already covered the
+sub-side cases) with the two pointy-block assertions, both green under `raku`
+too. `roast/S06-signature/errors.t` now passes fully under both the native
+and the real `Test` module. Full `t/` suite (3171 files) and
+`cargo clippy -- -D warnings` both clean.

@@ -170,6 +170,11 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
     // Parse params
     let (r, first) = crate::parser::stmt::parse_pointy_param_pub(r)?;
     let (r, _) = ws(r)?;
+    // A `:` invocant marker (`-> $a: { ... }`) is only valid in a method
+    // signature — a pointy block / lambda can never declare one.
+    if r.starts_with(':') && !r.starts_with("::") {
+        return Err(crate::parser::stmt::sub::invocant_not_allowed_error());
+    }
     if r.starts_with(',') {
         // Multi-param: -> $a, $b { body }
         let mut param_defs = vec![first];
@@ -188,6 +193,9 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             let (r2, next) = crate::parser::stmt::parse_pointy_param_pub(r2)?;
             param_defs.push(next);
             let (r2, _) = ws(r2)?;
+            if r2.starts_with(':') && !r2.starts_with("::") {
+                return Err(crate::parser::stmt::sub::invocant_not_allowed_error());
+            }
             if !r2.starts_with(',') {
                 r = r2;
                 break;
