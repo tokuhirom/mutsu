@@ -369,6 +369,13 @@ impl Interpreter {
                 // Single-character `our`-scoped constant declared in an inner
                 // block (see the multi-char case below for rationale).
                 our_val
+            } else if let Some(pkg_val) = self.package_chain_var_fallback(name) {
+                // Same package-qualified fallback as the multi-char case below
+                // (see its comment) — a single-character sigilless `constant`
+                // inside a non-unit `module`/`package` hits this branch first
+                // and has its own complete else-chain, so it needs the same
+                // fallback repeated here.
+                pkg_val
             } else {
                 Value::str(name.to_string())
             }
@@ -392,6 +399,22 @@ impl Interpreter {
             // Resolve the bare word to that persisted package value rather than
             // treating it as an undeclared bareword string.
             our_val
+        } else if let Some(pkg_val) = self.package_chain_var_fallback(name) {
+            // A sigilless `constant \NAME` (or other `our`-scoped bareword)
+            // declared directly inside a non-unit `module`/`package` block: its
+            // value is stored under the package-qualified key (e.g. `RSV::EOR`),
+            // but a nested `sub`'s body never learns that qualification at
+            // compile time — `Expr::BareWord`'s resolution only sees bare/
+            // enclosing-scope sigilless bindings (`compiler/expr.rs`), not
+            // `constant_vars_in_scope`, which isn't propagated across the fresh
+            // `Compiler` a named sub's body compiles under. This is the same
+            // package-chain walk `GetGlobal` already applies for a qualified
+            // *sigiled* variable read (`package_chain_var_fallback`); reusing
+            // it for a bareword closes that gap without any compiler change,
+            // and without shadowing anything — every more specific resolution
+            // above (types, enums, functions, an unqualified `our`-var) already
+            // had first refusal.
+            pkg_val
         } else if let Some(module_val) = self.module_scope_lexical(name).cloned() {
             // A `constant` (or sigilless declaration) the running routine's own
             // module made in its file scope. A module body executes in the env of
