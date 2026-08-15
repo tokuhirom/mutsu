@@ -415,7 +415,13 @@ pub(crate) fn reject_attr_params_in_sub(params: &[ParamDef]) -> Result<(), PErro
                 variable
             );
             let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg.clone()));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Variable {} used where no 'self' is available",
+                    variable
+                )),
+            );
             attrs.insert("variable".to_string(), Value::str(variable));
             let ex = Value::make_instance(Symbol::intern("X::Syntax::NoSelf"), attrs);
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
@@ -429,10 +435,10 @@ pub(crate) fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> 
         .iter()
         .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
     {
-        let msg = "X::Syntax::Signature::InvocantNotAllowed: Invocant not allowed in sub signature"
-            .to_string();
+        let text = "Can only use the : invocant marker in the signature for a method";
+        let msg = format!("X::Syntax::Signature::InvocantNotAllowed: {}", text);
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("message".to_string(), Value::str(text.to_string()));
         let ex = Value::make_instance(
             Symbol::intern("X::Syntax::Signature::InvocantNotAllowed"),
             attrs,

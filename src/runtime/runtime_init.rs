@@ -1715,6 +1715,11 @@ impl Interpreter {
             "X::Syntax::Signature::InvocantMarker",
             "X::Syntax::Signature",
         );
+        register_x(
+            "X::Syntax::Signature::InvocantNotAllowed",
+            "X::Syntax::Signature",
+        );
+        register_x("X::Syntax::NoSelf", "X::Syntax");
 
         // X::Obsolete (compile-time, subtype of X::Comp)
         register_x("X::Obsolete", "X::Comp");
