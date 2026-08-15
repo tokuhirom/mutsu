@@ -209,6 +209,8 @@ impl Interpreter {
             return;
         }
         self.clear_private_zeroarg_method_cache();
+        // ADR-0019 F4c-4: kept for the registry dual-write below.
+        let composed_for_registry = composed.clone();
         let mut registry = self.registry_mut();
         let Some(class_def) = registry.classes.get_mut(class_name) else {
             return;
@@ -219,6 +221,18 @@ impl Interpreter {
                 .entry(method_name)
                 .or_default()
                 .extend(defs);
+        }
+        // Dual-write via the SAME already-held `registry` guard -- not a
+        // fresh `self.registry_mut()` call. `class_def`'s borrow ended
+        // with the loop above (its last use), so this is just another
+        // method call on `registry`, not a reentrant lock acquisition
+        // (the R8 hazard other F4c-4 sites in this ADR box hit).
+        let owner = Symbol::intern(class_name);
+        for (method_name, defs) in composed_for_registry {
+            let method_sym = Symbol::intern(&method_name);
+            for def in defs {
+                registry.push_user_method(owner, method_sym, def);
+            }
         }
         drop(registry);
         // These submethods are added after register_class_decl has compiled the
