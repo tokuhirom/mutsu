@@ -394,8 +394,55 @@ impl Interpreter {
                 attributes,
                 ..
             } => {
+                // ADR-0019 Phase F box F1: `.^lookup`/`.^find_method`/
+                // `.^methods` return a Method/Submethod `Instance` now
+                // instead of a `Sub` (`todo/tickets/classhow-lookup-returns-
+                // sub-not-method-instance.md`) -- mirror the `ValueView::Sub`
+                // arm's doc-comment key shape below using the same
+                // `__mutsu_lookup_class`/`__mutsu_lookup_method` attributes
+                // `.wrap` already reads, so `Class.^find_method(name).WHY`
+                // keeps finding the `#|` comment on the method declaration
+                // (roast integration/advent2011-day10.t).
+                if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") {
+                    let am = attributes.as_map();
+                    let method_name = am.get("__mutsu_lookup_method").map(|v| v.to_string_value());
+                    let owner = am
+                        .get("__mutsu_lookup_class")
+                        .map(|v| v.to_string_value())
+                        .or_else(|| {
+                            am.get("package").and_then(|v| match v.view() {
+                                ValueView::Package(p) => Some(p.resolve()),
+                                _ => None,
+                            })
+                        });
+                    let mut k = Vec::new();
+                    // A specific multi candidate (`.candidates[N]`) has its
+                    // own `#|` comment, distinct from its sibling candidates
+                    // and the dispatcher itself -- try the
+                    // `/multi.{idx}`-suffixed key first, mirroring the
+                    // `ValueView::Sub` arm's `multi_idx` handling above. A
+                    // non-multi method also carries `candidate_idx=0` (see
+                    // `make_method_object_with_owner_ex`), but no doc comment
+                    // is ever recorded under that suffixed key, so the lookup
+                    // below just falls through to the plain key for it.
+                    if let Some(ValueView::Int(idx)) =
+                        am.get("__mutsu_lookup_candidate_idx").map(Value::view)
+                        && let (Some(owner), Some(name)) = (&owner, &method_name)
+                    {
+                        k.push(format!("{}::{}/multi.{}", owner, name, idx));
+                        k.push(format!("&{}/multi.{}", name, idx));
+                    }
+                    if let (Some(owner), Some(name)) = (&owner, &method_name) {
+                        k.push(format!("{}::{}", owner, name));
+                    }
+                    if let Some(name) = &method_name {
+                        k.push(format!("&{}", name));
+                        k.push(name.clone());
+                    }
+                    k
+                }
                 // Role candidate with index metadata
-                if let Some(ValueView::Int(idx)) = attributes
+                else if let Some(ValueView::Int(idx)) = attributes
                     .as_map()
                     .get("__mutsu_role_candidate_idx")
                     .map(Value::view)

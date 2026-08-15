@@ -168,9 +168,26 @@ impl Interpreter {
     /// separate slice (see
     /// `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
     pub(super) fn make_native_method_object(&self, name: &str, owner: &str) -> Value {
+        self.make_native_method_object_ex(name, owner, false)
+    }
+
+    /// `is_regex`: the method is a grammar `token`/`rule`/`regex` -- its
+    /// `__mutsu_method_callable` payload must carry that flag so invoking the
+    /// returned Method `Instance` (`CALL-ME`) runs it against a `Cursor` like
+    /// `call_sub_value`'s own `ValueView::Routine { is_regex, .. }` branch
+    /// already does for a bare token value.
+    pub(super) fn make_native_method_object_ex(
+        &self,
+        name: &str,
+        owner: &str,
+        is_regex: bool,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
+        attrs.insert("multi".to_string(), Value::FALSE);
+        attrs.insert("rw".to_string(), Value::FALSE);
+        attrs.insert("readonly".to_string(), Value::TRUE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
         attrs.insert(
             "signature".to_string(),
@@ -181,7 +198,32 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        // `.WHY` (`dispatch_why`'s `Instance` branch) builds its doc-comment
+        // lookup key from these two, the same way it does for a plain user
+        // method -- without them, a grammar token/rule/regex's `#|` comment
+        // was unreachable (roast S26-documentation/why-leading.t's "regex"
+        // case).
+        attrs.insert(
+            "__mutsu_lookup_class".to_string(),
+            Value::str(owner.to_string()),
+        );
+        attrs.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(name.to_string()),
+        );
+        // ADR-0019 Phase F box F1: the Sub-vs-Instance unification. Carrying
+        // the original Routine marker lets `CALL-ME` invoke this Instance
+        // exactly as `.^lookup`/`.^find_method` used to return it directly.
+        attrs.insert(
+            "__mutsu_method_callable".to_string(),
+            Value::routine_parts(Symbol::intern(owner), Symbol::intern(name), is_regex),
+        );
+        // Real Raku: a grammar `token`/`rule`/`regex`'s `.^lookup`/`.^name` is
+        // `Regex`, not `Method` (`raku -e 'grammar G { regex X {} }; say
+        // G.^lookup("X").^name'` -> `Regex`) -- verified for all three
+        // declarators, which are otherwise indistinguishable at this point.
+        let class_name = if is_regex { "Regex" } else { "Method" };
+        Value::make_instance(Symbol::intern(class_name), attrs)
     }
 
     /// Records the owning class/role so a `.wrap` on the returned Method
@@ -197,6 +239,47 @@ impl Interpreter {
         overloads: Option<&[MethodDef]>,
         owner_class: Option<&str>,
     ) -> Value {
+        self.make_method_object_with_owner_ex(
+            name,
+            method_def,
+            is_dispatcher,
+            return_type,
+            overloads,
+            owner_class,
+            false,
+            None,
+            0,
+        )
+    }
+
+    /// `is_multi_candidate`: this object is one entry of a multi family's
+    /// `.candidates` array (real Raku: `.multi` answers `True` there, `False`
+    /// on a plain single method and on the dispatcher itself -- see the
+    /// `is_dispatcher`/`multi` handling `methods_instance_ops.rs` implements
+    /// for the older Sub-shaped `.^lookup` return, which this generalizes to
+    /// the `Instance` shape). Always `false` from the public wrapper; set
+    /// `true` only by the recursive `candidates` build below.
+    ///
+    /// `explicit_candidates`, when `Some`, is used as the `.candidates` array
+    /// verbatim instead of building it from `overloads`/`owner_class` --
+    /// needed when a multi family combines candidates declared on more than
+    /// one class in the MRO (`classhow_lookup_all_candidates`), where each
+    /// candidate has its own owner and the single-`owner_class` builder below
+    /// cannot represent that (roast S06-advanced/wrap.t "multi methods with
+    /// a wrapped one are in order").
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn make_method_object_with_owner_ex(
+        &self,
+        name: &str,
+        method_def: &MethodDef,
+        is_dispatcher: bool,
+        return_type: Option<String>,
+        overloads: Option<&[MethodDef]>,
+        owner_class: Option<&str>,
+        is_multi_candidate: bool,
+        explicit_candidates: Option<Vec<Value>>,
+        candidate_idx: usize,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
 
         // Store the display name (with ! prefix for private methods)
@@ -207,38 +290,98 @@ impl Interpreter {
         };
         attrs.insert("name".to_string(), Value::str(display_name));
         attrs.insert("is_dispatcher".to_string(), Value::truth(is_dispatcher));
-        // Record the owning class + method name so a `.wrap` on this Method
-        // object can register a class-keyed wrap chain (see `wrap` dispatch for
-        // Method instances). Single (non-multi) methods are candidate 0; multi
-        // methods are wrapped through their `.candidates[N]` entries instead.
-        // `.package` shares the same gate: a real Rakudo multi *dispatcher*'s
-        // own `.package` is an internal synthetic type (`(Dummy)`), not the
-        // declaring class, so it is deliberately left unset here rather than
-        // guessed -- but each individual (non-dispatcher) candidate's
-        // `.package` is exactly `owner_class`, verified against `raku`.
-        if let Some(owner) = owner_class
-            && !is_dispatcher
-        {
+        attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
+        attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));
+        attrs.insert("readonly".to_string(), Value::truth(!method_def.is_rw));
+        // The method name is always recorded so `CALL-ME` on a dispatcher
+        // (no single callable of its own) can re-dispatch on the first
+        // argument, mirroring the old Sub-shaped dispatcher's
+        // `sub_multi_method_dispatcher_name` re-dispatch.
+        attrs.insert(
+            "__mutsu_lookup_method".to_string(),
+            Value::str(name.to_string()),
+        );
+        // The owning class is likewise recorded whenever known, dispatcher or
+        // not: `^add_method`'s multi-family alias detection
+        // (`unwrap_method_instance_callable`) needs `__mutsu_lookup_class`
+        // present on a DISPATCHER too, mirroring the pre-Instance code, which
+        // set the equivalent Sub env tag unconditionally.
+        if let Some(owner) = owner_class {
             attrs.insert(
                 "__mutsu_lookup_class".to_string(),
                 Value::str(owner.to_string()),
             );
+        }
+        // Record the candidate slot + callable so a `.wrap` on this Method
+        // object can register a class-keyed wrap chain (see `wrap` dispatch
+        // for Method instances), and so `CALL-ME` can invoke it directly.
+        // Single (non-multi) methods are candidate 0; multi methods are
+        // wrapped through their `.candidates[N]` entries instead. `.package`
+        // shares the same gate: a real Rakudo multi *dispatcher*'s own
+        // `.package` is an internal synthetic type (`(Dummy)`), not the
+        // declaring class, so it is deliberately left unset here rather than
+        // guessed -- but each individual (non-dispatcher) candidate's
+        // `.package` is exactly `owner_class`, verified against `raku`.
+        //
+        // ADR-0019 Phase F box F1: `__mutsu_method_callable` is the Sub value
+        // that `CALL-ME` invokes, unifying this Instance's representation
+        // with the plain-Sub shape `.^lookup`/`.^find_method` used to return
+        // directly (`todo/tickets/classhow-lookup-returns-sub-not-method-
+        // instance.md`) -- a dispatcher has no single callable (it must
+        // re-dispatch on the first argument the way the old Sub-shaped
+        // dispatcher's `sub_multi_method_dispatcher_name` did), so only a
+        // non-dispatcher candidate gets one.
+        if let Some(owner) = owner_class
+            && !is_dispatcher
+        {
             attrs.insert(
-                "__mutsu_lookup_method".to_string(),
-                Value::str(name.to_string()),
+                "__mutsu_lookup_candidate_idx".to_string(),
+                Value::int(candidate_idx as i64),
             );
-            attrs.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
             attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
+            attrs.insert(
+                "__mutsu_method_callable".to_string(),
+                Self::method_def_callable(owner, name, method_def),
+            );
         }
 
         // Build a Signature object for this method, threading the return type
-        // so that `.signature.returns` reflects a `--> Type` declaration.
-        let param_defs = &method_def.param_defs;
+        // so that `.signature.returns` reflects a `--> Type` declaration. Real
+        // Rakudo's `Method.signature` always carries the invocant as
+        // `params[0]` (`B.^find_method('foo').signature.gist` is
+        // `(B $:: $!a, *%_)`, not `($!a, *%_)`) -- prepend one the same way
+        // `method_def_callable` does for the actual callable, unless the
+        // declaration already names one explicitly. Without this,
+        // `.signature.params[N]` was off by one against the invocant-carrying
+        // `Sub`-shaped signature `.^lookup`/`.^find_method` used to return
+        // directly (roast S06-signature/introspection.t).
+        let has_explicit_invocant = method_def
+            .param_defs
+            .iter()
+            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+        let mut full_param_defs = Vec::with_capacity(method_def.param_defs.len() + 1);
+        if let Some(owner) = owner_class
+            && !has_explicit_invocant
+        {
+            full_param_defs.push(Self::make_invocant_param(owner));
+        }
+        full_param_defs.extend(method_def.param_defs.iter().cloned());
         let sig_info =
-            crate::value::signature::param_defs_to_sig_info(param_defs, return_type.clone());
+            crate::value::signature::param_defs_to_sig_info(&full_param_defs, return_type.clone());
+        // Thread an owner key so a parameter's own `#=`/`#|` doc comment is
+        // reachable through `.signature.params[N].WHY` -- mirrors
+        // `sub_signature_value`'s owner-key format exactly (`"ClassName::
+        // name"`), without which `__mutsu_owner_sub` was never set on the
+        // Parameter object and the comment was unreachable (roast
+        // S26-documentation/why-trailing.t's "invocant comment" case).
+        let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
         attrs.insert(
             "signature".to_string(),
-            crate::value::signature::make_signature_value(sig_info, Some(self)),
+            crate::value::signature::make_signature_value_with_owner(
+                sig_info,
+                owner_key,
+                Some(self),
+            ),
         );
 
         // Return type
@@ -249,27 +392,67 @@ impl Interpreter {
         // For a multi method dispatcher, attach one Method object per
         // candidate so that `.candidates` returns them. A non-multi (single)
         // method is its own sole candidate.
-        let candidates: Vec<Value> = match overloads {
-            Some(defs) if is_dispatcher => defs
-                .iter()
-                .map(|def| {
-                    self.make_method_object_with_owner(
-                        name,
-                        def,
-                        false,
-                        def.return_type.clone(),
-                        None,
-                        owner_class,
-                    )
-                })
-                .collect(),
-            _ => Vec::new(),
+        let candidates: Vec<Value> = match explicit_candidates {
+            Some(cands) => cands,
+            None => match overloads {
+                Some(defs) if is_dispatcher => defs
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, def)| {
+                        self.make_method_object_with_owner_ex(
+                            name,
+                            def,
+                            false,
+                            def.return_type.clone(),
+                            None,
+                            owner_class,
+                            true,
+                            None,
+                            idx,
+                        )
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            },
         };
         if !candidates.is_empty() {
             attrs.insert("candidates".to_string(), Value::array(candidates));
         }
 
-        Value::make_instance(Symbol::intern("Method"), attrs)
+        // Real Raku: `.^lookup`/`.^find_method` walk the whole MRO and DO
+        // surface a submethod (`.^methods`/`.^method_table`, this function's
+        // other callers, filter submethods out before ever reaching here --
+        // see `collect_class_methods`'s doc comment -- so this case was
+        // previously unreachable); its `.^name` is `Submethod`, not `Method`
+        // (`raku -e 'class C { submethod BUILD {} }; say C.^lookup("BUILD")
+        // .^name'` -> `Submethod`). A multi dispatcher's own submethod-ness
+        // isn't modeled (Raku does not support `multi submethod`), so this
+        // only matters for the non-dispatcher/candidate case.
+        let instance_class_name = if method_def.is_submethod {
+            "Submethod"
+        } else {
+            "Method"
+        };
+        let method_obj = Value::make_instance(Symbol::intern(instance_class_name), attrs);
+        // A non-multi (single) method's own `.candidates` is itself, a
+        // one-element list -- verified against `raku`
+        // (`Foo.^lookup('bar').candidates[0]` on a plain method, not just a
+        // multi's). Set once the Instance exists so it can hold a self-copy.
+        if !is_dispatcher
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = method_obj.view()
+        {
+            let mut am = attributes.as_map().clone();
+            am.insert(
+                "candidates".to_string(),
+                Value::array(vec![method_obj.clone()]),
+            );
+            return Value::make_instance(class_name, am);
+        }
+        method_obj
     }
 
     pub(super) fn classhow_methods_tree(

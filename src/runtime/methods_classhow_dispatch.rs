@@ -1,6 +1,67 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// `.^add_method`/`.^add_multi_method`'s callable argument used to always be
+/// a plain `Sub` (`X.^lookup('other')`'s old return shape). ADR-0019 Phase F
+/// box F1 made `.^lookup`/`.^find_method` return a Method/Submethod
+/// `Instance` instead (`todo/tickets/classhow-lookup-returns-sub-not-method-
+/// instance.md`), so unwrap the `__mutsu_method_callable` attribute back to
+/// that same `Sub` before the rest of this file's `ValueView::Sub` match --
+/// any other value (a real closure literal, etc.) passes through unchanged.
+fn unwrap_method_instance_callable(value: &Value) -> Value {
+    match value.view() {
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") => {
+            let am = attributes.as_map();
+            // A non-dispatcher candidate carries its callable directly. A
+            // multi dispatcher has none of its own -- fall back to its first
+            // candidate's callable as the carrier body, mirroring the old
+            // Sub-shaped dispatcher (itself built from the first candidate
+            // found); the lookup-tag rewrite below still marks the RESULT as
+            // the dispatcher (no candidate_idx), not that specific candidate.
+            let base_callable = am.get("__mutsu_method_callable").cloned().or_else(|| {
+                am.get("candidates").and_then(|c| match c.view() {
+                    ValueView::Array(items, _) => items.first().cloned(),
+                    _ => None,
+                })
+            });
+            let Some(base_callable) = base_callable else {
+                return value.clone();
+            };
+            let callable = unwrap_method_instance_callable(&base_callable);
+            // Port the Instance's `__mutsu_lookup_*` attributes back onto the
+            // unwrapped Sub's `env` -- this function's callers (below) still
+            // read them from `SubData::env` (predating ADR-0019 Phase F box
+            // F1's move of that carrier data to Instance attributes) to
+            // detect a multi-family alias (`^add_method(name,
+            // X.^lookup('other'))` cloning the whole candidate family, not
+            // just one carrier candidate). Cleared first, not merely
+            // overwritten, since a dispatcher's own attrs carry no
+            // `__mutsu_lookup_candidate_idx` but its fallback candidate's
+            // unwrapped env still has one from its own unwrap above.
+            if let ValueView::Sub(data) = callable.view() {
+                let mut new_data: crate::value::SubData = (**data).clone();
+                for key in [
+                    "__mutsu_lookup_class",
+                    "__mutsu_lookup_method",
+                    "__mutsu_lookup_candidate_idx",
+                ] {
+                    new_data.env.remove(key);
+                    if let Some(v) = am.get(key) {
+                        new_data.env.insert(key.to_string(), v.clone());
+                    }
+                }
+                return Value::sub_value(crate::gc::Gc::new(new_data));
+            }
+            callable
+        }
+        _ => value.clone(),
+    }
+}
+
 /// `Metamodel::Naming.shortname`: the type name with every `Foo::` package
 /// qualifier dropped, including inside `[...]` type args -- `Foo::Bar` ->
 /// `Bar`, `R[M2::N]` -> `R[N]`. Non-identifier suffixes (`<anon|1>`,
@@ -658,7 +719,7 @@ impl Interpreter {
                     _ => class_name,
                 };
                 let method_name = args[1].to_string_value();
-                let method_value = args[2].clone();
+                let method_value = unwrap_method_instance_callable(&args[2]);
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };
@@ -828,7 +889,7 @@ impl Interpreter {
                     }
                 };
                 let method_name = args[1].to_string_value();
-                let method_value = args[2].clone();
+                let method_value = unwrap_method_instance_callable(&args[2]);
                 let ValueView::Sub(sub_data) = method_value.view() else {
                     return Ok(Value::NIL);
                 };

@@ -3,7 +3,7 @@ use crate::symbol::Symbol;
 use crate::value::signature::{extract_sig_info, make_signature_value, param_defs_to_sig_info};
 
 /// Build a structured `X::Routine::Unwrap` error (`&f.unwrap($bad-handle)`).
-fn routine_unwrap_error(message: &str) -> RuntimeError {
+pub(super) fn routine_unwrap_error(message: &str) -> RuntimeError {
     let mut attrs = std::collections::HashMap::new();
     attrs.insert("message".to_string(), Value::str(message.to_string()));
     let mut err = RuntimeError::new(message);
@@ -1062,7 +1062,7 @@ impl Interpreter {
     }
 
     /// Extract wrap handle ID from a WrapHandle instance.
-    fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
+    pub(super) fn extract_wrap_handle_id(&self, handle: &Value) -> Option<u64> {
         match handle.view() {
             ValueView::Instance { attributes, .. } => {
                 if let Some(ValueView::Int(id)) =

@@ -2196,6 +2196,44 @@ impl Interpreter {
                     return self.proxy_subclass_array_mutate(&attrs_ref, &attr_name, method, &args);
                 }
 
+                // `CALL-ME` on a Method/Submethod `Instance` (`.^lookup`/
+                // `.^find_method`/`.^methods` results -- ADR-0019 Phase F box
+                // F1's Sub-vs-Instance unification,
+                // `todo/tickets/classhow-lookup-returns-sub-not-method-
+                // instance.md`): a non-dispatcher candidate carries its
+                // callable `Sub`/`Routine` directly under
+                // `__mutsu_method_callable` (`make_method_object_with_owner`/
+                // `make_native_method_object`); a multi dispatcher has none
+                // and instead re-dispatches on the first argument as
+                // invocant, mirroring the old Sub-shaped dispatcher's
+                // `sub_multi_method_dispatcher_name` re-dispatch (verified
+                // against `raku`: calling a multi's `.^lookup` result
+                // re-resolves by argument type).
+                if method == "CALL-ME"
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+                {
+                    let am = attributes.as_map();
+                    if let Some(callable) = am.get("__mutsu_method_callable").cloned() {
+                        return self.call_sub_value(callable, args, false);
+                    }
+                    if matches!(
+                        am.get("is_dispatcher").map(Value::view),
+                        Some(ValueView::Bool(true))
+                    ) && let Some(ValueView::Str(meth)) =
+                        am.get("__mutsu_lookup_method").map(Value::view)
+                        && !args.is_empty()
+                    {
+                        let mut args = args;
+                        let invocant = args.remove(0);
+                        return self.call_method_with_values(invocant, &meth.to_string(), args);
+                    }
+                }
+
                 // `.wrap` on a Method object obtained from `.^methods(:local)`
                 // (a "Method" instance carrying its owning class via the
                 // `__mutsu_lookup_*` attributes): register a class-keyed wrap
@@ -2234,6 +2272,54 @@ impl Interpreter {
                             wh,
                         ));
                     }
+                }
+                // `.unwrap` on a Method candidate `Instance`, mirroring the
+                // `.wrap` block above and `dispatch_sub_method`'s equivalent
+                // for the older Sub-shaped candidate (ADR-0019 E10; the same
+                // `(class, method, idx)`-keyed `Registry::method_wrap_chains`
+                // entry `.wrap` just registered).
+                if method == "unwrap"
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
+                    && class_name == "Method"
+                    && let am = attributes.as_map()
+                    && let (
+                        Some(ValueView::Str(cls)),
+                        Some(ValueView::Str(meth)),
+                        Some(ValueView::Int(idx)),
+                    ) = (
+                        am.get("__mutsu_lookup_class").map(Value::view),
+                        am.get("__mutsu_lookup_method").map(Value::view),
+                        am.get("__mutsu_lookup_candidate_idx").map(Value::view),
+                    )
+                {
+                    let (cls, meth, idx) = (cls.to_string(), meth.to_string(), idx as usize);
+                    if args.is_empty() {
+                        return match self.registry_mut().pop_method_wrap(&cls, &meth, idx) {
+                            Some(_) => Ok(Value::TRUE),
+                            None => Err(super::methods_sub::routine_unwrap_error(
+                                "Cannot unwrap routine: not wrapped",
+                            )),
+                        };
+                    }
+                    let Some(handle_id) = self.extract_wrap_handle_id(&args[0]) else {
+                        return Err(super::methods_sub::routine_unwrap_error(
+                            "Cannot unwrap routine: invalid wrap handle",
+                        ));
+                    };
+                    return if self
+                        .registry_mut()
+                        .remove_method_wrap(&cls, &meth, idx, handle_id)
+                    {
+                        Ok(Value::TRUE)
+                    } else {
+                        Err(super::methods_sub::routine_unwrap_error(
+                            "Cannot unwrap routine: invalid wrap handle",
+                        ))
+                    };
                 }
                 // Metamodel method fallback (`.^add_fallback`): before failing,
                 // consult any dynamic fallbacks registered for this value's class.
