@@ -147,6 +147,7 @@ impl Interpreter {
             let compiler = crate::compiler::Compiler::new();
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
+            let tail_is_when = super::resolution_map_grep::tail_is_when_chain(&normalized_body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
@@ -270,11 +271,17 @@ impl Interpreter {
                         }
                     };
                     let saved_when_matched = vm.when_matched();
+                    vm.when_nonmatch_value = None;
                     match vm.run_reuse(&code, &compiled_fns) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
+                                .or_else(|| {
+                                    tail_is_when.then(|| {
+                                        vm.when_nonmatch_value.take().unwrap_or(Value::FALSE)
+                                    })
+                                })
                                 .or_else(|| vm.env().get("_").cloned())
                                 .unwrap_or(Value::NIL);
                             writeback(list_items, vm);
@@ -415,6 +422,7 @@ impl Interpreter {
             compiler.lexically_in_routine = !self.routine_stack.is_empty();
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
+            let tail_is_when = super::resolution_map_grep::tail_is_when_chain(&normalized_body);
             let (code, compiled_fns) = compiler.compile(&normalized_body);
 
             let underscore = "_".to_string();
@@ -539,11 +547,17 @@ impl Interpreter {
                             (arity == 1 && !keeps_outer_topic).then_some(topic_source_key.clone()),
                         );
                         let saved_when_matched = vm.when_matched();
+                        vm.when_nonmatch_value = None;
                         match vm.run_reuse(&code, &compiled_fns) {
                             Ok(()) => {
                                 let pred = vm
                                     .last_stack_value()
                                     .cloned()
+                                    .or_else(|| {
+                                        tail_is_when.then(|| {
+                                            vm.when_nonmatch_value.take().unwrap_or(Value::FALSE)
+                                        })
+                                    })
                                     .or_else(|| vm.env().get("_").cloned())
                                     .unwrap_or(Value::NIL);
                                 let updated_item = if arity == 1 {
