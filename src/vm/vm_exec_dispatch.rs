@@ -1205,7 +1205,18 @@ impl Interpreter {
                 } else {
                     raw_val
                 };
-                if name.starts_with('%')
+                if raw_mode {
+                    // `constant @x = ...` / `constant %x = ...` already applied
+                    // their own List/Map coercion above (raw_mode's own `@`/`%`
+                    // branches) — a fresh `constant` declaration is never a
+                    // write into an existing container, so neither the typed
+                    // re-coercion nor the writethrough metadata preservation
+                    // below apply. Running them anyway (verified 2026-08-15)
+                    // called `array_container_writethrough_value` on an
+                    // already-correct `does Positional` instance, whose
+                    // non-Array input falls through to a generic
+                    // `coerce_to_array` wrap and loses the custom class.
+                } else if name.starts_with('%')
                     && (loan_env!(self, var_type_constraint(&name)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
