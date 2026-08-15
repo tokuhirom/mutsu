@@ -539,24 +539,24 @@ impl Interpreter {
             .state_locals
             .iter()
             .find(|(s, _)| *s == slot)
-            .map(|(_, k)| k.clone())
+            .map(|(_, k)| *k)
         else {
             return;
         };
         let Some(val) = self.locals.get(slot).cloned() else {
             return;
         };
-        let scoped = self.scoped_state_key(&key);
+        let scoped = self.scoped_state_key(key);
         loan_env!(self, set_state_var(scoped, val));
     }
 
-    /// Resolve a state variable key, applying the current closure scope if set.
-    pub(crate) fn scoped_state_key(&self, key: &str) -> String {
-        if let Some(id) = self.state_scope_id {
-            format!("{key}#c{id}")
-        } else {
-            key.to_string()
-        }
+    /// Resolve a state variable key, applying the current closure scope if
+    /// set. A Copy tuple, not a `format!`ed `String` — `publish_state_local`
+    /// runs on every `SetLocal`/`SetLocalDecl` write to a `state` local
+    /// (including the JIT shims, see `vm_jit_helpers::{set_local,
+    /// set_local_decl}`), so this must be free.
+    pub(crate) fn scoped_state_key(&self, key: Symbol) -> (Symbol, Option<u64>) {
+        (key, self.state_scope_id)
     }
 
     // Both loaders/syncers resolve the key through `scoped_state_key`, matching
@@ -566,8 +566,8 @@ impl Interpreter {
     // which is every path that existed before the inline-map scoping).
     fn load_state_locals(&mut self, code: &CompiledCode) {
         for (slot, key) in &code.state_locals {
-            let scoped_key = self.scoped_state_key(key);
-            if let Some(val) = self.get_state_var(&scoped_key) {
+            let scoped_key = self.scoped_state_key(*key);
+            if let Some(val) = self.get_state_var(scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -589,31 +589,24 @@ impl Interpreter {
             } else {
                 self.locals[*slot].clone()
             };
-            let scoped_key = self.scoped_state_key(key);
+            let scoped_key = self.scoped_state_key(*key);
             self.set_state_var(scoped_key, val);
         }
     }
 
     /// Whether the state variable `(slot, key)` has its `StateVarInit` opcode
-    /// within [start..end). Matches both slot and key constant to avoid false
+    /// within [start..end). Matches both slot and key symbol to avoid false
     /// matches when multiple state variables share the same local slot.
     fn state_local_init_in_range(
         code: &CompiledCode,
         slot: usize,
-        key: &str,
+        key: Symbol,
         start: usize,
         end: usize,
     ) -> bool {
         code.ops[start..end].iter().any(|op| {
             if let OpCode::StateVarInit(s, k) = op {
-                if *s as usize != slot {
-                    return false;
-                }
-                if let ValueView::Str(stored_key) = code.constants[*k as usize].view() {
-                    stored_key.as_ref() == key
-                } else {
-                    false
-                }
+                *s as usize == slot && Symbol::from_id(*k) == key
             } else {
                 false
             }
@@ -630,7 +623,7 @@ impl Interpreter {
         end: usize,
     ) {
         for (slot, key) in &code.state_locals {
-            if !Self::state_local_init_in_range(code, *slot, key, start, end) {
+            if !Self::state_local_init_in_range(code, *slot, *key, start, end) {
                 continue;
             }
             let local_name = &code.locals[*slot];
@@ -658,7 +651,7 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or_else(|| self.locals[*slot].clone())
             };
-            let scoped_key = self.scoped_state_key(key);
+            let scoped_key = self.scoped_state_key(*key);
             self.set_state_var(scoped_key, val);
         }
     }
@@ -679,11 +672,11 @@ impl Interpreter {
         end: usize,
     ) {
         for (slot, key) in &code.state_locals {
-            if !Self::state_local_init_in_range(code, *slot, key, start, end) {
+            if !Self::state_local_init_in_range(code, *slot, *key, start, end) {
                 continue;
             }
-            let scoped_key = self.scoped_state_key(key);
-            self.remove_state_var(&scoped_key);
+            let scoped_key = self.scoped_state_key(*key);
+            self.remove_state_var(scoped_key);
         }
     }
 

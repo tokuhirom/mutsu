@@ -143,8 +143,8 @@ impl Interpreter {
         let saved_state_scope = self.enter_routine_state_scope(cf, fn_name);
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
-            let scoped_key = self.scoped_state_key(key);
-            if let Some(val) = self.get_state_var(&scoped_key) {
+            let scoped_key = self.scoped_state_key(*key);
+            if let Some(val) = self.get_state_var(scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -255,7 +255,7 @@ impl Interpreter {
                 .get(local_name)
                 .cloned()
                 .unwrap_or_else(|| self.locals[*slot].clone());
-            let scoped_key = self.scoped_state_key(key);
+            let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
         self.leave_routine_state_scope(saved_state_scope);

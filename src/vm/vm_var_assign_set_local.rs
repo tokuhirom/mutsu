@@ -2011,7 +2011,7 @@ impl Interpreter {
             let is_state = code
                 .state_locals
                 .iter()
-                .any(|(_, key)| key.contains(&format!("::{}@", name)));
+                .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
             if !is_state {
                 self.thread_redeclared_vars.insert(name.to_string());
                 // The initializer has not run yet, so neither this frame's slot
@@ -2085,7 +2085,7 @@ impl Interpreter {
             let is_state = code
                 .state_locals
                 .iter()
-                .any(|(_, key)| key.contains(&format!("::{}@", name)));
+                .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
             let is_body_local = !is_state && code.locals.iter().any(|n| n.as_str() == name);
             if is_body_local
                 && let Some(saved) = self.loop_local_saved_env.last_mut()

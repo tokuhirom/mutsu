@@ -634,7 +634,8 @@ impl Interpreter {
             if let Some(name) = code.locals.get(*slot)
                 && let Some(val) = self.env().get(name).cloned()
             {
-                self.set_state_var(key.clone(), val);
+                let scoped_key = self.scoped_state_key(*key);
+                self.set_state_var(scoped_key, val);
             }
         }
         let value = self.env().get("_").cloned().unwrap_or(Value::NIL);
@@ -794,7 +795,8 @@ impl Interpreter {
             if let Some(name) = code.locals.get(*slot)
                 && let Some(val) = self.env().get(name).cloned()
             {
-                self.set_state_var(key.clone(), val);
+                let scoped_key = self.scoped_state_key(*key);
+                self.set_state_var(scoped_key, val);
             }
         }
         let value = self.env().get("_").cloned().unwrap_or(Value::NIL);

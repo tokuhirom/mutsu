@@ -177,6 +177,7 @@ impl Interpreter {
         exclude_end: bool,
         is_fff: bool,
     ) -> Value {
+        let key = (crate::symbol::Symbol::intern(key), None);
         let seq = self
             .get_state_var(key)
             .and_then(|v| match v.view() {
@@ -188,26 +189,26 @@ impl Interpreter {
         if seq > 0 {
             let current = seq;
             if rhs {
-                self.set_state_var(key.to_string(), Value::int(0));
+                self.set_state_var(key, Value::int(0));
                 if exclude_end {
                     Value::NIL
                 } else {
                     Value::int(current)
                 }
             } else {
-                self.set_state_var(key.to_string(), Value::int(current + 1));
+                self.set_state_var(key, Value::int(current + 1));
                 Value::int(current)
             }
         } else if lhs {
             if !is_fff && rhs {
-                self.set_state_var(key.to_string(), Value::int(0));
+                self.set_state_var(key, Value::int(0));
                 if exclude_start || exclude_end {
                     Value::NIL
                 } else {
                     Value::int(1)
                 }
             } else {
-                self.set_state_var(key.to_string(), Value::int(2));
+                self.set_state_var(key, Value::int(2));
                 if exclude_start {
                     Value::NIL
                 } else {
@@ -258,7 +259,7 @@ impl Interpreter {
         let scope = self.flip_flop_scope_key();
         let state_key = format!("__mutsu_ff_state::{scope}::{site_id}");
         let seq = self
-            .get_state_var(&state_key)
+            .get_state_var((crate::symbol::Symbol::intern(&state_key), None))
             .and_then(|v| match v.view() {
                 ValueView::Int(i) if i > 0 => Some(i),
                 _ => None,

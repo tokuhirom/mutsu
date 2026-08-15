@@ -311,8 +311,7 @@ impl Interpreter {
                 if matches!(sval.view(), ValueView::ContainerRef(_)) {
                     continue;
                 }
-                let shared_key =
-                    format!("__mutsu_shared_state::{}", Self::normalize_state_key(skey));
+                let shared_key = Self::shared_state_cell_key(*skey);
                 shared.seed_if_absent(&shared_key, || sval.clone().into_container_ref());
             }
         }

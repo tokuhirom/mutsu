@@ -689,8 +689,8 @@ impl Interpreter {
         // (state_scope_id is set to data.id above, so scoped_state_key
         // will generate closure-instance-specific keys automatically).
         for (slot, key) in &cc.state_locals {
-            let scoped_key = self.scoped_state_key(key);
-            if let Some(val) = self.get_state_var(&scoped_key) {
+            let scoped_key = self.scoped_state_key(*key);
+            if let Some(val) = self.get_state_var(scoped_key) {
                 self.locals[*slot] = val.clone();
             }
         }
@@ -955,7 +955,7 @@ impl Interpreter {
                     .cloned()
                     .unwrap_or_else(|| self.locals[*slot].clone())
             };
-            let scoped_key = self.scoped_state_key(key);
+            let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
 
@@ -1378,7 +1378,7 @@ impl Interpreter {
             for k in &cc.free_var_syms {
                 let meta_key = format!("__mutsu_state_key::{}", k);
                 let state_key = self.env().get(&meta_key).and_then(|v| match v.view() {
-                    ValueView::Str(s) => Some(s.to_string()),
+                    ValueView::Str(s) => Some(Self::state_key_from_display(&s)),
                     _ => None,
                 });
                 if let Some(state_key) = state_key
