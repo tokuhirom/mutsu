@@ -539,6 +539,10 @@ impl Interpreter {
             let mut mixins = HashMap::new();
             for role in &roles {
                 mixins.insert(format!("__mutsu_role__{}", role), Value::TRUE);
+                mixins.insert(
+                    format!("__mutsu_role_seq__{}", role),
+                    Value::int(crate::value::next_instance_id() as i64),
+                );
             }
             attrs.insert(attr_name, Value::mixin(base, mixins));
         }

@@ -120,14 +120,32 @@ impl Interpreter {
                 }
             }
         }
-        let mut role_names: Vec<String> = mixins
+        // Order by application order, most-recently-applied first: Rakudo
+        // resolves a method-name collision between mixed-in roles by
+        // later-wins precedence (`(0 but A) but B).m` answers from B), and
+        // this loop returns on the first match below. Each application site
+        // stamps `__mutsu_role_seq__{name}` with a monotonic counter (see
+        // todo/tickets/mixin-role-order-not-tracked.md); missing/unstamped
+        // entries (should not occur once every site is updated) sort last.
+        let mut role_names: Vec<(i64, String)> = mixins
             .iter()
             .filter_map(|(key, value)| {
                 key.strip_prefix("__mutsu_role__")
                     .and_then(|name| value.truthy().then_some(name.to_string()))
             })
+            .map(|name| {
+                let seq = mixins
+                    .get(&format!("__mutsu_role_seq__{}", name))
+                    .and_then(|v| match v.view() {
+                        ValueView::Int(n) => Some(n),
+                        _ => None,
+                    })
+                    .unwrap_or(i64::MIN);
+                (seq, name)
+            })
             .collect();
-        role_names.sort();
+        role_names.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+        let role_names: Vec<String> = role_names.into_iter().map(|(_, name)| name).collect();
         // Determine if this is a private method call (method starts with '!')
         let is_private_call = method.starts_with('!');
         let lookup_name = if is_private_call {
