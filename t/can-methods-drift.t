@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 129;
+plan 193;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -55,6 +55,41 @@ works-and-can (1+2i), 'Complex', { (1+2i).Complex };
 # --- List / Array ---
 works-and-can (1, 2, 3), 'minpairs', { (1, 2, 3).minpairs };
 works-and-can (1, 2, 3), 'maxpairs', { (1, 2, 3).maxpairs };
+works-and-can (1, 2, 3), 'list',        { (1, 2, 3).list };
+works-and-can (1, 2, 3), 'item',        { (1, 2, 3).item };
+works-and-can (1, 2, 3), 'Slip',        { (1, 2, 3).Slip };
+works-and-can (1, 2, 3), 'sink',        { (1, 2, 3).sink };
+works-and-can (a => 1, b => 2), 'invert', { (a => 1, b => 2).invert };
+works-and-can (1, 2, 3), 'AT-POS',      { (1, 2, 3).AT-POS(0) };
+works-and-can (1, 2, 3), 'EXISTS-POS',  { (1, 2, 3).EXISTS-POS(0) };
+works-and-can (1, 2, 3), 'is-lazy',     { (1, 2, 3).is-lazy };
+works-and-can (1, 2, 3), 'Capture',     { (1, 2, 3).Capture };
+works-and-can (1, 2, 3), 'hyper',       { (1, 2, 3).hyper };
+works-and-can (1, 2, 3), 'race',        { (1, 2, 3).race };
+works-and-can (1, 2, 3), 'Supply',      { (1, 2, 3).Supply };
+works-and-can (1, 2, 3), 'fmt',         { (1, 2, 3).fmt('%d') };
+
+my @arr = (1, 2, 3);
+works-and-can @arr, 'WHICH',   { @arr.WHICH };
+works-and-can @arr, 'dynamic', { @arr.dynamic };
+
+# --- Range ---
+my $rng = 1..5;
+works-and-can $rng, 'hyper',       { $rng.hyper };
+works-and-can $rng, 'lazy',        { $rng.lazy };
+works-and-can $rng, 'int-bounds',  { $rng.int-bounds };
+works-and-can $rng, 'AT-POS',      { $rng.AT-POS(0) };
+works-and-can $rng, 'race',        { $rng.race };
+works-and-can $rng, 'in-range',    { $rng.in-range(3) };
+works-and-can $rng, 'EXISTS-POS',  { $rng.EXISTS-POS(0) };
+
+# --- Blob / Buf ---
+my $buf = Buf.new(1, 2, 3, 4, 5, 6, 7, 8);
+works-and-can $buf, 'read-uint8',  { $buf.read-uint8(0) };
+works-and-can $buf, 'read-int8',   { $buf.read-int8(0) };
+works-and-can $buf, 'read-uint16', { $buf.read-uint16(0) };
+works-and-can $buf, 'read-int16',  { $buf.read-int16(0) };
+works-and-can $buf, 'read-uint32', { $buf.read-uint32(0) };
 
 # --- Mu ---
 works-and-can 5, 'DEFINITE', { 5.DEFINITE };
@@ -98,6 +133,16 @@ ok 'x'.^methods.map(*.Str).grep('Version'),      'Str.^methods includes Version'
 ok 'x'.^methods.map(*.Str).grep('Date'),         'Str.^methods includes Date';
 ok 'x'.^methods.map(*.Str).grep('DateTime'),     'Str.^methods includes DateTime';
 ok (1, 2).^methods.map(*.Str).grep('minpairs'),  'List.^methods includes minpairs';
+ok (1, 2).^methods.map(*.Str).grep('Slip'),      'List.^methods includes Slip';
+ok (1, 2).^methods.map(*.Str).grep('hyper'),     'List.^methods includes hyper';
+ok (1, 2).^methods.map(*.Str).grep('fmt'),       'List.^methods includes fmt';
+ok @arr.^methods.map(*.Str).grep('WHICH'),       'Array.^methods includes WHICH';
+ok @arr.^methods.map(*.Str).grep('dynamic'),     'Array.^methods includes dynamic';
+ok $rng.^methods.map(*.Str).grep('hyper'),       'Range.^methods includes hyper';
+ok $rng.^methods.map(*.Str).grep('int-bounds'),  'Range.^methods includes int-bounds';
+ok $rng.^methods.map(*.Str).grep('in-range'),    'Range.^methods includes in-range';
+ok $buf.^methods.map(*.Str).grep('read-uint8'),  'Blob.^methods includes read-uint8';
+ok $buf.^methods.map(*.Str).grep('read-uint32'), 'Blob.^methods includes read-uint32';
 ok Mu.^methods.map(*.Str).grep('DEFINITE'),      'Mu.^methods includes DEFINITE';
 ok Any.^methods.map(*.Str).grep('serial'),       'Any.^methods includes serial';
 ok Any.^methods.map(*.Str).grep('hash'),         'Any.^methods includes hash';

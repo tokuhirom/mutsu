@@ -266,3 +266,51 @@ owner the original survey flagged with 7+ extras -- are now triaged (9 of 18 own
 counting `Mu`/`Hash`/`Rat`/`Num` too). The remaining ~9 owners left for step 2 each have only 1-3
 extras per the original survey table (much smaller individual slices); step 3 (the actual
 `RAW_ROWS`-as-single-source cutover) can reasonably start once those are swept.
+
+## Progress (2026-08-15, continued): `List`/`Array`/`Range`/`Blob` triaged -- the "1-3 extras" estimate was also wrong, and step 2 is now COMPLETE
+
+Rather than trust the original survey's rough per-owner extras counts for the remaining 9 owners,
+ran a fresh throwaway probe (temporary `#[cfg(test)]` in `native_method_row.rs`, not committed --
+iterate `BUILTIN_METHOD_OWNERS`, diff each owner's `RAW_ROWS` names against its current
+introspection array, print non-empty diffs) to get exact current numbers. Result: `List` has 18
+extras, `Array` 19, `Range` 13, `Blob` 7 -- all far larger than "1-3". `Bool`, `Sub`, `Signature`,
+`IO::Path`, `IO::Handle` printed nothing at all: genuinely **zero** extras, already fully covered.
+
+`List`: 13 of 18 genuine (`list`, `item`, `Slip`, `sink`, `invert`, `AT-POS`, `EXISTS-POS`,
+`is-lazy`, `Capture`, `hyper`, `race`, `Supply`, `fmt`), raku-verified and already dispatching
+(`(1,2,3).list`, `.item`, `.Slip`, `.sink`, pair-list `.invert`, `.AT-POS(0)`, `.EXISTS-POS(0)`,
+`.is-lazy`, `.Capture`, `.hyper`, `.race`, `.Supply`, `.fmt('%d')`). `cache`/`WHICH`/`tree`/
+`pairup`/`hash` confirmed dispatch-only for `List` specifically -- real `List.^methods` omits them.
+
+`Array`: same 13 as `List` PLUS 2 more real Rakudo answers only for `Array`: `WHICH` and
+`dynamic` -- confirmed against raku directly (`Array.^methods` includes `WHICH`, `List.^methods`
+doesn't), not assumed from `RAW_ROWS` alone. Since `LIST_METHODS` is one array shared by both
+`"List"` and `"Array"` match arms but their genuine extras differ, split into
+`LIST_EXTRA_TAIL`/`ARRAY_EXTRA_TAIL` (same shared-base-plus-per-owner-tail pattern as the
+`Int`/`Rat`/`Complex` split earlier in this file).
+
+`Range`: 7 of 13 genuine (`hyper`, `lazy`, `int-bounds`, `AT-POS`, `race`, `in-range`,
+`EXISTS-POS`), raku-verified and dispatching (`(1..5).hyper`, `.lazy`, `.int-bounds`, `.AT-POS(0)`,
+`.race`, `.in-range(3)`, `.EXISTS-POS(0)`). `Array`/`join`/`Supply`/`List`/`head`/`batch`
+confirmed dispatch-only for `Range`.
+
+`Blob`/`Buf`: 5 of 7 genuine (`read-uint8`, `read-int8`, `read-uint16`, `read-int16`,
+`read-uint32`), raku-verified and dispatching (`Buf.new(...).read-uint8(0)` etc.). `values`/`List`
+confirmed dispatch-only for `Blob`.
+
+All 25 additions pinned in `t/can-methods-drift.t` (now 193 assertions). Full local `t/` suite
+(3167 files) green; `roast/S12-introspection/*`, `S02-types/{array,list,range}.t`,
+`S32-container/buf.t`, `S03-operators/buf.t`, and every `S03-buf/*.t` file green (via
+`scripts/run-roast-test.sh`).
+
+**F3 step 2 is now complete**: 13 of 18 owners needed real additions (`Mu`, `Any`, `Hash`, `Cool`,
+`Int`, `Rat`, `Complex`, `Str`, `List`, `Array`, `Range`, `Blob` -- 12 -- plus `Num` confirmed
+zero-change). The other 5 (`Sub`, `Signature`, `IO::Path`, `IO::Handle`, `Bool`) were confirmed to
+already have zero `RAW_ROWS`/introspection drift. Every one of the 18 `BUILTIN_METHOD_OWNERS` has
+now been raku-verified against its `RAW_ROWS` extras. **Step 3 (the actual "delete the 14 arrays,
+read `builtin_method_entries`/`builtin_type_method_names` from `RAW_ROWS` directly" cutover) is
+now unblocked** -- every genuine gap this step's classification needed has been closed, and every
+dispatch-only name has been confirmed and left out on purpose. Step 3 itself still needs its own
+design pass (how to encode "dispatch-only, not introspectable" as a flag on `NativeMethodRow`
+rather than by omission from a second array, per this file's original "suggested next step"
+section) -- not started here.

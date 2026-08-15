@@ -917,6 +917,26 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `Cool`, `Complex`, `Any`) are now triaged. The remaining ~10 small owners (1-3 extras each per the
   original survey table) are still open for step 2 but are far smaller individually; step 3 (the
   actual `RAW_ROWS`-as-single-source cutover) can reasonably start once those are swept too.
+  **Progress (2026-08-15, step 2, `List`/`Array`/`Range`/`Blob`):** the "1-3 extras each" estimate
+  for the remaining owners above was also wrong for these four — a fresh `RAW_ROWS`-vs-introspection
+  diff (not the original survey's rough read) found `List` has 18 extras, `Array` 19, `Range` 13,
+  `Blob` 7; `Bool`/`Sub`/`Signature`/`IO::Path`/`IO::Handle` genuinely have zero (already fully
+  covered). `List` gains 13 (`list`, `item`, `Slip`, `sink`, `invert`, `AT-POS`, `EXISTS-POS`,
+  `is-lazy`, `Capture`, `hyper`, `race`, `Supply`, `fmt`); `Array` gains those same 13 plus two more
+  real Rakudo answers only for `Array` specifically (`WHICH`, `dynamic`) — confirmed by raku, not
+  assumed, since `LIST_METHODS` is one array shared by both owners but `RAW_ROWS` itself lists
+  `WHICH` only under `Array`, not `List`. `Range` gains 7 (`hyper`, `lazy`, `int-bounds`, `AT-POS`,
+  `race`, `in-range`, `EXISTS-POS`). `Blob`/`Buf` gain 5 (`read-uint8`, `read-int8`, `read-uint16`,
+  `read-int16`, `read-uint32`). All 25 additions raku-verified and already dispatched correctly
+  before this change. Since `List`/`Array` need different extra sets from the same shared base,
+  split their match arm into two with separate `LIST_EXTRA_TAIL`/`ARRAY_EXTRA_TAIL` tails (same
+  pattern as the `Int`/`Rat`/`Complex` split earlier in this box). All raku-verified and pinned in
+  `t/can-methods-drift.t` (193 assertions total now). Full local `t/` suite (3167 files) green;
+  `roast/S12-introspection/*`, `S02-types/{array,list,range}.t`, `S32-container/buf.t`,
+  `S03-operators/buf.t`, and every `S03-buf/*.t` file green (via `scripts/run-roast-test.sh`).
+  Running total: 13 of 18 owners now settled. Remaining 5 (`Sub`/`Signature`/`IO::Path`/
+  `IO::Handle`/`Bool` per the fresh diff) all have **zero** extras — F3 step 2's owner-by-owner
+  triage is therefore complete; step 3 (the actual cutover) is unblocked.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
