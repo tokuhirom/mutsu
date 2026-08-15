@@ -393,12 +393,29 @@ impl Interpreter {
                         // to also strip/honor the mark, so `$var` inside
                         // `"..."` gets the same non-constant treatment as
                         // everywhere else.
-                        let is_const = is_inside_double_quoted_regex_literal(&chars, i)
-                            || self.is_compile_time_constant_scalar(&name);
+                        let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
+                        let is_const = inside_qq || self.is_compile_time_constant_scalar(&name);
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                         }
-                        Self::push_value_as_regex_pattern(&value, &mut out);
+                        // A Regex value: reroute through the `<$var>` tokenizer arm
+                        // (rather than splicing its pattern body here) so its
+                        // captures get isolated the same way `<$var>` isolates
+                        // them (see `RegexAtom::CaptureIsolatedGroup`). Not inside a
+                        // double-quoted regex literal — that domain is re-read
+                        // verbatim as literal text by the structural parser's own
+                        // `"..."` scanner, which would turn `<$name>` into four+
+                        // literal characters instead of an assertion.
+                        if !inside_qq
+                            && matches!(
+                                value.view(),
+                                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                            )
+                        {
+                            out.push_str(&format!("<${name}>"));
+                        } else {
+                            Self::push_value_as_regex_pattern(&value, &mut out);
+                        }
                         if !is_const {
                             out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                         }
@@ -475,13 +492,30 @@ impl Interpreter {
                     // literal is scanned by the structural parser's own
                     // inner loop, which does not strip
                     // `NON_DECLARATIVE_INTERP_MARK`, so skip marking there.
-                    let is_const = !is_overlay
-                        && (is_inside_double_quoted_regex_literal(&chars, i)
-                            || self.is_compile_time_constant_scalar(&name));
+                    let inside_qq = is_inside_double_quoted_regex_literal(&chars, i);
+                    let is_const =
+                        !is_overlay && (inside_qq || self.is_compile_time_constant_scalar(&name));
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }
-                    Self::push_value_as_regex_pattern(&value, &mut out);
+                    // A Regex value: reroute through the `<$var>` tokenizer arm so
+                    // its captures get isolated (see the `${name}` arm above and
+                    // `RegexAtom::CaptureIsolatedGroup`'s doc comment). Skipped inside a
+                    // double-quoted regex literal (same reason as the `${name}`
+                    // arm) and for an overlay-resolved `$*` dyn-var, whose value
+                    // lives in `REGEX_DYNVAR_OVERLAY` — a store the `<$var>`
+                    // tokenizer arm cannot see, only `self.env`.
+                    if !inside_qq
+                        && !is_overlay
+                        && matches!(
+                            value.view(),
+                            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                        )
+                    {
+                        out.push_str(&format!("<${name}>"));
+                    } else {
+                        Self::push_value_as_regex_pattern(&value, &mut out);
+                    }
                     if !is_const {
                         out.push(Self::NON_DECLARATIVE_INTERP_MARK);
                     }
@@ -550,6 +584,14 @@ impl Interpreter {
                             }
                             _ => crate::value::ArrayData::new(vec![value]),
                         };
+                        // TODO: unlike bare `@name` below, a Regex-valued
+                        // element here (`@$var` dereferences a scalar, not a
+                        // named array variable) has no `<@name>` tokenizer
+                        // form to reroute through, so its captures still leak
+                        // into the outer match (same leak as bug 2's `<@var>`
+                        // case, just not yet closed for this dereferenced
+                        // form). Splicing the raw pattern text is unchanged
+                        // from before this fix.
                         let mut alts = Vec::new();
                         for elt in &elements {
                             match elt.view() {
@@ -591,6 +633,22 @@ impl Interpreter {
                         }
                         _ => crate::value::ArrayData::new(vec![value]),
                     };
+                    // A Regex-valued element: reroute the whole alternation
+                    // through the `<@var>` tokenizer arm (which strips each
+                    // element's captures — see `array_var_alternation_atom`)
+                    // instead of splicing pattern text directly, same
+                    // reasoning as the bare-`$var` arms above. String-only
+                    // arrays keep the existing text-splice path unchanged.
+                    if elements.iter().any(|elt| {
+                        matches!(
+                            elt.view(),
+                            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                        )
+                    }) {
+                        out.push_str(&format!("<{sigiled_name}>"));
+                        i = j;
+                        continue;
+                    }
                     let mut alts = Vec::new();
                     for elt in &elements {
                         match elt.view() {
@@ -701,6 +759,14 @@ impl Interpreter {
             ValueView::RegexWithAdverbs(a) => out.push_str(&a.pattern),
             ValueView::Junction { values, .. } => {
                 // Expand junction values as alternation [v1|v2|...]
+                // TODO: same capture leak as bug 2 of
+                // `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`
+                // (out of scope for that fix): a Regex-valued junction member's
+                // pattern text is spliced verbatim here, so `any(rx/(a)/, ...)`
+                // interpolated into an outer regex still leaks its positional and
+                // named captures into the outer match's numbering. Fixing this
+                // would need the same `<$var>`-style reroute (there is no
+                // `<$var>`-junction tokenizer form to reroute through yet).
                 out.push('[');
                 for (idx, v) in values.iter().enumerate() {
                     if idx > 0 {

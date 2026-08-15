@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 13;
+plan 18;
 
 # --- Bug 1: a stored regex keeps its defining scope ---------------------------
 
@@ -48,3 +48,23 @@ ok ("xaby" ~~ mk5()).defined, '<$var> assertion form survives the frame';
 }
 sub mk6 { my $w = 'no'; my $r2 = rx/ abc <?{ $w eq 'yes' }> /; $w = 'yes'; return $r2; }
 ok ("abc" ~~ mk6()).defined, 'embedded code sees a mutation made before the frame died';
+
+# --- Bug 2: <$var>-family calls are capture-isolated (raku-verified) ----------
+
+{
+    my $inner = rx/ $<d>=(\d+) /;
+    my $m = "n=123" ~~ / 'n=' <$inner> /;
+    is ~$m, 'n=123', '<$inner> still consumes its text';
+    nok $m[0].defined,   '<$var> does not leak positional captures into $/';
+    nok $m<d>.defined,   '<$var> does not leak named captures into $/';
+}
+{
+    my $inner2 = rx/ (\d+) /;
+    "n=123" ~~ / 'n=' $inner2 /;
+    nok $0.defined, 'bare $var regex interpolation does not leak captures either';
+}
+{
+    my @pats = rx/(\d+)/, rx/(x+)/;
+    "n=123" ~~ / 'n=' <@pats> /;
+    nok $0.defined, '<@pats> alternation does not leak captures either';
+}

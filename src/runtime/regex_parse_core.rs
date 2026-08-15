@@ -259,6 +259,21 @@ impl Interpreter {
                 _ => elt.to_string_value(),
             };
             if let Some(parsed) = self.parse_regex_with_mode(&pat_str, mode) {
+                // Same capture isolation as `<$var>` (see
+                // `CaptureIsolatedGroup`'s doc comment): `<@var>` alternation
+                // elements get their own discarded Match object, so a
+                // Regex-valued element's positional and named captures must
+                // not leak into the outer match — while an internal
+                // backreference within that element's own pattern still
+                // works, since `parsed` itself is untouched, just wrapped.
+                let parsed = if matches!(
+                    elt.view(),
+                    ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
+                ) {
+                    super::regex::regex_helpers::wrap_capture_isolated(parsed)
+                } else {
+                    parsed
+                };
                 alt_patterns.push(parsed);
             }
         }
@@ -2665,7 +2680,31 @@ impl Interpreter {
                                     if let Some(parsed) =
                                         self.parse_regex_with_mode(&scoped_pat, mode)
                                     {
-                                        RegexAtom::Group(parsed)
+                                        // A `<$var>` call gets its own discarded Match
+                                        // object in Raku — no positional or named
+                                        // captures escape into the outer match's
+                                        // numbering, though a backreference to a
+                                        // capture WITHIN `parsed` itself (e.g. Cro's
+                                        // MIME boundary pattern `$<b>=[...] ... $<b>`)
+                                        // must keep working — verified against real
+                                        // `raku`. `CaptureIsolatedGroup` matches
+                                        // `parsed` exactly like `Group` (so its own
+                                        // captures resolve normally for such internal
+                                        // backreferences) but never publishes them to
+                                        // the caller (see its doc comment and
+                                        // `todo/tickets/
+                                        // stored-regex-loses-its-defining-scope-lexicals.md`
+                                        // bug 2).
+                                        //
+                                        // TODO: this only isolates the OUTER pattern's
+                                        // own capture groups; if `value` was itself a
+                                        // `RegexCaptured` (a regex that closed over its
+                                        // defining scope — bug 1), only its pattern
+                                        // TEXT was extracted above, so any lexicals it
+                                        // closed over are lost here too. Fixing that
+                                        // needs installing the inner regex's own
+                                        // closure scope around this Group's match.
+                                        RegexAtom::CaptureIsolatedGroup(parsed)
                                     } else {
                                         continue;
                                     }

@@ -390,6 +390,19 @@ pub(crate) enum RegexAtom {
     NotNewline,
     Group(RegexPattern),
     CaptureGroup(RegexPattern),
+    /// A capture-isolated sub-match: matches `RegexPattern` exactly like
+    /// `Group` (its own nested captures resolve normally, so a
+    /// backreference WITHIN it to its OWN capture still works), but its
+    /// positional/named captures are never merged into the caller's numbering
+    /// — the caller sees only the matched extent, like a discarded `Match`
+    /// object. Used for the `<$var>` / bare-`$var` / `<@var>`-alternation
+    /// "stored Regex value" family: Raku gives such a sub-match its own
+    /// discarded `Match`, so its captures must not leak into the outer `$/`
+    /// (see `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`
+    /// bug 2, and the Cro::HTTP `http-request-serializer.rakutest` boundary
+    /// pattern that needs the INTERNAL backreference to keep working, ruling
+    /// out plain capture erasure).
+    CaptureIsolatedGroup(RegexPattern),
     Alternation(Vec<RegexPattern>),
     SequentialAlternation(Vec<RegexPattern>),
     /// Conjunction: all branches must match at the same position; longest match wins

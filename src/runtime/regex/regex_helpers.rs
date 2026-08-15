@@ -548,6 +548,37 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
     }
 }
 
+/// Wrap an already-parsed `RegexPattern` in a single-token pattern whose atom
+/// is `RegexAtom::CaptureIsolatedGroup` — a sub-match that resolves its OWN
+/// captures normally (so a backreference inside `pattern` to its own capture
+/// still works — verified against real `raku`: `rx/ $<b>=(\w+) " " $<b> /`
+/// invoked via `<$var>` still matches its repeated boundary), but does not
+/// publish any positional or named capture into the caller's numbering (a
+/// `<$var>`-family call gets its own discarded `Match` object in Raku). See
+/// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md` bug 2.
+pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
+    let ignore_case = pattern.ignore_case;
+    let ignore_mark = pattern.ignore_mark;
+    RegexPattern {
+        tokens: vec![RegexToken {
+            atom: RegexAtom::CaptureIsolatedGroup(pattern),
+            quant: RegexQuant::One,
+            named_capture: None,
+            secondary_named_capture: None,
+            hash_capture: None,
+            force_list_capture: false,
+            ratchet: false,
+            frugal: false,
+            separator: None,
+            from_runtime_interpolation: false,
+        }],
+        anchor_start: false,
+        anchor_end: false,
+        ignore_case,
+        ignore_mark,
+    }
+}
+
 fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
     match atom {
         RegexAtom::Literal(ch) => {
@@ -570,6 +601,9 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         }
         RegexAtom::Group(p) => RegexAtom::Group(strip_marks_pattern(p)),
         RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern(p)),
+        RegexAtom::CaptureIsolatedGroup(p) => {
+            RegexAtom::CaptureIsolatedGroup(strip_marks_pattern(p))
+        }
         RegexAtom::Alternation(alts) => {
             RegexAtom::Alternation(alts.iter().map(strip_marks_pattern).collect())
         }

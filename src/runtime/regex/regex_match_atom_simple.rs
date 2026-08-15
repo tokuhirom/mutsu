@@ -201,7 +201,7 @@ impl Interpreter {
         }
         // Group, CaptureGroup, Alternation, ZeroWidth, CodeAssertion can match zero-width
         match atom {
-            RegexAtom::Group(pattern) => {
+            RegexAtom::Group(pattern) | RegexAtom::CaptureIsolatedGroup(pattern) => {
                 return self.regex_match_end_from_in_pkg(pattern, chars, pos, pkg);
             }
             RegexAtom::CaptureGroup(pattern) => {
@@ -723,6 +723,7 @@ impl Interpreter {
             }
             RegexAtom::Group(_)
             | RegexAtom::CaptureGroup(_)
+            | RegexAtom::CaptureIsolatedGroup(_)
             | RegexAtom::Alternation(_)
             | RegexAtom::SequentialAlternation(_)
             | RegexAtom::Conjunction(_)
