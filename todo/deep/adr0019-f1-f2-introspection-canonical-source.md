@@ -330,3 +330,36 @@ that surface still returns a `Sub`-shaped value with a completely separate `.sig
 path this slice never touched. The F1 fidelity slice (per-method override columns on
 `NativeMethodRow`) is next per the original sequencing, once the unification lands or is
 independently scoped.
+
+## Progress (2026-08-15): checked whether the fidelity slice is ready to start in bulk -- it is not, by the decision's own design
+
+Before starting the fidelity slice, ran a `.package` divergence sweep the same shape as the
+`.signature` sweep above (raku, `.^lookup($name).package.gist` vs. the catalog owner, across the
+same 9 representative owners' `RAW_ROWS` `INTROSPECTABLE` rows -- `List` not yet included). Result:
+**199 divergent (owner, name, real-package) triples just from those 9 owners** (e.g. every
+`Str`-declared string method actually reports `(Cool)`; every universal coercion name like `Bool`/
+`Str`/`Numeric`/`gist`/`raku` reports `(Mu)` almost everywhere -- except `Str.Int`, which does NOT
+diverge, so even that "universal coercion = Mu" pattern isn't a clean mechanical rule; `Rat`/`Num`
+math methods mostly report `(Real)`/`(Rational)`/`(Numeric)`, not `(Rat)`/`(Num)`). Extrapolated
+across all ~650 introspectable rows and the 9 unsampled owners, this is easily 400+ entries, not the
+"~5-10 known corrections" the earlier ground-truth passes' handful of examples (`uc`->`Cool`,
+`push`->`Any`) suggested.
+
+**This confirms, rather than contradicts, the decision's own point 3**: "add overrides lazily, one
+at a time... NOT an upfront sweep of all ~350 native methods." Running the upfront sweep here was
+useful as a scale check, but populating even a fraction of its 199 findings right now would be
+exactly the upfront-hand-table campaign the decision explicitly rejected as the wrong shape for this
+work -- there is no `t/`/roast assertion today that exercises any of these 199 `.package` answers
+being wrong, so there is no forcing function yet, and hand-encoding them speculatively would be
+guessing at future demand rather than responding to it.
+
+**Where this leaves the fidelity slice**: it is not "not ready" so much as "correctly idle until
+something needs it." The override-column mechanism itself (an `Option<&'static str>` decorating a
+`NativeMethodRow`, or a small sparse `(owner, name, package) ` table guarded by a
+row-still-exists test, per point 2/3) is a short, well-scoped implementation whenever the first real
+demand shows up -- e.g. a roast test that asserts `.package` on a specific native method, or a user
+program that breaks on it. Until then, both mechanism-slice halves (`.package` defaulting to the
+catalog owner, `.signature` synthesizing a generic shape) are the correct, complete state of F1's
+"no hand data" tier. The two genuinely open threads for a future session are (a) the Sub-vs-Instance
+unification above (a real correctness bug, not an approximation gap) and (b) fidelity overrides
+added reactively, never as a bulk campaign.
