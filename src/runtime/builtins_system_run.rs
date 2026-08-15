@@ -80,7 +80,24 @@ impl Interpreter {
             .cwd
             .clone()
             .or_else(|| self.get_dynamic_string("$*CWD"));
-        let opts_env = opts.env.clone();
+        // No `:env` override: explicitly apply mutsu's own `%*ENV` rather than
+        // relying on `Command::spawn()`'s default OS-level inheritance, which
+        // stops seeing a `%*ENV<k> = v`/`std::env::set_var` write once any OS
+        // thread has ever been spawned in this process — see
+        // `todo/deep/env-var-write-invisible-to-spawn-after-a-thread.md` (and
+        // `native_proc_async.rs`'s `.start()`, which applies the same fix for
+        // `Proc::Async`).
+        let opts_env = if opts.env_explicit {
+            opts.env.clone()
+        } else {
+            match self.env.get("%*ENV").map(Value::view) {
+                Some(ValueView::Hash(map)) => map
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.to_string_value()))
+                    .collect(),
+                _ => HashMap::new(),
+            }
+        };
 
         let mut cmd = Command::new(program);
         Self::apply_run_args(&mut cmd, rest_args, opts.win_verbatim_args);
@@ -413,8 +430,17 @@ impl Interpreter {
         {
             command.current_dir(cwd);
         }
-        for (k, v) in opts.env {
-            command.env(k, v);
+        // See the matching comment in `builtin_run` above: no `:env` override
+        // means explicitly apply mutsu's own `%*ENV` rather than relying on
+        // default OS-level inheritance.
+        if opts.env_explicit {
+            for (k, v) in opts.env {
+                command.env(k, v);
+            }
+        } else if let Some(ValueView::Hash(map)) = self.env.get("%*ENV").map(Value::view) {
+            for (k, v) in map.iter() {
+                command.env(k, v.to_string_value());
+            }
         }
 
         match command.spawn() {

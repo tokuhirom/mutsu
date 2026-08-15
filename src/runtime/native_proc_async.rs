@@ -15,34 +15,32 @@ fn make_buf_value(bytes: &[u8]) -> Value {
 /// and returns `true` when a genuinely malformed byte is hit — the caller then
 /// quits the supply, matching Rakudo ("stdout/stderr Supply quit on encoding
 /// error", roast S17-procasync/encoding.t).
+///
+/// `translate_crlf`/`held_cr` mirror the whole-run `\r\n` -> `\n` translation
+/// the replayed (post-exit) path applies to `collected_stdout` (mutsu-specific,
+/// stdout only — see the caller): a lone trailing `\r` is held back rather than
+/// emitted, in case the very next read starts with `\n` (a `\r\n` split across
+/// two `read()`s), and flushed as-is once the stream ends with no `\n` to pair.
 fn feed_utf8_incremental(
     pending: &mut Vec<u8>,
     new: &[u8],
     tx: &Option<super::native_methods::supply_channel::SupplySender>,
     collected: &mut String,
+    translate_crlf: bool,
+    held_cr: &mut bool,
 ) -> bool {
     pending.extend_from_slice(new);
     match std::str::from_utf8(pending) {
         Ok(s) => {
-            if !s.is_empty() {
-                if let Some(tx) = tx {
-                    let _ = tx.send(SupplyEvent::Emit(Value::str(s.to_string())));
-                }
-                collected.push_str(s);
-            }
+            emit_decoded_chunk(s, tx, collected, translate_crlf, held_cr);
             pending.clear();
             false
         }
         Err(e) => {
             let valid = e.valid_up_to();
             if valid > 0 {
-                let s = std::str::from_utf8(&pending[..valid])
-                    .unwrap_or("")
-                    .to_string();
-                if let Some(tx) = tx {
-                    let _ = tx.send(SupplyEvent::Emit(Value::str(s.clone())));
-                }
-                collected.push_str(&s);
+                let s = std::str::from_utf8(&pending[..valid]).unwrap_or("");
+                emit_decoded_chunk(s, tx, collected, translate_crlf, held_cr);
             }
             match e.error_len() {
                 // Incomplete trailing sequence: keep the tail for the next read.
@@ -54,6 +52,57 @@ fn feed_utf8_incremental(
                 Some(_) => true,
             }
         }
+    }
+}
+
+/// Send one decoded chunk (see [`feed_utf8_incremental`]), applying the
+/// held-back-`\r` CRLF translation when `translate_crlf` is set.
+fn emit_decoded_chunk(
+    s: &str,
+    tx: &Option<super::native_methods::supply_channel::SupplySender>,
+    collected: &mut String,
+    translate_crlf: bool,
+    held_cr: &mut bool,
+) {
+    if s.is_empty() && !*held_cr {
+        return;
+    }
+    let mut text = String::with_capacity(s.len() + 1);
+    if std::mem::take(held_cr) {
+        text.push('\r');
+    }
+    text.push_str(s);
+    if translate_crlf {
+        if let Some(stripped) = text.strip_suffix('\r') {
+            *held_cr = true;
+            text.truncate(stripped.len());
+        }
+        if text.contains('\r') {
+            text = text.replace("\r\n", "\n");
+        }
+    }
+    if text.is_empty() {
+        return;
+    }
+    if let Some(tx) = tx {
+        let _ = tx.send(SupplyEvent::Emit(Value::str(text.clone())));
+    }
+    collected.push_str(&text);
+}
+
+/// Flush a [`feed_utf8_incremental`] run's held-back lone `\r` (see its doc
+/// comment) once the stream has genuinely ended with no following `\n` to
+/// pair it with.
+fn flush_held_cr(
+    held_cr: bool,
+    tx: &Option<super::native_methods::supply_channel::SupplySender>,
+    collected: &mut String,
+) {
+    if held_cr {
+        if let Some(tx) = tx {
+            let _ = tx.send(SupplyEvent::Emit(Value::str("\r".to_string())));
+        }
+        collected.push('\r');
     }
 }
 
@@ -193,6 +242,7 @@ impl Interpreter {
                 // (and any relative-path child) run in the wrong directory and
                 // fail. `:ENV` replaces the child's whole environment with the
                 // given hash (Raku semantics), matching Rakudo's `Proc::Async`.
+                let mut env_override = false;
                 for arg in &args {
                     if let ValueView::Pair(key, val) = arg.view() {
                         match key.as_str() {
@@ -208,10 +258,35 @@ impl Interpreter {
                                     for (env_key, env_val) in map.iter() {
                                         cmd.env(env_key, env_val.to_string_value());
                                     }
+                                    env_override = true;
                                 }
                             }
                             _ => {}
                         }
+                    }
+                }
+                // No `:ENV` override: explicitly apply mutsu's own `%*ENV`
+                // rather than relying on `Command::spawn()`'s default (inherit
+                // the OS process environment as `std::env` sees it right now).
+                // `%*ENV<k> = v` does mirror into `std::env::set_var` (see
+                // `vm_var_assign_element.rs`/`vm_var_assign_index_named.rs`),
+                // but that mutation is not reliably visible to a `spawn()` on
+                // this thread once ANY other OS thread has ever been spawned in
+                // this process (confirmed with a plain `Supply.interval(...)
+                // .tap()` before a later default-env `run()` on unmodified
+                // main — a std::env::set_var + threads + fork hazard, not
+                // specific to Proc::Async; see the ADR-worthy
+                // `todo/deep/env-var-write-invisible-to-spawn-after-a-thread.md`
+                // finding). Reading mutsu's own `%*ENV` value directly sidesteps
+                // the hazard entirely and is what `%*ENV` is authoritatively
+                // supposed to mean anyway.
+                if !env_override
+                    && let Some(env_hash) = self.env.get("%*ENV")
+                    && let ValueView::Hash(map) = env_hash.view()
+                {
+                    cmd.env_clear();
+                    for (env_key, env_val) in map.iter() {
+                        cmd.env(env_key, env_val.to_string_value());
                     }
                 }
 
@@ -382,6 +457,91 @@ impl Interpreter {
                     tx
                 });
 
+                // A tap registered on `.stdout`/`.stderr` before `.start()` (the
+                // normal order — `X::Proc::Async::TapBeforeSpawn` rejects a
+                // `.stdout`/`.stderr` accessor call after start, though a Supply
+                // fetched early and tapped late is not itself rejected, so this
+                // is a best-effort pass, not the only delivery path) can drain
+                // this stream's channel live as the reader thread below produces
+                // chunks, instead of waiting for the whole run to finish and
+                // replaying it as one chunk (see
+                // todo/tickets/procasync-stdout-is-not-incremental.md). Take the
+                // channel back out immediately — nothing else has run yet to
+                // race for it — and hand it to the same live act-loop pump
+                // ordinary channel-backed supplies (signals, sockets, …) use.
+                // The handles are joined below, alongside the reader threads,
+                // before the child's exit is observed by `await`/`.result` —
+                // otherwise a caller could see the Promise settle before the
+                // last chunk (or the tap's `done =>`) was actually delivered.
+                //
+                // Skipped for a `whenever $p.stdout { ... }` registered inside a
+                // `react`/`supply` block (`!self.supply_emit_buffer.is_empty() ||
+                // self.react_active > 0` — the same condition
+                // `subtest.rs`'s whenever-registration path itself checks to
+                // decide "am I in react mode"; `react_active` alone is not
+                // enough because a `whenever`'s SOURCE expression, including
+                // this `.start()` call when it is `whenever $p.start { ... }`,
+                // runs during react's collection pass, before the drive loop
+                // that bumps `react_active` even starts). A `whenever` body
+                // there shares lexicals with sibling `whenever`s through the
+                // react loop's own single-threaded dispatch, not through a
+                // general cross-thread cell — running this tap's callback on
+                // a genuinely separate OS thread (as the live pump below
+                // does) can leave a write invisible to a sibling `whenever`
+                // that reads it (e.g. `whenever $p.stdout { $out ~= $_ }` /
+                // `whenever $p.start { … $out … }`; see
+                // `t/proc-async.t`'s chained-stdin cases, and
+                // `todo/tickets/procasync-stdout-is-not-incremental.md`'s
+                // notes on this guard). Plain `.tap()` outside `react` — the
+                // shape that ticket reports — is unaffected and still
+                // streams live.
+                //
+                // Also skipped for a non-UTF-8 `:enc` (`get_supply_enc`, set
+                // by the "tap" handler from the tap's own effective
+                // encoding): the reader thread's live decode
+                // (`feed_utf8_incremental`) only understands UTF-8. The
+                // await/result-time replay already decodes the raw bytes
+                // with the stream's real encoding (`decode_proc_stream`), so
+                // falling back to it here is correct, just not incremental
+                // for that (uncommon) case.
+                let mut live_tap_handles = Vec::new();
+                for sid in [stdout_supply_id, stderr_supply_id].into_iter().flatten() {
+                    if !self.supply_emit_buffer.is_empty() || self.react_active > 0 {
+                        continue;
+                    }
+                    if let Some(enc) = get_supply_enc(sid)
+                        && !matches!(enc.to_ascii_lowercase().as_str(), "utf-8" | "utf8" | "")
+                    {
+                        continue;
+                    }
+                    let Some(cb) = get_supply_taps(sid).into_iter().next() else {
+                        continue;
+                    };
+                    let Some(rx) = take_supply_channel(sid) else {
+                        continue;
+                    };
+                    mark_supply_live_tapped(sid);
+                    let quit_cb = get_supply_quit_taps(sid).into_iter().next();
+                    let mut thread_interp = self.clone_for_thread();
+                    let close_flag = rx.close_flag();
+                    let close_id = register_act_loop_close(close_flag.clone());
+                    live_tap_handles.push(crate::runtime::worker_pool::submit_joinable(
+                        move || {
+                            Self::run_supply_act_loop(
+                                &mut thread_interp,
+                                &rx,
+                                &cb,
+                                0.0,
+                                None,
+                                quit_cb,
+                                Some((close_id, close_flag)),
+                                false,
+                                true,
+                            );
+                        },
+                    ));
+                }
+
                 // Take stdout/stderr handles before moving child into thread
                 let child_stdout = child.stdout.take();
                 let child_stderr = child.stderr.take();
@@ -410,6 +570,7 @@ impl Interpreter {
                             let mut raw: Vec<u8> = Vec::new();
                             let mut buf = [0u8; 4096];
                             let mut pending: Vec<u8> = Vec::new();
+                            let mut held_cr = false;
                             let mut quit = false;
                             loop {
                                 match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
@@ -426,6 +587,8 @@ impl Interpreter {
                                             &buf[..n],
                                             &tx,
                                             &mut collected,
+                                            true,
+                                            &mut held_cr,
                                         ) {
                                             if let Some(ref tx) = tx {
                                                 let _ = tx.send(SupplyEvent::Quit(
@@ -439,8 +602,11 @@ impl Interpreter {
                                     Err(_) => break,
                                 }
                             }
-                            if !quit && let Some(ref tx) = tx {
-                                let _ = tx.send(SupplyEvent::Done);
+                            if !quit {
+                                flush_held_cr(held_cr, &tx, &mut collected);
+                                if let Some(ref tx) = tx {
+                                    let _ = tx.send(SupplyEvent::Done);
+                                }
                             }
                             // Retain the raw bytes so the await-time replay can
                             // decode them with the stream's effective encoding
@@ -467,6 +633,7 @@ impl Interpreter {
                             let mut raw: Vec<u8> = Vec::new();
                             let mut buf = [0u8; 4096];
                             let mut pending: Vec<u8> = Vec::new();
+                            let mut held_cr = false;
                             let mut quit = false;
                             loop {
                                 match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
@@ -483,6 +650,8 @@ impl Interpreter {
                                             &buf[..n],
                                             &tx,
                                             &mut collected,
+                                            false,
+                                            &mut held_cr,
                                         ) {
                                             if let Some(ref tx) = tx {
                                                 let _ = tx.send(SupplyEvent::Quit(
@@ -535,6 +704,14 @@ impl Interpreter {
                         .and_then(|h| crate::gc::block_quiescent(|| h.join()).ok())
                         .unwrap_or_default();
                     let collected_stdout = collected_stdout.replace("\r\n", "\n");
+
+                    // Join any live tap consumers spawned above: the reader
+                    // threads only guarantee the raw bytes were *read*, not that
+                    // a live-tapped stream's last chunk (and `done =>`) was
+                    // actually delivered to its callback yet.
+                    for handle in live_tap_handles {
+                        let _ = crate::gc::block_quiescent(|| handle.join());
+                    }
 
                     // Clean up stdin registry
                     if let Ok(mut map) = proc_stdin_map().lock() {
