@@ -818,7 +818,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   default and the Sub-vs-Instance unification remain open. Pin: `t/classhow-methods-package.t`;
   design detail in `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Progress
   (2026-08-14): F1 mechanism slice, `.package` only".
-- [ ] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
+- [x] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
   (~350 slots in `builtin_type_methods.rs`) that still feed `builtin_method_entries`. This is the
@@ -937,6 +937,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   Running total: 13 of 18 owners now settled. Remaining 5 (`Sub`/`Signature`/`IO::Path`/
   `IO::Handle`/`Bool` per the fresh diff) all have **zero** extras — F3 step 2's owner-by-owner
   triage is therefore complete; step 3 (the actual cutover) is unblocked.
+  **Progress (2026-08-15, step 3, the cutover):** deleted all fourteen hand-written per-type
+  `&[&str]` name slices in `builtin_type_methods.rs` (`STR_OWN`, `NUMERIC_OWN`/`NUMERIC_COERCIONS`
+  and their four owner-specific extra tails, `LIST_METHODS`/`ARRAY_EXTRA_TAIL`/`LIST_EXTRA_TAIL`,
+  `HASH_METHODS`, `RANGE_METHODS`/`RANGE_EXTRA_TAIL`, `CODE_METHODS`, `SIGNATURE_METHODS`,
+  `IO_PATH_METHODS`, `IO_HANDLE_METHODS`, `COOL_OWN`/`COOL_NATIVE_INT_COERCE_TAIL`, `ANY_METHODS`,
+  `MU_METHODS`, `BUF_METHODS`/`BUF_EXTRA_TAIL`) plus the test-only `METHOD_UNIVERSE` and its now-
+  moot `native_responds_to` helper (`builtin_sample_value`/`native_method_arities` stay: they still
+  back `native_method_row.rs`'s inverse-probe tests, an unrelated concern). Mechanism: added a
+  4th `NativeRowFlags` bit, `INTROSPECTABLE`, and set it on exactly the `RAW_ROWS` rows whose
+  `(folded owner, name)` was a member of the OLD hand-written arrays -- computed once via a
+  throwaway `#[test]` (comparing the live pre-deletion `builtin_type_method_names` output against
+  every `RAW_ROWS` row and dumping the 652 matched pairs), then baked into
+  `native_method_row_table.rs` with a small Python script (the table is `#[rustfmt::skip]`, hand-
+  editing 652 of 1108 rows was not viable). `builtin_type_method_names` is now three lines:
+  fold the owner, then read `native_method_row::introspectable_names_for_owner(folded)` -- RAW_ROWS
+  order for the introspectable subset is guaranteed to match the old arrays' order (pinned by
+  `raw_rows_cover_every_introspection_name_in_order`, which stays as a construction-time regression
+  guard rather than an independent cross-check now). Zero behavior change intended: `t/can-methods-
+  drift.t` (193 assertions), the full `t/` suite (3167 files, release), and every `S12-introspection`/
+  `S02-types/{hash,array,list,range}.t`/`S09-typed-arrays/hashes.t`/`S32-{str,num}/*`/`S32-container/
+  buf.t`/`S03-operators/buf.t` roast file stayed green. **F3 is now closed** -- the per-type name
+  lists ANALYSIS §4-1 called out are gone; `RAW_ROWS` (already the dispatch-admission source since
+  E4b) is also the sole `.^methods` source.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the

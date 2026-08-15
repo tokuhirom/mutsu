@@ -8,27 +8,32 @@
 //! recognition metadata, not invocation, and it is what [`NativeMethodRow`]
 //! records. See `todo/deep/adr0019-e2-e4-resolver-core.md` decision 1.
 //!
-//! Invocation stays in the arity cascades until Phase F retires them; nothing
-//! in the VM or the interpreter's real dispatch reads a row today. E2a's rows
-//! are a deliberately conservative first pass, generated once (2026-08-10) by
-//! probing every (owner, name) pair from the existing 14 built-in-method name
-//! slices ([`super::builtin_type_methods`]) against the real native dispatch
-//! cascades with a representative sample value per owner, plus a type-object
-//! probe for the [`TYPE_OBJECT_OK`](NativeRowFlags::TYPE_OBJECT_OK) flag. A
-//! pair recognized at NO arity is conservatively classified `N`/`SPECIAL` (or
-//! `MUTATES_RECEIVER` when the name also appears in the Tier-A mutable-method
-//! dispatch, `vm/vm_call_method_mut_ops.rs`) -- exactly mirroring what
-//! `native_call_unmodeled` (`vm/vm_stats.rs`) would flag as unrecognized if a
-//! real call reached that (owner, name) pair. Per the doc comment on
-//! `builtin_type_methods`, row *generation* must stay static (no native-method
-//! invocation during real `Interpreter` construction); the probing that
-//! produced [`RAW_ROWS`] below ran once in a throwaway `#[test]`, and its
-//! output was pasted here as plain data -- production code never calls a
-//! native method to build this table.
+//! Invocation stays in the arity cascades until Phase F retires them.
+//! [`native_row_servable`] (E4b's dispatch-admission resolver,
+//! `runtime/resolution_sequence.rs`) and, since ADR-0019 Phase F box F3 step
+//! 3, `builtin_type_methods::builtin_type_method_names` (`.^methods`
+//! enumeration, via [`introspectable_names_for_owner`]) are the two
+//! production readers. E2a's rows are a deliberately conservative first
+//! pass, generated once (2026-08-10) by probing every (owner, name) pair
+//! from the (now-retired) 14 built-in-method name slices against the real
+//! native dispatch cascades with a representative sample value per owner,
+//! plus a type-object probe for the [`TYPE_OBJECT_OK`](NativeRowFlags::TYPE_OBJECT_OK)
+//! flag. A pair recognized at NO arity is conservatively classified
+//! `N`/`SPECIAL` (or `MUTATES_RECEIVER` when the name also appears in the
+//! Tier-A mutable-method dispatch, `vm/vm_call_method_mut_ops.rs`) --
+//! exactly mirroring what `native_call_unmodeled` (`vm/vm_stats.rs`) would
+//! flag as unrecognized if a real call reached that (owner, name) pair. Per
+//! the doc comment on `builtin_type_methods`, row *generation* must stay
+//! static (no native-method invocation during real `Interpreter`
+//! construction); the probing that produced [`RAW_ROWS`] below ran once in a
+//! throwaway `#[test]`, and its output was pasted here as plain data --
+//! production code never calls a native method to build this table. The
+//! `INTROSPECTABLE` flag (F3 step 2/3) was added the same way: raku-verified
+//! by hand, then baked into the table once via a throwaway generator test.
 //!
-//! E2b drives the gap between this conservative table and the cascades'
+//! E2b drove the gap between this conservative table and the cascades'
 //! actual behavior to zero (see the design doc's classification table and the
-//! `native_call_unmodeled` counter this box wires up).
+//! `native_call_unmodeled` counter that box wired up).
 
 #[cfg(test)]
 use super::builtin_type_methods::builtin_method_entries;
@@ -87,6 +92,17 @@ impl NativeRowFlags {
     /// natively recognized at all) -- never resolved by plain
     /// `native_method_*arg` name matching.
     pub(crate) const SPECIAL: NativeRowFlags = NativeRowFlags(1 << 2);
+    /// ADR-0019 Phase F box F3 step 3: this `(owner, name)` pair is a genuine
+    /// `.^methods` entry on the built-in type, not merely a name the arity
+    /// cascades happen to recognize. Set exactly on the rows that were
+    /// raku-verified during F3 step 2's owner-by-owner triage (recorded in
+    /// this ADR's progress notes); the many extra dispatch-recognized names
+    /// `RAW_ROWS` also carries per owner (confirmed dispatch-only, e.g.
+    /// `Str.perl`, `Hash.AT-POS`) do NOT get this bit.
+    /// `builtin_type_methods::builtin_type_method_names` is the sole
+    /// production reader, replacing the fourteen hand-written per-type name
+    /// slices that function used to concatenate.
+    pub(crate) const INTROSPECTABLE: NativeRowFlags = NativeRowFlags(1 << 3);
 
     pub(crate) const fn contains(self, bit: NativeRowFlags) -> bool {
         self.0 & bit.0 != 0
@@ -196,6 +212,23 @@ pub(crate) fn native_method_row(
 /// is the only signal E2's data actually carries for that question.
 pub(crate) fn native_method_row_exists(owner: &'static str, name: &'static str) -> bool {
     classification_table().contains_key(&(owner, name))
+}
+
+/// ADR-0019 Phase F box F3 step 3: the `.^methods` name list for a *folded*
+/// built-in owner (already run through `canonical_builtin_owner`), read
+/// straight off [`RAW_ROWS`] in table order. This is what
+/// `builtin_type_methods::builtin_type_method_names` now delegates to instead
+/// of concatenating hand-written per-type name slices -- the introspectable
+/// bit on each row (set once, F3 step 2's raku-verified triage) is the only
+/// thing that used to live in those slices.
+pub(crate) fn introspectable_names_for_owner(owner: &str) -> Vec<&'static str> {
+    RAW_ROWS
+        .iter()
+        .filter(|&&(o, _, _, flags)| {
+            o == owner && NativeRowFlags(flags).contains(NativeRowFlags::INTROSPECTABLE)
+        })
+        .map(|&(_, name, _, _)| name)
+        .collect()
 }
 
 /// The full native-method-row catalog for one built-in owner, in `.^methods`
@@ -412,15 +445,12 @@ mod tests {
         }
     }
 
-    /// ADR-0019 F3 scoping (`todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`):
-    /// every introspection-array name must have a matching `RAW_ROWS` entry
-    /// under the *folded* owner (`canonical_builtin_owner`), and among the
-    /// names the two sources share, `RAW_ROWS`'s relative order must match
-    /// the introspection array's -- a future F3 cutover that enumerates
-    /// straight from `RAW_ROWS` would otherwise silently drop or reorder
-    /// `.^methods` output. `RAW_ROWS` is allowed to carry EXTRA
-    /// dispatch-recognized names the introspection arrays omit (tracked
-    /// separately, not this test's job -- see the doc's step 2 triage).
+    /// ADR-0019 F3 step 3 (post-cutover regression pin): `builtin_type_method_names`
+    /// now enumerates straight from `RAW_ROWS`'s `INTROSPECTABLE` rows, so
+    /// this is by construction rather than an independent check -- but it
+    /// still guards `canonical_builtin_owner`'s fold and `introspectable_
+    /// names_for_owner`'s ordering against a future regression (e.g. a fold
+    /// bug that reads the wrong owner's rows, or an accidental resort).
     #[test]
     fn raw_rows_cover_every_introspection_name_in_order() {
         use super::super::builtin_type_methods::BUILTIN_METHOD_OWNERS;
