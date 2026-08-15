@@ -1365,6 +1365,71 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
   and the name/arity lookup facades once no caller remains. Also delete the eight stale doc
   comments that reference the already-removed `run_instance_method_resolved`.
+
+  **Scoping (2026-08-15, read-only, no code):** a full grep of every `self.run_instance_method(`
+  call site (excluding the definitions themselves) found 15 sites across 7 caller families, close
+  to the box's own "~14" estimate: **new-dispatch** (`methods_object_dispatch_new.rs:61,1418,1573`
+  — direct user `.new`, a role-punned `.new`, and the general new-dispatch fallback);
+  **general call-dispatch fallback** (`methods_call_dispatch.rs:70,581,3942` — the native-lever-A
+  user-override branch inside `call_method_with_values` itself, the general by-name dispatch
+  fallback, and a mixin/inner-instance dispatch); **instance-ops/pseudo-method** (`methods_instance_
+  ops.rs:1308,1661,1699,1870` — accessor-vs-method resolution, Package/type-object dispatch,
+  `Routine`/`Block`/`Code`/`Callable` ancestor dispatch, and a `.raku`-rendering coercion);
+  **coercion** (`types/coercion.rs:195`, one site — a user-defined coercion method e.g. `method
+  Str {...}`); **qualified dispatch** (`methods_qualified.rs:397`, one site — already E7-step-2
+  shadow-checked at its OWN `resolve_method_with_owner` probe, which is separate from and prior to
+  this call); **mut dispatch** (`methods_mut_dispatch.rs:28,2777` — the same native-lever-A branch
+  mirrored for the mut path, and the general mut-dispatch fallback); **mut lvalue**
+  (`methods_mut_method_lvalue.rs:1538`, one site — Proxy/STORE dispatch for lvalue method calls).
+  An eighth, already-tagged family (`vm_core_helpers.rs`'s `vm_run_instance_method`, called from
+  `vm_exec_dispatch.rs`'s `CallDefined`/`SinkPop` handling) is E7 step 1's own site and already
+  shadow-checked; it is not re-scoped here.
+
+  **Key finding — the carrier's own resolver is NOT the unified E3/E4 one.**
+  `run_instance_method_celled` resolves via `resolve_method_with_owner_invocant` ->
+  `resolve_method_with_owner_impl` (`resolution_method.rs`): a per-call ad-hoc MRO walk that reads
+  `get_method_overloads` fresh at every level and matches candidates against live argument VALUES
+  directly (`where`/type-constraint checks inline). This is textually distinct from the modern
+  cached path `resolve_method_cached` -> `resolve_via_sequence_cache` -> `pick_method_winner_from_
+  sequence` (`vm_call_method_compiled_cache.rs` / `resolution_sequence.rs`), which resolves against
+  a cached, TypeId-keyed *candidate sequence* (`resolve_sequence`) and picks the winner from that
+  cached shape. `resolve_sequence`'s own doc comment says it "mirrors the membership rules
+  `resolve_method_with_owner_impl` applies per candidate ... but not its early-stopping MRO-walk
+  control flow" — i.e. these are two independent implementations of the same semantics, not one
+  resolver wearing two names. E7 step 1 already proved (corpus shadow-check, `vm_run_instance_
+  method`'s one tagged site) that they agree in practice, but the other 7 families named above have
+  never been shadow-checked against each other — `run_instance_method_at`'s own doc comment already
+  flags this ("the ~14 other `run_instance_method` callers ... stay unmeasured until their own E7
+  sub-slice tags them with a distinct `site` name"). The `site`/`shadow_check_resolver` plumbing
+  already exists and needs no new mechanism — each family's first step is simply passing its own
+  `site` tag through `run_instance_method_at` instead of the untagged `run_instance_method`, same as
+  E7 step 1 did, before any cutover is attempted.
+
+  **Key finding — carrier deletion is not a resolver swap, it is a per-site rewrite.** F6's target
+  end-state removes the whole `run_instance_method`/`run_instance_method_at`/`run_instance_method_
+  celled`/`instance_method_not_found`/`run_resolved_instance_method` API surface, not just its
+  internal resolver call. That means each caller must stop calling into this `(receiver_class_name:
+  &str, attributes: AttrMap, method_name, args, invocant: Option<Value>)`-shaped API entirely — most
+  likely replaced by constructing/reusing a full `target: Value` (several call sites already have
+  one, e.g. `types/coercion.rs`'s `value`, `methods_call_dispatch.rs:3942`'s `target.clone()`) and
+  calling `call_method_with_values`/the VM's own compiled-dispatch entry point instead — NOT a
+  mechanical find-replace, since `call_method_with_values` itself is one of the seven families
+  (`methods_call_dispatch.rs:70`, its own native-lever-A fallback branch) and cannot be the
+  migration target for its own caller without infinite regress; that site specifically needs the
+  VM-level `resolve_method_cached`/`dispatch_compiled_method` pair directly. Each family also
+  differs in what it does with the returned `(Value, AttrMap)` — some discard the map entirely
+  (`Option::None` invocant, no cell to commit to), others thread it back into a live cell — so the
+  post-migration commit logic needs individual review per family, not a shared helper assumed safe
+  by pattern-match (the same discipline F4a's own box text insists on for its role-fallback
+  candidates).
+
+  **Recommended next step:** start with the smallest, most isolated family — `types/coercion.rs`'s
+  single site — as F6's first sub-slice: tag it with its own `site` string, gather shadow-check
+  corpus evidence (full `t/` + a coercion-heavy roast subset) that the ad-hoc walk and the sequence
+  resolver agree, then migrate the call site itself off the `run_instance_method` API. Only after
+  several families have independently proven the two resolvers agree does deleting the ad-hoc walker
+  inside `run_instance_method_celled` itself (as opposed to deleting the whole carrier) become safe
+  to consider as a separate, later step.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
