@@ -1166,11 +1166,329 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `methods_classhow_dispatch.rs:862,923` write `MethodEntry` directly instead of
     `class_def.methods`), solve the full-name-enumeration need
     (`methods_classhow_dispatch.rs:1324` needs "every method name owner X has," which the
-    `(owner, name)`-keyed table has no index for today), then delete `ClassDef::methods`/
-    `RoleDef::methods` and update snapshot/rollback (class redeclaration, augment rollback, EVAL
-    class restoration) to copy the one remaining source. Needs its own design note before code —
-    this is the box's own original "field deletion" framing, now correctly scoped as the last
-    step rather than the first.
+    `(owner, name)`-keyed table has no index for today), then delete `ClassDef::methods` (see the
+    design note below — `RoleDef::methods` is explicitly OUT of scope, not merely deferred) and
+    update snapshot/rollback (class redeclaration, EVAL class restoration, and the other
+    mechanisms the design note below identifies) to copy the one remaining source. Needs its own
+    design note before code — this is the box's own original "field deletion" framing, now
+    correctly scoped as the last step rather than the first.
+
+    **Design note (2026-08-15, design-only — no code; this unblocks F4c implementation).**
+
+    **(0) Ground-truth corrections to this box's own text, found by reading the code.** Four of
+    F4c's own claims need amending before any slice starts. (i) The enumeration site is
+    `methods_classhow_dispatch.rs:1331` (`^submethod_table`), not `:1324`; and it is one of
+    *eight*, not one: `methods_classhow_method_obj.rs:29` (`.^methods`), `:93`
+    (`class_method_table`, i.e. `^method_table`), `metamodel.rs:403-418`
+    (`declare_drive_how_protocol`, the site F4b explicitly deferred here),
+    `registration_class.rs:486` and `:488,493` (`collect_type_method_names`, backing
+    `handles SomeType` — note it enumerates a **role** owner too), `registration.rs:207`
+    (`resolve_class_stub_requirements`), `registration.rs:636`
+    (`validate_private_method_existence`, which runs on *every* class registration), and
+    `class.rs:174` (`detect_unresolved_role_method_conflicts`). (ii) The write-site list omits
+    `registration_class_body.rs:251-252` (`our &alias ::= &m`), `registration_class.rs:401-405`
+    (`apply_handle_specs`), `registration_class_compose_body.rs:390`,
+    `types/role_mixin_class.rs:216-226`, `registration_class_augment.rs:1055-1132`
+    (`ensure_role_pun_class`), `runtime_init.rs:2171-2198` (builtin seeding plus a startup
+    `for class_name in classes.keys() { sync_user_method_entries }` loop), and
+    `builtins_system_require.rs:227-240` (the `require` **class-alias** copy — it clones a whole
+    `ClassDef`, methods included, under a second name, so after inversion it must also copy that
+    owner's method rows; nothing in this box named it). (iii) "`sync_user_method_entries` only
+    handles `ClassDef`" is right about its *source* but wrong about its *callers*: it is called
+    with a role name at `methods_object_dispatch_new.rs:201` (`withdraw_role_pun`),
+    `registration_class_compose_body.rs:45` (`rename_generic_composed_class`, old name), and
+    transitively at `registration_class_augment.rs:1140` — in every such case the call is a pure
+    **clear** (the `classes` lookup misses and the function returns after its `retain`). Those
+    three become explicit `clear_user_methods_for_owner` calls, not accidents of a missing map
+    entry. (iv) `methods_object.rs:95-96` is *not* a stale F4b hit: it is
+    `is_native_default_constructible`, a different function from the three F4b migrated
+    (`mro_has_build_or_tweak`, `native_ctor_plan`'s probes, `build_owning_attr_names`). It is a
+    class-only read and belongs to F4c's reader cutover.
+
+    **(1) Scope: `RoleDef::methods` is NOT deleted by F4c, and this is not re-litigating F4a.**
+    F4c inherited "delete both fields" from the pre-split F4 bullet, written before F4a
+    established the composition-input policy. Recommendation: **F4c deletes `ClassDef::methods`
+    only; `RoleDef::methods` stays exactly where it is**, and a role-side sibling table
+    (`Registry::role_method_entries`) is explicitly rejected, not deferred. Three reasons, all
+    confirmed by reading. **First, the two representations hold genuinely different data under
+    the same owner string and are live simultaneously.** When a role `R` is punned,
+    `ensure_role_pun_class` (`registration_class_augment.rs:1041-1132`) builds a `ClassDef`
+    under the key `R` whose every method is `role_origin`-tagged via its `tag_role_origin`
+    closure, and registers it in `classes` — while `roles[R].methods` continues to hold the
+    *untagged* originals (`registration_role_method.rs:243` sets `role_origin: None`). So
+    `(R, m)` in `method_entries` and `(R, m)` in a hypothetical `role_method_entries` would carry
+    different `MethodDef`s at the same instant. A single `(owner, name)` table therefore cannot
+    hold both, and a sibling table keyed the same way buys uniformity of key type and nothing
+    else. **Second, `RoleDef::methods` is not a mirror.** F4's whole thesis is eliminating drift
+    between two copies of the same data; `ClassDef::methods` qualifies because
+    `sync_user_method_entries` *derives* `method_entries` from it (`registry.rs:341-396`).
+    `RoleDef::methods` is derived from nothing and nothing is derived from it — since F4a it has
+    exactly one read helper (`Registry::role_method_overloads`, `registry.rs:1005-1015`). There
+    is no drift to eliminate. **Third, moving it would cost real code for no invariant.** Its
+    consumers are overwhelmingly *whole-map* iterations at composition time
+    (`registration_class_compose.rs:315`, `registration_role_body.rs:368`,
+    `registration_class_compose_body.rs:342`, `registration_class_augment.rs:633,644,1055,1074`,
+    `types/role_mixin_class.rs:187`), so they would each need the role-side reverse index too;
+    `RoleDef` is cloned wholesale in ~15 places (`roles.get(x).cloned()`), which gets methods for
+    free today and would become a two-lookup dance; and `methods_qualified.rs:449-457` finds a
+    parameterised role by **prefix-scanning `roles.keys()`**, so `Registry::roles` has to stay
+    the role-name index regardless. The one argument *for* a sibling table — making "role methods
+    are never dispatch entries" structural instead of by-convention — is already delivered by
+    F4a's single-helper read path; a second table adds no enforcement the helper does not
+    already give. This is not re-litigating F4a: F4a decided the **read policy** (role method
+    definitions are composition inputs; the dispatchable form is always the flattened copy on the
+    composing class; winner selection must never consult the role fallback). That policy is kept
+    verbatim. What is being declined is a **storage relocation** the policy never required. The
+    resulting class/role asymmetry is the point, not a defect: it makes it structurally
+    impossible to feed a role-owned row to a dispatcher expecting a class-owned one, which is
+    exactly the shape of the `resolve_methods_per_mro_level` `any_failed` regression (PR #6478,
+    `todo/deep/method-entries-never-covers-unpunned-roles.md`). If a role-side drift is ever
+    *observed*, file it as a new box then; do not pre-build the table.
+
+    **(2) The full-name-enumeration index.** Add one private field to `Registry`:
+    `owner_method_names: HashMap<Symbol, Vec<Symbol>>`, insertion-ordered, holding exactly the
+    names for which `(owner, name)` has a **non-empty `user_candidates`** — not every row.
+    Scoping it to the user column is load-bearing: rows also exist for `builtin` (1108 seeded
+    rows, `seed_builtin_method_entries`), `accessor` (D2d), and `proto` (E8b), and indexing those
+    would make `.^methods`/`^method_table` start reporting attribute and proto names that
+    `class_def.methods.keys()` never contained. Rejected alternatives: a full `method_entries`
+    scan per query (the precedent `builtin_method_names`, `registry.rs:326-339`, sets — but
+    `validate_private_method_existence` runs once per class *registration*, making the program
+    O(classes x total rows), i.e. quadratic); a `BTreeMap<(Symbol, Symbol), MethodEntry>` for
+    free range queries (pays log n on `user_method_overloads`, which is on the dispatch
+    cache-miss path E1/E2 deliberately made a flat hash); `FxHashSet<Symbol>` values (fine
+    correctness-wise, but a `Vec` is cheaper at these sizes, keeps declaration order, and makes
+    the snapshot/restore of an owner's rows deterministically ordered). Ordering is a free
+    fidelity gain, not a risk: `ClassDef::methods` is a `std::collections::HashMap`
+    (`decl_types.rs:15`) whose `RandomState` reseeds per instance, so today's `.^methods` /
+    `^method_table` / `handles Type` order is nondeterministic **between runs**, and no consumer
+    can be depending on it. Rakudo enumerates in declaration order, so an insertion-ordered `Vec`
+    moves toward the reference implementation. **Maintenance is encapsulated, not distributed.**
+    The field is private to the registry module and mutated only by a new mutator API — see (3);
+    no write site touches it, so no write site can drift. The correctness trap to pin with unit
+    tests is the interaction with the row-liveness predicate at `registry.rs:361-365`: a row
+    whose `user_candidates` becomes empty must leave the index **even when the row itself
+    survives** on `builtin`/`accessor`/`proto` (the `augment class Str { method chars {...} }`
+    then-rolled-back shape, which the existing `user_override_shares_the_builtin_method_entry`
+    test at `registry.rs:1288-1342` already exercises for the row half). Add
+    `#[cfg(debug_assertions)]` + env-gated `MUTSU_CHECK_METHOD_INDEX=1` full-table verification
+    (index <=> `{k : !method_entries[k].user_candidates.is_empty()}`), on the `MUTSU_VM_STATS`
+    precedent; a full `t/` + whitelist sweep under it is this box's substitute for a read-side
+    shadow check.
+
+    **(3) Inverting the write direction: why it cannot be one-write-site-per-PR, and what
+    replaces that.** F4a/F4b could ship one consumer family per PR because a *read* can be
+    shadow-compared old-vs-new. A *write* has no such comparison, and worse: a site that starts
+    writing only `method_entries` becomes invisible to every reader still on
+    `class_def.methods`, so no single write site can move alone. The resolution is a **dual-write
+    bridge**. A new `src/runtime/registry_method_table.rs` (a second `impl Registry` block —
+    `registry.rs` is already 1402 lines, so the 500-line convention forbids growing it) provides
+    the whole mutator surface: `set_user_methods(owner, name, defs)`,
+    `push_user_method(owner, name, def)` (the `multi` case),
+    `retain_user_methods(owner, name, pred)` (the privacy-preserving non-multi replace at
+    `registration_class_body_method.rs:219-222`), `remove_user_methods(owner, name)`,
+    `clear_user_methods_for_owner(owner)` (the redeclaration reset that `publish_class_shell`,
+    `registration_class_validate.rs:406-409`, gets today for free from `sync`'s `retain` half),
+    `rename_method_owner(old, new)`, `map_user_methods_in_place(owner, f)` (for
+    `compile_class_methods`, `accessors_resolve.rs:116-122`, which mutates `compiled_code` on
+    every `MethodDef` in place), `owner_method_names(owner)`,
+    `user_method_rows_for_owner(owner)` / `restore_user_method_rows(owner, rows)` (for
+    rollback), and `sync_accessor_entries(owner)` — the surviving half of
+    `sync_user_method_entries`, which still derives the `accessor` column from
+    `ClassDef::attributes` (F4 keeps type-structure metadata on `ClassDef` by design). Every
+    mutator maintains the reverse index, drops rows that fall dead under the `registry.rs:361-365`
+    predicate, refuses to store an empty candidate vec, and bumps `method_generation`. During the
+    bridge each mutator writes **both** `method_entries` (+ index) and `classes[owner].methods`,
+    and `sync_user_method_entries` degenerates to an assertion that the two agree. **The
+    dual-write window is the shadow-check, and the consistency verifier is the comparison** —
+    each write-site slice ships behind it, is independently revertible, and is verified by (a)
+    the verifier over a full `t/` + roast-whitelist sweep, (b) `grep` showing that slice's file
+    has zero remaining direct `.methods` mutations, and (c) the usual full local `t/` plus a
+    targeted roast subset. Prefer *write-through* over *buffer-and-flush* at every site: keeping
+    a per-declaration buffer in `ClassBodyCx` would just recreate the dual representation F4 is
+    deleting. Write-through also **deletes two existing workarounds**, which is the box's real
+    payoff and should be an explicit acceptance criterion:
+    `registration_class_body_attr.rs:162-180` is a hand-written merge-back that exists *only*
+    because the in-flight `cx.class_def` would clobber methods a user `trait_mod:<is>` installed
+    via `.^add_method` mid-body (Attribute::Predicate's `is predicate`), and the
+    `cx.class_def = updated` re-reads at `registration_class_body.rs:266-268` and `:398-402` are
+    the same bug patched twice more.
+
+    Ordered slices:
+
+    - **F4c-1 — reverse index + the eight enumeration reads.** Add `owner_method_names`,
+      maintained inside `sync_user_method_entries` only (nothing else writes the user column
+      yet), plus the verifier. Cut the eight sites in (0)(i) from `class_def.methods.keys()` to
+      `Registry::owner_method_names`. Invariant: each site's *set* of names is unchanged; order
+      may change (justified above). Genuinely shadow-checkable, exactly like F4b — emit both
+      lists under `MUTSU_VM_STATS` and require zero set-mismatches across `t/` + the whitelist
+      before deleting the old read. This slice closes F4b's one deliberate deferral
+      (`declare_drive_how_protocol`) and is valuable even if F4c goes no further. Run the
+      batteries gate (`scripts/battery-testsuite.sh`) for this one — `declare_drive_how_protocol`
+      and the custom-HOW paths are what OO::Monitors' `EXPORTHOW::DECLARE` support runs through.
+    - **F4c-2 — mutator API + dual write.** No call-site changes beyond routing
+      `sync_user_method_entries` through the mutators. Zero intended behavior change; verifier
+      green.
+    - **F4c-3 — the class-declaration family** (the in-flight `ClassBodyCx` writers):
+      `registration_class_body_method.rs:192,205,221,344,351`, `registration_class_body.rs:251-252`,
+      `registration_class_body_attr.rs:172-178` (delete the merge-back),
+      `registration_class_compose.rs:352-356`, `registration_class_compose_body.rs:390-393`,
+      `registration_class.rs:401-405`, `registration.rs:313,367,369`. Borrow-structure warning:
+      `resolve_class_stub_requirements` (`registration.rs:202-373`) holds `&mut ClassDef` while
+      calling `&mut self` helpers (`class_mro`, `collect_class_attributes`); once the map lives
+      in the registry it must become snapshot -> compute -> write back, because the lock
+      discipline at `registry.rs:21-26` forbids holding a guard across those calls. Getting this
+      wrong yields a same-thread recursive `RwLock` acquisition — a **deadlock**, which surfaces
+      as a `t/` timeout, i.e. the exact failure shape CLAUDE.md's triage protocol warns against
+      dismissing as flaky.
+    - **F4c-4 — the augment family:** `registration_class_augment.rs:294,310,322` (method decl),
+      `:514,521` (method `handles`), `:574` (attribute `handles`), `:665-679`
+      (`compose_role_into_augmented_class`), plus `types/role_mixin_class.rs:216-226`
+      (`compose_mixin_role_submethods`). Separate from F4c-3 for two reasons: augment mutates the
+      *registered* `ClassDef` in place rather than an in-flight one, and its publication into
+      `method_entries` is **implicit** — it happens only because `compile_class_methods(name)`
+      (`registration_class_augment.rs:602,699`; `types/role_mixin_class.rs:226`) incidentally
+      calls `sync`. That implicit publication must become explicit in this slice or augment
+      silently stops publishing.
+    - **F4c-5 — role pun / synthesised mixin classes:** `ensure_role_pun_class`
+      (`registration_class_augment.rs:1055-1132`), `withdraw_role_pun`
+      (`methods_object_dispatch_new.rs:197-202`, becomes `clear_user_methods_for_owner`),
+      `rename_generic_composed_class` (`registration_class_compose_body.rs:42-46`, becomes
+      `rename_method_owner`), `types/role_mixin_class.rs:305-312`. Its own slice because this is
+      the only place a role *name* legitimately owns class-side rows — the exact seam F4a's
+      incident sits on. State and test the invariant: while `R` is punned,
+      `user_method_overloads(R, m)` and `role_method_overloads(R, m)` may both be `Some` with
+      **different** content (tagged vs untagged), and withdrawal clears only the former. Pin the
+      "only the first `R.new` in a program worked" regression `withdraw_role_pun`'s own doc
+      comment describes.
+    - **F4c-6 — the runtime-reflective MOP family:** `methods_classhow_dispatch.rs:852-877`
+      (`^add_method`, including its "create a stub `ClassDef` for a builtin type" branch),
+      `:928-939` (`^add_multi_method`), `system.rs:349-360` (BEGIN-time method statements). Own
+      slice because these fire at arbitrary times against an already-published class and are what
+      the F4c-3 merge-back deletion depends on. Invariant: existence checks keep keying off
+      `classes.contains_key`, not off the method table — `^add_method` must still auto-create a
+      stub `ClassDef`, and `^add_multi_method` must still *error* for an unregistered class
+      (its `inserted` flag, `:928-934`).
+    - **F4c-7 — seeds and aliases:** `runtime_init.rs`'s builtin `classes`/`roles` seeding and
+      its startup `for class_name in classes.keys() { sync }` loop (`:2195-2198`, which
+      disappears), `builtins_system_require.rs:227-240` (the `require` class alias — must now
+      copy method rows to the alias owner), and the `methods: HashMap::new()` initialisers at
+      `methods_object_native_ctors_io.rs:20` and `methods_object_dispatch_new.rs:619` (these
+      merely lose a field).
+    - **F4c-8 — snapshot/rollback**, see (4).
+    - **F4c-9a — reader cutover** (dual write still on, so every read is old-vs-new
+      shadow-checkable exactly like F4b), then **F4c-9b — flip the mutators to single write,
+      delete `ClassDef::methods`, delete `sync_user_method_entries` and the bridge's assertion
+      half.**
+
+    **(4) Snapshot/rollback — there are five mechanisms, not three.** **(a) `ClassRegSnapshot`**
+    (`registration_class_validate.rs:19-72`): add `prev_method_rows: Vec<(Symbol, Vec<MethodDef>)>`
+    captured with `user_method_rows_for_owner(name)` (O(names) via the index, and `MethodDef`
+    clone is shallow — `body` is an `Arc`), restored with `restore_user_method_rows`. Two
+    pre-existing gaps must be preserved deliberately, not silently inherited: the snapshot
+    captures neither `MethodEntry::proto` (so a failed redeclaration that declared a
+    `proto method` leaves it behind; today this survives because `sync`'s retain deliberately
+    spares the `proto` column, `registry.rs:348-360` — after inversion the equivalent guarantee
+    is that `restore_user_method_rows` touches only `user_candidates`) nor `method_wrap_chains`
+    (cleared unconditionally at `publish_class_shell` via `clear_method_wrap_chains_for_class`,
+    `registration_class_validate.rs:377`, and never restored). File the proto one as a
+    `todo/tickets/` note rather than folding a behavior change into F4c. **(b) EVAL-string
+    rollback** (`system_eval_string.rs:220-444`): read the merge carefully before redesigning it.
+    `classes = snapshot; classes.extend(current)` means **current wins for every key present in
+    current** — the snapshot's only net effect is to *resurrect* keys the EVAL removed
+    (`withdraw_role_pun`, `__MUTSU_UNREGISTER_CLASS__`, `shadow_suppressed_type_with_package`,
+    `rename_generic_composed_class`). So the `for class_name in ... { sync }` loop at `:441-444`
+    is O(classes) x O(total rows) — quadratic — to repair at most a handful of owners.
+    Replacement: take a shallow whole-table snapshot of the user column up front (strictly
+    cheaper than the `classes_snapshot` deep `ClassDef` clone the function already pays at
+    `:229`), then at restore install rows only for
+    `resurrected = snapshot_class_keys - current_class_keys`. Linear, and scales with what the
+    EVAL actually changed. To the explicit question: **no, this path never touches
+    `RoleDef::methods` directly** — it clones and restores the whole `roles` map (`:222`,
+    `:400`, `:412`) and role method data rides along inside `RoleDef`. That stays true under this
+    design precisely because (1) keeps `RoleDef::methods` where it is; had we moved it to a
+    sibling table, this merge would have needed a parallel union/merge for it. **(c) The fourth
+    mechanism the box text does not name: `Registry::replace_method_entries_from`**
+    (`registry.rs:459-462`), with five call sites — `test_functions/eval_exception.rs:256,362`
+    (`eval-lives-ok`/`eval-dies-ok`), `test_functions/mod.rs:60-64`
+    (`sync_eval_definition_state`, the write-back direction), `throws_like.rs:50`,
+    `fails_like.rs:63` — which copies the whole table between a parent and a nested
+    `Interpreter`. It must copy the reverse index too, or the nested interpreter runs the
+    parent's table against `Interpreter::new()`'s empty index. Because it is a single function
+    over a private field, encapsulation makes this a one-line fix rather than a landmine — which
+    is itself the argument for the field being private. **(d) The fifth: `rename_generic_composed_class`**
+    (`registration_class_compose_body.rs:42-46`), an owner *rename* currently expressed as
+    "sync old (clears), sync new (re-derives)"; it needs a real `rename_method_owner`.
+    **(e) Finally, three `classes.remove` sites call no sync at all** —
+    `builtins.rs:511-517` (`__MUTSU_UNREGISTER_CLASS__`), `runtime_encoding.rs:258-266`
+    (`shadow_suppressed_type_with_package`), `registration_role_decl.rs:99` — so they leave
+    **permanently stale** `method_entries` rows today, masked only because every dispatcher
+    checks `classes.contains_key` first. F4c-8 should give each an explicit
+    `clear_user_methods_for_owner` rather than inherit a latent bug into the new world.
+
+    **(5) Risk register.** **R1 — loss of the self-healing rebuild (the headline risk).** Today
+    every `sync_user_method_entries` call is a full, idempotent re-derive for one owner, and
+    `registration_class_body.rs:208` runs one after *every class-body statement* — so any missed
+    or mis-ordered write is silently repaired by the next statement. After inversion there is no
+    repair path at all; a missed write is a permanently missing method. Mitigation: the
+    dual-write bridge, the mutator choke point, and full-corpus verifier sweeps per slice.
+    **R2 — index/table drift.** Mitigation: private field, mutators only, debug assert +
+    `MUTSU_CHECK_METHOD_INDEX`, and a unit test per mutator for the `registry.rs:361-365`
+    liveness interaction. **R3 — implicit-publication loss** (augment and mixin composition
+    publishing only via `compile_class_methods`' incidental sync). Mitigation: F4c-4 makes it
+    explicit; detection is the verifier plus targeted `augment`/`does`-mixin `t/` tests.
+    **R4 — the F4a landmine: accidentally widening a reader's role visibility while merely
+    relocating storage.** The governing rule for F4c-9a is **preserve each site's existing
+    role-visibility bit exactly**: a site reading only `classes` today moves to
+    `user_method_overloads`; a site already doing class-then-role moves to
+    `get_method_overloads_with_role_fallback`; a role-only site moves to
+    `role_method_overloads`. Concretely, `resolution_method.rs` is the single highest-risk file
+    in the refactor because it contains **both** kinds 400 lines apart:
+    `resolve_method_with_owner_impl`'s per-level walk (`:140`) is class-only via
+    `get_method_overloads` and must stay class-only, while `count_visible_method_candidates`
+    (`:594-603`) and `resolve_all_methods_with_owner` (`:632-645`) do class-then-role today and
+    must keep it. Doing the "obvious" thing and unifying the file on one helper reproduces the
+    PR #6478 regression exactly. Apply the incident's own lesson — "the risk inventory is every
+    transitive reader of that function, found by grep, not just the sites a ticket names" — as a
+    per-site grep obligation for F4c-9a, not a per-file one. The same care applies to
+    `accessors_state.rs:588,593` vs `:1116`, and `methods_classhow_lookup.rs:57` vs `:113`.
+    **R5 — enumeration-order change.** Bounded by the `RandomState` argument in (2); still verify
+    against the `.^methods`/`.^method_table`-touching roast files. **R6 — generation-bump
+    volume.** Per-mutation bumps replace per-statement bumps; watch the `MUTSU_VM_STATS`
+    `fast_method_cache` counters, and batch behind a `bump_once` guard if they move. Note the
+    likely *win* in the other direction: `sync_user_method_entries` currently does a full
+    `method_entries.retain()` (>1100 rows) **plus** a full clone of the class's method map after
+    every class-body statement, making class registration O(statements x table size); F4c makes
+    it O(declarations). Measure it via the bench CI, not locally. **R7 — empty rows.**
+    `class_def.methods` can in principle hold `Some(vec![])` while `user_method_overloads`
+    filters it to `None` (`registry.rs:403-406`); the mutator API must make empty rows
+    unrepresentable and the verifier must assert it. **R8 — lock/borrow restructuring**, see
+    F4c-3.
+
+    **(6) Sequencing — definitive.** The scope decision (1) must be settled **first**, because it
+    determines whether the role-only read sites are in F4c at all (they are not) and whether
+    `role_method_overloads` remains the role read path (it does); that is this note, plus the
+    one-line amendment to the F4c bullet above. The reverse index (2) must land **second, before
+    any write site moves**, because `clear_user_methods_for_owner`, `rename_method_owner`, and
+    both rollback redesigns all need an O(names) way to enumerate an owner's rows, and because it
+    is independently valuable and independently shadow-checkable. Then the mutator/dual-write
+    bridge, then the write sites in dependency order (class body -> augment -> pun/mixin -> MOP ->
+    seeds/aliases), then rollback, then the read cutover, then the field deletion. So:
+    **F4c-0 -> F4c-1 -> F4c-2 -> F4c-3 -> F4c-4 -> F4c-5 -> F4c-6 -> F4c-7 -> F4c-8 -> F4c-9a ->
+    F4c-9b.** Standard verification per slice: full local `t/`, the 312-file
+    `S04`/`S06`/`S09`/`S12`/`S14` roast subset the other F4 slices used, plus
+    `scripts/battery-testsuite.sh` for F4c-1, F4c-4, and F4c-6 (the MOP/EXPORTHOW-adjacent ones),
+    and a `MUTSU_CHECK_METHOD_INDEX=1` sweep for every slice from F4c-2 onward.
+
+    Notes on where this design note corrects the box's own framing, beyond (0) above: the
+    write/read inventories in the original bullet were incomplete — a full `grep -rn "\.methods"`
+    over `src/` returns ~130 hits across ~45 files, including whole files neither list mentioned
+    (`methods_call_dispatch.rs`, `methods_mixin_dispatch.rs`, `methods_signature_shaped.rs`,
+    `resolution_deferral.rs`, `types/roles.rs`, `types/type_registry.rs`,
+    `types/role_mixin_class.rs`, `methods_native_bypass.rs`, `compiler/helpers_method_body.rs`);
+    most of the extras are role-only reads, which (1) puts out of F4c entirely. "Augment
+    rollback" as a distinct named mechanism does not exist — `registration_class_augment.rs` has
+    no snapshot/restore path; there are five mechanisms and they are the ones enumerated in (4).
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site
