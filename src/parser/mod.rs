@@ -449,6 +449,15 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
                     if let Some(ex) = e.exception {
                         err.exception = Some(ex);
                     }
+                    // rakudo's X::Comp family also carries `.pre`/`.post` (the
+                    // source text immediately around the eject point, current
+                    // line only). This is the one place both the full original
+                    // source and the failure offset are unambiguously known, so
+                    // compute it here rather than at each individual raise site.
+                    let pre_full = &source[..consumed];
+                    let pre = pre_full.rsplit('\n').next().unwrap_or(pre_full).to_string();
+                    let post = tail.split('\n').next().unwrap_or(tail).to_string();
+                    err.set_pre_post_context(pre, post);
                     Err(with_parse_hint(err))
                 } else if let Some(context) = near_snippet(tail, 60) {
                     Err(with_parse_hint(RuntimeError::with_location(

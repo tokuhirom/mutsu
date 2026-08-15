@@ -228,6 +228,39 @@ impl RuntimeError {
         {
             attrs.insert("what".to_string(), Value::str_from(what));
         }
+        // `X::InvalidType`'s message IS `Invalid typename '{typename}'` in
+        // rakudo (same derive-don't-duplicate rule as `X::Syntax::Missing`
+        // above). Without it, `throws-like …, X::InvalidType, typename => …`
+        // matched the class and then died on "No such method 'typename'".
+        if class_name == "X::InvalidType"
+            && let Some(rest) = text.strip_prefix("Invalid typename '")
+            && let Some(typename) = rest.strip_suffix('\'')
+        {
+            attrs.insert("typename".to_string(), Value::str_from(typename));
+        }
+        // `X::Syntax::Adverb`'s message IS `You can't adverb {what}` in
+        // rakudo (same derive-don't-duplicate rule as the two above).
+        if class_name == "X::Syntax::Adverb"
+            && let Some(what) = text.strip_prefix("You can't adverb ")
+        {
+            let what = what.strip_suffix('.').unwrap_or(what);
+            attrs.insert("what".to_string(), Value::str_from(what));
+        }
+        // rakudo's whole X::Comp family carries `.pre`/`.post` (source text
+        // around the eject point); `parse_program` computes these for every
+        // typed parse diagnosis. Without them, a `throws-like …, X::…, pre =>
+        // …` (or a handler that merely reads `.post` to build a message)
+        // matched the class and then died on "No such method 'post'".
+        if let Some(pre) = self.pre_context() {
+            attrs
+                .entry("pre".to_string())
+                .or_insert_with(|| Value::str_from(pre));
+        }
+        if let Some(post) = self.post_context() {
+            attrs
+                .entry("post".to_string())
+                .or_insert_with(|| Value::str_from(post));
+        }
         if let Some(line) = self.line() {
             attrs.insert("line".to_string(), Value::int(line as i64));
         }

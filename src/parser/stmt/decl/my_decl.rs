@@ -411,10 +411,11 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
         } else {
             "$"
         };
+        let what = format!("{}{}", sigil, name);
         return Err(illegal_my_var_error(
             "X::Syntax::Adverb",
-            &format!("You can't adverb {}{}", sigil, name),
-            &[],
+            &format!("You can't adverb {}", what),
+            &[("what", &what)],
         ));
     }
 

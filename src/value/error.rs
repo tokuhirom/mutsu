@@ -118,6 +118,13 @@ pub struct RuntimeErrorCold {
     /// resume point (`resume_body_ip = ip + 1`), so statements after the take
     /// in the same iteration are not lost on coroutine resume.
     pub take_suspend_site: Option<(usize, usize)>,
+    /// Source text immediately before a parse failure's eject point (current
+    /// line only, matching rakudo's `X::Comp.pre`). Set alongside `line`/
+    /// `column` by `parse_program` when the full source and offset are known.
+    pub pre_context: Option<String>,
+    /// Source text immediately after a parse failure's eject point (current
+    /// line only, matching rakudo's `X::Comp.post`).
+    pub post_context: Option<String>,
 }
 
 #[derive(Debug)]
@@ -247,6 +254,17 @@ impl RuntimeError {
     }
     pub(crate) fn set_backtrace(&mut self, v: Option<String>) {
         self.cold_mut().backtrace = v;
+    }
+    pub(crate) fn set_pre_post_context(&mut self, pre: String, post: String) {
+        let cold = self.cold_mut();
+        cold.pre_context = Some(pre);
+        cold.post_context = Some(post);
+    }
+    pub(crate) fn pre_context(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.pre_context.as_deref())
+    }
+    pub(crate) fn post_context(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.post_context.as_deref())
     }
 
     pub(crate) fn failure_original_backtrace(&self) -> Option<&str> {
