@@ -282,7 +282,13 @@ impl Interpreter {
         role: &RoleDef,
         role_param_values: &HashMap<String, Value>,
     ) {
-        if let Some(parent_specs) = self.registry().role_parents.get(base_role_name).cloned() {
+        // ADR-0019 F4c-3: hoisted out of `if let Some(x) = self.registry()
+        // ....cloned() { .. }` -- see the matching comment further down in
+        // this function for why (temporary-lifetime-extension keeps the
+        // `RegistryReadGuard` alive for the whole body, which now contains a
+        // `self.registry_mut()` call).
+        let maybe_parent_specs = self.registry().role_parents.get(base_role_name).cloned();
+        if let Some(parent_specs) = maybe_parent_specs {
             for parent_spec in parent_specs {
                 let resolved_parent = if let Some(v) = role_param_values.get(&parent_spec) {
                     type_value_name(v)
@@ -312,7 +318,16 @@ impl Interpreter {
                     .split_once('[')
                     .map(|(b, _)| b)
                     .unwrap_or(resolved_parent.as_str());
-                if let Some(parent_role) = self.registry().roles.get(parent_base).cloned() {
+                // ADR-0019 F4c-3: bind the clone in its own `let` rather
+                // than `if let Some(x) = self.registry()....cloned() { ...
+                // }` -- the latter's temporary-lifetime-extension rule keeps
+                // the `RegistryReadGuard` alive for the WHOLE if-let body
+                // (not just the condition), which panics the moment that
+                // body calls `self.registry_mut()` (read -> write reentrant
+                // lock upgrade; see `lock_reentry.rs`). This is the exact
+                // hazard the F4c design note's R8 warns about.
+                let maybe_parent_role = self.registry().roles.get(parent_base).cloned();
+                if let Some(parent_role) = maybe_parent_role {
                     if !cx.out.composed_roles_list.contains(&resolved_parent) {
                         cx.out.composed_roles_list.push(resolved_parent.clone());
                     }
@@ -386,6 +401,17 @@ impl Interpreter {
                                 })
                                 .collect()
                         };
+                        // ADR-0019 F4c-3: dual-write, see
+                        // class_body_method_decl's own comment in
+                        // registration_class_body_method.rs.
+                        {
+                            let owner = Symbol::intern(cx.name);
+                            let method_sym = Symbol::intern(mname);
+                            let mut registry = self.registry_mut();
+                            for def in &composed {
+                                registry.push_user_method(owner, method_sym, def.clone());
+                            }
+                        }
                         cx.class_def
                             .methods
                             .entry(mname.clone())

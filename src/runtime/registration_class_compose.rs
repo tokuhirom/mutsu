@@ -9,6 +9,7 @@ use super::registration_class::{
 };
 use super::registration_class_decl::BUILTIN_PARENT_TYPES;
 use super::*;
+use crate::symbol::Symbol;
 
 /// Replace whole type-name tokens in `name` that exactly match a role type
 /// parameter with its concrete type name. Tokens are delimited by `[`, `]`,
@@ -349,6 +350,19 @@ impl Interpreter {
                     })
                     .collect()
             };
+            // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
+            // comment in registration_class_body_method.rs -- the periodic
+            // per-statement `sync_user_method_entries` call re-derives the
+            // registry from `cx.class_def.methods` regardless, so this is
+            // additive, not the sole write.
+            {
+                let owner = Symbol::intern(cx.name);
+                let method_sym = Symbol::intern(mname);
+                let mut registry = self.registry_mut();
+                for def in &composed {
+                    registry.push_user_method(owner, method_sym, def.clone());
+                }
+            }
             cx.class_def
                 .methods
                 .entry(mname.clone())

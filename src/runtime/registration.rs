@@ -372,12 +372,31 @@ impl Interpreter {
                         .any(|cm| Self::method_signatures_match(m, cm))
                 });
             }
+            // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
+            // comment in registration_class_body_method.rs. Safe even though
+            // this loop can still return `Err` on a later `method_name`
+            // (leaving these registry writes uncommitted-to-`class_def`
+            // stragglers): `finalize_class_registration`'s only caller
+            // rolls back via `ClassRegSnapshot::restore`, which always ends
+            // with a full `sync_user_method_entries(name)` re-derive from
+            // the restored (pre-attempt) `class_def` -- that unconditional
+            // full re-derive overwrites any partial state a failed attempt
+            // left in the registry, exactly as it already does for
+            // `class_def` itself.
+            let owner = Symbol::intern(class_name);
             if concrete.is_empty() {
                 if stubs.is_empty() {
                     continue; // nothing changed, skip update
                 }
+                self.registry_mut()
+                    .remove_user_methods(owner, Symbol::intern(&method_name));
                 class_def.methods.remove(&method_name);
             } else {
+                self.registry_mut().set_user_methods(
+                    owner,
+                    Symbol::intern(&method_name),
+                    concrete.clone(),
+                );
                 class_def.methods.insert(method_name, concrete);
             }
         }

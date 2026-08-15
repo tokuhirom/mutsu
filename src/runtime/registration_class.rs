@@ -1,5 +1,6 @@
 use super::*;
 use crate::ast::{HandleSpec, ParamDef};
+use crate::symbol::Symbol;
 
 pub(super) type ResolvedRoleCandidate = (RoleDef, Vec<String>, Vec<Value>);
 
@@ -392,12 +393,36 @@ impl Interpreter {
     /// For type-based handles, collects method names from the referenced type
     /// first, then applies them without holding borrows on self.
     pub(crate) fn apply_handle_specs(
-        &self,
+        &mut self,
+        class_name: &str,
         specs: &[HandleSpec],
         attr_var_name: &str,
         class_def: &mut ClassDef,
     ) {
         let resolved = self.resolve_handle_specs_to_names(specs, attr_var_name);
+        // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
+        // comment in registration_class_body_method.rs. `apply_resolved_
+        // handles` stays the shared class/role implementation (`RoleDef::
+        // methods` is out of scope for the registry index, see the F4c
+        // design note section (1)), so only the class-only wrapper here
+        // additionally writes through the registry.
+        let owner = Symbol::intern(class_name);
+        let mut registry = self.registry_mut();
+        for handle in &resolved {
+            if let ResolvedHandle::Method {
+                exposed,
+                target,
+                attr_var,
+            } = handle
+            {
+                registry.push_user_method(
+                    owner,
+                    Symbol::intern(exposed),
+                    make_delegation_method(attr_var, target),
+                );
+            }
+        }
+        drop(registry);
         apply_resolved_handles(
             &resolved,
             &mut class_def.methods,

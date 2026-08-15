@@ -187,7 +187,18 @@ impl Interpreter {
         let is_lexical_only = decl.is_my && !decl.is_submethod;
         let is_our_only = decl.is_our && !decl.our_variable_form;
         if !is_lexical_only && !is_our_only {
+            // ADR-0019 F4c-3: dual-write -- `cx.class_def.methods` stays the
+            // authoritative in-flight state (still re-derived wholesale into
+            // the registry by the per-statement `sync_user_method_entries`
+            // call right after this returns, per F4c design note (3)'s
+            // bridge), but each write also goes straight through the
+            // registry mutator API so the two agree at every point, not
+            // just at statement boundaries.
+            let owner = Symbol::intern(cx.name);
+            let method_sym = Symbol::intern(&resolved_method_name);
             if decl.multi {
+                self.registry_mut()
+                    .push_user_method(owner, method_sym, def.clone());
                 cx.class_def
                     .methods
                     .entry(resolved_method_name.clone())
@@ -216,6 +227,10 @@ impl Interpreter {
                 // A non-multi method replaces prior same-privacy
                 // candidates but must preserve methods of the OTHER
                 // privacy stored under the same name.
+                self.registry_mut()
+                    .retain_user_methods(owner, method_sym, |m| m.is_private != new_is_private);
+                self.registry_mut()
+                    .push_user_method(owner, method_sym, def.clone());
                 let entry = cx
                     .class_def
                     .methods
@@ -340,18 +355,30 @@ impl Interpreter {
             for spec in &decl.handles {
                 match spec {
                     HandleSpec::Name(target) => {
+                        let delegation = make_delegation_method(&source_attr_marker, target);
+                        self.registry_mut().push_user_method(
+                            Symbol::intern(cx.name),
+                            Symbol::intern(target),
+                            delegation.clone(),
+                        );
                         cx.class_def
                             .methods
                             .entry(target.clone())
                             .or_default()
-                            .push(make_delegation_method(&source_attr_marker, target));
+                            .push(delegation);
                     }
                     HandleSpec::Rename { exposed, target } => {
+                        let delegation = make_delegation_method(&source_attr_marker, target);
+                        self.registry_mut().push_user_method(
+                            Symbol::intern(cx.name),
+                            Symbol::intern(exposed),
+                            delegation.clone(),
+                        );
                         cx.class_def
                             .methods
                             .entry(exposed.clone())
                             .or_default()
-                            .push(make_delegation_method(&source_attr_marker, target));
+                            .push(delegation);
                     }
                     HandleSpec::Wildcard => {
                         cx.class_def

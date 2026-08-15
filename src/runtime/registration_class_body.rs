@@ -249,6 +249,15 @@ impl Interpreter {
         };
         let alias = var_name.trim_start_matches('&').to_string();
         if let Some(overloads) = cx.class_def.methods.get(source_name).cloned() {
+            // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
+            // comment -- this function republishes `cx.class_def` wholesale
+            // to the registry a few lines below anyway, so this is a
+            // redundant-but-cheap early confirmation, not the sole write.
+            self.registry_mut().set_user_methods(
+                Symbol::intern(cx.name),
+                Symbol::intern(&alias),
+                overloads.clone(),
+            );
             cx.class_def.methods.insert(alias, overloads);
         }
         // Also execute the statement so the code variable is set
