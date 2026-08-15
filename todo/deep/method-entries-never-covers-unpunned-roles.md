@@ -108,6 +108,88 @@ longer disagrees with raku for that shape. This ticket's own subject — `method
 covering an un-punned role at all, affecting the four *production dispatch* call sites listed
 above — is untouched by that fix and remains open exactly as scoped.
 
+## Update 2026-08-15: the "obvious fix" causes a real regression, confirmed by repro
+
+Tried the suggested fix exactly as written (add a role branch to `sync_user_method_entries`
+mirroring the class branch, call it from `finish_role_registration` right after
+`self.registry_mut().roles.insert(name.to_string(), role_def)`). It builds clean and passes the vast
+majority of `t/`, but breaks `t/multi-method-roles.t` deterministically — confirmed with a minimal
+repro (no Test module):
+
+```raku
+role R5 {
+    multi method rt()       { say 'empty' }
+    multi method rt(Str $a) { say 'Str'   }
+}
+role R6 {
+    multi method rt(Numeric $a) { say 'Numeric' }
+}
+class C { has @.order }
+my C $b1 .= new();
+$b1 does (R5, R6);
+$b1.*rt;
+```
+
+raku prints `empty`; with the fix applied mutsu throws `No matching candidates for method: rt`.
+`t/role-required-universal-method.t` and `t/mixin-compiled-attr-writeback.t` also broke (not yet
+root-caused individually, but very likely the same mechanism).
+
+**Root cause traced with `rust-gdb -batch` (breakpoint on `make_multi_no_match_error`, `bt`):**
+`does (R5, R6)` on a real `Instance` goes through `does_rebless_instance`
+(`role_mixin_class.rs`), which reblesses `$b1` into a real composed class `C+{R5,R6}` (via
+`ensure_mixin_class` → `register_class_decl`, which flattens both roles' `rt` candidates onto the
+new class's own `ClassDef.methods`) — this is unrelated to and unaffected by this ticket's fix.
+The break is in `resolve_methods_per_mro_level` (`resolution_method.rs:742`), the winner-selection
+path `call_method_all_with_values` uses for `.*`/`.+`:
+
+1. It walks `class_mro("C+{R5,R6}")`, which includes `R5` and `R6` themselves as MRO members (for
+   qualified-call support), and collects every level where `get_method_overloads(level, "rt")` is
+   `Some` into `defining_levels`. Before this fix that was only the class's own flattened level;
+   after this fix `R5` and `R6` are *also* `Some` now (their own raw candidates), so
+   `defining_levels = ["C+{R5,R6}", "R5", "R6"]`.
+2. Because `rt` is multi, it then calls `resolve_method_with_owner_impl(cn, "rt", args, None, None)`
+   **once per defining level, with that level's own name as the MRO-walk start** — i.e. it
+   re-resolves `rt` starting fresh from `"R5"` and separately from `"R6"`, not just from the
+   receiver's own class.
+3. `$b1.*rt` (zero args) matches `R5`'s `rt()` and the class's own flattened `rt()`, but **`R6` only
+   has `rt(Numeric $a)`, which does not match zero args** — `resolve_method_with_owner_impl("R6",
+   ...)` returns `None`, setting `any_failed = true`.
+4. `any_failed` makes the whole function return `Vec::new()` (see the `if any_failed { return
+   Vec::new(); }` a few lines below the per-level loop) — every candidate is discarded, including
+   the ones that DID match — and the caller then raises `X::Multi::NotFound` believing genuinely no
+   candidate matched.
+
+This is a real, general hazard, not a corner case: **any composed-role multi method where one
+role's own candidate set doesn't cover a given call's arguments will now spuriously fail `.*`/`.+`
+dispatch**, even though the flattened class-level candidate set (which already worked before) is
+unaffected. The "any_failed ⇒ discard everything" logic in `resolve_methods_per_mro_level` was
+written assuming every `defining_levels` entry is a class the receiver actually descends from with
+its own complete candidate set — it silently assumed no MRO level could be a role whose candidates
+are also (partially or fully) duplicated by a more-derived flattened level, which is exactly what
+`does_rebless_instance`'s composition produces.
+
+**Why this was not just "restrict the role branch to the 4 originally-named production call sites"
+in the first place:** `get_method_overloads`/`user_method_overloads` is the ONE function all
+production readers (winner selection included) already share — this ticket's original framing (the
+gap "bites" 4 specific call sites) undercounted the exposure, because *any* caller reachable through
+that same read function inherits the newly-visible role rows, including
+`resolve_method_with_owner_impl`'s own per-level walk inside `resolve_methods_per_mro_level`, which
+was not on the original list of 4 "bites here" sites but turned out to be the one that broke.
+
+**What a real fix needs, not attempted here:** either (a) give `resolve_methods_per_mro_level` (and
+anywhere else with the same "one failing level discards everything" shape) a way to recognize a
+role-owned defining level whose candidates are a subset of a more-derived flattened level and skip
+re-resolving it from scratch, rather than adding a second, disjoint read path; or (b) don't populate
+`method_entries` for role owners through the shared `sync_user_method_entries`/
+`get_method_overloads` machinery at all — instead give the 4 originally-named call sites
+(`resolve_all_methods_with_owner` already does this) their own direct `self.roles.get(...)` fallback
+that winner-selection code never touches. (b) is more surgical and matches the "one consumer family
+per sub-PR" precedent the rest of ADR-0019 Phase E used, but is more code (four separate small
+patches instead of one shared one) and still needs the same raku-verification-per-shape discipline
+this ticket already called for. Whoever picks this up next should read
+`resolve_methods_per_mro_level`'s full body first — the any_failed/all-or-nothing gate is the actual
+landmine, independent of which population strategy is chosen.
+
 ## Suggested fix, for whoever picks this up
 
 - Add a role branch to `sync_user_method_entries` mirroring the class branch (`self.roles.get(class_name)`
