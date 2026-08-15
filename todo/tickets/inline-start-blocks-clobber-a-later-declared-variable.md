@@ -29,7 +29,132 @@ by the time the first `await` (of anything) triggers `sync_shared_vars_to_env`'s
 The bug is therefore in the `start`-block spawn/exit path, not in `await`/`allof`/`anyof` themselves —
 confirming the ticket's original "not a `Promise` bug" framing, now narrowed further.
 
-## What's now known (2026-08-14 investigation, not yet a fix)
+## CONFIRMED root cause (2026-08-15, via `rust-gdb`) -- prior session's hypothesis was WRONG
+
+The 2026-08-14 session's hypothesis (a CHILD thread executing `{ 1 }`/`{ 2 }` walks the mainline's
+`CompiledCode.locals` at its own `run_inner` teardown and republishes a stale `"p"`) was tested with
+`rust-gdb -batch` and **refuted**: a Python breakpoint on `sync_env_from_locals`
+(`src/vm/vm_env_helpers.rs:1388`) logging thread id + backtrace on every hit shows **zero hits from
+either worker thread** for this repro. Every hit is on the single VM execution thread (main program
+thread; see "the VM runs on a spawned thread" in this file's Debugging guidelines).
+
+The REAL mechanism, confirmed end-to-end with three separate breakpoints:
+
+1. **Where the bad value gets planted.** `dispatch_func_call_inner`'s `if name == "start" {
+   self.sync_env_from_locals(code); }` special case (`src/vm/vm_call_func_ops.rs:1503`, duplicated in
+   `exec_call_func_op` at `:1118`) runs SYNCHRONOUSLY on the main thread, once per `start { ... }` call,
+   BEFORE the block is spawned. For `my $p = Promise.allof(start { 1 }, start { 2 })`, both `start`
+   calls are `.allof`'s arguments, evaluated before `$p`'s own `SetLocalDecl` (instr 11) ever runs — so
+   at both sync points `self.locals[0]` ("p") still holds its `SetVarDynamic`-hoisted pre-assignment
+   placeholder (Nil). `sync_env_from_locals` blindly publishes EVERY local in `code.locals` (no gate at
+   all), so it writes `shared_vars["p"] = Nil` via `set_env_with_main_alias` -> `set_shared_var_sym`,
+   which also calls `mark_shared_var_dirty("p")` (`src/runtime/runtime_shared_vars.rs:534-540`).
+   Confirmed via gdb: breaking on `vm_call_func_ops.rs:1503` shows this firing (repeatedly, once per
+   `start` call) purely on the main thread, always before `SetLocalDecl`.
+
+2. **Why the real assignment never overwrites it.** `$p`'s real `SetLocalDecl` (instr 11) writes
+   `self.locals[0] = Promise` correctly, but the ordinary per-store write path
+   (`exec_set_local_op_inner`, `src/vm/vm_var_assign_set_local.rs`) computes `skip_env_write =
+   !code.needs_env_sync[idx] && ...` (line 1826) and, when true, **does not** call
+   `set_env_plain_lexical`/`set_shared_var_sym` for this store (`src/vm/vm_var_assign_set_local.rs:1835-1844`,
+   the "(B) per-store env-write" ADR-0018-era optimization: a slot the compiler proved has no
+   closure/reflective/named-sub reader by name is its own single source of truth, so env/shared_vars
+   mirroring is skipped). Confirmed via gdb (breakpoint at `vm_var_assign_set_local.rs:1831` printing
+   `skip_env_write`): **`skip_env_write=true`** for slot 0 ("p") at this exact assignment, because `$p`
+   is never referenced by name inside the `start { 1 }`/`start { 2 }` closures (they don't touch it at
+   all) or anywhere else — `code.needs_env_sync[0] == false`. So `shared_vars["p"]` is left at the stale
+   `Nil` from step 1, still marked dirty. `self.locals[0]` itself IS correct, and `GetLocal(0)` (a direct
+   read of `$p`, e.g. `say $p.WHAT` right after the assignment) reads it correctly — which is why the bug
+   is invisible until the next step.
+
+3. **How the stale value clobbers the correct one.** `await` (of ANYTHING, confirmed by the narrowed
+   repro below) calls `builtin_await` -> `sync_shared_vars_to_env()`
+   (`src/runtime/runtime_shared_vars.rs:576`), which pulls every DIRTY `shared_vars` key back into `env`
+   (line 696: `self.env.insert(key, val)`) and queues the name into `pending_caller_var_writeback`. Since
+   `"p"` was marked dirty in step 1 with the stale Nil, this overwrites `env["p"]` with Nil. Then
+   `apply_pending_caller_var_writeback` (`src/vm/vm_env_helpers.rs:1617`, drained right after the call
+   op returns, `exec_call_func_op`) finds `"p"`'s slot in the mainline's own `code.locals` and does
+   `self.locals[slot] = env["p"]` (line 1628) -- **directly overwriting the correct `self.locals[0]`
+   (the real `Promise`) with the stale `Nil`.** Confirmed via gdb: a breakpoint on
+   `vm_env_helpers.rs:1628` conditioned on `source == "p"` fires immediately after `await`'s
+   `sync_shared_vars_to_env` calls, with a backtrace through `builtin_await` -> `exec_call_func_op`.
+   `say $p.WHAT` afterward now reads the clobbered slot and prints `Nil`.
+
+This chain is now confirmed for both repros in this ticket (the `await $p` one and the narrowed
+`await Promise.in(0.05)` one), fully explaining why the `await` target doesn't matter: step 3 fires for
+ANY `await` that reaches `sync_shared_vars_to_env`, regardless of what it's awaiting, because the
+corruption (steps 1-2) already happened synchronously before any `await` ran.
+
+### Fix attempt 2026-08-15 -- tried, REVERTED, confirmed unsafe
+
+Given step 1's `sync_env_from_locals` has no gate at all while step 2's ordinary write path already has
+exactly the right gate (`code.needs_env_sync[idx]` -- a compiler-computed, per-slot signal, not a
+name-based heuristic), the natural fix is to make step 1 respect the same gate: add
+`sync_env_from_locals_needed` (only at the two "before start spawn" call sites,
+`vm_call_func_ops.rs:1118` and `:1503` -- NOT touching `sync_env_from_locals`'s other 6 callers, e.g.
+frame teardown, which have a different justification/history), skipping a slot when
+`!code.needs_env_sync[idx]`.
+
+This is semantically well-motivated: `compute_needs_env_sync`'s nested-closure free-var scan
+(`src/opcode.rs:4607-4625`) already walks `closure_compiled_codes` (which includes a `start { ... }`
+block's `MakeAnonSub` body) and sets `needs_env_sync[slot] = true` for any local a nested closure reads
+BY NAME via a `GetOuterVar`-recorded free-var -- exactly the mechanism the `S17-channel/stress.t`
+`bogosort_concurrent(@list)` case needs (`@list` IS read by name inside its `start` block, so its
+`needs_env_sync` is `true` regardless of this change). Verified: `t/lock.t` (3x), `roast/S17-channel/stress.t`
+(3x, ~11-15s each), and both of this ticket's repros (5x each) all passed cleanly with the fix in.
+
+**But it is UNSAFE and was reverted.** Running the full `t/` suite (`make test`, 3169 files) surfaced a
+real regression: `t/promise-combinator.t` subtest "allof.result syncs cas updates from worker promises"
+started failing deterministically (`~$seen` came back `' 1'` instead of `'1'`):
+
+```raku
+my $seen = [];
+Promise.allof(start { cas $seen, -> @current { flat @current, 1 } }).result;
+is ~$seen, '1', ...;
+```
+
+Confirmed via gdb (breakpoint in `sync_env_from_locals_needed` printing `code.needs_env_sync`) that
+**`needs_env_sync[slot for "seen"] == false`** even though the `start` block's `cas $seen, ...` body
+genuinely depends on seeing/mutating `$seen` cross-thread. `cas`'s target argument is a **rw-arg sink**,
+not an ordinary `GetOuterVar` free-var read or one of the `op_container_mutate_const_idx`-recognized
+in-place-mutation forms (`:delete`, `$h<k>=v`, `$a[i]++`) that `compute_needs_env_sync`'s nested-closure
+scan (`src/opcode.rs:4607-4650`) already special-cases -- so it is invisible to `needs_env_sync`
+entirely. This is not a novel gap: this repo's own `CLAUDE.md` ("What 'gain' and 'risk' actually mean")
+already documents that "mutsu's compile-time mutation analysis is incomplete (it does not see writes
+from separately-registered role/class methods, nor **rw-arg sinks like `cas`**)" as a known reason a
+by-value/incomplete-static-analysis shortcut is the RISKY choice, not the safe one. Gating
+`sync_env_from_locals`'s pre-spawn publish on `needs_env_sync` is exactly that shortcut, and the `cas`
+case is exactly the documented gap it falls into.
+
+Verified this is caused by the fix, not pre-existing: reverted the change (`git stash` / rebuild /
+`prove -e target/debug/mutsu t/promise-combinator.t`) and confirmed the unmodified baseline passes
+cleanly; restored the fix (`git stash pop`) and confirmed it fails again, deterministically (not a
+one-off/flaky result). **The fix was then fully reverted** (`git checkout -- src/vm/vm_call_func_ops.rs
+src/vm/vm_env_helpers.rs`) and the new pinned test file removed -- the working tree is back to
+unmodified `main`. No PR was opened for a code change.
+
+### Next steps for whoever picks this up
+
+`needs_env_sync` is the right KIND of signal (compiler-computed, per-slot, already trusted by the write
+path) but is currently INCOMPLETE for this purpose: it needs to also cover rw-arg-sink reads inside a
+nested closure (starting with `cas`, but audit for other rw-arg builtins/forms with the same shape --
+anything that takes a variable "by reference" rather than by value inside a `start`/closure body).
+Concretely: extend `compute_needs_env_sync`'s nested-closure scan (`src/opcode.rs:4607-4650`, alongside
+the existing `free_var_syms` loop and the `op_container_mutate_const_idx` loop) with a THIRD pass that
+recognizes `cas`'s (and any sibling rw-arg builtin's) target-variable argument the same way the
+container-mutate pass recognizes `:delete`/`$h<k>=v`/`$a[i]++` -- i.e. find how `cas $var, ...` is
+compiled (what op/arg-source records `$var` as an rw target) and fold that name's slot into
+`needs_env_sync` too. Once that is done and independently verified NOT to reintroduce this ticket's
+original bug, re-apply the `sync_env_from_locals_needed` gate at the two "before start spawn" call
+sites and re-run the full verification battery: `t/lock.t`, `roast/S17-channel/stress.t`,
+`t/promise-combinator.t` (all 3-5x, concurrency tests), this ticket's two repros as a new pinned
+`t/*.t`, plus the full `t/` suite and a broad `roast/S17-*` sweep before opening a PR.
+
+Do NOT re-attempt the gate without first fixing the `needs_env_sync` completeness gap above -- it WILL
+reintroduce the `t/promise-combinator.t` regression, confirmed twice in this round (with and without
+the fix, via `git stash`/`git stash pop`).
+
+## What's now known (2026-08-14 investigation, superseded above -- kept for history)
 
 `cargo run -- --dump-bytecode -e 'my $p = Promise.allof(start { 1 }, start { 2 }); await $p;'` shows
 the mainline:
