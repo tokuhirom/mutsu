@@ -114,20 +114,21 @@ impl Interpreter {
                     |attr| {
                         let name = &attr.name;
                         let sigil = &attr.sigil;
-                        // NOTE: this binds the tuple's former 5th positional
-                        // field (`is_required`), NOT an actual type
-                        // constraint (those live in `attribute_types`
-                        // separately) — a pre-existing mismatch between this
-                        // variable's name and what it holds, carried over
-                        // unchanged from the old positional tuple pattern
-                        // (ADR-0019 D2 struct conversion is a pure rename;
-                        // fixing this is out of scope here).
-                        let type_constraint = &attr.is_required;
                         // A constructible sigil/type shape:
-                        // - `$`: a type constraint is allowed only when it is a
-                        //   plain `type_matches_value`-checkable class/role/subset
-                        //   type (see `is_simple_native_ctor_constraint`); native /
-                        //   coercion / parametric types keep the interpreter.
+                        // - `$`: a type constraint (if any) is validated by the
+                        //   blanket `attribute_types.values().all(...)` check
+                        //   below, which applies the exact same
+                        //   `is_simple_native_ctor_constraint` /
+                        //   `native_scalar_default` / `is_native_coercion_ctor_constraint`
+                        //   test to every typed attribute regardless of sigil —
+                        //   so a `$` attribute needs no separate gate here.
+                        //   (A previous version of this branch read
+                        //   `attr.is_required` here instead — a mismatch carried
+                        //   over unchanged from the old positional-tuple
+                        //   `ClassAttributeDef` shape, ADR-0019 D2 — which wrongly
+                        //   disqualified any `is required` scalar from the native
+                        //   path even though required-ness is deliberately allowed
+                        //   through, see below.)
                         // - `@`/`%`: only untyped with no `is Type` trait — typed
                         //   elements need container type metadata and `is Type`
                         //   builds a typed container, both interpreter-owned.
@@ -139,14 +140,7 @@ impl Interpreter {
                         // `enforce_attribute_where_constraints` as a post-assembly
                         // phase (same predicate dispatch as the full constructor).
                         match sigil {
-                                '$' => match type_constraint {
-                                    None => true,
-                                    Some(inner) => inner.as_deref().is_some_and(|tc| {
-                                        Self::is_simple_native_ctor_constraint(tc)
-                                            || Self::native_scalar_default(tc).is_some()
-                                            || Self::is_native_coercion_ctor_constraint(tc)
-                                    }),
-                                },
+                                '$' => true,
                                 '@' | '%' => {
                                     // An `is Type` container (`has @.a is Buf`)
                                     // builds a special typed container — keep the
