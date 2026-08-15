@@ -320,7 +320,7 @@ impl Interpreter {
 
     /// Check for unresolved package/class stubs at program end.
     /// Throws X::Package::Stubbed if any stubs remain.
-    pub(crate) fn check_unresolved_stubs(&self) -> Result<(), RuntimeError> {
+    pub(crate) fn check_unresolved_stubs(&mut self) -> Result<(), RuntimeError> {
         self.check_unresolved_stubs_excluding(&std::collections::HashSet::new())
     }
 
@@ -330,18 +330,31 @@ impl Interpreter {
     /// already pending in the outer program will be defined later in that
     /// outer unit (class decls install at BEGIN time in raku), so they are
     /// not the EVAL's concern.
+    ///
+    /// A name already reported by a previous call is skipped too (tracked in
+    /// `reported_stub_errors`, separate from `class_stubs`/`package_stubs`
+    /// themselves — the name is STILL a stub for every class-system purpose,
+    /// e.g. a later `class B is A {}` composition check must still see it as
+    /// unresolved; only its *error* has already fired once). rakudo raises
+    /// this once per compilation unit at CHECK time, so a stub that was
+    /// already reported (e.g. by an inner EVAL whose caller caught the error)
+    /// must not be reported again by an outer/later check — otherwise a
+    /// `try { EVAL('role Bottle[::T] {...}; class Wine {...}; Bottle[Wine].new')
+    /// ; CATCH { ... } }` that handles the error still aborts the whole
+    /// program later, when the top-level end-of-program check finds the same
+    /// never-defined `Wine` stub still sitting in the registry.
     pub(crate) fn check_unresolved_stubs_excluding(
-        &self,
+        &mut self,
         exclude: &std::collections::HashSet<String>,
     ) -> Result<(), RuntimeError> {
         let mut unresolved: Vec<String> = Vec::new();
         for name in &self.registry().class_stubs {
-            if !exclude.contains(name) {
+            if !exclude.contains(name) && !self.registry().reported_stub_errors.contains(name) {
                 unresolved.push(name.clone());
             }
         }
         for name in &self.registry().package_stubs {
-            if !exclude.contains(name) {
+            if !exclude.contains(name) && !self.registry().reported_stub_errors.contains(name) {
                 unresolved.push(name.clone());
             }
         }
@@ -349,6 +362,11 @@ impl Interpreter {
             return Ok(());
         }
         unresolved.sort();
+        for name in &unresolved {
+            self.registry_mut()
+                .reported_stub_errors
+                .insert(name.clone());
+        }
         let names_list = unresolved
             .iter()
             .map(|n| format!("    {}", n))
