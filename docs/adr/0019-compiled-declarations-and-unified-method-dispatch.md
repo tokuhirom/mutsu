@@ -1039,6 +1039,40 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     per sub-PR, each raku-verified — the same discipline E1a/E4a/E7 already used successfully.
     Winner selection (`resolve_method_with_owner_impl`, `resolve_methods_per_mro_level`) must NOT
     call this helper.
+
+    **Progress (private-method family, #TBD):** added `Registry::role_method_overloads(owner,
+    name)` (reads `Registry::roles` directly, filtered non-empty like `user_method_overloads`)
+    and `Registry::get_method_overloads_with_role_fallback` (`get_method_overloads(...).or_else(||
+    role_method_overloads(...))`). Before wiring either into production, gathered corpus evidence
+    with a `MUTSU_VM_STATS`-gated pure probe at the three named `resolution_private_method.rs`
+    sites (`resolve_private_method_with_owner`, `resolve_private_method_any_owner`,
+    `private_method_candidates_by_name`): each site's own MRO walk already probed
+    `role_method_overloads` whenever its plain `get_method_overloads` call came back empty, purely
+    to count how often the fallback would have found something extra — never consulted for a real
+    answer. A full local `t/` sweep (3173 files) plus a full `roast-whitelist.txt` sweep (1436
+    files), one process per file, `MUTSU_VM_STATS=1`, recorded a combined 41 opportunities (the
+    plain lookup came back empty at some `cn` reached in an MRO walk) and **zero** hits — the role
+    fallback never once found anything beyond what `get_method_overloads` alone already returned.
+    This matches the theory: private methods are private specifically to their declaring
+    package, so a role's own private method is only reachable either (a) already flattened onto
+    the composing class (the common `does` case, where the class-level entry wins before the walk
+    ever reaches the role's own MRO position) or (b) through an owner-qualified `self!R::m()` call,
+    which requires an explicit `trusts` declaration Raku itself gates at compile time before
+    dispatch is ever attempted — so the un-punned-role gap this box's ticket describes structurally
+    cannot surface through these three sites' own call shape. With that evidence, cut the three
+    sites over from `get_method_overloads` to `get_method_overloads_with_role_fallback` for real
+    (removing the now-served-its-purpose probe): a documented no-op over the entire corpus, and a
+    correctness fix for any case the corpus doesn't exercise. Verified with the full local `t/`
+    suite (3173 files) and a 64-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset, both green
+    (`S14-roles/versioning.t` flaked once under `-j4` parallel load, passes individually and via
+    `prove -e`, the same known shape other boxes' progress notes have already hit). Remaining sites
+    from the ticket's confirmed list: `ctor_phase_plan.rs:133` needs no change — traced separately
+    (see F4b's own progress note) to be structurally unreachable with a role receiver, since its
+    only caller already filters to a real class first; `vm_call_method_compiled_cache.rs:97` is
+    still open, a separate consumer family for its own sub-PR. The informally-flagged sites
+    (`methods_qualified.rs`, `methods_classhow_lookup.rs`, `methods_classhow_dispatch.rs`,
+    `accessors_state.rs`, `methods_walk.rs`, `class_introspection.rs:262`) remain unconfirmed and
+    out of scope, per the box's own rule above.
   - [ ] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
     role at all (`methods_object.rs`'s six BUILD/TWEAK existence checks, `metamodel.rs`,
     `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`) move from `class_def.methods` to

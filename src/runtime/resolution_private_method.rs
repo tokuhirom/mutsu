@@ -28,7 +28,9 @@ impl Interpreter {
                 continue;
             }
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self.registry().get_method_overloads(cn, method_name);
+            let overloads = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn, method_name);
             if let Some(overloads) = overloads {
                 for def in overloads {
                     if !def.is_private {
@@ -132,7 +134,9 @@ impl Interpreter {
         }
         for cn in mro.iter().map(|s| s.as_str()) {
             // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
-            let overloads = self.registry().get_method_overloads(cn, method_name);
+            let overloads = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn, method_name);
             if let Some(overloads) = overloads {
                 for def in &overloads {
                     if !def.is_private {
@@ -200,7 +204,9 @@ impl Interpreter {
             {
                 continue;
             }
-            let overloads = self.registry().get_method_overloads(cn, method_name);
+            let overloads = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn, method_name);
             if let Some(overloads) = overloads {
                 for def in overloads {
                     if def.is_private && !Self::is_stub_method_body(&def.body) {
