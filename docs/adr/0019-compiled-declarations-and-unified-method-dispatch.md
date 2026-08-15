@@ -838,6 +838,15 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   introspection array (rows were scattered into unrelated hand-added blocks); order now matches for
   all 18. The ~90+ extra dispatch-recognized names per owner (step 2's raku-verification triage) are
   still untouched — that remains the real blocker before the actual cutover (step 3).
+  **Progress (2026-08-15, step 2, first name):** raku-verified the first of the ~90+ extra names —
+  `Mu`'s single extra, `DEFINITE` (`RAW_ROWS` had it via E2b; `MU_METHODS` did not). Confirmed a
+  genuine gap, not dispatch-only noise: `raku -e 'say 5.DEFINITE'` works and real Rakudo's
+  `Mu.^methods` lists `DEFINITE` (mutsu's `Mu.DEFINITE` already dispatched correctly before this
+  fix — only introspection was missing it). Added to `MU_METHODS` at the position matching its
+  `RAW_ROWS`-relative order (first, ahead of `defined`), keeping
+  `raw_rows_cover_every_introspection_name_in_order` green, and pinned in
+  `t/can-methods-drift.t`. Step 2 remains open for the other ~89+ names across the other 17 owners —
+  this is one triaged name, not a batch.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the

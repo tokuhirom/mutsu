@@ -130,3 +130,20 @@ verification before F3 can decide "genuine `.^methods` gap" vs. "deliberately in
 dispatch-only" for each one. Step 1 only closes the "is `RAW_ROWS` even a safe superset, in the right
 order" question, and the answer for the *introspection-array* side is now yes, permanently enforced.
 Step 3 (the actual cutover) still needs step 2 first.
+
+## Progress (2026-08-15): step 2 started, one name (`Mu`'s `DEFINITE`)
+
+Triaged the smallest owner first (`Mu` had exactly one extra name per the survey above). Raku
+ground truth: `Mu.^methods` lists `DEFINITE` in real Rakudo, and mutsu already dispatches
+`.DEFINITE` correctly (`RAW_ROWS` picked it up via an earlier E2b slice) — introspection was simply
+missing it, a genuine gap, not one of the deliberately-internal/protocol names this step also needs
+to identify. Added `"DEFINITE"` to `MU_METHODS` (`builtin_type_methods.rs`) at the position
+matching its `RAW_ROWS`-relative order (ahead of `defined`), keeping
+`raw_rows_cover_every_introspection_name_in_order` green, and pinned with a `works-and-can`/
+`.^methods` pair in `t/can-methods-drift.t` (verified against real `raku` output too).
+
+Remaining for step 2: ~89+ names across the other 17 owners (`Any` has 7, `Str` 25, `Int` 25,
+`Cool` 11, `Hash` 11, plus smaller counts elsewhere per the survey table above), each needing the
+same raku-verify-then-classify treatment (genuine `.^methods` gap vs. deliberately-internal
+dispatch-only name). Suggest continuing owner-by-owner in ascending extra-name-count order (small,
+independently-landable slices, same pattern as this one), rather than a single large sweep.

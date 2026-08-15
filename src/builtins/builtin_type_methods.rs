@@ -406,8 +406,8 @@ const ANY_METHODS: &[&str] = &[
 ];
 
 const MU_METHODS: &[&str] = &[
-    "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku", "clone",
-    "new",
+    "DEFINITE", "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku",
+    "clone", "new",
 ];
 
 /// The method names a built-in `type_name` responds to, in `.^methods` order.

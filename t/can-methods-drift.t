@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 20;
+plan 23;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -28,10 +28,14 @@ works-and-can 5, 'expmod', { 4.expmod(2, 5) };
 works-and-can (1, 2, 3), 'minpairs', { (1, 2, 3).minpairs };
 works-and-can (1, 2, 3), 'maxpairs', { (1, 2, 3).maxpairs };
 
+# --- Mu ---
+works-and-can 5, 'DEFINITE', { 5.DEFINITE };
+
 # The fixed names also appear in `.^methods`.
 ok 'x'.^methods.map(*.Str).grep('trans'),        'Str.^methods includes trans';
 ok 'x'.^methods.map(*.Str).grep('substr-rw'),    'Str.^methods includes substr-rw';
 ok (1, 2).^methods.map(*.Str).grep('minpairs'),  'List.^methods includes minpairs';
+ok Mu.^methods.map(*.Str).grep('DEFINITE'),      'Mu.^methods includes DEFINITE';
 
 # Methods that mutsu does NOT implement must still report False (no over-claim).
 nok 'abc'.^can('samespace').Bool, 'unimplemented samespace is not over-claimed';
