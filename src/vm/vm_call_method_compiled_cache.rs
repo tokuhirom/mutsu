@@ -93,9 +93,24 @@ impl Interpreter {
         let mut any_multi = false;
         let mut value_dependent = false;
         'outer: for cn in mro.iter() {
+            // ADR-0019 F4a: `Registry::method_entries` (and thus the plain
+            // `get_method_overloads`) has no row at all for a role that is
+            // never `.new`-punned, so an un-punned role's own MRO slot always
+            // came back empty here even though `class_mro` can list the role
+            // by name directly (common in role-heavy diamond compositions).
+            // Missing a role-only candidate can only make this cacheability
+            // gate UNDER-report: a `where`/literal/rw/signature-shaped
+            // candidate that lives only on the role would be invisible, so
+            // `value_dependent` could wrongly stay `false` and the type-keyed
+            // multi cache would then memoize a resolution that is not
+            // actually type-deterministic. The role fallback closes that gap;
+            // it cannot remove information the plain lookup already found, so
+            // it can only push `any_multi`/`value_dependent` from false to
+            // true, never the reverse. Winner selection itself
+            // (`resolve_via_sequence_cache`) is untouched by this box's rule.
             let Some(overloads) = self
                 .registry()
-                .get_method_overloads(cn.as_str(), method_name)
+                .get_method_overloads_with_role_fallback(cn.as_str(), method_name)
             else {
                 continue;
             };
