@@ -1092,6 +1092,26 @@ correctly is necessary but not sufficient — always re-check the class's
 several gaps of exactly this shape (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`
 already covers the general problem; this was one concrete instance of it).
 
+**Correction (2026-08-15): not every "Got: X::Syntax::Confused" file is a
+registration gap.** `roast/S03-operators/range.t` (expected class
+`X::Worry::Precedence::Range`) looked like the same shape but is not —
+`X::Worry::Precedence::Range` is already correctly typed *and* registered,
+and works end to end in isolation. The file's actual failure is a topic
+(`$_`) leak: the first `throws-like` call (reached through the real, loaded
+`Test.rakumod`) permanently overwrites the enclosing `for @opvariants { ...
+}` loop's own `$_` with the caught exception's message, so every subsequent
+statement in the loop — which builds its assertion's source string by
+interpolating `$_` — parses garbage and reports the generic
+`X::Syntax::Confused` several statements after the real corruption happened.
+Root-caused as far as ruling out the CATCH/topicalization restore mechanism
+itself (verified correct in isolation) without finding the exact write;
+recorded as
+`todo/deep/module-catch-default-topic-leaks-to-callers-for-loop.md` with a
+5-line repro. Before trusting a "Got: X::Syntax::Confused" diagnosis on any
+remaining file, check whether the file's *own* topic/loop variable could have
+been clobbered by an earlier assertion in the same loop — the parse failure
+may be several statements downstream of the actual bug.
+
 ## `X::Syntax::Signature::InvocantNotAllowed` and `X::Syntax::NoSelf` (2026-08-15)
 
 Same shape again, found via `roast/S06-signature/errors.t` (not itself in the
