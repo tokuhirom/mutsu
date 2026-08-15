@@ -1113,15 +1113,10 @@ impl Interpreter {
             let result = result?;
             loan_env!(self, maybe_fetch_rw_proxy(result, cf_auto_fetch))?
         } else {
-            // A `start` block spawns a thread via `clone_for_thread_for_block`,
-            // which now syncs this frame's locals into env itself (using the
-            // live `current_code` pointer) before snapshotting — see the
-            // comment on that sync call in
-            // `runtime/runtime_thread.rs::clone_for_thread_excluding`. No
-            // per-callee special case is needed here any more; every
-            // thread-spawning construct that clones through that function
-            // (`start`, `.cue`, `Promise.start`, `Thread.start`, a
-            // `whenever` worker, ...) gets the same fresh-locals guarantee.
+            // Sync Interpreter locals to env before spawning threads so closures capture them
+            if name == "start" {
+                self.sync_env_from_locals(code);
+            }
             self.set_pending_call_arg_sources(arg_sources);
             let result = self.call_function_compiled_first(&name, args, compiled_fns);
             self.set_pending_call_arg_sources(None);
@@ -1503,11 +1498,10 @@ impl Interpreter {
                     let result = result?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, true))
                 } else {
-                    // See the matching comment in the sibling `CallFunc` arm
-                    // above: the "sync locals to env before a `start` spawn"
-                    // step now lives centrally in
-                    // `clone_for_thread_excluding`, so no per-callee special
-                    // case is needed here.
+                    // Sync Interpreter locals to env before spawning threads so closures capture them
+                    if name == "start" {
+                        self.sync_env_from_locals(code);
+                    }
                     // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
                     // pseudo-package reads are reflective env lookups: the
                     // interpreter is a carrier here, not a tree-walk fallback.

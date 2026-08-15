@@ -911,7 +911,7 @@ impl Interpreter {
         None
     }
 
-    pub(crate) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
+    pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
         self.set_env_with_main_alias_sym(name, None, value);
     }
 
