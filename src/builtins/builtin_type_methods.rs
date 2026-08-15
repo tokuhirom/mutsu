@@ -9,9 +9,18 @@
 //! must never execute native methods merely to discover their names. The runtime
 //! registry copies these entries once and serves introspection from that table.
 //!
-//! ## Keep in sync with dispatch
+//! ## Single source of truth (ADR-0019 Phase F box F3)
 //!
-//! Add a native or slow-path method to the owning static slice in this module.
+//! [`builtin_type_method_names`] reads the name list straight off
+//! `native_method_row::RAW_ROWS`'s `INTROSPECTABLE`-flagged rows for the
+//! folded owner, in table order -- there is no longer a hand-maintained
+//! per-type name slice in this file. `RAW_ROWS` carries many more
+//! dispatch-recognized names per owner than `.^methods` actually lists (real
+//! Rakudo does not enumerate every internal/dispatch-only name); the
+//! `INTROSPECTABLE` bit marks exactly the raku-verified genuine
+//! `.^methods` entries (F3 step 2's owner-by-owner triage). Add a new
+//! genuine introspection name by setting that bit on its row in
+//! `native_method_row_table.rs`, not by adding a slice here.
 //! `t/can-methods-drift.t` guards the callable/introspectable contract.
 
 #[cfg(test)]
@@ -19,608 +28,22 @@ use crate::symbol::Symbol;
 #[cfg(test)]
 use crate::value::Value;
 
-/// Numeric/stringy coercion methods shared verbatim (same order) by the leaf
-/// types `Str`, `Int`/`Num`/`Rat`/`Complex`, `Bool`, and `Cool`. Declared once
-/// here so a new coercion is added to every one of them at the same time.
-const NUMERIC_COERCIONS: &[&str] = &[
-    "Numeric", "Int", "Num", "Rat", "Bool", "Str", "gist", "raku",
-];
-
-/// `Str`-specific methods, in `.^methods` order, up to (not including) the
-/// shared coercion tail.
-const STR_OWN: &[&str] = &[
-    "chars",
-    "codes",
-    "comb",
-    "chomp",
-    "chop",
-    "contains",
-    "ends-with",
-    "fc",
-    "flip",
-    "index",
-    "indices",
-    "lc",
-    "lines",
-    "match",
-    "ords",
-    "pred",
-    "rindex",
-    "samecase",
-    "samemark",
-    "split",
-    "starts-with",
-    "substr",
-    "succ",
-    "tc",
-    "trim",
-    "trim-leading",
-    "trim-trailing",
-    "uc",
-    "words",
-    "wordcase",
-    "NFC",
-    "NFD",
-    "NFKC",
-    "NFKD",
-    "encode",
-    "uniparse",
-    "unimatch",
-    "uniprops",
-    "parse-names",
-    "parse-base",
-    "subst",
-    "subst-mutate",
-    "substr-rw",
-    "substr-eq",
-    "trans",
-    "IO",
-];
-
-/// `Str`-only extras beyond the shared coercion tail (ADR-0019 Phase F box F3
-/// step 2, `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`),
-/// raku-verified genuine `Str.^methods` entries that already dispatch
-/// correctly. `RAW_ROWS` also lists `AST`/`list`/`UInt`/`FatRat`/`sprintf`/
-/// `chrs`/`bytes`/`Range`/`Complex`/`Real`/`reverse`/`byte`/`perl` under
-/// `Str`, but real Rakudo's `Str.^methods` does not include any of those --
-/// confirmed dispatch-only, left out.
-const STR_EXTRA_TAIL: &[&str] = &[
-    "uniprop", "indent", "ord", "uniname", "uninames", "unival", "univals", "tclc", "Version",
-    "Date", "DateTime",
-];
-
-/// Numeric leaf (`Int`/`Num`/`Rat`/`Complex`) methods, up to the coercion tail.
-const NUMERIC_OWN: &[&str] = &[
-    "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp", "roots", "is-prime",
-    "chr", "base", "polymod", "expmod", "pred", "succ",
-];
-
-/// `Int`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail.
-/// ADR-0019 Phase F box F3 step 2 (`todo/deep/
-/// adr0019-f3-raw-rows-drift-from-introspection-arrays.md`): `RAW_ROWS` lists
-/// these 7 only under the `"Int"` owner (not `Num`/`Rat`/`Complex`), and all 7
-/// are raku-verified genuine `Int.^methods` entries that already dispatch
-/// correctly. `rand` is also real on `Num`/`Rat` in Rakudo, but `RAW_ROWS` has
-/// no row for it there either -- that's a separate, still-open introspection
-/// gap outside this array's scope (F3 tracks `RAW_ROWS` parity, not a full
-/// raku-fidelity sweep of the whole numeric family).
-const INT_EXTRA_TAIL: &[&str] = &["rand", "uniprop", "lsb", "msb", "int8", "Real", "Complex"];
-
-/// `Rat`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail
-/// (ADR-0019 Phase F box F3 step 2), raku-verified genuine `Rat.^methods`
-/// entries that already dispatch correctly.
-const RAT_EXTRA_TAIL: &[&str] = &["FatRat", "nude"];
-
-/// `Complex`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS`
-/// tail (ADR-0019 Phase F box F3 step 2). `RAW_ROWS` also lists `UInt` and
-/// `reverse` under `Complex`, but real Rakudo's `Complex.^methods` does not
-/// include either -- confirmed dispatch-only, left out.
-const COMPLEX_EXTRA_TAIL: &[&str] = &["isNaN", "re", "im", "reals", "conj", "Complex"];
-
-/// `Bool` methods, up to the coercion tail.
-const BOOL_OWN: &[&str] = &["pred", "succ", "pick", "roll"];
-
-/// `Cool` methods (string + math coercion helpers), up to the coercion tail.
-const COOL_OWN: &[&str] = &[
-    "substr",
-    "chars",
-    "codes",
-    "chomp",
-    "chop",
-    "contains",
-    "comb",
-    "ends-with",
-    "fc",
-    "flip",
-    "index",
-    "indices",
-    "lc",
-    "lines",
-    "match",
-    "ords",
-    "pred",
-    "rindex",
-    "samecase",
-    "split",
-    "starts-with",
-    "succ",
-    "tc",
-    "trim",
-    "trim-leading",
-    "trim-trailing",
-    "uc",
-    "words",
-    "wordcase",
-    "abs",
-    "ceiling",
-    "floor",
-    "round",
-    "sign",
-    "sqrt",
-    "log",
-    "log10",
-    "exp",
-    "is-prime",
-    "chr",
-    "base",
-    "polymod",
-];
-
-/// The native-sized-integer coercion methods (`42.int8`, `"42".byte`, ...)
-/// declared on `Cool` — same 11 names, same order, as
-/// `runtime::native_types::NATIVE_INT_COERCE_METHODS`. Kept as a separate
-/// tail (appended after `NUMERIC_COERCIONS` in `builtin_type_method_names`,
-/// not folded into `COOL_OWN`) because `RAW_ROWS` lists them after `Cool`'s
-/// `gist`/`raku` rows, and `raw_rows_cover_every_introspection_name_in_order`
-/// requires the introspection array's order to match. Confirmed a genuine
-/// `.^methods` gap (real Rakudo's `Cool.^methods` lists all 11) rather than
-/// dispatch-only noise, ADR-0019 Phase F box F3 step 2 (`todo/deep/
-/// adr0019-f3-raw-rows-drift-from-introspection-arrays.md`); dispatch and
-/// `.^can` already worked before this list existed (`t/native-int-coerce-
-/// methods-are-cool-only.t`), only `.^methods` enumeration was missing them.
-const COOL_NATIVE_INT_COERCE_TAIL: &[&str] = &[
-    "int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "byte", "int", "uint",
-];
-
-const LIST_METHODS: &[&str] = &[
-    "elems",
-    "end",
-    "keys",
-    "values",
-    "kv",
-    "pairs",
-    "antipairs",
-    "join",
-    "map",
-    "grep",
-    "first",
-    "sort",
-    "reverse",
-    "rotate",
-    "unique",
-    "repeated",
-    "squish",
-    "flat",
-    "eager",
-    "lazy",
-    "head",
-    "tail",
-    "skip",
-    "push",
-    "pop",
-    "shift",
-    "unshift",
-    "splice",
-    "append",
-    "prepend",
-    "classify",
-    "categorize",
-    "min",
-    "max",
-    "minmax",
-    "minpairs",
-    "maxpairs",
-    "sum",
-    "pick",
-    "roll",
-    "permutations",
-    "combinations",
-    "rotor",
-    "batch",
-    "produce",
-    "reduce",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-    "Numeric",
-    "Int",
-    "Array",
-    "List",
-];
-
-/// `List`-only extras beyond `LIST_METHODS` (ADR-0019 Phase F box F3 step 2,
-/// `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`),
-/// raku-verified genuine `List.^methods` entries that already dispatch
-/// correctly. `RAW_ROWS` also lists `cache`/`WHICH`/`tree`/`pairup`/`hash`
-/// under `List`, but real Rakudo's `List.^methods` does not include any of
-/// those -- confirmed dispatch-only, left out. (`WHICH` genuinely is on
-/// `Array.^methods` -- see `ARRAY_EXTRA_TAIL` -- but not on plain `List`'s.)
-const LIST_EXTRA_TAIL: &[&str] = &[
-    "list",
-    "item",
-    "Slip",
-    "sink",
-    "invert",
-    "AT-POS",
-    "EXISTS-POS",
-    "is-lazy",
-    "Capture",
-    "hyper",
-    "race",
-    "Supply",
-    "fmt",
-];
-
-/// `Array`-only extras beyond `LIST_METHODS` (ADR-0019 Phase F box F3 step
-/// 2), raku-verified genuine `Array.^methods` entries that already dispatch
-/// correctly. Differs from `LIST_EXTRA_TAIL` by two names Rakudo's `Array`
-/// answers but plain `List` doesn't: `WHICH` and `dynamic`. `RAW_ROWS` also
-/// lists `cache`/`tree`/`pairup`/`hash` under `Array`, confirmed
-/// dispatch-only like `List`'s, left out.
-const ARRAY_EXTRA_TAIL: &[&str] = &[
-    "list",
-    "item",
-    "Slip",
-    "sink",
-    "invert",
-    "WHICH",
-    "AT-POS",
-    "EXISTS-POS",
-    "is-lazy",
-    "Capture",
-    "dynamic",
-    "hyper",
-    "race",
-    "Supply",
-    "fmt",
-];
-
-const HASH_METHODS: &[&str] = &[
-    "elems",
-    "keys",
-    "values",
-    "kv",
-    "pairs",
-    "antipairs",
-    "push",
-    "append",
-    "classify-list",
-    "categorize-list",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-    "Numeric",
-    "Int",
-    "pick",
-    "EXISTS-KEY",
-    "AT-KEY",
-    "List",
-    "invert",
-    "flat",
-    "dynamic",
-    "roll",
-];
-
-const RANGE_METHODS: &[&str] = &[
-    "min",
-    "max",
-    "bounds",
-    "elems",
-    "list",
-    "flat",
-    "reverse",
-    "pick",
-    "roll",
-    "sum",
-    "rand",
-    "minmax",
-    "infinite",
-    "is-int",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-    "Numeric",
-    "Int",
-    "excludes-min",
-    "excludes-max",
-];
-
-/// `Range`-only extras beyond `RANGE_METHODS` (ADR-0019 Phase F box F3 step
-/// 2), raku-verified genuine `Range.^methods` entries that already dispatch
-/// correctly. `RAW_ROWS` also lists `Array`/`join`/`Supply`/`List`/`head`/
-/// `batch` under `Range`, but real Rakudo's `Range.^methods` does not
-/// include any of those -- confirmed dispatch-only, left out.
-const RANGE_EXTRA_TAIL: &[&str] = &[
-    "hyper",
-    "lazy",
-    "int-bounds",
-    "AT-POS",
-    "race",
-    "in-range",
-    "EXISTS-POS",
-];
-
-const CODE_METHODS: &[&str] = &[
-    "name",
-    "signature",
-    "arity",
-    "count",
-    "of",
-    "returns",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-];
-
-const SIGNATURE_METHODS: &[&str] = &[
-    "params", "arity", "count", "returns", "Bool", "Str", "gist", "raku",
-];
-
-const IO_PATH_METHODS: &[&str] = &[
-    "absolute",
-    "basename",
-    "cleanup",
-    "copy",
-    "dirname",
-    "e",
-    "d",
-    "f",
-    "l",
-    "r",
-    "w",
-    "x",
-    "rw",
-    "rwx",
-    "s",
-    "z",
-    "extension",
-    "IO",
-    "lines",
-    "mkdir",
-    "modified",
-    "accessed",
-    "changed",
-    "mode",
-    "move",
-    "open",
-    "parent",
-    "parts",
-    "pred",
-    "rename",
-    "resolve",
-    "rmdir",
-    "sibling",
-    "slurp",
-    "spurt",
-    "succ",
-    "symlink",
-    "link",
-    "add",
-    "child",
-    "unlink",
-    "volume",
-    "watch",
-    "words",
-    "CWD",
-    "SPEC",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-    "Numeric",
-    "Int",
-];
-
-const IO_HANDLE_METHODS: &[&str] = &[
-    "open",
-    "close",
-    "path",
-    "IO",
-    "slurp",
-    "slurp-rest",
-    "spurt",
-    "lines",
-    "words",
-    "comb",
-    "split",
-    "print",
-    "print-nl",
-    "printf",
-    "say",
-    "put",
-    "get",
-    "getc",
-    "read",
-    "readchars",
-    "write",
-    "seek",
-    "tell",
-    "eof",
-    "flush",
-    "lock",
-    "unlock",
-    "opened",
-    "nl-in",
-    "nl-out",
-    "chomp",
-    "encoding",
-    "decode",
-    "Supply",
-    "native-descriptor",
-    "WRITE",
-    "READ",
-    "t",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-];
-
-const ANY_METHODS: &[&str] = &[
-    "serial",
-    "hash",
-    "say",
-    "put",
-    "print",
-    "note",
-    "so",
-    "not",
-    "defined",
-    "WHAT",
-    "WHERE",
-    "HOW",
-    "WHY",
-    "iterator",
-    "flat",
-    "eager",
-    "lazy",
-    "map",
-    "grep",
-    "first",
-    "sort",
-    "reverse",
-    "unique",
-    "repeated",
-    "squish",
-    "head",
-    "tail",
-    "skip",
-    "min",
-    "max",
-    "minmax",
-    "elems",
-    "end",
-    "keys",
-    "values",
-    "kv",
-    "pairs",
-    "antipairs",
-    "classify",
-    "categorize",
-    "join",
-    "pick",
-    "roll",
-    "sum",
-    "reduce",
-    "produce",
-    "rotor",
-    "batch",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-    "Numeric",
-    "Int",
-];
-
-const MU_METHODS: &[&str] = &[
-    "DEFINITE", "defined", "WHAT", "WHERE", "HOW", "WHY", "WHICH", "Bool", "Str", "gist", "raku",
-    "clone", "new",
-];
-
 /// The method names a built-in `type_name` responds to, in `.^methods` order.
 /// Returns an empty `Vec` for types not modelled here (e.g. user classes, which
 /// are handled separately via `registry().classes`).
-/// `Buf`/`Blob` methods the native probe can't reach (slow-path or type-object
-/// constructors). `allocate` matters beyond introspection:
-/// `NativeHelpers::Blob`'s `blob-from-pointer` branches on
-/// `$type.can('allocate')` and takes a REPR-poking fallback when it answers
-/// false.
-const BUF_METHODS: &[&str] = &[
-    "allocate",
-    "new",
-    "push",
-    "pop",
-    "shift",
-    "unshift",
-    "append",
-    "prepend",
-    "splice",
-    "reallocate",
-    "subbuf",
-    "subbuf-rw",
-    "decode",
-    "elems",
-    "bytes",
-    "of",
-    "reverse",
-    "list",
-    "Blob",
-    "Buf",
-    "Bool",
-    "Str",
-    "gist",
-    "raku",
-];
-
-/// `Blob`/`Buf`-only extras beyond `BUF_METHODS` (ADR-0019 Phase F box F3
-/// step 2), raku-verified genuine `.^methods` entries that already dispatch
-/// correctly (`$buf.read-uint8(0)`, etc.). `RAW_ROWS` also lists `values`/
-/// `List` under `Blob`, but real Rakudo's `Blob.^methods` does not include
-/// either -- confirmed dispatch-only, left out.
-const BUF_EXTRA_TAIL: &[&str] = &[
-    "read-uint8",
-    "read-int8",
-    "read-uint16",
-    "read-int16",
-    "read-uint32",
-];
-
 pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
-    if crate::runtime::utils::is_buf_or_blob_class(type_name) {
-        return [BUF_METHODS, BUF_EXTRA_TAIL].concat();
+    let owner = canonical_builtin_owner(type_name);
+    if owner.is_empty() {
+        return Vec::new();
     }
-    match type_name {
-        "Str" => [
-            STR_OWN,
-            NUMERIC_COERCIONS,
-            &["elems", "fmt"],
-            STR_EXTRA_TAIL,
-        ]
-        .concat(),
-        "Int" => [NUMERIC_OWN, NUMERIC_COERCIONS, INT_EXTRA_TAIL].concat(),
-        "Rat" => [NUMERIC_OWN, NUMERIC_COERCIONS, RAT_EXTRA_TAIL].concat(),
-        "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS, COMPLEX_EXTRA_TAIL].concat(),
-        "Num" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
-        "List" => [LIST_METHODS, LIST_EXTRA_TAIL].concat(),
-        "Array" => [LIST_METHODS, ARRAY_EXTRA_TAIL].concat(),
-        "Hash" => HASH_METHODS.to_vec(),
-        "Bool" => [BOOL_OWN, NUMERIC_COERCIONS].concat(),
-        "Range" => [RANGE_METHODS, RANGE_EXTRA_TAIL].concat(),
-        "Sub" | "Method" | "Block" | "Routine" | "Code" => CODE_METHODS.to_vec(),
-        "Signature" => SIGNATURE_METHODS.to_vec(),
-        "IO::Path" => IO_PATH_METHODS.to_vec(),
-        "IO::Handle" => IO_HANDLE_METHODS.to_vec(),
-        "Cool" => [COOL_OWN, NUMERIC_COERCIONS, COOL_NATIVE_INT_COERCE_TAIL].concat(),
-        "Any" => ANY_METHODS.to_vec(),
-        "Mu" => MU_METHODS.to_vec(),
-        _ => Vec::new(),
-    }
+    crate::builtins::native_method_row::introspectable_names_for_owner(owner)
 }
 
-/// A representative sample VALUE for a *concrete* built-in type, used to probe
-/// the real native dispatch when answering `.^methods` / `.^can`. Abstract types
-/// (`Any`/`Mu`/`Cool`) and types without an easily-constructed instance return
-/// `None`, so the caller falls back to the declared list above.
-///
-/// Probing a sample value is what makes the method set *derived from dispatch*
-/// rather than a hand-maintained list: e.g. `"abc"` responds to `chars`/`uc`/
-/// `samemark` but not `abs`, while `2` responds to `abs` but not `chars`, so the
-/// same `METHOD_UNIVERSE` yields each type's correct subset automatically.
+/// A representative sample VALUE for a *concrete* built-in type, used by
+/// `native_method_row.rs`'s inverse-probe tests to confirm a `RAW_ROWS` row's
+/// claimed arity is actually backed by the real native dispatch cascade.
+/// Abstract types (`Any`/`Mu`/`Cool`) and types without an easily-constructed
+/// instance return `None`.
 #[cfg(test)]
 pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
     if crate::runtime::utils::is_buf_or_blob_class(type_name) {
@@ -653,19 +76,6 @@ pub(crate) fn builtin_sample_value(type_name: &str) -> Option<Value> {
     })
 }
 
-/// Whether `value` responds to `method_name` via mutsu's *native* method
-/// dispatch (the pure 0/1/2-arg `native_method_*` paths). `is_some()` means the
-/// method NAME was recognized at that arity — independent of whether the call
-/// would succeed — because the dispatch matches the method name before the
-/// argument values. This is the same recognition `.^can` relies on, so
-/// `.^methods` (which filters `METHOD_UNIVERSE` through this) stays consistent
-/// with `.^can`. It does NOT cover slow-path methods (those needing `&mut self`,
-/// e.g. block-taking `map`/`grep`/`sort`); those remain in the declared lists.
-#[cfg(test)]
-pub(crate) fn native_responds_to(value: &Value, method_name: &str) -> bool {
-    native_method_arities(value, method_name) != 0
-}
-
 #[cfg(test)]
 pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     let sym = Symbol::intern(method_name);
@@ -689,176 +99,6 @@ pub(crate) fn native_method_arities(value: &Value, method_name: &str) -> u8 {
     }
     arities
 }
-
-/// Generous master set of built-in method NAMES (excluding the universal
-/// `Mu`/`Any` methods such as `say`/`WHAT`/`defined`, which are reported via the
-/// `Any`/`Mu` lists on `:all`). `.^methods` for a concrete type filters this
-/// through `native_responds_to(sample, name)`, so a name listed here that the
-/// type does not actually dispatch is silently dropped — making the universe
-/// safe to keep broad. Add a name here when introducing a native method whose
-/// name is not already present.
-#[cfg(test)]
-pub(crate) const METHOD_UNIVERSE: &[&str] = &[
-    // String / Cool
-    "chars",
-    "codes",
-    "comb",
-    "chomp",
-    "chop",
-    "contains",
-    "ends-with",
-    "fc",
-    "flip",
-    "index",
-    "indices",
-    "lc",
-    "lines",
-    "match",
-    "ord",
-    "ords",
-    "pred",
-    "rindex",
-    "samecase",
-    "samemark",
-    "samespace",
-    "split",
-    "starts-with",
-    "substr",
-    "substr-eq",
-    "substr-rw",
-    "subst",
-    "subst-mutate",
-    "succ",
-    "tc",
-    "tclc",
-    "trim",
-    "trim-leading",
-    "trim-trailing",
-    "uc",
-    "words",
-    "wordcase",
-    "indent",
-    "trans",
-    "encode",
-    "NFC",
-    "NFD",
-    "NFKC",
-    "NFKD",
-    "uniparse",
-    "parse-names",
-    "parse-base",
-    "fmt",
-    "elems",
-    "IO",
-    // Unicode property accessors
-    "unimatch",
-    "uniname",
-    "uninames",
-    "uniprop",
-    "uniprops",
-    "unival",
-    "univals",
-    "uniprop-int",
-    "uniprop-bool",
-    "uniprop-str",
-    // Numeric / Cool
-    "abs",
-    "ceiling",
-    "floor",
-    "round",
-    "sign",
-    "sqrt",
-    "log",
-    "log10",
-    "exp",
-    "roots",
-    "is-prime",
-    "chr",
-    "base",
-    "polymod",
-    "expmod",
-    "sin",
-    "cos",
-    "tan",
-    "asin",
-    "acos",
-    "atan",
-    "atan2",
-    "sinh",
-    "cosh",
-    "tanh",
-    "sec",
-    "cosec",
-    "cotan",
-    "lsb",
-    "msb",
-    // List / Array (native, non-block)
-    "end",
-    "keys",
-    "values",
-    "kv",
-    "pairs",
-    "antipairs",
-    "join",
-    "reverse",
-    "rotate",
-    "unique",
-    "repeated",
-    "squish",
-    "flat",
-    "eager",
-    "head",
-    "tail",
-    "skip",
-    "push",
-    "pop",
-    "shift",
-    "unshift",
-    "splice",
-    "append",
-    "prepend",
-    "min",
-    "max",
-    "minmax",
-    "minpairs",
-    "maxpairs",
-    "sum",
-    "pick",
-    "roll",
-    "permutations",
-    "combinations",
-    "rotor",
-    "batch",
-    "list",
-    "Array",
-    "List",
-    "Seq",
-    "cache",
-    // Hash
-    "classify-list",
-    "categorize-list",
-    // Range
-    "bounds",
-    "rand",
-    "infinite",
-    "is-int",
-    "excludes-min",
-    "excludes-max",
-    // Coercions / identity (own, not the universal Mu set)
-    "Numeric",
-    "Int",
-    "Num",
-    "Rat",
-    "FatRat",
-    "Complex",
-    "Bool",
-    "Str",
-    "Stringy",
-    "Capture",
-    "gist",
-    "raku",
-    "WHICH",
-];
 
 /// One canonical built-in type×method entry. User candidates will use the same shape once
 /// ADR-0019's registry migration lands.
@@ -1047,31 +287,43 @@ mod tests {
 
     #[test]
     fn native_probe_recognizes_per_type_methods() {
-        // The probe must recognize a type's own native methods on its sample and
-        // reject a method that belongs to a different type — this per-value
-        // discrimination is what makes one shared `METHOD_UNIVERSE` correct.
+        // A type's own native methods must be recognized on its sample, and a
+        // method belonging to a different type must be rejected -- this
+        // per-value discrimination is what `native_method_arities` gives
+        // `RAW_ROWS`'s inverse-probe tests in `native_method_row.rs`.
         let s = builtin_sample_value("Str").unwrap();
-        assert!(
-            native_responds_to(&s, "chars"),
+        assert_ne!(
+            native_method_arities(&s, "chars"),
+            0,
             "Str sample should do chars"
         );
-        assert!(native_responds_to(&s, "uc"), "Str sample should do uc");
+        assert_ne!(
+            native_method_arities(&s, "uc"),
+            0,
+            "Str sample should do uc"
+        );
         // A Str has no native `abs` (it would need numeric coercion via the slow
-        // path), so the probe must reject it — this is the discrimination that
-        // lets one shared universe yield different sets per type.
-        assert!(
-            !native_responds_to(&s, "abs"),
+        // path), so the probe must reject it.
+        assert_eq!(
+            native_method_arities(&s, "abs"),
+            0,
             "Str sample must not claim native abs"
         );
-        assert!(
-            !native_responds_to(&s, "no-such-method-xyz"),
+        assert_eq!(
+            native_method_arities(&s, "no-such-method-xyz"),
+            0,
             "Str sample must not claim an unknown method"
         );
 
         let i = builtin_sample_value("Int").unwrap();
-        assert!(native_responds_to(&i, "abs"), "Int sample should do abs");
-        assert!(
-            !native_responds_to(&i, "no-such-method-xyz"),
+        assert_ne!(
+            native_method_arities(&i, "abs"),
+            0,
+            "Int sample should do abs"
+        );
+        assert_eq!(
+            native_method_arities(&i, "no-such-method-xyz"),
+            0,
             "Int sample must not claim an unknown method"
         );
     }
@@ -1114,22 +366,26 @@ mod tests {
     }
 
     #[test]
-    fn universe_excludes_universal_mu_any_methods() {
+    fn str_methods_exclude_universal_mu_any_methods() {
         // The universal Mu/Any methods (say/WHAT/defined/...) are reported via
-        // the Any/Mu lists on `:all`, NOT the per-type probe — keeping them out
-        // of the universe is what stops `Str.^methods` listing `say`.
+        // the Any/Mu lists on `:all`, NOT `Str`'s own -- `RAW_ROWS`'s
+        // `INTROSPECTABLE` rows for `Str` must not include any of them.
+        let str_methods = builtin_type_method_names("Str");
         for forbidden in [
             "say", "put", "print", "note", "WHAT", "WHERE", "defined", "so", "not",
         ] {
             assert!(
-                !METHOD_UNIVERSE.contains(&forbidden),
-                "METHOD_UNIVERSE must not contain the universal Mu/Any method `{forbidden}`"
+                !str_methods.contains(&forbidden),
+                "Str.^methods must not contain the universal Mu/Any method `{forbidden}`"
             );
         }
     }
 
     #[test]
     fn coercion_methods_present_on_every_numeric_leaf() {
+        const NUMERIC_COERCIONS: &[&str] = &[
+            "Numeric", "Int", "Num", "Rat", "Bool", "Str", "gist", "raku",
+        ];
         for ty in ["Str", "Int", "Num", "Rat", "Complex", "Bool", "Cool"] {
             let names = builtin_type_method_names(ty);
             for coercion in NUMERIC_COERCIONS {
