@@ -1556,6 +1556,56 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
     `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
     clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-3, #TBD):** converted the class-declaration family's write sites to dual-write
+    through the mutator API (`cx.class_def.methods`/`class_def.methods` unchanged, each site ALSO
+    calls the matching registry mutator): `registration_class_body_method.rs`'s multi-candidate
+    push, non-multi retain+push, and both `HandleSpec` delegation-forwarder pushes;
+    `registration_class_body.rs`'s code-alias write; `registration_class_compose.rs` and
+    `registration_class_compose_body.rs`'s role-method composition (both the direct-parent and
+    grandparent-role-propagation paths); `registration_class.rs`'s `apply_handle_specs` (now
+    `&mut self` plus a `class_name` parameter, its one call site updated); and
+    `registration.rs`'s `resolve_class_stub_requirements` write-back (safe despite this function's
+    own mid-loop `Err` returns: its only caller, `finalize_class_registration`, rolls back via
+    `ClassRegSnapshot::restore`, which always ends with a full `sync_user_method_entries` re-derive
+    from the restored pre-attempt `class_def` -- any registry state a failed attempt's mutator
+    calls left behind is overwritten by that unconditional re-derive, exactly as it already
+    overwrites `class_def` itself). The periodic per-statement `sync_user_method_entries` call
+    (`registration_class_body.rs:208` and friends) is deliberately left untouched in this slice --
+    per design note (3)'s framing it "degenerates to an assertion that the two agree" only once
+    read cutover (F4c-9a) removes the last consumer of `class_def.methods`, so for now it stays the
+    actual mechanism and these mutator calls are additive/shadow-provable, not a behavior change.
+
+    **`registration_class_body_attr.rs:172-178`'s merge-back is deliberately NOT deleted in this
+    slice**, contrary to this box's own bullet -- read carefully before assuming otherwise. Its
+    root cause is that a user `trait_mod:<is>` (Attribute::Predicate's `is predicate` being the
+    real-world case) can call `.^add_method`, which writes directly into the registry with no way
+    to reach `cx.class_def` (the in-flight `ClassBodyCx` has no visibility into a MOP call). F4c-6
+    (`^add_method`) has not landed yet, so `.^add_method`'s write still bypasses `class_def.methods`
+    entirely; deleting the merge-back now would let the later unconditional `class_def.methods`
+    re-publish (`registration_class_body.rs:208`'s per-statement sync, unchanged in this slice, per
+    above) silently drop that method again -- reintroducing the exact bug the merge-back exists to
+    fix. Revisit once F4c-6 makes `^add_method` dual-write-aware.
+
+    **A real R8 lock-reentrancy panic was hit and fixed while implementing this slice** --
+    `propagate_composed_role_parent_specs` (`registration_class_compose_body.rs`) had two
+    `if let Some(x) = self.registry()....cloned() { <body> }` sites; Rust's temporary-lifetime-
+    extension rule keeps the `RegistryReadGuard` produced by `self.registry()` alive for the
+    *entire* `if let` body, not just the condition, so adding a `self.registry_mut()` call inside
+    either body panics on a same-thread read -> write lock upgrade (caught by the debug-only
+    `lock_reentry.rs` guard, not a silent deadlock -- see that module's own docs). Fixed by hoisting
+    each clone into its own `let` statement first (ordinary `let` does not extend the temporary's
+    lifetime past the statement), then branching on the *owned* result. This is exactly the R8
+    hazard the design note names, just found in the sibling composition-propagation function
+    rather than in `resolve_class_stub_requirements` itself, and just as easy to trip on any future
+    F4c-4+ site that adds a `registry_mut()` call inside an existing `if let Some(x) =
+    self.registry()... { }` -- grep for that shape before adding a write inside one.
+
+    Verified with the full local `t/` suite (3182 files, 29634 tests) under
+    `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions, 0 lock-reentrancy panics after
+    the fix above), the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release; only the
+    pre-existing tracked `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh`
+    (GATE PASSED); `cargo clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

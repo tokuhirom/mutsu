@@ -326,7 +326,7 @@ impl Interpreter {
         } else {
             format!("!{}", attr_name_str)
         };
-        self.apply_handle_specs(&decl.handles, &attr_var_name, &mut cx.class_def);
+        self.apply_handle_specs(cx.name, &decl.handles, &attr_var_name, &mut cx.class_def);
         Ok(ClassBodyFlow::RunTail)
     }
 }
