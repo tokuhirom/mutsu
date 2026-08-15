@@ -77,11 +77,45 @@ const STR_OWN: &[&str] = &[
     "IO",
 ];
 
+/// `Str`-only extras beyond the shared coercion tail (ADR-0019 Phase F box F3
+/// step 2, `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`),
+/// raku-verified genuine `Str.^methods` entries that already dispatch
+/// correctly. `RAW_ROWS` also lists `AST`/`list`/`UInt`/`FatRat`/`sprintf`/
+/// `chrs`/`bytes`/`Range`/`Complex`/`Real`/`reverse`/`byte`/`perl` under
+/// `Str`, but real Rakudo's `Str.^methods` does not include any of those --
+/// confirmed dispatch-only, left out.
+const STR_EXTRA_TAIL: &[&str] = &[
+    "uniprop", "indent", "ord", "uniname", "uninames", "unival", "univals", "tclc", "Version",
+    "Date", "DateTime",
+];
+
 /// Numeric leaf (`Int`/`Num`/`Rat`/`Complex`) methods, up to the coercion tail.
 const NUMERIC_OWN: &[&str] = &[
     "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp", "roots", "is-prime",
     "chr", "base", "polymod", "expmod", "pred", "succ",
 ];
+
+/// `Int`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail.
+/// ADR-0019 Phase F box F3 step 2 (`todo/deep/
+/// adr0019-f3-raw-rows-drift-from-introspection-arrays.md`): `RAW_ROWS` lists
+/// these 7 only under the `"Int"` owner (not `Num`/`Rat`/`Complex`), and all 7
+/// are raku-verified genuine `Int.^methods` entries that already dispatch
+/// correctly. `rand` is also real on `Num`/`Rat` in Rakudo, but `RAW_ROWS` has
+/// no row for it there either -- that's a separate, still-open introspection
+/// gap outside this array's scope (F3 tracks `RAW_ROWS` parity, not a full
+/// raku-fidelity sweep of the whole numeric family).
+const INT_EXTRA_TAIL: &[&str] = &["rand", "uniprop", "lsb", "msb", "int8", "Real", "Complex"];
+
+/// `Rat`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS` tail
+/// (ADR-0019 Phase F box F3 step 2), raku-verified genuine `Rat.^methods`
+/// entries that already dispatch correctly.
+const RAT_EXTRA_TAIL: &[&str] = &["FatRat", "nude"];
+
+/// `Complex`-only extras beyond the shared `NUMERIC_OWN`/`NUMERIC_COERCIONS`
+/// tail (ADR-0019 Phase F box F3 step 2). `RAW_ROWS` also lists `UInt` and
+/// `reverse` under `Complex`, but real Rakudo's `Complex.^methods` does not
+/// include either -- confirmed dispatch-only, left out.
+const COMPLEX_EXTRA_TAIL: &[&str] = &["isNaN", "re", "im", "reals", "conj", "Complex"];
 
 /// `Bool` methods, up to the coercion tail.
 const BOOL_OWN: &[&str] = &["pred", "succ", "pick", "roll"];
@@ -205,6 +239,53 @@ const LIST_METHODS: &[&str] = &[
     "List",
 ];
 
+/// `List`-only extras beyond `LIST_METHODS` (ADR-0019 Phase F box F3 step 2,
+/// `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`),
+/// raku-verified genuine `List.^methods` entries that already dispatch
+/// correctly. `RAW_ROWS` also lists `cache`/`WHICH`/`tree`/`pairup`/`hash`
+/// under `List`, but real Rakudo's `List.^methods` does not include any of
+/// those -- confirmed dispatch-only, left out. (`WHICH` genuinely is on
+/// `Array.^methods` -- see `ARRAY_EXTRA_TAIL` -- but not on plain `List`'s.)
+const LIST_EXTRA_TAIL: &[&str] = &[
+    "list",
+    "item",
+    "Slip",
+    "sink",
+    "invert",
+    "AT-POS",
+    "EXISTS-POS",
+    "is-lazy",
+    "Capture",
+    "hyper",
+    "race",
+    "Supply",
+    "fmt",
+];
+
+/// `Array`-only extras beyond `LIST_METHODS` (ADR-0019 Phase F box F3 step
+/// 2), raku-verified genuine `Array.^methods` entries that already dispatch
+/// correctly. Differs from `LIST_EXTRA_TAIL` by two names Rakudo's `Array`
+/// answers but plain `List` doesn't: `WHICH` and `dynamic`. `RAW_ROWS` also
+/// lists `cache`/`tree`/`pairup`/`hash` under `Array`, confirmed
+/// dispatch-only like `List`'s, left out.
+const ARRAY_EXTRA_TAIL: &[&str] = &[
+    "list",
+    "item",
+    "Slip",
+    "sink",
+    "invert",
+    "WHICH",
+    "AT-POS",
+    "EXISTS-POS",
+    "is-lazy",
+    "Capture",
+    "dynamic",
+    "hyper",
+    "race",
+    "Supply",
+    "fmt",
+];
+
 const HASH_METHODS: &[&str] = &[
     "elems",
     "keys",
@@ -255,6 +336,21 @@ const RANGE_METHODS: &[&str] = &[
     "Int",
     "excludes-min",
     "excludes-max",
+];
+
+/// `Range`-only extras beyond `RANGE_METHODS` (ADR-0019 Phase F box F3 step
+/// 2), raku-verified genuine `Range.^methods` entries that already dispatch
+/// correctly. `RAW_ROWS` also lists `Array`/`join`/`Supply`/`List`/`head`/
+/// `batch` under `Range`, but real Rakudo's `Range.^methods` does not
+/// include any of those -- confirmed dispatch-only, left out.
+const RANGE_EXTRA_TAIL: &[&str] = &[
+    "hyper",
+    "lazy",
+    "int-bounds",
+    "AT-POS",
+    "race",
+    "in-range",
+    "EXISTS-POS",
 ];
 
 const CODE_METHODS: &[&str] = &[
@@ -471,17 +567,40 @@ const BUF_METHODS: &[&str] = &[
     "raku",
 ];
 
+/// `Blob`/`Buf`-only extras beyond `BUF_METHODS` (ADR-0019 Phase F box F3
+/// step 2), raku-verified genuine `.^methods` entries that already dispatch
+/// correctly (`$buf.read-uint8(0)`, etc.). `RAW_ROWS` also lists `values`/
+/// `List` under `Blob`, but real Rakudo's `Blob.^methods` does not include
+/// either -- confirmed dispatch-only, left out.
+const BUF_EXTRA_TAIL: &[&str] = &[
+    "read-uint8",
+    "read-int8",
+    "read-uint16",
+    "read-int16",
+    "read-uint32",
+];
+
 pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
     if crate::runtime::utils::is_buf_or_blob_class(type_name) {
-        return BUF_METHODS.to_vec();
+        return [BUF_METHODS, BUF_EXTRA_TAIL].concat();
     }
     match type_name {
-        "Str" => [STR_OWN, NUMERIC_COERCIONS, &["elems", "fmt"]].concat(),
-        "Int" | "Num" | "Rat" | "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
-        "List" | "Array" => LIST_METHODS.to_vec(),
+        "Str" => [
+            STR_OWN,
+            NUMERIC_COERCIONS,
+            &["elems", "fmt"],
+            STR_EXTRA_TAIL,
+        ]
+        .concat(),
+        "Int" => [NUMERIC_OWN, NUMERIC_COERCIONS, INT_EXTRA_TAIL].concat(),
+        "Rat" => [NUMERIC_OWN, NUMERIC_COERCIONS, RAT_EXTRA_TAIL].concat(),
+        "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS, COMPLEX_EXTRA_TAIL].concat(),
+        "Num" => [NUMERIC_OWN, NUMERIC_COERCIONS].concat(),
+        "List" => [LIST_METHODS, LIST_EXTRA_TAIL].concat(),
+        "Array" => [LIST_METHODS, ARRAY_EXTRA_TAIL].concat(),
         "Hash" => HASH_METHODS.to_vec(),
         "Bool" => [BOOL_OWN, NUMERIC_COERCIONS].concat(),
-        "Range" => RANGE_METHODS.to_vec(),
+        "Range" => [RANGE_METHODS, RANGE_EXTRA_TAIL].concat(),
         "Sub" | "Method" | "Block" | "Routine" | "Code" => CODE_METHODS.to_vec(),
         "Signature" => SIGNATURE_METHODS.to_vec(),
         "IO::Path" => IO_PATH_METHODS.to_vec(),

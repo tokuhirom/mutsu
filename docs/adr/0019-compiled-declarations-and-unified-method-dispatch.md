@@ -882,6 +882,61 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   targeted `S12-introspection`/`S02-types/hash.t`/`S09-typed-arrays/hashes.t` roast files stay
   green. Running total: 4 of 18 owners triaged (`Mu`, `Any`, `Hash`, `Cool`); `Str` (25 extras) and
   `Int`/`Num`/`Rat`/`Complex` (25, likely shared) remain the largest untriaged owners.
+  **Progress (2026-08-15, step 2, `Int`/`Num`/`Rat`/`Complex`):** the "25 extras, likely shared"
+  guess above was wrong — checked `RAW_ROWS` directly per owner instead of assuming: only `Int` has
+  a real 25-name extras block; `Num` has none; `Rat` has 2 (`FatRat`, `nude`); `Complex` has 8. Of
+  `Int`'s 25, 7 are genuine `Int.^methods` gaps (`rand`, `uniprop`, `lsb`, `msb`, `int8`, `Real`,
+  `Complex`), all raku-verified and already dispatching correctly; the other 18 are confirmed
+  dispatch-only. `Rat`'s both extras are genuine (`FatRat`, `nude`). Of `Complex`'s 8, 6 are genuine
+  (`isNaN`, `re`, `im`, `reals`, `conj`, `Complex`); `UInt`/`reverse` are dispatch-only. Since
+  `NUMERIC_OWN` is one array shared by all four owners but these extras are NOT shared (e.g. `rand`
+  is `Int`-only per `RAW_ROWS`, even though real Rakudo also has `Num`/`Rat` `.rand` — a separate,
+  still-open gap `RAW_ROWS` itself doesn't cover, out of F3's own "match `RAW_ROWS`" scope), split
+  the `"Int" | "Num" | "Rat" | "Complex"` match arm into four, each with its own optional extra tail
+  (`INT_EXTRA_TAIL`, `RAT_EXTRA_TAIL`, `COMPLEX_EXTRA_TAIL`) appended after `NUMERIC_COERCIONS`,
+  matching each block's `RAW_ROWS` position. All raku-verified and pinned in
+  `t/can-methods-drift.t` (96 assertions total now). Full local `t/` suite (3167 files) and the
+  targeted `S12-introspection/*`/`S32-num/*` roast files stay green. Running total: 8 of 18 owners
+  now settled (`Mu`, `Any`, `Hash`, `Cool`, `Int`, `Num`, `Rat`, `Complex` — `Num` needed no
+  changes, its extras block was empty). `Str` (25 extras) is now the only large owner left
+  untriaged; the remaining 10 owners are the small-count ones the original survey table lists.
+  **Progress (2026-08-15, step 2, `Str`):** triaged `Str`'s 24-name extras block (the survey's "25"
+  count off by one). 11 genuine `Str.^methods` gaps (`uniprop`, `indent`, `ord`, `uniname`,
+  `uninames`, `unival`, `univals`, `tclc`, `Version`, `Date`, `DateTime`), all raku-verified and
+  already dispatching correctly (e.g. `'A'.ord`, `65.uniname`, `'1.2.3'.Version`). The other 13
+  (`AST`, `list`, `UInt`, `FatRat`, `sprintf`, `chrs`, `bytes`, `Range`, `Complex`, `Real`,
+  `reverse`, `byte`, `perl`) confirmed dispatch-only — real Rakudo's `Str.^methods` lists none of
+  them. Added a new `STR_EXTRA_TAIL`, appended after the existing `&["elems", "fmt"]` tail in the
+  `"Str"` match arm, matching the block's `RAW_ROWS` position. All raku-verified and pinned in
+  `t/can-methods-drift.t` (129 assertions total now). Full local `t/` suite (3167 files) green;
+  `roast/S12-introspection/*` and every `roast/S32-str/*.t` file green too (invoked via
+  `scripts/run-roast-test.sh`, not a bare `prove` — the bare invocation spuriously "fails" 3 of the
+  encoding-conversion files on missing fixture paths that only resolve inside that wrapper, an
+  invocation artifact unrelated to this change, not a regression). **This closes F3 step 2's
+  large-owner sweep**: all 5 owners the original survey flagged as having 7+ extras (`Str`, `Int`,
+  `Cool`, `Complex`, `Any`) are now triaged. The remaining ~10 small owners (1-3 extras each per the
+  original survey table) are still open for step 2 but are far smaller individually; step 3 (the
+  actual `RAW_ROWS`-as-single-source cutover) can reasonably start once those are swept too.
+  **Progress (2026-08-15, step 2, `List`/`Array`/`Range`/`Blob`):** the "1-3 extras each" estimate
+  for the remaining owners above was also wrong for these four — a fresh `RAW_ROWS`-vs-introspection
+  diff (not the original survey's rough read) found `List` has 18 extras, `Array` 19, `Range` 13,
+  `Blob` 7; `Bool`/`Sub`/`Signature`/`IO::Path`/`IO::Handle` genuinely have zero (already fully
+  covered). `List` gains 13 (`list`, `item`, `Slip`, `sink`, `invert`, `AT-POS`, `EXISTS-POS`,
+  `is-lazy`, `Capture`, `hyper`, `race`, `Supply`, `fmt`); `Array` gains those same 13 plus two more
+  real Rakudo answers only for `Array` specifically (`WHICH`, `dynamic`) — confirmed by raku, not
+  assumed, since `LIST_METHODS` is one array shared by both owners but `RAW_ROWS` itself lists
+  `WHICH` only under `Array`, not `List`. `Range` gains 7 (`hyper`, `lazy`, `int-bounds`, `AT-POS`,
+  `race`, `in-range`, `EXISTS-POS`). `Blob`/`Buf` gain 5 (`read-uint8`, `read-int8`, `read-uint16`,
+  `read-int16`, `read-uint32`). All 25 additions raku-verified and already dispatched correctly
+  before this change. Since `List`/`Array` need different extra sets from the same shared base,
+  split their match arm into two with separate `LIST_EXTRA_TAIL`/`ARRAY_EXTRA_TAIL` tails (same
+  pattern as the `Int`/`Rat`/`Complex` split earlier in this box). All raku-verified and pinned in
+  `t/can-methods-drift.t` (193 assertions total now). Full local `t/` suite (3167 files) green;
+  `roast/S12-introspection/*`, `S02-types/{array,list,range}.t`, `S32-container/buf.t`,
+  `S03-operators/buf.t`, and every `S03-buf/*.t` file green (via `scripts/run-roast-test.sh`).
+  Running total: 13 of 18 owners now settled. Remaining 5 (`Sub`/`Signature`/`IO::Path`/
+  `IO::Handle`/`Bool` per the fresh diff) all have **zero** extras — F3 step 2's owner-by-owner
+  triage is therefore complete; step 3 (the actual cutover) is unblocked.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
