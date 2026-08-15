@@ -4234,6 +4234,7 @@ impl Interpreter {
             OpCode::ClearPackageStub { name_idx } => {
                 let name = Self::const_str(code, *name_idx).to_string();
                 self.registry_mut().package_stubs.remove(&name);
+                self.registry_mut().reported_stub_errors.remove(&name);
                 *ip += 1;
             }
 

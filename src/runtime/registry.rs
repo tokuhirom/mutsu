@@ -124,6 +124,15 @@ pub(crate) struct Registry {
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.
     pub(crate) package_stubs: HashSet<String>,
+    /// Names already reported by `check_unresolved_stubs_excluding` as an
+    /// `X::Package::Stubbed` error. Kept separate from `class_stubs`/
+    /// `package_stubs` — a name here is STILL a stub for every class-system
+    /// purpose (composition checks, "already stubbed, allow re-stubbing"),
+    /// only its *unresolved-stub error* has already been raised once, so a
+    /// later check (an outer EVAL, or the top-level end-of-program check)
+    /// must not raise the identical error again for a `try`/`CATCH` that
+    /// already handled it.
+    pub(crate) reported_stub_errors: HashSet<String>,
     /// Declarator keyword used for a bare `package`/`module`/`grammar` (a
     /// `Stmt::Package`), so `.HOW` reports the matching metaclass
     /// (`PackageHOW`/`ModuleHOW`/`GrammarHOW`) instead of the default

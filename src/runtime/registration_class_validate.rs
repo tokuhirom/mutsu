@@ -423,6 +423,10 @@ impl Interpreter {
             let mut reg = self.registry_mut();
             reg.class_stubs.remove(name);
             reg.package_stubs.remove(name);
+            // A resolved stub is no longer a stub at all, so a future re-use
+            // of this name that stubs it again must be free to report its own
+            // X::Package::Stubbed error (see `reported_stub_errors`'s doc).
+            reg.reported_stub_errors.remove(name);
         }
         Ok(false)
     }

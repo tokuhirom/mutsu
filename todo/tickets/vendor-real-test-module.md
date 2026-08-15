@@ -1274,14 +1274,34 @@ independent, not the same fix.
    unconditional) found the same still-registered `Wine` stub and raised the
    identical error a **second time, uncaught**, well after the `CATCH` had
    already handled it — aborting the whole file past line 93.
-   `check_unresolved_stubs_excluding` (`src/runtime/run_dist.rs`) now removes
-   every name it reports from `class_stubs`/`package_stubs` before returning
-   the error, so a stub is reported at most once per program — matching
-   rakudo's own "raised once per compilation unit at CHECK time" semantics.
-   Required widening `check_unresolved_stubs{,_excluding}` from `&self` to
-   `&mut self`; both call sites (`run.rs`'s end-of-program check, `system.rs`'s
-   EVAL check) already held `&mut self`. Pin: new
-   `t/eval-stub-error-not-reraised.t`, green under `raku` too.
+   `check_unresolved_stubs_excluding` (`src/runtime/run_dist.rs`) now tracks
+   every name it reports in a **new, separate** registry set
+   (`reported_stub_errors`) and skips names already in it, so a stub is
+   reported at most once per program — matching rakudo's own "raised once per
+   compilation unit at CHECK time" semantics. **First attempt was wrong**:
+   removing the reported name straight from `class_stubs`/`package_stubs`
+   (rather than tracking it separately) broke `roast/S12-class/stubs.t`
+   (regressed in CI, not caught locally the first time) — `class_stubs`
+   membership is not just report-bookkeeping, it is the live "is this class
+   still just a stub" flag every other class-system check reads (composition,
+   "already a stub, allow re-stubbing"), so removing `A` from it after
+   reporting made a *later* `class B is A {}` silently compose instead of
+   raising `X::Inheritance::NotComposed` (`stubs.t`'s own next assertion,
+   reusing the exact same name `A` in a separate `EVAL` right after). The
+   separate-set fix keeps `class_stubs` semantically untouched; names are
+   removed from `reported_stub_errors` wherever a stub is genuinely resolved,
+   so a reused name can report its own fresh error later. Required widening
+   `check_unresolved_stubs{,_excluding}` from `&self` to `&mut self`; both
+   call sites (`run.rs`'s end-of-program check, `system.rs`'s EVAL check)
+   already held `&mut self`. Pin: new `t/eval-stub-error-not-reraised.t`,
+   green under `raku` too — plus the full `S12-class/stubs.t` and every other
+   roast file found to touch stubs/`X::Package::Stubbed` re-run locally after
+   the correction.
+   **Lesson: a "remove once reported" fix on any registry set needs to ask
+   first whether that set is pure bookkeeping or also a live semantic flag
+   consulted elsewhere — CI (not local `t/`) is what caught this, so widen
+   the local regression sweep to every roast file matching the touched
+   mechanism's name before trusting a "fixed" write-up next time.**
 
 Both fixes: `news/2026-08/malformed-message-prefix-and-stub-error-not-reraised.md`.
 `roast/S32-exceptions/misc.t` progresses substantially further under
