@@ -35,10 +35,7 @@ impl Interpreter {
     ) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
-            let methods = match self.registry().classes.get(cn.as_str()) {
-                Some(cd) => cd.methods.get("new").cloned(),
-                None => None,
-            };
+            let methods = self.registry().user_method_overloads(cn.as_str(), "new");
             if let Some(overloads) = methods {
                 for method in &overloads {
                     // Look for a positional (non-named, non-invocant) param

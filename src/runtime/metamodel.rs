@@ -298,9 +298,8 @@ impl Interpreter {
         // itself is lazily filled and still empty right after a module load.
         let has_user_find_method = self.class_mro(&how_class).iter().any(|c| {
             self.registry()
-                .classes
-                .get(c.as_str())
-                .is_some_and(|cd| cd.methods.contains_key("find_method"))
+                .user_method_overloads(c.as_str(), "find_method")
+                .is_some()
         });
         let mut reg = self.registry_mut();
         reg.class_how_values
@@ -337,9 +336,8 @@ impl Interpreter {
         // itself is lazily filled and still empty right after a module load.
         let has_user_compose = self.class_mro(&how_class).iter().any(|c| {
             self.registry()
-                .classes
-                .get(c.as_str())
-                .is_some_and(|cd| cd.methods.contains_key("compose"))
+                .user_method_overloads(c.as_str(), "compose")
+                .is_some()
         });
         let instance = self.call_method_with_values(how_type, "new", Vec::new())?;
         self.registry_mut()
@@ -360,9 +358,8 @@ impl Interpreter {
         };
         self.class_mro(&how_class.resolve()).iter().any(|c| {
             self.registry()
-                .classes
-                .get(c.as_str())
-                .is_some_and(|cd| cd.methods.contains_key(method_name))
+                .user_method_overloads(c.as_str(), method_name)
+                .is_some()
         })
     }
 
