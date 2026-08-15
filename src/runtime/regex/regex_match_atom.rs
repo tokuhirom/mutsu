@@ -315,6 +315,21 @@ impl Interpreter {
             out.reverse();
             return out;
         }
+        if let RegexAtom::CaptureIsolatedGroup(pattern) = atom {
+            // Same shape as the `Group` arm just above (collect ALL candidate
+            // ends so the outer pattern can backtrack into a shorter match of
+            // the isolated sub-pattern), but discard the inner captures
+            // entirely instead of merging them — see the variant's doc
+            // comment and `regex_match_capture.rs`'s single-candidate twin.
+            let mut out = Vec::new();
+            for (end, _inner_caps) in
+                self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg)
+            {
+                out.push((end, RegexCaptures::default()));
+            }
+            out.reverse();
+            return out;
+        }
         if let RegexAtom::GoalMatch {
             goal,
             inner,

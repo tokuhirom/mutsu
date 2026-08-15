@@ -401,7 +401,7 @@ impl Interpreter {
                         // A Regex value: reroute through the `<$var>` tokenizer arm
                         // (rather than splicing its pattern body here) so its
                         // captures get isolated the same way `<$var>` isolates
-                        // them (see `strip_captures_pattern`). Not inside a
+                        // them (see `RegexAtom::CaptureIsolatedGroup`). Not inside a
                         // double-quoted regex literal — that domain is re-read
                         // verbatim as literal text by the structural parser's own
                         // `"..."` scanner, which would turn `<$name>` into four+
@@ -500,7 +500,7 @@ impl Interpreter {
                     }
                     // A Regex value: reroute through the `<$var>` tokenizer arm so
                     // its captures get isolated (see the `${name}` arm above and
-                    // `strip_captures_pattern`'s doc comment). Skipped inside a
+                    // `RegexAtom::CaptureIsolatedGroup`'s doc comment). Skipped inside a
                     // double-quoted regex literal (same reason as the `${name}`
                     // arm) and for an overlay-resolved `$*` dyn-var, whose value
                     // lives in `REGEX_DYNVAR_OVERLAY` — a store the `<$var>`

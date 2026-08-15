@@ -548,84 +548,34 @@ fn strip_marks_token(token: &RegexToken) -> RegexToken {
     }
 }
 
-/// Strip capture groups (positional AND named) from every level of a
-/// `RegexPattern`, so it can run as a *capture-isolated* sub-match. Used by
-/// the `<$var>` / bare-`$var` / `@var`-alternation "stored Regex value"
-/// family: Raku gives such a sub-match its own discarded `Match` object — no
-/// positional or named capture escapes into the caller's capture numbering
-/// (see `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md`,
-/// bug 2). Modeled on `strip_marks_pattern` above.
-///
-/// Accepted edge: an inner pattern's OWN backreference to its OWN capture
-/// (e.g. `rx/(\w)$0/` invoked via `<$var>`) stops working once the capture
-/// group here is degraded to a plain non-capturing `Group` — restoring that
-/// needs match-time isolation (a dedicated `RegexAtom` variant), not this
-/// parse-time transform.
-pub(crate) fn strip_captures_pattern(pattern: &RegexPattern) -> RegexPattern {
+/// Wrap an already-parsed `RegexPattern` in a single-token pattern whose atom
+/// is `RegexAtom::CaptureIsolatedGroup` — a sub-match that resolves its OWN
+/// captures normally (so a backreference inside `pattern` to its own capture
+/// still works — verified against real `raku`: `rx/ $<b>=(\w+) " " $<b> /`
+/// invoked via `<$var>` still matches its repeated boundary), but does not
+/// publish any positional or named capture into the caller's numbering (a
+/// `<$var>`-family call gets its own discarded `Match` object in Raku). See
+/// `todo/tickets/stored-regex-loses-its-defining-scope-lexicals.md` bug 2.
+pub(crate) fn wrap_capture_isolated(pattern: RegexPattern) -> RegexPattern {
+    let ignore_case = pattern.ignore_case;
+    let ignore_mark = pattern.ignore_mark;
     RegexPattern {
-        tokens: pattern.tokens.iter().map(strip_captures_token).collect(),
-        anchor_start: pattern.anchor_start,
-        anchor_end: pattern.anchor_end,
-        ignore_case: pattern.ignore_case,
-        ignore_mark: pattern.ignore_mark,
-    }
-}
-
-fn strip_captures_token(token: &RegexToken) -> RegexToken {
-    RegexToken {
-        atom: strip_captures_atom(&token.atom),
-        quant: token.quant.clone(),
-        named_capture: None,
-        secondary_named_capture: None,
-        hash_capture: None,
-        force_list_capture: false,
-        ratchet: token.ratchet,
-        frugal: token.frugal,
-        separator: token.separator.as_ref().map(|s| {
-            Box::new(RegexSeparatorSpec {
-                pattern: strip_captures_pattern(&s.pattern),
-                allow_trailing: s.allow_trailing,
-            })
-        }),
-        from_runtime_interpolation: token.from_runtime_interpolation,
-    }
-}
-
-fn strip_captures_atom(atom: &RegexAtom) -> RegexAtom {
-    match atom {
-        RegexAtom::Group(p) => RegexAtom::Group(strip_captures_pattern(p)),
-        // A capturing group loses its capture-ness but stays a group — its
-        // contents (and their own nested captures) still get stripped.
-        RegexAtom::CaptureGroup(p) => RegexAtom::Group(strip_captures_pattern(p)),
-        RegexAtom::Alternation(alts) => {
-            RegexAtom::Alternation(alts.iter().map(strip_captures_pattern).collect())
-        }
-        RegexAtom::SequentialAlternation(alts) => {
-            RegexAtom::SequentialAlternation(alts.iter().map(strip_captures_pattern).collect())
-        }
-        RegexAtom::Conjunction(branches) => {
-            RegexAtom::Conjunction(branches.iter().map(strip_captures_pattern).collect())
-        }
-        RegexAtom::GoalMatch {
-            goal,
-            inner,
-            goal_text,
-        } => RegexAtom::GoalMatch {
-            goal: strip_captures_pattern(goal),
-            inner: strip_captures_pattern(inner),
-            goal_text: goal_text.clone(),
-        },
-        RegexAtom::Lookaround {
-            pattern,
-            negated,
-            is_behind,
-        } => RegexAtom::Lookaround {
-            pattern: strip_captures_pattern(pattern),
-            negated: *negated,
-            is_behind: *is_behind,
-        },
-        // All other atoms don't carry nested patterns with captures.
-        other => other.clone(),
+        tokens: vec![RegexToken {
+            atom: RegexAtom::CaptureIsolatedGroup(pattern),
+            quant: RegexQuant::One,
+            named_capture: None,
+            secondary_named_capture: None,
+            hash_capture: None,
+            force_list_capture: false,
+            ratchet: false,
+            frugal: false,
+            separator: None,
+            from_runtime_interpolation: false,
+        }],
+        anchor_start: false,
+        anchor_end: false,
+        ignore_case,
+        ignore_mark,
     }
 }
 
@@ -651,6 +601,9 @@ fn strip_marks_atom(atom: &RegexAtom) -> RegexAtom {
         }
         RegexAtom::Group(p) => RegexAtom::Group(strip_marks_pattern(p)),
         RegexAtom::CaptureGroup(p) => RegexAtom::CaptureGroup(strip_marks_pattern(p)),
+        RegexAtom::CaptureIsolatedGroup(p) => {
+            RegexAtom::CaptureIsolatedGroup(strip_marks_pattern(p))
+        }
         RegexAtom::Alternation(alts) => {
             RegexAtom::Alternation(alts.iter().map(strip_marks_pattern).collect())
         }

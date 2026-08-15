@@ -110,6 +110,20 @@ impl Interpreter {
                         (next, new_caps)
                     });
             }
+            RegexAtom::CaptureIsolatedGroup(pattern) => {
+                // Match `pattern` exactly like `Group` — its own captures
+                // resolve normally against `pattern`'s own text, so a
+                // backreference WITHIN it to its OWN capture still works
+                // (verified against real `raku`: Cro's MIME boundary pattern
+                // `$<b>=[...] ... $<b>` invoked via `<$var>`) — but discard
+                // everything except the match extent: a `<$var>`-family call
+                // gets its own discarded `Match` object in Raku, so none of
+                // its positional/named captures may reach the caller's
+                // numbering. See the variant's doc comment.
+                return self
+                    .regex_match_end_from_caps_in_pkg(pattern, chars, pos, pkg)
+                    .map(|(next, _inner_caps)| (next, RegexCaptures::default()));
+            }
             RegexAtom::GoalMatch {
                 goal,
                 inner,

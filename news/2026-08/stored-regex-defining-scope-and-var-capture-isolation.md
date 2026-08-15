@@ -58,34 +58,54 @@ positional *and* named captures numbered themselves straight into the
 *outer* match. Raku gives a `<$var>`-family call its own discarded `Match`
 object; no capture escapes.
 
-The fix is a parse-time transform rather than a new engine-wide `RegexAtom`
-variant: `strip_captures_pattern()` (`src/runtime/regex/regex_helpers.rs`,
-modeled on the existing `strip_marks_pattern()` traversal used for `:m`)
-recursively degrades every `CaptureGroup` to a plain `Group` and clears
-`named_capture`/`secondary_named_capture`/`hash_capture`/`force_list_capture`
-on every token, everywhere a sub-pattern can nest (groups, alternations,
-conjunctions, lookarounds, goal-matches, separators). It is applied at the
-`<$var>` tokenizer arm and in `array_var_alternation_atom` (the `<@var>`
-form). Bare `$var`/`${name}` interpolation of a Regex value now emits the
-text `<$name>` instead of splicing the pattern body directly, so it reuses
-the same `<$var>` arm (and its capture stripping) rather than duplicating the
-logic; the bare-`@name` alternation form does the analogous `<@name>`
-reroute when any element is a Regex value. String-only interpolations are
-untouched in both cases.
+The first attempt at a fix was a parse-time transform (`strip_captures_pattern()`,
+modeled on the existing `strip_marks_pattern()` traversal used for `:m`) that
+recursively degraded every `CaptureGroup` to a plain `Group` and cleared each
+token's capture-related fields. It passed every local and roast check — but
+the bundled-battery gate caught what those suites missed: `Cro::HTTP`'s
+`http-request-serializer.rakutest` builds its multipart MIME boundary with
+`Q/'boundary="' $<b>=[<-["]>+] '"'/` and then *reuses* `$<b>` later in the
+same interpolated pattern as a backreference, to require the same boundary
+string at the closing delimiter. Checked directly against `raku`, an
+interpolated sub-pattern's OWN internal backreference to its OWN capture
+keeps working even though the capture is invisible to the *outer* match — a
+distinction plain capture erasure cannot express, since it destroys the
+capture bookkeeping needed for the backreference in the first place, not just
+its visibility to the caller.
 
-Two edges are accepted rather than chased down: an inner pattern's *own*
-backreference to its *own* capture (`rx/(\w)$0/` invoked via `<$var>`) stops
-working once the capture group is degraded to a non-capturing one — fixing
-that needs match-time isolation via a dedicated `RegexAtom` variant, not this
-parse-time transform. And two narrower corners were left as `// TODO`s for a
-future pass: the `Junction` arm of `push_value_as_regex_pattern` (an
-`any(rx/(a)/, ...)` interpolated into a pattern still leaks), and `@$var`
-(dereferencing a scalar to an array, as opposed to a literal `@name`) has no
-`<@var>`-style tokenizer form to reroute through.
+The corrected fix adds a real match-time isolation boundary instead: a new
+`RegexAtom::CaptureIsolatedGroup` variant matches its wrapped `RegexPattern`
+exactly like `Group` (so internal captures resolve normally, including
+backreferences within the same sub-pattern), but the two call sites that
+merge a matched atom's captures into the caller's `RegexCaptures` — the
+single-candidate and all-candidates matchers in `regex_match_capture.rs` /
+`regex_match_atom.rs` — simply discard everything from a
+`CaptureIsolatedGroup` match except its end position, instead of merging
+`named`/`positional` the way they do for `Group`. It is constructed at the
+`<$var>` tokenizer arm and in `array_var_alternation_atom` (the `<@var>`
+form, via a `wrap_capture_isolated()` helper). Bare `$var`/`${name}`
+interpolation of a Regex value emits the text `<$name>` instead of splicing
+the pattern body directly, reusing the `<$var>` arm rather than duplicating
+the logic; the bare-`@name` alternation form does the analogous `<@name>`
+reroute when any element is a Regex value. String-only interpolations are
+untouched in both cases. Every other `RegexAtom::Group`-handling site in the
+regex engine (casefolding, LTM ranking, mark-stripping, capture counting,
+quantified-name collection, ...) was audited by hand for how it should treat
+the new variant — most already fall through a conservative default (treat it
+like an opaque/subrule construct) that turns out to be exactly correct.
+
+Two narrower corners were left as `// TODO`s for a future pass: the
+`Junction` arm of `push_value_as_regex_pattern` (an `any(rx/(a)/, ...)`
+interpolated into a pattern still leaks), and `@$var` (dereferencing a scalar
+to an array, as opposed to a literal `@name`) has no `<@var>`-style tokenizer
+form to reroute through.
 
 `t/regex-stored-closure-scope.t` (18 subtests, every assertion verified
-against real `raku`) pins both halves. The full `t/` suite (3168 files, 29462
-assertions) and the roast files most adjacent to this area —
-`S05-interpolation/regex-in-variable.t`, `S05-interpolation/lexicals.t`,
-`S05-capture/subrule.t`, `S05-metasyntax/regex.t`, `S05-capture/caps.t`, and
-all 94 whitelisted `S05-*` files as a broader spot-check — stayed green.
+against real `raku`, including the Cro boundary-backreference shape) pins
+both halves. The full `t/` suite (3168 files, 29462 assertions), the roast
+files most adjacent to this area — `S05-interpolation/regex-in-variable.t`,
+`S05-interpolation/lexicals.t`, `S05-capture/subrule.t`,
+`S05-metasyntax/regex.t`, `S05-capture/caps.t`, and all 94 whitelisted
+`S05-*` files as a broader spot-check — and `Cro::HTTP`'s
+`http-request-serializer.rakutest` (17/17, run directly against the fetched
+upstream suite) all stayed green.
