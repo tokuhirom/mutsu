@@ -12,7 +12,7 @@ use Test;
 # `for %headers.kv -> $k, $v { $resp.append-header($k, $v) }` in
 # t/http-rawbodyparserselector.rakutest, which could not run a single test.
 
-plan 10;
+plan 14;
 
 sub declares-typed-v() { my Int $v = 42; $v }
 is declares-typed-v(), 42, "the typed lexical itself still works";
@@ -73,6 +73,48 @@ lives-ok { $v = 5 }, "...and still accepts an Int";
     }
     is-deeply @rounds, [1, 2],
         "an inner multi-param loop reusing the outer loop's \$i does not clobber it";
+}
+
+# A global-by-name write (no local slot for the shadowed name in this frame)
+# must not leak either -- the same root cause as the @/% case below, just
+# reached via a routine with no other reference to the name.
+# (todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md)
+{
+    sub f() { for <a b c>.kv -> $j, $u { } }
+    my $j = 42;
+    f();
+    is $j, 42, "a multi-param loop in a routine does not leak into an outer \$j via a global write";
+}
+
+# `@`/`%`-sigil multi-param loop variables are their own fresh per-iteration
+# lexicals, not aliases of a same-named outer `@`/`%` -- an `@`/`%` slot holds
+# a mutable container, so a plain per-iteration assignment (as opposed to a
+# fresh declaration) mutated the OUTER container in place.
+# (todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md)
+
+# Outer array shadowed by an `@`-sigil multi-param.
+{
+    my @arr = (100, 200);
+    for 1, [10, 20], 2, [30, 40] -> $a, @arr { }
+    is-deeply @arr, [100, 200], "outer \@arr survives being shadowed by an \@-sigil multi-param loop";
+}
+
+# Outer hash shadowed by a `%`-sigil multi-param.
+{
+    my %h = (x => 1);
+    for 1, {y => 2}, 3, {z => 3} -> $a, %h { }
+    is-deeply %h, {x => 1}, "outer %h survives being shadowed by a %-sigil multi-param loop";
+}
+
+# The loop parameter itself still binds a fresh value each iteration.
+{
+    my @arr = (100, 200);
+    my @seen;
+    for 1, [10, 20], 2, [30, 40] -> $a, @arr {
+        @seen.push(@arr.join('-'));
+    }
+    is @seen.join('|'), "10-20|30-40",
+        "the \@-sigil multi-param itself still binds each iteration's own value";
 }
 
 done-testing;
