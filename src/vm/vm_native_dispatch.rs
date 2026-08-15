@@ -213,10 +213,17 @@ impl Interpreter {
         // `Array` does not declare its own `sort`, so no redeclaration error --
         // unlike `augment class Str { method uc {...} }`) was silently shadowed
         // by the native fast path below. See `t/augment-native-lever-a-methods.t`.
-        if !matches!(
-            target.view(),
-            ValueView::Instance { .. } | ValueView::Package(_)
-        ) && self.native_lever_a_user_override(target, &method_name)
+        // `is_lazy_match_value()` is a cheap tag probe; a lazy Match always
+        // decodes to `ValueView::Instance` (see `nanbox/peek.rs`), so this
+        // gate would never fire for one anyway — checking the tag first
+        // avoids forcing full Match materialization (`force_attrs()`) just to
+        // learn that.
+        if !target.is_lazy_match_value()
+            && !matches!(
+                target.view(),
+                ValueView::Instance { .. } | ValueView::Package(_)
+            )
+            && self.native_lever_a_user_override(target, &method_name)
         {
             return None;
         }
