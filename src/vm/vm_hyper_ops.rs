@@ -283,13 +283,41 @@ impl Interpreter {
             };
             let identity = runtime::reduction_identity(op);
             let mut result = std::collections::HashMap::with_capacity(keys.len());
+            // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
+            // metadata carried in `original_keys`, not derivable from the
+            // `.WHICH`-string key alone — merge it from whichever side(s)
+            // actually have it for each key surviving into the result.
+            let mut original_keys: std::collections::HashMap<String, Value> =
+                std::collections::HashMap::new();
             for key in keys {
                 let l = la.get(&key).unwrap_or(&identity).clone();
                 let r = ra.get(&key).unwrap_or(&identity).clone();
                 let v = self.hyper_op_pair(op, &l, &r, dwim_left, dwim_right)?;
+                if let Some(ok) = la
+                    .original_keys
+                    .as_ref()
+                    .and_then(|m| m.get(&key))
+                    .or_else(|| ra.original_keys.as_ref().and_then(|m| m.get(&key)))
+                {
+                    original_keys.insert(key.clone(), ok.clone());
+                }
                 result.insert(key, v);
             }
-            return Ok(Value::hash_with_data(Value::hash_arc(result)));
+            // Inherit object-hash / typed-value identity from whichever
+            // operand carries it (`%a{Any} >>op<< %b` and `%a >>op<< %b{Any}`
+            // must both come out an object hash), left preferred to match the
+            // key-set precedence above.
+            let mut data = crate::value::HashData::new(result);
+            data.key_type = la.key_type.clone().or_else(|| ra.key_type.clone());
+            data.value_type = la.value_type.clone().or_else(|| ra.value_type.clone());
+            data.declared_type = la
+                .declared_type
+                .clone()
+                .or_else(|| ra.declared_type.clone());
+            if !original_keys.is_empty() {
+                data.original_keys = Some(original_keys);
+            }
+            return Ok(Value::hash_with_data(Value::hash_arc(data)));
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).

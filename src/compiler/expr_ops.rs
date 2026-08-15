@@ -261,6 +261,10 @@ impl Compiler {
                     self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(&format!("@{}", name));
                 }
+                Expr::HashVar(name) => {
+                    self.code.emit(OpCode::Dup);
+                    self.emit_set_named_var(&format!("%{}", name));
+                }
                 Expr::Var(name) => {
                     self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(name);

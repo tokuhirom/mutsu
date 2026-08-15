@@ -1205,47 +1205,42 @@ impl Interpreter {
                 } else {
                     raw_val
                 };
-                if (name.starts_with('@') || name.starts_with('%'))
+                if raw_mode {
+                    // `constant @x = ...` / `constant %x = ...` already applied
+                    // their own List/Map coercion above (raw_mode's own `@`/`%`
+                    // branches) — a fresh `constant` declaration is never a
+                    // write into an existing container, so neither the typed
+                    // re-coercion nor the writethrough metadata preservation
+                    // below apply. Running them anyway (verified 2026-08-15)
+                    // called `array_container_writethrough_value` on an
+                    // already-correct `does Positional` instance, whose
+                    // non-Array input falls through to a generic
+                    // `coerce_to_array` wrap and loses the custom class.
+                } else if name.starts_with('%')
                     && (loan_env!(self, var_type_constraint(&name)).is_some()
                         || loan_env!(self, var_hash_key_constraint(&name)).is_some())
                 {
                     val = self.coerce_typed_container_assignment(&name, val, false)?;
-                } else if name.starts_with('@')
-                    && name.len() > 1
-                    && !name.contains("__")
-                    && loan_env!(self, var_type_constraint(&name)).is_none()
-                    && matches!(val.view(), ValueView::Array(d, _) if d.value_type.is_none() && d.declared_type.is_none())
-                {
-                    // `@a = list` where `@a` has no *declared* element type but is
-                    // an alias / for-loop binding of an element-typed array
-                    // (`array[int]`): the assignment writes INTO that container, so
-                    // preserve its declared element type rather than replacing it
-                    // with an untyped `Array`. Internal/anonymous names
-                    // (`@__ANON_ARRAY__`, `@__mutsu_*`) are excluded: they are
-                    // fresh per use and must not inherit a stale slot's type. The
-                    // guard `val` is itself untyped is essential: when the RHS
-                    // already carries a type (e.g. a `DeitemizeForBind` chunk
-                    // element), that type wins — reading a possibly-stale slot here
-                    // would clobber it (the cross-type for-loop contamination).
-                    let old_info = match self
-                        .get_env_with_main_alias(&name)
-                        .as_ref()
-                        .map(Value::view)
-                    {
-                        Some(ValueView::Array(old, _))
-                            if old.value_type.is_some() || old.declared_type.is_some() =>
-                        {
-                            Some(crate::runtime::ContainerTypeInfo {
-                                value_type: old.value_type.clone().unwrap_or_default(),
-                                key_type: None,
-                                declared_type: old.declared_type.clone(),
-                            })
-                        }
-                        _ => None,
-                    };
-                    if let Some(info) = old_info {
-                        val = self.tag_container_metadata(val, info);
-                    }
+                } else if name.starts_with('@') && name.len() > 1 && !name.contains("__") {
+                    // `@a = list` reached by name (a closure/nested-sub write to
+                    // a captured free var, `our @a`, a for-loop multi-param
+                    // bind, ...): the assignment writes INTO whatever container
+                    // `@a` already is, so its declared/inherited element type
+                    // (`array[int]`, `Array[Int]`) must survive rather than
+                    // collapsing to a plain `Array`. `array_container_writethrough_value`
+                    // is the same helper the SetLocal ContainerRef writethrough
+                    // path uses for the identical scenario (`my @b := @a; @a =
+                    // ...`): it re-coerces elements to the declared/inherited
+                    // element type and stamps the result with the matching
+                    // `value_type`/`declared_type` metadata, whether that type
+                    // comes from a `var_type_constraint` (`my int @a`) or from
+                    // the container currently bound to the name (a bare `for
+                    // @src -> @a { }` alias, no declared constraint of its
+                    // own). Internal/anonymous names (`@__ANON_ARRAY__`,
+                    // `@__mutsu_*`) are excluded: they are fresh per use and
+                    // must not inherit a stale slot's type.
+                    let old = self.get_env_with_main_alias(&name).unwrap_or(Value::NIL);
+                    val = self.array_container_writethrough_value(&name, val, &old)?;
                 }
                 // An attribute twigil (`@!c = ...` as a statement lands on
                 // SetGlobal): the element type lives in the class registry,

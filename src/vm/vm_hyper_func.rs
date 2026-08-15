@@ -321,6 +321,14 @@ impl Interpreter {
             std::collections::HashMap::with_capacity(keys.len());
         let mut mutated: std::collections::HashMap<String, Value> =
             std::collections::HashMap::with_capacity(if do_writeback { keys.len() } else { 0 });
+        // Object-hash identity (`{Any}`-keyed, `.WHICH`-stored) is per-key
+        // metadata carried in `original_keys`, not derivable from the
+        // `.WHICH`-string key alone — merge it from whichever side(s)
+        // actually have it for each key surviving into the result. Mirrors
+        // the symbolic-operator hyper op fix in `hyper_op_pair`
+        // (vm_hyper_ops.rs).
+        let mut original_keys: std::collections::HashMap<String, Value> =
+            std::collections::HashMap::new();
         for key in keys {
             let l = match &la {
                 Some(m) => m.get(&key).cloned().unwrap_or_else(|| identity.clone()),
@@ -331,6 +339,18 @@ impl Interpreter {
                 (None, Some(s)) => s.clone(),
                 (None, None) => identity.clone(),
             };
+            if let Some(ok) = la
+                .as_ref()
+                .and_then(|m| m.original_keys.as_ref())
+                .and_then(|m| m.get(&key))
+                .or_else(|| {
+                    ra.as_ref()
+                        .and_then(|m| m.original_keys.as_ref())
+                        .and_then(|m| m.get(&key))
+                })
+            {
+                original_keys.insert(key.clone(), ok.clone());
+            }
             if do_writeback {
                 let synth = format!("__mutsu_hyperfn_lvh_{}", key);
                 self.env_mut().insert(synth.clone(), l.clone());
@@ -348,10 +368,34 @@ impl Interpreter {
                 result.insert(key, v);
             }
         }
-        let result_hash = Value::hash_with_data(Value::hash_arc(result));
+        // Inherit object-hash / typed-value identity from whichever operand
+        // carries it, left preferred to match the key-set precedence above.
+        let key_type = la
+            .as_ref()
+            .and_then(|m| m.key_type.clone())
+            .or_else(|| ra.as_ref().and_then(|m| m.key_type.clone()));
+        let value_type = la
+            .as_ref()
+            .and_then(|m| m.value_type.clone())
+            .or_else(|| ra.as_ref().and_then(|m| m.value_type.clone()));
+        let declared_type = la
+            .as_ref()
+            .and_then(|m| m.declared_type.clone())
+            .or_else(|| ra.as_ref().and_then(|m| m.declared_type.clone()));
+        let tagged_hash = |map: std::collections::HashMap<String, Value>| {
+            let mut data = crate::value::HashData::new(map);
+            data.key_type = key_type.clone();
+            data.value_type = value_type.clone();
+            data.declared_type = declared_type.clone();
+            if !original_keys.is_empty() {
+                data.original_keys = Some(original_keys.clone());
+            }
+            Value::hash_with_data(Value::hash_arc(data))
+        };
+        let result_hash = tagged_hash(result);
         if writeback {
             let writeback_val = if do_writeback {
-                Value::hash_with_data(Value::hash_arc(mutated))
+                tagged_hash(mutated)
             } else {
                 left.clone()
             };

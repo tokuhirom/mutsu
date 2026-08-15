@@ -2370,7 +2370,26 @@ impl Compiler {
             } else {
                 value_expr
             };
-            let stmt = bind_stmt(actual_name.clone(), value_expr);
+            // An `@`/`%`-sigil multi-param loop variable is its own fresh
+            // per-iteration lexical in Raku, not an alias of a same-named
+            // outer `@`/`%` (unlike a plain `Stmt::Assign`, which mutates
+            // whatever container the shared slot already holds in place —
+            // exactly the outer container when the names collide). Declare
+            // it instead, so each iteration gets a genuinely fresh container
+            // and the outer variable is shadowed rather than clobbered. See
+            // todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md.
+            // `MarkBind` (the same marker `my @a := expr` uses) makes the
+            // declaration a raw bind rather than a `my @a = expr`-style
+            // coercing assignment, which would collapse an already
+            // element-typed source array (`array[int8]`) to a plain `Array`.
+            let stmt = if actual_name.starts_with(['@', '%']) {
+                Stmt::SyntheticBlock(vec![
+                    Stmt::MarkBind,
+                    decl_stmt(actual_name.clone(), value_expr),
+                ])
+            } else {
+                bind_stmt(actual_name.clone(), value_expr)
+            };
             if actual_name == "_" {
                 deferred_topic = Some(stmt);
             } else {
