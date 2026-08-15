@@ -900,6 +900,23 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   now settled (`Mu`, `Any`, `Hash`, `Cool`, `Int`, `Num`, `Rat`, `Complex` — `Num` needed no
   changes, its extras block was empty). `Str` (25 extras) is now the only large owner left
   untriaged; the remaining 10 owners are the small-count ones the original survey table lists.
+  **Progress (2026-08-15, step 2, `Str`):** triaged `Str`'s 24-name extras block (the survey's "25"
+  count off by one). 11 genuine `Str.^methods` gaps (`uniprop`, `indent`, `ord`, `uniname`,
+  `uninames`, `unival`, `univals`, `tclc`, `Version`, `Date`, `DateTime`), all raku-verified and
+  already dispatching correctly (e.g. `'A'.ord`, `65.uniname`, `'1.2.3'.Version`). The other 13
+  (`AST`, `list`, `UInt`, `FatRat`, `sprintf`, `chrs`, `bytes`, `Range`, `Complex`, `Real`,
+  `reverse`, `byte`, `perl`) confirmed dispatch-only — real Rakudo's `Str.^methods` lists none of
+  them. Added a new `STR_EXTRA_TAIL`, appended after the existing `&["elems", "fmt"]` tail in the
+  `"Str"` match arm, matching the block's `RAW_ROWS` position. All raku-verified and pinned in
+  `t/can-methods-drift.t` (129 assertions total now). Full local `t/` suite (3167 files) green;
+  `roast/S12-introspection/*` and every `roast/S32-str/*.t` file green too (invoked via
+  `scripts/run-roast-test.sh`, not a bare `prove` — the bare invocation spuriously "fails" 3 of the
+  encoding-conversion files on missing fixture paths that only resolve inside that wrapper, an
+  invocation artifact unrelated to this change, not a regression). **This closes F3 step 2's
+  large-owner sweep**: all 5 owners the original survey flagged as having 7+ extras (`Str`, `Int`,
+  `Cool`, `Complex`, `Any`) are now triaged. The remaining ~10 small owners (1-3 extras each per the
+  original survey table) are still open for step 2 but are far smaller individually; step 3 (the
+  actual `RAW_ROWS`-as-single-source cutover) can reasonably start once those are swept too.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the

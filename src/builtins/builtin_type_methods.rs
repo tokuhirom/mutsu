@@ -77,6 +77,18 @@ const STR_OWN: &[&str] = &[
     "IO",
 ];
 
+/// `Str`-only extras beyond the shared coercion tail (ADR-0019 Phase F box F3
+/// step 2, `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md`),
+/// raku-verified genuine `Str.^methods` entries that already dispatch
+/// correctly. `RAW_ROWS` also lists `AST`/`list`/`UInt`/`FatRat`/`sprintf`/
+/// `chrs`/`bytes`/`Range`/`Complex`/`Real`/`reverse`/`byte`/`perl` under
+/// `Str`, but real Rakudo's `Str.^methods` does not include any of those --
+/// confirmed dispatch-only, left out.
+const STR_EXTRA_TAIL: &[&str] = &[
+    "uniprop", "indent", "ord", "uniname", "uninames", "unival", "univals", "tclc", "Version",
+    "Date", "DateTime",
+];
+
 /// Numeric leaf (`Int`/`Num`/`Rat`/`Complex`) methods, up to the coercion tail.
 const NUMERIC_OWN: &[&str] = &[
     "abs", "ceiling", "floor", "round", "sign", "sqrt", "log", "log10", "exp", "roots", "is-prime",
@@ -498,7 +510,13 @@ pub(crate) fn builtin_type_method_names(type_name: &str) -> Vec<&'static str> {
         return BUF_METHODS.to_vec();
     }
     match type_name {
-        "Str" => [STR_OWN, NUMERIC_COERCIONS, &["elems", "fmt"]].concat(),
+        "Str" => [
+            STR_OWN,
+            NUMERIC_COERCIONS,
+            &["elems", "fmt"],
+            STR_EXTRA_TAIL,
+        ]
+        .concat(),
         "Int" => [NUMERIC_OWN, NUMERIC_COERCIONS, INT_EXTRA_TAIL].concat(),
         "Rat" => [NUMERIC_OWN, NUMERIC_COERCIONS, RAT_EXTRA_TAIL].concat(),
         "Complex" => [NUMERIC_OWN, NUMERIC_COERCIONS, COMPLEX_EXTRA_TAIL].concat(),

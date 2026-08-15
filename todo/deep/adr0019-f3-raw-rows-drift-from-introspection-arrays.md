@@ -238,3 +238,31 @@ Running total: 8 of 18 owners now settled (`Mu`, `Any`, `Hash`, `Cool`, `Int`, `
 `Complex` -- `Num` needed no changes, its `RAW_ROWS` extras block was empty). `Str` (25 extras) is
 now the only large owner left untriaged; the rest are the smaller-count owners from the original
 survey.
+
+## Progress (2026-08-15, continued): `Str` (24 extras, the survey's "25" was off by one) triaged
+
+11 of 24 genuine `Str.^methods` gaps: `uniprop`, `indent`, `ord`, `uniname`, `uninames`, `unival`,
+`univals`, `tclc`, `Version`, `Date`, `DateTime` -- all raku-verified present on `Str.^methods` and
+already dispatching correctly (`'A'.ord` -> 65, `65.uniname` -> "LATIN CAPITAL LETTER A",
+`'1.2.3'.Version` -> v1.2.3, etc.). The other 13 (`AST`, `list`, `UInt`, `FatRat`, `sprintf`,
+`chrs`, `bytes`, `Range`, `Complex`, `Real`, `reverse`, `byte`, `perl`) confirmed dispatch-only --
+real Rakudo's `Str.^methods` lists none of them.
+
+Added a new `STR_EXTRA_TAIL`, appended after the `&["elems", "fmt"]` tail already in the `"Str"`
+match arm, positioned to match the extras block's location in `RAW_ROWS`. All raku-verified and
+pinned in `t/can-methods-drift.t` (129 assertions total). Full local `t/` suite (3167 files) green.
+
+**Invocation gotcha hit while verifying roast, not a regression**: a bare `prove -e
+'target/debug/mutsu' roast/S32-str/*.t` spuriously fails 3 files
+(`gb18030-encode-decode.t`/`gb2312-encode-decode.t`/`shiftjis-encode-decode.t`) with "No such file
+or directory" on their fixture paths -- those tests resolve `t/spec/...` relative paths that only
+exist when run through `scripts/run-roast-test.sh` (per `MUTSU_BIN=... prove -e
+'scripts/run-roast-test.sh' roast/<path>.t` from CLAUDE.md), which the direct-binary invocation
+skips. Re-ran the correct way and all of `roast/S32-str/*.t` passes clean; unrelated to this
+change.
+
+**This closes F3 step 2's large-owner sweep**: `Str`, `Int`, `Cool`, `Complex`, and `Any` -- every
+owner the original survey flagged with 7+ extras -- are now triaged (9 of 18 owners settled
+counting `Mu`/`Hash`/`Rat`/`Num` too). The remaining ~9 owners left for step 2 each have only 1-3
+extras per the original survey table (much smaller individual slices); step 3 (the actual
+`RAW_ROWS`-as-single-source cutover) can reasonably start once those are swept.

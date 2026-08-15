@@ -5,7 +5,7 @@ use Test;
 # methods were missing, so `.^can` lied (returned False) and `.^methods` omitted
 # them. These pin the methods back in sync — each one both works AND introspects.
 
-plan 96;
+plan 129;
 
 # Helper: the method genuinely dispatches (so the list entry is honest) and
 # `.^can` agrees.
@@ -20,6 +20,17 @@ works-and-can 'abc', 'subst',        { 'abc'.subst('a', 'X') };
 works-and-can 'abc', 'subst-mutate', { my $s = 'abc'; $s.subst-mutate(/a/, 'X') };
 works-and-can 'abc', 'substr-rw',    { my $s = 'abc'; $s.substr-rw(0, 1) = 'Z' };
 works-and-can 'abc', 'substr-eq',    { 'abc'.substr-eq('bc', 1) };
+works-and-can 'A', 'uniprop',   { 'A'.uniprop('Alpha') };
+works-and-can 'hi', 'indent',   { 'hi'.indent(2) };
+works-and-can 'A', 'ord',       { 'A'.ord };
+works-and-can 'A', 'uniname',   { 'A'.uniname };
+works-and-can 'AB', 'uninames', { 'AB'.uninames };
+works-and-can '5', 'unival',    { '5'.unival };
+works-and-can '12', 'univals',  { '12'.univals };
+works-and-can 'hi', 'tclc',     { 'hi'.tclc };
+works-and-can '1.2.3', 'Version',  { '1.2.3'.Version };
+works-and-can '2024-01-01', 'Date', { '2024-01-01'.Date };
+works-and-can '2024-01-01T00:00:00Z', 'DateTime', { '2024-01-01T00:00:00Z'.DateTime };
 
 # --- Int ---
 works-and-can 5, 'expmod',  { 4.expmod(2, 5) };
@@ -75,6 +86,17 @@ nok (a => 1).^can('int8').Bool, 'Pair is not Cool, so it cannot int8';
 # The fixed names also appear in `.^methods`.
 ok 'x'.^methods.map(*.Str).grep('trans'),        'Str.^methods includes trans';
 ok 'x'.^methods.map(*.Str).grep('substr-rw'),    'Str.^methods includes substr-rw';
+ok 'x'.^methods.map(*.Str).grep('uniprop'),      'Str.^methods includes uniprop';
+ok 'x'.^methods.map(*.Str).grep('indent'),       'Str.^methods includes indent';
+ok 'x'.^methods.map(*.Str).grep('ord'),          'Str.^methods includes ord';
+ok 'x'.^methods.map(*.Str).grep('uniname'),      'Str.^methods includes uniname';
+ok 'x'.^methods.map(*.Str).grep('uninames'),     'Str.^methods includes uninames';
+ok 'x'.^methods.map(*.Str).grep('unival'),       'Str.^methods includes unival';
+ok 'x'.^methods.map(*.Str).grep('univals'),      'Str.^methods includes univals';
+ok 'x'.^methods.map(*.Str).grep('tclc'),         'Str.^methods includes tclc';
+ok 'x'.^methods.map(*.Str).grep('Version'),      'Str.^methods includes Version';
+ok 'x'.^methods.map(*.Str).grep('Date'),         'Str.^methods includes Date';
+ok 'x'.^methods.map(*.Str).grep('DateTime'),     'Str.^methods includes DateTime';
 ok (1, 2).^methods.map(*.Str).grep('minpairs'),  'List.^methods includes minpairs';
 ok Mu.^methods.map(*.Str).grep('DEFINITE'),      'Mu.^methods includes DEFINITE';
 ok Any.^methods.map(*.Str).grep('serial'),       'Any.^methods includes serial';
