@@ -1,6 +1,6 @@
 use Test;
 
-plan 16;
+plan 21;
 
 # A typed exception must carry the attributes rakudo declares for it, not just
 # a message that happens to name the class: `throws-like` matches on them.
@@ -53,3 +53,29 @@ throws-like 'module H { my $x is export = 42 }', X::Comp::Trait::Scope,
     throws-like { @list.grep(Mu, :!v) }, X::Adverb,
         what => 'grep', 'a negated :v is unexpected too';
 }
+
+# X::InvalidType: `.typename` for a `does`/`hides` parent that isn't declared.
+throws-like 'my class C hides Baz { }', X::InvalidType,
+    typename => 'Baz', 'hides names the missing typename';
+throws-like 'my class C does InNoWayExist { }', X::InvalidType,
+    typename => 'InNoWayExist', 'does names the missing typename';
+
+# X::Syntax::Adverb: `.what` on a variable declaration and on an operator
+# declarator, two independent raise sites for the same class.
+throws-like 'my $x :a', X::Syntax::Adverb,
+    what => '$x', 'a colonpair adverb on a declaration names the variable';
+{
+    use MONKEY;
+    throws-like { EVAL 'infix:(&)' }, X::Syntax::Adverb,
+        what => ':(&)', 'a signature-literal adverb on an operator names itself';
+}
+
+# X::Syntax::Missing: `.pre`/`.post` (source text around the eject point),
+# not just `.what`. rakudo itself gets the eject position wrong for this
+# construct (https://github.com/rakudo/rakudo/issues/4431, `#?rakudo todo` in
+# roast/S32-exceptions/misc.t) and reports `pre => 'if True if '`, `post =>
+# '{ };'` instead — this pin asserts mutsu's own (correct) eject point rather
+# than reproducing rakudo's bug.
+throws-like 'if True if { };', X::Syntax::Missing,
+    what => 'block', pre => 'if True ', post => 'if { };',
+    'a missing block carries pre/post context';

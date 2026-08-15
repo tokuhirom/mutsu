@@ -1164,3 +1164,82 @@ sub-side cases) with the two pointy-block assertions, both green under `raku`
 too. `roast/S06-signature/errors.t` now passes fully under both the native
 and the real `Test` module. Full `t/` suite (3171 files) and
 `cargo clippy -- -D warnings` both clean.
+
+## `X::Comp` missing `.pre`/`.post`, plus two more "typed but missing an
+attribute" gaps (2026-08-15)
+
+Continuing the campaign, picked `roast/S32-exceptions/misc.t` — still
+regressing under `MUTSU_REAL_TEST=1` — and triaged it in full before starting
+(per the "a file that fails at three unrelated layers" lesson above). Three
+independent gaps, all the same shape as every other entry in this file: the
+class was already typed correctly, but an attribute `throws-like` reads was
+missing, so the assertion crashed the whole file with "No such method" instead
+of just failing the one subtest.
+
+1. **`X::Comp`'s whole family (`X::Syntax::Missing` and friends) had no
+   `.pre`/`.post` at all.** rakudo's `X::Comp` base class carries these (the
+   source text immediately around the parse failure's eject point) for every
+   compile-time exception, but mutsu's generic "derive attrs from the typed
+   `"X::Type: text"` message" path (`RuntimeError::exception_value_with_backtrace`,
+   `src/value/error_construct.rs`) only derived `X::Syntax::Missing.what`. Fixed
+   generally rather than per-class: `parser::parse_program()`
+   (`src/parser/mod.rs`) is the one place that unambiguously has both the full
+   original source and the failure offset for a SOFT (recoverable,
+   typed-convention-message) parse diagnosis, so it now computes `pre`/`post`
+   there (current-line-only, same convention as the pre-existing
+   `source_span_at` helper `X::Syntax::Confused`'s "Missing semicolon" case
+   already used) and stores them on two new `RuntimeError` cold fields
+   (`pre_context`/`post_context`, `src/value/error.rs`). The generic attribute
+   derivation then fills `pre`/`post` from those fields for any class that
+   doesn't already carry them explicitly (`.entry(...).or_insert_with(...)`,
+   so a call site that built its own exception with its own `pre`/`post`
+   — e.g. the `modifier.rs` "Missing semicolon" site — is left alone).
+   **Caveat, not fixed:** this does not attempt to reproduce rakudo's `pre`/
+   `post` bug-for-bug — `roast/S32-exceptions/misc.t` line 92's own assertion
+   is `#?rakudo todo`'d as "Wrong eject position" (rakudo issue #4431), i.e.
+   rakudo itself gets this specific construct's eject point wrong, so no
+   fix here could match both rakudo and the assertion at once. mutsu now
+   computes its own eject point without crashing, which is strictly closer to
+   correct than raising nothing.
+2. **`X::InvalidType` had no `.typename`** on the `does`/`hides`-parent raise
+   site (`src/runtime/registration_class_validate.rs`) — only the sibling
+   `returns`/`of`-trait site (`src/runtime/registration_sub.rs`) set it. Fixed
+   the same way as `X::Syntax::Missing.what`: rakudo's message IS `Invalid
+   typename '{typename}'`, so `exception_value_with_backtrace` derives it from
+   the message text rather than duplicating it at the raise site.
+3. **`X::Syntax::Adverb` had no `.what`** at either of its two raise sites
+   (`my $x :a` in `src/parser/stmt/decl/my_decl.rs`, `infix:(&)` in
+   `src/parser/primary/ident/identifier_call.rs`). The first already builds a
+   full exception object with the sigil+name in hand, so it now passes `what`
+   as an extra attribute directly; the second only ever built a plain message
+   string, so it goes through the same message-derivation mechanism as item 2
+   (`"You can't adverb {what}"`).
+
+None of these three needed a message-text change (the trailing-period
+double-`X::Type:` prefix bug documented in the round-6-round-8
+`bench-ctor`-adjacent sessions elsewhere in this repo was checked for at both
+raise sites and not present here) — only additional attributes. Pin: extended
+`t/typed-exception-attributes.t` (16 → 21 assertions) with the three new
+cases, message text unchanged elsewhere in the file; all new assertions green
+under `raku` too except the `X::Syntax::Missing` `pre`/`post` one, which is
+annotated with the rakudo-bug caveat from item 1 instead. `misc.t` now passes
+fully under both the native and the real `Test` module. Full `t/` suite (3172
+files, 29568 tests) and `cargo clippy -- -D warnings` both clean.
+
+**Next lead:** `misc.t` was fully closed, but two more gaps surfaced past it
+while triaging (not fixed this round): `sub foo() returns !!!wtf??? { }`
+(expects `X::Syntax::Malformed`, `what => 'trait'`) parses as generic
+`X::Syntax::Confused` instead — the malformed-return-type name is not
+recognized as its own diagnosis; and a stubbed-role-parameterization test
+(`role Bottle[::T] { ... }; class Wine { ... }; say Bottle[Wine].new;`, around
+line 29) raised an uncaught "The following packages were stubbed but not
+defined: Wine" that aborted the file with exit 1 before the `pre`/`post` fix
+made it possible to see past line 93. Also still open in this file's
+neighbourhood: `PError::malformed()` (`src/parser/parse_result.rs`) has the
+same double-prefix `message`-attribute bug the `X::Anon::Multi` and
+`InvocantNotAllowed` fixes elsewhere in this file already found and fixed for
+other classes — `X::Syntax::Malformed.message` currently reads
+`"X::Syntax::Malformed: Malformed initializer"` instead of rakudo's plain
+`"Malformed initializer"` — not yet fixed since no roast assertion in the
+sweep currently reads `.message` on it, but worth doing alongside whichever of
+the two gaps above is picked up next (both raise `X::Syntax::Malformed`).
