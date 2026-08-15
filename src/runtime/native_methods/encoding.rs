@@ -467,6 +467,14 @@ impl Interpreter {
     /// partial trailing line is flushed once as its own line when the source
     /// signals `Done`/`Quit` (see
     /// `todo/tickets/supply-lines-drops-channel-backed-supplies.md`).
+    ///
+    /// `head_limit` mirrors a `.head(N)`-derived Supply's own attribute (see
+    /// the "head" arm in `native_supply_dispatch.rs`): once `N` plain-value
+    /// units have been dispatched, the loop stops accepting more even though
+    /// the channel itself never signals `Done` (an infinite source like
+    /// `Supply.interval` has no natural end) — it fires `done_cb` itself and
+    /// breaks, same as a real upstream `Done`
+    /// (`todo/tickets/head-on-a-channel-backed-supply-drops-every-value.md`).
     #[allow(clippy::too_many_arguments)]
     pub(in crate::runtime) fn run_supply_act_loop(
         interp: &mut Interpreter,
@@ -478,6 +486,7 @@ impl Interpreter {
         close_flag: Option<(u64, std::sync::Arc<std::sync::atomic::AtomicBool>)>,
         is_lines: bool,
         line_chomp: bool,
+        mut head_limit: Option<usize>,
     ) {
         use super::state::take_complete_lines_from_buffer;
         use std::io::Write;
@@ -540,6 +549,18 @@ impl Interpreter {
                         }
                     } else {
                         units.push((value, None, false));
+                    }
+                    if let Some(remaining) = head_limit {
+                        if units.len() >= remaining {
+                            units.truncate(remaining);
+                            head_limit = Some(0);
+                            outer_should_break = true;
+                            if let Some(ref cb) = done_cb {
+                                units.push((Value::NIL, Some((cb.clone(), Vec::new())), true));
+                            }
+                        } else {
+                            head_limit = Some(remaining - units.len());
+                        }
                     }
                 }
                 Ok(SupplyEvent::Done) => {

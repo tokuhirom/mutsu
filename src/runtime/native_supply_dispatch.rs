@@ -642,20 +642,32 @@ impl Interpreter {
             }
             "head" => {
                 let has_supplier = attributes.get("supplier_id").is_some();
+                // A channel-backed live Supply (`Supply.interval` without
+                // `:scheduler`, `Proc::Async` output, an async socket, or a
+                // `.lines`-style Supply derived from one) carries a
+                // `supply_id`/`parent_supply_id` rather than a `supplier_id`.
+                // `supply_get_values` below reads the (empty — nothing has
+                // been emitted, since the Supply has not even been tapped
+                // yet) materialized `values`, which is right for the
+                // materialized-Supply case but wrong here: see
+                // `todo/tickets/head-on-a-channel-backed-supply-drops-every-value.md`.
+                let has_channel = !has_supplier
+                    && (attributes.get("supply_id").is_some()
+                        || attributes.get("parent_supply_id").is_some());
                 let source_values = self.supply_get_values(attributes)?;
                 let count = if args.is_empty() {
                     1
                 } else {
                     match args.first().map(Value::view) {
                         Some(ValueView::Whatever) => {
-                            if has_supplier {
+                            if has_supplier || has_channel {
                                 usize::MAX
                             } else {
                                 source_values.len()
                             }
                         }
                         Some(ValueView::Num(f)) if f.is_infinite() => {
-                            if has_supplier {
+                            if has_supplier || has_channel {
                                 usize::MAX
                             } else {
                                 source_values.len()
@@ -688,6 +700,35 @@ impl Interpreter {
                     let mut new_attrs = attributes.clone();
                     new_attrs.insert("head_limit".to_string(), Value::int(count as i64));
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+                } else if has_channel {
+                    // Same shape as `.lines`: a derived Supply with a fresh
+                    // `supply_id` of its own but no channel — its values
+                    // still arrive on the *source* Supply's channel via
+                    // `parent_supply_id`. `head_limit` is consulted by the
+                    // "tap" chokepoint's live act-loop pump, which truncates
+                    // dispatch and fires `done` once it is reached.
+                    let new_id = next_supply_id();
+                    let mut new_attrs = HashMap::new();
+                    new_attrs.insert("values".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
+                    new_attrs.insert("supply_id".to_string(), Value::int(new_id as i64));
+                    new_attrs.insert("head_limit".to_string(), Value::int(count as i64));
+                    new_attrs.insert("live".to_string(), Value::FALSE);
+                    let parent_id = attributes
+                        .get("parent_supply_id")
+                        .or_else(|| attributes.get("supply_id"));
+                    if let Some(parent_id) = parent_id {
+                        new_attrs.insert("parent_supply_id".to_string(), parent_id.clone());
+                    }
+                    // Carry the source's own decode shape forward (a
+                    // `.lines.head(N)` chain must still split into lines
+                    // before `head_limit` counts them).
+                    for key in ["is_lines", "line_chomp", "enc"] {
+                        if let Some(val) = attributes.get(key) {
+                            new_attrs.insert(key.to_string(), val.clone());
+                        }
+                    }
                     Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
                 } else {
                     let taken: Vec<Value> = source_values.into_iter().take(count).collect();
