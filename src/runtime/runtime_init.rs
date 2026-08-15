@@ -1709,6 +1709,7 @@ impl Interpreter {
         register_x("X::Syntax::Reserved", "X::Syntax");
         register_x("X::Syntax::KeywordAsFunction", "X::Syntax");
         register_x("X::Syntax::Name::Null", "X::Syntax");
+        register_x("X::Syntax::Comment::Embedded", "X::Syntax");
         register_x("X::Syntax::Signature", "X::Syntax");
         register_x(
             "X::Syntax::Signature::InvocantMarker",

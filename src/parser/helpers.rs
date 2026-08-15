@@ -63,7 +63,17 @@ fn ws_inner_with_bol(input: &str, bol: bool) -> PResult<'_, ()> {
                         r,
                     ));
                 }
-                return Err(PError::expected("Opening bracket required for #` comment"));
+                // `#\`` not immediately followed by an opening bracket is
+                // always invalid in Raku (`X::Syntax::Comment::Embedded`,
+                // whose `.message` has no dynamic content — see
+                // `old-design-docs/S32-setting-library/Exception.pod`), never
+                // a construct another alternative could still match, so this
+                // is fatal like the "no terminator" case above.
+                return Err(PError::fatal_at(
+                    "X::Syntax::Comment::Embedded: Opening bracket required for #` comment"
+                        .to_string(),
+                    r,
+                ));
             }
             let end = r.find('\n').unwrap_or(r.len());
             rest = &r[end..];

@@ -1062,6 +1062,32 @@ instead, a different, still-unimplemented gap. Pin: `t/diffy-assign-metaop.t`
 provider and `MUTSU_REAL_TEST=1`. This was the only file in the "14 files
 fail on `Got: X::Syntax::Confused`" cluster whose expected class was
 `X::Syntax::CannotMeta`; the other 13 (different expected classes:
-`X::Syntax::Comment::Embedded`, `X::Syntax::Signature::InvocantNotAllowed`,
+~~`X::Syntax::Comment::Embedded`~~, `X::Syntax::Signature::InvocantNotAllowed`,
 `X::Comp::Group`, `X::Worry::Precedence::Range`, `X::Syntax::Malformed`,
 ...) remain open, each needing its own individual parser diagnosis.
+
+## `X::Syntax::Comment::Embedded` for `#\`` without an immediate bracket (2026-08-15)
+
+Picked the `X::Syntax::Comment::Embedded` example named above. Two
+independent gaps, not one: the parser's "Opening bracket required for #\`
+comment" diagnosis (`src/parser/helpers.rs`'s `ws()`) was never spelled in
+the `"X::Type: text"` convention (fixed: `PError::fatal_at` with the class
+prefix, same treatment as the sibling "Couldn't find terminator" case a few
+lines above), and — found only after fixing the first — the class was not
+registered under `X::Syntax` in `runtime_init.rs` at all, so
+`roast/S02-lexical-conventions/comments.t`'s three "no space/tab allowed"
+variants (which check the looser `~~ X::Comp`, marked "no exception type
+yet" in the roast source) regressed until the registration was added too.
+Fixed both; `news/2026-08/comment-embedded-exception-class.md`, pin
+`t/comment-embedded-exception-class.t`. `comments.t` goes from 4 to 1
+remaining failure under `MUTSU_REAL_TEST=1` (the last is the unrelated
+unspace-in-comment "sanity check" at line 167 — `#\`\  (comment) 32` reads
+the backslash as unspace and produces a differently-wrong parse rather than
+the `X::Syntax::Comment::Embedded` the roast assertion at line 157 wants;
+not investigated this round); `misc2.t` goes from 7 to 6.
+
+**Lesson for the next `Got: X::Syntax::Confused` file:** typing the message
+correctly is necessary but not sufficient — always re-check the class's
+`register_x` entry exists too, since `runtime_init.rs`'s X::Syntax family has
+several gaps of exactly this shape (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`
+already covers the general problem; this was one concrete instance of it).
