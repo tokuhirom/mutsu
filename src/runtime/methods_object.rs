@@ -243,9 +243,9 @@ impl Interpreter {
     /// dispatch to set `method_dispatch_pure` correctly.
     pub(crate) fn mro_has_build_or_tweak(&self, cn: &str) -> bool {
         self.mro_readonly(cn).iter().any(|cls| {
-            self.registry().classes.get(cls).is_some_and(|cd| {
-                cd.methods.contains_key("BUILD") || cd.methods.contains_key("TWEAK")
-            })
+            let registry = self.registry();
+            registry.user_method_overloads(cls, "BUILD").is_some()
+                || registry.user_method_overloads(cls, "TWEAK").is_some()
         })
     }
 
@@ -294,18 +294,12 @@ impl Interpreter {
                 std::sync::Arc::new(self.collect_attribute_type_constraints(cn_resolved));
             let mro = self.mro_readonly(cn_resolved);
             let registry = self.registry();
-            let mut has_build = mro.iter().any(|cls| {
-                registry
-                    .classes
-                    .get(cls)
-                    .is_some_and(|cd| cd.methods.contains_key("BUILD"))
-            });
-            let mut has_tweak = mro.iter().any(|cls| {
-                registry
-                    .classes
-                    .get(cls)
-                    .is_some_and(|cd| cd.methods.contains_key("TWEAK"))
-            });
+            let mut has_build = mro
+                .iter()
+                .any(|cls| registry.user_method_overloads(cls, "BUILD").is_some());
+            let mut has_tweak = mro
+                .iter()
+                .any(|cls| registry.user_method_overloads(cls, "TWEAK").is_some());
             let has_smiley = mro.iter().any(|cls| {
                 registry
                     .classes
@@ -472,9 +466,8 @@ impl Interpreter {
             }
             let has_own_build = self
                 .registry()
-                .classes
-                .get(cls)
-                .is_some_and(|cd| cd.methods.contains_key("BUILD"))
+                .user_method_overloads(cls, "BUILD")
+                .is_some()
                 || !self
                     .ordered_role_submethods_for_class(cls, "BUILD")
                     .is_empty();

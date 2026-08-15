@@ -62,11 +62,8 @@ impl Interpreter {
             // Does the class itself declare the submethod (not role-composed)?
             let class_has_own = self
                 .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get(method_name))
-                .map(|overloads| overloads.iter().any(|md| md.role_origin.is_none()))
-                .unwrap_or(false);
+                .user_method_overloads(mro_class, method_name)
+                .is_some_and(|overloads| overloads.iter().any(|md| md.role_origin.is_none()));
             // Role-composed submethods, with the same 6.c/6.e rules as the
             // former per-construction loops:
             // - Always call role submethods (both 6.c and 6.e classes)
@@ -98,15 +95,12 @@ impl Interpreter {
             // the receiver, exactly as before.
             let has_non_submethod = self
                 .registry()
-                .classes
-                .get(mro_class)
-                .and_then(|def| def.methods.get(method_name))
-                .map(|overloads| {
+                .user_method_overloads(mro_class, method_name)
+                .is_some_and(|overloads| {
                     overloads
                         .iter()
                         .any(|md| md.role_origin.is_none() || !md.is_my)
-                })
-                .unwrap_or(false);
+                });
             if has_non_submethod {
                 let pinned = self.try_pin_phase_candidate(mro_class, method_name);
                 steps.push(ConstructionPhaseStep::Class {

@@ -1050,6 +1050,28 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `class_dispatch.rs:228` — it lives inside the `run_instance_method` carrier F6 deletes
     outright, so cutting it over here is throwaway work; let F6's carrier deletion remove it for
     free.
+
+    **Progress (the class-only cluster, #TBD):** the class-level-only reads named above are
+    migrated to `Registry::user_method_overloads` (a thin, already-existing wrapper over the
+    canonical `MethodEntry` table): `methods_object.rs`'s `mro_has_build_or_tweak`,
+    `native_ctor_plan`'s has_build/has_tweak probes, and `build_owning_attr_names`;
+    `ctor_phase_plan.rs:67,103` (`build_construction_phase_steps`'s class_has_own /
+    has_non_submethod probes); `metamodel.rs`'s three custom-HOW existence checks
+    (`install_custom_grammar_how`'s `find_method`, `install_custom_class_how`'s `compose`,
+    `declare_how_has_user_method`'s arbitrary method_name); `class_introspection.rs:39`
+    (`class_has_new_accepting_positional`'s `new` lookup). Each site already bailed on a
+    non-class MRO entry before this change (`registry.classes.get(cls)` returning `None`), so
+    the swap is behavior-preserving by construction — no separate shadow-check instrumentation
+    was needed on top of that existing bail. `metamodel.rs`'s `declare_drive_how_protocol`
+    (~line 406-428, full-method-name enumeration for a class) is deliberately left on
+    `class_def.methods`: it needs every method name a class owns, which the `(owner,
+    name)`-keyed table has no index for yet — the same gap F4c's own text already calls out.
+    `ctor_phase_plan.rs:133` (`get_method_overloads` inside `try_pin_phase_candidate`) already
+    reads the canonical table and needs no change; its only caller passes `mro_class` after the
+    loop's own role-skip (`roles.contains_key && !classes.contains_key` -> `continue`), so it is
+    structurally never called with a role receiver today. Verified with the full local `t/`
+    suite (3173 files) and a 64-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (class
+    declarations, multi, typed arrays, introspection, roles), all green.
   - [ ] **F4c — Invert the write direction and remove the field.** Make `MethodEntry`/the
     canonical table the write-side source (`sync_user_method_entries`'s write sites in
     `registration.rs`, `registration_class_body_attr.rs`, `registration_class_body_method.rs`,
