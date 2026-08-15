@@ -394,8 +394,39 @@ impl Interpreter {
                 attributes,
                 ..
             } => {
+                // ADR-0019 Phase F box F1: `.^lookup`/`.^find_method`/
+                // `.^methods` return a Method/Submethod `Instance` now
+                // instead of a `Sub` (`todo/tickets/classhow-lookup-returns-
+                // sub-not-method-instance.md`) -- mirror the `ValueView::Sub`
+                // arm's doc-comment key shape below using the same
+                // `__mutsu_lookup_class`/`__mutsu_lookup_method` attributes
+                // `.wrap` already reads, so `Class.^find_method(name).WHY`
+                // keeps finding the `#|` comment on the method declaration
+                // (roast integration/advent2011-day10.t).
+                if class_name == "Method" || class_name == "Submethod" {
+                    let am = attributes.as_map();
+                    let method_name = am.get("__mutsu_lookup_method").map(|v| v.to_string_value());
+                    let owner = am
+                        .get("__mutsu_lookup_class")
+                        .map(|v| v.to_string_value())
+                        .or_else(|| {
+                            am.get("package").and_then(|v| match v.view() {
+                                ValueView::Package(p) => Some(p.resolve()),
+                                _ => None,
+                            })
+                        });
+                    let mut k = Vec::new();
+                    if let (Some(owner), Some(name)) = (&owner, &method_name) {
+                        k.push(format!("{}::{}", owner, name));
+                    }
+                    if let Some(name) = &method_name {
+                        k.push(format!("&{}", name));
+                        k.push(name.clone());
+                    }
+                    k
+                }
                 // Role candidate with index metadata
-                if let Some(ValueView::Int(idx)) = attributes
+                else if let Some(ValueView::Int(idx)) = attributes
                     .as_map()
                     .get("__mutsu_role_candidate_idx")
                     .map(Value::view)

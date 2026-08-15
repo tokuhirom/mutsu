@@ -834,6 +834,23 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `t/classhow-native-method-signature-default.t`. The Sub-vs-Instance representation unification for
   `.^lookup`/`.^find_method` remains open — that surface still returns a `Sub`-shaped value with its
   own, separate `.signature` rendering path, untouched by this slice.
+  **Update (2026-08-15, F1 mechanism slice, Sub-vs-Instance unification, closes the ticket):**
+  `.^lookup`/`.^find_method` now return the same `Method`/`Submethod` `Instance`
+  `.^methods`/`.^method_table`/`.^can` build, for all four cases `classhow_lookup_impl` handles (user
+  class method, role method, attribute accessor, native/builtin method incl. grammar tokens).
+  `.wrap`'s tag reuse needed no change (the `Instance` shape already carried the same
+  `__mutsu_lookup_*` tags `.^methods(:local)` used); direct callability (`$m(invocant, args)`, real
+  Raku's implicit `CALL-ME`) is preserved via a hidden `__mutsu_method_callable` attribute plus one
+  new `CALL-ME` handler, not a general "make an Instance callable everywhere" capability — the two
+  blockers the ticket worried about were both smaller than feared. `.multi`/`.rw`/`.readonly`
+  (missing entirely from the `Instance` shape) were added as a byproduct. Found and fixed five real
+  bugs along the way (missing invocant in `Method.signature`, `.candidates` on a non-multi method,
+  cross-class multi-family `.candidates` combination plus a pre-existing per-candidate wrap-index
+  bug, `.WHY` on a Method Instance, and dynamic hyper dispatch on a method value) — full detail in
+  `news/2026-08/classhow-lookup-method-instance-unification.md`. Pin:
+  `t/classhow-lookup-method-instance-callable.t`. F1's only remaining open piece is the fidelity
+  slice (per-native-method `.signature`/`.package`/`.is_dispatcher` override columns), correctly idle
+  until a real assertion demands a specific override (per the 2026-08-14 decision above).
 - [x] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices

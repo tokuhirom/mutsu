@@ -49,7 +49,7 @@ impl Interpreter {
         let mro = self.class_mro(&class_name_str);
         for owner_sym in mro.iter() {
             let owner_str = owner_sym.as_str();
-            let (defs_first, has_multi) = {
+            let defs_all: Vec<MethodDef> = {
                 let registry = self.registry();
                 let Some(class_def) = registry.classes.get(owner_str) else {
                     continue;
@@ -57,117 +57,72 @@ impl Interpreter {
                 let Some(defs) = class_def.methods.get(method_name) else {
                     continue;
                 };
-                let Some(def) = defs.first() else {
+                let Some(first) = defs.first() else {
                     continue;
                 };
                 // A submethod (`is_my`) is visible only at its own declaring
                 // level for `.^find_method`/`.can` (`include_ancestor_
                 // submethods = false`) -- `.^lookup` has no such restriction.
-                if def.is_my && owner_str != class_name_str && !include_ancestor_submethods {
+                if first.is_my && owner_str != class_name_str && !include_ancestor_submethods {
                     continue;
                 }
-                (def.clone(), defs.iter().any(|d| d.is_multi))
+                defs.clone()
             };
-            let def = &defs_first;
-            let has_explicit_invocant = def
-                .param_defs
-                .iter()
-                .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
-            let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-            if !has_explicit_invocant {
-                full_param_defs.push(Self::make_invocant_param(owner_str));
+            let first = &defs_all[0];
+            let has_multi = defs_all.iter().any(|d| d.is_multi);
+            // ADR-0019 Phase F box F1: return the same `Method`/`Submethod`
+            // `Instance` shape `.^methods`/`.^method_table` build, instead of
+            // an ad hoc `Sub` -- see `todo/tickets/classhow-lookup-returns-
+            // sub-not-method-instance.md`. `__mutsu_method_callable`
+            // (attached for a non-dispatcher) is what `CALL-ME` runs; a multi
+            // dispatcher has none and re-dispatches on the first argument
+            // instead.
+            if has_multi {
+                // A multi family can combine candidates declared across
+                // several classes in the MRO (roast S06-advanced/wrap.t:
+                // `C1`/`C2` each contribute `bar` candidates) -- unlike
+                // `.^methods`, whose `.^method_table` view is intentionally
+                // per-class-only, `.^lookup`'s dispatcher must expose the
+                // FULL combined family, matching the old Sub-shaped
+                // dispatcher's `classhow_lookup_all_candidates` walk.
+                let candidates =
+                    self.classhow_lookup_all_candidates(&class_name_str, method_name, class_name);
+                return Some(self.make_method_object_with_owner_ex(
+                    method_name,
+                    first,
+                    true,
+                    first.return_type.clone(),
+                    None,
+                    Some(owner_str),
+                    false,
+                    Some(candidates),
+                    0,
+                ));
             }
-            full_param_defs.extend(def.param_defs.iter().cloned());
-            let mut env = crate::env::Env::new();
-            // Set callable type for .^name to return Method/Submethod
-            let callable_type = if def.is_submethod {
-                "Submethod"
-            } else {
-                "Method"
-            };
-            env.insert(
-                "__mutsu_callable_type".to_string(),
-                Value::str_from(callable_type),
-            );
-            // Carry the declared return type so `.signature.returns` / `.returns`
-            // reflect a `--> Type` declaration on the method.
-            if let Some(rt) = &def.return_type {
-                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
-            }
-            env.insert(
-                "__mutsu_lookup_class".to_string(),
-                Value::str(owner_str.to_string()),
-            );
-            env.insert(
-                "__mutsu_lookup_method".to_string(),
-                Value::str(method_name.to_string()),
-            );
-            // A single (non-multi) method is candidate 0; recording it lets
-            // `.wrap()` register a method-level wrap chain that participates in
-            // MRO `nextsame` dispatch (S06-advanced/wrap.t GH#2178). Multi methods
-            // are wrapped via the `.candidates[N]` path, which carries its own idx.
-            if !has_multi {
-                env.insert("__mutsu_lookup_candidate_idx".to_string(), Value::int(0));
-            }
-            return Some(Value::make_sub(
-                *owner_sym,
-                Symbol::intern(method_name),
-                def.params.clone(),
-                full_param_defs,
-                (*def.body).clone(),
-                def.is_rw,
-                env,
+            return Some(self.make_method_object_with_owner(
+                method_name,
+                first,
+                false,
+                first.return_type.clone(),
+                None,
+                Some(owner_str),
             ));
         }
         // Check role methods
         if let Some(role_def) = self.registry().roles.get(&class_name_str)
             && let Some(defs) = role_def.methods.get(method_name)
-            && let Some(def) = defs.first()
+            && !defs.is_empty()
         {
-            let has_multi = defs.iter().any(|d| d.is_multi);
-            let has_explicit_invocant = def
-                .param_defs
-                .iter()
-                .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
-            let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
-            if !has_explicit_invocant {
-                full_param_defs.push(Self::make_invocant_param(&class_name_str));
-            }
-            full_param_defs.extend(def.param_defs.iter().cloned());
-            let mut env = crate::env::Env::new();
-            // Set callable type for .^name to return Method/Submethod
-            let callable_type = if def.is_submethod {
-                "Submethod"
-            } else {
-                "Method"
-            };
-            env.insert(
-                "__mutsu_callable_type".to_string(),
-                Value::str_from(callable_type),
-            );
-            // Carry the declared return type so `.signature.returns` / `.returns`
-            // reflect a `--> Type` declaration on the role method.
-            if let Some(rt) = &def.return_type {
-                env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
-            }
-            if has_multi {
-                env.insert(
-                    "__mutsu_lookup_class".to_string(),
-                    Value::str(class_name_str.clone()),
-                );
-                env.insert(
-                    "__mutsu_lookup_method".to_string(),
-                    Value::str(method_name.to_string()),
-                );
-            }
-            return Some(Value::make_sub(
-                class_name,
-                Symbol::intern(method_name),
-                def.params.clone(),
-                full_param_defs,
-                (*def.body).clone(),
-                def.is_rw,
-                env,
+            let defs_all = defs.clone();
+            let first = &defs_all[0];
+            let has_multi = defs_all.iter().any(|d| d.is_multi);
+            return Some(self.make_method_object_with_owner(
+                method_name,
+                first,
+                has_multi,
+                first.return_type.clone(),
+                if has_multi { Some(&defs_all) } else { None },
+                Some(&class_name_str),
             ));
         }
         // Check auto-generated accessor methods for public attributes (has $.x, has $.x is rw).
@@ -182,7 +137,7 @@ impl Interpreter {
                         "__mutsu_callable_type".to_string(),
                         Value::str_from("Method"),
                     );
-                    return Some(Value::make_sub(
+                    let callable = Value::make_sub(
                         class_name,
                         Symbol::intern(method_name),
                         vec!["self".to_string()],
@@ -190,6 +145,12 @@ impl Interpreter {
                         vec![],
                         is_rw,
                         env,
+                    );
+                    return Some(Self::wrap_accessor_method_object(
+                        method_name,
+                        &class_name_str,
+                        is_rw,
+                        callable,
                     ));
                 }
             }
@@ -199,22 +160,83 @@ impl Interpreter {
         if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
             && !defs.is_empty()
         {
-            return Some(Value::routine_parts(
-                class_name,
-                Symbol::intern(method_name),
-                true,
-            ));
+            return Some(self.make_native_method_object_ex(method_name, &class_name_str, true));
         }
-        // Check built-in type methods — return a Routine marker that the
-        // runtime can dispatch when called.
+        // Check built-in type methods — return a native Method Instance
+        // (`__mutsu_method_callable` carries the Routine marker the runtime
+        // dispatches when called).
         if self.is_builtin_type_method(&class_name_str, method_name) {
-            return Some(Value::routine_parts(
-                class_name,
-                Symbol::intern(method_name),
-                false,
-            ));
+            return Some(self.make_native_method_object(method_name, &class_name_str));
         }
         None
+    }
+
+    /// Build a minimal Method `Instance` for an auto-generated attribute
+    /// accessor (`has $.x`), wrapping the pre-built accessor `Sub` as
+    /// `__mutsu_method_callable`. There is no `MethodDef` for these (the
+    /// accessor is synthesized, not declared), so this does not go through
+    /// `make_method_object_with_owner`.
+    fn wrap_accessor_method_object(name: &str, owner: &str, is_rw: bool, callable: Value) -> Value {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
+        attrs.insert("is_dispatcher".to_string(), Value::FALSE);
+        attrs.insert("multi".to_string(), Value::FALSE);
+        attrs.insert("rw".to_string(), Value::truth(is_rw));
+        attrs.insert("readonly".to_string(), Value::truth(!is_rw));
+        attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
+        attrs.insert(
+            "signature".to_string(),
+            crate::value::signature::make_signature_value(
+                crate::value::signature::synthesize_native_signature(owner),
+                None,
+            ),
+        );
+        attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
+        attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
+        attrs.insert("__mutsu_method_callable".to_string(), callable);
+        Value::make_instance(Symbol::intern("Method"), attrs)
+    }
+
+    /// Build the callable `Sub` value for a single (non-dispatcher) method
+    /// candidate -- shared by `.^lookup`/`.^find_method`
+    /// (`classhow_lookup_impl`) and the Method `Instance` object's
+    /// `__mutsu_method_callable` payload (`make_method_object_with_owner`),
+    /// so invoking either shape runs the exact same body/params/env. This is
+    /// the ADR-0019 Phase F box F1 Sub-vs-Instance unification: the Instance
+    /// carries introspection attributes generically, while this attached Sub
+    /// is what `CALL-ME` actually runs.
+    pub(super) fn method_def_callable(owner: &str, name: &str, def: &MethodDef) -> Value {
+        let has_explicit_invocant = def
+            .param_defs
+            .iter()
+            .any(|pd| pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"));
+        let mut full_param_defs = Vec::with_capacity(def.param_defs.len() + 1);
+        if !has_explicit_invocant {
+            full_param_defs.push(Self::make_invocant_param(owner));
+        }
+        full_param_defs.extend(def.param_defs.iter().cloned());
+        let mut env = crate::env::Env::new();
+        let callable_type = if def.is_submethod {
+            "Submethod"
+        } else {
+            "Method"
+        };
+        env.insert(
+            "__mutsu_callable_type".to_string(),
+            Value::str_from(callable_type),
+        );
+        if let Some(rt) = &def.return_type {
+            env.insert("__mutsu_return_type".to_string(), Value::str(rt.clone()));
+        }
+        Value::make_sub(
+            Symbol::intern(owner),
+            Symbol::intern(name),
+            def.params.clone(),
+            full_param_defs,
+            (*def.body).clone(),
+            def.is_rw,
+            env,
+        )
     }
 
     pub(super) fn make_invocant_param(class_name: &str) -> crate::ast::ParamDef {
@@ -303,45 +325,24 @@ impl Interpreter {
                 continue;
             };
             for (idx, def) in defs.iter().enumerate() {
-                let mut full_param_defs = vec![Self::make_invocant_param(owner)];
-                full_param_defs.extend(def.param_defs.iter().cloned());
-                let mut env = crate::env::Env::new();
-                // Set callable type for .^name to return Method/Submethod
-                let callable_type = if def.is_submethod {
-                    "Submethod"
-                } else {
-                    "Method"
-                };
-                env.insert(
-                    "__mutsu_callable_type".to_string(),
-                    Value::str_from(callable_type),
-                );
-                env.insert(
-                    "__mutsu_lookup_class".to_string(),
-                    Value::str(owner.to_string()),
-                );
-                env.insert(
-                    "__mutsu_lookup_method".to_string(),
-                    Value::str(method_name.to_string()),
-                );
-                env.insert(
-                    "__mutsu_lookup_candidate_idx".to_string(),
-                    Value::int(idx as i64),
-                );
-                // Real Raku: an individual `.candidates[N]` entry answers
-                // `.multi` True (it IS a declared multi candidate), unlike the
-                // dispatcher-shaped value `.^lookup`/`.^find_method` return for
-                // the family as a whole, which answers `.multi` falsy. See the
-                // `is_dispatcher`/`multi` handling in `methods_instance_ops.rs`.
-                env.insert("__mutsu_is_multi_candidate".to_string(), Value::TRUE);
-                out.push(Value::make_sub(
-                    crate::symbol::Symbol::intern(owner),
-                    crate::symbol::Symbol::intern(method_name),
-                    def.params.clone(),
-                    full_param_defs,
-                    (*def.body).clone(),
-                    def.is_rw,
-                    env,
+                // ADR-0019 Phase F box F1: build the same Method `Instance`
+                // shape `.^methods`'s own multi-candidate builder does,
+                // instead of an ad hoc `Sub` -- see `todo/tickets/classhow-
+                // lookup-returns-sub-not-method-instance.md`. The explicit
+                // `idx` (not the single-owner builder's hardcoded 0) keeps
+                // `.wrap()` on `.candidates[N]` targeting the right
+                // `(class, method, idx)` slot when a class declares more
+                // than one candidate of its own (roast S06-advanced/wrap.t).
+                out.push(self.make_method_object_with_owner_ex(
+                    method_name,
+                    def,
+                    false,
+                    def.return_type.clone(),
+                    None,
+                    Some(owner),
+                    true,
+                    None,
+                    idx,
                 ));
             }
         }

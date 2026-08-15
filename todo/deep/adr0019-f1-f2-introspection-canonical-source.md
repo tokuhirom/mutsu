@@ -363,3 +363,12 @@ catalog owner, `.signature` synthesizing a generic shape) are the correct, compl
 "no hand data" tier. The two genuinely open threads for a future session are (a) the Sub-vs-Instance
 unification above (a real correctness bug, not an approximation gap) and (b) fidelity overrides
 added reactively, never as a bulk campaign.
+
+## Progress (2026-08-15): (a) is done — Sub-vs-Instance unification closed
+
+`.^lookup`/`.^find_method` now return the same `Method`/`Submethod` `Instance` shape `.^methods`
+builds; direct callability and `.wrap` both work via a `__mutsu_method_callable` attribute plus one
+`CALL-ME` handler. Full detail: `news/2026-08/classhow-lookup-method-instance-unification.md`, and
+the ADR's F1 box. Only thread (b), the fidelity slice, remains open on this file's scope — still
+correctly idle until a real assertion demands a specific `.package`/`.signature`/`.is_dispatcher`
+override for a native method.

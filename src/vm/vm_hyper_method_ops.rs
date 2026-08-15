@@ -174,6 +174,38 @@ fn hyper_subscript_index_is_slice(v: &Value) -> bool {
     }
 }
 
+/// Extracts the callable name from a "method value" used as a dynamic hyper
+/// target (`».$var`, `>>.&$var`), if `v` is one of the shapes that IS a
+/// callable rather than a plain method-name string. ADR-0019 Phase F box F1
+/// made `.^lookup`/`.^find_method` return a Method/Submethod `Instance`
+/// instead of a `Sub`/`Routine` (`todo/tickets/classhow-lookup-returns-sub-
+/// not-method-instance.md`), so this must recognize that shape too — reading
+/// its `__mutsu_lookup_method` attribute (falling back to the display `name`
+/// attribute, stripping the `!` private-method prefix) the same way `.wrap`
+/// already does. `None` means "not callable, stringify as a method name" (the
+/// pre-existing path for a plain `Str`/`Symbol` method-name value).
+fn method_value_callable_name(v: &Value) -> Option<String> {
+    match v.view() {
+        ValueView::Sub(data) => Some(data.name.resolve()),
+        ValueView::WeakSub(weak) => weak.upgrade().map(|d| d.name.resolve()),
+        ValueView::Routine { name, .. } => Some(name.resolve()),
+        ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } if class_name == "Method" || class_name == "Submethod" => {
+            let am = attributes.as_map();
+            am.get("__mutsu_lookup_method")
+                .map(|v| v.to_string_value())
+                .or_else(|| {
+                    am.get("name")
+                        .map(|v| v.to_string_value().trim_start_matches('!').to_string())
+                })
+        }
+        _ => None,
+    }
+}
+
 /// Whether a method/routine name is *nodal* — natively defined on the list type
 /// so a hyper applies it at the node level instead of descending to the leaves.
 /// Raku marks these routines `is nodal`; this is mutsu's approximation of that
@@ -1234,20 +1266,14 @@ impl Interpreter {
             elems
         });
         let mut results = Vec::with_capacity(items.len());
-        let method = (!matches!(
-            name_val.view(),
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-        ))
-        .then(|| {
+        let name_val_callable_name = method_value_callable_name(&name_val);
+        let method = name_val_callable_name.is_none().then(|| {
             let method_raw = name_val.to_string_value();
             Self::rewrite_method_name(&method_raw, modifier)
         });
         for (idx, item) in items.iter_mut().enumerate() {
             let item_args = args.clone();
-            if matches!(
-                name_val.view(),
-                ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-            ) {
+            if let Some(callable_name) = &name_val_callable_name {
                 // A `>>.&callable` hyper descends to the leaves (deepmap) UNLESS the
                 // callable is *nodal* (`>>.&elems`, `>>.&reverse`, ...), which applies
                 // at the node level like `>>.elems`. A block or a plain sub is not
@@ -1260,15 +1286,7 @@ impl Interpreter {
                 // TODO: store the `is nodal` trait on SubData and read it here, so a
                 // plain `sub foo` never counts as nodal and a custom `sub bar is
                 // nodal` (non-builtin name) does.
-                let callable_name = match name_val.view() {
-                    ValueView::Sub(data) => data.name.resolve(),
-                    ValueView::WeakSub(weak) => {
-                        weak.upgrade().map(|d| d.name.resolve()).unwrap_or_default()
-                    }
-                    ValueView::Routine { name, .. } => name.resolve(),
-                    _ => String::new(),
-                };
-                let callable_is_nodal = is_nodal_list_method(&callable_name);
+                let callable_is_nodal = is_nodal_list_method(callable_name);
                 if callable_is_nodal {
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "hypermethodcalldynamic",
