@@ -102,6 +102,14 @@ impl Interpreter {
     /// raku itself skips `Any` for — see the catalog's `Junction` row) for `value`'s
     /// dispatch receiver.
     pub(crate) fn dispatch_mro(&mut self, value: &Value) -> Vec<TypeId> {
+        // Tag probe first: a lazy `Match` always decodes to `ValueView::Instance
+        // { class_name: "Match", .. }` (see `value/nanbox/peek.rs`), which the
+        // `Instance` arm below would answer with `self.class_chain("Match")`
+        // anyway — checking the tag avoids forcing full materialization
+        // (`force_attrs()`) on every dispatch just to learn the class is "Match".
+        if value.is_lazy_match_value() {
+            return self.class_chain("Match");
+        }
         match value.view() {
             // Transient wrappers: classify the held value.
             ValueView::VarRef { value: inner, .. } => self.dispatch_mro(inner),
@@ -321,7 +329,12 @@ impl Interpreter {
     /// classifier chain already starts with the allomorph type itself, not a
     /// role, so `dispatch_mro`'s answer is already correct.
     pub(crate) fn dispatch_owner_chain(&mut self, value: &Value) -> Vec<TypeId> {
-        if let ValueView::Mixin(inner, mixins) = value.view()
+        // Tag probe first (`is_mixin_value`): almost every receiver is not a
+        // Mixin, and forcing `view()` here would materialize a lazy Match for
+        // nothing — `dispatch_mro` below already has its own lazy-Match fast
+        // path.
+        if value.is_mixin_value()
+            && let ValueView::Mixin(inner, mixins) = value.view()
             && !mixins.contains_key("Str")
         {
             return self.dispatch_mro(inner.as_ref());

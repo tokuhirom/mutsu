@@ -1,5 +1,70 @@
 # Parsing YAML with the bundled `YAMLish` is still ~5-35x slower than raku
 
+**Update (2026-08-15, round 8): the post-P5 drift's dominant call site is
+found and fixed — `match_materializations` drops from 20949 to 1749 on
+`benchmarks/bench-yaml-parse.raku` (matches the P5-merge-day baseline
+exactly: round 7's table cites `leaf_spans: 26` at `fa2400a49`, and this
+build now measures `leaf_spans=26` too).** Round 7 left "run a gdb hit-count
+sweep across all `force_attrs()`/`materialize_map()` callers" as the concrete
+next step. Doing that (a `rust-gdb -batch` Python breakpoint script
+aggregating the first non-internal caller frame per hit — see the method
+below, not committed, a throwaway `tmp/` script per the debugging
+guidelines) found the count was **not diffuse**: 19200 of 20949 hits
+(91.6%) resolved to a *single* unconditional `target.view()` call in
+`try_native_method_raw` (`src/vm/vm_native_dispatch.rs`), gating the
+"augmented native-type bypass" check — it ran *before* the function's own
+`target.is_lazy_match_value()` special case a few lines below, which exists
+specifically to avoid this. Since a lazy `Match` always decodes to
+`ValueView::Instance` (`value/nanbox/peek.rs`), the `!matches!(target.view(),
+Instance | Package)` gate is provably always `false` for a Match anyway — so
+skipping it behind a cheap `is_lazy_match_value()` tag probe first is a
+behavior-preserving fix, not a new special case.
+
+Fixing that reduced but did not eliminate the count (it moved the dominant
+call site to `Interpreter::dispatch_owner_chain`/`dispatch_mro`
+(`src/runtime/receiver_class.rs`) — the ADR-0019 E1b method-owner classifier
+consulted by *every* method dispatch, hyper or not). Same shape, same fix:
+`dispatch_mro`'s top-level `match value.view() { ... }` decoded a Match just
+to answer `ValueView::Instance { class_name: "Match", .. } =>
+self.class_chain("Match")`, a class name `is_lazy_match_value()` already
+knows without decoding; `dispatch_owner_chain`'s own `if let
+ValueView::Mixin(...) = value.view()` had the identical problem, fixed with
+the pre-existing `is_mixin_value()` tag probe. Three call sites, one root
+cause each: **compute the answer from the cheap tag probe you already have,
+instead of forcing `view()` to ask a question `view()`'s own decode logic
+would have answered with a constant.**
+
+Verification: `prove -e target/debug/mutsu t/` (3166 files, 29279 tests) and
+the mixin/regex/grammar/dispatch subsets individually — all pass, no
+behavior change (expected, since every fix is provably a no-op on the
+*decision*, only on whether `view()` is forced to reach it). Pinned by
+`tests/lazy_match_no_eager_materialization.rs` (an integration test in the
+`jit_diff.rs` style: run the benchmark under `MUTSU_VM_STATS=1`, assert
+`match_materializations` stays under a generous ceiling well below the
+pre-fix 20949). Local wall-clock (release, single run, not an idle-box
+measurement — see the round 6/7 caveats about why only `bench-history.tsv`
+is authoritative for the number that goes in a document): the synthetic
+benchmark went from round 7's CI-measured ~1.60-1.80s down to a locally
+measured ~1.20-1.25s (3 runs, tight spread), and `basic.rakutest` from round
+7's ~6.0-6.9s down to ~5.1-5.2s. Both directionally consistent with the
+92% materialization-count cut, though — per the standing methodology note —
+the CI `bench-history.tsv` series is what should be cited once this lands.
+
+**Net assessment: the post-P5 drift's root cause (item 1 from round 7) is
+now fixed, not just localized.** The 20949 vs 1749 numbers bracket the drift
+almost exactly (round 6/7 table: `leaf_spans` was 26 at the P5-merge commit,
+19226 just before this fix — now back to 26). Item 2 (whole-upstream-file
+re-measurement) was already resolved in round 7. What remains open: (a) a
+CI-confirmed `bench-history.tsv` number for this fix (not available yet,
+this is a same-session local measurement), and (b) the 1749 *remaining*
+materializations are not zero — `invoke_grammar_actions` (1714 of them, per
+the same sweep) is the next-largest bucket, but that path recurses into
+named/positional child captures and genuinely needs the attribute map, so it
+is very plausibly legitimate work, not a bug — not independently verified
+this round.
+
+---
+
 **Update (2026-08-14, round 7): `basic.rakutest` is fixed (round 5's "barely
 improved" concern is resolved, ~7x faster now) and `MUTSU_VM_STATS` traces the
 post-P5 drift to a concrete, falsifiable mechanism — near-total loss of P5's
@@ -576,33 +641,37 @@ The `MUTSU_VM_STATS` counters are useless here: only ~25k opcodes run for a
    the top of this file. This item is done; the ADR itself is the record of
    what it fixed.
 
-5. **(New, round 6; updated round 7) Two items neither round 1-5 nor the ADR
-   closed:**
-   - **Bisect the post-P5 drift — partially traced, not closed (round 7).**
-     `bench-yaml-parse`'s CI-measured raw median rose from ~1.35s
-     (2026-07-31, the P5-merge day) to ~1.55-1.80s (2026-08-12 through 08-14)
-     over ~1700 unrelated merged commits — see the round 6 table above. Round
-     7's `MUTSU_VM_STATS` comparison (P5-merge `fa2400a49` vs current) found
-     the driver's *neighborhood*: `leaf_spans` exploded ×739 (26→19226) and
-     the new `match_materializations` counter shows 20951 forced
-     materializations, while dual-store/JIT/opcode-volume/grammar-dispatch
-     counters are all flat — i.e. P5's lazy-Match win is being defeated
-     somewhere, not a broad diffuse overhead. A `rust-gdb` breakpoint at
-     `MatchNode::force_attrs()` (`src/value/match_lazy.rs:74`) found *a* real,
-     unguarded `Value::view()` call that forces materialization
-     unconditionally (`OpCode::GetGlobal` at `vm_exec_dispatch.rs:532`, and
-     siblings `GetUpvalue`/`SetLocal`-readonly-check) — contrasted with
-     `GetLocal`, which already guards the same check behind a cheap
-     `is_lazy_thunk_value()` tag probe. But diffing those exact sites against
-     `fa2400a49` shows them byte-identical, so this specific inconsistency
-     predates the regression window and is not (solely) the cause of the
-     delta. **Round 8: run a gdb hit-count sweep** (not 3 samples — `ignore N`
-     or an env-gated backtrace-on-every-Kth-hit) across all
-     `force_attrs()`/`materialize_map()` callers to find which one(s)
-     actually dominate the 20951 total, and check whether they trace to one
-     of the many ADR-0019 (`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`)
-     E3/E4/F1 dispatch-resolution PRs that landed in this exact window (see
-     the round 7 entry at the top of this file for the full reasoning).
+5. **(New, round 6; updated round 7; done round 8) Two items neither round 1-5
+   nor the ADR closed:**
+   - **Bisect the post-P5 drift — done (round 8).** See the round 8 entry at
+     the top of this file for the full trace: a gdb hit-count sweep found the
+     19200-of-20949 dominant call site (`try_native_method_raw`'s augmented
+     native-type bypass check running before its own lazy-Match special
+     case), fixed it plus two sibling instances in
+     `dispatch_mro`/`dispatch_owner_chain` (`src/runtime/receiver_class.rs`),
+     and confirmed `match_materializations` returns to the P5-merge-day
+     baseline (1749, `leaf_spans=26`, matching `fa2400a49` exactly). None of
+     the three fixed sites trace to ADR-0019 — the E3/E4/F1 hypothesis from
+     round 7 was not the cause; the real culprits are older, unrelated
+     `.view()` calls in the native-dispatch bypass and the ADR-0019 E1b
+     owner-chain classifier itself (both predate the 2026-07-31 to 08-14
+     drift window, meaning something ELSE started calling these paths far
+     more often in that window — not yet identified, but no longer needed to
+     close this item: fixing the call sites themselves is sufficient and
+     general regardless of what changed their call *frequency*).
+     **Still open, not part of round 8's fix:** round 7's `GetGlobal`
+     (`vm_exec_dispatch.rs:536`) / `GetUpvalue`
+     (`vm_var_assign_local_get.rs:58`) / `SetLocal`-readonly-check
+     (`vm_var_assign_set_local.rs:1817`) unguarded `Value::view()` calls —
+     confirmed real (contrast with `GetLocal`'s existing
+     `is_lazy_thunk_value()` tag-probe guard) but confirmed NOT the dominant
+     cause (byte-identical at the P5-merge commit, low call counts in this
+     benchmark). Worth fixing for the same reason as the round 8 sites (any
+     Match read via those ops pays an unnecessary full materialization) but
+     lower priority now that the dominant regression is closed — a good
+     small follow-up `todo/tickets/` slice on its own, not filed separately
+     yet since round 7/8's analysis already documents it precisely enough to
+     pick up cold.
    - **Re-measure `basic.rakutest` and the other whole-upstream-file numbers —
      done for `basic.rakutest` (round 7), resolved.** Round 1-5's own numbers
      predated P1-P5 entirely; round 5 explicitly flagged `basic.rakutest` as
