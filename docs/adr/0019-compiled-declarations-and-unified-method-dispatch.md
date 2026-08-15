@@ -818,6 +818,22 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   default and the Sub-vs-Instance unification remain open. Pin: `t/classhow-methods-package.t`;
   design detail in `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Progress
   (2026-08-14): F1 mechanism slice, `.package` only".
+  **Update (2026-08-15, F1 mechanism slice, `.signature` default):** `make_native_method_object`
+  hardcoded every native `Method` Instance's `.signature` as an empty `Signature()` — `.^methods`/
+  `.^method_table` on any built-in type answered zero params regardless of the method's real arity.
+  A raku ground-truth sweep of ~280 introspectable (owner, name) pairs found no single shape
+  dominates real Rakudo's native signatures (raw-capture `(Owner $:: |)`, generic named-catchall
+  `(Owner:D $:: *%_)`, and fully-typed explicit params were all common, with no pattern derivable
+  from `NativeArityMask` alone), so this slice synthesizes the plurality shape — `(Owner $:: |)`, an
+  invocant plus a raw capture — as the generic default (`crate::value::signature::
+  synthesize_native_signature`), replacing the hardcoded empty signature. Not exact parity by
+  design; per-method overrides are the fidelity slice's job. Surfaced (but did not fix, filed
+  separately as `todo/tickets/signature-arity-count-wrong-for-capture-params.md`) a pre-existing,
+  general bug: `Signature.arity`/`.count` are wrong for any signature containing a raw-capture
+  param, reproducing on plain user-declared subs too, not specific to this change. Pin:
+  `t/classhow-native-method-signature-default.t`. The Sub-vs-Instance representation unification for
+  `.^lookup`/`.^find_method` remains open — that surface still returns a `Sub`-shaped value with its
+  own, separate `.signature` rendering path, untouched by this slice.
 - [x] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
