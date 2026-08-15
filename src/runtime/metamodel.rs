@@ -400,22 +400,26 @@ impl Interpreter {
             // deterministic protocol order. Each is passed as a Method object
             // carrying its owner markers so a `.wrap` inside the user
             // `add_method` becomes a class-keyed wrap chain.
-            let mut method_names: Vec<String> = self
-                .registry()
-                .classes
-                .get(class_name)
-                .map(|cd| {
-                    cd.methods
-                        .iter()
-                        .filter(|(_, overloads)| {
+            // ADR-0019 F4c-1: enumerate via the canonical reverse index
+            // instead of `class_def.methods.keys()` (the enumeration site
+            // F4b deferred here; zero-mismatch shadow-checked across the
+            // full local `t/` suite before this cutover).
+            let registry = self.registry();
+            let mut method_names: Vec<String> = registry
+                .owner_method_names(class_name)
+                .into_iter()
+                .map(|name| name.resolve())
+                .filter(|name| {
+                    registry
+                        .user_method_overloads(class_name, name)
+                        .is_some_and(|overloads| {
                             overloads.first().is_some_and(|first| {
                                 !first.is_private && !first.is_submethod && !first.is_multi
                             })
                         })
-                        .map(|(name, _)| name.clone())
-                        .collect()
                 })
-                .unwrap_or_default();
+                .collect();
+            drop(registry);
             method_names.sort();
             for method_name in method_names {
                 let Some(overloads) = self

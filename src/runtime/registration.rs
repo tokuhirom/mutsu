@@ -204,7 +204,19 @@ impl Interpreter {
         class_name: &str,
         class_def: &mut ClassDef,
     ) -> Result<(), RuntimeError> {
-        let method_names: Vec<String> = class_def.methods.keys().cloned().collect();
+        // ADR-0019 F4c-1: enumerate via the canonical reverse index instead
+        // of `class_def.methods.keys()`. `class_def` here is the very state
+        // `run_class_body`'s own last per-statement `sync_user_method_entries`
+        // call already published to the registry (this function runs before
+        // `class_def` gets mutated below), so the two are guaranteed in sync
+        // -- zero-mismatch shadow-checked across the full local `t/` suite
+        // before this cutover.
+        let method_names: Vec<String> = self
+            .registry()
+            .owner_method_names(class_name)
+            .iter()
+            .map(Symbol::resolve)
+            .collect();
         for method_name in method_names {
             let Some(all_defs) = class_def.methods.get(&method_name).cloned() else {
                 continue;
@@ -633,8 +645,16 @@ impl Interpreter {
             Some(cd) => cd.clone(),
             None => return Ok(()),
         };
-        for overloads in class_def.methods.values() {
-            for method_def in overloads {
+        // ADR-0019 F4c-1: enumerate via the canonical reverse index instead
+        // of `class_def.methods.values()` (zero-mismatch shadow-checked
+        // across the full local `t/` suite before this cutover).
+        let registry = self.registry();
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(overloads) = registry.user_method_overloads(class_name, &method_name) else {
+                continue;
+            };
+            for method_def in &overloads {
                 self.check_private_calls_exist(class_name, &class_def, &method_def.body)?;
             }
         }

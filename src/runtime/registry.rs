@@ -82,6 +82,29 @@ pub(crate) struct Registry {
     pub(crate) method_entries: HashMap<MethodEntryKey, MethodEntry>,
     /// Monotonic invalidation generation for the canonical method table.
     pub(crate) method_generation: u64,
+    /// Reverse index (ADR-0019 F4c-1): owner -> every `name` for which
+    /// `(owner, name)` currently has a non-empty `user_candidates` row in
+    /// [`method_entries`](Self::method_entries), i.e. exactly the names
+    /// `ClassDef::methods.keys()` holds for that owner today. Deliberately
+    /// scoped to the user column only -- NOT every live row -- because rows
+    /// also exist for `builtin`/`accessor`/`proto`, and indexing those would
+    /// make `.^methods`/`^method_table` start reporting names `class_def.
+    /// methods.keys()` never contained. Insertion-ordered (a `Vec`, not a
+    /// set): `ClassDef::methods` is itself an unordered `HashMap` whose
+    /// `RandomState` reseeds per process, so today's enumeration order is
+    /// already nondeterministic between runs and no consumer can depend on
+    /// it; a `Vec` merely avoids adding a second, different nondeterminism
+    /// (hash-set iteration order) on top. Private to this module -- for now
+    /// (F4c-1) maintained only by [`sync_user_method_entries`](Self::
+    /// sync_user_method_entries); F4c-2 adds the full mutator API and routes
+    /// every write through it. See the ADR-0019 F4c design note.
+    ///
+    /// `pub(crate)` only because `Registry { .. Registry::default() }`
+    /// struct-update syntax (`runtime_init.rs`) requires field visibility at
+    /// the construction site; every actual read/write outside this impl
+    /// block should go through [`owner_method_names`](Self::owner_method_names)
+    /// rather than touching the field directly.
+    pub(crate) owner_method_names: HashMap<Symbol, Vec<Symbol>>,
     /// Method-candidate wrap chains: `(owner class, method name, candidate
     /// index)` -> stack of `(handle_id, wrapper_sub)`, outermost (currently
     /// active) last. Populated by `.wrap()` on a Sub/Method obtained via
@@ -364,19 +387,35 @@ impl Registry {
                 || entry.proto.is_some()
         });
         let Some(class_def) = self.classes.get(class_name) else {
+            // A pure clear (`withdraw_role_pun`, `rename_generic_composed_
+            // class`'s old-name half, ...): `classes.get` misses, so there is
+            // nothing to re-derive rows from -- but the `retain` above may
+            // just have zeroed this owner's `user_candidates`, so the index
+            // must drop it too, or `owner_method_names` keeps listing a name
+            // whose row is now dead (caught by `MUTSU_CHECK_METHOD_INDEX`).
+            self.owner_method_names.remove(&owner);
             self.bump_method_generation();
+            self.debug_verify_owner_method_names_index();
             return;
         };
         let methods = class_def.methods.clone();
         let attributes = class_def.attributes.clone();
+        let mut names = Vec::with_capacity(methods.len());
         for (name, candidates) in methods {
+            let name = Symbol::intern(&name);
+            let is_empty = candidates.is_empty();
             self.method_entries
-                .entry(MethodEntryKey {
-                    owner,
-                    name: Symbol::intern(&name),
-                })
+                .entry(MethodEntryKey { owner, name })
                 .or_default()
                 .user_candidates = candidates;
+            if !is_empty {
+                names.push(name);
+            }
+        }
+        if names.is_empty() {
+            self.owner_method_names.remove(&owner);
+        } else {
+            self.owner_method_names.insert(owner, names);
         }
         // A later same-name declaration within the class overrides an earlier
         // one (mirrors `collect_class_attributes`'/`has_public_accessor`'s
@@ -393,6 +432,7 @@ impl Registry {
                 .accessor = Some(attr.is_public);
         }
         self.bump_method_generation();
+        self.debug_verify_owner_method_names_index();
     }
 
     pub(crate) fn user_method_overloads(
@@ -458,6 +498,11 @@ impl Registry {
 
     pub(crate) fn replace_method_entries_from(&mut self, source: &Self) {
         self.method_entries = source.method_entries.clone();
+        // F4c-1: copy the reverse index alongside the table it derives from,
+        // or a nested interpreter built via this path (EVAL/`eval-lives-ok`/
+        // `throws-like`/`fails-like`) would run the parent's `method_entries`
+        // against its own `Interpreter::new()`'s empty `owner_method_names`.
+        self.owner_method_names = source.owner_method_names.clone();
         self.bump_method_generation();
     }
 

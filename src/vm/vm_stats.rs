@@ -364,6 +364,45 @@ pub(crate) fn record_owner_shadow_check(
     }
 }
 
+// ADR-0019 Phase F box F4c-1: shadow comparison between the eight
+// `class_def.methods.keys()`-style full-name-enumeration reads the F4c
+// design note's ground-truth correction (0)(i) named and the new
+// `Registry::owner_method_names` reverse index for the same owner, as a
+// SET (declaration order is not compared -- see the field's own doc for why
+// order is not a meaningful invariant here). `OWNER_METHOD_NAMES_SHADOW_
+// CHECKS`/`_MISMATCHES` are the totals across all eight sites;
+// `owner_method_names_shadow_mismatch_by_site` breaks mismatches down by
+// site so each can be triaged independently before its read is cut over.
+// Nothing reads these counters to make a dispatch decision: shadow-only,
+// zero behavior change.
+static OWNER_METHOD_NAMES_SHADOW_CHECKS: AtomicU64 = AtomicU64::new(0);
+static OWNER_METHOD_NAMES_SHADOW_MISMATCHES: AtomicU64 = AtomicU64::new(0);
+
+fn owner_method_names_shadow_mismatch_by_site() -> &'static Mutex<HashMap<String, u64>> {
+    static BY_SITE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    BY_SITE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Record one F4c-1 owner-method-names shadow comparison at `site`. `detail`
+/// is only evaluated on a mismatch, mirroring [`record_owner_shadow_check`].
+#[inline]
+pub(crate) fn record_owner_method_names_shadow_check(
+    site: &str,
+    matched: bool,
+    detail: impl FnOnce() -> String,
+) {
+    if !enabled() {
+        return;
+    }
+    OWNER_METHOD_NAMES_SHADOW_CHECKS.fetch_add(1, Ordering::Relaxed);
+    if !matched {
+        OWNER_METHOD_NAMES_SHADOW_MISMATCHES.fetch_add(1, Ordering::Relaxed);
+        if let Ok(mut map) = owner_method_names_shadow_mismatch_by_site().lock() {
+            *map.entry(format!("{site} [{}]", detail())).or_insert(0) += 1;
+        }
+    }
+}
+
 // ADR-0019 Phase E box E2a: coverage gap between the native-method-row catalog
 // (`crate::builtins::native_method_row`) and what the real `native_method_{0,1,2}arg`
 // cascades actually recognize. Bumped whenever a cascade call returns `Some(..)`
@@ -1076,6 +1115,28 @@ pub(crate) fn dump() {
             .collect();
         eprintln!(
             "[mutsu vm-stats] adr0019-e1a owner-shadow mismatches by site (top {}): {}",
+            top.len(),
+            top.join(" ")
+        );
+    }
+    let owner_method_names_shadow_checks = OWNER_METHOD_NAMES_SHADOW_CHECKS.load(Ordering::Relaxed);
+    let owner_method_names_shadow_mismatches =
+        OWNER_METHOD_NAMES_SHADOW_MISMATCHES.load(Ordering::Relaxed);
+    eprintln!(
+        "[mutsu vm-stats] adr0019-f4c-1: owner_method_names_shadow_checks={owner_method_names_shadow_checks} owner_method_names_shadow_mismatches={owner_method_names_shadow_mismatches}"
+    );
+    if let Ok(map) = owner_method_names_shadow_mismatch_by_site().lock()
+        && !map.is_empty()
+    {
+        let mut entries: Vec<(&String, &u64)> = map.iter().collect();
+        entries.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+        let top: Vec<String> = entries
+            .iter()
+            .take(25)
+            .map(|(name, count)| format!("{name}={count}"))
+            .collect();
+        eprintln!(
+            "[mutsu vm-stats] adr0019-f4c-1 owner-method-names-shadow mismatches by site (top {}): {}",
             top.len(),
             top.join(" ")
         );

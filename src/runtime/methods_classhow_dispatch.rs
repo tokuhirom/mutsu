@@ -1325,13 +1325,19 @@ impl Interpreter {
                 Ok(Value::hash(self.class_method_table(&type_name)))
             }
             "submethod_table" if !args.is_empty() => {
+                // ADR-0019 F4c-1: enumerate via the canonical reverse index
+                // instead of `class_def.methods.keys()` (zero-mismatch
+                // shadow-checked across the full local `t/` suite).
                 let type_name = self.mop_receiver_owner(&args[0]);
                 let mut table = HashMap::new();
-                if let Some(class_def) = self.registry().classes.get(&type_name) {
-                    for (name, defs) in &class_def.methods {
-                        if defs.iter().any(|d| d.is_my) {
-                            table.insert(name.clone(), Value::str(name.clone()));
-                        }
+                let registry = self.registry();
+                for name in registry.owner_method_names(&type_name) {
+                    let name = name.resolve();
+                    if registry
+                        .user_method_overloads(&type_name, &name)
+                        .is_some_and(|defs| defs.iter().any(|d| d.is_my))
+                    {
+                        table.insert(name.clone(), Value::str(name));
                     }
                 }
                 Ok(Value::hash(table))
