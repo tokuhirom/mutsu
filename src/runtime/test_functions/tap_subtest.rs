@@ -88,6 +88,25 @@ impl Interpreter {
         self.restore_var_type_constraints(var_type_constraints);
     }
 
+    /// Run a subtest body callable. Compiled-first: a `Sub` carrying bytecode
+    /// dispatches through the VM closure path (`vm_call_on_value`); the
+    /// `call_sub_value` AST carrier re-compiles `data.body` from scratch on
+    /// EVERY invocation (`eval_block_value` -> a fresh `Compiler::compile()`
+    /// call, the same re-entrant path `EVAL` uses) — see
+    /// news/2026-08/subtest-compiled-first-dispatch.md. Subs without
+    /// bytecode (built interpreter-side) keep the carrier.
+    fn subtest_call_block(&mut self, block: &Value) -> Result<Value, RuntimeError> {
+        let has_bytecode = matches!(
+            block.view(),
+            ValueView::Sub(d) if d.compiled_code.is_some() || d.compiled_routine.is_some()
+        );
+        if has_bytecode {
+            self.vm_call_on_value(block.clone(), vec![], None)
+        } else {
+            self.call_sub_value(block.clone(), vec![], true)
+        }
+    }
+
     pub(crate) fn test_fn_subtest(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // subtest 'name' => { ... } (Pair arg) or subtest 'name', { ... } (two args)
         // Pairs are treated as named args by positional_value, so check raw args first
@@ -130,7 +149,7 @@ impl Interpreter {
         self.tap.set_subtest_callable_is_sub_last(callable_is_sub);
         let saved_env = self.env.clone();
         let saved_decls = self.snapshot_subtest_decls();
-        let run_result = self.call_sub_value(block, vec![], true);
+        let run_result = self.subtest_call_block(&block);
         // If `plan skip-all` was used inside a Block callable, the error is fatal
         // and should propagate out of the subtest entirely (matching Raku behavior).
         if let Err(ref e) = run_result
