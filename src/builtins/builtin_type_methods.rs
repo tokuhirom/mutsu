@@ -206,6 +206,14 @@ const HASH_METHODS: &[&str] = &[
     "raku",
     "Numeric",
     "Int",
+    "pick",
+    "EXISTS-KEY",
+    "AT-KEY",
+    "List",
+    "invert",
+    "flat",
+    "dynamic",
+    "roll",
 ];
 
 const RANGE_METHODS: &[&str] = &[
@@ -351,6 +359,8 @@ const IO_HANDLE_METHODS: &[&str] = &[
 ];
 
 const ANY_METHODS: &[&str] = &[
+    "serial",
+    "hash",
     "say",
     "put",
     "print",

@@ -1,4 +1,4 @@
-# ADR-0019 F3 step 2: `Mu.^methods` was missing `DEFINITE`
+# ADR-0019 F3 step 2: `Mu`, `Any`, and `Hash` introspection gaps
 
 ADR-0019 Phase F box F3 ("delete the per-type method-name lists, retain only the generated native
 entry catalog") found in an earlier scoping pass that its target catalog, `native_method_row.rs`'s
@@ -16,6 +16,15 @@ order (ahead of `defined`), which keeps the `raw_rows_cover_every_introspection_
 regression guard green, and pinned it in `t/can-methods-drift.t` (verified against real `raku`
 output).
 
-Step 2 remains open for the ~89+ other names across the other 17 catalog owners; see
-`todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md` for the running list and
-suggested owner-by-owner ordering.
+Continued the same triage for `Any` (7 extras) and `Hash` (11 extras). `Any`'s `serial` and
+`hash` and `Hash`'s `pick`/`EXISTS-KEY`/`AT-KEY`/`List`/`invert`/`flat`/`dynamic`/`roll` were all
+confirmed as genuine `.^methods` gaps against real `raku` output and already-working dispatch;
+`Any`'s `self`/`clone`/`WHICH`/`sink`/`item` and `Hash`'s `Array`/`AT-POS`/`EXISTS-POS`/`perl`
+were confirmed as deliberately dispatch-only names real Rakudo's `.^methods` correctly omits.
+Added the genuine names to `ANY_METHODS`/`HASH_METHODS` and pinned all of them in
+`t/can-methods-drift.t`.
+
+3 of 18 catalog owners are now fully triaged (`Mu`, `Any`, `Hash`). Step 2 remains open for the
+~80+ names across the other 15 owners (`Str` has 25, `Int`/`Num`/`Rat`/`Complex` 25, `Cool` 11
+being the largest); see `todo/deep/adr0019-f3-raw-rows-drift-from-introspection-arrays.md` for the
+running list and suggested owner-by-owner ordering.

@@ -147,3 +147,26 @@ Remaining for step 2: ~89+ names across the other 17 owners (`Any` has 7, `Str` 
 same raku-verify-then-classify treatment (genuine `.^methods` gap vs. deliberately-internal
 dispatch-only name). Suggest continuing owner-by-owner in ascending extra-name-count order (small,
 independently-landable slices, same pattern as this one), rather than a single large sweep.
+
+## Progress (2026-08-15, continued): `Any` (7 extras) and `Hash` (11 extras) triaged
+
+`Any`: `serial` and `hash` confirmed as genuine `.^methods` gaps (`raku -e 'say
+Any.^methods.grep(*.name eq "serial").elems'` → 1, same for `hash`; both already dispatch
+correctly on mutsu, e.g. `(1,2,3).serial`, `(a=>1,b=>2).hash`). `self`, `clone`, `WHICH`, `sink`,
+`item` confirmed dispatch-only/internal — raku's `Any.^methods` does not list any of them (`elems`
+0 for each); these stay unlisted in `ANY_METHODS` by design, not oversight. Added `serial`/`hash`
+to `ANY_METHODS`, ahead of `say` (their `RAW_ROWS`-relative position).
+
+`Hash`: of the 11 extras (`pick`, `EXISTS-KEY`, `AT-KEY`, `List`, `invert`, `flat`, `Array`,
+`AT-POS`, `EXISTS-POS`, `dynamic`, `roll`, `perl` — 12 listed in the original survey, one,
+`perl`, was miscounted as one of the "11"), 8 are genuine gaps (`pick`, `EXISTS-KEY`, `AT-KEY`,
+`List`, `invert`, `flat`, `dynamic`, `roll` — each confirmed present on real `Hash.^methods` and
+already dispatching correctly, e.g. `%h.pick`, `%h.EXISTS-KEY('a')`, `%h.List`, `%h.invert`).
+`Array`, `AT-POS`, `EXISTS-POS`, `perl` confirmed dispatch-only (not on real `Hash.^methods`).
+Added the 8 genuine names to `HASH_METHODS`, appended after the array's existing tail (their
+`RAW_ROWS` rows arrive in a second block, after `Int`) to keep
+`raw_rows_cover_every_introspection_name_in_order` green. All raku-verified and pinned in
+`t/can-methods-drift.t`.
+
+Running total: 3 of 18 owners fully triaged (`Mu`, `Any`, `Hash`). Largest remaining: `Str` (25
+extras), `Int`/`Num`/`Rat`/`Complex` (25, likely shared via `NUMERIC_OWN`), `Cool` (11).

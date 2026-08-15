@@ -847,6 +847,23 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `raw_rows_cover_every_introspection_name_in_order` green, and pinned in
   `t/can-methods-drift.t`. Step 2 remains open for the other ~89+ names across the other 17 owners —
   this is one triaged name, not a batch.
+  **Progress (2026-08-15, step 2, `Any` and `Hash`):** triaged `Any`'s 7 extras and `Hash`'s 11.
+  For `Any`: `serial` and `hash` are genuine `.^methods` gaps (real Rakudo's `Any.^methods` lists
+  both, and mutsu already dispatches both correctly); `self`/`clone`/`WHICH`/`sink`/`item` are
+  confirmed dispatch-only/internal (real Rakudo's `Any.^methods` does not list any of them —
+  `WHICH` is a `Mu`-declared method appearing on `Any`'s inherited view, not `Any`'s own). Added
+  `serial`/`hash` to `ANY_METHODS`. For `Hash`: `pick`/`EXISTS-KEY`/`AT-KEY`/`List`/`invert`/`flat`/
+  `dynamic`/`roll` are genuine gaps (all confirmed present on real Rakudo's `Hash.^methods` and
+  already dispatch correctly on mutsu); `Array`/`AT-POS`/`EXISTS-POS`/`perl` are confirmed
+  dispatch-only (not on real Rakudo's `Hash.^methods`). Added the 8 genuine names to
+  `HASH_METHODS`, in `RAW_ROWS`-relative order (both owners' rows arrive in two separate blocks in
+  `native_method_row_table.rs`, an artifact of how E2b originally landed them; the newly-added
+  names had to be appended after the array's existing tail to keep
+  `raw_rows_cover_every_introspection_name_in_order` green, since that test only requires the
+  *shared* names' relative order to match, not raku's true `.^methods` order). All raku-verified
+  and pinned in `t/can-methods-drift.t`. Running total: 3 of 18 owners triaged (`Mu`, `Any`,
+  `Hash`); `Str` (25 extras), `Int`/`Num`/`Rat`/`Complex` (25), `Cool` (11) remain the largest
+  untriaged owners.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
