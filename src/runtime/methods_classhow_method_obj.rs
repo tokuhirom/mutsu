@@ -160,24 +160,24 @@ impl Interpreter {
     }
 
     /// `owner` is the catalog type this native method is being reported for --
-    /// ADR-0019 Phase F box F1's mechanism slice: `.package` defaults to it.
-    /// This is not always Rakudo's true declaring type (e.g. `Str.uc`'s real
-    /// `.package` is `Cool`, not `Str`) -- that per-method fidelity data is a
-    /// later, separate slice (see
+    /// ADR-0019 Phase F box F1's mechanism slice: `.package` defaults to it,
+    /// and `.signature` defaults to a synthesized generic shape (see
+    /// [`crate::value::signature::synthesize_native_signature`]). Neither is
+    /// always Rakudo's true answer (e.g. `Str.uc`'s real `.package` is
+    /// `Cool`, not `Str`) -- that per-method fidelity data is a later,
+    /// separate slice (see
     /// `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
     pub(super) fn make_native_method_object(&self, name: &str, owner: &str) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
         attrs.insert("package".to_string(), Value::package(Symbol::intern(owner)));
-        let sig_attrs = {
-            let mut sa = std::collections::HashMap::new();
-            sa.insert("params".to_string(), Value::array(Vec::new()));
-            sa
-        };
         attrs.insert(
             "signature".to_string(),
-            Value::make_instance(Symbol::intern("Signature"), sig_attrs),
+            crate::value::signature::make_signature_value(
+                crate::value::signature::synthesize_native_signature(owner),
+                Some(self),
+            ),
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));

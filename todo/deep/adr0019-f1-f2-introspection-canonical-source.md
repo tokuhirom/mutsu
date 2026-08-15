@@ -270,3 +270,96 @@ Not done in this slice (left for follow-up, per point 5's own sequencing): `.sig
 synthesized-generic-shape default, and the `Method`-Instance-vs-`Sub` representation unification
 (`todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`) -- `.^lookup` still returns a
 `Sub`-shaped value untouched by this slice. Pinned: `t/classhow-methods-package.t`.
+
+## Progress (2026-08-15): F1 mechanism slice, `.signature` synthesized default
+
+Landed the `.signature` half of the mechanism slice. `make_native_method_object` hardcoded every
+native `Method` Instance's `.signature` as an empty `Signature()` (zero params, `returns`/`of` both
+`Mu`), regardless of the method's real arity or Rakudo's actual declared signature.
+
+**Ran a wider raku ground-truth sweep first** (`raku`, all methods of 10 representative built-in
+type samples via `.^lookup($name).signature.gist`, cross-referenced against `RAW_ROWS`'s
+`INTROSPECTABLE`-flagged rows for the matching owner+arity, ~280 correlated pairs) to check whether
+a single template, or a template varying by `NativeArityMask`, would be "close to correct" as the
+decision above assumed. Neither held cleanly: within a single arity-mask bucket (e.g. the `A0`-only
+bucket, 180 samples) the observed shapes split roughly 3-way between a raw-capture form
+(`(Owner $:: |)`, plurality: 131/282), a generic named-catchall (`(Owner:D $:: *%_)`, 91/282), and
+assorted explicit-param shapes (60/282) -- arity mask alone does not predict which. Went with the
+overall plurality shape as the single generic default: an invocant param (`type_constraint: Some(
+owner)`, no `:D` -- bare owner names were also more common than `:D`-suffixed ones in the raw
+samples) plus one raw-capture param, i.e. `(Owner $:: |)`.
+
+**Implementation**: `crate::value::signature::synthesize_native_signature(owner)` builds a `SigInfo`
+with those two `SigParam`s (added `#[derive(Default)]` to `SigParam`/`SigInfo` so only the fields
+that matter need setting); `make_native_method_object` now calls
+`make_signature_value(synthesize_native_signature(owner), Some(self))` instead of hand-building an
+empty-params `Signature` instance directly.
+
+**A rendering bug found and fixed along the way, not native-method-specific**: the first attempt (
+invocant `multi_invocant: false`, matching the field's naive-sounding name) rendered as
+`(;; Owner $:: |)` -- a spurious leading `;;`. Traced `render_signature`'s `;;`-insertion logic
+(`src/value/signature.rs`) and the *parser's* own `multi_invocant` semantics
+(`src/parser/stmt/sub/param_list.rs:185-221`): the field does NOT mean "this param is one of several
+invocant candidates" (a plausible-sounding but wrong reading of the name) -- it means "this param
+appeared before any literal `;;` boundary in the signature source", and the parser sets it `true` on
+every param when the signature contains no `;;` at all (the overwhelmingly common case). Any
+hand-built `SigInfo` for a `;;`-free signature must therefore set `multi_invocant: true` on every
+param, not just the invocant -- fixed by setting it on both synthesized params, which produces the
+correct `(Owner $:: |)` gist with no separator artifact. This bug was latent before this slice: no
+existing code path in the whole codebase manually constructs a `SigParam` with `is_invocant: true`
+outside the AST-parser conversion path (`param_def_to_sig_param`, which always mirrors the parser's
+own `multi_invocant` bookkeeping automatically), so it had never been exercised.
+
+**A separate pre-existing bug surfaced, not fixed here**: comparing `.arity`/`.count` against real
+`raku` for a raw-capture signature (`sub foo(|c) {}`) found mutsu answers `arity=1, count=1` where
+real Rakudo answers `arity=0, count=Inf` -- a general bug in how `Signature.arity`/`.count` treat any
+`is_capture` param, reproducing on a plain user-declared sub, unrelated to native methods. Filed as
+`todo/tickets/signature-arity-count-wrong-for-capture-params.md`; out of scope for this slice (which
+only needs `.signature` to exist and gist-render sensibly, not exact arity/count fidelity).
+
+Verified: `t/classhow-native-method-signature-default.t` (new, 18 assertions, checks the gist shape,
+param flags, and that no native method across 6 sampled owners still answers an empty `Signature()`);
+`t/classhow-methods-package.t` and `t/can-methods-drift.t` stay green; `cargo test --lib` (826
+tests); full `t/` suite; `roast/S06-signature/introspection.t` (154/154, the one `not ok` is a
+pre-existing `# TODO`) and every `roast/S12-introspection/*.t` file (271 assertions) via
+`scripts/run-roast-test.sh`.
+
+Still open, per the original sequencing: the `Method`-Instance-vs-`Sub` representation unification
+for `.^lookup`/`.^find_method` (`todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`) --
+that surface still returns a `Sub`-shaped value with a completely separate `.signature` rendering
+path this slice never touched. The F1 fidelity slice (per-method override columns on
+`NativeMethodRow`) is next per the original sequencing, once the unification lands or is
+independently scoped.
+
+## Progress (2026-08-15): checked whether the fidelity slice is ready to start in bulk -- it is not, by the decision's own design
+
+Before starting the fidelity slice, ran a `.package` divergence sweep the same shape as the
+`.signature` sweep above (raku, `.^lookup($name).package.gist` vs. the catalog owner, across the
+same 9 representative owners' `RAW_ROWS` `INTROSPECTABLE` rows -- `List` not yet included). Result:
+**199 divergent (owner, name, real-package) triples just from those 9 owners** (e.g. every
+`Str`-declared string method actually reports `(Cool)`; every universal coercion name like `Bool`/
+`Str`/`Numeric`/`gist`/`raku` reports `(Mu)` almost everywhere -- except `Str.Int`, which does NOT
+diverge, so even that "universal coercion = Mu" pattern isn't a clean mechanical rule; `Rat`/`Num`
+math methods mostly report `(Real)`/`(Rational)`/`(Numeric)`, not `(Rat)`/`(Num)`). Extrapolated
+across all ~650 introspectable rows and the 9 unsampled owners, this is easily 400+ entries, not the
+"~5-10 known corrections" the earlier ground-truth passes' handful of examples (`uc`->`Cool`,
+`push`->`Any`) suggested.
+
+**This confirms, rather than contradicts, the decision's own point 3**: "add overrides lazily, one
+at a time... NOT an upfront sweep of all ~350 native methods." Running the upfront sweep here was
+useful as a scale check, but populating even a fraction of its 199 findings right now would be
+exactly the upfront-hand-table campaign the decision explicitly rejected as the wrong shape for this
+work -- there is no `t/`/roast assertion today that exercises any of these 199 `.package` answers
+being wrong, so there is no forcing function yet, and hand-encoding them speculatively would be
+guessing at future demand rather than responding to it.
+
+**Where this leaves the fidelity slice**: it is not "not ready" so much as "correctly idle until
+something needs it." The override-column mechanism itself (an `Option<&'static str>` decorating a
+`NativeMethodRow`, or a small sparse `(owner, name, package) ` table guarded by a
+row-still-exists test, per point 2/3) is a short, well-scoped implementation whenever the first real
+demand shows up -- e.g. a roast test that asserts `.package` on a specific native method, or a user
+program that breaks on it. Until then, both mechanism-slice halves (`.package` defaulting to the
+catalog owner, `.signature` synthesizing a generic shape) are the correct, complete state of F1's
+"no hand data" tier. The two genuinely open threads for a future session are (a) the Sub-vs-Instance
+unification above (a real correctness bug, not an approximation gap) and (b) fidelity overrides
+added reactively, never as a bulk campaign.

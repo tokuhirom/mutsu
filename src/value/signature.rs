@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 /// Lightweight representation of a signature parameter for runtime use.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct SigParam {
     pub(crate) name: String,
     pub(crate) type_constraint: Option<String>,
@@ -35,7 +35,7 @@ pub(crate) struct SigParam {
 }
 
 /// Complete signature info stored at runtime.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct SigInfo {
     pub(crate) params: Vec<SigParam>,
     pub(crate) return_type: Option<String>,
@@ -44,6 +44,37 @@ pub(crate) struct SigInfo {
 impl SigParam {
     fn is_optional(&self) -> bool {
         self.has_default || self.optional_marker
+    }
+}
+
+/// ADR-0019 Phase F box F1 mechanism slice: a synthesized generic `Signature`
+/// for a native method with no per-method fidelity override -- replaces the
+/// prior hardcoded empty `Signature()` every native `Method` object answered.
+/// Not a claim of exact Rakudo parity: a raku ground-truth sweep
+/// (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`) found real
+/// native signatures range from this raw-capture shape to a generic
+/// named-catchall to fully-typed explicit params, with no single pattern
+/// derivable from arity alone -- this is "close to correct for most, not
+/// exact for all" by design; per-method overrides are a later, separate
+/// fidelity slice.
+pub(crate) fn synthesize_native_signature(owner: &str) -> SigInfo {
+    let invocant = SigParam {
+        type_constraint: Some(owner.to_string()),
+        is_invocant: true,
+        multi_invocant: true,
+        sigil: '$',
+        required: true,
+        ..Default::default()
+    };
+    let capture = SigParam {
+        is_capture: true,
+        multi_invocant: true,
+        sigil: '$',
+        ..Default::default()
+    };
+    SigInfo {
+        params: vec![invocant, capture],
+        return_type: None,
     }
 }
 
