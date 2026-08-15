@@ -686,6 +686,32 @@ pub(in crate::runtime) fn mark_supply_replayed(supply_id: u64) -> bool {
         .unwrap_or(false)
 }
 
+/// Marks a Proc::Async output supply (stdout/stderr) as having a *live*
+/// act-loop pump (a `.tap()` registered before `.start()` took the channel
+/// and streams each chunk as it arrives — see
+/// `todo/tickets/procasync-stdout-is-not-incremental.md`). The await/result-time
+/// `replay_proc_output` consults this to skip redelivering the same output a
+/// second time once the child exits: the live pump already streamed every
+/// chunk (and fired `done`/`quit`) inline as the reader thread produced them.
+pub(in crate::runtime) fn mark_supply_live_tapped(supply_id: u64) {
+    if let Ok(mut set) = live_tapped_set().lock() {
+        set.insert(supply_id);
+    }
+}
+
+/// Whether [`mark_supply_live_tapped`] was ever called for `supply_id`.
+pub(in crate::runtime) fn is_supply_live_tapped(supply_id: u64) -> bool {
+    live_tapped_set()
+        .lock()
+        .map(|set| set.contains(&supply_id))
+        .unwrap_or(false)
+}
+
+fn live_tapped_set() -> &'static std::sync::Mutex<std::collections::HashSet<u64>> {
+    static SET: OnceLock<std::sync::Mutex<std::collections::HashSet<u64>>> = OnceLock::new();
+    SET.get_or_init(|| std::sync::Mutex::new(std::collections::HashSet::new()))
+}
+
 /// Register a `quit =>` handler on a Proc::Async output Supply. Unlike ordinary
 /// value taps these fire only when the stream ends in an encoding error.
 pub(in crate::runtime) fn register_supply_quit_tap(supply_id: u64, tap: Value) {

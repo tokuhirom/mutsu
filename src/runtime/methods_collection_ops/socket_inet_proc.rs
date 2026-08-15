@@ -388,13 +388,25 @@ impl Interpreter {
     /// encoding error" behaviour (roast S17-procasync/encoding.t).
     fn replay_proc_output(&mut self, sid: Option<u64>, value_taps: &[Value], fallback: String) {
         use super::super::native_methods::{
-            get_supply_enc, get_supply_quit_taps, mark_supply_replayed, take_supply_collected_bytes,
+            get_supply_enc, get_supply_quit_taps, is_supply_live_tapped, mark_supply_replayed,
+            take_supply_collected_bytes,
         };
         // Replay is once-per-stream: a second `await`/`.result` on the same Proc
         // must not deliver the collected output to the taps again.
         if let Some(sid) = sid
             && !mark_supply_replayed(sid)
         {
+            return;
+        }
+        // A tap registered before `.start` already drained this stream live, one
+        // chunk at a time, and fired its `quit =>` handler inline if the stream
+        // ended in a decode error — see `mark_supply_live_tapped`'s doc comment.
+        // Redelivering the collected bytes here would duplicate everything the
+        // live pump already sent.
+        if let Some(sid) = sid
+            && is_supply_live_tapped(sid)
+        {
+            let _ = take_supply_collected_bytes(sid);
             return;
         }
         let (text, quit_reason) = match sid {

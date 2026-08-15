@@ -238,18 +238,25 @@ impl Interpreter {
                     }
                 }
 
-                // A Proc::Async output supply (`proc_output` marker) is delivered
-                // exactly once, by the await/result-time `replay_proc_taps` — the
-                // tap was registered in the global registry above. Consuming the
-                // live channel (or the collected output) here as well would
-                // deliver the same output twice once the tap closure's captured
-                // lexicals are shared cells (S17-procasync/basic.t test 37), and
-                // taking the channel would starve `react whenever` / `bind-stdin`
-                // consumers of the same stream.
+                // A Proc::Async output supply (`proc_output` marker) whose tap is
+                // registered AFTER `.start()` (channel already spawned — see
+                // `native_proc_async.rs`'s pre-start live-tap loop for the normal,
+                // tap-BEFORE-start case, which streams incrementally) is
+                // deliberately left on the await/result-time `replay_proc_taps`
+                // path, not given a live consumer here: `replay_proc_taps` runs
+                // SYNCHRONOUSLY on whichever thread evaluates `await`/`.result`,
+                // so it is the only delivery that is guaranteed complete by the
+                // time that statement returns — a live consumer spawned here
+                // would be a fire-and-forget worker thread with nothing joining
+                // it before that same `await` proceeds, racing the very next
+                // statement that reads the tap's accumulated value
+                // (`roast/S17-procasync/basic.t`'s "Tapping stdout supply after
+                // start of process does not lose data").
                 let is_proc_output = attrs.contains_key("proc_output");
 
-                // For live/async supplies (e.g., signal), spawn a background thread
-                // to consume events from the channel and call the callback.
+                // For live/async supplies (e.g., signal, Proc::Async stdout/stderr),
+                // spawn a background thread to consume events from the channel and
+                // call the callback.
                 if !is_proc_output
                     && let Some(sid) = Self::resolve_tap_channel_supply_id(&attrs)
                     && let Some(rx) = take_supply_channel(sid)
