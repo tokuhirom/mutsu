@@ -117,8 +117,10 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
 optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
-E1, E3-E11 are all closed). Phase F has started: F5 is closed; F1-F4, F6, F7, and the completion
-gates (G1-G4) remain open. See each box's entry below for its own status, and
+E1, E3-E11 are all closed). Phase F has started: F3 and F5 are closed; F1/F2 are done except a
+deliberately-parked fidelity slice; F4 is split into F4a/F4b/F4c (none closed yet — see F4's own
+entry); F6, F7, and the completion gates (G1-G4) remain open. See each box's entry below for its
+own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
 `d4-parent-expr-chunks.md`, `d5-plan-driven-how-ops.md`, `d6-d9-legacy-body-removal.md`,
 `d7-d8-role-plan-encoding.md`, `d3-8-method-body-main-pass-compilation.md` for Phase D, and
@@ -995,6 +997,62 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   E4b) is also the sole `.^methods` source.
 - [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
+  **Split in place (2026-08-15), following the C6/D2/E1-E11 precedent** — a read-site
+  classification pass (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s sibling
+  survey, and the earlier `todo/deep/adr0019-f4-classdef-methods-still-load-bearing.md` scoping)
+  found `Registry::sync_user_method_entries` currently writes the canonical table FROM
+  `ClassDef::methods` (the opposite of what F4 wants), with ~15-20 files of live dispatch/MOP/
+  BUILD-TWEAK read sites and ~10 files of write sites. That work does not fit one PR or one
+  design decision, so it is now three sub-boxes:
+  - [ ] **F4a — Decide and implement the role-owner read policy.** `Registry::method_entries` has
+    no row at all for a role that is never `.new`-punned (the common case — a role only ever
+    `does`-composed into a class, never instantiated directly): see
+    `todo/deep/method-entries-never-covers-unpunned-roles.md`. **Do NOT close this gap by
+    populating role-owner rows into `Registry::method_entries` through the shared
+    `sync_user_method_entries`/`get_method_overloads` write-and-read path** — tried exactly that
+    on 2026-08-15 (mirror the class branch, populate on role-registration-finish) and it
+    regressed composed-role multi-method `.*`/`.+` dispatch
+    (`resolve_methods_per_mro_level`'s all-or-nothing `any_failed` gate, an existing landmine
+    unrelated to this box, treats a newly-visible role-owned MRO level as a hard requirement even
+    when its candidates are already fully represented via a more-derived flattened class level —
+    reverted, PR #6478, repro and full trace in the ticket). The general lesson: **when a change
+    writes through a function every dispatcher reads, the risk inventory is every transitive
+    reader of that function, found by grep — not just the call sites a ticket happens to name.**
+    The gap ticket originally named 4 "bites here" sites; a 5th, unnamed one
+    (`resolve_method_with_owner_impl`'s own per-level walk, reached transitively through
+    `resolve_methods_per_mro_level`) is the one that broke. Instead: add an explicit
+    `role_method_overloads(owner, name)` helper reading `Registry::roles` directly (role method
+    definitions are composition inputs, not dispatch entries — the dispatchable form is always
+    the flattened copy on the composing class), and migrate ONLY the originally-named 4
+    production call sites (qualified-call resolution, the deferral/`nextsame`-`callsame` chain,
+    private-method resolution, the ctor phase plan) to consult it as an explicit fallback, one
+    consumer family per sub-PR, each raku-verified — the same discipline E1a/E4a/E7 already used
+    successfully. Winner selection (`resolve_method_with_owner_impl`,
+    `resolve_methods_per_mro_level`) must NOT call this helper.
+  - [ ] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
+    role at all (`methods_object.rs`'s six BUILD/TWEAK existence checks, `metamodel.rs`,
+    `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`, and the Cluster B sites once F4a's
+    helper exists) move from `class_def.methods` to `MethodEntry.user_candidates` (+ the F4a
+    helper where a role fallback applies), shadow-checked per the usual pattern. Skip
+    `class_dispatch.rs:228` — it lives inside the `run_instance_method` carrier F6 deletes
+    outright, so cutting it over here is throwaway work; let F6's carrier deletion remove it for
+    free.
+  - [ ] **F4c — Invert the write direction and remove the field.** Make `MethodEntry`/the
+    canonical table the write-side source (`sync_user_method_entries`'s write sites in
+    `registration.rs`, `registration_class_body_attr.rs`, `registration_class_body_method.rs`,
+    `registration_class_compose.rs`, `registration_role_*.rs`, `system.rs`,
+    `methods_classhow_dispatch.rs:862,923` write `MethodEntry` directly instead of
+    `class_def.methods`), solve the full-name-enumeration need
+    (`methods_classhow_dispatch.rs:1324` needs "every method name owner X has," which the
+    `(owner, name)`-keyed table has no index for today), then delete `ClassDef::methods`/
+    `RoleDef::methods` and update snapshot/rollback (class redeclaration, augment rollback, EVAL
+    class restoration) to copy the one remaining source. Needs its own design note before code —
+    this is the box's own original "field deletion" framing, now correctly scoped as the last
+    step rather than the first.
+  F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
+  caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
+  one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site
+  last, right before the carrier itself is deleted.
 - [x] **F5 — Remove superseded method caches and manual invalidation.** Keep only the
   generation-keyed resolved-call cache plus data caches that type mutation cannot invalidate.
   The inventory this box retires: ~72 manual clear sites across 12 files (the 32 in
