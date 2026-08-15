@@ -432,6 +432,7 @@ impl Interpreter {
         // in an enclosing nested sub (resolved from env via `GetSelfOrNoSelf`)
         // would see `$obj` leaked in. See try_compiled_method_or_interpret.
         let saved_self = self.get_env_with_main_alias("self");
+        let saved_topic = self.get_env_with_main_alias("_");
         let call_result = if matches!(
             name_val.view(),
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
@@ -463,6 +464,12 @@ impl Interpreter {
             Some(s) => self.set_env_with_main_alias("self", s),
             None => {
                 self.env_mut().remove("self");
+            }
+        }
+        match saved_topic {
+            Some(t) => self.set_env_with_main_alias("_", t),
+            None => {
+                self.env_mut().remove("_");
             }
         }
         let call_result = call_result?;
