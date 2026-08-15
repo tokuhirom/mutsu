@@ -75,6 +75,31 @@ Best done as part of the F1/F2 design once the native-metadata ground-truth pass
 (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`) lands, since both are about making
 introspection surfaces agree with each other and with the canonical dispatch table.
 
+## Progress (2026-08-15): the direct-caller audit is smaller than it looked
+
+After landing F1's mechanism slice (`.package` and `.signature` defaults for native `Method`
+Instances -- see the linked design doc), did a quick read-only grep-audit of the "all existing
+callers... need an audit" bullet above, since it was the vaguest of the three blockers. Only 5 real
+call sites in the whole codebase touch `classhow_lookup`/`classhow_find_method`:
+`methods_classhow_dispatch.rs` (2, the `.^lookup`/`.^find_method` opcode handlers themselves, which
+return the result straight to user code -- these are exactly the sites that need the result to be
+BOTH callable and Method-accessor-bearing, i.e. exactly where the representation choice matters
+most), `builtins_dispatch_next.rs` (1, `nextsame`-family redispatch), `methods_instance_ops.rs` (1,
+inside the general method-call fallback), and `methods_classhow_method_obj.rs` (1, a `.is_some()`
+existence check only -- does not touch the returned value's shape at all, so free of this concern).
+Not a large fan-out; the "audit" bullet is not the blocker the other two are.
+
+**The remaining two blockers (`.wrap`'s tag reuse and direct callability) are still the real
+open questions**, and still need real design/verification, not a grep. In particular: does making
+`.^lookup`'s result a `Method` Instance require teaching mutsu's call dispatch to invoke an
+`Instance` value directly (a new, general capability), or is there a narrower fix that keeps the
+returned value Sub-shaped for *calling* purposes while making every `Method`-only accessor
+(`is_dispatcher`, `multi`, `.candidates`, `.signature`, `.package`, ...) answer correctly on it --
+extending #6420's tag-based approach comprehensively instead of swapping representations? The
+narrower fix keeps the well-known #6420 pattern (env tags read by the general dispatch fallback) but
+risks becoming an ever-growing patch list, one accessor at a time, rather than closing the gap once.
+This design choice is the actual next step before any implementation.
+
 ## Progress (2026-08-14, #6420)
 
 The `.is_dispatcher`/`.multi` symptom is fixed with a scoped patch, not the representation
