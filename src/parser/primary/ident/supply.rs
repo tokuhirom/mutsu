@@ -228,10 +228,12 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
         Stmt::Whenever {
             supply,
             param,
+            param_type,
             body,
         } => Stmt::Whenever {
             supply,
             param,
+            param_type,
             body: rewrite_supply_body(body, emitter_name),
         },
         Stmt::Subtest { name, body } => Stmt::Subtest {

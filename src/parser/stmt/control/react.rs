@@ -39,26 +39,27 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, supply) = expression(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, param) = if let Some(stripped) = rest.strip_prefix("->") {
+    let (rest, param, param_type) = if let Some(stripped) = rest.strip_prefix("->") {
         let (r, _) = ws(stripped)?;
         // Optional type constraint before the variable name
         // (`whenever $s -> Int $x { }`, `-> IO::Socket::Async:D $c { }`). Reuse
         // the signature type parser so qualified names and `:D`/`:U` smileys are
-        // handled. The constraint is not enforced on the whenever binding (as in
-        // the untyped form); we only consume it so the variable name parses.
-        // Without this, a typed pointy param made `whenever_stmt` fail, so the
-        // whole `whenever ... -> Type $x { ... }` fragmented into a bare
-        // `whenever` word + a standalone pointy block, which then tripped the
-        // out-of-scope-`whenever` check (SSH::LibSSH::Tunnel).
-        let r = match crate::parser::stmt::sub_param::parse_type_constraint_expr(r) {
-            Some((r2, _tc)) => {
+        // handled, and carried through so the binding can enforce it (as an
+        // ordinary typed block parameter would) — see
+        // news/2026-08/whenever-parameter-type-constraint-enforced.md.
+        // Without consuming it here, a typed pointy param made `whenever_stmt`
+        // fail, so the whole `whenever ... -> Type $x { ... }` fragmented into a
+        // bare `whenever` word + a standalone pointy block, which then tripped
+        // the out-of-scope-`whenever` check (SSH::LibSSH::Tunnel).
+        let (r, param_type) = match crate::parser::stmt::sub_param::parse_type_constraint_expr(r) {
+            Some((r2, tc)) => {
                 let (r2, _) = ws(r2)?;
-                r2
+                (r2, Some(tc))
             }
-            None => r,
+            None => (r, None),
         };
         match var_name(r) {
-            Ok((r, name)) => (r, Some(name)),
+            Ok((r, name)) => (r, Some(name), param_type),
             Err(_) => {
                 // Sigilless pointy param (`whenever $ch -> \row { }`,
                 // Text::CSV's Channel/Supply in-format loops): binds the raw
@@ -70,15 +71,15 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
                 if let Some(stripped) = r.strip_prefix('\\')
                     && let Ok((r2, name)) = crate::parser::stmt::idents::ident(stripped)
                 {
-                    (r2, Some(name))
+                    (r2, Some(name), param_type)
                 } else {
                     // Type-only pointy block (`-> Int { }`) binds no variable.
-                    (r, None)
+                    (r, None, param_type)
                 }
             }
         }
     } else {
-        (rest, None)
+        (rest, None, None)
     };
     let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
@@ -87,6 +88,7 @@ pub(crate) fn whenever_stmt(input: &str) -> PResult<'_, Stmt> {
         Stmt::Whenever {
             supply,
             param,
+            param_type,
             body,
         },
     ))

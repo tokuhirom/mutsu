@@ -3990,6 +3990,7 @@ impl Compiler {
             Stmt::Whenever {
                 supply,
                 param,
+                param_type,
                 body,
             } => {
                 self.compile_expr(supply);
@@ -4031,6 +4032,9 @@ impl Compiler {
                 let param_idx = param
                     .as_ref()
                     .map(|p| self.code.add_constant(Value::str(p.clone())));
+                let param_type_idx = param_type
+                    .as_ref()
+                    .map(|t| self.code.add_constant(Value::str(t.clone())));
                 // Only bridge the tap handle out through `env[$s]` when this
                 // whenever is the value of a `do whenever $s {...}` expression
                 // (`whenever_bind_target`). A bare `whenever $s {...}` statement
@@ -4049,6 +4053,7 @@ impl Compiler {
                     analysis_cc_idx,
                     param_idx,
                     target_var_idx,
+                    param_type_idx,
                 });
             }
             Stmt::Let {

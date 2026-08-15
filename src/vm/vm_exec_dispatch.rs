@@ -4682,9 +4682,16 @@ impl Interpreter {
                 analysis_cc_idx: _,
                 param_idx,
                 target_var_idx,
+                param_type_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                self.exec_whenever_scope_op(code, *body_idx, param_idx, target_var_idx)?;
+                self.exec_whenever_scope_op(
+                    code,
+                    *body_idx,
+                    param_idx,
+                    target_var_idx,
+                    param_type_idx,
+                )?;
                 *ip += 1;
             }
 

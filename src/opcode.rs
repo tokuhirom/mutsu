@@ -1915,6 +1915,9 @@ pub(crate) enum OpCode {
         analysis_cc_idx: u32,
         param_idx: Option<u32>,
         target_var_idx: Option<u32>,
+        /// Constant index of the pointy param's declared type constraint
+        /// (`whenever $s -> Int $x { }`), if any.
+        param_type_idx: Option<u32>,
     },
     UseModule {
         name_idx: u32,

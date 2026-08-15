@@ -354,6 +354,7 @@ impl Interpreter {
         supply_val: Value,
         target_var: Option<&str>,
         param: &Option<String>,
+        param_type: &Option<String>,
         body: &[Stmt],
         owned_lexicals: &[Symbol],
     ) -> Result<(), RuntimeError> {
@@ -380,11 +381,40 @@ impl Interpreter {
             Some(ref e) => Self::sub_with_env_key(&cb, Self::WHENEVER_EMITTER_ENV_KEY, e.clone()),
             None => cb,
         };
+        // Thread the pointy param's declared type constraint into a ParamDef
+        // so the ordinary call-time binding check enforces it, exactly like a
+        // `.tap(-> Int $x { ... })` block — see
+        // news/2026-08/whenever-parameter-type-constraint-enforced.md.
+        let main_param_defs: Vec<ParamDef> = match (param, param_type) {
+            (Some(name), Some(tc)) => vec![ParamDef {
+                name: name.clone(),
+                default: None,
+                multi_invocant: true,
+                required: false,
+                named: false,
+                slurpy: false,
+                double_slurpy: false,
+                onearg: false,
+                sigilless: false,
+                type_constraint: Some(tc.clone()),
+                literal_value: None,
+                sub_signature: None,
+                where_constraint: None,
+                traits: Vec::new(),
+                optional_marker: false,
+                outer_sub_signature: None,
+                code_signature: None,
+                is_invocant: false,
+                shape_constraints: None,
+                block_param: true,
+            }],
+            _ => Vec::new(),
+        };
         let callback = stamp(Value::make_sub_owning(
             Symbol::intern(&self.current_package()),
             Symbol::intern(""),
             param.iter().cloned().collect(),
-            Vec::new(),
+            main_param_defs,
             main_body,
             false,
             self.env.clone(),
