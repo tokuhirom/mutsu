@@ -139,6 +139,7 @@ impl Interpreter {
         let mut opts = ProcOptions {
             cwd: None,
             env: HashMap::new(),
+            env_explicit: false,
             capture_err: false,
             capture_out: false,
             capture_in: false,
@@ -157,6 +158,7 @@ impl Interpreter {
                             opts.cwd = Some(inner.to_string_value());
                         }
                         "env" => {
+                            opts.env_explicit = true;
                             if let ValueView::Hash(env_map) = inner.view() {
                                 for (ek, ev) in env_map.iter() {
                                     opts.env.insert(ek.clone(), ev.to_string_value());
@@ -189,6 +191,7 @@ impl Interpreter {
                 match key.as_str() {
                     "cwd" => opts.cwd = Some(inner.to_string_value()),
                     "env" => {
+                        opts.env_explicit = true;
                         if let ValueView::Hash(env_map) = inner.view() {
                             for (ek, ev) in env_map.iter() {
                                 opts.env.insert(ek.clone(), ev.to_string_value());

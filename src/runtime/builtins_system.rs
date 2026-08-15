@@ -154,6 +154,10 @@ pub(crate) fn proc_by_pid_map() -> &'static ProcByPidMap {
 pub(super) struct ProcOptions {
     pub(super) cwd: Option<String>,
     pub(super) env: HashMap<String, String>,
+    /// Whether `:env` was explicitly given (even as an empty hash) — distinct
+    /// from `env.is_empty()`, so callers can tell "use the default `%*ENV`"
+    /// apart from "explicitly clear the child's environment".
+    pub(super) env_explicit: bool,
     pub(super) capture_err: bool,
     pub(super) capture_out: bool,
     pub(super) capture_in: bool,
