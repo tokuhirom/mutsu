@@ -1038,3 +1038,30 @@ symptom**, not a signal that leverage is exhausted. What actually predicts a
 Write the next status note as "the largest *mechanism* cluster is N", and only
 after trying to merge symptom buckets that share a mechanism. Do not write
 "one at a time" again without that step.
+
+## `X::Syntax::CannotMeta` for diffy comparison operators as an assign-metaop base (2026-08-15)
+
+Picked up the named-but-not-yet-fixed example from the 2026-08-14 entry:
+`roast/S03-operators/assign.t` failed two `throws-like …, X::Syntax::CannotMeta`
+assertions under `MUTSU_REAL_TEST=1` (`6 >== 2`, `6 ~~= 2`) because the parser
+had no diagnosis at all for a chaining/structural comparison operator used as
+the base of the `=` assignment metaoperator — it fell through to the generic
+"Confused" error instead. Fixed generally (`ComparisonOp::source_spelling()`
++ `diffy_assign_meta_dba()` in `src/parser/expr/precedence/ternary.rs`, wired
+into every site that consumes a comparison or range operator during parsing),
+not as a two-spelling special case — it now covers all chaining ops (`==`,
+`!=`, `<`, `<=`, `>`, `>=`, `eq`, `ne`, `lt`, `le`, `gt`, `ge`, `eqv`, `~~`,
+`!~~`, `before`, `after`, `===`, `=:=`, `=~=`, ...), all structural ops
+(`cmp`, `leg`, `<=>`, `coll`, `unicmp`), and the range operators (`..`,
+`..^`, `^..`, `^..^`), each verified message-for-message against
+`raku -e '...'`. `NotDivisibleBy` (`!%%`) was deliberately excluded — rakudo
+parses `6 !%%= 2` as METAOP_NEGATE of the compound-assignment operator `%%=`
+instead, a different, still-unimplemented gap. Pin: `t/diffy-assign-metaop.t`
+(70 assertions, green under `raku` too). `news/2026-08/diffy-comparison-assign-metaop-cannotmeta.md`.
+`roast/S03-operators/assign.t` now passes under both the native `Test`
+provider and `MUTSU_REAL_TEST=1`. This was the only file in the "14 files
+fail on `Got: X::Syntax::Confused`" cluster whose expected class was
+`X::Syntax::CannotMeta`; the other 13 (different expected classes:
+`X::Syntax::Comment::Embedded`, `X::Syntax::Signature::InvocantNotAllowed`,
+`X::Comp::Group`, `X::Worry::Precedence::Range`, `X::Syntax::Malformed`,
+...) remain open, each needing its own individual parser diagnosis.

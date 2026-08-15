@@ -150,6 +150,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         }
     }
     if let Some((op, len)) = parse_negated_meta_comparison_op(r) {
+        reject_diffy_assign_meta(op, r, len)?;
         let r = &r[len..];
         let (r, _) = ws(r)?;
         let (r, right) = if mode == ExprMode::Full {
@@ -179,6 +180,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             let (r2, _) = ws(r)?;
             // Try negated meta comparison for chaining
             if let Some((cop, chain_len)) = parse_negated_meta_comparison_op(r2) {
+                reject_diffy_assign_meta(cop, r2, chain_len)?;
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
                 let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
@@ -208,6 +210,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             }
             // Also try regular comparison for mixed chaining
             if let Some((cop, chain_len)) = parse_comparison_op(r2) {
+                reject_diffy_assign_meta(cop, r2, chain_len)?;
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
                 let (r2, next_right) = junctive_expr_mode(r2, mode).map_err(|err| PError {
@@ -237,6 +240,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         return Ok((r, result));
     }
     if let Some((op, len)) = parse_comparison_op(r) {
+        reject_diffy_assign_meta(op, r, len)?;
         let r = &r[len..];
         let (r, _) = ws(r)?;
         // Start of the (whitespace-trimmed) RHS input — used below to tell a bare
@@ -387,6 +391,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 if is_structural_comparison_op(cop) {
                     break;
                 }
+                reject_diffy_assign_meta(cop, r2, chain_len)?;
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
                 let (r2, next_right) =
@@ -413,6 +418,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 if is_structural_comparison_op(cop) {
                     break;
                 }
+                reject_diffy_assign_meta(cop, r2, chain_len)?;
                 let r2 = &r2[chain_len..];
                 let (r2, _) = ws(r2)?;
                 let (r2, next_right) =

@@ -68,6 +68,43 @@ impl ComparisonOp {
             ComparisonOp::ContainerNe => TokenKind::Ident("!=:=".to_string()),
         }
     }
+
+    /// The operator's Raku surface spelling, matching rakudo's own
+    /// `X::Syntax::CannotMeta.operator` attribute value (verified against
+    /// `raku -e '6 >== 2'` and friends -- see
+    /// `src/parser/expr/precedence/ternary.rs::reject_diffy_assign_meta`).
+    pub(super) fn source_spelling(self) -> &'static str {
+        match self {
+            ComparisonOp::StrictEq => "===",
+            ComparisonOp::StrictNe => "!===",
+            ComparisonOp::NumEq => "==",
+            ComparisonOp::NotDivisibleBy => "!%%",
+            ComparisonOp::NumNe => "!=",
+            ComparisonOp::SmartNotMatch => "!~~",
+            ComparisonOp::SmartMatch => "~~",
+            ComparisonOp::Spaceship => "<=>",
+            ComparisonOp::NumLe => "<=",
+            ComparisonOp::NumGe => ">=",
+            ComparisonOp::NumLt => "<",
+            ComparisonOp::NumGt => ">",
+            ComparisonOp::StrEq => "eq",
+            ComparisonOp::StrNe => "ne",
+            ComparisonOp::StrLt => "lt",
+            ComparisonOp::StrGt => "gt",
+            ComparisonOp::StrLe => "le",
+            ComparisonOp::StrGe => "ge",
+            ComparisonOp::Leg => "leg",
+            ComparisonOp::Cmp => "cmp",
+            ComparisonOp::Coll => "coll",
+            ComparisonOp::Unicmp => "unicmp",
+            ComparisonOp::Eqv => "eqv",
+            ComparisonOp::Before => "before",
+            ComparisonOp::After => "after",
+            ComparisonOp::ApproxEq => "=~=",
+            ComparisonOp::ContainerEq => "=:=",
+            ComparisonOp::ContainerNe => "!=:=",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

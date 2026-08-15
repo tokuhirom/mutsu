@@ -69,6 +69,51 @@ pub(in crate::parser::expr) fn is_structural_comparison_op(op: ComparisonOp) -> 
     )
 }
 
+/// Rakudo's category name ("chaining" / "structural infix") for `op` when
+/// used as the base of an `OP=` assignment metaoperator, or `None` when `op`
+/// is a valid assignment-metaop base. `NotDivisibleBy` (`!%%`) is excluded:
+/// rakudo parses a trailing `=` there as the METAOP_NEGATE of the
+/// *compound-assignment* operator `%%=` (`!(%%=)`, "Cannot negate %%= because
+/// assignment operator operators are not iffy enough") instead of this
+/// diffy-base-of-assignment case -- a different, unrelated gap.
+pub(in crate::parser::expr) fn diffy_assign_meta_dba(op: ComparisonOp) -> Option<&'static str> {
+    if matches!(op, ComparisonOp::NotDivisibleBy) {
+        return None;
+    }
+    Some(if is_structural_comparison_op(op) {
+        "structural infix"
+    } else {
+        "chaining"
+    })
+}
+
+/// If `op` (spelled at the start of `r`, `len` bytes long) is immediately
+/// followed by a bare `=` -- `>==`, `eq=`, `~~=`, `cmp=`, ... -- that is
+/// rakudo's rejected `OP=` assignment metaoperator over a diffy comparison
+/// operator, diagnosed as `X::Syntax::CannotMeta`
+/// (`roast/S03-operators/assign.t` "Can't use diffy >= with the = metaop").
+/// A `==` or `=>` continuation is a distinct operator, not this metaop, and
+/// is left alone (mirrors the `starts_with('=') && !starts_with("==")`
+/// convention used throughout the parser for every other `OP=` form).
+pub(in crate::parser::expr) fn reject_diffy_assign_meta(
+    op: ComparisonOp,
+    r: &str,
+    len: usize,
+) -> Result<(), PError> {
+    let after_op = &r[len..];
+    if !after_op.starts_with('=') || after_op.starts_with("==") || after_op.starts_with("=>") {
+        return Ok(());
+    }
+    let Some(dba) = diffy_assign_meta_dba(op) else {
+        return Ok(());
+    };
+    Err(cannot_meta_assign_diffy_error(
+        op.source_spelling(),
+        dba,
+        r.len(),
+    ))
+}
+
 pub(crate) fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (rest, left) = junctive_expr_mode(input, mode)?;
     let (r, _) = ws(rest)?;
@@ -78,6 +123,7 @@ pub(crate) fn structural_comparison_expr_mode(input: &str, mode: ExprMode) -> PR
     if !is_structural_comparison_op(op) {
         return Ok((rest, left));
     }
+    reject_diffy_assign_meta(op, r, len)?;
     let r = &r[len..];
     let (r, _) = ws(r)?;
     let (r, right) = if mode == ExprMode::Full {
