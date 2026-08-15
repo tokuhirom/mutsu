@@ -595,7 +595,8 @@ impl Interpreter {
                 for def in overloads {
                     // is_my is set to true for submethods in role method registration
                     if def.is_my {
-                        current_target = self.run_role_submethod(current_target, &role, &def)?;
+                        current_target =
+                            self.run_role_submethod(current_target, role_name, &role, &def)?;
                         break;
                     }
                 }
@@ -609,6 +610,7 @@ impl Interpreter {
     fn run_role_submethod(
         &mut self,
         target: Value,
+        role_name: &str,
         role: &RoleDef,
         def: &crate::runtime::MethodDef,
     ) -> Result<Value, RuntimeError> {
@@ -640,6 +642,32 @@ impl Interpreter {
                 if let Some(val) = mixins.get(&key) {
                     self.env
                         .insert(attr_env_key(*sigil, attr_name), val.clone());
+                }
+            }
+        }
+        // Seed the role's own type/value parameter(s) (`role RP[$v] { ... }`)
+        // into env so a BUILD/TWEAK submethod reading `$v` sees the argument
+        // actually supplied to `does`/`but`, not (Any). `compose_role_on_value`
+        // already stored each binding on the target's own mixin map under
+        // `__mutsu_role_param__{name}` (there is no class to key
+        // `class_role_param_bindings` by here — this composition targets a
+        // plain, non-Instance value). See
+        // todo/tickets/role-submethod-runtime-does-parameterized-value.md.
+        let role_param_names = self
+            .registry()
+            .role_type_params
+            .get(role_name)
+            .cloned()
+            .unwrap_or_default();
+        let mut saved_role_params: Vec<(String, Option<Value>)> = Vec::new();
+        if !role_param_names.is_empty()
+            && let ValueView::Mixin(_, mixins) = target.view()
+        {
+            for param_name in &role_param_names {
+                let key = format!("__mutsu_role_param__{}", param_name);
+                if let Some(val) = mixins.get(&key) {
+                    saved_role_params.push((param_name.clone(), self.env.get(param_name).cloned()));
+                    self.env.insert(param_name.clone(), val.clone());
                 }
             }
         }
@@ -687,6 +715,13 @@ impl Interpreter {
             self.env.insert("self".to_string(), prev);
         } else {
             self.env.remove("self");
+        }
+        // Restore any outer binding the role's own params seeding shadowed.
+        for (param_name, prev) in saved_role_params {
+            match prev {
+                Some(v) => self.env.insert(param_name, v),
+                None => self.env.remove(&param_name),
+            };
         }
         Ok(updated_target)
     }
