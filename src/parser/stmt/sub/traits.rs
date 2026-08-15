@@ -435,15 +435,23 @@ pub(crate) fn reject_invocant_in_sub(params: &[ParamDef]) -> Result<(), PError> 
         .iter()
         .any(|p| p.is_invocant || p.traits.iter().any(|t| t == "invocant"))
     {
-        let text = "Can only use the : invocant marker in the signature for a method";
-        let msg = format!("X::Syntax::Signature::InvocantNotAllowed: {}", text);
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(text.to_string()));
-        let ex = Value::make_instance(
-            Symbol::intern("X::Syntax::Signature::InvocantNotAllowed"),
-            attrs,
-        );
-        return Err(PError::fatal_with_exception(msg, Box::new(ex)));
+        return Err(invocant_not_allowed_error());
     }
     Ok(())
+}
+
+/// A `:` invocant marker outside a method signature (a plain `sub`, or a
+/// pointy block / lambda — `-> $a: { ... }`): only a method may declare an
+/// invocant. Rakudo uses the same wording regardless of which non-method
+/// context it was found in.
+pub(crate) fn invocant_not_allowed_error() -> PError {
+    let text = "Can only use the : invocant marker in the signature for a method";
+    let msg = format!("X::Syntax::Signature::InvocantNotAllowed: {}", text);
+    let mut attrs = std::collections::HashMap::new();
+    attrs.insert("message".to_string(), Value::str(text.to_string()));
+    let ex = Value::make_instance(
+        Symbol::intern("X::Syntax::Signature::InvocantNotAllowed"),
+        attrs,
+    );
+    PError::fatal_with_exception(msg, Box::new(ex))
 }

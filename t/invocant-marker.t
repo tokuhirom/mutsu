@@ -4,7 +4,7 @@ use Test;
 # parameter (`sub f($x, $y:)`, `method m($x, $y:)`) Raku raises
 # X::Syntax::Signature::InvocantMarker, regardless of sub vs method.
 
-plan 5;
+plan 7;
 
 throws-like 'my sub f($x, $y:) { }', X::Syntax::Signature::InvocantMarker,
     'invocant marker on a non-first sub parameter';
@@ -25,3 +25,11 @@ lives-ok { sub g($x, $y) { $x + $y }; die unless g(2, 3) == 5; },
 # A sub may not have an invocant at all (distinct error, still rejected).
 throws-like 'my sub h($self:) { }', X::Syntax::Signature::InvocantNotAllowed,
     'sub with a first-parameter invocant marker is InvocantNotAllowed';
+
+# A pointy block / lambda is not a method either -- roast/S06-signature/errors.t
+# (see todo/tickets/vendor-real-test-module.md).
+throws-like '-> $a: { }', X::Syntax::Signature::InvocantNotAllowed,
+    'pointy block with a lone invocant marker is InvocantNotAllowed';
+
+throws-like '-> $a: $b { }', X::Syntax::Signature::InvocantNotAllowed,
+    'pointy block with an invocant marker followed by more params is InvocantNotAllowed';
