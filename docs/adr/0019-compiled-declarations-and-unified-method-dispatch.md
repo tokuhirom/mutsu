@@ -1018,22 +1018,35 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     reverted, PR #6478, repro and full trace in the ticket). The general lesson: **when a change
     writes through a function every dispatcher reads, the risk inventory is every transitive
     reader of that function, found by grep — not just the call sites a ticket happens to name.**
-    The gap ticket originally named 4 "bites here" sites; a 5th, unnamed one
-    (`resolve_method_with_owner_impl`'s own per-level walk, reached transitively through
-    `resolve_methods_per_mro_level`) is the one that broke. Instead: add an explicit
-    `role_method_overloads(owner, name)` helper reading `Registry::roles` directly (role method
-    definitions are composition inputs, not dispatch entries — the dispatchable form is always
-    the flattened copy on the composing class), and migrate ONLY the originally-named 4
-    production call sites (qualified-call resolution, the deferral/`nextsame`-`callsame` chain,
-    private-method resolution, the ctor phase plan) to consult it as an explicit fallback, one
-    consumer family per sub-PR, each raku-verified — the same discipline E1a/E4a/E7 already used
-    successfully. Winner selection (`resolve_method_with_owner_impl`,
-    `resolve_methods_per_mro_level`) must NOT call this helper.
+    The gap ticket's own "where this actually bites today" section named `ctor_phase_plan.rs:133`,
+    `vm_call_method_compiled_cache.rs:97`, and `resolution_private_method.rs`'s three call sites as
+    the production readers that need the fallback (`resolve_all_methods_with_owner`, the deferral/
+    `nextsame`-`callsame` chain walker, was separately confirmed already correct — it reads
+    `Registry::roles` directly today, bypassing `get_method_overloads` entirely, so it does not
+    need migrating). It did NOT name `resolve_method_with_owner_impl`'s own per-level walk
+    (reached transitively through `resolve_methods_per_mro_level`) — that is the one that broke.
+    A separate same-day read-site survey (done for this split, informal, not yet raku-verified)
+    additionally flagged `methods_qualified.rs`, `methods_classhow_lookup.rs`,
+    `methods_classhow_dispatch.rs`, `accessors_state.rs`, `methods_walk.rs`, and
+    `class_introspection.rs:262` as reading a similar class-vs-role fallback shape for `.^lookup`/
+    `.WALK`/qualified dispatch/introspection — candidates for the same helper, but each needs its
+    own confirmation of exactly what it reads and whether it is winner-selection-adjacent (like the
+    site that broke) before being added to this box's scope, not assumed safe by pattern-match.
+    Fix direction: add an explicit `role_method_overloads(owner, name)` helper reading
+    `Registry::roles` directly (role method definitions are composition inputs, not dispatch
+    entries — the dispatchable form is always the flattened copy on the composing class), and
+    migrate confirmed-safe call sites to consult it as an explicit fallback, one consumer family
+    per sub-PR, each raku-verified — the same discipline E1a/E4a/E7 already used successfully.
+    Winner selection (`resolve_method_with_owner_impl`, `resolve_methods_per_mro_level`) must NOT
+    call this helper.
   - [ ] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
     role at all (`methods_object.rs`'s six BUILD/TWEAK existence checks, `metamodel.rs`,
-    `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`, and the Cluster B sites once F4a's
-    helper exists) move from `class_def.methods` to `MethodEntry.user_candidates` (+ the F4a
-    helper where a role fallback applies), shadow-checked per the usual pattern. Skip
+    `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`) move from `class_def.methods` to
+    `MethodEntry.user_candidates` directly. The sites F4a confirms need a role fallback (`ctor_
+    phase_plan.rs:133`, `vm_call_method_compiled_cache.rs:97`, `resolution_private_method.rs`, and
+    whichever of the informally-flagged sites above F4a confirms in scope) move together with
+    F4a's own migration, not as separate F4b work. All cutovers shadow-checked per the usual
+    pattern. Skip
     `class_dispatch.rs:228` — it lives inside the `run_instance_method` carrier F6 deletes
     outright, so cutting it over here is throwaway work; let F6's carrier deletion remove it for
     free.
