@@ -1533,6 +1533,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `positional-role-attr-writeback-coherence.t`) before any cutover read it, so the coverage gap
     of (0)(iii)'s "pure clear" callers never reached production behavior. Fixed by clearing the
     index in that branch too; the same sweep is clean (0 crashes) after the fix.
+
+    **Progress (F4c-2, #TBD):** added the full mutator surface to `registry_method_table.rs`
+    per (3) -- `set_user_methods`, `push_user_method`, `retain_user_methods`,
+    `remove_user_methods`, `clear_user_methods_for_owner`, `rename_method_owner`,
+    `map_user_methods_in_place`, `user_method_rows_for_owner`, `restore_user_method_rows`, and
+    `sync_accessor_entries` (the accessor-column "surviving half", deliberately left at its
+    pre-existing O(total table) shape per (3)'s own framing -- accessor-only rows are not covered
+    by `owner_method_names`, which stays scoped to the user-method column). `sync_user_method_
+    entries` is rewritten to call these instead of inlining the retain/re-populate logic, per
+    F4c-2's "no call-site changes beyond routing `sync_user_method_entries` through the mutators"
+    scope -- the seven mutators no other production call site uses yet
+    (`push_user_method`/`retain_user_methods`/`remove_user_methods`/`rename_method_owner`/
+    `map_user_methods_in_place`/`user_method_rows_for_owner`/`restore_user_method_rows`) are
+    `#[allow(dead_code)]` until their F4c-3/4/5/8 slice wires them in, and are exercised in the
+    meantime by a unit test per mutator (10 tests) in a new `registry_method_table_tests.rs`,
+    satisfying (5) R2's mitigation. Each mutator bumps `method_generation` on its own call rather
+    than once per `sync_user_method_entries` invocation, a deliberately accepted (5) R6 behavior
+    change -- not mitigated with a `bump_once` guard in this slice, since R6 frames that as
+    reactive ("if they move"), not a prerequisite. Verified with the full local `t/` suite (3182
+    files, 29634 tests) under `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions), the
+    312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
+    `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
+    clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site
