@@ -1305,6 +1305,34 @@ impl Interpreter {
                 Some(UserMethodOrAccessor::Accessor)
             );
             if !accessor_wins && self.has_user_method(&cn_resolved, method) {
+                // ADR-0019 F6: try the VM-level direct compiled-dispatch path
+                // first (no `run_instance_method` carrier, no recursion risk —
+                // see `try_dispatch_compiled_method_direct`'s doc comment).
+                // `target` and `attributes` share the same underlying cell
+                // (ADR-0013), and `dispatch_compiled_method` already commits
+                // any reconciled attribute map back through that cell, so a
+                // fresh `attributes.to_map()` read after the call reflects the
+                // post-mutation state without needing the carrier's own
+                // returned snapshot (same reasoning as the mut-lvalue family's
+                // migration).
+                if let Some(result) =
+                    self.try_dispatch_compiled_method_direct(&target, method, &args)
+                {
+                    let result = result?;
+                    let updated = attributes.to_map();
+                    if !self.in_lvalue_assignment
+                        && let ValueView::Proxy { fetcher, .. } = result.view()
+                    {
+                        return self.proxy_fetch(
+                            fetcher,
+                            None,
+                            &class_name.resolve(),
+                            &updated,
+                            target_id,
+                        );
+                    }
+                    return Ok(result);
+                }
                 let (result, updated) = self.run_instance_method_at(
                     "instanceops",
                     &class_name.resolve(),

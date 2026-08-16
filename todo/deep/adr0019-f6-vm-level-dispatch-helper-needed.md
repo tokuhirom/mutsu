@@ -1,5 +1,16 @@
 # ADR-0019 F6: remaining `run_instance_method` families need a VM-level dispatch helper, not `call_method_with_values`
 
+**Status update:** the helper this doc calls for is now implemented —
+`Interpreter::try_dispatch_compiled_method_direct` (`src/vm/vm_call_method_compiled_direct.rs`) —
+and applied to its first site (instance-ops family's accessor-vs-method resolution branch,
+`methods_instance_ops.rs:~1307`). See ADR-0019's F6 box, "Progress (VM-level direct-dispatch
+helper, ...)", for the verification writeup. The remaining call sites this doc enumerates
+(instance-ops's other two sites, new-dispatch's three sites, mut-dispatch's general fallback,
+general-call-dispatch's three sites, qualified-dispatch's shared helper) are still open — each
+needs its own per-site migration onto the new helper, following the same discipline as every prior
+F6 slice (review what the site does with the returned value beyond the resolved method; verify with
+`t/` + a relevant roast subset + the battery gate).
+
 ## Summary
 
 ADR-0019 Phase F6 (delete the `run_instance_method` compatibility carrier) established a working

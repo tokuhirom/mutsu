@@ -2458,6 +2458,48 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   (`methods_mut_dispatch.rs:2777`, the general mut-dispatch fallback) stays on `run_instance_method_at`
   — it is the mut-path's own analog of `dispatch_instance_and_fallback`/`dispatch_new` and is
   presumed blocked by the same recursion shape (not yet attempted).
+
+  **Progress (VM-level direct-dispatch helper, #TBD) — unblocks the recursion-hazard sites.**
+  Implemented `Interpreter::try_dispatch_compiled_method_direct`
+  (`src/vm/vm_call_method_compiled_direct.rs`, new file), the helper
+  `todo/deep/adr0019-f6-vm-level-dispatch-helper-needed.md` scoped: it extracts the
+  `resolve_method_cached` -> `check_method_wrap_chain` -> on-demand-compile ->
+  `dispatch_compiled_method` sequence that `try_compiled_method_or_interpret_inner`
+  (`vm_call_method_compiled_interpret.rs`) already runs for the VM's own `CallMethod` opcode path,
+  minus that function's accessor-vs-method arbitration branch (which recurses into
+  `call_method_with_values` and is therefore exactly the hazard this helper exists to avoid). Confirmed
+  by direct call-graph inspection that neither `try_compiled_method_or_interpret_inner` nor any function
+  it calls (`resolve_method_cached`, `check_method_wrap_chain`, `populate_uncompiled_method`,
+  `dispatch_compiled_method`) is reachable from `call_method_with_values`/`call_method_mut_with_values`'s
+  own bodies (`grep` for `try_compiled_method_or_interpret` in `methods_call_dispatch.rs`/
+  `methods_mut_dispatch.rs` finds nothing) — so a call site inside either function's call graph can call
+  this new helper without risking the self-reentry that broke the naive `call_method_with_values` swap.
+  Returns `None` (caller falls back to `run_instance_method_at`) when no compiled resolution exists, when
+  the resolved method still lacks bytecode after an on-demand compile attempt, or — implicitly, since the
+  helper does no accessor arbitration of its own — the caller is responsible for excluding the
+  accessor-should-win case before calling it (every currently-known blocked site already does this itself,
+  e.g. instance-ops's `!accessor_wins &&` guard below).
+
+  **First application (instance-ops family, accessor-vs-method resolution site,
+  `methods_instance_ops.rs:~1307`):** the `!accessor_wins && self.has_user_method(...)` branch now tries
+  `try_dispatch_compiled_method_direct` first and only falls back to `run_instance_method_at("instanceops",
+  ...)` when it returns `None`. Per the mut-lvalue family's own finding, `target` and `attributes` share
+  the same underlying cell (ADR-0013) and `dispatch_compiled_method` already commits any reconciled
+  attribute map back through that cell, so re-reading `attributes.to_map()` after the direct-dispatch call
+  reflects the post-mutation state without needing the carrier's own returned snapshot. Verified with the
+  full local `t/` suite (3190 files, all green — no recursion, no regression), the exact `t/` files that
+  exercise this branch's accessor-vs-method priority logic (`t/accessor-mro-shadowing.t`,
+  `t/role-class-prioritization.t`, `t/method-table.t`, all green with `MUTSU_VM_STATS=1` confirming zero
+  `"instanceops"` fallback traffic for those runs), `cargo build`/`clippy -- -D warnings`/`fmt` clean, the
+  314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted
+  files fail identically before and after this change, confirmed by an A/B run via `git stash`), and
+  `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged). The instance-ops family's other two
+  sites (Package/type-object dispatch, `Routine`/`Block`/`Code`/`Callable` ancestor dispatch) and every
+  other blocked family (new-dispatch, mut-dispatch's remaining site, general-call-dispatch,
+  qualified-dispatch's shared helper) remain open — each needs its own per-site review of what it does
+  with the returned value beyond the resolved method (same "no shared-helper-by-pattern-match" discipline
+  this box has followed throughout), but now has a concrete, verified-safe direct-dispatch path to migrate
+  onto instead of the blocked `call_method_with_values`/`call_method_mut_with_values` swap.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
