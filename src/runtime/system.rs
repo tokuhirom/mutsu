@@ -162,7 +162,24 @@ impl Interpreter {
                 // carry the outcome instead of `?`-ing out of the middle: a
                 // `my` in code that then *dies* (`throws-like 'my $x = 1; die …'`
                 // is a common assertion shape) is still EVAL-scoped.
+                //
+                // A `my class`/`my package` the snippet declares must not stay
+                // resolvable by bareword after the EVAL returns (raku: `EVAL 'my
+                // package A { }'; A` is `X::Undeclared` even when nothing else in
+                // the program ever mentions `A`) — the same push/pop pair a bare
+                // `{ ... }` block already uses (`vm_misc_scope.rs`) to re-suppress
+                // whatever it declared on the way out. Without this, a `my class A`
+                // that had gone out of scope *earlier* in the program (and was
+                // therefore suppressed) gets silently un-suppressed for good the
+                // moment ANY later EVAL — even one that itself fails after
+                // declaring `A` — redeclares the same bare name, since
+                // `unsuppress_name` runs unconditionally when a class/package body
+                // starts executing (`vm_typedecl_ops.rs`) and nothing here used to
+                // undo it. Pop runs unconditionally (mirrors the block cleanup
+                // being exception-safe), so a failing snippet is cleaned up too.
+                self.push_lexical_class_scope();
                 let mut outcome = self.eval_block_value_opts(&stmts, true);
+                self.pop_lexical_class_scope();
                 if let Ok(value) = &outcome
                     && self.eval_result_is_unresolved_bareword(&stmts, value)
                 {

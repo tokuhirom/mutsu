@@ -4219,6 +4219,20 @@ impl Interpreter {
                 if let Some(set) = self.block_declared_vars.last_mut() {
                     set.insert(name_sym);
                 }
+                // A `my package`/`my module` is lexical exactly like `my class` —
+                // its bare binding must die with the enclosing block/EVAL, not
+                // stay visible the way a plain (non-`my`) `package Foo {}` does.
+                // Reuse the same lexical-class-scope bookkeeping `my class`
+                // already relies on (`register_lexical_class` /
+                // `pop_lexical_class_scope`, consulted by both the bare-block
+                // exit restore in `vm_misc_scope.rs` and by `EVAL`'s own
+                // push/pop in `system.rs`) instead of inventing a second
+                // mechanism — without this, `{ my package A { } }; A` and
+                // `EVAL 'my package A { }'; A` both stayed resolvable outside
+                // their scope, and a *stale* out-of-scope `my class`/`my
+                // package A` un-suppressed by `shadow_suppressed_type_with_package`
+                // above never got re-suppressed either.
+                self.register_lexical_class(name);
                 *ip += 1;
             }
             OpCode::RegisterPackageStub { name_idx } => {
