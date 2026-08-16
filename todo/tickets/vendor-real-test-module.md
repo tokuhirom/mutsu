@@ -1791,3 +1791,82 @@ file that loads it) — caught locally before pushing, not by CI. A safe
 general fix needs a registry of builtin enum-like constants and
 sigilless-lexical name tracking in the parser first; left as a `todo/tickets/`
 candidate for whoever picks this back up, not re-attempted this session.
+
+## `when SomeUndeclaredType { }`: second attempt, reusing precedented infrastructure, also reverted (2026-08-16)
+
+Came back to this same session with what looked like the missing prerequisite
+in hand: `src/parser/expr/precedence/ternary.rs` and `list_infix_top.rs`
+already solve the **identical** ambiguity (an undeclared bareword directly
+before `!!`/end-of-item is a listop-call gobble, not a complete term) with a
+mature, already-shipped exclusion set —
+`is_known_type_constraint`/`is_known_compound_type`/`is_user_declared_type`
+plus `is_builtin_enum_value`/`is_builtin_constant_term`/
+`is_user_declared_value_term`/`is_user_declared_enum_value`. That last one,
+`is_user_declared_value_term` (`src/parser/stmt/simple/user_ops.rs`), turned
+out to already cover exactly the `condition` sigilless-param case from the
+first attempt — `register_sigilless_terms` in `sub_decl.rs` already registers
+a routine's sigilless params as term symbols when parsing its body, so the
+"prerequisite" the first attempt's write-up asked for already existed; it
+just wasn't being consulted at this call site. Added `Planned`/`Kept`/`Broken`
+to `is_builtin_enum_value` (documented as representing mutsu's bare-string
+`Promise.status`) to cover the other first-attempt false positive, and wired
+`when_stmt` to the same guard set as the ternary sites (compound `::` names
+still restricted to the `X::`/`CX::` check, since that half of the original
+concern — forward-imported/not-yet-parsed compound type names — is
+unaffected by any of this).
+
+Verified both original false positives fixed (`Kept`, `condition`) — but a
+**third and fourth** false positive surfaced on a *wider* regression sweep
+(the first attempt was only checked against the specific files the first two
+false positives came from; this round checked every whitelisted file
+touching `Kept`/`Broken`/`Planned`/`ternary`/`given`/`ClassDecl`-in-a-block
+patterns):
+
+1. **`roast/S04-exception-handlers/catch.t`**: `class Naughty is Exception
+   {}` declared inside a bare `{ ... }` block, then `when Naughty { }` used in
+   a **later, separate** bare block after the first one exited. Plain
+   (non-`my`) class declarations are supposed to stay bareword-visible after
+   their declaring block ends (this file's whole point is testing exception
+   superclass matching) — real `raku` treats `Naughty` as visible there. But
+   `is_user_declared_type`'s `SCOPES` tracking only keeps a *bare* name
+   (`register_user_type_verbatim`) in the scope that was active when
+   registered; `register_user_type`'s "stays visible after the enclosing body
+   ends" logic only promotes the **composed** (package-prefixed) spelling to
+   the outermost scope, not the bare one, and bare blocks pop their own scope
+   frame. So by the time the second block's `when Naughty` was parsed, no
+   currently-active scope contained `"Naughty"` and the check misfired. This
+   is a real, previously-latent gap in `is_user_declared_type`'s own model of
+   Raku's non-lexical `class`/`package`/`role` visibility (already flagged,
+   for the narrower EVAL-boundary case, at the end of the
+   `X::Parameter::BadType leak, fixed` section above) — not something a
+   `when`-local workaround should paper over.
+2. **`roast/S32-exceptions/misc2.t`**: `given $bar { when Real { 1 } when Str
+   { 2 } }` — `Real` is a genuine builtin Raku type but was simply **absent**
+   from `is_known_type_constraint`'s list (verified: `grep '"Real"'` finds
+   nothing). The roast assertion here doesn't even care about `when`'s
+   semantics — it's testing an unrelated curly-brace hash/block
+   disambiguation ("Strange text after block" in real `raku`) and only
+   incidentally uses `Real`/`Str` as filler type names — but the missing
+   registry entry let the new `when`-check misfire into a wrong diagnosis
+   anyway.
+
+Given TWO independent, previously-unknown gaps in the exclusion registries
+surfaced on a regression sweep that only covered a few dozen files (not the
+full corpus), the risk model from the first attempt's write-up holds:
+**`is_known_type_constraint` is not provably complete, and `is_user_declared_type`
+does not correctly model non-lexical class/package visibility across block
+boundaries.** Reusing the ternary sites' exact guard is *necessary* but not
+*sufficient* — those two sites happen not to be exercised by any roast file
+that hits either gap, but `when` (used far more pervasively across the
+corpus, including directly on `given`'s topic in loops over heterogeneous
+values) is. Reverted `given_when.rs` back to the original `X::`/`CX::`-only
+check and the `is_builtin_enum_value` addition (neither false positive
+reproduces on the reverted tree; full `t/` suite and the ~20 touched roast
+files all clean again). **Do not re-attempt this broadening without first
+either (a) auditing `is_known_type_constraint` against the actual
+`raku-doc/doc/Type/` type list for completeness, or (b) fixing
+`register_user_type`'s scope model so a plain (non-`my`) declaration's bare
+name outlives its declaring block the way its composed name already does —
+whichever is cheaper turns out to be first will likely also fix the other's
+symptom for free, since both are "the registry `when` would need to trust is
+not yet trustworthy" instances of the same root problem.**
