@@ -1631,6 +1631,32 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     panics), the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
     `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
     clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-5, #TBD):** converted the role-pun/mixin-class family. `ensure_role_punned_to_
+    class`'s (formerly `ensure_role_pun_class` in this bullet's own text -- renamed since) fresh
+    `ClassDef` insert now also dual-writes every composed method through `set_user_methods` (no
+    R8 hazard here: it is a brand-new registry row, not a mutation of an already-borrowed one).
+    `withdraw_role_pun` now calls `clear_user_methods_for_owner` + `sync_accessor_entries`
+    directly instead of `sync_user_method_entries` -- behaviorally identical today (with the
+    `classes.remove` immediately above, the old call would only ever take its "pure clear"
+    early-return path, which already *is* exactly those two calls per the F4c-2 rewrite) and
+    forward-looking for F4c-9b's eventual deletion of `sync_user_method_entries` itself.
+    `rename_generic_composed_class` now calls `rename_method_owner` for the user-method column
+    (replacing the old "sync old, sync new" idiom) plus the same `sync_accessor_entries` pair as
+    before for the accessor column (no owner-rename mutator exists for that column by design --
+    it stays keyed off `ClassDef::attributes`). `types/role_mixin_class.rs:305-312`, named in this
+    bullet's own text, turned out to be stale -- that file's only `class_def.methods` write
+    (`compose_mixin_role_submethods`) was already converted in F4c-4; grepping the whole file for
+    `.methods` confirms nothing else touches it. This slice also retired the now-satisfied
+    `#[allow(dead_code)]` markers on `push_user_method`, `retain_user_methods`,
+    `remove_user_methods`, and `user_method_rows_for_owner` in `registry_method_table.rs` --
+    `map_user_methods_in_place` and `restore_user_method_rows` (F4c-3's `compile_class_methods`
+    site and F4c-8's rollback, respectively) remain the only unused mutators. Verified with the
+    full local `t/` suite (3183 files, 29636 tests) under `MUTSU_CHECK_METHOD_INDEX=1` (0
+    index/table-drift assertions, 0 lock-reentrancy panics), the 312-file
+    `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
+    `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
+    clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

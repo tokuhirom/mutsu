@@ -5,19 +5,18 @@
 //! note's own reasoning for `registry_method_table.rs`).
 //!
 //! `Registry::owner_method_names` (the field) is declared on `registry.rs`;
-//! every read AND write goes through this file's API instead. As of F4c-2
-//! the only caller of the write side is still `registry.rs`'s
-//! `sync_user_method_entries` (routed through these mutators rather than
-//! inlining the retain/re-populate logic it used to) — F4c-3 onward moves
-//! individual class-declaration/augment/MOP write sites onto this API
-//! directly, per the ADR-0019 F4c design note section (3)'s ordered slices.
-//! Mutators not yet called by production code outside `sync_user_method_
-//! entries` (`push_user_method`, `retain_user_methods`, `remove_user_
-//! methods`, `rename_method_owner`, `map_user_methods_in_place`, `user_
-//! method_rows_for_owner`, `restore_user_method_rows`) are `#[allow(dead_
-//! code)]` until their slice lands, and are exercised by this file's own
-//! unit tests per design note (5) R2's mitigation ("a unit test per mutator
-//! for the `registry.rs:361-365` liveness interaction").
+//! every read AND write goes through this file's API instead. `registry.rs`'s
+//! `sync_user_method_entries` was the first caller (F4c-2, routed through
+//! these mutators rather than inlining the retain/re-populate logic it used
+//! to); F4c-3 (class-declaration family), F4c-4 (augment family), and F4c-5
+//! (role pun / mixin classes) have since moved their own write sites onto
+//! this API directly, per the ADR-0019 F4c design note section (3)'s ordered
+//! slices. `map_user_methods_in_place` and `restore_user_method_rows` remain
+//! `#[allow(dead_code)]` until F4c-3's `compile_class_methods` site and
+//! F4c-8's snapshot/rollback land respectively; every mutator (used or not
+//! yet) is exercised by this file's own unit tests per design note (5) R2's
+//! mitigation ("a unit test per mutator for the `registry.rs:361-365`
+//! liveness interaction").
 //!
 //! Every mutator bumps `method_generation` on its own call, per design note
 //! (3) ("Every mutator ... bumps `method_generation`"). This is a
@@ -187,7 +186,6 @@ impl Registry {
     /// Appends one candidate to `(owner, name)`'s user candidate list -- the
     /// `multi` declaration case, where a later declaration adds a candidate
     /// rather than replacing the row.
-    #[allow(dead_code)] // ADR-0019 F4c-3 wires this into the class-body `multi` write site.
     pub(crate) fn push_user_method(&mut self, owner: Symbol, name: Symbol, def: MethodDef) {
         let key = MethodEntryKey { owner, name };
         self.method_entries
@@ -204,7 +202,6 @@ impl Registry {
     /// privacy-preserving non-`multi` replace
     /// (`registration_class_body_method.rs:219-222`'s current shape). A
     /// no-op if the row does not exist.
-    #[allow(dead_code)] // ADR-0019 F4c-3 wires this into the class-body non-multi replace site.
     pub(crate) fn retain_user_methods(
         &mut self,
         owner: Symbol,
@@ -226,7 +223,6 @@ impl Registry {
     }
 
     /// Clears `(owner, name)`'s user candidate list entirely.
-    #[allow(dead_code)] // ADR-0019 F4c-3 wires this into `withdraw_role_pun`-style single-row clears.
     pub(crate) fn remove_user_methods(&mut self, owner: Symbol, name: Symbol) {
         self.set_user_methods(owner, name, Vec::new());
     }
@@ -259,7 +255,6 @@ impl Registry {
     /// are gone afterward; any pre-existing `new`-owned row with the same
     /// name is overwritten, matching `set_user_methods`' own replace
     /// semantics.
-    #[allow(dead_code)] // ADR-0019 F4c-5 wires this into role-pun renaming.
     pub(crate) fn rename_method_owner(&mut self, old: Symbol, new: Symbol) {
         let rows = self.user_method_rows_for_owner(old);
         self.clear_user_methods_for_owner(old);
@@ -296,7 +291,6 @@ impl Registry {
     /// Snapshots every user-owned row `owner` currently has, for rollback
     /// (ADR-0019 F4c design note (4)'s `ClassRegSnapshot`/EVAL-rollback
     /// mechanisms). `MethodDef` clones are shallow (`body` is an `Arc`).
-    #[allow(dead_code)] // ADR-0019 F4c-8 wires this into snapshot/rollback.
     pub(crate) fn user_method_rows_for_owner(
         &self,
         owner: Symbol,

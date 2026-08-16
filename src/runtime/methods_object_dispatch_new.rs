@@ -206,7 +206,16 @@ impl Interpreter {
         self.registry_mut().classes.remove(role_name);
         self.registry_mut().hidden_classes.remove(role_name);
         self.registry_mut().class_composed_roles.remove(role_name);
-        self.registry_mut().sync_user_method_entries(role_name);
+        // ADR-0019 F4c-5: calls the mutator API directly instead of
+        // `sync_user_method_entries(role_name)` -- equivalent today (with
+        // `classes.remove` just above, that call would only take its
+        // "pure clear" early-return path, which is exactly
+        // `clear_user_methods_for_owner` + `sync_accessor_entries` per the
+        // F4c-2 rewrite), and forward-looking for F4c-9b's eventual
+        // deletion of `sync_user_method_entries` itself.
+        let owner = Symbol::intern(role_name);
+        self.registry_mut().clear_user_methods_for_owner(owner);
+        self.registry_mut().sync_accessor_entries(owner);
         self.clear_private_zeroarg_method_cache();
         self.native_ctor_plan_cache.clear();
     }
