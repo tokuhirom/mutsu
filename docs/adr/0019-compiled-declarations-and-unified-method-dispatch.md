@@ -2335,6 +2335,21 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   (3189 files, `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of the
   standard `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and `scripts/battery-testsuite.sh`
   (GATE PASSED).
+
+  **Progress (new-dispatch family, #TBD):** `methods_object_dispatch_new.rs`'s three named
+  `.new`-dispatch sites (the augmented-builtin-`.new` fallback, the role-punned `.new` branch, and
+  the general new-dispatch fallback) tagged `run_instance_method_at("newdispatch", ...)`. The
+  role-punned `.new` site is the same `ensure_role_punned_to_class` shape the mut-dispatch family's
+  fix above targeted, so its evidence sweep (full local `t/`, 3190 files, before this branch was
+  rebased onto that fix) found the identical self-referential-pun mismatch pattern at 4 call sites
+  (`t/class-type-object-coercion-call.t`, `t/punned-role-user-new.t` x2,
+  `t/role-pun-dispatches-on-type-object.t`'s `WithNew.new`) — no new root cause, just more corpus
+  instances of the same bug. After rebasing onto the merged fix, the full sweep finds zero
+  `"newdispatch"` mismatches (the only 2 remaining corpus-wide are the pre-existing, unrelated
+  `"privatedispatch"` pair every prior sweep in this box has recorded). Verified with the full local
+  `t/` suite (3190 files, `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of
+  the standard `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and
+  `scripts/battery-testsuite.sh` (GATE PASSED).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.

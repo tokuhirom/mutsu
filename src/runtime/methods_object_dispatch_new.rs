@@ -58,7 +58,14 @@ impl Interpreter {
             return Ok(None);
         }
         let empty_attrs = AttrMap::new();
-        match self.run_instance_method(class_key, empty_attrs, "new", args.to_vec(), None) {
+        match self.run_instance_method_at(
+            "newdispatch",
+            class_key,
+            empty_attrs,
+            "new",
+            args.to_vec(),
+            None,
+        ) {
             Ok((result, _updated)) => Ok(Some(result)),
             Err(e) if e.is_multi_no_match() => Ok(None),
             Err(e) => Err(e),
@@ -1435,7 +1442,8 @@ impl Interpreter {
                 if role.methods.contains_key("new") {
                     let role_name = class_name.resolve();
                     self.ensure_role_punned_to_class(&role_name)?;
-                    let dispatched = self.run_instance_method(
+                    let dispatched = self.run_instance_method_at(
+                        "newdispatch",
                         &class_name.resolve(),
                         AttrMap::new(),
                         "new",
@@ -1594,7 +1602,8 @@ impl Interpreter {
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
                     let empty_attrs = AttrMap::new();
-                    match self.run_instance_method(
+                    match self.run_instance_method_at(
+                        "newdispatch",
                         &class_name.resolve(),
                         empty_attrs,
                         "new",
