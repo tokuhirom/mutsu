@@ -1409,3 +1409,62 @@ targeted sweep of all 93 whitelisted `S06-signature`/`S06-traits` files
 **Remaining: 3 items** (the two `X::Comp::Group` parser-ambiguity cases, the
 order-dependent `X::Parameter::BadType` leak, and the deep
 `X::ControlFlow::Return` ticket) — none picked up yet.
+
+## The order-dependent `X::Parameter::BadType` leak, fixed (2026-08-16)
+
+Picked up `todo/tickets/parameter-badtype-order-dependent-under-many-prior-evals.md`,
+the one remaining item from the previous round's `misc.t` triage that looked
+deep enough to file separately. Root-caused with a synthetic loop, per that
+ticket's own "suggested next step" — reduced to a 4-line repro with no roast
+file needed: `my class A {}` in a now-exited block, `EVAL 'my package A {};
+my A $a;'` (fails), then a wholly separate `EVAL 'my package A {}; sub
+foo(A $a) { }'` — the second `EVAL`'s own `X::Parameter::BadType` silently
+stopped firing.
+
+Not actually order-*dependent* once isolated — it reproduces with exactly two
+`EVAL`s and no accumulated file state at all. The real shape: `my class`/`my
+role` already lexically scope their bare name (suppressed once their block/
+EVAL exits, via `register_lexical_class`/`pop_lexical_class_scope`), but `my
+package`/`my module` never participated in that mechanism, and `EVAL` itself
+never pushed its own lexical-class-scope frame around its body (only bare
+`{ ... }` blocks did). So a `my package A` that shadows a stale out-of-scope
+`my class A` (`shadow_suppressed_type_with_package`, which deliberately
+un-suppresses `A` so the new package becomes active) never got RE-suppressed
+when its own EVAL/block ended — permanently un-suppressing `A` for the rest
+of the process, even from a snippet that itself later failed.
+
+Fixed generally: `EVAL` (`parse_and_eval_with_operators`, `system.rs`) now
+push/pops its own lexical-class-scope frame around the snippet body (mirrors
+the bare-block cleanup in `vm_misc_scope.rs`, unconditional pop so a dying
+snippet still cleans up), and `RegisterPackageMy` (`vm_exec_dispatch.rs`) now
+calls `register_lexical_class` too, so a `my`-scoped package reuses the exact
+same scope-exit re-suppression `my class` already had, for both a bare block
+and `EVAL`'s new push/pop. `roast/S32-exceptions/misc.t` line 227 now passes
+deterministically with the file's full preceding state, under both `Test`
+providers. Pin: 3 new assertions in `t/lexical-type-scope-suppression.t`.
+Full write-up: `news/2026-08/my-package-lexical-scope-leak.md`.
+
+**A blind alley worth recording:** the first fix attempt gated the raw
+`env.get(name)` bareword-resolution fallback (`vm_var_get_ops.rs`) on
+`!is_name_suppressed(name)` directly — reasoning that a self-named
+`Package("A")` env entry should never resolve while `A` is suppressed. That
+regressed `t/class-body-type-scope.t`: a class body's OWN `my class Foo`
+legitimately suppresses the bare name `Foo` globally while its scope is
+active, but the *file-scope* `Foo` declared earlier is a completely different,
+still-valid binding that happens to share the same suppressed name.
+`suppressed_names` is a bare `HashSet<String>`, not tied to which declaration
+produced the *current* env value, so "is this name suppressed" and "is this
+specific env value stale" are different questions the flag cannot answer by
+itself — gating on it wholesale is unsound. Reverted that part; the two
+`register_lexical_class` fixes above turned out to be sufficient for the
+actual reported bug without touching bareword resolution at all.
+
+**Also found and deliberately left open:** a *non*-`my` `class`/`package`
+declared inside `EVAL` (`EVAL 'class Foo { }'`) also stays bareword-visible
+outside the `EVAL` in mutsu, unlike raku (`EVAL`'s own compilation-unit
+boundary is stricter than a plain block's — a plain `{ package Foo { } }`
+correctly SHOULD stay visible after the block, only `EVAL` should not). No
+test in the current suite depends on this either way; fixing it would mean
+touching `eval_eval_string`'s classes/roles snapshot-merge dance
+(`system_eval_string.rs`), which is broader and riskier than this round's
+fix. Left for a future round if a roast file ever needs it.
