@@ -379,11 +379,32 @@ impl Interpreter {
     /// matched set. See `resolution_method.rs`'s `drop_flattened_role_duplicates`
     /// doc comment for why the duplicate exists at all (mutsu keeps a composed
     /// role in the class's MRO; rakudo does not).
+    ///
+    /// **Self-owned pun exclusion (ADR-0019 F6 mut-dispatch family, found by its
+    /// shadow-check sweep, `t/role-bless-pun.t`):** a role pun (`Service.bless`/
+    /// `.new` on a bare role) copies the role's own methods into a synthetic
+    /// class registered under the role's OWN name (`ensure_role_punned_to_class`),
+    /// tagging each copy `role_origin = Some(role_name)` — the same name as the
+    /// copy's own `owner`. That single MRO level would otherwise land in
+    /// `flattened` from its own candidate and immediately delete itself, since
+    /// the check below only compares owner identity, not whether some OTHER,
+    /// differently-owned level actually carries the flattened copy this dedup
+    /// exists to remove. Only a role_origin that names a DIFFERENT owner than
+    /// the candidate carrying it indicates a genuine flattened-elsewhere
+    /// duplicate (`class Foo does R`: the "Foo"-owned flattened copy has
+    /// `role_origin = Some("R")`, owner != role_origin, and it is that fact
+    /// which makes the separate raw "R"-owned MRO level redundant) — matching
+    /// `resolve_method_with_owner_impl`, which this sequence is meant to
+    /// reproduce and which never drops a pun's own single-level candidate.
     fn drop_flattened_role_duplicate_candidates(candidates: &mut Vec<ResolvedCandidate>) {
         let flattened: HashSet<String> = candidates
             .iter()
             .filter_map(|c| match c {
-                ResolvedCandidate::User { def, .. } => def.role_origin.clone(),
+                ResolvedCandidate::User { owner, def, .. } => def
+                    .role_origin
+                    .as_deref()
+                    .filter(|ro| *ro != owner.as_str())
+                    .map(str::to_string),
                 ResolvedCandidate::NativeCallBinding { .. } | ResolvedCandidate::Native { .. } => {
                     None
                 }
