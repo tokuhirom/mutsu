@@ -2252,6 +2252,35 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `roast/S12-introspection/attributes.t`, and `roast/S12-class/attributes.t` (release, via
   `scripts/run-roast-test.sh`) all green. Call-site migration off the API itself remains open, same
   as the coercion family.
+
+  **Progress (instance-ops/pseudo-method family, #TBD):** `methods_instance_ops.rs`'s four named
+  sites. Three (accessor-vs-method resolution ~1308, Package/type-object dispatch ~1661,
+  Routine/Block/Code/Callable ancestor dispatch ~1699) tagged `run_instance_method_at("instanceops",
+  ...)`, same additive tag-and-gather pattern as coercion/mut-lvalue. The fourth (`.raku`/`.perl`
+  rendering of a `Junction`'s member Instances, ~1891) already had a discarded pre-resolved
+  `(owner, method_def)` from `resolve_method_with_owner` — same shape the qualified-dispatch slice
+  above just fixed — so it was migrated straight to `run_resolved_method_compiled_or_treewalk`
+  reusing that value, not merely tagged.
+
+  **Real finding, not just a no-op:** the full local `t/` sweep (3187 files, `MUTSU_VM_STATS=1`) this
+  time surfaced genuine mismatches — 9 of them, all `"instanceops"`, all shape `real=Some(owner)
+  shadow=None` (the ad-hoc `run_instance_method` walk finds the method; the E4 `resolve_sequence`
+  resolver does not; never the reverse). All 9 trace to the Package/type-object dispatch branch
+  (~1661): `t/role-pun-dispatches-on-type-object.t` (6), `t/nested-type-short-name-owner-scope.t` (1,
+  a qualified nested-package type object), `t/role-instantiation.t`'s `NotNewPun.x` (a role pun's
+  non-`.new` method), and a `role R { multi method COERCE {...} }` type-object coercion call —
+  i.e. every case is a **type-object receiver** (`Definedness::TypeObject`, not a live instance).
+  Filed as `todo/tickets/adr0019-e4-sequence-resolver-misses-type-object-dispatch.md`: harmless today
+  (shadow-only, nothing consumes the comparison to make a real dispatch decision) but it means the
+  Package-dispatch branch specifically **cannot** be migrated off `run_instance_method` to the
+  sequence resolver until that gap is closed — this box's own "gather evidence before migrating"
+  discipline (F6's box text) working exactly as intended. The other two tagged sites (~1308, ~1699)
+  and the fourth (migrated) site show zero mismatches.
+
+  Verified with the full local `t/` suite (3187 files, `MUTSU_VM_STATS=1` for the shadow sweep,
+  `cargo build`/`clippy`/`fmt` all clean) and the standard 312-file `S04`/`S06`/`S09`/`S12`/`S14`
+  roast subset (release), both green — the 9 mismatches are diagnostic-only and change no observed
+  behavior. `scripts/battery-testsuite.sh` GATE PASSED.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
