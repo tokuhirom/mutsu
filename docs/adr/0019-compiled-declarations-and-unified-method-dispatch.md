@@ -2389,6 +2389,33 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `cargo build`/`clippy`/`fmt` clean, the 314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` +
   `S12-coercion`/`S13-overloading` roast subset (release), and `scripts/battery-testsuite.sh`
   (GATE PASSED).
+
+  **Negative result (instance-ops family, attempted and reverted, #TBD):** tried the same
+  `call_method_with_values` swap on two of `methods_instance_ops.rs`'s three tagged sites (the
+  accessor-vs-method resolution branch ~1308, and the Package/type-object dispatch branch ~1657 —
+  the latter now that the mut-dispatch family's role-pun-dedup fix closed the E4 sequence-resolver
+  gap that used to block it, see the mut-dispatch/new-dispatch progress notes above). Both caused an
+  immediate stack overflow across a large swath of the local `t/` suite (dozens of files aborting
+  with SIGABRT/SIGSEGV from unbounded recursion), not a subtle shadow mismatch. Root cause: **all
+  three sites live inside `dispatch_instance_and_fallback`
+  (`methods_instance_ops.rs:42`), which is itself called FROM `methods_call_dispatch.rs` at three
+  sites reachable through `call_method_with_values`'s own call chain** — so a call site inside it
+  calling back into `call_method_with_values` recurses into itself whenever the modern resolver
+  falls through to the same fallback again for the same `(target, method)` (a condition that,
+  unlike the already-migrated coercion/mut-lvalue sites, recurs unboundedly rather than terminating,
+  since `has_user_method` keeps evaluating true). This differs from the coercion and mut-lvalue call
+  sites, which live in leaf functions never reached from `call_method_with_values`'s own resolution
+  chain. **Lesson: before applying the `call_method_with_values` swap to any remaining F6 site,
+  first confirm the containing function is not itself in `call_method_with_values`'s call graph**
+  (grep its own name as a callee inside `methods_call_dispatch.rs`) — a shadow-check-clean corpus
+  sweep (as the instance-ops family's own tag-and-gather step ran) does NOT catch this, since the
+  shadow check only compares resolved values, never actually invokes the swapped call path. All
+  three instance-ops sites remain on `run_instance_method_at` pending a fix that goes through the
+  VM-level `resolve_method_cached`/`dispatch_compiled_method` pair directly instead (the same
+  direction this box's own "general-call-dispatch fallback" family note already flagged as required
+  for `call_method_with_values`'s OWN native-lever-A site, for the identical infinite-regress
+  reason). `methods_instance_ops.rs` is reverted to its pre-attempt state, byte-identical to before
+  this slice; no functional change landed from this attempt.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
