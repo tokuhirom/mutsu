@@ -388,6 +388,17 @@ impl Interpreter {
         if err.message.starts_with("Constraint type check failed") {
             return err;
         }
+        // Likewise `is rw`/`is raw` binding a non-writable argument
+        // (`X::Parameter::RW`) is a genuine runtime check, not a compile-time
+        // shape mismatch -- and unlike the exception-carrying errors handled
+        // below, this call site only spells its class via the "X::Type: text"
+        // message convention (`RuntimeError::new`, no `.exception` attached),
+        // so wrapping it in "Calling f(Int) will never work..." would destroy
+        // the only place its class is recorded, losing it to the generic
+        // X::AdHoc fallback (`roast/S06-traits/misc.t`).
+        if err.message.starts_with("X::Parameter::RW:") {
+            return err;
+        }
         // Capture the hint before `err.exception` is (possibly) moved out below,
         // so the later `set_hint` does not clash with that partial move.
         let hint = err.take_hint();
