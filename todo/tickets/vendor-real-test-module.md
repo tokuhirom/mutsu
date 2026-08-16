@@ -1622,3 +1622,59 @@ confirmed present on a clean `main` checkout too via `git stash`, not
 investigated further this round). `roast/S32-exceptions/misc2.t` also
 improved (6 → 5 remaining failures). Full `t/` suite (3185 files) and `cargo
 clippy -- -D warnings` both clean.
+
+## `trait_mod:<is>` no-candidate fallback missing for attribute/class/role traits (2026-08-16)
+
+The same round found two more `Got: X::Multi::NoMatch` files —
+`roast/S12-attributes/instance.t` and `roast/S12-class/inheritance.t` — and
+both trace to the exact bug already fixed once for *variable* traits
+(`news/2026-08/user-trait-mod-does-not-consume-every-trait.md`,
+`todo/tickets/user-trait-mod-multi-shadows-builtin-traits.md`, closed as
+#5689): a user-declared `trait_mod:<is>` multi (Test.rakumod itself exports
+`multi sub trait_mod:<is>(Routine:D $r, :$test-assertion!)`) shares its
+dispatch with the built-ins, so a trait shape it doesn't match must fall
+through to the built-in unknown-trait diagnosis — but that fallback had only
+ever been wired into the *variable*-trait code path
+(`vm_var_trait_ops.rs::exec_apply_var_trait_op`), not the two siblings:
+
+- **Attribute traits** (`has $.a is bar`) — `apply_attribute_traits`
+  (`src/runtime/methods_classhow_attribute.rs`) unconditionally propagated
+  `call_result?` from the `trait_mod:<is>` dispatch, so a non-matching user
+  candidate's `X::Multi::NoMatch` reached the caller instead of the
+  `X::Comp::Trait::Unknown` built below it in the same function.
+- **Class/role inheritance traits** (`class X is nosuchtrait { }`,
+  `role R is nosuchtrait { }`) — `validate_class_parents`
+  (`src/runtime/registration_class_validate.rs`) defers ANY lowercase parent
+  name to custom-trait dispatch as soon as `has_proto("trait_mod:<is>") ||
+  has_multi_candidates(...)` is true, regardless of whether that candidate's
+  *signature* could ever match a `(Package, Pair)` call — and the two
+  deferred-dispatch sites that actually run it (`exec_register_class_op`/
+  `exec_register_role_op`, `src/vm/vm_typedecl_ops.rs`) likewise propagated
+  the dispatch failure verbatim instead of falling back to
+  `X::Inheritance::UnknownParent`.
+
+Fixed both the same way as the variable-trait precedent: match on the
+dispatch `Result`, and only when `Interpreter::is_trait_mod_no_candidate`
+(the existing shared predicate) says "no candidate matched at all" does
+execution fall through to the unknown-trait/unknown-parent error; a real
+error raised from *inside* a candidate that DID match still propagates
+unchanged. Extracted the `X::Inheritance::UnknownParent`-building code (used
+at three call sites now — the immediate check, and the class/role deferred
+paths) into a shared `Interpreter::unknown_parent_error` helper rather than
+duplicating the suggestion/attrs logic three times.
+
+Pin: extended `t/user-trait-mod-does-not-consume-every-trait.t` (6 → 10
+assertions) with the attribute-trait case, both the class and role
+inheritance cases, and a negative control (an error from inside a matching
+class-level handler still propagates) — all verified against `raku` too.
+`roast/S12-attributes/instance.t` and `roast/S12-class/inheritance.t` both
+pass fully under both `Test` providers. Full `t/` suite (3187 files),
+`cargo clippy -- -D warnings`, and the full roast whitelist under the native
+provider (only the pre-existing unrelated `S32-io/spurt.t` artifact) all
+clean.
+
+**Lesson for the next `Got: X::Multi::NoMatch` file:** `trait_mod:<is>` has
+(at least) four independent dispatch sites sharing this exact bug shape —
+variable, attribute, class, and role. All four are now fixed, but any FUTURE
+new `is`-trait dispatch site should wire in `is_trait_mod_no_candidate` from
+day one rather than adding a fifth latent instance.
