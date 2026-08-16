@@ -1,5 +1,8 @@
 use super::list_infix::{attach_trailing_adverbs, wrap_left_exclusive_sequence};
-use super::ternary::{assign_operator_is_tight, is_assignment_expr};
+use super::ternary::{
+    assign_operator_is_tight, is_assignment_expr, spelled_assign_operator,
+    ternary_missing_bang_bang_error,
+};
 use super::*;
 
 /// The "item" level: Z/X's operand precedence.
@@ -50,12 +53,18 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         && !crate::parser::stmt::simple::is_user_declared_value_term(name)
         && !crate::parser::stmt::simple::is_user_declared_enum_value(name)
     {
+        // Only diagnose the typed SecondPartGobbled when the bareword ends
+        // cleanly (see the matching comment on the top-level `ternary_mode`
+        // guard) -- a `\` glued directly onto the bareword is the generic
+        // "Bogus code" Confused instead.
+        if after_then.is_empty() || after_then.starts_with(char::is_whitespace) {
+            return Err(conditional_second_part_gobbled_error());
+        }
         return Err(PError::expected("expected '!!' in ternary expression"));
     }
     let (after_then, _) = ws(after_then)?;
-    let (after_bang, _) = parse_tag(after_then, "!!").map_err(|err| {
-        enrich_expected_error(err, "expected '!!' in ternary expression", after_then.len())
-    })?;
+    let (after_bang, _) = parse_tag(after_then, "!!")
+        .map_err(|err| ternary_missing_bang_bang_error(after_then, err, after_then.len()))?;
     let (after_bang, _) = ws(after_bang)?;
     let (rest, else_expr) = item_expr(after_bang, mode).map_err(|err| {
         enrich_expected_error(err, "expected else-expression after '!!'", after_bang.len())
@@ -63,10 +72,15 @@ pub(crate) fn item_expr(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     // Only a LOOSE assignment is an error here; the mutating method call `.=` is
     // at method-postfix precedence and is legal inside `?? !!` (see
     // `assign_operator_is_tight`).
-    if (is_assignment_expr(&then_expr) && !assign_operator_is_tight(after_q))
-        || (is_assignment_expr(&else_expr) && !assign_operator_is_tight(after_bang))
-    {
-        return Err(conditional_precedence_too_loose_error());
+    if is_assignment_expr(&then_expr) && !assign_operator_is_tight(after_q) {
+        return Err(conditional_precedence_too_loose_error(
+            &spelled_assign_operator(after_q),
+        ));
+    }
+    if is_assignment_expr(&else_expr) && !assign_operator_is_tight(after_bang) {
+        return Err(conditional_precedence_too_loose_error(
+            &spelled_assign_operator(after_bang),
+        ));
     }
     Ok((
         rest,

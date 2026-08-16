@@ -66,7 +66,8 @@ pub(crate) use comparison::comparison_expr_mode;
 pub(crate) use custom_infix::{ListInfixOperand, parse_flipflop_infix};
 pub(crate) use errors::{
     cannot_meta_assign_diffy_error, check_range_precedence_worry,
-    conditional_precedence_too_loose_error, non_associative_error, non_associative_pair_error,
+    conditional_precedence_too_loose_error, conditional_second_part_gobbled_error,
+    conditional_second_part_invalid_error, non_associative_error, non_associative_pair_error,
     non_list_associative_error, syntax_exception,
 };
 pub(crate) use list_infix::{sequence_expr, sequence_only_expr};

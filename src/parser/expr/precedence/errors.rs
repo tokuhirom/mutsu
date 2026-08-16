@@ -100,9 +100,55 @@ pub(crate) fn cannot_meta_assign_diffy_error(op: &str, dba: &str, remaining_len:
     err
 }
 
-pub(crate) fn conditional_precedence_too_loose_error() -> PError {
+/// `X::Syntax::ConditionalOperator::PrecedenceTooLoose`: something looser than
+/// the conditional `?? !!` sits inside a branch and needs parentheses -- an
+/// assignment operator (`$a ?? $a = 1 !! $a = 2`), the comma list separator
+/// (`1 ?? 2,3 !! 4,5`), or a colonpair adverb (`1 ?? 3 :foo !! 2`). `op` is
+/// rakudo's own spelling of the offending operator and appears verbatim in
+/// both the message and the `.operator` attribute (verified against
+/// `raku -e '...'` for each shape: the message is always exactly "Precedence
+/// of {op} is too loose to use inside ?? !!; please parenthesize").
+pub(crate) fn conditional_precedence_too_loose_error(op: &str) -> PError {
+    let message =
+        format!("Precedence of {op} is too loose to use inside ?? !!; please parenthesize");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("operator".to_string(), Value::str(op.to_string()));
+    let exception = Value::make_instance(
+        Symbol::intern("X::Syntax::ConditionalOperator::PrecedenceTooLoose"),
+        attrs,
+    );
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// `X::Syntax::ConditionalOperator::SecondPartInvalid`: the else-branch was
+/// introduced with something other than `!!` -- rakudo recognizes `::` and a
+/// bare `:` as typos for it (`1 ?? 3 :: 2`, `1 ?? 3 : 2`) and names the
+/// offending spelling directly, both in the message and the `.second-part`
+/// attribute.
+pub(crate) fn conditional_second_part_invalid_error(second_part: &str) -> PError {
+    let message = format!("Please use !! rather than {second_part}");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert(
+        "second-part".to_string(),
+        Value::str(second_part.to_string()),
+    );
+    let exception = Value::make_instance(
+        Symbol::intern("X::Syntax::ConditionalOperator::SecondPartInvalid"),
+        attrs,
+    );
+    PError::fatal_with_exception(message, Box::new(exception))
+}
+
+/// `X::Syntax::ConditionalOperator::SecondPartGobbled`: the then-branch was a
+/// bareword call parsed as a listop, which swallowed the `!!` as part of its
+/// own argument list (`1 ?? rt123115 !! 3`, where `!! 3` parses as the
+/// double-negation prefix operator applied to `3`, becoming `rt123115`'s sole
+/// argument).
+pub(crate) fn conditional_second_part_gobbled_error() -> PError {
     syntax_exception(
-        "X::Syntax::ConditionalOperator::PrecedenceTooLoose",
-        "Assignment operators inside ?? !! are too loose; parenthesize them",
+        "X::Syntax::ConditionalOperator::SecondPartGobbled",
+        "Your !! was gobbled by the expression in the middle; please parenthesize",
     )
 }

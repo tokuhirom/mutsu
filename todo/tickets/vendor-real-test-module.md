@@ -1468,3 +1468,99 @@ test in the current suite depends on this either way; fixing it would mean
 touching `eval_eval_string`'s classes/roles snapshot-merge dance
 (`system_eval_string.rs`), which is broader and riskier than this round's
 fix. Left for a future round if a roast file ever needs it.
+
+## Re-measured 2026-08-16 (round N+1): ternary `?? !!` diagnoses, and one more `X::Syntax::Adverb` gap
+
+Re-ran the full sweep on a fresh `MUTSU_REAL_TEST=1` release build to find the
+next mechanism cluster after the `misc.t`/`X::Anon::Multi` work above (no
+dominant single-file blocker was left in the ledger, so this was a fresh
+`grep -l "Got: X::Syntax::Confused"` sweep over the `-j6` residue, alone-rerun
+to separate genuine failures from `-j6` contention per this file's own
+established method). One 7-assertion cluster in a single file stood out:
+`roast/S03-operators/ternary.t` failed 7 `throws-like …,
+X::Syntax::ConditionalOperator::*` assertions, all landing on the generic
+`X::Syntax::Confused` instead.
+
+**Root cause: mutsu's ternary (`?? !!`) parser had no typed diagnoses at all
+for the common ways rakudo's grammar reports a malformed then/else branch** —
+not a registration gap this time (the file closing this round's earlier
+entries were all "typed but not registered"; this one genuinely had zero
+mechanism). Implemented four distinct diagnoses, each verified message-for-
+message against `raku -e '...'`:
+
+| shape | class | rakudo message |
+| --- | --- | --- |
+| `1 ?? 2,3 !! 4,5` (comma inside a branch) | `X::Syntax::ConditionalOperator::PrecedenceTooLoose` | "Precedence of `{op}` is too loose to use inside ?? !!; please parenthesize" |
+| `1 ?? 3 :foo !! 2` (colonpair adverb inside a branch) | same class | same message, `op` = the spelled adverb (`:foo`, `:v`, ...) |
+| `$a ?? $a = 1 !! $a = 2` (assignment inside a branch — already partly handled) | same class | same message, `op` = the spelled assignment operator (`=`, `+=`, ...) |
+| `1 ?? 3 :: 2` / `1 ?? 3 : 2` | `X::Syntax::ConditionalOperator::SecondPartInvalid` | "Please use !! rather than `{second-part}`" |
+| `1 ?? rt123115 !! 3` (a bareword listop call swallows the `!!`) | `X::Syntax::ConditionalOperator::SecondPartGobbled` | "Your !! was gobbled by the expression in the middle; please parenthesize" |
+
+The existing `PrecedenceTooLoose` builder (`conditional_precedence_too_loose_error`,
+`src/parser/expr/precedence/errors.rs`) already fired for the assignment case
+but with a message that didn't match rakudo's wording at all ("Assignment
+operators inside ?? !! are too loose; parenthesize them") and no `.operator`
+attribute — discovered by checking real `raku`'s actual output for that case
+too, not just the untested ones (`raku -e 'my $a=5; $a ?? $a = 42 !! $a =
+43'` → "Precedence of = is too loose..."). Unified all three PrecedenceTooLoose
+producers (comma, adverb, assignment) onto one parameterized builder taking
+the exact spelled operator text, fixing a latent message-wording bug in the
+same pass as adding the two missing classes.
+
+**One trap, caught by testing against `raku` and not just by feel:** the
+initial fix made the bareword-gobble diagnosis fire unconditionally whenever
+a non-type bareword sat in then-position — reasoning that `1 ??
+UNDECLARED_NAME !! 2` must be a gobble the same way `1 ?? rt123115 !! 3` (a
+*declared* sub) is. Wrong on two counts, both caught only by running the roast
+file's own existing assertion (`1 ?? b\n !! 2` → `X::Syntax::Confused`,
+`roast/S03-operators/ternary.t` line 111) against real `raku` before trusting
+the fix:
+
+1. Declared-vs-undeclared doesn't matter — `raku -e '1 ?? b !! 2'` (a clean,
+   *undeclared* bareword) also gobbles and reports `SecondPartGobbled`; rakudo
+   always attempts the listop-call parse regardless of whether the name
+   resolves.
+2. The roast assertion's `1 ?? b\n !! 2` is not actually about an undeclared
+   name at all — it's a **literal backslash-n** (two characters; the source
+   is single-quoted inside `EVAL`, so `\n` is not a newline) glued directly
+   onto the bareword with no separating whitespace, which is genuinely bogus
+   trailing code, not a clean gobble.
+
+The real, general rule (implemented in both `ternary_mode` and its
+list-infix-layer twin `item_expr`, which duplicate this whole guard — see the
+`item_expr` doc comment's own note that it "mirrors" `ternary_mode`): a
+bareword then-branch is `SecondPartGobbled` only when the residual
+immediately after it is whitespace or end-of-input; anything else (adjacent
+non-whitespace garbage) falls through to the pre-existing generic Confused
+path unchanged.
+
+**A related, separate gap surfaced in the same file and was fixed alongside
+it:** `1 ?? (3 :foo) !! 2` (a parenthesized adverbed *literal*) also failed —
+not a ternary problem at all, but `(EXPR :adverb)` general paren-expression
+parsing having no diagnosis for a colonpair directly following a bare literal
+term. rakudo: `raku -e '(3 :foo)'` → `X::Syntax::Adverb`, "You can't adverb
+3" (confirmed this is specifically about *literal* terms — `(1+2 :foo)`
+legitimately attaches the colonpair as a named argument to the `infix:<+>`
+call in rakudo, a separate, pre-existing, still-open gap left untouched since
+no roast assertion needs it). Fixed narrowly for `Expr::Literal`/
+`Expr::LiteralSrc` in `src/parser/primary/container/paren.rs`, matching only
+the verified-correct shape rather than guessing at `Expr::Var`'s behaviour
+too (which `raku -e 'my $x=5; ($x :foo)'` suggests behaves the same way, but
+was not verified byte-for-byte and is not needed by any current test —
+left as a documented possible follow-up, not assumed).
+
+`roast/S03-operators/ternary.t` is now **28/28 clean** under
+`MUTSU_REAL_TEST=1` (previously 21/28). Full `t/` suite (3186 files, 29686
+tests) and `cargo clippy -- -D warnings` both clean. Pin:
+`t/ternary-second-part-diagnoses.t` (18 assertions, all verified
+byte-identical against `raku` including the two "stays Confused" negative
+cases).
+
+**Note found in passing, not investigated:** `roast/S32-io/spurt.t` test 36
+fails when run standalone with `prove` directly (both on this branch and on a
+clean `main` checkout via `git stash` — confirmed NOT a regression from this
+round's work), but the whitelisted `make roast` run passes it. `make roast`
+removes a stale `roast/temp-file-RT-126006-test` before starting (see
+CLAUDE.md); this looks like the same class of leftover-file-from-a-prior-run
+issue, not caught this round since `prove` was run directly for speed. If it
+recurs as a genuine `make roast` failure, look there first.

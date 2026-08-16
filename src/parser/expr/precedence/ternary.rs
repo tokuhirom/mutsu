@@ -1,4 +1,5 @@
 use super::*;
+use crate::parser::primary::misc::colonpair_expr;
 
 pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
     matches!(
@@ -25,12 +26,24 @@ pub(crate) fn is_assignment_expr(expr: &Expr) -> bool {
 /// else is reported as loose, preserving the previous behaviour.
 pub(crate) fn assign_operator_is_tight(src: &str) -> bool {
     let src = src.trim_start();
+    if !src.starts_with(['$', '@', '%', '&']) {
+        return false;
+    }
+    skip_lvalue_prefix(src).starts_with(".=")
+}
+
+/// Skip the sigil + name at the start of an assignment branch's source text
+/// (`$x`, `@a`, `%h`, `&c`), returning what follows -- shared by
+/// [`assign_operator_is_tight`] (does the operator look like `.=`?) and
+/// [`spelled_assign_operator`] (what does the operator actually spell?).
+fn skip_lvalue_prefix(src: &str) -> &str {
+    let src = src.trim_start();
     let mut chars = src.char_indices();
     let Some((_, sigil)) = chars.next() else {
-        return false;
+        return src;
     };
     if !matches!(sigil, '$' | '@' | '%' | '&') {
-        return false;
+        return src;
     }
     let mut end = sigil.len_utf8();
     for (idx, ch) in chars {
@@ -40,7 +53,53 @@ pub(crate) fn assign_operator_is_tight(src: &str) -> bool {
             break;
         }
     }
-    src[end..].trim_start().starts_with(".=")
+    src[end..].trim_start()
+}
+
+/// The exact assignment operator spelled in `src` (a ternary branch's source
+/// text, starting at its lvalue), for
+/// `X::Syntax::ConditionalOperator::PrecedenceTooLoose`'s message/`.operator`
+/// attribute -- `raku -e 'my $a=5; $a ?? $a += 1 !! $a'` reports "Precedence
+/// of += is too loose...", not a generic "=". Falls back to "=" when no
+/// compound-assignment spelling is found there (a plain `=`, or an lvalue
+/// this heuristic doesn't recognize -- should not happen for a branch already
+/// classified as `Expr::AssignExpr`).
+pub(crate) fn spelled_assign_operator(src: &str) -> String {
+    let after_lvalue = skip_lvalue_prefix(src);
+    if let Some((remaining, _op)) = parse_compound_assign_op(after_lvalue) {
+        let consumed = after_lvalue.len() - remaining.len();
+        return after_lvalue[..consumed].to_string();
+    }
+    "=".to_string()
+}
+
+/// Diagnose why `!!` wasn't found where expected in a ternary branch --
+/// rakudo has distinct messages for the common typos/precedence traps: `::`
+/// or a bare `:` meant to be `!!`, a colonpair adverb parsed at a precedence
+/// looser than the conditional (`1 ?? 3 :foo !! 2`), or the comma list
+/// separator (`1 ?? 2,3 !! 4,5`). `residual` is the unconsumed input right
+/// where `!!` was expected (already whitespace-skipped); `err`/`remaining_len`
+/// are the underlying `parse_tag` failure, used for the generic fallback.
+/// Verified against `raku -e '...'` for each named shape.
+pub(crate) fn ternary_missing_bang_bang_error(
+    residual: &str,
+    err: PError,
+    remaining_len: usize,
+) -> PError {
+    if residual.starts_with("::") {
+        return conditional_second_part_invalid_error("::");
+    }
+    if let Ok((rest, _)) = colonpair_expr(residual) {
+        let spelled = &residual[..residual.len() - rest.len()];
+        return conditional_precedence_too_loose_error(spelled);
+    }
+    if residual.starts_with(':') {
+        return conditional_second_part_invalid_error(":");
+    }
+    if residual.starts_with(',') {
+        return conditional_precedence_too_loose_error(",");
+    }
+    enrich_expected_error(err, "expected '!!' in ternary expression", remaining_len)
 }
 
 pub(crate) fn comparison_nonassoc_key(op: &TokenKind) -> Option<&'static str> {
@@ -288,13 +347,24 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             // -- so types are excluded from this guard above and accepted.
             // Likewise a sigilless term (`my \foo = …`; `1 ?? foo !! bar`, from
             // Astro::Utils) is a complete nullary term, not a listop head.
+            //
+            // Only diagnose the typed SecondPartGobbled when the bareword ends
+            // cleanly (residual is whitespace or end-of-input): `1 ?? b !! 2`
+            // gobbles regardless of whether `b` is declared. But `1 ?? b\n !!
+            // 2` (a LITERAL backslash-n, not a newline -- the roast source
+            // deliberately writes it inside a single-quoted EVAL string) has a
+            // `\` glued directly onto `b` with no separating whitespace, which
+            // rakudo reports as the generic "Bogus code found before the !!"
+            // (`X::Syntax::Confused`) instead -- the soft fallback below.
+            if input.is_empty() || input.starts_with(char::is_whitespace) {
+                return Err(conditional_second_part_gobbled_error());
+            }
             return Err(PError::expected("expected '!!' in ternary expression"));
         }
         let (input, _) = ws(input)?;
         let (input, _) = if mode == ExprMode::Full {
-            parse_tag(input, "!!").map_err(|err| {
-                enrich_expected_error(err, "expected '!!' in ternary expression", input.len())
-            })?
+            parse_tag(input, "!!")
+                .map_err(|err| ternary_missing_bang_bang_error(input, err, input.len()))?
         } else {
             parse_tag(input, "!!")?
         };
@@ -319,10 +389,15 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
         // call at method-postfix precedence (operators.rakudoc "Method call" /
         // "Dotty infix"), far tighter than `?? !!`, so `1 ?? $v .= uc !! 9` is
         // legal and must not be rejected.
-        if (is_assignment_expr(&then_expr) && !assign_operator_is_tight(then_src))
-            || (is_assignment_expr(&else_expr) && !assign_operator_is_tight(else_src))
-        {
-            return Err(conditional_precedence_too_loose_error());
+        if is_assignment_expr(&then_expr) && !assign_operator_is_tight(then_src) {
+            return Err(conditional_precedence_too_loose_error(
+                &spelled_assign_operator(then_src),
+            ));
+        }
+        if is_assignment_expr(&else_expr) && !assign_operator_is_tight(else_src) {
+            return Err(conditional_precedence_too_loose_error(
+                &spelled_assign_operator(else_src),
+            ));
         }
         let ternary_expr = if let Expr::Binary { left, op, right } = cond {
             // The loose word-logicals (`and`/`andthen`/`notandthen`/`or`/`orelse`)

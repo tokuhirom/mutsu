@@ -2,7 +2,22 @@ use crate::ast::Expr;
 use crate::parser::expr::{expression, expression_no_sequence};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
+use crate::value::Value;
+use std::collections::HashMap;
+
+/// `X::Syntax::Adverb`: a colonpair immediately follows a term that cannot
+/// take one. `spelled` is the term's own source text and appears in both the
+/// message and the `.what` attribute.
+fn adverb_not_allowed_error(spelled: &str) -> PError {
+    let message = format!("You can't adverb {spelled}");
+    let mut attrs = HashMap::new();
+    attrs.insert("message".to_string(), Value::str(message.clone()));
+    attrs.insert("what".to_string(), Value::str(spelled.to_string()));
+    let exception = Value::make_instance(Symbol::intern("X::Syntax::Adverb"), attrs);
+    PError::fatal_with_exception(message, Box::new(exception))
+}
 
 use super::meta_ops::{
     finalize_paren_list, maybe_curry_xz_metaop, normalize_chained_zip_meta,
@@ -178,6 +193,18 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
         expression_no_sequence(input)?
     };
     let (input, _) = ws(input)?;
+    // A colonpair directly following a bare literal is illegal -- rakudo lets an
+    // adverb attach to a call (`foo :bar`, absorbed as a named arg) or even a
+    // binary-operator call (`1+2 :foo` -> `infix:<+>(1, 2, :foo)`), but not to a
+    // plain literal term (`(3 :foo)`, `("str" :foo)`). Diagnosed with the term's
+    // own source text, matching rakudo's exact wording (verified against
+    // `raku -e '(3 :foo)'`: "You can't adverb 3").
+    if matches!(&first, Expr::Literal(_) | Expr::LiteralSrc(_, _))
+        && looks_like_colonpair_start(input)
+    {
+        let spelled = content_start[..content_start.len() - input.len()].trim_end();
+        return Err(adverb_not_allowed_error(spelled));
+    }
     // If sequence syntax appears, try full expression parsing first.
     // This avoids mis-parsing cases like ("a"...* ~~ / z /) where
     // sequence is followed by another infix operator.
