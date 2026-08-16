@@ -1719,3 +1719,75 @@ the message convention (no `.exception`) is invisible to the two branches
 that DO preserve a class (`is_arity_error || is_type_only_mismatch`, and the
 `else if let Some(ex) = err.exception` branch), so it silently loses its
 typing the moment this wrap fires.
+
+## One of the two remaining `X::Comp::Group` gaps closed: bare `5.` (2026-08-16)
+
+Picked up the "3 items, none picked up yet" list from the `X::Inheritance::SelfInherit`
+round above — down to 2 by then (`X::Parameter::BadType` leak and
+`X::ControlFlow::Return` were both closed in later rounds; see above). Took
+the `5.` half of the remaining pair: `throws-like '5.', X::Comp::Group,
+sorrows => sub (@s) { @s[0] ~~ X::Syntax::Number::IllegalDecimal }`.
+
+**Root cause:** the decimal-literal parser already backtracked cleanly when
+`5.` had no fraction digit, but nothing downstream diagnosed the resulting
+dead end — the postfix-`.` parser only special-cased *whitespace* after the
+dot (`5. `) as the "Decimal point must be followed by digit" error; `5.`
+immediately followed by end-of-input, `;`, `)`, `,`, `}`, `]`, `\n`, `=`, or a
+lone `:` fell through to a method-call attempt with nothing to read, landing
+on the generic `X::Syntax::Confused`. Also, even the existing whitespace case
+raised a lone typed exception, not the `X::Comp::Group` (sorrow +
+panic) rakudo actually throws — `PError::comp_group` already existed for
+exactly this shape (see `check_bare_io_func`'s bare-`say` diagnosis and
+`check_multi_underscore`'s underscore-run diagnosis, both in this file's
+neighbourhood) but this call site wasn't using it.
+
+Fixed in `src/parser/expr/postfix/loop_.rs`: a new
+`illegal_decimal_point_error()` helper builds the `X::Comp::Group` (sorrow =
+`X::Syntax::Number::IllegalDecimal`, panic class `X::Comp::AdHoc` labelled
+"Confused" since rakudo's own second complaint varies by what follows the dot
+— `Malformed postfix call`, `Unsupported use of . to concatenate strings`,
+`Missing required term after infix`, depending on the exact next character —
+and no roast assertion pins the panic's own class or the message's second
+line, only `.sorrows[0]`'s class), reused by both the pre-existing whitespace
+case and a new "nothing at all can follow" case.
+
+**A broadened first attempt regressed `roast/S02-literals/numeric.t`,
+caught before pushing:** treating any `:` after the dot as a dead end (unless
+immediately followed by an identifier char) broke the legitimate
+reified-operator postfixes `42.:<->`, `42.:«~»`, `42.:[...]`,
+`42.:<<'~'>>` — `<`, `«`, `[` are not identifier characters either. Tightened
+to only treat `:` as a dead end when the character *after* the colon is
+ALSO one of the dead-end terminators (or end of input) — i.e. `5.:` alone
+is illegal, `5.:<anything-that-could-start-a-postfix>` is not. This is the
+same lesson as the `when`-gobbling attempt below: **verify a broadened parser
+condition against every roast file that exercises the same punctuation
+before trusting it, not just the one file that motivated the change.**
+
+`roast/S32-exceptions/misc.t`'s `5.` subtest now passes under both `Test`
+providers. Pin: `t/decimal-point-illegal-comp-group.t` (10 assertions,
+verified byte-identical against `raku` for exception type/sorrow
+count/sorrow class — `.message`'s *second* line was deliberately left
+unpinned since it varies by construct, per above). Full `t/` suite (3189
+files) and the six touched/neighbouring whitelisted roast files
+(`S02-literals/numeric.t`, `S02-lexical-conventions/minimal-whitespace.t`,
+`S32-exceptions/misc.t`, `misc2.t`, `S02-literals/radix.t`,
+`S02-types/WHICH.t`) all clean; `cargo clippy -- -D warnings` clean.
+
+**The other half — `when SomeUndeclaredType { }` — was tried and reverted,
+not fixed.** Broadening `when`'s existing `X::`/`CX::`-only gobbling
+detection (`src/parser/stmt/control/given_when.rs`) to any undeclared
+bareword looked promising (raku genuinely gobbles the block for *any*
+undeclared/forward-referenced/even-declared-sub bareword there, not just
+`X::`/`CX::`-namespaced ones — verified directly against `raku`), but it
+produces real false positives mutsu cannot rule out at parse time:
+`when Kept { }` (`roast/packages/Test-Helpers/lib/Test/Util.rakumod` —
+`Kept` is a builtin `PromiseStatus`-shaped constant mutsu represents as a
+bare runtime string, not a registered enum value the parser can see) and
+`when condition { }` (`roast/S04-statements/given.t` — `condition` is a
+sigilless lexical, `\condition`, and the parser has no "is this name a
+declared sigilless variable" check at all). Both broke multiple whitelisted
+roast files transitively (a `Test::Util` compile failure takes down every
+file that loads it) — caught locally before pushing, not by CI. A safe
+general fix needs a registry of builtin enum-like constants and
+sigilless-lexical name tracking in the parser first; left as a `todo/tickets/`
+candidate for whoever picks this back up, not re-attempted this session.
