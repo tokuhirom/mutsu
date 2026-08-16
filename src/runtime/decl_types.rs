@@ -147,6 +147,15 @@ pub(crate) struct MethodDef {
     /// any method defined in a `use`d module (see
     /// `news/2026-08/method-frame-def-file.md`).
     pub(crate) source_file: Option<String>,
+    /// Role type-parameter bindings for THIS composed candidate (`T => Int`),
+    /// stamped by `compose_role_into_class` when a parameterized role is
+    /// composed. Injected into the body env at dispatch in preference to the
+    /// per-class `Registry::class_role_param_bindings` map, which is
+    /// last-write-wins when the same role is composed twice with different
+    /// type args (`does R[Int] does R[Str]` — both candidates' bodies must
+    /// see their OWN `T`, not whichever composition ran last). `None` for
+    /// methods not composed from a parameterized role.
+    pub(crate) role_param_bindings: Option<std::sync::Arc<Vec<(String, Value)>>>,
 }
 
 /// Invocant context for an active `proto method` `{*}` dispatch.

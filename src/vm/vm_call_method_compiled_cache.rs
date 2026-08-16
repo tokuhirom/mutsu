@@ -460,9 +460,10 @@ impl Interpreter {
                     .as_ref()
                     .is_some_and(|tc| tc.contains('('))
         });
-        let has_role_bindings = self
-            .class_role_param_bindings(owner_class.as_str())
-            .is_some()
+        let has_role_bindings = method_def.role_param_bindings.is_some()
+            || self
+                .class_role_param_bindings(owner_class.as_str())
+                .is_some()
             || self.class_role_param_bindings(receiver_class).is_some();
         if has_invocant_constraint || has_complex_params || has_role_bindings {
             return;

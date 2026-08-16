@@ -848,6 +848,7 @@ impl Interpreter {
                         Some(sub_data.env.clone())
                     },
                     source_file: sub_data.source_file.clone(),
+                    role_param_bindings: None,
                 };
                 // If the class doesn't exist yet (e.g. built-in types like Rat, Int, Str),
                 // create a stub ClassDef so methods can be added dynamically.
@@ -933,6 +934,7 @@ impl Interpreter {
                         Some(sub_data.env.clone())
                     },
                     source_file: sub_data.source_file.clone(),
+                    role_param_bindings: None,
                 };
                 let inserted =
                     if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {

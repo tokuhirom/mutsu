@@ -222,6 +222,26 @@ impl Interpreter {
                 .class_role_param_bindings
                 .insert(p.clone(), v.clone());
         }
+        // Per-candidate role param bindings (`T => Int`), stamped onto each
+        // composed MethodDef below in addition to the flat per-class map
+        // above. The flat map is last-write-wins when the same role is
+        // composed twice with different type args (`does R[Int] does
+        // R[Str]`), so a candidate's own body must carry its OWN binding to
+        // read the right `T` at dispatch time instead of whichever
+        // composition ran last (see
+        // news/2026-08/role-double-parametric-multi-dispatch.md).
+        let candidate_role_bindings: Option<std::sync::Arc<Vec<(String, Value)>>> =
+            if role_param_names.is_empty() {
+                None
+            } else {
+                Some(std::sync::Arc::new(
+                    role_param_names
+                        .iter()
+                        .cloned()
+                        .zip(role_arg_values.iter().cloned())
+                        .collect(),
+                ))
+            };
         for attr in &role.attributes {
             if !cx.class_def.attributes.iter().any(|a| a.name == attr.name) {
                 cx.class_def.attributes.push(attr.clone());
@@ -334,6 +354,7 @@ impl Interpreter {
                             method.original_role = method.role_origin.clone();
                         }
                         method.role_origin = Some(base_role_name.to_string());
+                        method.role_param_bindings = candidate_role_bindings.clone();
                         method
                     })
                     .collect()
@@ -346,6 +367,7 @@ impl Interpreter {
                             method.original_role = method.role_origin.clone();
                         }
                         method.role_origin = Some(base_role_name.to_string());
+                        method.role_param_bindings = candidate_role_bindings.clone();
                         method
                     })
                     .collect()
