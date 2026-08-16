@@ -26,7 +26,6 @@ pub(crate) struct ClassDef {
     /// Attributes declared with `has $x` (no twigil) — the bare name is an alias
     /// for `$!x` inside class methods.
     pub(crate) alias_attributes: HashSet<String>,
-    pub(crate) methods: HashMap<String, Vec<MethodDef>>, // name -> overloads
     pub(crate) native_methods: HashSet<String>,
     pub(crate) mro: std::sync::Arc<[crate::symbol::Symbol]>,
     /// Attribute var names (e.g. "!foo") that have `handles *` wildcard delegation.

@@ -413,22 +413,12 @@ impl Interpreter {
                                 })
                                 .collect()
                         };
-                        // ADR-0019 F4c-3: dual-write, see
-                        // class_body_method_decl's own comment in
-                        // registration_class_body_method.rs.
-                        {
-                            let owner = Symbol::intern(cx.name);
-                            let method_sym = Symbol::intern(mname);
-                            let mut registry = self.registry_mut();
-                            for def in &composed {
-                                registry.push_user_method(owner, method_sym, def.clone());
-                            }
+                        let owner = Symbol::intern(cx.name);
+                        let method_sym = Symbol::intern(mname);
+                        let mut registry = self.registry_mut();
+                        for def in composed {
+                            registry.push_user_method(owner, method_sym, def);
                         }
-                        cx.class_def
-                            .methods
-                            .entry(mname.clone())
-                            .or_default()
-                            .extend(composed);
                     }
                 } else if self.registry().classes.contains_key(parent_base)
                     && !cx.class_def.parents.iter().any(|p| p == &resolved_parent)
@@ -487,7 +477,6 @@ impl Interpreter {
                     attribute_types: HashMap::new(),
                     attribute_smileys: HashMap::new(),
                     attribute_built: HashMap::new(),
-                    methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro: [].into(),
                     wildcard_handles: Vec::new(),

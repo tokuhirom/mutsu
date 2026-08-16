@@ -146,38 +146,25 @@ impl Interpreter {
         // to it with an Attribute introspection object; otherwise raise
         // X::Comp::Trait::Unknown. Kept in a separate method so its
         // locals don't inflate this already-large function's frame.
-        if !decl.unknown_traits.is_empty() {
-            if let Err(err) = self.apply_attribute_traits(
+        // ADR-0019 F4c-9b: a user-defined `trait_mod:<is>` calling
+        // `.^add_method` mid-body (e.g. Attribute::Predicate's `is
+        // predicate`) writes straight to the canonical `method_entries`
+        // table now — there is no local `class_def.methods` copy left for
+        // it to be clobbered by, so (unlike pre-9b) nothing needs merging
+        // back afterward.
+        if !decl.unknown_traits.is_empty()
+            && let Err(err) = self.apply_attribute_traits(
                 &decl.unknown_traits,
                 &attr_name_str,
                 decl.sigil,
                 decl.is_public,
                 cx.name,
                 decl.type_constraint.as_deref(),
-            ) {
-                self.set_current_package(cx.saved_package.clone());
-                self.env = cx.saved_env.clone();
-                return Err(err);
-            }
-            // A user-defined `trait_mod:<is>` may have called
-            // `.^add_method` on the class currently being composed
-            // (e.g. Attribute::Predicate's `is predicate` adds a
-            // `has-foo` accessor). Those methods land directly in the
-            // registry entry, but the local `class_def` — re-inserted
-            // at the end of body processing — would clobber them.
-            // Merge any registry methods not already present locally,
-            // mirroring the class_def re-sync done after run_block_raw.
-            if let Some(reg_cd) = self.registry().classes.get(cx.name) {
-                let added: Vec<(String, Vec<MethodDef>)> = reg_cd
-                    .methods
-                    .iter()
-                    .filter(|(mname, _)| !cx.class_def.methods.contains_key(*mname))
-                    .map(|(mname, mdefs)| (mname.clone(), mdefs.clone()))
-                    .collect();
-                for (mname, mdefs) in added {
-                    cx.class_def.methods.insert(mname, mdefs);
-                }
-            }
+            )
+        {
+            self.set_current_package(cx.saved_package.clone());
+            self.env = cx.saved_env.clone();
+            return Err(err);
         }
 
         // Handle class-level attributes (our $.x / my $.x)

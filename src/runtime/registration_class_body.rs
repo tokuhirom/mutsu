@@ -205,7 +205,8 @@ impl Interpreter {
             self.registry_mut()
                 .classes
                 .insert(cx.name.to_string(), cx.class_def.clone());
-            self.registry_mut().sync_user_method_entries(cx.name);
+            self.registry_mut()
+                .sync_accessor_entries(Symbol::intern(cx.name));
         }
         self.run_class_body_leave_phasers(&cx, &class_leave_phasers)?;
         self.persist_class_body_statics(&cx, declared_static_names);
@@ -248,23 +249,19 @@ impl Interpreter {
             unreachable!("class_body_code_alias called on a non-CodeVar VarDecl");
         };
         let alias = var_name.trim_start_matches('&').to_string();
-        if let Some(overloads) = cx.class_def.methods.get(source_name).cloned() {
-            // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
-            // comment -- this function republishes `cx.class_def` wholesale
-            // to the registry a few lines below anyway, so this is a
-            // redundant-but-cheap early confirmation, not the sole write.
+        if let Some(overloads) = self.registry().user_method_overloads(cx.name, source_name) {
             self.registry_mut().set_user_methods(
                 Symbol::intern(cx.name),
                 Symbol::intern(&alias),
-                overloads.clone(),
+                overloads,
             );
-            cx.class_def.methods.insert(alias, overloads);
         }
         // Also execute the statement so the code variable is set
         self.registry_mut()
             .classes
             .insert(cx.name.to_string(), cx.class_def.clone());
-        self.registry_mut().sync_user_method_entries(cx.name);
+        self.registry_mut()
+            .sync_accessor_entries(Symbol::intern(cx.name));
         self.run_class_body_chunk_or_raw(chunk, std::slice::from_ref(stmt))?;
         for outer_name in cx.saved_env.keys() {
             let class_scoped_name = format!("{}::{}", cx.name, outer_name);
@@ -369,7 +366,8 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(cx.name.to_string(), cx.class_def.clone());
-        self.registry_mut().sync_user_method_entries(cx.name);
+        self.registry_mut()
+            .sync_accessor_entries(Symbol::intern(cx.name));
         // Mark this class as "being defined" so a `has`-attribute
         // declaration executed by a *compile-time* phaser
         // (`class Foo { BEGIN EVAL q[has $.x] }`) attaches to it

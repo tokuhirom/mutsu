@@ -364,21 +364,6 @@ impl Interpreter {
                     source_file: self.current_source_file(),
                     role_param_bindings: None,
                 };
-                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                    if *multi {
-                        class_def
-                            .methods
-                            .entry(resolved_method_name.clone())
-                            .or_default()
-                            .push(def.clone());
-                    } else {
-                        class_def
-                            .methods
-                            .insert(resolved_method_name.clone(), vec![def.clone()]);
-                    }
-                }
-                // ADR-0019 F4c-6: dual-write on a separate short-lived
-                // guard -- cannot share the `class_def` borrow above.
                 let owner = crate::symbol::Symbol::intern(&class_name);
                 let method_sym = crate::symbol::Symbol::intern(&resolved_method_name);
                 if *multi {
@@ -387,7 +372,6 @@ impl Interpreter {
                     self.registry_mut()
                         .set_user_methods(owner, method_sym, vec![def]);
                 }
-                self.registry_mut().sync_user_method_entries(&class_name);
             } else {
                 remaining.push(stmt);
             }

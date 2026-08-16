@@ -74,23 +74,21 @@ impl ClassRegSnapshot {
         } else {
             reg.class_role_param_bindings.remove(name);
         }
-        // ADR-0019 F4c-8(a): dual-write the method rows through the mutator
-        // API too. Redundant with the `sync_user_method_entries` call below
-        // today (which re-derives from the just-restored `prev_class.
-        // methods` and wins), but this is the mechanism F4c-9b needs once
-        // that field and that function are gone. `restore_user_method_rows`
-        // only ever touches `user_candidates`, so `MethodEntry::proto`
-        // survives untouched here exactly as the pre-existing behavior
-        // leaves it; `method_wrap_chains` is untouched by either path,
-        // also matching pre-existing behavior. Both are deliberate,
-        // pre-existing gaps -- see the design note's own instruction not to
-        // fold that behavior change into this box.
-        reg.restore_user_method_rows(
-            crate::symbol::Symbol::intern(name),
-            self.prev_method_rows.clone(),
-        );
-        drop(reg);
-        this.registry_mut().sync_user_method_entries(name);
+        // ADR-0019 F4c-9b: `restore_user_method_rows` is now the sole
+        // mechanism restoring the method rows (there is no `ClassDef::
+        // methods` left for a `sync_user_method_entries`-style re-derive to
+        // read). `restore_user_method_rows` only ever touches
+        // `user_candidates`, so `MethodEntry::proto` survives untouched
+        // here exactly as pre-existing behavior left it; `method_wrap_
+        // chains` is untouched by either path, also matching pre-existing
+        // behavior. Both are deliberate, pre-existing gaps -- see the
+        // design note's own instruction not to fold that behavior change
+        // into this box. The accessor column still needs its own re-derive
+        // from the just-restored `prev_class.attributes`, which
+        // `sync_user_method_entries` used to also do as its surviving half.
+        let owner = crate::symbol::Symbol::intern(name);
+        reg.restore_user_method_rows(owner, self.prev_method_rows.clone());
+        reg.sync_accessor_entries(owner);
     }
 }
 
@@ -355,7 +353,6 @@ impl Interpreter {
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
             attribute_built: HashMap::new(),
-            methods: HashMap::new(),
             native_methods: HashSet::new(),
             mro: [].into(),
             wildcard_handles: Vec::new(),
@@ -429,16 +426,18 @@ impl Interpreter {
                     .extend(does_roles);
             }
         }
+        // ADR-0019 F4c-9b: no `sync_user_method_entries` needed here anymore
+        // -- the registry's method rows for `name` were already brought to
+        // a clean, fully-composed state before this call (see
+        // `register_class_decl`'s pre-composition clear).
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def.clone());
-        self.registry_mut().sync_user_method_entries(name);
         if is_stub_body {
             self.registry_mut().class_stubs.insert(name.to_string());
             self.registry_mut()
                 .classes
                 .insert(name.to_string(), class_def.clone());
-            self.registry_mut().sync_user_method_entries(name);
             let mut stack = Vec::new();
             let _ = self.compute_class_mro(name, &mut stack)?;
             return Ok(true);

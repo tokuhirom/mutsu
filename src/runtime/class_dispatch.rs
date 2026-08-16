@@ -223,9 +223,7 @@ impl Interpreter {
         // e.g. submethod on ancestor only).
         let has_visible_method = self.class_mro(receiver_class_name).iter().any(|cn| {
             self.registry()
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
+                .user_method_overloads(cn.as_str(), method_name)
                 .is_some_and(|ovs| {
                     let is_ancestor = cn.as_str() != receiver_class_name;
                     ovs.iter()

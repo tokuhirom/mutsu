@@ -85,9 +85,14 @@ impl Interpreter {
         // No user-code re-entry here (only the static compiler check runs), so a
         // let-bound guard is safe.
         let registry = self.registry();
-        let class_def = registry.classes.get(class_name)?;
-        for overloads in class_def.methods.values() {
-            for def in overloads {
+        registry.classes.get(class_name)?;
+        for method_name in registry.owner_method_names(class_name) {
+            let Some(overloads) =
+                registry.user_method_overloads(class_name, &method_name.resolve())
+            else {
+                continue;
+            };
+            for def in &overloads {
                 if let Some(err_val) =
                     crate::compiler::Compiler::check_native_readonly_param_assignment(
                         &def.param_defs,
@@ -115,10 +120,10 @@ impl Interpreter {
     /// Compile method bodies for a given class using the bytecode compiler.
     pub(crate) fn compile_class_methods(&mut self, class_name: &str) {
         let dist = self.resolve_package_distribution(class_name);
-        if let Some(class_def) = self.registry_mut().classes.get_mut(class_name) {
-            Self::compile_methods_for_map(&mut class_def.methods, class_name, dist);
-        }
-        self.registry_mut().sync_user_method_entries(class_name);
+        self.registry_mut()
+            .map_user_methods_in_place(Symbol::intern(class_name), |def| {
+                Self::compile_method_def_in_place_with_dist(def, class_name, dist.clone());
+            });
     }
 
     /// Compile method bodies for a given role.

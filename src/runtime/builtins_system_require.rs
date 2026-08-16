@@ -224,7 +224,7 @@ impl Interpreter {
                 self.env.insert(alias, value);
             }
 
-            let mut class_aliases: Vec<(String, ClassDef)> = Vec::new();
+            let mut class_aliases: Vec<(String, String, ClassDef)> = Vec::new();
             for (name, class_def) in &self.registry().classes {
                 if before_class_keys.contains(name) {
                     continue;
@@ -232,18 +232,22 @@ impl Interpreter {
                 let tail = name.rsplit_once("::").map(|(_, t)| t).unwrap_or(name);
                 let alias = format!("{pkg}::{tail}");
                 if !self.registry().classes.contains_key(&alias) {
-                    class_aliases.push((alias, class_def.clone()));
+                    class_aliases.push((name.clone(), alias, class_def.clone()));
                 }
             }
-            for (alias, class_def) in class_aliases {
+            for (name, alias, class_def) in class_aliases {
                 self.registry_mut().classes.insert(alias.clone(), class_def);
-                // ADR-0019 F4c-7: the aliased `ClassDef`'s methods must also
+                // ADR-0019 F4c-9b: the aliased class's method rows must also
                 // land in the registry's canonical `method_entries` table
-                // under the alias name, or every F4c-1-cut-over enumeration
-                // site (`.^methods`, etc.) sees the alias as method-less
-                // even though `class_def.methods` (still consulted by the
-                // yet-to-be-cut-over dispatch paths) has them.
-                self.registry_mut().sync_user_method_entries(&alias);
+                // under the alias name -- there is no `ClassDef::methods`
+                // left for a `sync_user_method_entries`-style re-derive to
+                // copy from, so copy the rows directly instead.
+                let name_owner = crate::symbol::Symbol::intern(&name);
+                let alias_owner = crate::symbol::Symbol::intern(&alias);
+                let rows = self.registry().user_method_rows_for_owner(name_owner);
+                self.registry_mut()
+                    .restore_user_method_rows(alias_owner, rows);
+                self.registry_mut().sync_accessor_entries(alias_owner);
             }
         }
 

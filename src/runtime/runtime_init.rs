@@ -72,7 +72,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Mu"]),
                 attribute_types: HashMap::new(),
@@ -88,7 +87,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Mu".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -104,7 +102,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Any".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["IterationBuffer", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -120,7 +117,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["keep", "result", "status", "then"]
                     .iter()
                     .map(|s| s.to_string())
@@ -139,7 +135,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Promise::Vow"]),
                 attribute_types: HashMap::new(),
@@ -155,7 +150,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["send", "receive", "close", "closed"]
                     .iter()
                     .map(|s| s.to_string())
@@ -174,7 +168,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Collation"]),
                 attribute_types: HashMap::new(),
@@ -190,7 +183,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Thread"]),
                 attribute_types: HashMap::new(),
@@ -206,7 +198,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "emit",
                     "tap",
@@ -253,7 +244,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["utf8"]),
                 attribute_types: HashMap::new(),
@@ -269,7 +259,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["utf16"]),
                 attribute_types: HashMap::new(),
@@ -285,7 +274,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Any".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -301,7 +289,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Blob".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Buf", "Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -317,7 +304,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "emit",
                     "done",
@@ -343,7 +329,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Supplier".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Supplier::Preserving", "Supplier"]),
                 attribute_types: HashMap::new(),
@@ -359,7 +344,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "start",
                     "command",
@@ -427,7 +411,6 @@ impl Interpreter {
                     proc_attr("pid", '$', nil_default()),
                     proc_attr("command", '@', None),
                 ],
-                methods: HashMap::new(),
                 // `Str`/`gist` are NOT native: Rakudo's Proc has no stringifier
                 // of its own, so the default instance repr applies (`Proc.new`),
                 // not the exitcode number the old native arm rendered.
@@ -452,7 +435,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["cancel", "close", "socket-port", "socket-host"]
                     .iter()
                     .map(|s| s.to_string())
@@ -471,7 +453,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 // ADR-0028 Slice 1: the callback-shim target `Supply.
                 // schedule-on()` taps invoke instead of the real tap/done/
                 // quit callback — see `native_methods::scheduled_tap_pump`.
@@ -498,7 +479,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 // `Scheduler` is a composable role (`class Test::Scheduler does
                 // Scheduler {...}`) with NO native implementation of its own --
                 // only the concrete schedulers below have one, and each lists
@@ -521,7 +501,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["cue", "uncaught_handler", "loads"]
                     .iter()
                     .map(|s| s.to_string())
@@ -540,7 +519,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["cue", "uncaught_handler", "loads"]
                     .iter()
                     .map(|s| s.to_string())
@@ -559,7 +537,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["cue", "progress-by", "time"]
                     .iter()
                     .map(|s| s.to_string())
@@ -578,7 +555,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["cancel"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Cancellation"]),
                 attribute_types: HashMap::new(),
@@ -594,7 +570,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["protect", "lock", "unlock", "condition"]
                     .iter()
                     .map(|s| s.to_string())
@@ -613,7 +588,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Lock".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Lock::Async", "Lock"]),
                 attribute_types: HashMap::new(),
@@ -629,7 +603,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Lock".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Lock::Soft", "Lock"]),
                 attribute_types: HashMap::new(),
@@ -645,7 +618,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["wait", "signal", "signal_all"]
                     .iter()
                     .map(|s| s.to_string())
@@ -664,7 +636,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["acquire", "try_acquire", "release"]
                     .iter()
                     .map(|s| s.to_string())
@@ -683,7 +654,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "Str",
                     "gist",
@@ -766,7 +736,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "path",
                     "IO",
@@ -819,7 +788,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "get",
                     "getc",
@@ -887,7 +855,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Backtrace"]),
                 attribute_types: HashMap::new(),
@@ -903,7 +870,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["CompUnit::Repository::FileSystem"]),
                 attribute_types: HashMap::new(),
@@ -919,7 +885,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["slurp", "slurp-rest", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
@@ -938,7 +903,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "close",
                     "getpeername",
@@ -971,7 +935,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "close",
                     "write",
@@ -1002,7 +965,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["IO::Socket::Async::Listener"]),
                 attribute_types: HashMap::new(),
@@ -1018,7 +980,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "name",
                     "auth",
@@ -1050,7 +1011,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "DISTROnames",
                     "KERNELnames",
@@ -1085,7 +1045,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "name",
                     "auth",
@@ -1122,7 +1081,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "name",
                     "auth",
@@ -1151,7 +1109,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "name",
                     "auth",
@@ -1183,7 +1140,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["name", "alternative-names", "encoder", "decoder"]
                     .iter()
                     .map(|s| s.to_string())
@@ -1202,7 +1158,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["encode-chars"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Encoding::Encoder"]),
                 attribute_types: HashMap::new(),
@@ -1218,7 +1173,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: [
                     "decode-chars",
                     "add-bytes",
@@ -1247,7 +1201,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Encoding::Registry"]),
                 attribute_types: HashMap::new(),
@@ -1263,7 +1216,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1279,7 +1231,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block::Code", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1295,7 +1246,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::FormattingCode", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1311,7 +1261,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block::Comment", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1327,7 +1276,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block::Para", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1343,7 +1291,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block::Named", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1359,7 +1306,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Heading", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1375,7 +1321,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Block::Table", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1391,7 +1336,6 @@ impl Interpreter {
             ClassDef {
                 parents: Vec::new(),
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Config"]),
                 attribute_types: HashMap::new(),
@@ -1407,7 +1351,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Pod::Block".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Pod::Item", "Pod::Block"]),
                 attribute_types: HashMap::new(),
@@ -1423,7 +1366,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec![],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Exception"]),
                 attribute_types: HashMap::new(),
@@ -1439,7 +1381,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::AdHoc", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1455,7 +1396,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1471,7 +1411,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Binding", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1487,7 +1426,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["X::TypeCheck::Binding".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&[
                     "X::TypeCheck::Binding::Parameter",
@@ -1508,7 +1446,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Parameter", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1524,7 +1461,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["X::Parameter".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&[
                     "X::Parameter::InvalidConcreteness",
@@ -1544,7 +1480,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Supply::Combinator", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1560,7 +1495,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Argument", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1576,7 +1510,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Assignment", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1592,7 +1525,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Numeric::Real", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1608,7 +1540,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Return", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1624,7 +1555,6 @@ impl Interpreter {
             ClassDef {
                 parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
-                methods: HashMap::new(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Coerce::Impossible", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1662,7 +1592,6 @@ impl Interpreter {
                 ClassDef {
                     parents: vec![parent.to_string()],
                     attributes: Vec::new(),
-                    methods: HashMap::new(),
                     native_methods: HashSet::new(),
                     mro,
                     attribute_types: HashMap::new(),
@@ -2199,7 +2128,7 @@ impl Interpreter {
                 };
                 let class_names: Vec<String> = registry.classes.keys().cloned().collect();
                 for class_name in class_names {
-                    registry.sync_user_method_entries(&class_name);
+                    registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
                 }
                 Arc::new(RwLock::new(Arc::new(registry)))
             },

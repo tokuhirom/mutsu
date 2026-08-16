@@ -402,34 +402,37 @@ impl Interpreter {
         class_def: &mut ClassDef,
     ) {
         let resolved = self.resolve_handle_specs_to_names(specs, attr_var_name);
-        // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
-        // comment in registration_class_body_method.rs. `apply_resolved_
-        // handles` stays the shared class/role implementation (`RoleDef::
-        // methods` is out of scope for the registry index, see the F4c
-        // design note section (1)), so only the class-only wrapper here
-        // additionally writes through the registry.
+        // ADR-0019 F4c-9b: unlike `apply_handle_specs_to_role` below, the
+        // class path writes methods straight to the registry -- there is no
+        // `ClassDef::methods` for `apply_resolved_handles`' shared
+        // implementation to target anymore (`RoleDef::methods` stays out of
+        // scope for the registry index, see the F4c design note section
+        // (1), so the role path keeps using that shared helper unchanged).
         let owner = Symbol::intern(class_name);
         let mut registry = self.registry_mut();
         for handle in &resolved {
-            if let ResolvedHandle::Method {
-                exposed,
-                target,
-                attr_var,
-            } = handle
-            {
-                registry.push_user_method(
-                    owner,
-                    Symbol::intern(exposed),
-                    make_delegation_method(attr_var, target),
-                );
+            match handle {
+                ResolvedHandle::Method {
+                    exposed,
+                    target,
+                    attr_var,
+                } => {
+                    registry.push_user_method(
+                        owner,
+                        Symbol::intern(exposed),
+                        make_delegation_method(attr_var, target),
+                    );
+                }
+                ResolvedHandle::Regex { attr_var, pattern } => {
+                    class_def
+                        .wildcard_handles
+                        .push(format!("{}:regex:{}", attr_var, pattern));
+                }
+                ResolvedHandle::WildcardHandle(attr_var) => {
+                    class_def.wildcard_handles.push(attr_var.clone());
+                }
             }
         }
-        drop(registry);
-        apply_resolved_handles(
-            &resolved,
-            &mut class_def.methods,
-            &mut class_def.wildcard_handles,
-        );
     }
 
     /// Apply `handles` specifications to a role definition.

@@ -188,23 +188,14 @@ impl Interpreter {
         let is_lexical_only = decl.is_my && !decl.is_submethod;
         let is_our_only = decl.is_our && !decl.our_variable_form;
         if !is_lexical_only && !is_our_only {
-            // ADR-0019 F4c-3: dual-write -- `cx.class_def.methods` stays the
-            // authoritative in-flight state (still re-derived wholesale into
-            // the registry by the per-statement `sync_user_method_entries`
-            // call right after this returns, per F4c design note (3)'s
-            // bridge), but each write also goes straight through the
-            // registry mutator API so the two agree at every point, not
-            // just at statement boundaries.
+            // ADR-0019 F4c-9b: the registry's `method_entries` table is the
+            // sole store now -- every write goes straight through the
+            // mutator API, with no `cx.class_def.methods` half left to keep
+            // in lockstep.
             let owner = Symbol::intern(cx.name);
             let method_sym = Symbol::intern(&resolved_method_name);
             if decl.multi {
-                self.registry_mut()
-                    .push_user_method(owner, method_sym, def.clone());
-                cx.class_def
-                    .methods
-                    .entry(resolved_method_name.clone())
-                    .or_default()
-                    .push(def);
+                self.registry_mut().push_user_method(owner, method_sym, def);
             } else {
                 // Check for duplicate non-multi method definition.
                 // Only error if the existing method was defined in
@@ -214,7 +205,10 @@ impl Interpreter {
                 // collide (they are stored together but dispatch filters
                 // on `is_private`).
                 let new_is_private = def.is_private;
-                if let Some(existing) = cx.class_def.methods.get(&resolved_method_name) {
+                if let Some(existing) = self
+                    .registry()
+                    .user_method_overloads(cx.name, &resolved_method_name)
+                {
                     let conflicts = existing
                         .iter()
                         .any(|m| m.role_origin.is_none() && m.is_private == new_is_private);
@@ -230,15 +224,7 @@ impl Interpreter {
                 // privacy stored under the same name.
                 self.registry_mut()
                     .retain_user_methods(owner, method_sym, |m| m.is_private != new_is_private);
-                self.registry_mut()
-                    .push_user_method(owner, method_sym, def.clone());
-                let entry = cx
-                    .class_def
-                    .methods
-                    .entry(resolved_method_name.clone())
-                    .or_default();
-                entry.retain(|m| m.is_private != new_is_private);
-                entry.push(def);
+                self.registry_mut().push_user_method(owner, method_sym, def);
             }
         }
         // A method declared `is export` is importable as a *sub* whose
@@ -360,26 +346,16 @@ impl Interpreter {
                         self.registry_mut().push_user_method(
                             Symbol::intern(cx.name),
                             Symbol::intern(target),
-                            delegation.clone(),
+                            delegation,
                         );
-                        cx.class_def
-                            .methods
-                            .entry(target.clone())
-                            .or_default()
-                            .push(delegation);
                     }
                     HandleSpec::Rename { exposed, target } => {
                         let delegation = make_delegation_method(&source_attr_marker, target);
                         self.registry_mut().push_user_method(
                             Symbol::intern(cx.name),
                             Symbol::intern(exposed),
-                            delegation.clone(),
+                            delegation,
                         );
-                        cx.class_def
-                            .methods
-                            .entry(exposed.clone())
-                            .or_default()
-                            .push(delegation);
                     }
                     HandleSpec::Wildcard => {
                         cx.class_def

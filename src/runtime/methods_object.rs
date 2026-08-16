@@ -92,8 +92,8 @@ impl Interpreter {
             // fall through. A class with an unprovided `is required` or unset
             // class-typed attribute also falls through at build time (it may be
             // set by BUILD, which the conservative native path does not assume).
-            let simple = !class_def.methods.contains_key("BUILDALL")
-                && !class_def.methods.contains_key("new")
+            let simple = registry.user_method_overloads(&cls, "BUILDALL").is_none()
+                && registry.user_method_overloads(&cls, "new").is_none()
                 && class_def.native_methods.is_empty()
                 // An `is built(Bool)` trait only flips whether an attribute is
                 // assigned from a named arg — the native builder already honours

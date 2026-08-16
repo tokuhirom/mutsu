@@ -361,41 +361,6 @@ impl Registry {
         entries.into_iter().map(|entry| entry.name).collect()
     }
 
-    /// Re-derives `method_entries`' user-owned columns for `class_name` from
-    /// `ClassDef::methods`/`ClassDef::attributes` — the sole writer of the
-    /// user/accessor columns until ADR-0019 F4c-3 starts moving individual
-    /// class-declaration write sites onto the mutator API directly. As of
-    /// F4c-2 this function is itself just a caller of that API (`clear_user_
-    /// methods_for_owner`, `set_user_methods`, `sync_accessor_entries`, all
-    /// in `registry_method_table.rs`) rather than inlining the retain/
-    /// re-populate logic — see the ADR-0019 F4c design note section (3).
-    /// `entry.proto` (ADR-0019 E8b) is untouched by any of these: unlike
-    /// `user_candidates`/`accessor` it has no `ClassDef`-backed source to
-    /// re-derive from (written once, directly, by `Registry::
-    /// set_proto_method`), and every mutator's liveness check already counts
-    /// it toward keeping a row alive, so a proto-only entry survives this
-    /// call exactly as before.
-    pub(crate) fn sync_user_method_entries(&mut self, class_name: &str) {
-        let owner = Symbol::intern(class_name);
-        self.clear_user_methods_for_owner(owner);
-        let Some(class_def) = self.classes.get(class_name) else {
-            // A pure clear (`withdraw_role_pun`, `rename_generic_composed_
-            // class`'s old-name half, ...): `classes.get` misses, so there is
-            // nothing to re-derive rows from beyond the accessor clear below.
-            self.sync_accessor_entries(owner);
-            return;
-        };
-        let methods = class_def.methods.clone();
-        for (name, candidates) in methods {
-            self.set_user_methods(owner, Symbol::intern(&name), candidates);
-        }
-        // A later same-name declaration within the class overrides an
-        // earlier one; `sync_accessor_entries` iterates `ClassDef::
-        // attributes` in declaration order and lets each write clobber the
-        // last, giving the same "most recent wins" result as before.
-        self.sync_accessor_entries(owner);
-    }
-
     pub(crate) fn user_method_overloads(
         &self,
         class_name: &str,
@@ -1317,10 +1282,10 @@ mod tests {
             source_file: None,
             role_param_bindings: None,
         };
-        let mut class = ClassDef::default();
-        class.methods.insert("chars".to_string(), vec![method]);
-        registry.classes.insert("Str".to_string(), class);
-        registry.sync_user_method_entries("Str");
+        registry
+            .classes
+            .insert("Str".to_string(), ClassDef::default());
+        registry.set_user_methods(Symbol::intern("Str"), Symbol::intern("chars"), vec![method]);
         assert!(registry.method_generation > seeded_generation);
 
         let entry = registry
@@ -1335,7 +1300,7 @@ mod tests {
 
         let override_generation = registry.method_generation;
         registry.classes.remove("Str");
-        registry.sync_user_method_entries("Str");
+        registry.clear_user_methods_for_owner(Symbol::intern("Str"));
         assert!(registry.method_generation > override_generation);
         let entry = registry
             .method_entries

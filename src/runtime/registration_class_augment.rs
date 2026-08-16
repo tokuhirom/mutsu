@@ -1,6 +1,4 @@
-use super::registration_class::{
-    AttrValidationCtx, ResolvedHandle, apply_resolved_handles, make_delegation_method,
-};
+use super::registration_class::{AttrValidationCtx, ResolvedHandle, make_delegation_method};
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
 use crate::ast::HandleSpec;
@@ -286,16 +284,21 @@ impl Interpreter {
                     // `is_my=true` from the parser.
                     let is_lexical_only = decl.is_my && !decl.is_submethod;
                     let is_our_only = decl.is_our && !decl.our_variable_form;
+                    // ADR-0019 F4c-9b: single write through the registry
+                    // mutator API -- augment mutates the already-registered
+                    // `ClassDef`, but there is no `ClassDef::methods` left to
+                    // mutate in place, so the conflict check reads the
+                    // canonical table directly instead of the local
+                    // short-lived `class_def` borrow the pre-9b dual-write
+                    // needed.
                     if !is_lexical_only
                         && !is_our_only
-                        && let Some(class_def) = self.registry_mut().classes.get_mut(name)
+                        && self.registry().classes.contains_key(name)
                     {
+                        let owner = Symbol::intern(name);
+                        let method_sym = Symbol::intern(&resolved_method_name);
                         if decl.multi {
-                            class_def
-                                .methods
-                                .entry(resolved_method_name.clone())
-                                .or_default()
-                                .push(def.clone());
+                            self.registry_mut().push_user_method(owner, method_sym, def);
                         } else {
                             // Check for duplicate non-multi method
                             // definition. Only error if the existing
@@ -308,7 +311,10 @@ impl Interpreter {
                             // walker's privacy-aware check (ADR-0019
                             // D3-5).
                             let new_is_private = def.is_private;
-                            if let Some(existing) = class_def.methods.get(&resolved_method_name) {
+                            if let Some(existing) = self
+                                .registry()
+                                .user_method_overloads(name, &resolved_method_name)
+                            {
                                 let conflicts = existing.iter().any(|m| {
                                     m.role_origin.is_none() && m.is_private == new_is_private
                                 });
@@ -319,36 +325,6 @@ impl Interpreter {
                                     )));
                                 }
                             }
-                            let entry = class_def
-                                .methods
-                                .entry(resolved_method_name.clone())
-                                .or_default();
-                            entry.retain(|m| m.is_private != new_is_private);
-                            entry.push(def.clone());
-                        }
-                    }
-                    // ADR-0019 F4c-4: dual-write, mirroring the block above
-                    // but on its own short-lived registry guard -- it
-                    // CANNOT share the `class_def` borrow above. Unlike
-                    // F4c-3's in-flight `ClassBodyCx`, augment mutates the
-                    // already-registered `ClassDef` in place, so `class_def`
-                    // there is a live sub-borrow of a held write guard; a
-                    // second `registry_mut()` call while it is still alive
-                    // is the R8 lock-reentrancy hazard, not a hypothetical
-                    // one (see the F4c-3 progress note for where this bit).
-                    // The conflict check itself does not need repeating: if
-                    // it would have failed, the block above already
-                    // returned `Err` before this point.
-                    if !is_lexical_only
-                        && !is_our_only
-                        && self.registry().classes.contains_key(name)
-                    {
-                        let owner = Symbol::intern(name);
-                        let method_sym = Symbol::intern(&resolved_method_name);
-                        if decl.multi {
-                            self.registry_mut().push_user_method(owner, method_sym, def);
-                        } else {
-                            let new_is_private = def.is_private;
                             self.registry_mut()
                                 .retain_user_methods(owner, method_sym, |m| {
                                     m.is_private != new_is_private
@@ -533,57 +509,44 @@ impl Interpreter {
                     // `augment class Foo { method inner() handles 'uc'
                     // {...} }` makes `Foo.new.uc` dispatch through
                     // `inner`).
-                    if !decl.handles.is_empty()
-                        && let Some(class_def) = self.registry_mut().classes.get_mut(name)
-                    {
-                        let source_attr_marker = format!("&{}", resolved_method_name);
-                        for spec in &decl.handles {
-                            match spec {
-                                HandleSpec::Name(target) => {
-                                    class_def
-                                        .methods
-                                        .entry(target.clone())
-                                        .or_default()
-                                        .push(make_delegation_method(&source_attr_marker, target));
-                                }
-                                HandleSpec::Rename { exposed, target } => {
-                                    class_def
-                                        .methods
-                                        .entry(exposed.clone())
-                                        .or_default()
-                                        .push(make_delegation_method(&source_attr_marker, target));
-                                }
-                                HandleSpec::Wildcard => {
-                                    class_def.wildcard_handles.push(source_attr_marker.clone());
-                                }
-                                HandleSpec::Regex(pattern) => {
-                                    class_def
-                                        .wildcard_handles
-                                        .push(format!("{}:regex:{}", source_attr_marker, pattern));
-                                }
-                                HandleSpec::Type(_) => {}
-                            }
-                        }
-                    }
-                    // ADR-0019 F4c-4: dual-write on a separate short-lived
-                    // guard, see this function's earlier F4c-4 comment for
-                    // why it cannot share the `class_def` borrow above.
                     if !decl.handles.is_empty() && self.registry().classes.contains_key(name) {
                         let owner = Symbol::intern(name);
                         let source_attr_marker = format!("&{}", resolved_method_name);
                         for spec in &decl.handles {
-                            let (exposed, target) = match spec {
-                                HandleSpec::Name(target) => (target, target),
-                                HandleSpec::Rename { exposed, target } => (exposed, target),
-                                HandleSpec::Wildcard
-                                | HandleSpec::Regex(_)
-                                | HandleSpec::Type(_) => continue,
-                            };
-                            self.registry_mut().push_user_method(
-                                owner,
-                                Symbol::intern(exposed),
-                                make_delegation_method(&source_attr_marker, target),
-                            );
+                            match spec {
+                                HandleSpec::Name(target) => {
+                                    self.registry_mut().push_user_method(
+                                        owner,
+                                        Symbol::intern(target),
+                                        make_delegation_method(&source_attr_marker, target),
+                                    );
+                                }
+                                HandleSpec::Rename { exposed, target } => {
+                                    self.registry_mut().push_user_method(
+                                        owner,
+                                        Symbol::intern(exposed),
+                                        make_delegation_method(&source_attr_marker, target),
+                                    );
+                                }
+                                HandleSpec::Wildcard => {
+                                    if let Some(class_def) =
+                                        self.registry_mut().classes.get_mut(name)
+                                    {
+                                        class_def.wildcard_handles.push(source_attr_marker.clone());
+                                    }
+                                }
+                                HandleSpec::Regex(pattern) => {
+                                    if let Some(class_def) =
+                                        self.registry_mut().classes.get_mut(name)
+                                    {
+                                        class_def.wildcard_handles.push(format!(
+                                            "{}:regex:{}",
+                                            source_attr_marker, pattern
+                                        ));
+                                    }
+                                }
+                                HandleSpec::Type(_) => {}
+                            }
                         }
                     }
                 }
@@ -620,16 +583,25 @@ impl Interpreter {
                                 .attribute_types
                                 .insert(attr_name_str.clone(), tc.clone());
                         }
-                        apply_resolved_handles(
-                            &resolved,
-                            &mut class_def.methods,
-                            &mut class_def.wildcard_handles,
-                        );
+                        // ADR-0019 F4c-9b: only the wildcard half of
+                        // `apply_resolved_handles` applies here now -- a
+                        // `ResolvedHandle::Method` writes straight to the
+                        // registry below, there is no `ClassDef::methods`
+                        // left for the shared helper to target.
+                        for handle in &resolved {
+                            match handle {
+                                ResolvedHandle::Regex { attr_var, pattern } => {
+                                    class_def
+                                        .wildcard_handles
+                                        .push(format!("{}:regex:{}", attr_var, pattern));
+                                }
+                                ResolvedHandle::WildcardHandle(attr_var) => {
+                                    class_def.wildcard_handles.push(attr_var.clone());
+                                }
+                                ResolvedHandle::Method { .. } => {}
+                            }
+                        }
                     }
-                    // ADR-0019 F4c-4: dual-write on a separate short-lived
-                    // guard -- `resolved` was already computed above,
-                    // before any registry borrow, so it is safe to reuse
-                    // here without re-resolving.
                     if self.registry().classes.contains_key(name) {
                         let owner = Symbol::intern(name);
                         for handle in &resolved {
@@ -734,34 +706,18 @@ impl Interpreter {
                 }
             }
         }
-        // ADR-0019 F4c-4: kept for the registry dual-write below, which
-        // cannot share the `class_def` borrow this block takes (see this
-        // file's earlier F4c-4 comments for why).
-        let all_methods_for_registry = all_methods.clone();
         if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
-            for (mname, mdefs) in all_methods {
-                // Only add a role method the class does not already define
-                // itself (a class-local method wins over a composed one).
-                let entry = class_def.methods.entry(mname).or_default();
-                let has_local = entry.iter().any(|d| d.role_origin.is_none());
-                if !has_local {
-                    for mut d in mdefs {
-                        if d.role_origin.is_none() {
-                            d.role_origin = Some(base_role.to_string());
-                        }
-                        entry.push(d);
-                    }
-                }
-            }
             for attr in all_attributes {
                 if !class_def.attributes.iter().any(|a| a.name == attr.name) {
                     class_def.attributes.push(attr);
                 }
             }
         }
+        // Only add a role method the class does not already define itself
+        // (a class-local method wins over a composed one).
         if self.registry().classes.contains_key(name) {
             let owner = Symbol::intern(name);
-            for (mname, mdefs) in all_methods_for_registry {
+            for (mname, mdefs) in all_methods {
                 let has_local = self
                     .registry()
                     .user_method_overloads(name, &mname)
@@ -788,7 +744,8 @@ impl Interpreter {
             .entry(name.to_string())
             .or_default()
             .extend(composed);
-        self.registry_mut().sync_user_method_entries(name);
+        self.registry_mut()
+            .sync_accessor_entries(Symbol::intern(name));
         // Recompile so the fast path sees the newly composed methods.
         self.compile_class_methods(name);
     }
@@ -1208,15 +1165,12 @@ impl Interpreter {
                 }
             }
         }
-        // ADR-0019 F4c-5: kept for the registry dual-write below.
-        let all_methods_for_registry = all_methods.clone();
         let punned_class = ClassDef {
             parents: Vec::new(),
             attributes: all_attributes,
             attribute_types,
             attribute_smileys,
             attribute_built: HashMap::new(),
-            methods: all_methods,
             native_methods: HashSet::new(),
             mro: super::sym_mro(&[role_name, "Any", "Mu"]),
             wildcard_handles: all_wildcard_handles,
@@ -1226,12 +1180,8 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(role_name.to_string(), punned_class);
-        // Dual-write the pun's methods through the mutator API too -- this
-        // is a brand-new `ClassDef` (not a mutation of an already-borrowed
-        // one), so there is no R8 held-guard hazard here; each
-        // `set_user_methods` call is its own short-lived guard.
         let owner = Symbol::intern(role_name);
-        for (name, defs) in all_methods_for_registry {
+        for (name, defs) in all_methods {
             self.registry_mut()
                 .set_user_methods(owner, Symbol::intern(&name), defs);
         }
