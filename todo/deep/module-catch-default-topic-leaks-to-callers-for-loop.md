@@ -95,22 +95,58 @@ across the module boundary by bare name:
   loaded module's routine, rather than only when the module's own file-scope
   container is read.
 
+## Root cause found (2026-08-16), not yet fixed
+
+Located the exact write site via a `rust-gdb` breakpoint sweep on `Env::insert`
+for the 1-char key `"_"`: `src/vm/vm_call_named_inner.rs:238-244`
+
+```rust
+// Raku: routines get their own $_ initialized to (Any).
+if cf.code.is_routine && !cf.param_defs.iter().any(|pd| pd.name == "_") {
+    self.env_mut().insert("_".to_string(), Value::package(Symbol::intern("Any")));
+}
+```
+
+This write is correct Raku semantics in isolation (a routine call gets a fresh
+`$_`), but it hits the interpreter's single "current env" field with no
+per-call push/pop of a separate topic scope — a backtrace sweep showed
+`_init_vars`, `plan`, `throws-like`, `subtest`, `_diag`, `pass`, `ok`,
+`proclaim` all sharing the *same* env-field address across nested calls.
+Ordinary user code doesn't see this because a `for` loop's topic reads/writes
+normally go through the fast `locals` array (reset-then-discarded per call,
+harmless) — but `vm_try_catch_ops.rs`'s CATCH/`default{}` topicalization
+deliberately bypasses `locals` and does a raw `self.env().get("_")` /
+`insert("_", …)` save-restore, a **flat one-level** save/restore, not a real
+stack. Once several nested routine entries (each resetting `_`→`Any`)
+interleave with the CATCH's own bind-to-exception and restore — inside
+`throws-like` → `subtest` → (EVAL) → `CATCH default { pass; ok; _diag }` — the
+*last* write to survive the unwind is the exception's message text, not the
+loop's item. Confirmed a plain user-defined sub call inside a `for` loop does
+**not** leak on its own; the trigger needs the CATCH/`default{}` +
+multi-level-nested-call combination specifically. So this is a narrower
+instance of the dual-store (`locals` vs `env`) debt CLAUDE.md already flags,
+not the bare-name shared-store lane hypothesized above (no thread is
+spawned in the repro).
+
+**This is not a one-line patch.** A correct fix needs topic save/restore to
+nest properly across arbitrary call depth — e.g. an explicit topic stack, or
+migrating the CATCH region's topic handling onto the same `locals`-based fast
+path that ordinary routine calls already use safely — which is a design-level
+change to how `$_` is threaded through nested frames, not a targeted patch to
+`vm_call_named_inner.rs` or `vm_try_catch_ops.rs` alone. Stays a `todo/deep/`
+item pending a design pass.
+
+Other roast files combining a `for` loop with `throws-like`/`eval-lives-ok`/
+`eval-dies-ok` (`S32-exceptions/misc.t`, `S03-operators/ternary.t`,
+`integration/error-reporting.t`, others) are plausible candidates for the same
+mechanism but were not individually confirmed.
+
 ## Next steps for whoever picks this up
 
-1. Reproduce with `MUTSU_DEBUG_CLOBBER`-style instrumentation on `Env::insert`
-   / `insert_sym` for the key `"_"` specifically (see the shared-store ticket
-   above for the pattern), filtered to when the write happens from inside a
-   compiled module routine's frame, to catch the exact write that survives
-   past the CATCH region's restore.
-2. Check whether the write is happening *after* `vm_try_catch_ops.rs`'s
-   restore point at all — i.e. whether something written *inside* the CATCH
-   handler (a call to `pass`/`ok`/`_diag`, all real module routines with their
-   own control flow) reaches back out to the outer frame's `_` through a
-   different route than the CATCH region's own env, bypassing the
-   save/restore pair entirely (e.g. if the module's routines resolve `$_`
-   through the bare-name shared-store lane rather than the current frame's
-   `env`).
-3. Confirm whether this reproduces with *any* module-provided sub containing
+1. Design a real topic stack (or equivalent) so nested routine-entry resets of
+   `_` cannot clobber an outer CATCH region's saved value — see "Root cause
+   found" above for the exact write site and the mechanism.
+2. Confirm whether this reproduces with *any* module-provided sub containing
    `CATCH { default { ... } }`, or whether it is specific to `Test.rakumod` /
    `throws-like`'s particular shape (calling `pass`, `ok`, and a nested
    `with ... -> $nested-ex { }` inside the handler).
