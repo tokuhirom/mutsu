@@ -1535,7 +1535,8 @@ impl Interpreter {
         // results, allowing the raw Proxy to flow back for STORE dispatch.
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
-        let method_result = self.run_instance_method(
+        let method_result = self.run_instance_method_at(
+            "mutlvalue",
             &class_name.resolve(),
             attributes.to_map(),
             method,

@@ -2238,6 +2238,20 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   user-method-named-after-a-type call would actually reach, is deliberately deferred to its own
   follow-up slice rather than bundled here, matching this box's "post-migration commit logic needs
   individual review per family" caution.
+
+  **Progress (mut-lvalue family, step 1 — tag + gather evidence, #TBD):**
+  `assign_method_lvalue_with_values`'s sole call (`methods_mut_method_lvalue.rs`, the "method body
+  doesn't directly expose an attribute — run it and check for Proxy" fallback used for `is rw`
+  method/STORE-dispatch lvalue assignment, `invocant: None`) tagged with `run_instance_method_at
+  ("mutlvalue", ...)`, same pattern as the coercion family's step 1 above. Verified with a full local
+  `t/` sweep (3187 files, `MUTSU_VM_STATS=1`): the "mutlvalue" site never appears in the
+  mismatch-by-site breakdown (the same 2 pre-existing `privatedispatch` mismatches as every other
+  sweep in this box, unrelated to this site); `t/dot-assign-accessor.t` confirms the site is
+  genuinely exercised (`resolver_shadow_checks=1 resolver_shadow_mismatches=0` for that file alone).
+  `roast/S06-routine-modifiers/{lvalue-subroutines,proxy}.t`, `roast/S12-attributes/mutators.t`,
+  `roast/S12-introspection/attributes.t`, and `roast/S12-class/attributes.t` (release, via
+  `scripts/run-roast-test.sh`) all green. Call-site migration off the API itself remains open, same
+  as the coercion family.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
