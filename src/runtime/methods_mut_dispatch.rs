@@ -25,7 +25,8 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self.native_lever_a_user_override(&target, method)
         {
-            let (result, _) = self.run_instance_method(
+            let (result, _) = self.run_instance_method_at(
+                "mutdispatch",
                 crate::runtime::utils::value_type_name(&target),
                 crate::value::AttrMap::new(),
                 method,
@@ -2774,7 +2775,8 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "user",
                 );
-                let (result, updated) = self.run_instance_method(
+                let (result, updated) = self.run_instance_method_at(
+                    "mutdispatch",
                     &class_name.resolve(),
                     attributes.to_map(),
                     method,

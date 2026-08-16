@@ -2301,6 +2301,40 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `cargo build`/`clippy`/`fmt` all clean) and the standard 312-file `S04`/`S06`/`S09`/`S12`/`S14`
   roast subset (release), both green — the 9 mismatches are diagnostic-only and change no observed
   behavior. `scripts/battery-testsuite.sh` GATE PASSED.
+
+  **Progress (mut-dispatch family, #TBD) — closes the instanceops ticket with a real fix, not just a
+  tag.** `methods_mut_dispatch.rs`'s two named sites (the native-lever-A mirror at
+  `call_method_mut_with_values`'s top, and the general mut-dispatch fallback near its end) tagged
+  `run_instance_method_at("mutdispatch", ...)`, same additive pattern as every prior family. The
+  corpus-evidence sweep (full local `t/`, 3189 files, `MUTSU_VM_STATS=1`) found one mismatch,
+  `t/role-bless-pun.t`'s `Service.bless(...).start`/`.running` — real=Some("Service") shadow=None,
+  the same shape as the instance-ops family's already-filed
+  `todo/tickets/adr0019-e4-sequence-resolver-misses-type-object-dispatch.md`. Root-caused this time:
+  `resolve_sequence`'s `drop_flattened_role_duplicate_candidates` step drops a User candidate
+  whenever ANY candidate's `role_origin` names its owner — meant to remove a role's raw MRO-level
+  copy once a differently-owned class level already carries the role-flattened copy, but a role
+  **pun** (`Service.bless`/`.new` on a bare role, `ensure_role_punned_to_class`) copies the role's
+  methods into a synthetic class registered under the role's own name, self-tagging
+  `role_origin = Some(role_name) == owner`. The filter didn't distinguish this self-reference from a
+  genuine cross-owner duplicate, so a pun's sole MRO level deleted itself. Fixed by only adding a
+  `role_origin` to the dedup set when it names a DIFFERENT owner than the candidate carrying it —
+  matching `resolve_method_with_owner_impl` (the ad-hoc resolver this sequence is meant to
+  reproduce), which never drops a pun's own single-level candidate. This is a real, in-scope fix
+  (not deferred): it also closes all 9 of the instance-ops ticket's mismatches, which were the same
+  self-referential-pun shape reached via a type-object receiver (`NotNewPun.x`) instead of a bless'd
+  instance — confirmed by re-running that ticket's exact repro (now `resolver_shadow_mismatches=0`)
+  and by the post-fix full sweep finding zero `"mutdispatch"`/`"instanceops"` mismatches corpus-wide
+  (the only 2 remaining are the pre-existing, unrelated `"privatedispatch"` pair every prior sweep in
+  this box has already recorded). `todo/tickets/adr0019-e4-sequence-resolver-misses-type-object-
+  dispatch.md` retired to `news/2026-08/adr0019-f6-mut-dispatch-and-role-pun-dedup-bug.md`. As a side
+  effect, the fix lets the VM's cached fast dispatch path (`resolve_method_cached` ->
+  `resolve_via_sequence_cache`, which reads `resolve_sequence`) resolve a role pun's methods
+  directly instead of always missing and falling through to the slow `run_instance_method` path —
+  observed in `t/role-bless-pun.t`, where the newly-tagged `"mutdispatch"` sites stopped firing at
+  all once the cached path started succeeding on its own. Verified with the full local `t/` suite
+  (3189 files, `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of the
+  standard `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and `scripts/battery-testsuite.sh`
+  (GATE PASSED).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
