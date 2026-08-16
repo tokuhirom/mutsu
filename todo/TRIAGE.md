@@ -92,7 +92,7 @@ coverage — which will also surface more instances of the adjacent bug below.
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [vendor-real-test-module](tickets/vendor-real-test-module.md) | Test-vendor §1 | XL | The campaign header. Regression count driven 343→315→301→255→190→113 (last hard full-sweep number, 2026-08-04) via continuous fixes; step 3 (flip the default) hasn't started. Read this before any row below — its own text explicitly retracts three earlier "almost done" calls each disproven by the next session's clustered fixes. |
+| [vendor-real-test-module](deep/vendor-real-test-module.md) | Test-vendor §1 | XL | The campaign header. Regression count driven 343→315→301→255→190→113 (last hard full-sweep number, 2026-08-04) via continuous fixes; step 3 (flip the default) hasn't started. Read this before any row below — its own text explicitly retracts three earlier "almost done" calls each disproven by the next session's clustered fixes. |
 | [interpreter-call-path-in-hot-loops](deep/interpreter-call-path-in-hot-loops.md) | perf §4 | L | The one perf axis where mutsu loses to raku, and the real blocker for the flip: real-`Test` inflates heavy roast files past the 30s budget (`state.t` 67× deficit traced here). Attack row B (file-scope sub call) next. |
 | [use-inside-a-block-leaks-to-the-enclosing-scope](tickets/use-inside-a-block-leaks-to-the-enclosing-scope.md) | Test-vendor §1 | M | Remaining env half of import scoping; defeats selective imports in real-Test roast files. |
 | [cache-on-a-lazy-seq-must-not-answer-seq](deep/cache-on-a-lazy-seq-must-not-answer-seq.md) | soundness | M | Crash-class: real `is-deeply(Seq,Seq)` recurses to a stack-overflow abort because `.cache` still answers `Seq`. |

@@ -1,6 +1,6 @@
 # A `CATCH { default { } }` inside a loaded module's routine leaks its topic into the caller's `for` loop
 
-Found while resuming `todo/tickets/vendor-real-test-module.md` (2026-08-15),
+Found while resuming `todo/deep/vendor-real-test-module.md` (2026-08-15),
 investigating why `roast/S03-operators/range.t` fails under
 `MUTSU_REAL_TEST=1`. Not a `Test`-shape problem and not related to
 `X::Worry::Precedence::Range` (that class works correctly end to end) — it is
@@ -154,7 +154,7 @@ mechanism but were not individually confirmed.
 ## What it blocks
 
 `roast/S03-operators/range.t` under `MUTSU_REAL_TEST=1`
-(`todo/tickets/vendor-real-test-module.md`); likely other files in that
+(`todo/deep/vendor-real-test-module.md`); likely other files in that
 campaign's residue that use `throws-like`/`eval-lives-ok` inside a bare `for`
 loop with an interpolated topic, since the same mechanism would corrupt any
 of them the same way.

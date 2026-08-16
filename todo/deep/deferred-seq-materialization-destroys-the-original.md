@@ -71,7 +71,7 @@ multi sub is(Mu $got, Mu:D $expected, $desc = '') is export {
 
 so `is $fh.lines, <A B C>` compares an already-gutted Seq and reports
 `got: '(...)'`. It is one of the remaining gaps in
-`todo/tickets/vendor-real-test-module.md` (`t/is-lazy-io-lines.t`), and any
+`todo/deep/vendor-real-test-module.md` (`t/is-lazy-io-lines.t`), and any
 `t/` file that hands a lazy `.lines` to the real module will hit it.
 
 ## The fix, and why it is not a one-liner

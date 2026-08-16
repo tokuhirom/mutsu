@@ -8,7 +8,7 @@ for a single failure and bundle them into one `X::Comp::Group` exception
 stops at the first fatal error and reports one diagnosis — there is no
 mechanism to accumulate more than one. Two gaps in
 `roast/S32-exceptions/misc.t` (found while working
-`todo/tickets/vendor-real-test-module.md`) both trace to this missing
+`todo/deep/vendor-real-test-module.md`) both trace to this missing
 feature, not to a missing individual diagnosis:
 
 ### Case 1: `5.` (illegal decimal + malformed postfix call)
@@ -78,7 +78,7 @@ site need to keep working unchanged, etc.).
 
 ## Where this was found
 
-`todo/tickets/vendor-real-test-module.md`'s `roast/S32-exceptions/misc.t`
+`todo/deep/vendor-real-test-module.md`'s `roast/S32-exceptions/misc.t`
 gap-closing (this file's history has several rounds of individual
 "typed but missing an attribute"-shaped fixes — these two are different:
 they need a new *mechanism*, not a new attribute or registration).
