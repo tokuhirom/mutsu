@@ -2364,6 +2364,17 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of the standard
   `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and `scripts/battery-testsuite.sh`
   (GATE PASSED).
+
+  **All 15 `run_instance_method` call sites across all 7 scoped families now tagged.** With no
+  caller left passing an empty `site`, `cargo clippy`'s dead-code lint caught the untagged
+  `Self::run_instance_method` wrapper itself (the `run_instance_method_at("", ...)` thin shim every
+  caller used before its own tagging slice) as unreachable — deleted it, folding its doc comment
+  into `run_instance_method_at`'s and updating the one other stale "stays untagged" comment
+  (`vm_core_helpers::vm_run_instance_method`). This is a real deletion inside F6's scope, not F7's
+  bigger carrier removal: the celled core, `run_instance_method_at`, and the other compatibility
+  surface (`run_instance_method_celled`, `instance_method_not_found`, `run_resolved_instance_method`)
+  are still live — only the one now-orphaned entry point is gone. Verified with the same full local
+  `t/` suite / shadow sweep / roast subset / battery gate as this family's own slice above.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.

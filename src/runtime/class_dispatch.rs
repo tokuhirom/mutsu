@@ -49,38 +49,18 @@ impl Interpreter {
     /// cell-less invocant) only here — the celled core returns `None` on the
     /// common path so cell-threading callers (the construction phases) never
     /// pay the whole-map `to_map()`.
-    pub(crate) fn run_instance_method(
-        &mut self,
-        receiver_class_name: &str,
-        attributes: AttrMap,
-        method_name: &str,
-        args: Vec<Value>,
-        invocant: Option<Value>,
-    ) -> Result<(Value, AttrMap), RuntimeError> {
-        self.run_instance_method_at(
-            "",
-            receiver_class_name,
-            attributes,
-            method_name,
-            args,
-            invocant,
-        )
-    }
-
-    /// Same as [`Self::run_instance_method`], but tags the call with an ADR-0019
-    /// Phase E box E7 dispatch-resolver measurement `site` so
-    /// [`Self::run_instance_method_celled`] shadow-checks its ad-hoc
-    /// `resolve_method_with_owner_invocant` MRO walk against the E4 resolver
-    /// (`resolution_sequence::resolve_sequence`) for that call specifically.
-    /// An empty `site` -- what [`Self::run_instance_method`] passes -- disables
-    /// the probe entirely, so this is a genuine no-op for every caller except
-    /// the one tagged by E7's first sub-slice
-    /// (`vm_core_helpers::vm_run_instance_method`, reached only from the two VM
-    /// call sites in `vm_exec_dispatch.rs`: `CallDefined`'s user `.defined` and
-    /// `SinkPop`'s user `.sink`). Per Phase E's "one consumer family per
-    /// sub-PR" rule, the ~14 other `run_instance_method` callers (`new`,
-    /// qualified dispatch, `handles`, coercion, ...) stay unmeasured until
-    /// their own E7 sub-slice tags them with a distinct site name.
+    ///
+    /// `site` tags the call with an ADR-0019 Phase E box E7 / Phase F box F6
+    /// dispatch-resolver measurement name so [`Self::run_instance_method_celled`]
+    /// shadow-checks its ad-hoc `resolve_method_with_owner_invocant` MRO walk
+    /// against the E4 resolver (`resolution_sequence::resolve_sequence`) for
+    /// that call specifically. Every caller family named in F6's box text
+    /// (`vm_core_helpers::vm_run_instance_method`, `new`/role-pun `.new`,
+    /// coercion, mut-lvalue, qualified dispatch, instance-ops, mut-dispatch,
+    /// and the general call-dispatch fallback) now passes a distinct `site`
+    /// — the box's original untagged wrapper (empty `site`, disabling the
+    /// probe) has no callers left and was removed once every family was
+    /// tagged, per the box's "gather evidence before migrating" discipline.
     pub(crate) fn run_instance_method_at(
         &mut self,
         site: &'static str,
