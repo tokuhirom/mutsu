@@ -1564,3 +1564,61 @@ removes a stale `roast/temp-file-RT-126006-test` before starting (see
 CLAUDE.md); this looks like the same class of leftover-file-from-a-prior-run
 issue, not caught this round since `prove` was run directly for speed. If it
 recurs as a genuine `make roast` failure, look there first.
+
+## `MONKEY-TYPING` leaking into (and then failing to re-arm inside) `EVAL` (2026-08-16)
+
+Follow-on from the ternary round above: re-ran the sweep and picked
+`roast/S12-class/augment-supersede.t`'s remaining `Got: X::AdHoc` failure —
+a `throws-like` expecting `X::Syntax::Augment::WithoutMonkeyTyping` instead
+observed a *different* error (a method-clash `X::AdHoc`), meaning mutsu let
+an `augment` inside an `EVAL`'d string succeed when it should have been
+rejected outright.
+
+**Root cause: an outer `use MONKEY-TYPING;` (active in the script that calls
+`EVAL`) was leaking into the separately-`EVAL`'d string**, unlike real
+`raku` — verified directly: `raku -e 'use MONKEY-TYPING; try { EVAL q[class C
+{ method f {} }; augment class C { method f {} }] }; say $!.^name'` prints
+`X::Syntax::Augment::WithoutMonkeyTyping`, not the method-clash error an
+inherited pragma would reach. This differs from `fatal` (a genuine runtime
+dynamic-scope pragma the caller's `EVAL` legitimately inherits — see the
+`eval-does-not-leak-use-fatal` fix elsewhere in this repo, which is about the
+*opposite* leak direction, EVAL-out-to-caller): `MONKEY-TYPING` gates a
+compile-time check (`augment class Foo {}` is only legal *syntax* when it's
+active), and `EVAL` is a fresh compilation unit for that check.
+
+Fix: `eval_eval_string` (`src/runtime/system_eval_string.rs`) now saves and
+resets `self.monkey_typing` to `false` before compiling+running the EVAL'd
+unit (mirroring the existing `fatal_mode` save/restore skeleton, but with a
+forced reset rather than a straight save/restore, since the two pragmas have
+opposite inheritance semantics), and restores the caller's value afterward.
+
+**This surfaced a second, previously-invisible latent bug**, caught only by
+testing the fix against a full script sequence rather than a single isolated
+snippet (per this file's own repeated lesson about order-dependent state):
+resetting `monkey_typing` to false around `EVAL` meant an EVAL'd string's
+*own* `use MONKEY-TYPING;` now had to actually re-arm the flag — and it
+didn't, whenever the CALLER had already `use`d the same module once.
+`use_module_with_tags_inner`'s `if self.loaded_modules.contains(module) { ...
+}` fast path (`src/runtime/runtime_module.rs`) already re-arms `strict_mode`/
+`fatal_mode` on a repeat `use` of an already-loaded module (a scope that
+restored `env` wholesale since the original load may have lost the runtime
+effect even though the module stays recorded as loaded) — but had no
+matching arm for `MONKEY-TYPING`/`MONKEY`. This was invisible before because
+`monkey_typing` was never independently reset anywhere, so the omission
+never had a way to manifest. Added the missing arm, mirroring `strict`/
+`fatal` exactly.
+
+Pin: extended `t/monkey-typing-lexical.t` (4 → 6 assertions) with both the
+leak-prevention case and the re-arm-after-reset case, verified against `raku`
+too. `roast/S12-class/augment-supersede.t`'s TAP output is now 15/15 clean
+under `MUTSU_REAL_TEST=1` (previously failed one, and a second went from
+"passing only because a preceding failure happened to route through a
+different, uninstrumented path" to genuinely passing) — its remaining
+non-zero exit code under `MUTSU_REAL_TEST=1` is an unrelated, pre-existing
+issue (a `class ::F { ... }` stub declared inside a deliberately-broken `try
+EVAL '...'` in the file's own "used to crash rakudo" regression tests never
+resolves and trips the end-of-program `check_unresolved_stubs()` check;
+confirmed present on a clean `main` checkout too via `git stash`, not
+investigated further this round). `roast/S32-exceptions/misc2.t` also
+improved (6 → 5 remaining failures). Full `t/` suite (3185 files) and `cargo
+clippy -- -D warnings` both clean.
