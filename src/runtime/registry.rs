@@ -1315,6 +1315,7 @@ mod tests {
             is_submethod: false,
             captured_env: None,
             source_file: None,
+            role_param_bindings: None,
         };
         let mut class = ClassDef::default();
         class.methods.insert("chars".to_string(), vec![method]);
