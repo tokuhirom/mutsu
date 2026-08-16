@@ -137,6 +137,7 @@ mod vm_call_light_typed;
 mod vm_call_method_compiled;
 mod vm_call_method_compiled_cache;
 mod vm_call_method_compiled_coerce;
+mod vm_call_method_compiled_direct;
 mod vm_call_method_compiled_interpret;
 mod vm_call_method_compiled_io;
 mod vm_call_method_compiled_mut;
