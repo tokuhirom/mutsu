@@ -111,6 +111,45 @@ impl Interpreter {
         Ok(())
     }
 
+    /// `X::Inheritance::UnknownParent`: `name` (the class being declared)
+    /// gave `parent_name` as an `is` parent that names no known class, role,
+    /// enum, or builtin type. Shared by the immediate check below and by the
+    /// deferred-custom-trait dispatch (`vm_typedecl_ops.rs`) for when a
+    /// lowercase parent name was optimistically deferred to a user
+    /// `trait_mod:<is>` candidate that turns out not to match this call's
+    /// shape after all (mirrors the sibling variable-/attribute-trait
+    /// no-candidate fallback).
+    pub(crate) fn unknown_parent_error(&self, name: &str, parent_name: &str) -> RuntimeError {
+        // Suggest close known type names (Did-you-mean).
+        let suggestions = self.suggest_type_names(parent_name);
+        let mut msg = format!(
+            "'{}' cannot inherit from '{}' because it is unknown.",
+            name, parent_name
+        );
+        if suggestions.len() == 1 {
+            msg.push_str(&format!("\nDid you mean '{}'?", suggestions[0]));
+        } else if suggestions.len() > 1 {
+            msg.push_str("\nDid you mean one of these?\n");
+            for s in &suggestions {
+                msg.push_str(&format!("    '{}'\n", s));
+            }
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("child-name".to_string(), Value::str(name.to_string()));
+        attrs.insert("child".to_string(), Value::str(name.to_string()));
+        attrs.insert(
+            "parent-name".to_string(),
+            Value::str(parent_name.to_string()),
+        );
+        attrs.insert("parent".to_string(), Value::str(parent_name.to_string()));
+        attrs.insert(
+            "suggestions".to_string(),
+            Value::array(suggestions.into_iter().map(Value::str).collect()),
+        );
+        attrs.insert("message".to_string(), Value::str(msg));
+        RuntimeError::typed("X::Inheritance::UnknownParent", attrs)
+    }
+
     /// Validate that all parent classes exist.
     /// Allow inheriting from built-in types that may not be in the classes HashMap.
     /// Returns the parents that must NOT enter the C3 inheritance MRO because
@@ -212,39 +251,7 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
                 }
-                {
-                    // Suggest close known type names (Did-you-mean).
-                    let suggestions = self.suggest_type_names(resolved_parent_name.as_str());
-                    let mut msg = format!(
-                        "'{}' cannot inherit from '{}' because it is unknown.",
-                        name, resolved_parent_name
-                    );
-                    if suggestions.len() == 1 {
-                        msg.push_str(&format!("\nDid you mean '{}'?", suggestions[0]));
-                    } else if suggestions.len() > 1 {
-                        msg.push_str("\nDid you mean one of these?\n");
-                        for s in &suggestions {
-                            msg.push_str(&format!("    '{}'\n", s));
-                        }
-                    }
-                    let mut attrs = HashMap::new();
-                    attrs.insert("child-name".to_string(), Value::str(name.to_string()));
-                    attrs.insert("child".to_string(), Value::str(name.to_string()));
-                    attrs.insert(
-                        "parent-name".to_string(),
-                        Value::str(resolved_parent_name.to_string()),
-                    );
-                    attrs.insert(
-                        "parent".to_string(),
-                        Value::str(resolved_parent_name.to_string()),
-                    );
-                    attrs.insert(
-                        "suggestions".to_string(),
-                        Value::array(suggestions.into_iter().map(Value::str).collect()),
-                    );
-                    attrs.insert("message".to_string(), Value::str(msg));
-                    return Err(RuntimeError::typed("X::Inheritance::UnknownParent", attrs));
-                }
+                return Err(self.unknown_parent_error(name, resolved_parent_name.as_str()));
             }
             // A `does` target that is a non-composable built-in concrete class
             // (Int, Str, Num, Cool, Any, Mu, ...) — as opposed to a composable

@@ -502,8 +502,23 @@ impl Interpreter {
                         .class_attribute_trait_objects
                         .insert((owner.to_string(), attr_name_str.to_string()), mixin_val);
                 }
-                call_result?;
-                continue;
+                // Raku dispatches `trait_mod:<is>` as an ordinary multi: the
+                // built-in candidates and any user-declared one (e.g.
+                // Test.rakumod's own `trait_mod:<is>(Routine:D $r,
+                // :$test-assertion!)`, exported into scope by `use Test`)
+                // share one multi, so a user candidate whose signature does
+                // not match THIS trait's shape simply does not claim it --
+                // dispatch falls through to the unknown-trait diagnosis
+                // below, exactly like the sibling variable-trait path
+                // (`is_trait_mod_no_candidate`, `vm_var_trait_ops.rs`,
+                // `news/2026-08/user-trait-mod-does-not-consume-every-trait.md`).
+                // An error raised from *inside* a handler that DID match is a
+                // real error and still propagates.
+                match call_result {
+                    Ok(_) => continue,
+                    Err(err) if Self::is_trait_mod_no_candidate(&err) => {}
+                    Err(err) => return Err(err),
+                }
             }
             let msg = format!(
                 "Can't use unknown trait '{}' -> '{}' in an attribute declaration.",

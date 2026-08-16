@@ -516,10 +516,23 @@ impl Interpreter {
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
-                // Dispatch deferred unknown parents as custom traits (no args)
+                // Dispatch deferred unknown parents as custom traits (no
+                // args). `validate_class_parents` optimistically deferred
+                // these lowercase names on seeing *any* `trait_mod:<is>`
+                // proto/multi at all -- if none of its candidates actually
+                // match this shape, that guess was wrong and it really was
+                // an unknown parent all along (mirrors the sibling
+                // variable-/attribute-trait no-candidate fallback).
                 for trait_name in &deferred_traits {
                     let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    {
+                        Ok(_) => {}
+                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            return Err(self.unknown_parent_error(&storage_name, trait_name));
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
             }
             // Raku desugars `is Parent` to `trait_mod:<is>($type, Parent)`; when a
@@ -793,10 +806,20 @@ impl Interpreter {
                     let named_arg = Value::pair(trait_name.clone(), trait_value);
                     self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
                 }
-                // Dispatch deferred unknown parents as custom traits (no args)
+                // Dispatch deferred unknown parents as custom traits (no
+                // args); fall back to the unknown-parent diagnosis if no
+                // candidate actually matches this shape (see the matching
+                // comment on the class-registration site above).
                 for trait_name in &role_deferred {
                     let named_arg = Value::pair(trait_name.clone(), Value::TRUE);
-                    self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])?;
+                    match self.vm_call_function("trait_mod:<is>", vec![type_obj.clone(), named_arg])
+                    {
+                        Ok(_) => {}
+                        Err(err) if Self::is_trait_mod_no_candidate(&err) => {
+                            return Err(self.unknown_parent_error(&qualified_name, trait_name));
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
             }
 

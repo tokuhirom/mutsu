@@ -8,7 +8,7 @@ use Test;
 # `Test` was enough to trigger, since Test.rakumod exports
 # `multi sub trait_mod:<is>(Routine:D $r, :$test-assertion!)`.
 
-plan 6;
+plan 10;
 
 use MONKEY-SEE-NO-EVAL;
 
@@ -37,3 +37,24 @@ lives-ok { EVAL 'sub marked() is test-assertion { }' },
 multi sub trait_mod:<is>(Variable:D $v, :$explodes!) { die "boom from handler" }
 throws-like 'my $x is explodes = 1', X::AdHoc,
     'an error from inside a matching handler still propagates';
+
+# Two more independent code paths share the exact same bug shape: an
+# attribute's `is`/`will` trait, and a class/role's `is Parent` (both
+# dispatch through the same trait_mod:<is> multi and both optimistically
+# deferred to it as soon as ANY user candidate existed at all, regardless of
+# whether its signature could ever match).
+
+throws-like 'class Zap { has $.a is bar; }', X::Comp::Trait::Unknown,
+    'an unknown ATTRIBUTE trait is also X::Comp::Trait::Unknown, not X::Multi::NoMatch';
+
+throws-like 'class Zork is nosuchtrait { }', X::Inheritance::UnknownParent,
+    'an unknown CLASS parent is X::Inheritance::UnknownParent, not X::Multi::NoMatch';
+
+throws-like 'role Zorb is nosuchtrait { }', X::Inheritance::UnknownParent,
+    'an unknown ROLE parent is likewise X::Inheritance::UnknownParent';
+
+# Same negative control for the class-level path: a matching handler's own
+# error still propagates.
+multi sub trait_mod:<is>(Mu:U $type, :$blowsup!) { die "boom from class handler" }
+throws-like 'class Y is blowsup { }', X::AdHoc,
+    'an error from inside a matching CLASS-level handler still propagates';
