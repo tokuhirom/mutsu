@@ -2350,6 +2350,20 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `t/` suite (3190 files, `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of
   the standard `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and
   `scripts/battery-testsuite.sh` (GATE PASSED).
+
+  **Progress (general-call-dispatch family, #TBD):** `methods_call_dispatch.rs`'s three named sites
+  — the native-lever-A user-override branch inside `call_method_with_values` itself (mirroring the
+  mut-dispatch family's own native-lever-A site), the user-defined metamethod (`method ^foo(Mu)
+  {...}`) dispatch branch, and the mixin/inner-instance class-method dispatch branch — tagged
+  `run_instance_method_at("generalcalldispatch", ...)`, closing out this box's own 7-family scoping
+  list (coercion, mut-lvalue, qualified-dispatch, instance-ops, mut-dispatch, new-dispatch, and now
+  this one). A full local `t/` sweep (3190 files, `MUTSU_VM_STATS=1`) found zero new mismatches for
+  this site (the only 2 remaining corpus-wide are the pre-existing, unrelated `"privatedispatch"`
+  pair every prior sweep in this box has recorded) — every `run_instance_method` caller family is
+  now tagged and shadow-checked. Verified with the full local `t/` suite (3190 files,
+  `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of the standard
+  `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and `scripts/battery-testsuite.sh`
+  (GATE PASSED).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
