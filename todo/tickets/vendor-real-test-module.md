@@ -1870,3 +1870,70 @@ name outlives its declaring block the way its composed name already does —
 whichever is cheaper turns out to be first will likely also fix the other's
 symptom for free, since both are "the registry `when` would need to trust is
 not yet trustworthy" instances of the same root problem.**
+
+## Both prerequisites fixed (PR#6527) — and the `when` broadening *still* isn't safe (2026-08-16, same session)
+
+Did (a) and (b) both, in full, same session: audited `is_known_type_constraint`
+against every top-level (non-`::`-compound) type name documented under
+`raku-doc/doc/Type/*.rakudoc` (`comm -23` between the two name lists) and
+added every genuine gap found — `Real`, `Numeric`, `Rational`, `Callable`,
+`Supply`, `Iterable`, `Iterator`, `PredictiveIterator`, `Associative`,
+`Positional`, `PositionalBindFailover`, `Sequence`, `Stringy`, `Baggy`,
+`Mixy`, `Setty`, `Dateish`, `Systemic`, `Encoding`, `Formatter`,
+`ForeignCode`, `Collation`, `Proc`, `Signal`, `Order`, `Endian`,
+`PromiseStatus`, `Scheduler`, `Telemetry`, `RaceSeq`, `RakuAST` (28 entries).
+Fixed `register_user_type` (`pragma_preseed.rs`) to promote a plain
+declaration's bare name to the outermost scope unconditionally, exactly
+mirroring what it already did for the composed spelling — confirmed this is
+safe because the function has never distinguished `my`/non-`my` at any of its
+call sites, so the only behavioural change is that a `my`-scoped type now
+also stays "known" to this *parse-time heuristic* after its block exits,
+which is a strictly rarer and lower-consequence miss (a wrong exception
+*class* at parse time) than the false positive being fixed (this registry is
+never consulted by the actual runtime class registry, which has its own
+correct lexical-scoping mechanism).
+
+Re-applied the `given_when.rs` broadening from the previous entry with both
+fixes in place. All five previously-known false positives (`Kept`,
+`condition`, `Naughty` cross-block, plus a `Real`-shaped filler-type case)
+now resolve correctly, and the same ~24-file roast sample used before passes
+clean.
+
+**Then a full local `prove -e target/debug/mutsu t/` (not just the roast
+sample) surfaced 8 MORE previously-unknown false positives**, none
+overlapping the earlier ones: `t/if-pointy-topic-under-given.t`,
+`t/mustache-battery.t`, `t/pod-not-collected-from-heredoc.t`,
+`t/pod-to-text-bundled.t`, `t/prelude-helper-not-block-lexical.t`,
+`t/subst-smartmatch-topic-source.t`, `t/text-csv-battery.t`,
+`t/when-value-through-block-local.t`. Confirmed by bisection (revert only
+`given_when.rs`, keep the two registry fixes, re-run all 8) that every one of
+these is caused by the `when`-broadening itself, not by either registry fix —
+the registry fixes alone are clean against the full `t/` suite (3189 files)
+and the roast sample.
+
+**Final verdict, and why this ticket item stops here for now:** two
+consecutive genuine architectural prerequisites, each fully fixed and each
+independently valuable (shipped as PR#6527, the registry-only half), still
+were not enough — a *third* round of false positives appeared on a wider
+sweep, at roughly the same rate as the first two rounds (2-3 new ones per
+~25-30 files newly exercised). This is a strong signal that the true
+false-positive rate of "any undeclared/unknown bareword directly before `{`
+in a `when` clause is a gobble" is NOT bounded by a finite, auditable set of
+missing registry entries — `when`'s condition can legitimately be almost any
+term shape (block-lexical `my` bindings the parser scope-tracking doesn't see
+across certain block kinds, module-provided term symbols, battery-specific
+helper names, ...) far more often than the two other sites (`?? then !!`,
+list-infix) that this guard was borrowed from. **Extrapolating: fixing the
+current known set would very plausibly uncover a 4th, 5th, ... round at the
+same rate, each requiring a full-corpus (not sampled) sweep to catch — this
+is not converging fast enough to be worth continuing within a single
+session.** `given_when.rs` reverted to the original `X::`/`CX::`-only check
+one more time (verified clean against the full `t/` suite again). The
+registry fixes (PR#6527) are the net positive result of this investigation;
+the `when` broadening itself stays unimplemented. If picked up again: run the
+**full** `t/` suite (not a hand-picked roast sample) after every attempt,
+budget for several rounds of whack-a-mole, and consider whether a
+fundamentally different approach (e.g., a *runtime* fallback path in the VM
+that still raises the right exception if the gobble genuinely happens, rather
+than a parse-time static prediction) would be more tractable than trying to
+make the static prediction complete.
