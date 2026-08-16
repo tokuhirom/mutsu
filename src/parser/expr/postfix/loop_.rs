@@ -595,6 +595,22 @@ pub(in crate::parser) fn brace_newline_state(consumed: &str) -> (bool, bool) {
     (brace, newline_after)
 }
 
+/// Build the `X::Comp::Group` raku raises for `<digit>.` with no fraction
+/// digit and nothing that could start a postfix after the dot. rakudo
+/// collects this as a sorrow (`X::Syntax::Number::IllegalDecimal`) plus a
+/// panic it leads to (`roast/S32-exceptions/misc.t`'s
+/// `throws-like '5.', X::Comp::Group, sorrows => sub (@s) { @s[0] ~~
+/// X::Syntax::Number::IllegalDecimal }` checks exactly this shape), not a
+/// lone typed exception.
+fn illegal_decimal_point_error() -> PError {
+    const MSG: &str = "Decimal point must be followed by digit";
+    let sorrow = Value::make_exception(
+        "X::Syntax::Number::IllegalDecimal",
+        &[("message", Value::str(MSG.to_string()))],
+    );
+    PError::comp_group(sorrow, false, "Confused", MSG.to_string())
+}
+
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
     postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false))
 }
@@ -711,21 +727,39 @@ fn postfix_expr_loop_from(
             //   a decimal-point error: "Decimal point must be followed by digit".
             // - Otherwise `. ++` / `. --` is the obsolete Perl 5 postfix form.
             let after_dot_raw = &rest[1..];
+            let dot_target_is_numeric_literal = matches!(
+                expr,
+                Expr::Literal(ref lit) if matches!(
+                    lit.view(),
+                    ValueView::Int(_)
+                        | ValueView::Num(_)
+                        | ValueView::Rat(..)
+                        | ValueView::Complex(..),
+                )
+            );
+            // `<digit>.` with nothing after the dot that could ever begin a
+            // postfix construct (end of input, a statement/expression
+            // terminator, `=` — `.=` needs an identifier method name, never a
+            // literal target — or a bare `:` itself followed by another dead
+            // end — `.:name`/`.:<op>`/`.:[...]`/`.:«op»` are all legitimate
+            // reified-operator postfixes, roast/S02-literals/numeric.t, so only
+            // a `:` that leads nowhere counts) is unambiguously raku's
+            // "Decimal point must be followed by digit" error rather than a
+            // method-call attempt.
+            const DEAD_END: [char; 6] = [';', ',', ')', ']', '}', '\n'];
+            if dot_target_is_numeric_literal
+                && (after_dot_raw.is_empty()
+                    || after_dot_raw.starts_with(DEAD_END)
+                    || after_dot_raw.starts_with('=')
+                    || (after_dot_raw.starts_with(':')
+                        && (after_dot_raw[1..].is_empty()
+                            || after_dot_raw[1..].starts_with(DEAD_END))))
+            {
+                return Err(illegal_decimal_point_error());
+            }
             if after_dot_raw.starts_with(' ') || after_dot_raw.starts_with('\t') {
-                if matches!(
-                    expr,
-                    Expr::Literal(ref lit) if matches!(
-                        lit.view(),
-                        ValueView::Int(_)
-                            | ValueView::Num(_)
-                            | ValueView::Rat(..)
-                            | ValueView::Complex(..),
-                    )
-                ) {
-                    return Err(PError::fatal(
-                        "X::Syntax::Number::IllegalDecimal: Decimal point must be followed by digit"
-                            .to_string(),
-                    ));
+                if dot_target_is_numeric_literal {
+                    return Err(illegal_decimal_point_error());
                 }
                 let trimmed = after_dot_raw.trim_start_matches([' ', '\t']);
                 if trimmed.starts_with("++") || trimmed.starts_with("--") {

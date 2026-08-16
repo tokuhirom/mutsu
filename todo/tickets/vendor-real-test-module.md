@@ -1719,3 +1719,154 @@ the message convention (no `.exception`) is invisible to the two branches
 that DO preserve a class (`is_arity_error || is_type_only_mismatch`, and the
 `else if let Some(ex) = err.exception` branch), so it silently loses its
 typing the moment this wrap fires.
+
+## One of the two remaining `X::Comp::Group` gaps closed: bare `5.` (2026-08-16)
+
+Picked up the "3 items, none picked up yet" list from the `X::Inheritance::SelfInherit`
+round above — down to 2 by then (`X::Parameter::BadType` leak and
+`X::ControlFlow::Return` were both closed in later rounds; see above). Took
+the `5.` half of the remaining pair: `throws-like '5.', X::Comp::Group,
+sorrows => sub (@s) { @s[0] ~~ X::Syntax::Number::IllegalDecimal }`.
+
+**Root cause:** the decimal-literal parser already backtracked cleanly when
+`5.` had no fraction digit, but nothing downstream diagnosed the resulting
+dead end — the postfix-`.` parser only special-cased *whitespace* after the
+dot (`5. `) as the "Decimal point must be followed by digit" error; `5.`
+immediately followed by end-of-input, `;`, `)`, `,`, `}`, `]`, `\n`, `=`, or a
+lone `:` fell through to a method-call attempt with nothing to read, landing
+on the generic `X::Syntax::Confused`. Also, even the existing whitespace case
+raised a lone typed exception, not the `X::Comp::Group` (sorrow +
+panic) rakudo actually throws — `PError::comp_group` already existed for
+exactly this shape (see `check_bare_io_func`'s bare-`say` diagnosis and
+`check_multi_underscore`'s underscore-run diagnosis, both in this file's
+neighbourhood) but this call site wasn't using it.
+
+Fixed in `src/parser/expr/postfix/loop_.rs`: a new
+`illegal_decimal_point_error()` helper builds the `X::Comp::Group` (sorrow =
+`X::Syntax::Number::IllegalDecimal`, panic class `X::Comp::AdHoc` labelled
+"Confused" since rakudo's own second complaint varies by what follows the dot
+— `Malformed postfix call`, `Unsupported use of . to concatenate strings`,
+`Missing required term after infix`, depending on the exact next character —
+and no roast assertion pins the panic's own class or the message's second
+line, only `.sorrows[0]`'s class), reused by both the pre-existing whitespace
+case and a new "nothing at all can follow" case.
+
+**A broadened first attempt regressed `roast/S02-literals/numeric.t`,
+caught before pushing:** treating any `:` after the dot as a dead end (unless
+immediately followed by an identifier char) broke the legitimate
+reified-operator postfixes `42.:<->`, `42.:«~»`, `42.:[...]`,
+`42.:<<'~'>>` — `<`, `«`, `[` are not identifier characters either. Tightened
+to only treat `:` as a dead end when the character *after* the colon is
+ALSO one of the dead-end terminators (or end of input) — i.e. `5.:` alone
+is illegal, `5.:<anything-that-could-start-a-postfix>` is not. This is the
+same lesson as the `when`-gobbling attempt below: **verify a broadened parser
+condition against every roast file that exercises the same punctuation
+before trusting it, not just the one file that motivated the change.**
+
+`roast/S32-exceptions/misc.t`'s `5.` subtest now passes under both `Test`
+providers. Pin: `t/decimal-point-illegal-comp-group.t` (10 assertions,
+verified byte-identical against `raku` for exception type/sorrow
+count/sorrow class — `.message`'s *second* line was deliberately left
+unpinned since it varies by construct, per above). Full `t/` suite (3189
+files) and the six touched/neighbouring whitelisted roast files
+(`S02-literals/numeric.t`, `S02-lexical-conventions/minimal-whitespace.t`,
+`S32-exceptions/misc.t`, `misc2.t`, `S02-literals/radix.t`,
+`S02-types/WHICH.t`) all clean; `cargo clippy -- -D warnings` clean.
+
+**The other half — `when SomeUndeclaredType { }` — was tried and reverted,
+not fixed.** Broadening `when`'s existing `X::`/`CX::`-only gobbling
+detection (`src/parser/stmt/control/given_when.rs`) to any undeclared
+bareword looked promising (raku genuinely gobbles the block for *any*
+undeclared/forward-referenced/even-declared-sub bareword there, not just
+`X::`/`CX::`-namespaced ones — verified directly against `raku`), but it
+produces real false positives mutsu cannot rule out at parse time:
+`when Kept { }` (`roast/packages/Test-Helpers/lib/Test/Util.rakumod` —
+`Kept` is a builtin `PromiseStatus`-shaped constant mutsu represents as a
+bare runtime string, not a registered enum value the parser can see) and
+`when condition { }` (`roast/S04-statements/given.t` — `condition` is a
+sigilless lexical, `\condition`, and the parser has no "is this name a
+declared sigilless variable" check at all). Both broke multiple whitelisted
+roast files transitively (a `Test::Util` compile failure takes down every
+file that loads it) — caught locally before pushing, not by CI. A safe
+general fix needs a registry of builtin enum-like constants and
+sigilless-lexical name tracking in the parser first; left as a `todo/tickets/`
+candidate for whoever picks this back up, not re-attempted this session.
+
+## `when SomeUndeclaredType { }`: second attempt, reusing precedented infrastructure, also reverted (2026-08-16)
+
+Came back to this same session with what looked like the missing prerequisite
+in hand: `src/parser/expr/precedence/ternary.rs` and `list_infix_top.rs`
+already solve the **identical** ambiguity (an undeclared bareword directly
+before `!!`/end-of-item is a listop-call gobble, not a complete term) with a
+mature, already-shipped exclusion set —
+`is_known_type_constraint`/`is_known_compound_type`/`is_user_declared_type`
+plus `is_builtin_enum_value`/`is_builtin_constant_term`/
+`is_user_declared_value_term`/`is_user_declared_enum_value`. That last one,
+`is_user_declared_value_term` (`src/parser/stmt/simple/user_ops.rs`), turned
+out to already cover exactly the `condition` sigilless-param case from the
+first attempt — `register_sigilless_terms` in `sub_decl.rs` already registers
+a routine's sigilless params as term symbols when parsing its body, so the
+"prerequisite" the first attempt's write-up asked for already existed; it
+just wasn't being consulted at this call site. Added `Planned`/`Kept`/`Broken`
+to `is_builtin_enum_value` (documented as representing mutsu's bare-string
+`Promise.status`) to cover the other first-attempt false positive, and wired
+`when_stmt` to the same guard set as the ternary sites (compound `::` names
+still restricted to the `X::`/`CX::` check, since that half of the original
+concern — forward-imported/not-yet-parsed compound type names — is
+unaffected by any of this).
+
+Verified both original false positives fixed (`Kept`, `condition`) — but a
+**third and fourth** false positive surfaced on a *wider* regression sweep
+(the first attempt was only checked against the specific files the first two
+false positives came from; this round checked every whitelisted file
+touching `Kept`/`Broken`/`Planned`/`ternary`/`given`/`ClassDecl`-in-a-block
+patterns):
+
+1. **`roast/S04-exception-handlers/catch.t`**: `class Naughty is Exception
+   {}` declared inside a bare `{ ... }` block, then `when Naughty { }` used in
+   a **later, separate** bare block after the first one exited. Plain
+   (non-`my`) class declarations are supposed to stay bareword-visible after
+   their declaring block ends (this file's whole point is testing exception
+   superclass matching) — real `raku` treats `Naughty` as visible there. But
+   `is_user_declared_type`'s `SCOPES` tracking only keeps a *bare* name
+   (`register_user_type_verbatim`) in the scope that was active when
+   registered; `register_user_type`'s "stays visible after the enclosing body
+   ends" logic only promotes the **composed** (package-prefixed) spelling to
+   the outermost scope, not the bare one, and bare blocks pop their own scope
+   frame. So by the time the second block's `when Naughty` was parsed, no
+   currently-active scope contained `"Naughty"` and the check misfired. This
+   is a real, previously-latent gap in `is_user_declared_type`'s own model of
+   Raku's non-lexical `class`/`package`/`role` visibility (already flagged,
+   for the narrower EVAL-boundary case, at the end of the
+   `X::Parameter::BadType leak, fixed` section above) — not something a
+   `when`-local workaround should paper over.
+2. **`roast/S32-exceptions/misc2.t`**: `given $bar { when Real { 1 } when Str
+   { 2 } }` — `Real` is a genuine builtin Raku type but was simply **absent**
+   from `is_known_type_constraint`'s list (verified: `grep '"Real"'` finds
+   nothing). The roast assertion here doesn't even care about `when`'s
+   semantics — it's testing an unrelated curly-brace hash/block
+   disambiguation ("Strange text after block" in real `raku`) and only
+   incidentally uses `Real`/`Str` as filler type names — but the missing
+   registry entry let the new `when`-check misfire into a wrong diagnosis
+   anyway.
+
+Given TWO independent, previously-unknown gaps in the exclusion registries
+surfaced on a regression sweep that only covered a few dozen files (not the
+full corpus), the risk model from the first attempt's write-up holds:
+**`is_known_type_constraint` is not provably complete, and `is_user_declared_type`
+does not correctly model non-lexical class/package visibility across block
+boundaries.** Reusing the ternary sites' exact guard is *necessary* but not
+*sufficient* — those two sites happen not to be exercised by any roast file
+that hits either gap, but `when` (used far more pervasively across the
+corpus, including directly on `given`'s topic in loops over heterogeneous
+values) is. Reverted `given_when.rs` back to the original `X::`/`CX::`-only
+check and the `is_builtin_enum_value` addition (neither false positive
+reproduces on the reverted tree; full `t/` suite and the ~20 touched roast
+files all clean again). **Do not re-attempt this broadening without first
+either (a) auditing `is_known_type_constraint` against the actual
+`raku-doc/doc/Type/` type list for completeness, or (b) fixing
+`register_user_type`'s scope model so a plain (non-`my`) declaration's bare
+name outlives its declaring block the way its composed name already does —
+whichever is cheaper turns out to be first will likely also fix the other's
+symptom for free, since both are "the registry `when` would need to trust is
+not yet trustworthy" instances of the same root problem.**
