@@ -109,6 +109,30 @@ pub(crate) fn register_user_type_verbatim(name: &str) {
 /// Register a user-declared type name (class, role, grammar, enum).
 pub(crate) fn register_user_type(name: &str) {
     register_user_type_verbatim(name);
+    // A plain (non-`my`) declaration is installed non-lexically in Raku: it
+    // stays bareword-visible even after the bare `{ ... }` block it was
+    // written in exits (roast/S04-exception-handlers/catch.t: `class Naughty
+    // is Exception {}` inside one block, matched by `when Naughty { }` in a
+    // later, separate block). `register_user_type` does not currently
+    // distinguish `my`/non-`my` at all — every call site (class/role/grammar/
+    // subset declarations, `my`-scoped included) reaches this function
+    // identically — so promoting the bare name to the outermost scope here,
+    // unconditionally, matches the existing behaviour for the *composed*
+    // spelling below and is the same trade-off: a `my`-scoped type keeps
+    // parsing as "known" after its block exits too (this registry is a
+    // parse-time disambiguation heuristic only — used to decide whether an
+    // ambiguous bareword is "probably a type", e.g. before a `when`'s block
+    // or in `S`-vs-`S///` disambiguation — not the actual runtime class
+    // registry, which has its own correct lexical-scoping mechanism via
+    // `register_lexical_class`/`pop_lexical_class_scope`), which is a much
+    // rarer and lower-consequence miss than the false positive this fixes.
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let outermost = scopes
+            .first_mut()
+            .expect("scope stack should never be empty");
+        outermost.user_types.insert(name.to_string());
+    });
     // A declaration nested inside `package`/`module`/`class`/`role` is installed
     // under its composed name, and stays visible after the enclosing body ends.
     // Register that spelling in the outermost scope so it outlives the body's
