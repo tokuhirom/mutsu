@@ -2130,16 +2130,29 @@ impl Interpreter {
         // element-mutator errors. Everything else falls through to normal
         // dispatch, and the post-dispatch FALLBACK absorb in
         // `exec_call_method_mut_op` keeps handling genuinely-unknown methods.
-        if modifier.is_none()
-            && target.is_nil()
-            && let Some(err) =
-                crate::vm::vm_call_method_ops::nil_predispatch_error(&method, args.is_empty())
-        {
-            crate::vm::vm_stats::record_dispatch_entry_intercept(
-                "callmethodmut",
-                "nil-predispatch",
-            );
-            return Err(err);
+        if modifier.is_none() && target.is_nil() {
+            match crate::vm::vm_call_method_ops::nil_predispatch_verdict(&method, args.is_empty()) {
+                Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Error(err)) => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "nil-predispatch",
+                    );
+                    return Err(err);
+                }
+                Some(crate::vm::vm_call_method_ops::NilPredispatchVerdict::Warn {
+                    message,
+                    resume,
+                }) => {
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "nil-predispatch",
+                    );
+                    let resumed = self.raise_resumable_warning(message, resume)?;
+                    self.stack.push(resumed);
+                    return Ok(());
+                }
+                None => {}
+            }
         }
         // Auto-vivify undefined values (Nil, Any, Mu type objects) to empty Arrays
         // for mutating list methods. In Raku, calling push/unshift/append/prepend on
