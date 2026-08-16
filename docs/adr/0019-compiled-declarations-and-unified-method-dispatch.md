@@ -1687,6 +1687,26 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     pre-existing tracked `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh`
     (GATE PASSED, including OO::Monitors which exercises `^add_method` via `EXPORTHOW::DECLARE`);
     `cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-7, #TBD):** of the three items this bullet names, only one needed a code
+    change. `builtins_system_require.rs:227-240`'s `require`-driven class aliasing (a fresh
+    `ClassDef` clone inserted under a new alias name) never called `sync_user_method_entries` for
+    the alias at all -- the alias's `method_entries`/`owner_method_names` rows were simply never
+    populated, so every F4c-1-cut-over enumeration site (`.^methods`, etc.) saw the alias as
+    method-less even though `class_def.methods` (still read by the yet-to-be-cut-over dispatch
+    paths) had them. Fixed by calling `sync_user_method_entries(&alias)` right after the insert,
+    matching the pattern every other whole-class-insert site in the codebase already follows.
+    `runtime_init.rs`'s startup seeding loop and the two `methods: HashMap::new()` initialisers
+    needed no change -- the seeding loop already calls `sync_user_method_entries` per class (the
+    established mechanism, already correct), and the two initialisers construct a `ClassDef` with
+    zero methods, so there is nothing to dual-write; both are exactly the "disappears" /
+    "merely loses a field" outcomes this bullet's own text predicts for F4c-9b, not something F4c-7
+    itself needs to act on. Verified with the full local `t/` suite (3183 files, 29636 tests) under
+    `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions), the 312-file
+    `S04`/`S06`/`S09`/`S11`/`S12`/`S14` roast subset (`S11-modules` added for this slice's own
+    `require`-alias territory; only the pre-existing tracked `S11-modules/re-export.t` SORRY-abort
+    and `S12-attributes/trusts.t` failures), and `scripts/battery-testsuite.sh` (GATE PASSED);
+    `cargo clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site
