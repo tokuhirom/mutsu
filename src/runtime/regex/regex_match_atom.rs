@@ -707,9 +707,8 @@ impl Interpreter {
         // already cover).
         let is_user_method = self
             .registry()
-            .classes
-            .get(pkg)
-            .is_some_and(|cd| cd.methods.contains_key(&spec.lookup_name));
+            .user_method_overloads(pkg, &spec.lookup_name)
+            .is_some();
         if !is_user_method {
             return None;
         }

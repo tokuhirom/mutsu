@@ -30,8 +30,8 @@ impl Interpreter {
     pub(crate) fn registry_has_destroy_methods(&self) -> bool {
         let reg = self.registry();
         reg.classes
-            .values()
-            .any(|cd| cd.methods.contains_key("DESTROY"))
+            .keys()
+            .any(|name| reg.user_method_overloads(name, "DESTROY").is_some())
             || reg
                 .roles
                 .values()
@@ -82,10 +82,10 @@ impl Interpreter {
                 }
                 // Clone DESTROY overloads out and drop the guard before re-entering
                 // user code (run_instance_method_resolved).
-                let destroy_overloads = match self.registry().classes.get(mro_class) {
-                    Some(class_def) => class_def.methods.get("DESTROY").cloned(),
-                    None => continue,
-                };
+                if !self.registry().classes.contains_key(mro_class) {
+                    continue;
+                }
+                let destroy_overloads = self.registry().user_method_overloads(mro_class, "DESTROY");
                 // Call class's own DESTROY submethod
                 if let Some(overloads) = destroy_overloads
                     && let Some(method_def) = overloads.into_iter().find(|def| {
@@ -169,25 +169,23 @@ impl Interpreter {
     pub(super) fn detect_unresolved_role_method_conflicts(
         &self,
         class_name: &str,
-        class_def: &ClassDef,
     ) -> Result<(), RuntimeError> {
-        // ADR-0019 F4c-1 shadow check. NOTE: unlike the other seven sites,
-        // this `class_def` is NOT guaranteed to match the registry's
-        // `owner_method_names` at this point -- `finalize_class_registration`
-        // calls this immediately after `resolve_class_stub_requirements`,
-        // which can mutate/remove entries from `class_def.methods` in place
-        // (an unsatisfied stub whose requirement got resolved away), and the
-        // registry is not re-synced until after this call returns. A
-        // mismatch here is therefore expected whenever stub resolution
-        // changed the method set, not necessarily a bug -- do NOT cut this
-        // site over without first confirming (via the mismatch detail) which
-        // mismatches are this expected staleness vs. a real gap.
-        self.registry().shadow_check_owner_method_names(
-            "class::detect_unresolved_role_method_conflicts",
-            class_name,
-            class_def.methods.keys().map(String::as_str),
-        );
-        for (method_name, defs) in &class_def.methods {
+        // ADR-0019 F4c-9a-1: cut over from `class_def.methods` to the
+        // canonical table. `resolve_class_stub_requirements` (called just
+        // before this by `finalize_class_registration`) dual-writes every
+        // `class_def.methods` mutation to the registry via the mutator API
+        // (F4c-3), so unlike the pre-dual-write-bridge era this function's
+        // own F4c-1 shadow check used to worry about, the two are now kept
+        // in lockstep even mid-`finalize_class_registration` -- confirmed
+        // empirically via that same shadow check reporting zero mismatches
+        // across the full local `t/` suite (3185 files) and the S12/S14
+        // role-composition roast subset (122 files) before this cutover.
+        let registry = self.registry();
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(defs) = registry.user_method_overloads(class_name, &method_name) else {
+                continue;
+            };
             // Submethods (like BUILD, TWEAK) from multiple roles do not conflict —
             // they are accumulated and all called during construction. Skip them.
             if defs.iter().all(|d| d.is_submethod) {
@@ -335,13 +333,10 @@ impl Interpreter {
             // No user-code re-entry in this loop body (pure signature-string
             // building), so a let-bound guard is safe.
             let registry = self.registry();
-            let Some(class_def) = registry.classes.get(cn.as_str()) else {
+            let Some(overloads) = registry.user_method_overloads(cn.as_str(), method_name) else {
                 continue;
             };
-            let Some(overloads) = class_def.methods.get(method_name) else {
-                continue;
-            };
-            for def in overloads {
+            for def in &overloads {
                 if def.is_private || (def.is_my && is_ancestor) {
                     continue;
                 }

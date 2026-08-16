@@ -654,8 +654,7 @@ impl Interpreter {
                 // For the receiver's own class, "own" is any candidate stored
                 // on the class with role_origin == None.
                 let registry = self.registry();
-                let class_def = registry.classes.get(owner)?;
-                let overloads = class_def.methods.get(method_name)?;
+                let overloads = registry.user_method_overloads(owner, method_name)?;
                 if owner == receiver_class {
                     overloads
                         .iter()
@@ -689,8 +688,7 @@ impl Interpreter {
                 // Fall back to a submethod composed into the receiver's class
                 // table whose role origin matches this role.
                 let registry = self.registry();
-                let class_def = registry.classes.get(receiver_class)?;
-                let overloads = class_def.methods.get(method_name)?;
+                let overloads = registry.user_method_overloads(receiver_class, method_name)?;
                 overloads
                     .iter()
                     .find(|m| {

@@ -1740,6 +1740,88 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `S29-context/eval.t`/`evalfile.t`, `S06-other/main-eval.t`, `S04-phasers/in-eval.t` (only the
     same two pre-existing tracked failures), and `scripts/battery-testsuite.sh` (GATE PASSED);
     `cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-9a-1, #TBD):** first slice of the read cutover (F4c-9a); not the whole box —
+    see the remaining scope below. Migrated every `ClassDef::methods` direct-read site that is a
+    genuine *downstream dispatch/introspection consumer* (not a write-family's own in-flight
+    bookkeeping, and not a `RoleDef::methods` read, which (1) keeps in place) onto
+    `Registry::user_method_overloads`/`get_method_overloads` (class-only sites) or
+    `Registry::get_method_overloads_with_role_fallback` (the class-then-role sites R4 names).
+    Seventeen files: `resolution_method.rs` (`count_visible_method_candidates`,
+    `resolve_all_methods_with_owner` — the two sites R4 explicitly requires on the fallback
+    helper; `resolve_method_with_owner_impl` at `:168` is untouched, confirmed still class-only
+    via `get_method_overloads` per R4's own warning against unifying the file), `resolution_
+    deferral.rs` (`own_overloads_at_level`, whose doc comment warned against the bare helper —
+    now correctly reads as a pointer at the *with-fallback* one), `accessors_state.rs`
+    (`has_multiple_dispatch_candidates` moved to the fallback helper, dropping its own manual
+    class-then-role duplication; `find_method_candidate_index` at `:1116`, the R4-flagged
+    "different from `:588,593`" site, moved to the class-only helper as R4 requires), `class.rs`
+    (`registry_has_destroy_methods`'s class half, the per-level DESTROY fetch, and `format_
+    method_candidate_signatures`; `detect_unresolved_role_method_conflicts` at `:169` is
+    deliberately left untouched per its own comment — `class_def` there is not guaranteed to
+    match the registry mid-call), `class_introspection.rs` (`has_user_method`; `has_user_method_
+    including_role`'s role half is untouched, out of scope), `methods_walk.rs` (`WalkKind::Class`
+    and `WalkKind::Role`'s receiver-class submethod fallback; `WalkKind::Role`'s own role-table
+    probe and `WalkKind::MixinRole` are untouched, out of scope), `methods_classhow_lookup.rs`
+    (the MRO-walk in `classhow_lookup`, both lookups in `classhow_lookup_all_candidates`; the
+    role-only fallback outside the MRO loop is untouched), `methods_classhow_method_obj.rs`
+    (the two public-attribute-shadow checks in `collect_class_methods`/`class_method_table` —
+    the enumeration halves of these same two functions were already migrated in F4c-1),
+    `methods_qualified.rs`, `methods_signature_shaped.rs` (both `method_exists` MRO scans),
+    `methods_dispatch_new.rs` (`run_user_buildall_hook`'s `has_user` closure),
+    `methods_object_dispatch_new.rs` (`any_build`/`any_tweak`), `metamodel.rs`
+    (`declare_drive_how_protocol`'s per-name value fetch — its enumeration half was already
+    migrated in F4c-1; this closes out the function's own leftover redundant class_def re-lookup),
+    `registration.rs` (`inherited_matching_method_count`, `inherited_any_concrete_method`, and
+    `resolve_class_stub_requirements`'s per-name value read — the last of these reads via
+    `self.registry()` instead of the `&mut ClassDef` parameter, relying on the same "already
+    published to the registry by this point" invariant the function's own F4c-1-era comment
+    already documents for the enumeration half; verified safe because the parameter is a plain
+    owned local, not borrowed from `self`, so no aliasing risk), `regex/regex_match_atom.rs`, and
+    `compiler/helpers_method_body.rs` (a test-only fixture-comparison helper, moved to the
+    fallback helper for symmetry with `resolve_all_methods_with_owner`). Every write-family site
+    (registration_class_body*.rs, registration_class_augment.rs, registration_class_compose*.rs,
+    methods_classhow_dispatch.rs's MOP writers, system.rs, builtins_system_require.rs,
+    accessors_resolve.rs's `compile_class_methods`) is untouched — those still read/write
+    `class_def.methods` as part of the dual-write bridge itself and are F4c-9b's job, not 9a's.
+    `class_dispatch.rs:228` is untouched per the box's own instruction (F6's carrier deletes it
+    for free). Verified with the full local `t/` suite (3185 files, 29665 tests) under
+    `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions); the same 243-file
+    `S04`/`S06`/`S09`/`S12`/`S14` roast subset produced byte-identical failure output against a
+    `main` baseline build (the same 7 pre-existing non-whitelisted failures, none newly broken —
+    `S06-advanced/caller.t`, `S06-advanced/return_function.t`, `S12-attributes/trusts.t`,
+    `S12-class/open_closed.t`, `S12-meta/exporthow.t`, `S12-traits/basic.t`, `S12-traits/
+    parameterized.t`); `scripts/battery-testsuite.sh` (GATE PASSED, 245/271); `cargo clippy -- -D
+    warnings` and `cargo fmt` clean. **Remaining F4c-9a scope** (deferred, not done by this
+    slice): re-auditing the write-family files once F4c-9b is ready to retire their
+    `class_def.methods` half.
+
+    **Progress (F4c-9a-2, #TBD):** closes out `class.rs`'s `detect_unresolved_role_method_
+    conflicts`, the one site F4c-9a-1 deliberately left alone because its own comment warned that
+    `class_def` is not guaranteed to match the registry's `owner_method_names` mid-`finalize_
+    class_registration` (the call runs right after `resolve_class_stub_requirements`, before the
+    post-stub-resolution `class_def` is re-synced). That staleness gap turned out to already be
+    closed: `resolve_class_stub_requirements`'s own mutation loop (F4c-3) dual-writes every
+    `class_def.methods` add/remove straight to the registry via the mutator API, so the two are
+    kept in lockstep even mid-call now. Confirmed empirically, not just by re-reading the code,
+    before touching the site: this function's own pre-existing F4c-1 shadow check
+    (`shadow_check_owner_method_names`) was run under `MUTSU_VM_STATS=1` across the full local
+    `t/` suite (3185 files) and the 122-file `S12`/`S14` role-composition-conflict-heavy roast
+    subset -- zero mismatches in either sweep, i.e. the shadow check itself supplied the
+    confirmation its own comment demanded. Cut over to `Registry::owner_method_names` +
+    `Registry::user_method_overloads`, matching the other seven F4c-1 sites; dropped the now-dead
+    `class_def: &ClassDef` parameter (its one caller, `finalize_class_registration`, updated) and,
+    since this was the shadow check's last remaining caller, retired the whole F4c-1 shadow-check
+    apparatus it was the last user of: `Registry::shadow_check_owner_method_names`
+    (`registry_method_table.rs`) and `vm_stats::record_owner_method_names_shadow_check` plus its
+    two atomics, per-site mismatch map, and exit-time print block (`vm_stats.rs`) -- the box's own
+    "write-through deletes existing workarounds" payoff pattern, applied to a verification
+    scaffold instead of a runtime workaround. Verified with the full local `t/` suite (3185 files,
+    29665 tests, green) and the same 243-file roast subset producing byte-identical failure output
+    against the `main` baseline (same 7 pre-existing failures, zero new breakage); `scripts/
+    battery-testsuite.sh` (GATE PASSED, 245/271); `cargo build`, `cargo clippy -- -D warnings`,
+    `cargo fmt` all clean (confirming no other caller depended on the retired shadow-check API).
+    **F4c-9a is now fully closed** apart from re-auditing the write-family files at F4c-9b time.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

@@ -323,16 +323,9 @@ mod d3_8a_byte_parity_tests {
             .run(source)
             .unwrap_or_else(|e| panic!("fixture source runs: {e:?}"));
         let registry = interp.registry();
-        let runtime_code = registry
-            .classes
-            .get(type_name)
-            .and_then(|c| c.methods.get(method_name))
-            .or_else(|| {
-                registry
-                    .roles
-                    .get(type_name)
-                    .and_then(|r| r.methods.get(method_name))
-            })
+        let overloads = registry.get_method_overloads_with_role_fallback(type_name, method_name);
+        let runtime_code = overloads
+            .as_ref()
             .and_then(|defs| defs.first())
             .and_then(|def| def.compiled_code.as_ref())
             .unwrap_or_else(|| {

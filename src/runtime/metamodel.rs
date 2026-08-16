@@ -424,9 +424,7 @@ impl Interpreter {
             for method_name in method_names {
                 let Some(overloads) = self
                     .registry()
-                    .classes
-                    .get(class_name)
-                    .and_then(|cd| cd.methods.get(&method_name).cloned())
+                    .user_method_overloads(class_name, &method_name)
                 else {
                     continue;
                 };

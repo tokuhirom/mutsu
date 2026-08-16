@@ -417,10 +417,7 @@ impl Interpreter {
         // Hoist clone to a `let` so the guard drops before re-entry (&mut self).
         let overloads = self
             .registry()
-            .classes
-            .get(&inst_cn_str)
-            .and_then(|c| c.methods.get(actual_method))
-            .cloned();
+            .user_method_overloads(&inst_cn_str, actual_method);
         if let Some(overloads) = overloads {
             for def in overloads {
                 if def.role_origin.as_deref() == Some(qualifier)
