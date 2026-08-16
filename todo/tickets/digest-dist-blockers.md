@@ -175,19 +175,22 @@ ambiguous. The narrowness comparison for *named* parameters is the thing to fix.
 
 </details>
 
-## Also relevant: `Digest::HMAC` itself
+## Also relevant: `Digest::HMAC` itself — the `proto`/builtin-name collision is FIXED
 
-The jjmerelo `Digest::HMAC` module (23 lines) already runs correctly on mutsu —
-RFC 2202 vectors match — as long as the `&hash` callback is not a `proto`. A
-separate bug makes a `proto` bound to a `&`-parameter whose name collides with a
-builtin resolve to the builtin instead:
+**Re-verified 2026-08-16: fixed**, apparently as a side effect of unrelated
+work since this section was written (no specific commit identified; the exact
+repro below was re-run against current `main` and now resolves correctly):
 
     proto p1(|) {*}
     multi p1(Str $s) { "proto-ok" }
-    sub call-hash(&hash) { hash("x") }   # falls through to the `hash` builtin
-    sub call-cb(&cb)     { cb("x") }     # correct
-    say call-hash(&p1);   # mutsu: "Odd number of elements found where hash initializer expected"
+    sub call-hash(&hash) { hash("x") }   # used to fall through to the `hash` builtin
+    sub call-cb(&cb)     { cb("x") }     # was always correct
+    say call-hash(&p1);   # now: "proto-ok" (was: "Odd number of elements found where hash initializer expected")
 
-A `multi` or plain `sub` in the same position resolves correctly; only a `proto`
-value is missed. This blocks the natural `hmac-hex($key, $msg, &md5)` spelling
-with the bundled `OpenSSL::Digest` (whose `md5`/`sha1` are `my proto sub`s).
+The jjmerelo `Digest::HMAC` module (23 lines) already ran correctly on
+mutsu with a non-`proto` `&hash` callback; this closes the remaining gap
+for a `proto`-shaped one too (the natural `hmac-hex($key, $msg, &md5)`
+spelling with the bundled `OpenSSL::Digest`, whose `md5`/`sha1` are `my
+proto sub`s — not independently re-verified with the actual `OpenSSL::Digest`
+module, which is not present in this environment's `zef` store, but the
+underlying mechanism the ticket's repro isolated is confirmed fixed).
