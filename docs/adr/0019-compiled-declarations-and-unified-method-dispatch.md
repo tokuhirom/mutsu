@@ -1931,6 +1931,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     DECLARE/MOP-heaviest battery and the one most likely to catch a `^add_method`/`^add_multi_
     method` regression from item (1)); `cargo build`, `cargo clippy -- -D warnings`, `cargo fmt`
     all clean.
+
+    **Correction/fix found by CI, not local verification (R8, the lock-reentrancy hazard).**
+    `class_body_code_alias` (item (1)'s `registration_class_body.rs` entry, `our &alias ::= &m`)
+    originally read `if let Some(overloads) = self.registry().user_method_overloads(cx.name,
+    source_name) { self.registry_mut().set_user_methods(...); }` -- exactly the R8 shape this
+    ADR's own F4c-3/F4c-4/F4c-6 progress notes already warn about: a `self.registry()` temporary
+    used directly as an `if let` scrutinee has its `RegistryReadGuard` lifetime-extended for the
+    WHOLE if-let body by Rust's temporary-extension rule, so the nested `self.registry_mut()` call
+    is a same-thread recursive `RwLock` acquisition -- a deadlock, not a panic, so it surfaced as a
+    CI timeout (`roast/S13-syntax/aliasing.t`, exit 124) rather than a local test failure; none of
+    this box's own local verification (full `t/`, the roast subset, the battery gate) exercises
+    `our &alias ::= &method` inside a class body, so it passed clean locally and only CI's fuller
+    roast run caught it. Fixed by hoisting the `Option<Vec<MethodDef>>` to an owned `let` binding
+    before the `if let`, matching the established safe idiom this file and `registration_class_
+    compose_body.rs` already use elsewhere (with their own explanatory comments predating this
+    box). Audited every other `if let Some(...) = self.registry()...` site this box's diff touches
+    or added for the same shape (`registration_class_body_method.rs`, `registration_class_augment.
+    rs` — both already safe, the `registry_mut()` calls sit after the `if let` block closes, not
+    inside it) -- no second instance found. Regression-pinned locally in `t/method-alias-decl-no-
+    deadlock.t` (roast's own `S13-syntax/aliasing.t` already covers it, but is not always run
+    locally). Re-verified after the fix: full local `t/` (3185 files, 29668 tests, green), the same
+    243-file roast subset (byte-identical to `main` baseline), `scripts/battery-testsuite.sh`
+    (GATE PASSED, 245/271).
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

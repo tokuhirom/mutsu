@@ -249,7 +249,13 @@ impl Interpreter {
             unreachable!("class_body_code_alias called on a non-CodeVar VarDecl");
         };
         let alias = var_name.trim_start_matches('&').to_string();
-        if let Some(overloads) = self.registry().user_method_overloads(cx.name, source_name) {
+        // The `Option<Vec<MethodDef>>` must be bound to an owned local before
+        // the `if let` so the `self.registry()` read guard drops before
+        // `self.registry_mut()` below -- otherwise this is a same-thread
+        // recursive `RwLock` acquisition (the R8 hazard: `if let Some(x) =
+        // self.registry()....cloned() { ... self.registry_mut() ... }`).
+        let overloads = self.registry().user_method_overloads(cx.name, source_name);
+        if let Some(overloads) = overloads {
             self.registry_mut().set_user_methods(
                 Symbol::intern(cx.name),
                 Symbol::intern(&alias),
