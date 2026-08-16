@@ -1863,8 +1863,10 @@ impl Interpreter {
         register_x("X::Dynamic::NotFound", "Exception");
         register_x("X::IO::Unlink", "Exception");
         register_x("X::IllegalDimensionInShape", "Exception");
+        register_x("X::Inheritance::SelfInherit", "Exception");
         register_x("X::Inheritance::UnknownParent", "Exception");
         register_x("X::Mixin::NotComposable", "Exception");
+        register_x("X::Parameter::BadType", "X::Parameter");
         register_x("X::NoZeroArgMeaning", "Exception");
         register_x("X::Numeric::CannotConvert", "Exception");
         register_x("X::Numeric::DivideByZero", "Exception");

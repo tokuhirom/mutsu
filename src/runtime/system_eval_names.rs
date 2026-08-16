@@ -651,7 +651,9 @@ impl Interpreter {
 
     fn collect_declared_routine_names(stmt: &Stmt, out: &mut HashSet<String>) {
         match stmt {
-            Stmt::SubDecl { name, .. } | Stmt::MethodDecl { name, .. } => {
+            Stmt::SubDecl { name, .. }
+            | Stmt::MethodDecl { name, .. }
+            | Stmt::ProtoDecl { name, .. } => {
                 out.insert(name.resolve());
             }
             Stmt::EnumDecl { name, variants, .. } => {

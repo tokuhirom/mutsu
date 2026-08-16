@@ -136,10 +136,13 @@ impl Interpreter {
                 continue;
             }
             if resolved_parent == name {
-                return Err(RuntimeError::new(format!(
-                    "X::Inheritance::SelfInherit: class '{}' cannot inherit from itself",
-                    name
-                )));
+                let mut attrs = HashMap::new();
+                attrs.insert("name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "message".to_string(),
+                    Value::str(format!("'{}' cannot inherit from itself.", name)),
+                );
+                return Err(RuntimeError::typed("X::Inheritance::SelfInherit", attrs));
             }
             if !self.registry().classes.contains_key(base_parent)
                 && !BUILTIN_TYPES.contains(&base_parent)
