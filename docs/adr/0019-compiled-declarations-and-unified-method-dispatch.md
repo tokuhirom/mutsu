@@ -2375,6 +2375,20 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   surface (`run_instance_method_celled`, `instance_method_not_found`, `run_resolved_instance_method`)
   are still live — only the one now-orphaned entry point is gone. Verified with the same full local
   `t/` suite / shadow sweep / roast subset / battery gate as this family's own slice above.
+
+  **Progress (coercion family, step 2 — first per-site carrier migration, #TBD):** following this
+  box's own "Recommended next step" (the smallest, most isolated family first), `types/coercion.rs`'s
+  single site migrated off `run_instance_method_at` onto `call_method_with_values(value.clone(),
+  base_target, vec![])` — the invocant here is already a full `Value` (an `Instance`), so no
+  `receiver_class_name`/`attributes` reconstruction is needed, and the returned `AttrMap` was already
+  discarded (`let (coerced, _) = ...`) before this change, so nothing depended on it. This is F6's
+  first actual carrier-caller migration (every prior slice only tagged for shadow-check evidence);
+  the coercion family's own `"coercion"` `site` tag is now unused (no remaining caller) since the
+  site itself no longer calls into the `run_instance_method` API at all. Verified with the full local
+  `t/` suite (3190 files) plus the full local `t/`-coercion-named-file subset (67 files, all green),
+  `cargo build`/`clippy`/`fmt` clean, the 314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` +
+  `S12-coercion`/`S13-overloading` roast subset (release), and `scripts/battery-testsuite.sh`
+  (GATE PASSED).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
