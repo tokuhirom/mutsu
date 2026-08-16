@@ -1,5 +1,20 @@
 use super::*;
 
+/// A `returns`/`of` trait whose type-name expression fails to parse at all
+/// (`sub foo() returns !!!wtf??? { }`) is rakudo's `X::Syntax::Malformed:
+/// Malformed trait` — not the generic "Confused" the unconverted parse error
+/// would otherwise surface as. Mirrors `malformed_initializer`'s contract
+/// (`stmt/decl/my_decl_assign.rs`): only convert an error that failed
+/// immediately (no partial parse to prefer) and isn't already a fatal or
+/// structured-exception error.
+fn malformed_trait(err: PError, type_input: &str) -> PError {
+    let failed_immediately = err.remaining_len.is_none_or(|len| len >= type_input.len());
+    if err.exception.is_some() || err.is_fatal() || !failed_immediately {
+        return err;
+    }
+    PError::malformed("trait")
+}
+
 /// Parse the type named by `returns` / `of` / `-->`, including a coercion type's
 /// parenthesized source: `Str`, `Str()`, `Int(Str)`. Without this, `returns Str()`
 /// stopped at the `(` and the trailing `()` was left to be parsed as a sub body.
@@ -265,7 +280,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("returns", r) {
             let (r, _) = ws(r)?;
-            let (r, type_name) = parse_trait_type_name(r)?;
+            let (r, type_name) = parse_trait_type_name(r).map_err(|e| malformed_trait(e, r))?;
             return_type = Some(type_name);
             // Mark that the return type came from a `returns`/`of` trait (not a
             // `-->` signature arrow): an undeclared one is X::InvalidType, while
@@ -278,7 +293,7 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
         }
         if let Some(r) = keyword("of", r) {
             let (r, _) = ws(r)?;
-            let (r, type_name) = parse_trait_type_name(r)?;
+            let (r, type_name) = parse_trait_type_name(r).map_err(|e| malformed_trait(e, r))?;
             // `of` parameterizes a preceding `returns`/role type, e.g.
             // `returns Positional of Int` means return type `Positional[Int]`.
             return_type = Some(match return_type {
