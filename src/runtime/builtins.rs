@@ -512,6 +512,16 @@ impl Interpreter {
                 if let Some(name) = args.first() {
                     let class_name = name.to_string_value();
                     self.registry_mut().classes.remove(&class_name);
+                    // ADR-0019 F4c-8(e): this `classes.remove` called no
+                    // sync at all, leaving permanently stale `method_entries`
+                    // rows behind -- masked only because every dispatcher
+                    // checks `classes.contains_key` first. Explicit mutator
+                    // calls instead of `sync_user_method_entries`, per the
+                    // design note's own instruction not to inherit this
+                    // latent bug into the new world.
+                    let owner = crate::symbol::Symbol::intern(&class_name);
+                    self.registry_mut().clear_user_methods_for_owner(owner);
+                    self.registry_mut().sync_accessor_entries(owner);
                     self.env.remove(&class_name);
                     self.suppress_name(&class_name);
                 }
