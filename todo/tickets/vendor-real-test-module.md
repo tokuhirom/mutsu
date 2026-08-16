@@ -1678,3 +1678,44 @@ clean.
 variable, attribute, class, and role. All four are now fixed, but any FUTURE
 new `is`-trait dispatch site should wire in `is_trait_mod_no_candidate` from
 day one rather than adding a fifth latent instance.
+
+## `X::Parameter::RW` lost through the binding-error "enhancement" wrap (2026-08-16)
+
+Another `Got: X::AdHoc` file: `roast/S06-traits/misc.t` expected
+`X::Parameter::RW` for a literal/itemized-array argument passed to an `is rw`
+parameter (`sub f ($x is rw) {}; f(1)`), but observed a generic
+`X::AdHoc` whose message was the wrapped-and-buried original text:
+`"Calling f(Int) will never work with declared signature ($x)\n
+X::Parameter::RW: 'x' expects a writable variable argument"`.
+
+**Root cause, same family as the `X::Anon::Multi` double-prefix bug earlier
+in this file, different mechanism:** the RW-binding check
+(`src/runtime/types/binding_signature.rs`, two call sites) spells its class
+only via the `"X::Type: text"` message convention — `RuntimeError::new(...)`,
+no `.exception` object attached. `Interpreter::enhance_binding_error`
+(`src/runtime/calls.rs`) wraps every call-failure message in a "Calling
+f(Int) will never work with declared signature (...)" prefix for
+compile-flavored diagnostics, and it already has a precedent exclusion for
+exactly this shape of problem — a subset/where constraint failure is
+excluded because it "is a genuine *runtime* check in raku; it surfaces
+verbatim, never as a compile-flavored 'will never work'" — but `is rw`
+binding failure (equally a runtime check, and real `raku`'s own message for
+it has no such prefix either) had no matching exclusion. Once wrapped, the
+prefixed text no longer starts with `"X::Parameter::RW:"`, so the later
+generic typed-message-convention parser can't recover the class and falls
+back to `X::AdHoc`.
+
+Fixed by adding a second exclusion, `err.message.starts_with("X::Parameter::RW:")`,
+mirroring the existing subset/where one exactly. `roast/S06-traits/misc.t`
+passes fully under both `Test` providers. Pin:
+`t/rw-param-typed-exception-class.t` (4 assertions, verified against `raku`
+too, including a negative control that a sigilless `\x` parameter — not `is
+rw` — is unaffected).
+
+**Lesson for the next `Got: X::AdHoc` file:** `enhance_binding_error`'s
+message-prefix exclusion list is the first place to check whenever a binding
+failure's class goes missing — a call site spelling its class only through
+the message convention (no `.exception`) is invisible to the two branches
+that DO preserve a class (`is_arity_error || is_type_only_mismatch`, and the
+`else if let Some(ex) = err.exception` branch), so it silently loses its
+typing the moment this wrap fires.
