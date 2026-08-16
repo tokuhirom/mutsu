@@ -1657,6 +1657,36 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
     `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
     clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-6, #TBD):** converted the runtime-reflective MOP family --
+    `methods_classhow_dispatch.rs`'s `^add_method` (including the "create a stub `ClassDef`"
+    branch, which needed no separate handling: the dual-write call works purely against
+    `method_entries`/`owner_method_names`, independent of whether `self.classes` already had a row)
+    and `^add_multi_method`, plus `system.rs`'s BEGIN-time method-statement injection. Same
+    separate-short-lived-guard shape as F4c-4/F4c-5's `if let Some(class_def) =
+    self.registry_mut().classes.get_mut(...)` sites.
+
+    **Correction to this box's own stated payoff:** the bullet frames F4c-6 as what "the F4c-3
+    merge-back deletion depends on" -- landing this slice does NOT make deleting
+    `registration_class_body_attr.rs`'s merge-back safe, and it stays in place. The merge-back's
+    job is to pull a `.^add_method`-installed method back into `cx.class_def` before body
+    processing's own periodic `sync_user_method_entries` call re-derives the registry from that
+    local snapshot -- and that periodic full-clear-then-repopulate-from-`class_def.methods` call is
+    *itself* untouched through the whole F4c-3..F4c-8 bridge (per F4c-3's own progress note: it
+    stays the actual mechanism, not just an assertion, until F4c-9a). So even with `^add_method` now
+    ALSO writing through `set_user_methods`, the very next per-statement sync (which knows nothing
+    about that out-of-band write, only about `cx.class_def.methods`) unconditionally clears and
+    re-derives the owner's rows from the still-unaware local snapshot, silently dropping it again --
+    identically to before this slice. The merge-back can only go away once F4c-9b actually removes
+    `class_def.methods`/`sync_user_method_entries`, leaving `method_entries` as the only place left
+    to write. Verified this holds by re-running the merge-back's own regression coverage (the role
+    pun / `is predicate`-flavored `t/` files already in the standard sweep below) with no change in
+    outcome, confirming the guard is still load-bearing. Verified with the full local `t/` suite
+    (3183 files, 29636 tests) under `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions, 0
+    lock-reentrancy panics), the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the
+    pre-existing tracked `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh`
+    (GATE PASSED, including OO::Monitors which exercises `^add_method` via `EXPORTHOW::DECLARE`);
+    `cargo clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site
