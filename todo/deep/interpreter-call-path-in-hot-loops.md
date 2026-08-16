@@ -82,7 +82,7 @@ Two things stand out, and the second is the new one:
 Passing the block through a *module* sub (`sub s-amp(&code) { code() }`, imported) adds a further
 ~1.5× on top of every row — which is exactly the shape every `lives-ok`/`throws-like`/`subtest` body
 takes under the vendored `Test`, and is why the real module inflates heavy roast files past the
-30 s per-file budget (`todo/tickets/vendor-real-test-module.md`).
+30 s per-file budget (`todo/deep/vendor-real-test-module.md`).
 
 **Measured negative result (2026-08-03): fixing the block-local surcharge did NOT move the
 real-`Test` files.** `MUTSU_REAL_TEST=1 MUTSU_FUDGE=1 mutsu roast/S04-declarations/state.t` is

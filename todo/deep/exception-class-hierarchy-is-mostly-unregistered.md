@@ -17,7 +17,7 @@ That is not only a user-facing gap. mutsu's own compiler emits
 with `X::Method::NotFound` and `throws-like … , X::Bind::Slice` sees the wrong
 class — `t/bind-to-whatever-index.t` and `t/indexed-bind-in-expression.t` both
 fail this way under rakudo's real `Test` module
-(`todo/tickets/vendor-real-test-module.md`).
+(`todo/deep/vendor-real-test-module.md`).
 
 ## How the list was measured
 

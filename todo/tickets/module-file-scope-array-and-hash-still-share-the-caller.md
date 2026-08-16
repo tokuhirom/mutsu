@@ -172,7 +172,7 @@ this has been deferred past a single session twice now (2026-08-05 and
 Note the exposure is narrower than the scalar case was: it needs a module with a
 file-scope `my @a`/`my %h` **and** a consumer that declares the same name.
 `Test.rakumod`'s `@vars` is the one that matters for
-`todo/tickets/vendor-real-test-module.md`; the other eight of its file-scope
+`todo/deep/vendor-real-test-module.md`; the other eight of its file-scope
 lexicals are scalars and are fixed. As of 2026-08-14, `vendor-real-test-module.md`
 is still unmerged (mutsu's default `Test` provider stays native/`test_functions.rs`),
 so nothing whitelisted depends on this fix today — it only bites the moment

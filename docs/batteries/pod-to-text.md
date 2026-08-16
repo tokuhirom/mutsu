@@ -89,7 +89,7 @@ retirable without measuring it**:
 | --- | ---: | ---: | --- | --- | --- |
 | `Pod::To::Text` | 168 | 0 | 0 (0) | yes | **done** — this document |
 | `newline` | 5 | 0 | 0 (0) | yes, and loads | moving it changes nothing: `$?NL` stays `Nil` either way, because the `package EXPORT::crlf { BEGIN OUR::<$?NL> := ... }` export mechanism is unimplemented |
-| `Test` | 953 | 90 | 11 (9) | yes, **and loads** | **strongest candidate** — `todo/tickets/vendor-real-test-module.md` |
+| `Test` | 953 | 90 | 11 (9) | yes, **and loads** | **strongest candidate** — `todo/deep/vendor-real-test-module.md` |
 | `experimental` | 260 | 10 | 6 (4) | **no** | same parser gap as `NativeCall::Types`, plus `nqp::getcomp` (a compiler object) |
 | `NativeCall` | 1483 | 308 | 76 (61) | **no** | **not retirable** — `use QAST:from<NQP>` + MoarVM dispatch programs; `todo/deep/nativecall-cannot-be-vendored.md` |
 

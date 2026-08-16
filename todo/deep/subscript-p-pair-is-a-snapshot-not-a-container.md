@@ -72,7 +72,7 @@ would collapse onto the same mechanism once it exists:
 ## Where it showed up
 
 `t/subscript-adverbs.t` under the vendored upstream `Test` module
-(`todo/tickets/vendor-real-test-module.md`). It is not a `Test` difference: the
+(`todo/deep/vendor-real-test-module.md`). It is not a `Test` difference: the
 real `lives-ok` takes the block as `Callable $code` and calls it, which is what
 puts the write inside a closure, and the file's own second `{ my @a = ... }`
 block is what flips the first one to `BlockScope`. Both halves reproduce with no

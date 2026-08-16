@@ -47,4 +47,4 @@ answering `Seq`/`is-lazy == False` externally, similar to how gap 1 separated
 "stays lazy" from "reports as List".
 
 Found in the vendored-`Test.rakumod` campaign,
-`todo/tickets/vendor-real-test-module.md`.
+`todo/deep/vendor-real-test-module.md`.

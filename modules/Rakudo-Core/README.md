@@ -26,7 +26,7 @@ genuine upstream implementation instead of reimplementing it natively.
 ### `Test` is vendored but not yet the default
 
 `Test` is here because it is measurably reachable
-(`todo/tickets/vendor-real-test-module.md`), but `use Test` still resolves to
+(`todo/deep/vendor-real-test-module.md`), but `use Test` still resolves to
 mutsu's native TAP provider by default. Every `t/` file and every roast file
 stands on `Test`, so swapping the implementation swaps the foundation of the
 whole suite; step 3 of that ticket flips it once the residue is gone. Until

@@ -95,7 +95,7 @@ needs to be checked against both the Cro streaming-parser fix that motivated
 
 ## Where this was found
 
-`todo/tickets/vendor-real-test-module.md`'s ongoing campaign — this is the
+`todo/deep/vendor-real-test-module.md`'s ongoing campaign — this is the
 last of the 6 individual assertion gaps still open in
 `roast/S32-exceptions/misc.t` under `MUTSU_REAL_TEST=1` that traces to
 `X::ControlFlow::Return` (`throws-like 'gather { return  1}',

@@ -88,4 +88,4 @@ subtest {
 ```
 
 so every `throws-like '<code that returns>', X::ControlFlow::Return` reports the
-code as not having died. See `todo/tickets/vendor-real-test-module.md`.
+code as not having died. See `todo/deep/vendor-real-test-module.md`.

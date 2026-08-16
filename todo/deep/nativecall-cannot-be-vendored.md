@@ -91,7 +91,7 @@ again. Full table in `docs/batteries/pod-to-text.md`:
 | module | lines | `nqp::` | ops (missing) | parses? | verdict |
 | --- | ---: | ---: | --- | --- | --- |
 | `Pod::To::Text` | 168 | 0 | 0 (0) | yes | done (#5644) |
-| `Test` | 953 | 90 | 11 (9) | yes, and **loads** | reachable — `todo/tickets/vendor-real-test-module.md` |
+| `Test` | 953 | 90 | 11 (9) | yes, and **loads** | reachable — `todo/deep/vendor-real-test-module.md` |
 | `experimental` | 260 | 10 | 6 (4) | no | parser gap + `nqp::getcomp` |
 | `newline` | 5 | 0 | 0 (0) | yes | pointless to move (`$?NL` stays `Nil`: the `EXPORT::` package mechanism is unimplemented) |
 | **`NativeCall`** | **1483** | **308** | **76 (61)** | **no** | **this file** |
