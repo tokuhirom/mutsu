@@ -2493,13 +2493,39 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `"instanceops"` fallback traffic for those runs), `cargo build`/`clippy -- -D warnings`/`fmt` clean, the
   314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted
   files fail identically before and after this change, confirmed by an A/B run via `git stash`), and
-  `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged). The instance-ops family's other two
-  sites (Package/type-object dispatch, `Routine`/`Block`/`Code`/`Callable` ancestor dispatch) and every
+  `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged).
+
+  **Progress (instance-ops family, remaining two sites, #TBD) — family closed.** Migrated the
+  Package (type-object) dispatch branch (`~line 1687`, invocant `None`) onto
+  `try_dispatch_compiled_method_direct` directly (target is already a `Package` view, matching the
+  helper's own derivation), and the value-type dispatch branch (`~line 1732`, the
+  `augment class Array`/`Routine`/`Block`/`Code`/`Callable` fallback for a bare non-Instance/
+  non-Package receiver) onto the new `try_dispatch_compiled_method_direct_as` variant, which takes
+  an explicit `dispatch_class` symbol instead of deriving the owner class from `target`'s own
+  `ValueView` — needed here because `dispatch_class` (e.g. `"Array"`, `"Routine"`) is deliberately
+  *not* the receiver's own runtime type (a bare `Sub` dispatching against the `Routine`/`Block`/
+  `Code`/`Callable` MRO chain it doesn't literally carry as its `ValueView` tag). Both still fall
+  back to `run_instance_method_at("instanceops", ...)` when the direct path returns `None`.
+  Evidence gathered with a temporary env-gated probe (`MUTSU_DEBUG_F6_PROBE`, removed before
+  commit — see the debugging guidelines' "temporary instrumented build" allowance) run across the
+  full local `t/` corpus: the package-dispatch site hit the direct path 1527/1529 times, falling
+  back only for a `COERCE` call with no matching candidate (`t/class-type-object-coercion-call.t`
+  test 13, "a non-matching COERCE falls back to new" — the fallback's own ad-hoc `new`-redirect
+  logic, not a resolver bug); the value-type dispatch site hit the direct path 14/14 times (no
+  fallback observed in-corpus). A dedicated `use MONKEY-TYPING; augment class Routine {...}` /
+  `augment class Block {...}` repro (raku-compared) confirmed correct output, and an `rust-gdb`
+  breakpoint on each site's fallback call line confirmed it never fires for that repro (both sites
+  serve the call directly). Verified with the full local `t/` suite (3191 files, all green — no
+  recursion, no regression), `cargo build`/`clippy -- -D warnings`/`fmt` clean, the 314-file
+  whitelisted `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted
+  files fail identically before and after), and `scripts/battery-testsuite.sh` (GATE PASSED,
+  245/271 unchanged). **This closes the instance-ops family**: all three of its named sites are now
+  migrated off the carrier (falling back to it only for the residual COERCE edge case above). Every
   other blocked family (new-dispatch, mut-dispatch's remaining site, general-call-dispatch,
-  qualified-dispatch's shared helper) remain open — each needs its own per-site review of what it does
-  with the returned value beyond the resolved method (same "no shared-helper-by-pattern-match" discipline
-  this box has followed throughout), but now has a concrete, verified-safe direct-dispatch path to migrate
-  onto instead of the blocked `call_method_with_values`/`call_method_mut_with_values` swap.
+  qualified-dispatch's shared helper) remains open — each needs its own per-site review of what it
+  does with the returned value beyond the resolved method (same "no shared-helper-by-pattern-match"
+  discipline this box has followed throughout), but now has the same concrete, verified-safe
+  direct-dispatch path (`try_dispatch_compiled_method_direct`/`_as`) to migrate onto.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
