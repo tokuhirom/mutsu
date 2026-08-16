@@ -103,12 +103,12 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        // ADR-0019 Phase E box E7, first sub-slice: this is the carrier's ONLY
-        // two live callers (`CallDefined`'s user `.defined`, `SinkPop`'s user
-        // `.sink` in `vm_exec_dispatch.rs`), so tag them with a dedicated
-        // measurement site -- see `Interpreter::run_instance_method_at`'s doc
-        // comment for what the tag enables and why every other
-        // `run_instance_method` caller stays untagged (`""`).
+        // ADR-0019 Phase E box E7, first sub-slice: this carrier's ONLY two
+        // live callers (`CallDefined`'s user `.defined`, `SinkPop`'s user
+        // `.sink` in `vm_exec_dispatch.rs`) get a dedicated measurement site
+        // -- see `Interpreter::run_instance_method_at`'s doc comment for what
+        // the tag enables (by Phase F box F6, every other
+        // `run_instance_method_at` caller family has its own site too).
         self.loan_env_for(|i| {
             i.run_instance_method_at(
                 "run_instance_method:vm-carrier",

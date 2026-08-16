@@ -67,7 +67,8 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self.native_lever_a_user_override(&target, method)
         {
-            let (result, _) = self.run_instance_method(
+            let (result, _) = self.run_instance_method_at(
+                "generalcalldispatch",
                 crate::runtime::utils::value_type_name(&target),
                 AttrMap::new(),
                 method,
@@ -578,7 +579,14 @@ impl Interpreter {
                 && self.has_user_method(&cn, method)
             {
                 let attrs = AttrMap::new();
-                let (result, _) = self.run_instance_method(&cn, attrs, method, args, None)?;
+                let (result, _) = self.run_instance_method_at(
+                    "generalcalldispatch",
+                    &cn,
+                    attrs,
+                    method,
+                    args,
+                    None,
+                )?;
                 return Ok(result);
             }
         }
@@ -3949,8 +3957,14 @@ impl Interpreter {
                 }
                 if self.class_has_method(&cls, method) {
                     let attrs = attributes.to_map();
-                    let (result, updated) =
-                        self.run_instance_method(&cls, attrs, method, args, Some(target.clone()))?;
+                    let (result, updated) = self.run_instance_method_at(
+                        "generalcalldispatch",
+                        &cls,
+                        attrs,
+                        method,
+                        args,
+                        Some(target.clone()),
+                    )?;
                     // Propagate attribute mutations back to the inner instance so
                     // state changes made by the class method persist.
                     if let ValueView::Instance { attributes, .. } = inner.as_ref().view() {

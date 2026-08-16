@@ -2350,6 +2350,45 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `t/` suite (3190 files, `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of
   the standard `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and
   `scripts/battery-testsuite.sh` (GATE PASSED).
+
+  **Progress (general-call-dispatch family, #TBD):** `methods_call_dispatch.rs`'s three named sites
+  — the native-lever-A user-override branch inside `call_method_with_values` itself (mirroring the
+  mut-dispatch family's own native-lever-A site), the user-defined metamethod (`method ^foo(Mu)
+  {...}`) dispatch branch, and the mixin/inner-instance class-method dispatch branch — tagged
+  `run_instance_method_at("generalcalldispatch", ...)`, closing out this box's own 7-family scoping
+  list (coercion, mut-lvalue, qualified-dispatch, instance-ops, mut-dispatch, new-dispatch, and now
+  this one). A full local `t/` sweep (3190 files, `MUTSU_VM_STATS=1`) found zero new mismatches for
+  this site (the only 2 remaining corpus-wide are the pre-existing, unrelated `"privatedispatch"`
+  pair every prior sweep in this box has recorded) — every `run_instance_method` caller family is
+  now tagged and shadow-checked. Verified with the full local `t/` suite (3190 files,
+  `cargo build`/`clippy`/`fmt` all clean), the 309-file whitelisted subset of the standard
+  `S04`/`S06`/`S09`/`S12`/`S14` roast slice (release), and `scripts/battery-testsuite.sh`
+  (GATE PASSED).
+
+  **All 15 `run_instance_method` call sites across all 7 scoped families now tagged.** With no
+  caller left passing an empty `site`, `cargo clippy`'s dead-code lint caught the untagged
+  `Self::run_instance_method` wrapper itself (the `run_instance_method_at("", ...)` thin shim every
+  caller used before its own tagging slice) as unreachable — deleted it, folding its doc comment
+  into `run_instance_method_at`'s and updating the one other stale "stays untagged" comment
+  (`vm_core_helpers::vm_run_instance_method`). This is a real deletion inside F6's scope, not F7's
+  bigger carrier removal: the celled core, `run_instance_method_at`, and the other compatibility
+  surface (`run_instance_method_celled`, `instance_method_not_found`, `run_resolved_instance_method`)
+  are still live — only the one now-orphaned entry point is gone. Verified with the same full local
+  `t/` suite / shadow sweep / roast subset / battery gate as this family's own slice above.
+
+  **Progress (coercion family, step 2 — first per-site carrier migration, #TBD):** following this
+  box's own "Recommended next step" (the smallest, most isolated family first), `types/coercion.rs`'s
+  single site migrated off `run_instance_method_at` onto `call_method_with_values(value.clone(),
+  base_target, vec![])` — the invocant here is already a full `Value` (an `Instance`), so no
+  `receiver_class_name`/`attributes` reconstruction is needed, and the returned `AttrMap` was already
+  discarded (`let (coerced, _) = ...`) before this change, so nothing depended on it. This is F6's
+  first actual carrier-caller migration (every prior slice only tagged for shadow-check evidence);
+  the coercion family's own `"coercion"` `site` tag is now unused (no remaining caller) since the
+  site itself no longer calls into the `run_instance_method` API at all. Verified with the full local
+  `t/` suite (3190 files) plus the full local `t/`-coercion-named-file subset (67 files, all green),
+  `cargo build`/`clippy`/`fmt` clean, the 314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` +
+  `S12-coercion`/`S13-overloading` roast subset (release), and `scripts/battery-testsuite.sh`
+  (GATE PASSED).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.

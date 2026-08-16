@@ -185,21 +185,10 @@ impl Interpreter {
         {
             return Ok(value);
         }
-        if let ValueView::Instance {
-            class_name,
-            attributes,
-            ..
-        } = value.view()
+        if let ValueView::Instance { class_name, .. } = value.view()
             && self.class_has_user_method(&class_name.resolve(), base_target)
         {
-            let (coerced, _) = self.run_instance_method_at(
-                "coercion",
-                &class_name.resolve(),
-                attributes.to_map(),
-                base_target,
-                vec![],
-                Some(value.clone()),
-            )?;
+            let coerced = self.call_method_with_values(value.clone(), base_target, vec![])?;
             if self.type_matches_value(base_target, &coerced) {
                 return Ok(coerced);
             }
