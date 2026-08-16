@@ -2416,6 +2416,30 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   for `call_method_with_values`'s OWN native-lever-A site, for the identical infinite-regress
   reason). `methods_instance_ops.rs` is reverted to its pre-attempt state, byte-identical to before
   this slice; no functional change landed from this attempt.
+
+  **Progress (mut-dispatch family, step 2 — one carrier call site removed, #TBD):** the instance-ops
+  finding above generalizes across every remaining family — see
+  `todo/deep/adr0019-f6-vm-level-dispatch-helper-needed.md` for the full call-graph survey. One site
+  turned out safe despite that survey's caution: `call_method_mut_with_values`'s own native-lever-A
+  branch (`methods_mut_dispatch.rs`, the "augmented native-typed receiver" mirror of
+  `call_method_with_values`'s identically-shaped top branch). Its own doc comment already establishes
+  that a native-typed receiver here carries no attribute cell, so "a plain value dispatch (like the
+  non-mut path) is the correct shape" — meaning this branch never needed the mut-specific machinery
+  at all. Migrated `run_instance_method_at("mutdispatch", ...)` to
+  `self.call_method_with_values(target, method, args)` (the plain non-mut sibling, NOT a self-call —
+  `call_method_with_values` does not call back into `call_method_mut_with_values` for this shape, so
+  none of the instance-ops recursion risk applies here). This does not remove the carrier dependency
+  itself (`call_method_with_values`'s own identically-shaped branch still calls
+  `run_instance_method_at("generalcalldispatch", ...)` internally, per the general-call-dispatch
+  family's own known self-reference blocker) — it centralizes what used to be two independent
+  carrier call sites into the one the general-call-dispatch family will eventually fix, removing one
+  more distinct `run_instance_method` reference and one more duplicated implementation of the same
+  dispatch shape. Verified with the full local `t/` suite (3190 files, all green, no recursion),
+  `t/augment-native-lever-a-methods.t`, `cargo build`/`clippy -- -D warnings`/`fmt` clean, and
+  `scripts/battery-testsuite.sh` (GATE PASSED). `mut-dispatch`'s remaining site
+  (`methods_mut_dispatch.rs:2777`, the general mut-dispatch fallback) stays on `run_instance_method_at`
+  — it is the mut-path's own analog of `dispatch_instance_and_fallback`/`dispatch_new` and is
+  presumed blocked by the same recursion shape (not yet attempted).
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
