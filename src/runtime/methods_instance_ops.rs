@@ -1305,7 +1305,8 @@ impl Interpreter {
                 Some(UserMethodOrAccessor::Accessor)
             );
             if !accessor_wins && self.has_user_method(&cn_resolved, method) {
-                let (result, updated) = self.run_instance_method(
+                let (result, updated) = self.run_instance_method_at(
+                    "instanceops",
                     &class_name.resolve(),
                     attributes.to_map(),
                     method,
@@ -1657,8 +1658,14 @@ impl Interpreter {
             // Package (type object) dispatch -- check user-defined methods
             if self.has_user_method(&name.resolve(), method) {
                 let attrs = AttrMap::new();
-                let (result, _updated) =
-                    self.run_instance_method(&name.resolve(), attrs, method, args, None)?;
+                let (result, _updated) = self.run_instance_method_at(
+                    "instanceops",
+                    &name.resolve(),
+                    attrs,
+                    method,
+                    args,
+                    None,
+                )?;
                 return Ok(result);
             }
         }
@@ -1696,7 +1703,8 @@ impl Interpreter {
             };
             if let Some(dispatch_class) = dispatch_class {
                 let attrs = AttrMap::new();
-                let (result, _updated) = self.run_instance_method(
+                let (result, _updated) = self.run_instance_method_at(
+                    "instanceops",
                     dispatch_class,
                     attrs,
                     method,
@@ -1883,18 +1891,25 @@ impl Interpreter {
                             attributes,
                             ..
                         } = value.view()
-                            && self
-                                .resolve_method_with_owner(&class_name.resolve(), "raku", &[])
-                                .is_some()
+                            && let Some((owner, method_def)) =
+                                self.resolve_method_with_owner(&class_name.resolve(), "raku", &[])
                         {
                             let attrs_map = attributes.to_map();
-                            if let Ok((rendered, _)) = self.run_instance_method(
-                                &class_name.resolve(),
-                                attrs_map,
-                                "raku",
-                                Vec::new(),
-                                None,
-                            ) {
+                            // Reuse the resolved (owner, method_def) instead
+                            // of re-deriving it a second time inside
+                            // `run_instance_method`'s own ad-hoc walk
+                            // (ADR-0019 F6).
+                            if let Ok((rendered, _)) = self
+                                .run_resolved_method_compiled_or_treewalk(
+                                    &class_name.resolve(),
+                                    &owner.resolve(),
+                                    "raku",
+                                    method_def,
+                                    attrs_map,
+                                    Vec::new(),
+                                    None,
+                                )
+                            {
                                 parts.push(rendered.to_string_value());
                                 continue;
                             }
