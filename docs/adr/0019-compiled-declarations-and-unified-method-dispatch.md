@@ -2253,6 +2253,26 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `scripts/run-roast-test.sh`) all green. Call-site migration off the API itself remains open, same
   as the coercion family.
 
+  **Progress (qualified-dispatch family, #TBD):** unlike coercion/mut-lvalue, this family
+  (`dispatch_qualified_instance_method`, `methods_qualified.rs`, `self.Owner::method(...)`) already
+  had its shadow-check evidence from Phase E box E7 step 2 (`shadow_check_resolver_chain("qualifieddispatch",
+  ...)`, gated inline since the function has exactly one caller) — so this slice goes straight to the
+  call-site migration itself rather than adding a tag. The old code discarded the `resolve_method_with_
+  owner` result's `(owner, method_def)` after the shadow check and called `self.run_instance_method
+  (qualifier, ...)`, which re-derived the identical resolution a second time via its own internal
+  `resolve_method_with_owner_invocant` walk (the `let _ = method_def;` a few lines down was silencing
+  the now-unused destructured binding — a tell that the resolved value was being thrown away). Switched
+  to `self.run_resolved_method_compiled_or_treewalk(qualifier, &owner.resolve(), actual_method,
+  method_def, attrs_map, args, Some(target.clone()))`, reusing the already-resolved `(owner, method_def)`
+  directly — the same helper the sibling role-punned branch a few lines above already uses for the same
+  reason. Eliminates the redundant double-resolve; `run_resolved_method_compiled_or_treewalk` remains
+  part of the same `run_instance_method` family this box will eventually delete, so this is progress
+  within F6, not F6's finish line for this site. Verified with the full local `t/` suite (3187 files,
+  `MUTSU_CHECK_METHOD_INDEX=1`, all green, 0 index-drift assertions) and the standard 312-file
+  `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release, all green) plus every roast file with a bare
+  `self.Owner::method` qualified call (`S12-class/inheritance.t`, `S12-construction/new.t`,
+  `S12-methods/{delegation,qualified}.t`, `S14-roles/{basic,conflicts,lexical}.t`).
+
   **Progress (instance-ops/pseudo-method family, #TBD):** `methods_instance_ops.rs`'s four named
   sites. Three (accessor-vs-method resolution ~1308, Package/type-object dispatch ~1661,
   Routine/Block/Code/Callable ancestor dispatch ~1699) tagged `run_instance_method_at("instanceops",

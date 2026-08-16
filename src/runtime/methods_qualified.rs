@@ -392,12 +392,19 @@ impl Interpreter {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("qualifieddispatch", "notfound");
             }
         }
-        if let Some((_owner, method_def)) = resolved {
+        if let Some((owner, method_def)) = resolved {
             let attrs_map = attributes.to_map();
-            let (result, updated) = match self.run_instance_method(
+            // Reuse the (owner, method_def) this box's own E7-step-2 shadow
+            // check just verified against `resolve_sequence` above, instead
+            // of re-deriving it a second time inside `run_instance_method`'s
+            // own ad-hoc walk (ADR-0019 F6, mirroring the role-punned branch
+            // above which already avoids the same double-resolve).
+            let (result, updated) = match self.run_resolved_method_compiled_or_treewalk(
                 qualifier,
-                attrs_map,
+                &owner.resolve(),
                 actual_method,
+                method_def,
+                attrs_map,
                 args,
                 Some(target.clone()),
             ) {
@@ -408,7 +415,6 @@ impl Interpreter {
             if !self.in_lvalue_assignment
                 && let ValueView::Proxy { fetcher, .. } = result.view()
             {
-                let _ = method_def;
                 return Some(self.proxy_fetch(fetcher, None, qualifier, &attributes.to_map(), 0));
             }
             return Some(Ok(result));
