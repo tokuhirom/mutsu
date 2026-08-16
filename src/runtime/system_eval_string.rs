@@ -251,6 +251,21 @@ impl Interpreter {
         // long after the EVAL returned. (`throws-like 'use fatal; ...'` is a
         // common assertion shape, so one of them poisoned the rest of the file.)
         let saved_fatal_mode = self.fatal_mode;
+        // Unlike `fatal` (a runtime dynamic-scope check the EVAL'd unit
+        // legitimately inherits from its caller -- `raku -e 'use
+        // MONKEY-SEE-NO-EVAL; use fatal; try { EVAL q["bar"[5]] }; say
+        // $!.^name'` prints X::OutOfRange, so the caller's `fatal` IS live
+        // inside the EVAL), `MONKEY-TYPING` gates a COMPILE-TIME check
+        // (`augment class Foo {}` is only legal syntax when it's active) and
+        // EVAL is a fresh compilation unit for that check: an outer `use
+        // MONKEY-TYPING;` does NOT make an `augment` inside a *separately
+        // EVAL'd* string legal (verified against `raku -e 'use MONKEY-TYPING;
+        // try { EVAL q[class C { method f {} }; augment class C { method f
+        // {} }] }; say $!.^name'` -> X::Syntax::Augment::WithoutMonkeyTyping,
+        // not the method-clash error an inherited pragma would reach).
+        // `roast/S12-class/augment-supersede.t` exercises exactly this shape.
+        let saved_monkey_typing = self.monkey_typing;
+        self.monkey_typing = false;
         // CALLER:: from the EVAL'd unit's mainline must not resolve directly in
         // the scope that invoked EVAL (see push_eval_caller_frames for the
         // frame layout raku exposes).
@@ -371,6 +386,7 @@ impl Interpreter {
             self.env.remove("__mutsu_in_eval");
         }
         self.fatal_mode = saved_fatal_mode;
+        self.monkey_typing = saved_monkey_typing;
         self.restore_routine_registry_eval(routine_snapshot);
         let current_roles = self.registry().roles.clone();
         let current_role_candidates = self.registry().role_candidates.clone();

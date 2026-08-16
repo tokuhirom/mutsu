@@ -259,6 +259,8 @@ impl Interpreter {
                 self.strict_mode = true;
             } else if module == "fatal" {
                 self.fatal_mode = true;
+            } else if module == "MONKEY-TYPING" || module == "MONKEY" {
+                self.monkey_typing = true;
             }
             // The module stays loaded, so this `use` is a no-op — but a scope
             // that restored `env` wholesale since the load (a sub call around a
