@@ -227,6 +227,22 @@ impl Interpreter {
         let role_parents_snapshot = self.registry().role_parents.clone();
         let role_hides_snapshot = self.registry().role_hides.clone();
         let classes_snapshot = self.registry().classes.clone();
+        // ADR-0019 F4c-9b: `classes_snapshot` no longer carries method rows
+        // (there is no `ClassDef::methods` field left), so snapshot the
+        // canonical table's rows for every class here too -- before the
+        // EVAL runs and can mutate/clear them -- for the resurrected-class
+        // repair below to restore from.
+        let method_rows_snapshot: HashMap<String, Vec<(crate::symbol::Symbol, Vec<MethodDef>)>> =
+            classes_snapshot
+                .keys()
+                .map(|name| {
+                    let owner = crate::symbol::Symbol::intern(name);
+                    (
+                        name.clone(),
+                        self.registry().user_method_rows_for_owner(owner),
+                    )
+                })
+                .collect();
         let hidden_classes_snapshot = self.registry().hidden_classes.clone();
         let hidden_defer_parents_snapshot = self.registry().hidden_defer_parents.clone();
         let class_composed_roles_snapshot = self.registry().class_composed_roles.clone();
@@ -475,7 +491,13 @@ impl Interpreter {
         // class's `method_entries` rows are already correct and untouched
         // by the snapshot/extend dance.
         for class_name in resurrected_classes {
-            self.registry_mut().sync_user_method_entries(&class_name);
+            let owner = crate::symbol::Symbol::intern(&class_name);
+            let rows = method_rows_snapshot
+                .get(&class_name)
+                .cloned()
+                .unwrap_or_default();
+            self.registry_mut().restore_user_method_rows(owner, rows);
+            self.registry_mut().sync_accessor_entries(owner);
         }
         for key in current_type_keys.union(&snapshot_type_keys) {
             if let Some(value) = current_env.get(key).cloned() {

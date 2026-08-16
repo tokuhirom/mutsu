@@ -209,10 +209,10 @@ impl Interpreter {
         &mut self,
         name: &str,
         parents: &[String],
-        mut class_def: ClassDef,
+        class_def: ClassDef,
         snapshot: &ClassRegSnapshot,
     ) -> Result<(), RuntimeError> {
-        if let Err(err) = self.resolve_class_stub_requirements(name, &mut class_def) {
+        if let Err(err) = self.resolve_class_stub_requirements(name) {
             snapshot.restore(self, name);
             return Err(err);
         }
@@ -223,7 +223,6 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(name.to_string(), class_def);
-        self.registry_mut().sync_user_method_entries(name);
         let mut stack = Vec::new();
         if let Err(err) = self.compute_class_mro(name, &mut stack) {
             snapshot.restore(self, name);

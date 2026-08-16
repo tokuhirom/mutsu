@@ -862,7 +862,6 @@ impl Interpreter {
                             attribute_smileys: HashMap::new(),
                             attribute_built: HashMap::new(),
                             alias_attributes: HashSet::new(),
-                            methods: HashMap::new(),
                             native_methods: HashSet::new(),
                             mro: sym_mro(&[&class_name]),
                             wildcard_handles: vec![],
@@ -871,20 +870,11 @@ impl Interpreter {
                     );
                 }
                 let defs = multi_family.unwrap_or_else(|| vec![def]);
-                if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                    class_def.methods.insert(method_name.clone(), defs.clone());
-                }
-                // ADR-0019 F4c-6: dual-write on a separate short-lived
-                // guard, matching this function's F4c-4 sibling
-                // (`registration_class_augment.rs`) -- cannot share the
-                // `class_def` borrow above, which is a live sub-borrow of
-                // the held write guard for its whole block.
                 self.registry_mut().set_user_methods(
                     Symbol::intern(&class_name),
                     Symbol::intern(&method_name),
                     defs,
                 );
-                self.registry_mut().sync_user_method_entries(&class_name);
                 // Class shape changed (an added BUILD/TWEAK/new flips ctor
                 // eligibility) — drop cached construction plans.
                 self.native_ctor_plan_cache.clear();
@@ -936,26 +926,15 @@ impl Interpreter {
                     source_file: sub_data.source_file.clone(),
                     role_param_bindings: None,
                 };
-                let inserted =
-                    if let Some(class_def) = self.registry_mut().classes.get_mut(&class_name) {
-                        class_def
-                            .methods
-                            .entry(method_name.clone())
-                            .or_default()
-                            .push(def.clone());
-                        true
-                    } else {
-                        false
-                    };
-                if inserted {
-                    // ADR-0019 F4c-6: dual-write on a separate short-lived
-                    // guard -- see `add_method`'s own F4c-6 comment above.
+                // `^add_multi_method` must still *error* for an unregistered
+                // class -- existence keys off `classes.contains_key`, not the
+                // method table (ADR-0019 F4c design note (0)(iii)).
+                if self.registry().classes.contains_key(&class_name) {
                     self.registry_mut().push_user_method(
                         Symbol::intern(&class_name),
                         Symbol::intern(&method_name),
                         def,
                     );
-                    self.registry_mut().sync_user_method_entries(&class_name);
                     self.native_ctor_plan_cache.clear();
                     return Ok(Value::NIL);
                 }

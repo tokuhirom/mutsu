@@ -196,15 +196,10 @@ impl Interpreter {
     pub(super) fn resolve_class_stub_requirements(
         &mut self,
         class_name: &str,
-        class_def: &mut ClassDef,
     ) -> Result<(), RuntimeError> {
-        // ADR-0019 F4c-1: enumerate via the canonical reverse index instead
-        // of `class_def.methods.keys()`. `class_def` here is the very state
-        // `run_class_body`'s own last per-statement `sync_user_method_entries`
-        // call already published to the registry (this function runs before
-        // `class_def` gets mutated below), so the two are guaranteed in sync
-        // -- zero-mismatch shadow-checked across the full local `t/` suite
-        // before this cutover.
+        // ADR-0019 F4c-9b: the registry's `method_entries` table is the sole
+        // store now, so this function reads/writes it directly instead of an
+        // in-flight `ClassDef` parameter.
         let method_names: Vec<String> = self
             .registry()
             .owner_method_names(class_name)
@@ -318,9 +313,9 @@ impl Interpreter {
                             // because it is required by roles: C1, R1." — an
                             // X::Comp-flavored compile error naming every role
                             // that requires the method.
-                            let mut role_names: Vec<String> = class_def
-                                .methods
-                                .get(&method_name)
+                            let mut role_names: Vec<String> = self
+                                .registry()
+                                .user_method_overloads(class_name, &method_name)
                                 .map(|defs| {
                                     defs.iter()
                                         .filter(|d| {
@@ -372,14 +367,13 @@ impl Interpreter {
             // ADR-0019 F4c-3: dual-write, see class_body_method_decl's own
             // comment in registration_class_body_method.rs. Safe even though
             // this loop can still return `Err` on a later `method_name`
-            // (leaving these registry writes uncommitted-to-`class_def`
-            // stragglers): `finalize_class_registration`'s only caller
-            // rolls back via `ClassRegSnapshot::restore`, which always ends
-            // with a full `sync_user_method_entries(name)` re-derive from
-            // the restored (pre-attempt) `class_def` -- that unconditional
-            // full re-derive overwrites any partial state a failed attempt
-            // left in the registry, exactly as it already does for
-            // `class_def` itself.
+            // (ADR-0019 F4c-9b: the registry is now the sole store, so there
+            // is no `class_def` straggler to worry about): `finalize_class_
+            // registration`'s only caller rolls back via `ClassRegSnapshot::
+            // restore`, which always restores the full pre-attempt row set
+            // for this owner via `restore_user_method_rows` -- self-
+            // sufficient repair of any partial state a failed attempt left
+            // behind, needing no `class_def`-derived re-sync.
             let owner = Symbol::intern(class_name);
             if concrete.is_empty() {
                 if stubs.is_empty() {
@@ -387,14 +381,9 @@ impl Interpreter {
                 }
                 self.registry_mut()
                     .remove_user_methods(owner, Symbol::intern(&method_name));
-                class_def.methods.remove(&method_name);
             } else {
-                self.registry_mut().set_user_methods(
-                    owner,
-                    Symbol::intern(&method_name),
-                    concrete.clone(),
-                );
-                class_def.methods.insert(method_name, concrete);
+                self.registry_mut()
+                    .set_user_methods(owner, Symbol::intern(&method_name), concrete);
             }
         }
         Ok(())
@@ -785,9 +774,9 @@ impl Interpreter {
                     let method_name = name.resolve();
                     // Skip owner-qualified calls (e.g., Class::method)
                     if !method_name.contains("::") {
-                        let has_method = class_def
-                            .methods
-                            .get(&method_name)
+                        let has_method = self
+                            .registry()
+                            .user_method_overloads(class_name, &method_name)
                             .is_some_and(|overloads| overloads.iter().any(|md| md.is_private));
                         if !has_method {
                             return Err(

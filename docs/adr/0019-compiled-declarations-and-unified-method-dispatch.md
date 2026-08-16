@@ -1822,6 +1822,138 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     battery-testsuite.sh` (GATE PASSED, 245/271); `cargo build`, `cargo clippy -- -D warnings`,
     `cargo fmt` all clean (confirming no other caller depended on the retired shadow-check API).
     **F4c-9a is now fully closed** apart from re-auditing the write-family files at F4c-9b time.
+
+    **Progress (F4c-9b, #TBD): F4c is now fully closed.** Flipped every remaining dual-write site
+    to single-write-through-the-mutator-API, deleted `ClassDef::methods`, and deleted
+    `sync_user_method_entries` itself. This is the box's headline "invert the write direction and
+    remove the field" step, done as one coherent PR (per CLAUDE.md's "prefer one coherent
+    architectural PR over ten micro-PRs" -- the write sites are too interdependent to split
+    safely: deleting the field is an all-or-nothing compile-time fact). Twenty-three files.
+
+    **(1) Write-site conversions**, each dropping the `class_def.methods` half and keeping only
+    the mutator call already dual-writing there since F4c-3/4/5/6: `registration_class_body_
+    method.rs` (multi push, non-multi retain+push, `handles` delegation), `registration_class_
+    body.rs` (`our &alias ::= &m`), `registration_class_compose.rs` and `_compose_body.rs` (role-
+    method composition into the class), `registration_class.rs`'s `apply_handle_specs` (split the
+    shared `apply_resolved_handles` helper so the class path only still uses it for the wildcard
+    half -- the method half writes straight to the registry now; the role path,
+    `apply_handle_specs_to_role`, is untouched, still using the full shared helper since `RoleDef::
+    methods` stays), `registration_class_augment.rs` (five sites: method decl, both `handles`
+    blocks, `compose_role_into_augmented_class`, and the role-pun class literal in `ensure_role_
+    pun_class` -- this last one drops the `methods:` field from the `ClassDef` struct literal
+    entirely and moves its content to a post-insert `set_user_methods` loop), `methods_classhow_
+    dispatch.rs` (`^add_method`/`^add_multi_method` -- `^add_multi_method` keeps its `classes.
+    contains_key` existence gate per design note (0)(iii), now checked directly instead of via an
+    `Option<&mut ClassDef>` match), `system.rs` (BEGIN-time method statements), and `types/role_
+    mixin_class.rs`'s `compose_mixin_role_submethods`.
+
+    **(2) The redeclaration self-healing gap (R1, the headline risk) -- found and fixed, not just
+    inherited.** Composition's dual-writes are *appends* (`push_user_method`), and pre-9b this was
+    masked because `publish_class_shell`'s `sync_user_method_entries` call *rebuilt* the registry
+    from the freshly-composed `class_def.methods` afterward, silently discarding whatever the
+    dual-write had appended onto a stale prior declaration's rows. Deleting that rebuild step
+    would have let a redeclared class accumulate duplicate role-composed methods forever. Fixed by
+    moving the clear earlier: `register_class_decl` now calls `clear_user_methods_for_owner`
+    immediately after `begin_class_def`, before composition runs, so composition always appends
+    onto a clean slate. This also closes a *pre-existing*, independent gap: composition's `?`
+    early-return on failure had no rollback at all before this change (a failed `does` composition
+    could already leave dangling `method_entries` rows with no owning `ClassDef`, pre-9b too,
+    just less consequential because `class_def.methods` was the actually-consulted copy at read
+    time -- the field deletion makes the registry the sole record, so this pre-existing gap had to
+    be closed in the same slice). Fixed by adding an explicit `snapshot.restore` on composition
+    failure. `publish_class_shell`'s own trailing `sync_user_method_entries` calls (both the
+    normal and `is_stub_body` paths) are now dead weight and deleted outright -- the owner's rows
+    are already correct by the time it runs.
+
+    **(3) The other four `sync_user_method_entries` calling contexts**, each replaced with the
+    mechanism actually needed instead of a blanket rebuild: `finalize_class_registration`'s
+    trailing call (`registration_class_body_exit.rs`) was a pure no-op by the time it ran (the
+    per-statement loop and `resolve_class_stub_requirements` had already kept the registry
+    correct) -- deleted with no replacement. `ClassRegSnapshot::restore` (`registration_class_
+    validate.rs`, the F4c-8 rollback path) already had `restore_user_method_rows` doing the real
+    work; only needed to add the accessor re-derive (`sync_accessor_entries`) it was implicitly
+    getting as `sync_user_method_entries`'s surviving half. `compose_role_into_augmented_class`
+    (`registration_class_augment.rs`) similarly only needed the accessor re-derive, not a method
+    rebuild (its own method rows are already correct going in). The EVAL rollback path
+    (`system_eval_string.rs`, F4c-8(b)) needed real new machinery: since `classes_snapshot` no
+    longer carries method rows, a parallel `method_rows_snapshot: HashMap<String, Vec<(Symbol,
+    Vec<MethodDef>)>>` is captured for every class alongside it (before the EVAL runs), and the
+    resurrected-classes repair loop now calls `restore_user_method_rows` + `sync_accessor_entries`
+    per resurrected owner instead of a rebuild. The `require`-alias copy (`builtins_system_
+    require.rs`, F4c-7's territory) similarly needed a real replacement: `user_method_rows_for_
+    owner` on the source name, `restore_user_method_rows` + `sync_accessor_entries` on the alias
+    name -- copying between two different owners, which `restore_user_method_rows`'s signature
+    (rows carry no owner of their own) supports directly. `runtime_init.rs`'s startup builtin-
+    class seeding loop (`for class_name in classes.keys() { sync_user_method_entries }`) is now
+    `sync_accessor_entries` only -- every seeded `ClassDef` has zero methods by construction, so
+    only the accessor derive from `attributes` was ever doing anything there.
+
+    **(4) Remaining readers migrated as a prerequisite for field deletion** (not previously caught
+    by F4c-9a-1/2's downstream-consumer sweep, since these are write-adjacent files that sweep
+    deliberately skipped): `resolve_class_stub_requirements` and `check_private_calls_exist_expr`
+    (`registration.rs`, both now read `Registry::user_method_overloads` instead of the in-flight/
+    fetched `ClassDef`; `resolve_class_stub_requirements` also lost its now-fully-unused
+    `class_def: &mut ClassDef` parameter, and its caller `finalize_class_registration` stopped
+    passing it), `methods_object.rs`'s `is_native_default_constructible` (the one F4c-9a-1 missed
+    from the design note's own (0)(iv) ground-truth correction list), `accessors_resolve.rs`'s
+    `check_class_native_readonly_param_errors` and `compile_class_methods` (the latter now uses
+    the purpose-built `Registry::map_user_methods_in_place` mutator instead of mutating `class_def.
+    methods` in place then rebuilding), and `class_dispatch.rs:228`
+    (`instance_method_not_found`'s `has_visible_method` scan) -- the one site the F4c design note
+    explicitly said to *skip* as "F6's carrier, cut over for free" is no longer skippable: the
+    field is gone, so every remaining reference had to move regardless of which future box would
+    otherwise have deleted it. F6's own text (this box, a few lines below) is stale on this one
+    point now -- `class_dispatch.rs:228` reads `user_method_overloads` today, not `class_def.
+    methods`, though the surrounding `run_instance_method` carrier F6 targets is otherwise
+    unchanged.
+
+    **(5) Registry unit test.** `user_override_shares_the_builtin_method_entry`
+    (`registry.rs`) constructed a `ClassDef` with a `methods` field and called `sync_user_method_
+    entries` to exercise the builtin/user-row-sharing invariant; rewritten to call `set_user_
+    methods`/`clear_user_methods_for_owner` directly, same assertions.
+
+    **(6) `ClassDef::methods` field deletion mechanics.** Beyond the write/read sites above, ~90
+    `methods: HashMap::new()` struct-literal fields across `runtime_init.rs` (71 `ClassDef`
+    literals, mechanically stripped with a script that tracked `ClassDef{`/`RoleDef{` brace depth
+    so the 7 `RoleDef` literals in the same file -- which keep their `methods` field -- were left
+    untouched) and five other files (`registration_class_validate.rs`, `registration_class_
+    compose_body.rs`, `methods_object_native_ctors_io.rs`, `methods_classhow_dispatch.rs`,
+    `methods_object_dispatch_new.rs`) needed the field dropped, per the box's own "these merely
+    lose a field" framing for the seed initializers.
+
+    Verified with the full local `t/` suite (3185 files, 29668 tests, green) under
+    `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions -- the index invariant this
+    checks is unaffected by the write-direction inversion, since both sides of that invariant are
+    registry-internal); the same 243-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset producing
+    byte-identical failure output against a `main`-baseline release build (same 7 pre-existing
+    non-whitelisted failures, zero new breakage); `scripts/battery-testsuite.sh` (GATE PASSED,
+    245/271, identical to the F4c-9a runs -- notably exercises `OO::Monitors`, the EXPORTHOW::
+    DECLARE/MOP-heaviest battery and the one most likely to catch a `^add_method`/`^add_multi_
+    method` regression from item (1)); `cargo build`, `cargo clippy -- -D warnings`, `cargo fmt`
+    all clean.
+
+    **Correction/fix found by CI, not local verification (R8, the lock-reentrancy hazard).**
+    `class_body_code_alias` (item (1)'s `registration_class_body.rs` entry, `our &alias ::= &m`)
+    originally read `if let Some(overloads) = self.registry().user_method_overloads(cx.name,
+    source_name) { self.registry_mut().set_user_methods(...); }` -- exactly the R8 shape this
+    ADR's own F4c-3/F4c-4/F4c-6 progress notes already warn about: a `self.registry()` temporary
+    used directly as an `if let` scrutinee has its `RegistryReadGuard` lifetime-extended for the
+    WHOLE if-let body by Rust's temporary-extension rule, so the nested `self.registry_mut()` call
+    is a same-thread recursive `RwLock` acquisition -- a deadlock, not a panic, so it surfaced as a
+    CI timeout (`roast/S13-syntax/aliasing.t`, exit 124) rather than a local test failure; none of
+    this box's own local verification (full `t/`, the roast subset, the battery gate) exercises
+    `our &alias ::= &method` inside a class body, so it passed clean locally and only CI's fuller
+    roast run caught it. Fixed by hoisting the `Option<Vec<MethodDef>>` to an owned `let` binding
+    before the `if let`, matching the established safe idiom this file and `registration_class_
+    compose_body.rs` already use elsewhere (with their own explanatory comments predating this
+    box). Audited every other `if let Some(...) = self.registry()...` site this box's diff touches
+    or added for the same shape (`registration_class_body_method.rs`, `registration_class_augment.
+    rs` — both already safe, the `registry_mut()` calls sit after the `if let` block closes, not
+    inside it) -- no second instance found. Regression-pinned locally in `t/method-alias-decl-no-
+    deadlock.t` (roast's own `S13-syntax/aliasing.t` already covers it, but is not always run
+    locally). Re-verified after the fix: full local `t/` (3185 files, 29668 tests, green), the same
+    243-file roast subset (byte-identical to `main` baseline), `scripts/battery-testsuite.sh`
+    (GATE PASSED, 245/271).
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

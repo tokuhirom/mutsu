@@ -642,7 +642,6 @@ impl Interpreter {
                     ClassDef {
                         parents: vec!["IO::Path".to_string()],
                         attributes: Vec::new(),
-                        methods: HashMap::new(),
                         native_methods: std::collections::HashSet::new(),
                         mro: [].into(),
                         attribute_types: HashMap::new(),

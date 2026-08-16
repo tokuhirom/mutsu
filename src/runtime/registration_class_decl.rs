@@ -180,6 +180,21 @@ impl Interpreter {
             is_hidden,
             hidden_parents,
         );
+        // ADR-0019 F4c-9b: composition writes methods straight to the
+        // registry now (there is no `ClassDef::methods` buffer for
+        // `publish_class_shell` to later rebuild the table from), so a
+        // redeclaration must start this owner's method rows from a clean
+        // slate right here, before composition runs -- otherwise a stale
+        // row from the PREVIOUS declaration would survive alongside the
+        // freshly composed one (`push_user_method` appends, it does not
+        // replace). Only `user_candidates` are cleared (the `builtin`/
+        // `accessor`/`proto` columns are untouched, matching every other
+        // mutator's liveness semantics). If composition itself fails,
+        // restore from `snapshot` so the attempt does not leave the
+        // still-valid previous class (whose `ClassDef` in `registry.
+        // classes` is untouched at this point either way) methodless.
+        self.registry_mut()
+            .clear_user_methods_for_owner(crate::symbol::Symbol::intern(name));
         // Compose roles listed in the parents (from "does Role" or "is Role" in class header)
         let RoleCompositionOutcome {
             composed_roles_list,
@@ -194,7 +209,12 @@ impl Interpreter {
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
             };
-            self.compose_class_parent_roles(&mut cx, parents, does_parents, parent_pre_args)?;
+            if let Err(err) =
+                self.compose_class_parent_roles(&mut cx, parents, does_parents, parent_pre_args)
+            {
+                snapshot.restore(self, name);
+                return Err(err);
+            }
             cx.out
         };
         if class_role_param_bindings.is_empty() {
