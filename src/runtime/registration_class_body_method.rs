@@ -173,6 +173,7 @@ impl Interpreter {
             is_submethod: decl.is_submethod,
             captured_env: None,
             source_file: self.current_source_file(),
+            role_param_bindings: None,
         };
         // `my method` and `our method` are NOT part of the class
         // method table — they are only callable as functions.

@@ -21,6 +21,7 @@ fn dummy_method_def() -> MethodDef {
         is_submethod: false,
         captured_env: None,
         source_file: None,
+        role_param_bindings: None,
     }
 }
 

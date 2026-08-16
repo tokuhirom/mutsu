@@ -20,7 +20,19 @@ impl Interpreter {
         invocant: Option<&Value>,
     ) -> bool {
         let saved_env = self.env.clone();
+        // The passed-in class-level map goes first (it also carries nested
+        // generic-class rename entries, not just type-param bindings — see
+        // the identical comment in `call_compiled_method`,
+        // `vm_method_dispatch.rs`); the candidate's own `role_param_bindings`
+        // is then overlaid on top so a `where`/sub-signature match sees ITS
+        // OWN `T` when the same role is composed twice with different type
+        // args, instead of whichever composition's flat map happened to win.
         if let Some(bindings) = role_bindings {
+            for (name, value) in bindings {
+                self.env.insert(name.clone(), value.clone());
+            }
+        }
+        if let Some(bindings) = def.role_param_bindings.as_deref() {
             for (name, value) in bindings {
                 self.env.insert(name.clone(), value.clone());
             }

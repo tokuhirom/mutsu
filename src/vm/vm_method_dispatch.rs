@@ -120,7 +120,8 @@ impl Interpreter {
                 (pd.is_invocant || pd.traits.iter().any(|t| t == "invocant"))
                     && pd.type_constraint.is_some()
             });
-            let has_role_bindings = self.class_role_param_bindings(owner_class).is_some()
+            let has_role_bindings = method_def.role_param_bindings.is_some()
+                || self.class_role_param_bindings(owner_class).is_some()
                 || self
                     .class_role_param_bindings(receiver_class_name)
                     .is_some();
@@ -332,13 +333,31 @@ impl Interpreter {
             Value::int(method_callable_id as i64),
         );
 
-        // Role param bindings
+        // Role param bindings. The per-class map (`class_role_param_bindings`)
+        // carries more than type-param bindings (`T => Int`) — composing a
+        // role with a nested generic class (`role R[::T] { my package G {
+        // class A is Array[T] {} } }`) also stores a per-composition rename
+        // entry keyed by the class's UNPARAMETRIZED name (`"G::A" =>
+        // Package("R::G::A[Int]")`, see
+        // `registration_class_compose_body.rs`'s `rename_generic_composed_class`
+        // call), which a bareword read of `G::A` inside the method body
+        // resolves through this same env injection. So the class-level map
+        // must always be applied first; the candidate's own
+        // `role_param_bindings` (present when the SAME role is composed
+        // twice with different type args, `does R[Int] does R[Str]` — the
+        // class-level map is last-write-wins there) is then overlaid on top
+        // to correct just the type-param keys for this specific candidate.
         if let Some(role_bindings) = self.class_role_param_bindings(owner_class) {
             for (name, value) in &role_bindings {
                 self.env_mut().insert(name.clone(), value.clone());
             }
         } else if let Some(role_bindings) = self.class_role_param_bindings(receiver_class_name) {
             for (name, value) in &role_bindings {
+                self.env_mut().insert(name.clone(), value.clone());
+            }
+        }
+        if let Some(bindings) = method_def.role_param_bindings.as_deref() {
+            for (name, value) in bindings {
                 self.env_mut().insert(name.clone(), value.clone());
             }
         }

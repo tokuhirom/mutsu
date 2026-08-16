@@ -271,6 +271,7 @@ impl Interpreter {
             is_submethod: false,
             captured_env: None,
             source_file: proto.source_file.clone(),
+            role_param_bindings: None,
         };
         let attributes = match invocant.view() {
             ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
