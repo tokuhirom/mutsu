@@ -236,7 +236,14 @@ impl Interpreter {
                 }
             }
             for (alias, class_def) in class_aliases {
-                self.registry_mut().classes.insert(alias, class_def);
+                self.registry_mut().classes.insert(alias.clone(), class_def);
+                // ADR-0019 F4c-7: the aliased `ClassDef`'s methods must also
+                // land in the registry's canonical `method_entries` table
+                // under the alias name, or every F4c-1-cut-over enumeration
+                // site (`.^methods`, etc.) sees the alias as method-less
+                // even though `class_def.methods` (still consulted by the
+                // yet-to-be-cut-over dispatch paths) has them.
+                self.registry_mut().sync_user_method_entries(&alias);
             }
         }
 
