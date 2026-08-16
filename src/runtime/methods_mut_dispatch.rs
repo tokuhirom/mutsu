@@ -25,15 +25,7 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self.native_lever_a_user_override(&target, method)
         {
-            let (result, _) = self.run_instance_method_at(
-                "mutdispatch",
-                crate::runtime::utils::value_type_name(&target),
-                crate::value::AttrMap::new(),
-                method,
-                args,
-                Some(target),
-            )?;
-            return Ok(result);
+            return self.call_method_with_values(target, method, args);
         }
         // Track B/Track C: an aggregate that lives in a shared `ContainerRef`
         // cell (a `state @a`/`state %h` under an active thread context — see
