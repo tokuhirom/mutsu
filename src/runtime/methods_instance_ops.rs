@@ -1746,7 +1746,11 @@ impl Interpreter {
                 _ => None,
             };
             if let Some(ref class_name) = fallback_class {
-                // Try wildcard delegation: forward to delegate attribute's object
+                // Try wildcard delegation: forward to the delegate object,
+                // resolved either from an attribute (`has $.t handles *`) or
+                // by invoking a method on `target` (`method inner() handles
+                // *` — registered as `"&inner"`, mirroring
+                // `forward_resolved_delegation`'s explicit-list handling).
                 let wildcard_attrs = self.collect_wildcard_handles(&class_name.resolve());
                 if let ValueView::Instance { attributes, .. } = target.view() {
                     for attr_var in &wildcard_attrs {
@@ -1754,22 +1758,34 @@ impl Interpreter {
                         if let Some(regex_idx) = attr_var.find(":regex:") {
                             let real_attr = &attr_var[..regex_idx];
                             let pattern = &attr_var[regex_idx + ":regex:".len()..];
-                            let attr_key =
-                                real_attr.trim_start_matches('!').trim_start_matches('.');
-                            // Check if method name matches the regex pattern. Clone
-                            // the delegate out *in its own statement* so the
-                            // attribute read guard is released before the
-                            // (re-entrant) method call below — a let-chain
-                            // condition keeps its temporaries (the guard) alive for
-                            // the whole `if` body, which would deadlock when the
-                            // callee writes back to this same instance's cell.
+                            // Check if method name matches the regex pattern first
+                            // (cheap, no re-entrant call) before resolving the
+                            // delegate.
                             let matches = fancy_regex::Regex::new(pattern)
                                 .map(|re| re.is_match(method).unwrap_or(false))
                                 .unwrap_or(false);
-                            let delegate = if matches {
-                                attributes.as_map().get(attr_key).cloned()
+                            if !matches {
+                                continue;
+                            }
+                            let delegate = if let Some(source_method) = real_attr.strip_prefix('&')
+                            {
+                                self.call_method_with_values(
+                                    target.clone(),
+                                    source_method,
+                                    Vec::new(),
+                                )
+                                .ok()
                             } else {
-                                None
+                                let attr_key =
+                                    real_attr.trim_start_matches('!').trim_start_matches('.');
+                                // Clone the delegate out *in its own statement* so
+                                // the attribute read guard is released before the
+                                // (re-entrant) method call below — a let-chain
+                                // condition keeps its temporaries (the guard) alive
+                                // for the whole `if` body, which would deadlock
+                                // when the callee writes back to this same
+                                // instance's cell.
+                                attributes.as_map().get(attr_key).cloned()
                             };
                             if let Some(delegate) = delegate {
                                 match self.call_method_with_values(delegate, method, args.clone()) {
@@ -1779,9 +1795,14 @@ impl Interpreter {
                             }
                             continue;
                         }
-                        let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
-                        // Clone out before calling (release the read guard first).
-                        let delegate = attributes.as_map().get(attr_key).cloned();
+                        let delegate = if let Some(source_method) = attr_var.strip_prefix('&') {
+                            self.call_method_with_values(target.clone(), source_method, Vec::new())
+                                .ok()
+                        } else {
+                            let attr_key = attr_var.trim_start_matches('!').trim_start_matches('.');
+                            // Clone out before calling (release the read guard first).
+                            attributes.as_map().get(attr_key).cloned()
+                        };
                         if let Some(delegate) = delegate {
                             // Try calling the method on the delegate; if it succeeds, return
                             match self.call_method_with_values(delegate, method, args.clone()) {
