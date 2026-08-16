@@ -1375,10 +1375,8 @@ Continued picking off `misc.t`'s remaining 6 individual assertion gaps
 **Remaining after this round:** the `X::Comp::Group` cases (an undeclared
 type in a `when` clause, and a bare `5.` term needing a method name — both
 rakudo parser-ambiguity diagnostics, not simple "detect X and throw Y"
-fixes), the malformed-return-type gap (`sub foo() returns !!!wtf??? { }`,
-also `X::Syntax::Malformed` vs mutsu's generic `X::Syntax::Confused`), the
-order-dependent `X::Parameter::BadType` leak (ticket above), and
-`X::ControlFlow::Return` (deep ticket above) — 5 items, none picked up yet.
+fixes), the order-dependent `X::Parameter::BadType` leak (ticket above), and
+`X::ControlFlow::Return` (deep ticket above) — 3 items, none picked up yet.
 
 Full `t/` suite (3183 files, 29636 tests), `cargo build --release`, and
 `cargo clippy -- -D warnings` all clean. Verified the 3 whitelisted files
@@ -1387,3 +1385,27 @@ touched by these changes (`roast/S32-exceptions/misc.t`,
 under the *default* (native `Test`) mode too, since the `register_x`
 registrations and `RuntimeError::typed` conversions are not gated on
 `MUTSU_REAL_TEST`.
+
+## `sub foo() returns !!!wtf??? { }` malformed-return-type gap, fixed (2026-08-16)
+
+Picked up the malformed-return-type item this round's earlier entry left
+open. A `returns`/`of` trait whose type-name expression fails to parse at
+all (`!!!wtf???` doesn't start with an identifier character) propagated the
+generic parse error unconverted, surfacing as `X::Syntax::Confused` instead
+of rakudo's `X::Syntax::Malformed: Malformed trait`. Fixed in
+`src/parser/stmt/sub/traits.rs`: added `malformed_trait()`, mirroring the
+existing `malformed_initializer()` helper's contract
+(`stmt/decl/my_decl_assign.rs`) — only converts an error that failed
+*immediately* with no partial parse, and leaves an already-fatal or
+structured-exception error alone — and wired it into both the `returns` and
+`of` trait branches (verified against real `raku`: both give "Malformed
+trait"; `-->` gives a different, unrelated "Missing block" error via a
+different grammar path and was left untouched). Full `t/` suite (3183
+files), `cargo build --release`, `cargo clippy -- -D warnings` clean;
+targeted sweep of all 93 whitelisted `S06-signature`/`S06-traits` files
+(the area most likely to exercise `returns`/`of` traits) plus
+`S32-exceptions/misc.t` on release, all pass.
+
+**Remaining: 3 items** (the two `X::Comp::Group` parser-ambiguity cases, the
+order-dependent `X::Parameter::BadType` leak, and the deep
+`X::ControlFlow::Return` ticket) — none picked up yet.
