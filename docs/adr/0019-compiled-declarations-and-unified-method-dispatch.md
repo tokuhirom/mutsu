@@ -117,9 +117,9 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 
 **Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
 optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
-E1, E3-E11 are all closed). Phase F has started: F3 and F5 are closed; F1/F2 are done except a
-deliberately-parked fidelity slice; F4 is split into F4a/F4b/F4c (none closed yet — see F4's own
-entry); F6, F7, and the completion gates (G1-G4) remain open. See each box's entry below for its
+E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), and F5 are closed;
+F1/F2 are done except a deliberately-parked fidelity slice; F6, F7, and the completion gates
+(G1-G4) remain open. See each box's entry below for its
 own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
 `d4-parent-expr-chunks.md`, `d5-plan-driven-how-ops.md`, `d6-d9-legacy-body-removal.md`,
@@ -995,7 +995,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   buf.t`/`S03-operators/buf.t` roast file stayed green. **F3 is now closed** -- the per-type name
   lists ANALYSIS §4-1 called out are gone; `RAW_ROWS` (already the dispatch-admission source since
   E4b) is also the sole `.^methods` source.
-- [ ] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
+- [x] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
   **Split in place (2026-08-15), following the C6/D2/E1-E11 precedent** — a read-site
   classification pass (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s sibling
@@ -1004,7 +1004,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `ClassDef::methods` (the opposite of what F4 wants), with ~15-20 files of live dispatch/MOP/
   BUILD-TWEAK read sites and ~10 files of write sites. That work does not fit one PR or one
   design decision, so it is now three sub-boxes:
-  - [ ] **F4a — Decide and implement the role-owner read policy.** `Registry::method_entries` has
+  - [x] **F4a — Decide and implement the role-owner read policy.** `Registry::method_entries` has
     no row at all for a role that is never `.new`-punned (the common case — a role only ever
     `does`-composed into a class, never instantiated directly): see
     `todo/deep/method-entries-never-covers-unpunned-roles.md`. **Do NOT close this gap by
@@ -1126,7 +1126,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `t/` suite (3176 files) and the same 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset, both
     green. This closes F4a's entire informally-flagged list — one confirmed real gap fixed, five
     confirmed already-safe and reclassified into F4c.
-  - [ ] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
+  - [x] **F4b — Cutover the class-level-only read clusters.** The read sites that never touch a
     role at all (`methods_object.rs`'s six BUILD/TWEAK existence checks, `metamodel.rs`,
     `class_introspection.rs:39`, `ctor_phase_plan.rs:67,103`) move from `class_def.methods` to
     `MethodEntry.user_candidates` directly. The sites F4a confirms need a role fallback (`ctor_
@@ -1159,7 +1159,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     structurally never called with a role receiver today. Verified with the full local `t/`
     suite (3173 files) and a 64-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (class
     declarations, multi, typed arrays, introspection, roles), all green.
-  - [ ] **F4c — Invert the write direction and remove the field.** Make `MethodEntry`/the
+  - [x] **F4c — Invert the write direction and remove the field.** Make `MethodEntry`/the
     canonical table the write-side source (`sync_user_method_entries`'s write sites in
     `registration.rs`, `registration_class_body_attr.rs`, `registration_class_body_method.rs`,
     `registration_class_compose.rs`, `registration_role_*.rs`, `system.rs`,
@@ -2213,6 +2213,31 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   several families have independently proven the two resolvers agree does deleting the ad-hoc walker
   inside `run_instance_method_celled` itself (as opposed to deleting the whole carrier) become safe
   to consider as a separate, later step.
+
+  **Progress (coercion family, step 1 — tag + gather evidence, #TBD):** `try_coerce_value_with_method`
+  (`types/coercion.rs`, the sole call in the `ValueView::Instance` + `class_has_user_method` branch —
+  the narrow "the source instance's own class declares a method literally named after the target
+  type" coercion shape, e.g. `class HasInt { method Int { 42 } }` feeding `my Int() $x = HasInt.new`)
+  switched from the untagged `run_instance_method` to `run_instance_method_at("coercion", ...)`.
+  Purely additive — a no-op unless `MUTSU_VM_STATS` is set — so this alone changes no behavior; its
+  purpose is corpus evidence before the actual call-site migration (still open, see below). Verified
+  with a full local `t/` sweep (3187 files, one process per file, `MUTSU_VM_STATS=1`): the "coercion"
+  site never once appears in the mismatch-by-site breakdown (2 total mismatches recorded corpus-wide,
+  both pre-existing and tagged `privatedispatch`, unrelated to this site). Confirmed the site is
+  genuinely exercised (not merely silent from zero traffic) via a targeted repro
+  (`my Int() $x = HasInt.new` with `method Int {...}`) showing `resolver_shadow_checks=1
+  resolver_shadow_mismatches=0`; the local `t/` corpus itself does not happen to isolate this one
+  branch in an existing pinned test (the closer-named `t/any-type-object-int-coercion.t` /
+  `t/stringy-numeric-object.t` exercise the general `.Int`/`.Numeric`/`.Str` conversion protocol via a
+  different call path, not this branch — confirmed with a `rust-gdb -batch` breakpoint at the call
+  site, which never fired for either file). `roast/S12-coercion/*.t` and `roast/S13-overloading/*.t`
+  (release, via `scripts/run-roast-test.sh`) both fully green. **Remaining for this family:** the
+  call site itself still goes through `run_instance_method_at` (not yet migrated to
+  `call_method_with_values`/the VM-level resolved-dispatch entry point) — that migration, plus
+  confirming which of `call_method_with_values`'s many `ValueView::Instance` branches a plain
+  user-method-named-after-a-type call would actually reach, is deliberately deferred to its own
+  follow-up slice rather than bundled here, matching this box's "post-migration commit logic needs
+  individual review per family" caution.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
