@@ -1535,17 +1535,14 @@ impl Interpreter {
         // results, allowing the raw Proxy to flow back for STORE dispatch.
         let was_lvalue = self.in_lvalue_assignment;
         self.in_lvalue_assignment = true;
-        let method_result = self.run_instance_method_at(
-            "mutlvalue",
-            &class_name.resolve(),
-            attributes.to_map(),
-            method,
-            method_args,
-            None,
-        );
+        let method_result = self.call_method_with_values(target.clone(), method, method_args);
         self.in_lvalue_assignment = was_lvalue;
-        let (method_result, updated_attrs) = method_result?;
+        let method_result = method_result?;
         if let ValueView::Proxy { storer, .. } = method_result.view() {
+            // The method call above shares `attributes`' underlying cell with
+            // `target`, so any self-mutation the method body made is already
+            // visible here — re-snapshot rather than reuse a pre-call copy.
+            let updated_attrs = attributes.to_map();
             return self.proxy_store(
                 storer,
                 target_var,

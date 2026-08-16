@@ -2390,6 +2390,24 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `S12-coercion`/`S13-overloading` roast subset (release), and `scripts/battery-testsuite.sh`
   (GATE PASSED).
 
+  **Progress (mut-lvalue family, step 2 — carrier migration, #TBD):**
+  `assign_method_lvalue_with_values`'s sole site (`methods_mut_method_lvalue.rs`, the "method body
+  doesn't directly expose an attribute — run it and check for Proxy" fallback) migrated off
+  `run_instance_method_at("mutlvalue", ...)` onto `call_method_with_values(target.clone(), method,
+  method_args)`. Unlike the coercion family, the caller here still needed the post-call `AttrMap`
+  snapshot (`proxy_store`'s `attributes` param, fed to the `STORE` callback's Proxy context) — but
+  since `target` and the pre-extracted `attributes: Gc<InstanceAttrs>` share the same underlying
+  cell, and self-mutations inside the called method already write through that cell in place (the
+  interior-mutability guarantee ADR-0013 established), the old `run_instance_method`-returned
+  `updated_attrs` snapshot was redundant: re-reading `attributes.to_map()` *after* the
+  `call_method_with_values` call yields the identical post-mutation state. No functional change,
+  one fewer `(Value, AttrMap)`-shaped return to thread through. Verified with the full local `t/`
+  suite (3190 files, all green), `cargo build`/`clippy -- -D warnings`/`fmt` clean,
+  `roast/S06-routine-modifiers/{lvalue-subroutines,proxy}.t`, `roast/S12-attributes/mutators.t`,
+  `roast/S12-introspection/attributes.t`, and `roast/S12-class/attributes.t` (release, via
+  `scripts/run-roast-test.sh`), and `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged).
+  The `"mutlvalue"` `site` tag is now unused (no remaining caller).
+
   **Negative result (instance-ops family, attempted and reverted, #TBD):** tried the same
   `call_method_with_values` swap on two of `methods_instance_ops.rs`'s three tagged sites (the
   accessor-vs-method resolution branch ~1308, and the Package/type-object dispatch branch ~1657 —
