@@ -1606,6 +1606,31 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     the fix above), the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release; only the
     pre-existing tracked `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh`
     (GATE PASSED); `cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-4, #TBD):** converted the augment family's write sites to the same dual-write
+    shape as F4c-3 -- `registration_class_augment.rs`'s method-decl push, both `handles` sites
+    (method-level and attribute-level), and `compose_role_into_augmented_class`'s role-method
+    merge; plus `types/role_mixin_class.rs::compose_mixin_role_submethods`. Confirms this box's own
+    reasoning for splitting F4c-4 from F4c-3: augment mutates the **already-registered** `ClassDef`
+    via `self.registry_mut().classes.get_mut(name)`, so `class_def` here is *always* a live
+    sub-borrow of a held write guard (not conditionally, the way F4c-3's `if let` temporaries
+    sometimes were) -- every site in this file hits the R8 hazard the moment a second registry call
+    is added inside the same block, not just the ones using the `if let Some(x) =
+    self.registry()...` shape. Two different fixes were used depending on the existing structure:
+    (a) most sites keep the original `class_def.methods` mutation block completely unchanged and
+    add a **separate, subsequent, independently-short-lived** `self.registry()`/`self.registry_mut()`
+    block after it closes (re-deriving the same decision from a fresh read where needed --
+    `compose_role_into_augmented_class`'s per-name "does the class already have a local method"
+    check re-queries `user_method_overloads` instead of reading the now-out-of-scope `class_def`);
+    (b) `compose_mixin_role_submethods` already named its write guard (`let mut registry =
+    self.registry_mut();`) rather than using an inline temporary, so its dual-write reuses that
+    *same* guard for the mutator calls once `class_def`'s borrow ends (its last use), which is
+    simpler and clearly not a new lock acquisition at all -- prefer this shape over (a) when a
+    named guard is already in scope. Verified with the full local `t/` suite (3182 files, 29634
+    tests) under `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions, 0 lock-reentrancy
+    panics), the 312-file `S04`/`S06`/`S09`/`S12`/`S14` roast subset (only the pre-existing tracked
+    `S12-attributes/trusts.t` failure), and `scripts/battery-testsuite.sh` (GATE PASSED); `cargo
+    clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

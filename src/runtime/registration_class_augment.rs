@@ -1,5 +1,5 @@
 use super::registration_class::{
-    AttrValidationCtx, apply_resolved_handles, make_delegation_method,
+    AttrValidationCtx, ResolvedHandle, apply_resolved_handles, make_delegation_method,
 };
 use super::registration_class_body_method_forms::method_sub_form_params;
 use super::*;
@@ -294,7 +294,7 @@ impl Interpreter {
                                 .methods
                                 .entry(resolved_method_name.clone())
                                 .or_default()
-                                .push(def);
+                                .push(def.clone());
                         } else {
                             // Check for duplicate non-multi method
                             // definition. Only error if the existing
@@ -323,7 +323,36 @@ impl Interpreter {
                                 .entry(resolved_method_name.clone())
                                 .or_default();
                             entry.retain(|m| m.is_private != new_is_private);
-                            entry.push(def);
+                            entry.push(def.clone());
+                        }
+                    }
+                    // ADR-0019 F4c-4: dual-write, mirroring the block above
+                    // but on its own short-lived registry guard -- it
+                    // CANNOT share the `class_def` borrow above. Unlike
+                    // F4c-3's in-flight `ClassBodyCx`, augment mutates the
+                    // already-registered `ClassDef` in place, so `class_def`
+                    // there is a live sub-borrow of a held write guard; a
+                    // second `registry_mut()` call while it is still alive
+                    // is the R8 lock-reentrancy hazard, not a hypothetical
+                    // one (see the F4c-3 progress note for where this bit).
+                    // The conflict check itself does not need repeating: if
+                    // it would have failed, the block above already
+                    // returned `Err` before this point.
+                    if !is_lexical_only
+                        && !is_our_only
+                        && self.registry().classes.contains_key(name)
+                    {
+                        let owner = Symbol::intern(name);
+                        let method_sym = Symbol::intern(&resolved_method_name);
+                        if decl.multi {
+                            self.registry_mut().push_user_method(owner, method_sym, def);
+                        } else {
+                            let new_is_private = def.is_private;
+                            self.registry_mut()
+                                .retain_user_methods(owner, method_sym, |m| {
+                                    m.is_private != new_is_private
+                                });
+                            self.registry_mut().push_user_method(owner, method_sym, def);
                         }
                     }
                     // ADR-0019 D3-5: `our method` also registers as a
@@ -535,6 +564,27 @@ impl Interpreter {
                             }
                         }
                     }
+                    // ADR-0019 F4c-4: dual-write on a separate short-lived
+                    // guard, see this function's earlier F4c-4 comment for
+                    // why it cannot share the `class_def` borrow above.
+                    if !decl.handles.is_empty() && self.registry().classes.contains_key(name) {
+                        let owner = Symbol::intern(name);
+                        let source_attr_marker = format!("&{}", resolved_method_name);
+                        for spec in &decl.handles {
+                            let (exposed, target) = match spec {
+                                HandleSpec::Name(target) => (target, target),
+                                HandleSpec::Rename { exposed, target } => (exposed, target),
+                                HandleSpec::Wildcard
+                                | HandleSpec::Regex(_)
+                                | HandleSpec::Type(_) => continue,
+                            };
+                            self.registry_mut().push_user_method(
+                                owner,
+                                Symbol::intern(exposed),
+                                make_delegation_method(&source_attr_marker, target),
+                            );
+                        }
+                    }
                 }
                 Stmt::HasDecl { .. } => {
                     let decl = crate::opcode::CompiledAttrDecl::from_stmt(
@@ -574,6 +624,27 @@ impl Interpreter {
                             &mut class_def.methods,
                             &mut class_def.wildcard_handles,
                         );
+                    }
+                    // ADR-0019 F4c-4: dual-write on a separate short-lived
+                    // guard -- `resolved` was already computed above,
+                    // before any registry borrow, so it is safe to reuse
+                    // here without re-resolving.
+                    if self.registry().classes.contains_key(name) {
+                        let owner = Symbol::intern(name);
+                        for handle in &resolved {
+                            if let ResolvedHandle::Method {
+                                exposed,
+                                target,
+                                attr_var,
+                            } = handle
+                            {
+                                self.registry_mut().push_user_method(
+                                    owner,
+                                    Symbol::intern(exposed),
+                                    make_delegation_method(attr_var, target),
+                                );
+                            }
+                        }
                     }
                 }
                 // Sub declarations in the class body should persist across scope
@@ -662,6 +733,10 @@ impl Interpreter {
                 }
             }
         }
+        // ADR-0019 F4c-4: kept for the registry dual-write below, which
+        // cannot share the `class_def` borrow this block takes (see this
+        // file's earlier F4c-4 comments for why).
+        let all_methods_for_registry = all_methods.clone();
         if let Some(class_def) = self.registry_mut().classes.get_mut(name) {
             for (mname, mdefs) in all_methods {
                 // Only add a role method the class does not already define
@@ -680,6 +755,24 @@ impl Interpreter {
             for attr in all_attributes {
                 if !class_def.attributes.iter().any(|a| a.name == attr.name) {
                     class_def.attributes.push(attr);
+                }
+            }
+        }
+        if self.registry().classes.contains_key(name) {
+            let owner = Symbol::intern(name);
+            for (mname, mdefs) in all_methods_for_registry {
+                let has_local = self
+                    .registry()
+                    .user_method_overloads(name, &mname)
+                    .is_some_and(|defs| defs.iter().any(|d| d.role_origin.is_none()));
+                if !has_local {
+                    let method_sym = Symbol::intern(&mname);
+                    for mut d in mdefs {
+                        if d.role_origin.is_none() {
+                            d.role_origin = Some(base_role.to_string());
+                        }
+                        self.registry_mut().push_user_method(owner, method_sym, d);
+                    }
                 }
             }
         }
