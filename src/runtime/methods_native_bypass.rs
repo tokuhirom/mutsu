@@ -206,6 +206,132 @@ impl Interpreter {
                     || matches!(target.view(), ValueView::Mixin(inner, _) if matches!(inner.as_ref().view(), ValueView::Hash(_)))))
     }
 
+    /// The builtin method names rakudo resolves *only* through `Cool` — i.e.
+    /// the set a plain `Any`-derived instance (no `Cool` in its MRO) cannot
+    /// resolve at all, so `handles *` / `FALLBACK` must be given the chance
+    /// to intercept them (`todo/tickets/wildcard-handles-loses-to-builtin-cool-methods.md`'s
+    /// oracle-verified table). Any/Mu methods (`.gist`, `.list`, `.elems`,
+    /// ...) always resolve on a plain instance and must NOT be in this set.
+    /// A name with an Any/Mu *proto* but no matching candidate (`split`,
+    /// `fmt`, `Int`, `Numeric`, `Real`) counts as resolved (it errors, it
+    /// does not delegate) and is also excluded.
+    pub(crate) fn cool_only_builtin_method(method: &str) -> bool {
+        matches!(
+            method,
+            "uc" | "lc"
+                | "fc"
+                | "tc"
+                | "tclc"
+                | "wordcase"
+                | "chars"
+                | "codes"
+                | "chomp"
+                | "chop"
+                | "trim"
+                | "trim-leading"
+                | "trim-trailing"
+                | "flip"
+                | "comb"
+                | "words"
+                | "lines"
+                | "substr"
+                | "index"
+                | "rindex"
+                | "starts-with"
+                | "ends-with"
+                | "contains"
+                | "subst"
+                | "sprintf"
+                | "ord"
+                | "chr"
+                | "ords"
+                | "Num"
+                | "Rat"
+                | "succ"
+                | "pred"
+                | "abs"
+                | "sqrt"
+                | "sign"
+                | "round"
+                | "floor"
+                | "ceiling"
+                | "truncate"
+                | "base"
+                | "exp"
+                | "log"
+                | "log10"
+                | "log2"
+                | "sin"
+                | "cos"
+                | "tan"
+                | "asin"
+                | "acos"
+                | "atan"
+                | "atan2"
+                | "sinh"
+                | "cosh"
+                | "tanh"
+                | "asinh"
+                | "acosh"
+                | "atanh"
+                | "sec"
+                | "cosec"
+                | "cotan"
+                | "sech"
+                | "cosech"
+                | "cotanh"
+                | "cis"
+                | "unpolar"
+                | "roots"
+                | "polymod"
+                | "IO"
+                | "lazy"
+                | "race"
+                | "hyper"
+                | "samecase"
+                | "samemark"
+                | "samespace"
+                | "trans"
+                | "indent"
+                | "uniname"
+                | "uninames"
+                | "unival"
+                | "univals"
+                | "uniprop"
+                | "uniprops"
+                | "uniparse"
+                | "parse-base"
+                | "parse-names"
+                | "NFC"
+                | "NFD"
+                | "NFKC"
+                | "NFKD"
+                | "encode"
+                | "Date"
+                | "DateTime"
+                | "UInt"
+                | "Version"
+        )
+    }
+
+    /// Whether `class_name` (or any ancestor in its MRO) declares `handles *`
+    /// or a `FALLBACK` method — the two mechanisms that intercept a
+    /// `X::Method::NotFound` from normal resolution. Used to gate the native
+    /// builtin fast path off a Cool-only method name (`cool_only_builtin_method`)
+    /// so the interpreter's wildcard-delegation/`FALLBACK` fallback chain gets
+    /// a chance to run instead of the fast path unconditionally stringifying
+    /// the receiver.
+    pub(crate) fn class_has_wildcard_handles_or_fallback(&mut self, class_name: &str) -> bool {
+        let mro = self.class_mro(class_name);
+        let has_wildcard = mro.iter().any(|cn| {
+            self.registry()
+                .classes
+                .get(cn.as_str())
+                .is_some_and(|cd| !cd.wildcard_handles.is_empty())
+        });
+        has_wildcard || self.has_user_method(class_name, "FALLBACK")
+    }
+
     /// Determine whether to bypass the native method fast path.
     pub(super) fn should_bypass_native_fastpath(
         &mut self,
@@ -266,6 +392,15 @@ impl Interpreter {
                             .is_some()
                             || (self.has_class_level_attr(&class_name, method)
                                 && !self.has_public_accessor(&class_name, method))))
+                    // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is
+                    // not resolvable on a plain Any-derived instance in raku,
+                    // so a class declaring `handles *` / `FALLBACK` must get
+                    // the chance to intercept it instead of this fast path
+                    // unconditionally stringifying the receiver. Name-gated
+                    // first (a cheap `matches!`) so the MRO walk only runs
+                    // for the rare "Instance x Cool-only name" shape.
+                    || (Self::cool_only_builtin_method(method)
+                        && self.class_has_wildcard_handles_or_fallback(&class_name))
             }
             ValueView::Package(class_name) => {
                 let class_name = class_name.resolve();

@@ -3813,7 +3813,18 @@ impl Interpreter {
         let shadows_builtin = !is_pseudo_method
             && match target.view() {
                 ValueView::Instance { class_name, .. } => {
-                    self.class_has_user_method(&class_name.resolve(), method)
+                    let class_name = class_name.resolve();
+                    self.class_has_user_method(&class_name, method)
+                        // A Cool-only builtin (`.subst`, `.trans`, ...) is not
+                        // resolvable on a plain Any-derived instance in raku, so
+                        // a class declaring `handles *` / `FALLBACK` must be
+                        // given the chance to intercept it instead of this
+                        // by-name builtin dispatcher unconditionally
+                        // stringifying the receiver (the arity-0 twin of this
+                        // gate lives in `try_native_method_raw`/
+                        // `should_bypass_native_fastpath`).
+                        || (Self::cool_only_builtin_method(method)
+                            && self.class_has_wildcard_handles_or_fallback(&class_name))
                 }
                 ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
                 _ => false,

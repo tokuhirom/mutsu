@@ -324,6 +324,18 @@ impl Interpreter {
                 if self.is_native_method(&cn, &method_name) {
                     return None;
                 }
+                // A Cool-only builtin (`.uc`, `.flip`, `.subst`, ...) is not
+                // resolvable on a plain Any-derived instance in raku, so a
+                // class declaring `handles *` / `FALLBACK` must be given the
+                // chance to intercept it instead of this fast path
+                // unconditionally stringifying the receiver. Name-gated
+                // first (a cheap `matches!`) so the MRO walk only runs for
+                // the rare "Instance x Cool-only name" shape.
+                if Self::cool_only_builtin_method(&method_name)
+                    && self.class_has_wildcard_handles_or_fallback(&cn)
+                {
+                    return None;
+                }
             }
         } else if matches!(target.view(), ValueView::Package(name) if name == "Supply")
             && matches!(
