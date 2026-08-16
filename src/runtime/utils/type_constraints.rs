@@ -22,6 +22,9 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Rat"
             | "FatRat"
             | "Complex"
+            | "Real"
+            | "Numeric"
+            | "Rational"
             | "atomicint"
             | "int"
             | "num"
@@ -65,6 +68,7 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Match"
             | "Regex"
             | "Block"
+            | "Callable"
             | "Code"
             | "Sub"
             | "Method"
@@ -161,15 +165,20 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "Channel"
             | "CurrentThreadScheduler"
             | "Promise"
+            | "PromiseStatus"
             | "Semaphore"
             | "Supplier"
+            | "Supply"
             | "Tap"
             | "Thread"
             | "ThreadPoolScheduler"
+            | "Scheduler"
+            | "Telemetry"
             // Hyper/Parallel
             | "HyperConfiguration"
             | "HyperSeq"
             | "ParallelSequence"
+            | "RaceSeq"
             // Slang
             | "Slang"
             // Lock
@@ -178,6 +187,32 @@ pub(crate) fn is_known_type_constraint(constraint: &str) -> bool {
             | "CallFrame"
             // CompUnit
             | "CompUnit"
+            // Core roles
+            | "Associative"
+            | "Positional"
+            | "PositionalBindFailover"
+            | "Iterable"
+            | "Iterator"
+            | "PredictiveIterator"
+            | "Sequence"
+            | "Stringy"
+            | "Baggy"
+            | "Mixy"
+            | "Setty"
+            | "Dateish"
+            | "Systemic"
+            | "Encoding"
+            | "Formatter"
+            | "ForeignCode"
+            | "Collation"
+            // Process/system
+            | "Proc"
+            | "Signal"
+            | "Order"
+            | "Endian"
+            // RakuAST (top-level namespace only; RakuAST::* compound names are
+            // not covered here — see is_known_compound_type)
+            | "RakuAST"
     )
 }
 
@@ -191,6 +226,10 @@ pub(crate) fn is_builtin_enum_value(name: &str) -> bool {
         "Less" | "Same" | "More"
         // Endian
         | "LittleEndian" | "BigEndian" | "NativeEndian"
+        // PromiseStatus (mutsu represents Promise.status as a bare string, not
+        // a registered enum type — see roast/packages/Test-Helpers/lib/Test/Util.rakumod's
+        // `given $promise.status { when Kept { ... } }`)
+        | "Planned" | "Kept" | "Broken"
     )
 }
 
