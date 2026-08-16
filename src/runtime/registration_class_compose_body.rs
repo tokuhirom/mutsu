@@ -42,8 +42,20 @@ impl Interpreter {
         let mut def = self.registry_mut().classes.remove(old_name)?;
         def.mro = std::sync::Arc::from(Vec::<Symbol>::new());
         self.registry_mut().classes.insert(new_name.clone(), def);
-        self.registry_mut().sync_user_method_entries(old_name);
-        self.registry_mut().sync_user_method_entries(&new_name);
+        // ADR-0019 F4c-5: `rename_method_owner` replaces the old "sync old
+        // (clears via the pure-clear path), sync new (re-derives from
+        // `def.methods`)" idiom for the user-method column; the accessor
+        // column has no owner-rename mutator (design: it stays keyed off
+        // `ClassDef::attributes`, which the `classes.insert` above already
+        // moved to `new_name`), so it still goes through the same
+        // `sync_accessor_entries` calls the old `sync_user_method_entries`
+        // pair made internally.
+        let old_owner = Symbol::intern(old_name);
+        let new_owner = Symbol::intern(&new_name);
+        self.registry_mut()
+            .rename_method_owner(old_owner, new_owner);
+        self.registry_mut().sync_accessor_entries(old_owner);
+        self.registry_mut().sync_accessor_entries(new_owner);
         if self.user_declared_classes.remove(old_name) {
             self.user_declared_classes.insert(new_name.clone());
         }

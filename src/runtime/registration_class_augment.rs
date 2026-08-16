@@ -1207,6 +1207,8 @@ impl Interpreter {
                 }
             }
         }
+        // ADR-0019 F4c-5: kept for the registry dual-write below.
+        let all_methods_for_registry = all_methods.clone();
         let punned_class = ClassDef {
             parents: Vec::new(),
             attributes: all_attributes,
@@ -1223,6 +1225,15 @@ impl Interpreter {
         self.registry_mut()
             .classes
             .insert(role_name.to_string(), punned_class);
+        // Dual-write the pun's methods through the mutator API too -- this
+        // is a brand-new `ClassDef` (not a mutation of an already-borrowed
+        // one), so there is no R8 held-guard hazard here; each
+        // `set_user_methods` call is its own short-lived guard.
+        let owner = Symbol::intern(role_name);
+        for (name, defs) in all_methods_for_registry {
+            self.registry_mut()
+                .set_user_methods(owner, Symbol::intern(&name), defs);
+        }
         // Register the role and its composed roles
         self.registry_mut()
             .class_composed_roles
