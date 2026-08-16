@@ -397,6 +397,20 @@ impl Interpreter {
             .chain(classes_snapshot.keys())
             .cloned()
             .collect();
+        // ADR-0019 F4c-8(b): the classes whose canonical method table
+        // actually needs a registry re-derive after the `classes = snapshot;
+        // classes.extend(current)` merge below -- computed now, before that
+        // merge consumes `classes_snapshot`. `extend` makes `current` win
+        // for every key `current` has, so the merge's only real effect is
+        // *resurrecting* keys the EVAL removed (`withdraw_role_pun`,
+        // `__MUTSU_UNREGISTER_CLASS__`, ...); every other class's
+        // `method_entries` rows are already correct, kept in sync live by
+        // whatever ran during the EVAL itself.
+        let resurrected_classes: Vec<String> = classes_snapshot
+            .keys()
+            .filter(|name| !current_classes.contains_key(*name))
+            .cloned()
+            .collect();
         self.registry_mut().roles = roles_snapshot;
         self.registry_mut().user_declared_roles = user_declared_roles_snapshot;
         self.registry_mut().role_candidates = role_candidates_snapshot;
@@ -438,8 +452,13 @@ impl Interpreter {
         self.registry_mut()
             .class_role_param_bindings
             .extend(current_class_role_param_bindings);
-        let class_names: Vec<String> = self.registry().classes.keys().cloned().collect();
-        for class_name in class_names {
+        // ADR-0019 F4c-8(b): this used to loop over every class in the
+        // registry (O(all classes) x O(total table rows), to repair at most
+        // a handful of owners); scoping to `resurrected_classes` (computed
+        // above, before the merge) is O(resurrected) instead. Every other
+        // class's `method_entries` rows are already correct and untouched
+        // by the snapshot/extend dance.
+        for class_name in resurrected_classes {
             self.registry_mut().sync_user_method_entries(&class_name);
         }
         for key in current_type_keys.union(&snapshot_type_keys) {

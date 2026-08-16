@@ -22,6 +22,13 @@ pub(super) struct ClassRegSnapshot {
     prev_hidden_defer: Option<rustc_hash::FxHashSet<String>>,
     prev_composed_roles: Option<Vec<String>>,
     prev_role_param_bindings: Option<rustc_hash::FxHashMap<String, Value>>,
+    /// ADR-0019 F4c-8(a): dual-write mirror of `prev_class`'s methods
+    /// through the mutator API, forward-looking for F4c-9b -- once
+    /// `ClassDef::methods` is deleted, `prev_class.clone()` alone can no
+    /// longer capture them. Deliberately does NOT capture `MethodEntry::
+    /// proto` or `method_wrap_chains` -- see `restore`'s own comment for
+    /// why both gaps are preserved on purpose, not silently inherited.
+    prev_method_rows: Vec<(crate::symbol::Symbol, Vec<MethodDef>)>,
 }
 
 impl ClassRegSnapshot {
@@ -33,6 +40,7 @@ impl ClassRegSnapshot {
             prev_hidden_defer: reg.hidden_defer_parents.get(name).cloned(),
             prev_composed_roles: reg.class_composed_roles.get(name).cloned(),
             prev_role_param_bindings: reg.class_role_param_bindings.get(name).cloned(),
+            prev_method_rows: reg.user_method_rows_for_owner(crate::symbol::Symbol::intern(name)),
         }
     }
 
@@ -66,6 +74,21 @@ impl ClassRegSnapshot {
         } else {
             reg.class_role_param_bindings.remove(name);
         }
+        // ADR-0019 F4c-8(a): dual-write the method rows through the mutator
+        // API too. Redundant with the `sync_user_method_entries` call below
+        // today (which re-derives from the just-restored `prev_class.
+        // methods` and wins), but this is the mechanism F4c-9b needs once
+        // that field and that function are gone. `restore_user_method_rows`
+        // only ever touches `user_candidates`, so `MethodEntry::proto`
+        // survives untouched here exactly as the pre-existing behavior
+        // leaves it; `method_wrap_chains` is untouched by either path,
+        // also matching pre-existing behavior. Both are deliberate,
+        // pre-existing gaps -- see the design note's own instruction not to
+        // fold that behavior change into this box.
+        reg.restore_user_method_rows(
+            crate::symbol::Symbol::intern(name),
+            self.prev_method_rows.clone(),
+        );
         drop(reg);
         this.registry_mut().sync_user_method_entries(name);
     }

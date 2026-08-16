@@ -261,6 +261,13 @@ impl Interpreter {
         self.registry_mut().roles.remove(name);
         self.registry_mut().enum_types.remove(name);
         self.registry_mut().subsets.remove(name);
+        // ADR-0019 F4c-8(e): explicit mutator calls, matching
+        // `__MUTSU_UNREGISTER_CLASS__`'s own F4c-8(e) fix -- this
+        // `classes.remove` called no sync at all, leaving permanently stale
+        // `method_entries` rows behind.
+        let owner = crate::symbol::Symbol::intern(name);
+        self.registry_mut().clear_user_methods_for_owner(owner);
+        self.registry_mut().sync_accessor_entries(owner);
         self.suppressed_names.remove(name);
     }
 

@@ -1707,6 +1707,39 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `require`-alias territory; only the pre-existing tracked `S11-modules/re-export.t` SORRY-abort
     and `S12-attributes/trusts.t` failures), and `scripts/battery-testsuite.sh` (GATE PASSED);
     `cargo clippy -- -D warnings` and `cargo fmt` clean.
+
+    **Progress (F4c-8, #TBD):** of the five mechanisms (4) names, two were already done by earlier
+    slices -- **(c)** `Registry::replace_method_entries_from` already copied the reverse index
+    (fixed in F4c-1's own progress note) and **(d)** `rename_generic_composed_class` already uses
+    `rename_method_owner` (F4c-5) -- so this slice covers the remaining three. **(a)
+    `ClassRegSnapshot`** gained `prev_method_rows: Vec<(Symbol, Vec<MethodDef>)>`, captured via
+    `user_method_rows_for_owner` and restored via `restore_user_method_rows`; the restore call sits
+    before the pre-existing `sync_user_method_entries(name)` call, which stays authoritative during
+    the bridge and will simply have nothing left to correct once F4c-9b arrives. Both pre-existing
+    gaps preserved deliberately, not silently fixed: `restore_user_method_rows` only ever touches
+    `user_candidates`, so `MethodEntry::proto` is untouched exactly as before; `method_wrap_chains`
+    is untouched by either path, also exactly as before. Filed the proto gap as
+    `todo/tickets/class-redeclaration-rollback-loses-proto-method.md` per this box's own
+    instruction not to fold a behavior change into F4c. **(b) EVAL-string rollback**
+    (`system_eval_string.rs`) keeps its `classes = snapshot; classes.extend(current)` merge exactly
+    as-is (still correct, still needs no redesign) but the O(all classes) `for class_name in
+    self.registry().classes.keys() { sync }` repair loop is now scoped to `resurrected_classes`
+    (`classes_snapshot`'s keys minus `current_classes`'s, computed *before* the merge consumes
+    `classes_snapshot`) -- a genuine algorithmic win (O(all classes) x O(total table) down to
+    O(resurrected) x O(total table)), not just a mechanical dual-write, since every non-resurrected
+    class's `method_entries` rows are already correct (kept live-synced by whatever ran during the
+    EVAL). Confirmed this path still never touches `RoleDef::methods` -- unchanged, the `roles`
+    field restore/extend pair is untouched by this slice. **(e)** all three no-sync `classes.remove`
+    sites (`builtins.rs`'s `__MUTSU_UNREGISTER_CLASS__`, `runtime_encoding.rs`'s
+    `shadow_suppressed_type_with_package`, `registration_role_decl.rs`'s stale-pun cleanup) now
+    call `clear_user_methods_for_owner` + `sync_accessor_entries` explicitly, per the design note's
+    own instruction not to inherit the latent permanently-stale-rows bug into the new world.
+    Verified with the full local `t/` suite (3184 files, 29653 tests) under
+    `MUTSU_CHECK_METHOD_INDEX=1` (0 index/table-drift assertions), the 312-file
+    `S04`/`S06`/`S09`/`S11`/`S12`/`S14` roast subset plus the EVAL-specific
+    `S29-context/eval.t`/`evalfile.t`, `S06-other/main-eval.t`, `S04-phasers/in-eval.t` (only the
+    same two pre-existing tracked failures), and `scripts/battery-testsuite.sh` (GATE PASSED);
+    `cargo clippy -- -D warnings` and `cargo fmt` clean.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

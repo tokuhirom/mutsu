@@ -97,6 +97,13 @@ impl Interpreter {
     ) -> Option<Vec<String>> {
         // Clean up stale punned class entry for this role name.
         self.registry_mut().classes.remove(name);
+        // ADR-0019 F4c-8(e): explicit mutator calls, matching
+        // `__MUTSU_UNREGISTER_CLASS__`'s own F4c-8(e) fix -- this
+        // `classes.remove` called no sync at all, leaving permanently stale
+        // `method_entries` rows behind from the withdrawn pun.
+        let owner = crate::symbol::Symbol::intern(name);
+        self.registry_mut().clear_user_methods_for_owner(owner);
+        self.registry_mut().sync_accessor_entries(owner);
         self.registry_mut().hidden_classes.remove(name);
         self.registry_mut().class_composed_roles.remove(name);
         // When registering a parametric variant of an existing non-parametric role

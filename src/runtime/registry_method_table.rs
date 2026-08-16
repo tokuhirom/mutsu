@@ -310,7 +310,6 @@ impl Registry {
     /// Inverse of [`user_method_rows_for_owner`](Self::
     /// user_method_rows_for_owner): replaces `owner`'s entire user-owned row
     /// set with `rows`, clearing anything not present in `rows` first.
-    #[allow(dead_code)] // ADR-0019 F4c-8 wires this into snapshot/rollback.
     pub(crate) fn restore_user_method_rows(
         &mut self,
         owner: Symbol,
