@@ -1937,3 +1937,72 @@ fundamentally different approach (e.g., a *runtime* fallback path in the VM
 that still raises the right exception if the gobble genuinely happens, rather
 than a parse-time static prediction) would be more tractable than trying to
 make the static prediction complete.
+
+## `&infix:«<»`/`»`/`<=`/`>=` called as a routine numified big rationals/bigints as 0 (2026-08-16)
+
+Re-ran `scripts/test-module-sweep.sh` fresh (no code changes since PR#6527):
+3156 pass under both providers, 16 regressed under the real `Test`, 2 pass
+*only* under the real `Test`, 16 fail under both (pre-existing, out of this
+ticket's scope). Picked `t/bigrat-sort-compare.t`'s regression —
+`cmp-ok (-2**80 + 0.1).FatRat, '<', -0.5, ...` failed only under
+`MUTSU_REAL_TEST=1`, reporting `got: FatRat.new(-12089258196146291747061759, 10)`
+(the correct value) compared with `<` against `-0.5` and getting the wrong
+boolean. Confirmed the plain infix `$x < -0.5` already returned the right
+`True` — the difference is entirely in *how* `cmp-ok` invokes the comparator:
+`Test.rakumod`'s `cmp-ok` (line 264) resolves the string `'<'` to
+`&CALLER::LEXICAL::("infix:<$op>")` and then calls `$matcher($got,$expected)`
+as an ordinary two-arg routine call, not a compiled infix expression.
+
+**Root cause:** calling `&infix:«<»` as a sub routes through
+`Interpreter::call_infix_routine` → `apply_reduction_op`
+(`src/runtime/ops_reduction.rs`), whose `<`/`>`/`<=`/`>=` arms use a
+**local, independently-reimplemented** `to_num`/`to_int` numeric-coercion
+closure (distinct from the shared, already-correct
+`crate::runtime::utils::to_float_value` that every *compiled* comparison
+opcode uses — see `src/vm/vm_comparison_ops.rs`'s own `to_float_value`
+wrapper). This local closure pattern-matched `Int`/`Num`/`Rat`/`FatRat`/
+`Str`/`Bool`/`Enum`/`Array` and fell through to a silent `0.0`/`0` default
+for anything else — but a numerator/denominator that overflows the inline
+i64 `ValueView::FatRat(i64,i64)`/`ValueView::Rat(i64,i64)` view is boxed as
+`ValueView::BigRat(&BigInt,&BigInt)` (and plain overflowing integers as
+`ValueView::BigInt`), neither of which the closure had a case for. So
+`(-2**80 + 0.1).FatRat` (an out-of-i64-range numerator) numified to `0.0`
+when called as a routine, making `0.0 < -0.5` wrongly `False` (and the
+reverse-direction comparison wrongly `True`). `==`/`!=`/`cmp` in the same
+function were unaffected — they already route through the correct
+`to_big_rat_parts`/`compare_big_rat_parts` helpers before ever reaching
+`to_num`; only the `<`/`>`/`<=`/`>=` arms (line ~479-482) called it directly
+with no such guard.
+
+Fixed by adding `ValueView::BigInt(_) | ValueView::BigRat(..)` arms to both
+closures in `apply_reduction_op`: `to_num` now delegates to the shared
+`crate::runtime::utils::to_float_value` (avoiding a second reimplementation
+of the arbitrary-precision-to-f64 scaling logic that already lives there),
+and `to_int` does the analogous big-integer-division-then-clamp that its
+existing `ValueView::BigInt` arm already did for the non-rational case.
+Verified against `raku` directly (`&infix:«<»`/`»`/`<=`/`>=` called on big
+`Int`/`Rat`/`FatRat` operands in both signs and both operand orders) — all
+match byte-for-byte after the fix.
+
+**A related, deeper gap noticed but deliberately NOT fixed in this round:**
+`&infix:<div>`/`&infix:<mod>` called as routines on a `BigInt` that overflows
+i64 (e.g. `&infix:<div>(10**30, 3)`) still give a wrong answer
+(`3074457345618258602` instead of raku's exact
+`333333333333333333333333333333`) — `to_int`'s pre-existing `BigInt` arm
+clamps to `i64::MAX`/`i64::MIN` rather than doing true arbitrary-precision
+integer division and returning a `BigInt` `Value`. This is a *different*
+mechanism (not "unhandled `_ => 0` default", but "the whole `div`/`mod`
+branch is i64-only by construction") and is not exercised by any current
+regression — noted here for whoever next touches this function, not filed as
+a separate ticket since it wasn't blocking anything in this sweep.
+
+Pin: `t/bignum-infix-sub-comparison.t` (16 assertions: big `Int`, big `Rat`,
+and big `FatRat` operands, both signs, both operand orders, across `<`/`>`/
+`<=`/`>=`, plus the exact `cmp-ok` shape that started the investigation) — all
+verified byte-identical against `raku`. `t/bigrat-sort-compare.t` now passes
+under both `Test` providers. Full `t/` suite (3191 files, 29730 tests) and
+`cargo clippy -- -D warnings` both clean; also spot-checked the relevant
+whitelisted roast files (`S02-types/fatrat.t`, `S02-types/num.t`,
+`S32-num/cool-num.t`, `S32-num/fatrat.t`, `S03-metaops/infix.t`,
+`S03-operators/infixed-function.t`, `S06-operator-overloading/infix.t`)
+clean on a release build.

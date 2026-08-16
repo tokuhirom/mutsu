@@ -171,6 +171,16 @@ impl Interpreter {
                         n as f64 / d as f64
                     }
                 }
+                // Numerators/denominators too large for the inline i64 view
+                // (`ValueView::BigInt`/`ValueView::BigRat`) were falling
+                // through to the `_ => 0.0` default below, silently treating
+                // e.g. `(-2**80 + 0.1).FatRat` as `0` — wrong sign, wrong
+                // magnitude. Delegate to the shared, already-correct
+                // arbitrary-precision-to-f64 conversion instead of
+                // reimplementing it here.
+                ValueView::BigInt(_) | ValueView::BigRat(..) => {
+                    crate::runtime::utils::to_float_value(cur).unwrap_or(0.0)
+                }
                 // Raku numeric-string coercion allows surrounding whitespace
                 // (`+"1 " == 1`), so trim before parsing — Rust's `f64::parse`
                 // rejects the trailing/leading space and would yield 0.0, making
@@ -217,6 +227,18 @@ impl Interpreter {
                         0
                     } else {
                         n / d
+                    }
+                }
+                // Same gap as `to_num` above: a big-numerator/denominator
+                // rational (`ValueView::BigRat`, used for both big `Rat` and
+                // big `FatRat`) was falling through to the `_ => 0` default.
+                ValueView::BigRat(n, d) => {
+                    if d.is_zero() {
+                        0
+                    } else {
+                        (n / d)
+                            .to_i64()
+                            .unwrap_or_else(|| if n.is_negative() { i64::MIN } else { i64::MAX })
                     }
                 }
                 ValueView::Str(s) => s.parse::<i64>().unwrap_or(0),
