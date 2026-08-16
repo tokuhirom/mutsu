@@ -216,7 +216,7 @@ impl Interpreter {
             snapshot.restore(self, name);
             return Err(err);
         }
-        if let Err(err) = self.detect_unresolved_role_method_conflicts(name, &class_def) {
+        if let Err(err) = self.detect_unresolved_role_method_conflicts(name) {
             snapshot.restore(self, name);
             return Err(err);
         }

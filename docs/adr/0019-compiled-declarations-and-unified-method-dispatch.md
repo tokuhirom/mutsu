@@ -1793,9 +1793,35 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
     `S12-class/open_closed.t`, `S12-meta/exporthow.t`, `S12-traits/basic.t`, `S12-traits/
     parameterized.t`); `scripts/battery-testsuite.sh` (GATE PASSED, 245/271); `cargo clippy -- -D
     warnings` and `cargo fmt` clean. **Remaining F4c-9a scope** (deferred, not done by this
-    slice): `detect_unresolved_role_method_conflicts` (needs its own careful pass per its
-    staleness note above), and re-auditing the write-family files once F4c-9b is ready to retire
-    their `class_def.methods` half.
+    slice): re-auditing the write-family files once F4c-9b is ready to retire their
+    `class_def.methods` half.
+
+    **Progress (F4c-9a-2, #TBD):** closes out `class.rs`'s `detect_unresolved_role_method_
+    conflicts`, the one site F4c-9a-1 deliberately left alone because its own comment warned that
+    `class_def` is not guaranteed to match the registry's `owner_method_names` mid-`finalize_
+    class_registration` (the call runs right after `resolve_class_stub_requirements`, before the
+    post-stub-resolution `class_def` is re-synced). That staleness gap turned out to already be
+    closed: `resolve_class_stub_requirements`'s own mutation loop (F4c-3) dual-writes every
+    `class_def.methods` add/remove straight to the registry via the mutator API, so the two are
+    kept in lockstep even mid-call now. Confirmed empirically, not just by re-reading the code,
+    before touching the site: this function's own pre-existing F4c-1 shadow check
+    (`shadow_check_owner_method_names`) was run under `MUTSU_VM_STATS=1` across the full local
+    `t/` suite (3185 files) and the 122-file `S12`/`S14` role-composition-conflict-heavy roast
+    subset -- zero mismatches in either sweep, i.e. the shadow check itself supplied the
+    confirmation its own comment demanded. Cut over to `Registry::owner_method_names` +
+    `Registry::user_method_overloads`, matching the other seven F4c-1 sites; dropped the now-dead
+    `class_def: &ClassDef` parameter (its one caller, `finalize_class_registration`, updated) and,
+    since this was the shadow check's last remaining caller, retired the whole F4c-1 shadow-check
+    apparatus it was the last user of: `Registry::shadow_check_owner_method_names`
+    (`registry_method_table.rs`) and `vm_stats::record_owner_method_names_shadow_check` plus its
+    two atomics, per-site mismatch map, and exit-time print block (`vm_stats.rs`) -- the box's own
+    "write-through deletes existing workarounds" payoff pattern, applied to a verification
+    scaffold instead of a runtime workaround. Verified with the full local `t/` suite (3185 files,
+    29665 tests, green) and the same 243-file roast subset producing byte-identical failure output
+    against the `main` baseline (same 7 pre-existing failures, zero new breakage); `scripts/
+    battery-testsuite.sh` (GATE PASSED, 245/271); `cargo build`, `cargo clippy -- -D warnings`,
+    `cargo fmt` all clean (confirming no other caller depended on the retired shadow-check API).
+    **F4c-9a is now fully closed** apart from re-auditing the write-family files at F4c-9b time.
   F6 does not have to wait on F4 as a whole: only `class_dispatch.rs:228` couples them, so F6's
   caller-reduction slices (migrating the ~40 `run_instance_method` references off the carrier,
   one family at a time) can proceed in parallel with F4a/b/c and simply pick up that one site

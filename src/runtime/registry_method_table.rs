@@ -60,39 +60,6 @@ impl Registry {
             .unwrap_or_default()
     }
 
-    /// Shared F4c-1 shadow check for the eight `class_def.methods.keys()`
-    /// full-name-enumeration read sites the ADR-0019 F4c design note's
-    /// ground-truth correction (0)(i) named. `old_names` is today's read (a
-    /// borrow, so the caller pays nothing when `MUTSU_VM_STATS` is
-    /// disabled); compared against [`owner_method_names`](Registry::
-    /// owner_method_names) as a SET (declaration order is not a meaningful
-    /// invariant here -- see that field's own doc). Zero behavior change:
-    /// this only records a counter, the caller's existing read is untouched.
-    pub(crate) fn shadow_check_owner_method_names<'a>(
-        &self,
-        site: &str,
-        owner: &str,
-        old_names: impl Iterator<Item = &'a str>,
-    ) {
-        if !crate::vm::vm_stats::enabled() {
-            return;
-        }
-        let mut old: Vec<&str> = old_names.collect();
-        old.sort_unstable();
-        old.dedup();
-        let mut new: Vec<String> = self
-            .owner_method_names(owner)
-            .iter()
-            .map(Symbol::resolve)
-            .collect();
-        new.sort_unstable();
-        new.dedup();
-        let matched = old.iter().copied().eq(new.iter().map(String::as_str));
-        crate::vm::vm_stats::record_owner_method_names_shadow_check(site, matched, || {
-            format!("owner={owner} old={old:?} new={new:?}")
-        });
-    }
-
     /// Full-table consistency check between [`owner_method_names`](Registry::
     /// owner_method_names) and the `user_candidates` half of `method_entries`:
     /// every indexed name must have a live row and every row with a

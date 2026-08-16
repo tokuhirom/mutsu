@@ -169,25 +169,23 @@ impl Interpreter {
     pub(super) fn detect_unresolved_role_method_conflicts(
         &self,
         class_name: &str,
-        class_def: &ClassDef,
     ) -> Result<(), RuntimeError> {
-        // ADR-0019 F4c-1 shadow check. NOTE: unlike the other seven sites,
-        // this `class_def` is NOT guaranteed to match the registry's
-        // `owner_method_names` at this point -- `finalize_class_registration`
-        // calls this immediately after `resolve_class_stub_requirements`,
-        // which can mutate/remove entries from `class_def.methods` in place
-        // (an unsatisfied stub whose requirement got resolved away), and the
-        // registry is not re-synced until after this call returns. A
-        // mismatch here is therefore expected whenever stub resolution
-        // changed the method set, not necessarily a bug -- do NOT cut this
-        // site over without first confirming (via the mismatch detail) which
-        // mismatches are this expected staleness vs. a real gap.
-        self.registry().shadow_check_owner_method_names(
-            "class::detect_unresolved_role_method_conflicts",
-            class_name,
-            class_def.methods.keys().map(String::as_str),
-        );
-        for (method_name, defs) in &class_def.methods {
+        // ADR-0019 F4c-9a-1: cut over from `class_def.methods` to the
+        // canonical table. `resolve_class_stub_requirements` (called just
+        // before this by `finalize_class_registration`) dual-writes every
+        // `class_def.methods` mutation to the registry via the mutator API
+        // (F4c-3), so unlike the pre-dual-write-bridge era this function's
+        // own F4c-1 shadow check used to worry about, the two are now kept
+        // in lockstep even mid-`finalize_class_registration` -- confirmed
+        // empirically via that same shadow check reporting zero mismatches
+        // across the full local `t/` suite (3185 files) and the S12/S14
+        // role-composition roast subset (122 files) before this cutover.
+        let registry = self.registry();
+        for method_name in registry.owner_method_names(class_name) {
+            let method_name = method_name.resolve();
+            let Some(defs) = registry.user_method_overloads(class_name, &method_name) else {
+                continue;
+            };
             // Submethods (like BUILD, TWEAK) from multiple roles do not conflict —
             // they are accumulated and all called during construction. Skip them.
             if defs.iter().all(|d| d.is_submethod) {
