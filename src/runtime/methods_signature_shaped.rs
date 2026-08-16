@@ -295,9 +295,7 @@ impl Interpreter {
             let own_class = class_name.resolve();
             let method_exists = self.class_mro(&own_class).iter().any(|cn| {
                 self.registry()
-                    .classes
-                    .get(cn.as_str())
-                    .and_then(|c| c.methods.get(method))
+                    .user_method_overloads(cn.as_str(), method)
                     .is_some_and(|ovs| {
                         // A submethod on an ancestor class is not visible to
                         // the receiver, so don't count it as "method exists".
@@ -344,9 +342,7 @@ impl Interpreter {
                 // matched: raise a dispatch error, mirroring the Instance path.
                 let method_exists = self.class_mro(&class_name).iter().any(|cn| {
                     self.registry()
-                        .classes
-                        .get(cn.as_str())
-                        .and_then(|c| c.methods.get(method))
+                        .user_method_overloads(cn.as_str(), method)
                         .is_some_and(|ovs| {
                             let is_ancestor = cn.as_str() != class_name.as_str();
                             ovs.iter()

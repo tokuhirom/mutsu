@@ -86,13 +86,9 @@ impl Interpreter {
             let mut resolved: Option<(String, MethodDef)> = None;
             'scan: for cn in mro.iter() {
                 let registry = self.registry();
-                if let Some(overloads) = registry
-                    .classes
-                    .get(cn.as_str())
-                    .and_then(|c| c.methods.get(method_name))
-                {
+                if let Some(overloads) = registry.user_method_overloads(cn.as_str(), method_name) {
                     // First pass: skip stubs
-                    for def in overloads {
+                    for def in &overloads {
                         if !def.is_private {
                             continue;
                         }
@@ -109,7 +105,7 @@ impl Interpreter {
                         }
                     }
                     // Second pass: include stubs
-                    for def in overloads {
+                    for def in &overloads {
                         if !def.is_private {
                             continue;
                         }

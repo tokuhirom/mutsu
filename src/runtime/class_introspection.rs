@@ -235,8 +235,9 @@ impl Interpreter {
     pub(crate) fn has_user_method(&mut self, class_name: &str, method_name: &str) -> bool {
         let mro = self.class_mro(class_name);
         for cn in mro.iter() {
-            if let Some(class_def) = self.registry().classes.get(cn.as_str())
-                && let Some(defs) = class_def.methods.get(method_name)
+            if let Some(defs) = self
+                .registry()
+                .user_method_overloads(cn.as_str(), method_name)
             {
                 return defs.iter().any(|d| !d.is_private);
             }

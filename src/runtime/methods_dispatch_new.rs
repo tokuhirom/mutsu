@@ -561,9 +561,8 @@ impl Interpreter {
         let has_user = |zelf: &mut Self, m: &str| {
             zelf.class_mro(class_key).iter().any(|c| {
                 zelf.registry()
-                    .classes
-                    .get(c.as_str())
-                    .is_some_and(|cd| cd.methods.contains_key(m))
+                    .user_method_overloads(c.as_str(), m)
+                    .is_some()
             })
         };
         let method = if has_user(self, "BUILDALL") {

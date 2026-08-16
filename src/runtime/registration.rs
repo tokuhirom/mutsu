@@ -147,13 +147,10 @@ impl Interpreter {
             // No user-code re-entry in this loop body (only static helpers), so a
             // let-bound guard is safe.
             let registry = self.registry();
-            let Some(class_def) = registry.classes.get(parent.as_str()) else {
+            let Some(defs) = registry.user_method_overloads(parent.as_str(), method_name) else {
                 continue;
             };
-            let Some(defs) = class_def.methods.get(method_name) else {
-                continue;
-            };
-            for def in defs {
+            for def in &defs {
                 if Self::is_stub_method_def(def) {
                     continue;
                 }
@@ -172,10 +169,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         for parent in mro.iter().skip(1) {
             let registry = self.registry();
-            let Some(class_def) = registry.classes.get(parent.as_str()) else {
-                continue;
-            };
-            let Some(defs) = class_def.methods.get(method_name) else {
+            let Some(defs) = registry.user_method_overloads(parent.as_str(), method_name) else {
                 continue;
             };
             if defs.iter().any(|def| !Self::is_stub_method_def(def)) {
@@ -218,7 +212,10 @@ impl Interpreter {
             .map(Symbol::resolve)
             .collect();
         for method_name in method_names {
-            let Some(all_defs) = class_def.methods.get(&method_name).cloned() else {
+            let Some(all_defs) = self
+                .registry()
+                .user_method_overloads(class_name, &method_name)
+            else {
                 continue;
             };
             let mut stubs = Vec::new();

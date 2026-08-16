@@ -51,10 +51,7 @@ impl Interpreter {
             let owner_str = owner_sym.as_str();
             let defs_all: Vec<MethodDef> = {
                 let registry = self.registry();
-                let Some(class_def) = registry.classes.get(owner_str) else {
-                    continue;
-                };
-                let Some(defs) = class_def.methods.get(method_name) else {
+                let Some(defs) = registry.user_method_overloads(owner_str, method_name) else {
                     continue;
                 };
                 let Some(first) = defs.first() else {
@@ -66,7 +63,7 @@ impl Interpreter {
                 if first.is_my && owner_str != class_name_str && !include_ancestor_submethods {
                     continue;
                 }
-                defs.clone()
+                defs
             };
             let first = &defs_all[0];
             let has_multi = defs_all.iter().any(|d| d.is_multi);
@@ -293,11 +290,8 @@ impl Interpreter {
 
         let class_method_is_multi = |cls: &str| -> bool {
             registry
-                .classes
-                .get(cls)
-                .and_then(|cd| cd.methods.get(method_name))
-                .map(|defs| defs.iter().any(|d| d.is_multi))
-                .unwrap_or(false)
+                .user_method_overloads(cls, method_name)
+                .is_some_and(|defs| defs.iter().any(|d| d.is_multi))
         };
 
         // Build the owner list base-class-first. A non-multi resolved method
@@ -318,10 +312,7 @@ impl Interpreter {
 
         let mut out = Vec::new();
         for owner in &owners {
-            let Some(class_def) = registry.classes.get(owner) else {
-                continue;
-            };
-            let Some(defs) = class_def.methods.get(method_name) else {
+            let Some(defs) = registry.user_method_overloads(owner, method_name) else {
                 continue;
             };
             for (idx, def) in defs.iter().enumerate() {

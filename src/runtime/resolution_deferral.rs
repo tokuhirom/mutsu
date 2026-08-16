@@ -40,23 +40,14 @@ impl Interpreter {
     /// The overloads `class_name` declares directly for `method_name` (not inherited) —
     /// identical read to [`Self::resolve_all_methods_with_owner`]'s per-level lookup (class
     /// table, falling back to the role table for an MRO entry that is a punned role rather than
-    /// a class). Deliberately NOT [`crate::runtime::registry::Registry::user_method_overloads`]
-    /// (aka `get_method_overloads`): that table has a known gap for a role that was never
-    /// punned (see `resolution_sequence.rs`'s module doc) which `resolve_all_methods_with_owner`
-    /// does not share, and this function must not regress it.
+    /// a class): [`crate::runtime::registry::Registry::get_method_overloads_with_role_fallback`].
+    /// Deliberately NOT the bare `user_method_overloads`/`get_method_overloads`: that table has
+    /// a known gap for a role that was never punned (see `resolution_sequence.rs`'s module doc)
+    /// which `resolve_all_methods_with_owner` does not share, and this function must not
+    /// regress it.
     fn own_overloads_at_level(&mut self, owner: &str, method_name: &str) -> Option<Vec<MethodDef>> {
-        let registry = self.registry();
-        registry
-            .classes
-            .get(owner)
-            .and_then(|c| c.methods.get(method_name))
-            .or_else(|| {
-                registry
-                    .roles
-                    .get(owner)
-                    .and_then(|r| r.methods.get(method_name))
-            })
-            .cloned()
+        self.registry()
+            .get_method_overloads_with_role_fallback(owner, method_name)
     }
 
     /// Nominal (argument-independent) narrowness of `def`'s positional, non-slurpy parameter

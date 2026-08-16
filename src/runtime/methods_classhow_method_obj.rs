@@ -15,7 +15,11 @@ impl Interpreter {
         };
         // First add accessor methods for public attributes (in order)
         for attr in &class_def.attributes {
-            if attr.is_public && !class_def.methods.contains_key(&attr.name) {
+            if attr.is_public
+                && registry
+                    .user_method_overloads(class_name, &attr.name)
+                    .is_none()
+            {
                 result.push(self.make_native_method_object(&attr.name, class_name));
             }
         }
@@ -83,7 +87,11 @@ impl Interpreter {
             return table;
         };
         for attr in &class_def.attributes {
-            if attr.is_public && !class_def.methods.contains_key(&attr.name) {
+            if attr.is_public
+                && registry
+                    .user_method_overloads(class_name, &attr.name)
+                    .is_none()
+            {
                 table.insert(
                     attr.name.clone(),
                     self.make_native_method_object(&attr.name, class_name),

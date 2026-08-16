@@ -1716,12 +1716,7 @@ impl Interpreter {
                 let any_build = class_mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
-                        && self
-                            .registry()
-                            .classes
-                            .get(cn)
-                            .and_then(|def| def.methods.get("BUILD"))
-                            .is_some()
+                        && self.registry().user_method_overloads(cn, "BUILD").is_some()
                 });
                 // Role-composed BUILD submethods count as a BUILD phase too, for
                 // the attribute-initializer ordering below (not for the
@@ -2093,12 +2088,7 @@ impl Interpreter {
                 let any_tweak = mro.iter().map(|s| s.as_str()).any(|cn| {
                     cn != "Any"
                         && cn != "Mu"
-                        && (self
-                            .registry()
-                            .classes
-                            .get(cn)
-                            .and_then(|def| def.methods.get("TWEAK"))
-                            .is_some()
+                        && (self.registry().user_method_overloads(cn, "TWEAK").is_some()
                             || !self
                                 .ordered_role_submethods_for_class(cn, "TWEAK")
                                 .is_empty())

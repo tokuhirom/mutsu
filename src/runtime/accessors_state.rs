@@ -582,18 +582,10 @@ impl Interpreter {
         'outer: for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
             let registry = self.registry();
-            let overloads = registry
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
-                .or_else(|| {
-                    registry
-                        .roles
-                        .get(cn.as_str())
-                        .and_then(|r| r.methods.get(method_name))
-                });
+            let overloads =
+                registry.get_method_overloads_with_role_fallback(cn.as_str(), method_name);
             if let Some(overloads) = overloads {
-                for def in overloads {
+                for def in &overloads {
                     if def.is_private {
                         continue;
                     }
@@ -1112,8 +1104,7 @@ impl Interpreter {
     ) -> Option<usize> {
         // No user-code re-entry here, so a let-bound guard is safe.
         let registry = self.registry();
-        let class_def = registry.classes.get(class_name)?;
-        let defs = class_def.methods.get(method_name)?;
+        let defs = registry.user_method_overloads(class_name, method_name)?;
         // Fast path: a resolved MethodDef is a clone of a registry entry, so
         // its body Arc points at the same allocation — pointer identity finds
         // the candidate without traversing any AST. The structural-fingerprint

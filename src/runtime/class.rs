@@ -30,8 +30,8 @@ impl Interpreter {
     pub(crate) fn registry_has_destroy_methods(&self) -> bool {
         let reg = self.registry();
         reg.classes
-            .values()
-            .any(|cd| cd.methods.contains_key("DESTROY"))
+            .keys()
+            .any(|name| reg.user_method_overloads(name, "DESTROY").is_some())
             || reg
                 .roles
                 .values()
@@ -82,10 +82,10 @@ impl Interpreter {
                 }
                 // Clone DESTROY overloads out and drop the guard before re-entering
                 // user code (run_instance_method_resolved).
-                let destroy_overloads = match self.registry().classes.get(mro_class) {
-                    Some(class_def) => class_def.methods.get("DESTROY").cloned(),
-                    None => continue,
-                };
+                if !self.registry().classes.contains_key(mro_class) {
+                    continue;
+                }
+                let destroy_overloads = self.registry().user_method_overloads(mro_class, "DESTROY");
                 // Call class's own DESTROY submethod
                 if let Some(overloads) = destroy_overloads
                     && let Some(method_def) = overloads.into_iter().find(|def| {
@@ -335,13 +335,10 @@ impl Interpreter {
             // No user-code re-entry in this loop body (pure signature-string
             // building), so a let-bound guard is safe.
             let registry = self.registry();
-            let Some(class_def) = registry.classes.get(cn.as_str()) else {
+            let Some(overloads) = registry.user_method_overloads(cn.as_str(), method_name) else {
                 continue;
             };
-            let Some(overloads) = class_def.methods.get(method_name) else {
-                continue;
-            };
-            for def in overloads {
+            for def in &overloads {
                 if def.is_private || (def.is_my && is_ancestor) {
                     continue;
                 }

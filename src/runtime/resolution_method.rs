@@ -603,16 +603,8 @@ impl Interpreter {
         let mut count = 0usize;
         for cn in mro.iter() {
             let is_ancestor = cn.as_str() != class_name;
-            let overloads = registry
-                .classes
-                .get(cn.as_str())
-                .and_then(|c| c.methods.get(method_name))
-                .or_else(|| {
-                    registry
-                        .roles
-                        .get(cn.as_str())
-                        .and_then(|r| r.methods.get(method_name))
-                });
+            let overloads =
+                registry.get_method_overloads_with_role_fallback(cn.as_str(), method_name);
             if let Some(ovs) = overloads {
                 count += ovs
                     .iter()
@@ -641,20 +633,9 @@ impl Interpreter {
             // `self.registry().roles`, so fall back there when the entry is not a class.
             // Single guard for both the class and role method tables; clone the
             // matched overload Vec out so the guard drops before re-entry below.
-            let overloads = {
-                let registry = self.registry();
-                registry
-                    .classes
-                    .get(cn.as_str())
-                    .and_then(|c| c.methods.get(method_name))
-                    .or_else(|| {
-                        registry
-                            .roles
-                            .get(cn.as_str())
-                            .and_then(|r| r.methods.get(method_name))
-                    })
-                    .cloned()
-            };
+            let overloads = self
+                .registry()
+                .get_method_overloads_with_role_fallback(cn.as_str(), method_name);
             if let Some(overloads) = overloads {
                 let is_ancestor = cn.as_str() != class_name;
                 for def in overloads {
