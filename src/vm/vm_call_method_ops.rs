@@ -109,20 +109,41 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
 /// - `ords` warns and resumes to an empty Seq; `chrs` warns and resumes to a
 ///   single null byte.
 ///
+/// A pre-dispatch verdict for a method call on a `Nil` invocant: either a
+/// hard, unconditional error, or a warn-and-resume coercion whose caller must
+/// route the warning through [`Interpreter::raise_resumable_warning`] instead
+/// of just propagating a bare [`RuntimeError`] — see that method's doc
+/// comment for why a raw `warn_signal_with_resume` error is unsafe at an
+/// op-level warn site (it is NOT recognized as a catchable `CX::Warn` by a
+/// `CONTROL { when CX::Warn { ... } }` handler; `roast/packages/Test-Helpers`'s
+/// `Test::Util::warns-like` relies on exactly that mechanism, so a Nil
+/// coercion warning silently vanished under it —
+/// `todo/tickets/nil-method-warnings-are-not-a-resumable-cx-warn.md`).
+pub(crate) enum NilPredispatchVerdict {
+    Error(RuntimeError),
+    Warn {
+        message: &'static str,
+        resume: Value,
+    },
+}
+
 /// Returns `None` for every other method: the callers keep their own handling
 /// for autovivification (`push`/`append`/...), the methods Nil genuinely
 /// defines, and the Nil-absorbing catch-all / post-dispatch FALLBACK absorb.
 /// `no_args` is true when the call has no arguments (the coercion arms only
 /// apply to the 0-ary form; an argument makes them fall through unchanged).
-pub(crate) fn nil_predispatch_error(method: &str, no_args: bool) -> Option<RuntimeError> {
+pub(crate) fn nil_predispatch_verdict(
+    method: &str,
+    no_args: bool,
+) -> Option<NilPredispatchVerdict> {
     match method {
         "BIND-POS" | "BIND-KEY" | "ASSIGN-POS" | "ASSIGN-KEY" | "STORE" => {
-            Some(RuntimeError::new(format!(
+            Some(NilPredispatchVerdict::Error(RuntimeError::new(format!(
                 "Invocant of method '{}' must be an object instance of type \
                  'Any', not a type object of type 'Nil'.  Did you forget a \
                  '.new'?",
                 method
-            )))
+            ))))
         }
         "Rat" | "FatRat" | "Int" | "Num" | "Complex" | "Numeric" | "Real" if no_args => {
             let zero = match method {
@@ -133,29 +154,29 @@ pub(crate) fn nil_predispatch_error(method: &str, no_args: bool) -> Option<Runti
                 "Complex" => Value::complex(0.0, 0.0),
                 _ => unreachable!(),
             };
-            Some(RuntimeError::warn_signal_with_resume(
-                "Use of Nil in numeric context".to_string(),
-                zero,
-            ))
+            Some(NilPredispatchVerdict::Warn {
+                message: "Use of Nil in numeric context",
+                resume: zero,
+            })
         }
         "abs" | "floor" | "ceiling" | "round" | "truncate" | "sign" if no_args => {
-            Some(RuntimeError::warn_signal_with_resume(
-                "Use of Nil in numeric context".to_string(),
-                Value::int(0),
-            ))
+            Some(NilPredispatchVerdict::Warn {
+                message: "Use of Nil in numeric context",
+                resume: Value::int(0),
+            })
         }
-        "Str" | "Stringy" if no_args => Some(RuntimeError::warn_signal_with_resume(
-            "Use of Nil in string context".to_string(),
-            Value::str(String::new()),
-        )),
-        "ords" if no_args => Some(RuntimeError::warn_signal_with_resume(
-            "Use of Nil in string context".to_string(),
-            Value::seq(vec![]),
-        )),
-        "chrs" if no_args => Some(RuntimeError::warn_signal_with_resume(
-            "Use of Nil in string context".to_string(),
-            Value::str("\0".to_string()),
-        )),
+        "Str" | "Stringy" if no_args => Some(NilPredispatchVerdict::Warn {
+            message: "Use of Nil in string context",
+            resume: Value::str(String::new()),
+        }),
+        "ords" if no_args => Some(NilPredispatchVerdict::Warn {
+            message: "Use of Nil in string context",
+            resume: Value::seq(vec![]),
+        }),
+        "chrs" if no_args => Some(NilPredispatchVerdict::Warn {
+            message: "Use of Nil in string context",
+            resume: Value::str("\0".to_string()),
+        }),
         _ => None,
     }
 }
@@ -1632,15 +1653,27 @@ impl Interpreter {
                 // Nil-absorbing verdict without duplicating this dispatch.
                 if target.is_nil() {
                     // The warn-and-resume coercions and the element-mutator
-                    // errors live in `nil_predispatch_error`, shared with the
+                    // errors live in `nil_predispatch_verdict`, shared with the
                     // named-receiver opcode (`exec_call_method_mut_op_impl`)
                     // so `my $v := Nil; $v.Int` reaches the same verdict.
-                    if let Some(err) = nil_predispatch_error(method, args.is_empty()) {
-                        crate::vm::vm_stats::record_dispatch_entry_intercept(
-                            "callmethod",
-                            "nil-predispatch",
-                        );
-                        return Err(err);
+                    match nil_predispatch_verdict(method, args.is_empty()) {
+                        Some(NilPredispatchVerdict::Error(err)) => {
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethod",
+                                "nil-predispatch",
+                            );
+                            return Err(err);
+                        }
+                        Some(NilPredispatchVerdict::Warn { message, resume }) => {
+                            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                                "callmethod",
+                                "nil-predispatch",
+                            );
+                            let resumed = self.raise_resumable_warning(message, resume)?;
+                            self.stack.push(resumed);
+                            return Ok(());
+                        }
+                        None => {}
                     }
                     match method {
                         // Any:U autovivification: push/append/unshift/prepend on
