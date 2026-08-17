@@ -495,15 +495,21 @@ impl Interpreter {
         }
         // Validate that the map argument is callable (X::Cannot::Map)
         if let Some(func) = args.first() {
+            // Look through a role-mixed callable (`&foo but R1`) the same way
+            // `call_sub_value` does when actually invoking it, so this
+            // pre-check and the real invocation agree on what counts as
+            // callable (see
+            // `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`).
+            let unwrapped = Self::unwrap_callable_mixin(func.clone());
             let is_callable = matches!(
-                func.view(),
+                unwrapped.view(),
                 ValueView::Sub(_)
                     | ValueView::Routine { .. }
                     | ValueView::WeakSub(_)
                     | ValueView::Regex(_)
                     | ValueView::RegexWithAdverbs(_)
-            ) || (matches!(func.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
-                || matches!(func.view(), ValueView::Whatever);
+            ) || (matches!(unwrapped.view(), ValueView::Instance { class_name, .. } if class_name.resolve() == "WhateverCode" || class_name.resolve() == "HyperWhateverCode"))
+                || matches!(unwrapped.view(), ValueView::Whatever);
             if !is_callable {
                 let mut attrs = HashMap::new();
                 attrs.insert(
