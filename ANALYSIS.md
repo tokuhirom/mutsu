@@ -64,9 +64,14 @@ Overall assessment as of rev12:
   `#[allow(` count improved slightly, 178→**176**, but it does not change the overall slope.
 
 None of the remaining issues is of the "the basic design is broken" kind. The shape of the
-debt has changed, though: the soundness and representation campaigns are closed. The active
-center is now **ADR-0019's half-migrated declaration/dispatch architecture**, followed by the
-exception type model and two missing policy/concurrency decisions.
+debt has changed, though: the soundness and representation campaigns are closed, and as of
+2026-08-17 **ADR-0019 (compiled declarations and unified method dispatch) is Accepted/
+Implemented** — declaration registration compiles to typed plans, and one TypeId/MRO resolver
+with a generation-checked O(1) cache serves every dispatch entry (§1.1, §3.3). Its own
+completion-gate investigation (G3) also found and fixed two real perf regressions, unrelated to
+the ADR's own mechanisms (§1.1). What is left of that campaign is deliberately non-gating
+residue, now tracked as independent tickets rather than inside the ADR. The active center
+moves to the exception type model and two missing policy/concurrency decisions.
 
 Where to look first:
 - §1: what architectural work remains (§1.8-§1.10 are new)
@@ -78,30 +83,39 @@ Where to look first:
 
 ## 1. Architecture
 
-### 1.1 Remaining tree-walk — declaration registration and dispatch entries only
+### 1.1 Declaration registration and dispatch entries — ADR-0019 closed (2026-08-17)
 
-User-code bodies (subs, methods, blocks) execute exclusively as bytecode. ADR-0019 now owns
-the remaining migration (14/51 slices merged as of 2026-08-04):
+User-code bodies (subs, methods, blocks) execute exclusively as bytecode. **ADR-0019 is now
+Accepted/Implemented**: declarations compile to immutable typed plans (`RegisterDecl`), user
+and native methods share one registry-owned `MethodEntry` write side and one generation
+invalidation boundary, and a single TypeId/MRO resolver (`resolve_sequence`,
+`resolved_seq_cache`) serves every dispatch read entry with generation-checked O(1) cache
+hits — see the ADR's completion-gate section for the full closure record (G1-G4).
 
-- **Declaration registration**: `register_class_decl`
-  (`runtime/registration_class_decl.rs`), `register_sub_decl`, and `register_role_decl`
-  consume temporary typed plans behind one `RegisterDecl` opcode. The plans have left the
-  generic statement pool, but still retain `legacy_body` adapters. Class system, MRO and role
-  composition remain uncompiled — registration, not body execution.
-  **This is no longer a static amount of debt.** The MOP campaign (§1.9) hung the user HOW
-  protocol off exactly this path: `declare_drive_how_protocol` drives `new_type` /
-  `add_method` / `compose` against a user metaobject from inside AST-walking registration,
-  and `registration_class_decl.rs` has grown to 2927 lines. Every future MOP feature adds
-  to a tree-walk that has been flagged since rev5.
-- **Dispatch resolver entries**: multi/submethod and `samewith`/`nextsame` enter through
-  `run_instance_method` (`runtime/class_dispatch.rs:52`, plus a `_celled` variant at `:90`);
-  bodies are compiled. The sound multi-method resolution cache + `fast_method_cache` still
-  amortize the resolver. ADR-0019 Phase B has landed the canonical method-table write side
-  and generation invalidation; the TypeId-based unified read side remains Phase E (§3.3).
+What is left is deliberately non-gating residue, each tracked as its own ticket rather than
+inside the ADR:
+
+- **`legacy_body` adapters and the class/role registration walker**
+  (`runtime/registration_class_decl.rs`, 2927 lines) still tree-walk MOP protocol calls
+  (`declare_drive_how_protocol` driving `new_type`/`add_method`/`compose`) — declaration
+  *registration*, not body execution, which is fully compiled. This is the largest remaining
+  tree-walk surface and the one most likely to keep growing with future MOP features (§1.9).
+- **Native/builtin method introspection fidelity** (F1/F2's remaining slice): user-method
+  `.^methods`/`.^can`/method MRO views are now derived from the canonical table (no longer
+  hand-maintained, closing most of §4 item 1 below); native method metadata (`.package` on
+  multi dispatchers, exact per-method `.signature`, the `.^lookup` Sub-vs-Method-Instance
+  representation mismatch) is not yet at full parity. Tracked in
+  `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`.
+- **E2's exact-handler-ID catalog** (giving every native entry a static type×method row) is
+  open cleanup, no longer gating dispatch correctness — `native_call_unmodeled` is a
+  monitoring signal, not a precondition. Tracked in `todo/deep/adr0019-e2-e4-resolver-core.md`.
+- **D2c-5** (collapsing three near-duplicated default-evaluation env-setup shapes) is optional
+  de-duplication with no correctness impact. Tracked in
+  `todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`.
 - **Module-sub OTF compile gate** (`def_is_otf_compilable_module_single`,
-  `vm/vm_call_func_ops.rs:1991`): unchanged since rev10. The residual exclusions are
-  mechanism-level — `state`, sigilless `\x` params, `is encoded(...)`, `start` — each with a
-  documented blocker (PLAN §3).
+  `vm/vm_call_func_ops.rs:1991`): unchanged since rev10, outside ADR-0019's scope. The
+  residual exclusions are mechanism-level — `state`, sigilless `\x` params,
+  `is encoded(...)`, `start` — each with a documented blocker (PLAN §3).
 
 ### 1.2 Closure upvalues — indexed reads plus capture cells landed
 
@@ -338,19 +352,30 @@ duplicates `stmt.rs` logic for do/if/for/while/loop in expression position, incl
 `SubDecl` both registers an AST body (`RegisterSub`) and compiles the body
 (`compile_sub_body`). Collapses when §1.1's declaration registration is compiled.
 
-### 3.3 Method dispatch: canonical write side landed; read entries remain split
+### 3.3 Method dispatch: canonical write side and TypeId/MRO resolver both landed (ADR-0019 closed)
 
-ADR-0019 Phase B now gives built-in and user candidates one registry-owned `MethodEntry`
-write side and one generation invalidation boundary. Entry points remain unconsolidated:
-`call_method_with_values`
-(`runtime/methods_call_dispatch.rs:50`), `dispatch_method_by_name_{1,2,3}`
-(`runtime/methods_dispatch_match.rs:14` and siblings), `run_instance_method` /
-`run_instance_method_celled` (`runtime/class_dispatch.rs:52,90`), `native_method_{0,1,2}arg`
-(`builtins/`). Same-name string matches stay scattered — `"elems"` appears in **33 files**
-(rev10: 8+). `runtime/methods_call_dispatch.rs` is now 3875 lines.
+ADR-0019 Phase B gives built-in and user candidates one registry-owned `MethodEntry` write
+side and one generation invalidation boundary. Phase E added the read side: `resolve_sequence`
+builds the shape-independent ordered candidate universe (user candidates, accessor
+arbitration, native catalog rows, proto slot) from the same TypeId/MRO chain calls use, and
+`resolved_seq_cache` (keyed `(TypeId, Symbol, CallShape)`) makes a cache hit
+generation-checked O(1) — bench-CI parity confirmed on cutover (2026-08-14). Entry points
+still call into this resolver from multiple call sites rather than one funnel
+(`call_method_with_values` in `runtime/methods_call_dispatch.rs:50`,
+`dispatch_method_by_name_{1,2,3}` in `runtime/methods_dispatch_match.rs:14` and siblings,
+`run_instance_method`/`run_instance_method_celled` in `runtime/class_dispatch.rs:52,90`,
+`native_method_{0,1,2}arg` in `builtins/`), but all of them resolve through the same
+candidate-sequence logic rather than independently re-walking the MRO. Same-name string
+matches stay scattered — `"elems"` appears in **33 files** (rev10: 8+) — a cosmetic/lookup
+surface issue, not a second dispatch mechanism. `runtime/methods_call_dispatch.rs` is now
+3875 lines.
 
-The remaining work is the TypeId/MRO resolver, routing every read entry through it, deriving
-§4-1's introspection, and deleting the compatibility mirrors and caches (ADR-0019 E/F).
+What remains is the E2 exact-handler-ID catalog (giving every native entry a static row
+instead of the arity-cascade fallback) and deriving the last mile of introspection fidelity
+(§4 item 1) — both open cleanup tracked as independent tickets
+(`todo/deep/adr0019-e2-e4-resolver-core.md`,
+`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`), no longer gating dispatch
+correctness or performance.
 
 ---
 
@@ -358,9 +383,15 @@ The remaining work is the TypeId/MRO resolver, routing every read entry through 
 
 No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts remain:
 
-1. **`.^methods`/`.^can`/`.^mro` tables are hand-maintained** — centralized in
-   `builtins/builtin_type_methods.rs` (960 lines, rev10: 874) and guarded by structural tests
-   plus `t/can-methods-drift.t`. True derivation awaits §3.3. The growth rate matters now
+1. **User-method `.^methods`/`.^can`/method MRO views are now derived** from the canonical
+   `Registry::method_entries[(owner, name)].user_candidates` table (ADR-0019 F1/F2, closed for
+   this half 2026-08-14) — no longer hand-maintained for user-declared types. **Native/builtin
+   method metadata stays a hand-maintained shortcut**: `builtins/builtin_type_methods.rs` (960
+   lines, rev10: 874) centralizes the native candidate-name universe, guarded by structural
+   tests plus `t/can-methods-drift.t`; per-method fidelity gaps (native `.package` on multi
+   dispatchers, synthesized-not-exact `.signature`, the `.^lookup` Sub-vs-Method-Instance
+   mismatch) remain open in
+   `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`. The growth rate matters now
    that §1.9 lets user code introspect through the same surface.
 2. **Parser grammar relaxations for roast** (minor, unchanged): `is List` type-ish traits,
    the Test::Assuming colonpair, and the `throws-like` trailing-`)` special form.
@@ -411,30 +442,27 @@ priority reset, performance is polish and is not used as a ranking criterion her
 
 The ranking rule, stated so it can be argued with:
 
-1. **Finish the active half-migration before opening another broad implementation front.**
-   ADR-0019 already has transitional plans, mirrors, caches, and adapters on `main`; every
-   unrelated declaration/MOP change now pays both sides.
-2. **Design prerequisites before data sweeps or concurrency implementation.** Exception roles
+1. **Design prerequisites before data sweeps or concurrency implementation.** Exception roles
    need a type-metadata decision; a worker pool needs an `await` decision; batteries policy
    needs a durable adoption boundary.
-3. **Severity can override the queue only when the task is actionable.** A new crash artifact
+2. **Severity can override the queue only when the task is actionable.** A new crash artifact
    makes the Proc::Async SIGSEGV P0; without one, blind local loops have already been measured
    as unproductive.
-4. **Make hygiene a completion gate on the subsystem being replaced.** File splitting without
-   deleting a model is churn; deleting walkers, mirrors, and entry points through ADR-0019 is
-   structural progress.
-5. Feature breadth with no downstream consumer remains last.
+3. **Make hygiene a completion gate on the subsystem being replaced.** File splitting without
+   deleting a model is churn; the ADR-0019 registration walker
+   (`runtime/registration_class_decl.rs`, §1.1) is the next concrete case once a future MOP
+   feature forces it open.
+4. Feature breadth with no downstream consumer remains last.
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Continue ADR-0019: compiled declarations and unified method dispatch** (§1.1, §3.3, §4-1) | active design migration | 14/51 slices are merged. Typed plans and the canonical write-side table now coexist with `legacy_body`, class mirrors, multiple read resolvers, and hand introspection state. Stop after each phase gate if needed, but do not leave the repository indefinitely in this doubled state. |
-| 2 | **Exception role/type registration and error parity** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | correctness / type model | 124 core `X::` names cannot be constructed as types, and prefix-as-parent is semantically wrong because Rakudo expresses most membership through roles. Collect the role/MRO data now; align implementation with ADR-0019 E1's TypeId/MRO model rather than creating a second registry. |
-| 3 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
-| 4 | **Write the shared-worker-pool Proposed ADR** (`todo/deep/shared-worker-pool-adr.md`) | concurrency design | Thread-per-task at 19 sites reserves 256 MiB each. A bounded pool deadlocks nested blocking `await` without continuations, and idle workers must cooperate with GC stop-the-world. The next deliverable is the decision, not implementation. |
-| 5 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices, not part of the worker-pool design. |
-| 6 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Schedule it after the declaration/compiler migration stops moving adjacent structures. Opcode leftovers remain measurement-gated, not bundled into this task. |
-| 7 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. ADR-0019 phase gates should delete walkers, mirrors, caches, and adapters; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
-| 8 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
+| 1 | **Exception role/type registration and error parity** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | correctness / type model | 124 core `X::` names cannot be constructed as types, and prefix-as-parent is semantically wrong because Rakudo expresses most membership through roles. Collect the role/MRO data now; align implementation with ADR-0019's TypeId/MRO resolver model rather than creating a second registry. |
+| 2 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
+| 3 | **Write the shared-worker-pool Proposed ADR** (`todo/deep/shared-worker-pool-adr.md`) | concurrency design | Thread-per-task at 19 sites reserves 256 MiB each. A bounded pool deadlocks nested blocking `await` without continuations, and idle workers must cooperate with GC stop-the-world. The next deliverable is the decision, not implementation. |
+| 4 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices, not part of the worker-pool design. |
+| 5 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
+| 6 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. `registration_class_decl.rs` (2927 lines, §1.1) is the next walker due for deletion once a MOP feature forces it open; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
+| 7 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
 Explicitly **not** ranked as current architecture work: completed ADR-0013/0015-P3b/0016/0018
 campaigns; optional ADR-0015 P3c; ADR-0016's deliberately deferred eager replay carriers;
@@ -462,7 +490,7 @@ The rev11 corrections remain valid; rev12 adds the closure/progress deltas below
 | 0015 native-backed storage | The prior entry stopped at P3a and left the P3b completion unrecorded. | Recorded P3b (PR #5785) as landed, including the `ArrayData::items` chokepoint and native-boundary behavior; P3c remains optional. |
 | 0016 span-based captures | Status and all five phases remain accurate; the standing `view()` invariant was prose-only in rev11. | `match_materializations` now exposes each first lazy-node force under `MUTSU_VM_STATS=1`; capture-name keys are also interned. Deliberate replay/snapshot residue remains deferred. |
 | 0018 slot-addressed lexical capture | Added after rev11 to own the env-writeback/lexical-slot fused campaign. | Accepted and implemented; it replaces rev11's completed roadmap rows rather than remaining a current task. |
-| 0019 compiled declarations and unified dispatch | Added after rev11 to own §1.1/§3.3/§4-1 as one phased migration. | Proposed and active, 14/51 slices merged. Its execution checklist is now the source of truth for roadmap item 1. |
+| 0019 compiled declarations and unified dispatch | Added after rev11 to own §1.1/§3.3/§4-1 as one phased migration. | **Accepted/Implemented (2026-08-17).** All four completion gates (G1-G4) closed; the ADR's own execution checklist remains the historical record. Deliberately non-gating residue (native-method introspection fidelity, the E2 handler-ID catalog, D2c-5) now lives in independent tickets, not the ADR. |
 | 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0014, 0017 | Accurate; 0004 and 0009 already carry closing addenda. | No change. |
 | 0002 | Historical gate record; still accurate. | No change. |
 
@@ -486,3 +514,8 @@ Two **missing** ADRs are worth writing, and are listed here rather than drafted 
 materialization counter, ADR-0018 completion, and ADR-0019's 14/51 progress recorded;
 live hygiene metrics refreshed; §7 reduced to current work and reordered by dependency,
 severity, and actionability.*
+*2026-08-17 addendum (not a full rev13 re-verification): ADR-0019 reached Accepted/Implemented
+(all four completion gates closed); §1.1, §3.3, §4 item 1, the §7 roadmap, and the §8 ADR-ledger
+row were updated in place to describe the closed architecture and point at the tickets tracking
+its non-gating residue. Other findings/metrics in this document were not re-verified as part of
+this addendum.*
