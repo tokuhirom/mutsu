@@ -1111,11 +1111,17 @@ impl Interpreter {
             }
             return Ok(result);
         }
-        // Fallback: if we are inside a `new` method and nextwith/callwith is called,
-        // dispatch to the built-in Mu.new (i.e., bless) on the current invocant.
-        // In Raku, Mu.new(*%attrinit) is always the base candidate in the MRO for `new`.
-        // Check both routine_stack (VM path) and samewith_context_stack (interpreter path).
-        if matches!(func_name, "nextwith" | "callwith") {
+        // Fallback: if we are inside a `new` method and nextsame/callsame/
+        // nextwith/callwith is called, dispatch to the built-in Mu.new (i.e.,
+        // bless) on the current invocant. In Raku, Mu.new(*%attrinit) is
+        // always the base candidate in the MRO for `new`. Check both
+        // routine_stack (VM path) and samewith_context_stack (interpreter
+        // path). `nextsame`/`callsame` (override_args is None) implicitly
+        // forward the ORIGINAL call's args rather than an empty list — read
+        // them off the method dispatch frame / samewith context, mirroring
+        // `native_array_storage_next_candidate`'s same fallback for a
+        // no-frame single compiled method.
+        if matches!(func_name, "nextsame" | "callsame" | "nextwith" | "callwith") {
             let in_new = self
                 .routine_stack
                 .last()
@@ -1125,7 +1131,19 @@ impl Interpreter {
                     .last()
                     .is_some_and(|ctx| ctx.name == "new");
             if in_new && let Some(invocant) = self.env.get("self").cloned() {
-                let call_args = override_args.unwrap_or_default();
+                let call_args = match override_args {
+                    Some(args) => args,
+                    None => self
+                        .method_dispatch_stack
+                        .last()
+                        .map(|f| f.args.clone())
+                        .or_else(|| {
+                            self.samewith_context_stack
+                                .last()
+                                .and_then(|c| c.args.clone())
+                        })
+                        .unwrap_or_default(),
+                };
                 let result = self.call_method_with_values(invocant, "bless", call_args)?;
                 if tail_call {
                     return Err(RuntimeError {
