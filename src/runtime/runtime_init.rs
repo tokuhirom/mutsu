@@ -966,7 +966,25 @@ impl Interpreter {
                 parents: Vec::new(),
                 attributes: Vec::new(),
                 native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
-                mro: sym_mro(&["IO::Socket::Async::Listener"]),
+                // Real raku's `IO::Socket::Async.listen(...)` literally IS a
+                // `Supply` (built from a `supply { ... }` block in CORE.setting) --
+                // there is no separate "Listener" type. mutsu's listener is a
+                // bespoke native object with its own `tap`/`act` handler
+                // (`native_socket_async_listener`, dispatched by exact class name
+                // in `native_methods/mod.rs`'s IMMUTABLE table, which already
+                // special-cases this class name so it is unaffected by the MRO).
+                // Adding `Supply` here makes `$listener ~~ Supply` true, matching
+                // raku -- needed by consumers that type-check the return value of
+                // `.listen()` before tapping it (e.g. IO::Socket::Async::SSL's
+                // `!server-setup`, which fell through to treating the listener
+                // itself as a single accepted connection when the smartmatch
+                // failed). See `call_native_instance_method_mut`'s hardcoded
+                // class list in `native_methods/mod.rs`, which must also list this
+                // class name explicitly -- its MRO-walk fallback would otherwise
+                // now match `Supply` and route `tap`/`act` to the wrong (generic,
+                // non-functional) mutable-Supply handler instead of falling
+                // through to this class's real immutable one.
+                mro: sym_mro(&["IO::Socket::Async::Listener", "Supply"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
