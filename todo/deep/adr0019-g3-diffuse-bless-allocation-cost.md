@@ -123,3 +123,40 @@ GC-candidate-push family are still diffuse cost, matching the "no single hot fun
 conclusion from the earlier profile. Next dedicated-session step is still the counting-allocator
 build (previous section) if further attribution is wanted, or checking the bench-CI trend after
 this PR merges to see how much of the 7/31-vs-HEAD drift narrows.
+
+## 2026-08-17 (same session): `debug-guard`'s real cause found — a per-name, not per-program, gate
+
+The original A/B list at the top of this ticket also names `debug-guard +11.6%`, left uninvestigated
+alongside `bench-ctor`/`bench-class`. `benchmarks/debug-guard.raku` has nothing to do with
+construction — it's `constant DEBUG = False;` followed by a hot loop calling a `sub` with a plain
+`my $y = ...`. That shape is a red flag for the *same* commit (`0448be29a`, ADR-0022 Slice 5) whose
+`time-parts` bug was already fixed this session, and turned out to be a second, unfixed bug in the
+same mechanism.
+
+The #6575 fix gated the `__mutsu_constant_var::` marker-removal `format!` + `env.remove()` on a
+single **program-wide** `bool` (`any_constant_var_marker_set`): once *any* `constant` scalar was
+ever declared anywhere in the program, every subsequent ordinary `my`/`state` scalar declaration —
+any name, anywhere, for the rest of the run — paid the removal cost, because the bool has no way to
+say "but not for *this* name." `debug-guard.raku` declares exactly one constant (`DEBUG`) at the
+top, which immediately flips that bool permanently — so the hot loop's 1,000,000 `my $y = ...`
+declarations (unrelated name, unrelated scope) all still pay full `format!`-allocate-a-string +
+`HashMap::remove` cost, identical to before #6575's fix for a program with *zero* constants. The
+fix only ever helped the "no `constant` anywhere in the whole program" case, which `time-parts`
+happened to be but `debug-guard` (and any real program mixing `constant` with hot-loop `my`s) is
+not.
+
+**Fix:** replaced the single `bool` with `constant_var_names_seen: FxHashSet<String>` (same field,
+`src/runtime/mod.rs`), populated only on an actual `constant` declaration (rare) and consulted by
+*name* on every `my`/`state` vardecl (`src/vm/vm_var_assign_set_local.rs`) — `my $y` in a program
+that only ever declared `constant DEBUG` now does a cheap hash-set miss on `"y"` instead of an
+allocate + remove on `"y"`'s marker key. Thread-clone init (`runtime_thread.rs`) keeps the same
+"start empty" semantics the old bool had (unrelated pre-existing behavior, not touched).
+
+Local A/B (same worktree-baseline methodology, `MUTSU_JIT=off`, min-of-8/10, order-swapped, using a
+throwaway 10x-iteration variant of `debug-guard.raku` in `tmp/` for a clearer signal against
+process-startup noise): consistently ~7-8% faster, both orders (round 1: new 1.12s / base 1.22s;
+round 2 swapped: new 1.13s / base 1.21s). `t/*constant*.t` (18 files) and the full `t/` suite
+(29792 tests) pass; `cargo clippy -- -D warnings` clean.
+
+Landed as a second commit on the same PR as the `AttrMap` pre-sizing fix (both are G3-investigation
+findings from this session; see the PR for the combined test plan).

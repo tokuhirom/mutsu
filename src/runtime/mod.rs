@@ -2519,15 +2519,21 @@ pub struct Interpreter {
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
     /// env keys. Consulted by `block_captured_scalars` only; never persisted.
     pub(crate) active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
-    /// Set once a `constant $name = ...` scalar has ever been declared in
-    /// this run (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
+    /// Names of every `constant $name = ...` scalar ever declared in this run
+    /// (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
     /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
-    /// lookup on every ordinary (non-constant) scalar `my`/`state` — the
-    /// overwhelming common case — since there is nothing to remove until a
-    /// `constant` scalar has actually been seen. Never reset to `false`;
-    /// once true the plain removal path runs as before (still correct, just
-    /// no longer free to skip).
-    pub(crate) any_constant_var_marker_set: bool,
+    /// lookup on an ordinary (non-constant) scalar `my`/`state` whose name was
+    /// never used by a `constant` — the overwhelming common case, and NOT the
+    /// same as "no constant has been declared anywhere": a single
+    /// program-wide bool here previously made every subsequent `my`/`state`
+    /// in the whole program (any name) pay the removal cost the instant just
+    /// one `constant` existed anywhere (`benchmarks/debug-guard.raku`'s
+    /// `constant DEBUG = False` followed by a hot-loop `my $y`, e.g.). Per-name
+    /// membership is the actual precondition for the marker existing at all.
+    /// Entries are never removed; a name is either "never a constant" (never
+    /// pays the removal) or "was once a constant" (pays it — still correct,
+    /// just no longer free to skip for THAT name).
+    pub(crate) constant_var_names_seen: rustc_hash::FxHashSet<String>,
     /// Per loop-body scope: what each body-local `my` name must be restored to
     /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
     /// binding's value); `None` means the name did not exist before the loop, so
