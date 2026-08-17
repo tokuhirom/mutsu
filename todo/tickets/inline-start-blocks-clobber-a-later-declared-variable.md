@@ -154,6 +154,177 @@ Do NOT re-attempt the gate without first fixing the `needs_env_sync` completenes
 reintroduce the `t/promise-combinator.t` regression, confirmed twice in this round (with and without
 the fix, via `git stash`/`git stash pop`).
 
+### Fix attempt 2026-08-17 -- the `needs_env_sync` completeness gap WAS closed, but surfaced a DEEPER,
+### unrelated pre-existing bug in the atomic-scalar-cell subsystem; REVERTED again
+
+This round followed the previous session's "next steps" exactly and made real progress -- two
+completeness gaps in `needs_env_sync` were found and durably fixed -- but the gate itself still had to
+be reverted because it exposes a third, much deeper pre-existing bug that is out of this ticket's
+scope. Full trace below so the next session does not repeat the same three-gap discovery from scratch.
+
+**Gap 1 (as predicted): `cas`'s free-var completeness.** Confirmed via the compiler
+(`src/compiler/expr_call.rs`): `cas $var, ...` compiles to `LoadConst(<var name string>)` +
+`CallFunc("__mutsu_cas_var", ...)` -- the target reaches the callee as a **string constant**, never an
+ordinary `GetOuterVar`/`GetGlobal` read, so `compute_free_vars`'s op scan can never see it. `cas` is
+also deliberately excluded from `atomic_target_syms` (`note_atomic_env_sync_target(&var_name, false)` at
+its direct-`cas` call site, `expr_call.rs` ~line 781) to avoid the cell-promotion fold that the sibling
+`atomic-*` builtins (`atomic-fetch`, `⚛$x`, `$x⚛++`, ...) DO opt into via `counts_as_write: true`.
+
+**Fix 1 (worked, in isolation):** added a new `CompiledCode::rw_arg_env_sync_syms:
+FxHashSet<Symbol>` field, populated unconditionally (regardless of `counts_as_write`) in
+`note_atomic_env_sync_target` (`src/compiler/expr_helpers.rs`). Consumed in `compute_free_vars`
+(`src/opcode.rs`, right after the existing `atomic_target_syms` fold) by folding it into `free`
+**without** touching `free_writes`/`self_mutated` -- i.e. it gives `cas`'s target READ status (so it
+participates in `free_var_syms`, and through it, `needs_env_sync`) without giving it WRITE status (so
+it does NOT trigger cell promotion, preserving the exclusion `cas` needs). This alone fixed
+`t/promise-combinator.t`'s regressed subtest.
+
+**Gap 2 (new this round): multi-level closure nesting.** A first version of Fix 1 walked
+`nested.rw_arg_env_sync_syms` directly in `compute_needs_env_sync`'s nested-closure scan (one level up
+only, mirroring the existing `op_container_mutate_const_idx` pass). That is NOT enough: roast
+`S17-scheduler/every.t` (`$*SCHEDULER.cue({ cas $count, {.succ} }, every => Inf)` wrapped in
+`lives-ok { $c1 = $*SCHEDULER.cue(...) }`) regressed tests 22/24 -- `cas $count` sits behind an
+INTERMEDIATE closure (`lives-ok`'s block argument), so a one-level fold in the OUTER frame's
+`compute_needs_env_sync` never reaches it. **Fix 2:** since `free_var_syms` is ALREADY folded
+transitively through every nesting level by `compute_free_vars`'s own "fold a nested closure's
+`free_var_syms` into mine" passes, folding `rw_arg_env_sync_syms` into `free` INSIDE
+`compute_free_vars` (Fix 1, above) automatically reaches every ancestor frame for free -- no separate
+multi-level pass needed. The redundant one-level `compute_needs_env_sync` pass was removed once this
+was confirmed (`roast/S17-scheduler/every.t` tests 22/24 both green).
+
+**Gap 3 (env pre-init placeholder, explored and reverted): a DIFFERENT test,
+`t/shared-var-nil-redeclared-mask.t`'s "bind stays Nil across a spawn between declaration and read",
+regressed too** (`my $depends := nil-returner(); await start { 1 }; $depends` -- an UNRELATED `start`,
+no `cas` anywhere). Root cause, confirmed via `rust-gdb`: `exec_set_var_dynamic_op`
+(`src/vm/vm_var_assign_set_local.rs`) unconditionally seeds `env[name] = Package("Any")` at
+declaration time ("Pre-initialize the variable in the env with a default value so that closures
+created during the RHS expression can capture it") -- for a Nil-bound scalar with `needs_env_sync ==
+false`, the ACTUAL declaration store then skips its own env mirror (the pre-existing "(B) per-store
+env-write" gate), so this placeholder is NEVER corrected and stays `Any` in `env` forever. On baseline,
+this was invisible because `sync_env_from_locals`'s BLIND publish overwrote it with the correct value
+on every `start` spawn (the exact behavior this ticket's whole gate removes). Two things were tried
+and rejected for this gap:
+  - Skipping the placeholder seed (write-side) AND the `undeclared_variable` check's env-presence
+    requirement (read-side, `exec_get_local_op`) both gated on `needs_env_sync[idx]`: this "fixed" the
+    Nil-mask test but broke `t/undeclared-symbol-exception-class.t`, `t/block-lexical-scope.t`,
+    `t/package-block-lexical-capture.t`, `t/regex-counted-adverbs.t`,
+    `t/regex-p5-smartmatch-regressions.t`, `t/throws-like-outer-var-writeback.t` -- because
+    `needs_env_sync == false` does NOT distinguish "declared, deliberately slot-only" from "genuinely
+    never declared at runtime" (e.g. `{ my $x = 1 }; $x` reading a name whose enclosing block's `my`
+    never ran): both cases end with a Nil slot and no env entry, but only one should throw
+    `X::Undeclared`. **REVERTED** (both files back to original).
+  - **The fix that actually worked for gap 3, isolated:** keep the declaration-time seed AND the
+    `undeclared_variable` check fully unconditional (untouched, matching baseline exactly) -- instead
+    made `sync_env_from_locals_needed` (the ticket's own gated function) write `env` UNCONDITIONALLY
+    for every slot (matching `sync_env_from_locals`'s original behavior byte-for-byte on that half) but
+    gate ONLY the cross-thread `shared_vars` publish, per slot, via the existing
+    `suppress_shared_publish` flag (toggled per-iteration around the `set_env_with_main_alias` call).
+    Rationale: keeping `env` always coherent with `self.locals[i]` at every spawn means the
+    declaration-time placeholder is ALWAYS corrected before any spawn (env is the accurate live
+    snapshot, never stale), so `clone_for_thread_excluding`'s own independent env-walk (a SEPARATE
+    mechanism from this ticket's gate, with no per-slot `needs_env_sync` visibility of its own) always
+    seeds `shared_vars` correctly too -- without touching declaration/read-side machinery at all. This
+    passed the FULL `t/` suite (3192 files) cleanly, including all six files gap-3's first attempt
+    broke.
+
+**Gap 4 (the actual blocker this round, NOT resolved): `apply_pending_caller_var_writeback`'s
+`needs_env_sync` gate breaks the atomic-scalar-cell subsystem.** During the earlier 2026-08-15 round, a
+gate was ALSO added to `apply_pending_caller_var_writeback` (`src/vm/vm_env_helpers.rs`) -- skip
+pulling a dirty cross-thread value into `self.locals[slot]` when `needs_env_sync[slot]` is false, on
+the theory that such a slot never legitimately publishes by name so a name match must belong to an
+unrelated frame. With gaps 1-3 above fixed and the full `t/` suite green, a full `roast/S17-*/*.t`
+sweep (99 files) surfaced ONE new failure: `roast/S17-scheduler/every.t` tests 22/24 initially (fixed
+by gap 2's transitive fold), and after that fix, a full `t/` re-run surfaced
+`t/cross-thread-shared-var-writeback-coherence.t` subtest 3, **"awaited cas scalar increment visible in
+caller slot"**:
+```raku
+my $n = 0;
+Promise.allof(start { cas $n, -> $v { $v + 1 } }).result;
+is $n, 1, ...;   # got 0
+```
+Minimal repro (`tmp/repro16.raku` in this session, not preserved -- recreate from this snippet):
+this test ONLY fails when preceded by ANOTHER block using `cas` on a DIFFERENT array (e.g.
+`{ my $seen = []; Promise.allof(start { cas $seen, -> @c { flat @c, 1 } }).result; }` run first in the
+same process) -- standalone, `$n` reconciles correctly. `cas $n, -> $v { $v + 1 }` matches the
+compiler's DELTA-LAMBDA rewrite (`expr_call.rs` ~line 744: a 2-arg `cas` whose lambda body is a single
+`$v + delta` expression rewrites to `__mutsu_atomic_add_var` directly, `note_atomic_env_sync_target(&
+var_name, true)` -- `counts_as_write: true`, UNLIKE the general `cas` path). `builtin_atomic_add_var`
+(`src/runtime/builtins_atomic.rs`) has a fast path, `atomic_scalar_cell`
+(`src/runtime/builtins_atomic_shared.rs`): if a **shared cell** already exists for the name, it RMWs
+the cell directly and returns -- no `shared_vars`/dirty-key publish at all for that update (the cell
+IS the shared state). `rust-gdb` confirmed `atomic_scalar_cell` DOES find `Some(cell)` for `$n` in the
+failing run. Bisection (temporarily neutralizing each of the four changes independently, rebuilding
+each time, all via `git checkout -- <file>` / `git apply -p0 <saved-diff>` -- **NOT `git stash`**, per
+this repo's documented stash-sharing trap) showed:
+  - Disabling ONLY `apply_pending_caller_var_writeback`'s gate (keeping gaps 1-3's fixes fully active)
+    made the repro PASS (`1\n1`).
+  - But then re-testing with gap 2's transitive `free_var_syms` fold ALSO active (it was transiently
+    disabled during an earlier bisection step) made it FAIL AGAIN even with the writeback gate fully
+    removed -- i.e. the transitive fold itself, independent of the writeback gate, ALSO changes
+    something that breaks this atomic-cell case. `rust-gdb` on a from-scratch (unmodified `opcode.rs`)
+    build confirmed `needs_env_sync["n"]` is **false** even with baseline's own PRE-EXISTING
+    `atomic_target_syms` fold (which predates this ticket entirely) -- so gap 1's `counts_as_write:
+    true` write-fold, which SHOULD have already propagated `$n` to `free_var_syms` on its own, does
+    NOT actually reach the outer frame in this specific two-block program shape. This was not fully
+    root-caused: whether the transitive fold changes cell-promotion/upvalue-materialization decisions
+    for `$n` (as opposed to only `needs_env_sync`), and why baseline's own `atomic_target_syms` fold
+    does not already make `needs_env_sync["n"]` true here, are both still open questions.
+
+**Conclusion:** the `needs_env_sync` gate on `apply_pending_caller_var_writeback` (added 2026-08-15,
+BEFORE gaps 1-3 were even discovered) is unsound as currently designed -- `needs_env_sync` is not a
+complete signal for "does this slot need cross-thread reconciliation," because the atomic-scalar-cell
+subsystem (`atomic_scalar_cell`, `builtin_atomic_add_var`/`builtin_atomic_fetch_add_var`/etc.) performs
+its OWN independent cross-thread visibility mechanism (shared `Gc<Mutex<Value>>` cells, RMW'd in place,
+with no per-name `shared_vars`/env publish once a cell exists) that `needs_env_sync` was never designed
+to model and does not track. Gating `apply_pending_caller_var_writeback` on it therefore has TWO
+INCOMPATIBLE requirements that cannot both be satisfied by one signal: `needs_env_sync == false` must
+mean "do not resurrect a foreign frame's stale value" for gap 3's Nil-mask case, AND `needs_env_sync ==
+false` must NOT mean "skip the writeback" for an atomic-cell scalar target whose `needs_env_sync` this
+session could not make reliably true. **The entire round was reverted** (`git checkout --
+src/compiler/expr_helpers.rs src/opcode.rs src/vm/vm_call_func_ops.rs src/vm/vm_env_helpers.rs`; the new
+pinned test file `t/start-block-inline-arg-locals-clobber.t` was removed) -- the working tree is back to
+unmodified `main`. No PR was opened.
+
+### Next steps for whoever picks this up (revised 2026-08-17)
+
+Gaps 1-3 above are SOLVED designs, safe to re-apply verbatim (re-derive from this write-up; the exact
+diffs were not preserved as a patch file, but every piece is described precisely enough to reconstruct):
+1. `CompiledCode::rw_arg_env_sync_syms` field + `note_atomic_env_sync_target` populating it
+   unconditionally + `compute_free_vars` folding it into `free` only (not `free_writes`) -- gap 1 + 2.
+2. `sync_env_from_locals_needed`: unconditional `env` write (matching `sync_env_from_locals` verbatim)
+   + per-slot `suppress_shared_publish` toggle gating ONLY the `shared_vars` half on
+   `needs_env_sync[i]` -- gap 3. Do NOT gate the env write itself (that reopens gap 3 via the
+   undeclared-variable / placeholder-seed entanglement documented above).
+3. Do NOT add a `needs_env_sync`-based gate to `apply_pending_caller_var_writeback` at all (revert it
+   to its pre-2026-08-15 unconditional form if it is ever reintroduced) until gap 4 has a real fix.
+
+Gap 4 needs a fundamentally different signal, not a smarter `needs_env_sync`. Candidate directions,
+not evaluated this round:
+- Give `apply_pending_caller_var_writeback` visibility into whether the SOURCE name currently resolves
+  to a live atomic cell (`atomic_scalar_cell`/`scalar_cell_target`-style lookup) and, if so, always
+  apply the writeback (or better, skip the whole env-diffing path and defer entirely to the cell, since
+  a cell-backed scalar's `self.locals[slot]` should probably just BE a `ContainerRef` at the CALLER
+  too, making the whole writeback question moot for it) -- investigate why the caller's own slot is NOT
+  already a matching `ContainerRef` after `await`/`.result` for this case, which may be the more
+  fundamental gap.
+- Re-scope `pending_caller_var_writeback`'s gate to something more precise than a per-slot boolean:
+  e.g. only skip when the frame doing the drain can positively identify the dirty entry as belonging to
+  a DIFFERENT, still-live lineage (the actual concern gap 3 was guarding against), rather than inferring
+  it from "this slot doesn't publish by name."
+- Get a minimal, gap-4-only repro (two sibling top-level blocks, first uses array `cas`, second uses
+  scalar delta-lambda `cas`, no `Test`/`lives-ok` involved -- `tmp/repro16.raku`'s shape in this
+  session) under `rust-gdb` from a clean baseline FIRST, before layering gaps 1-3's fixes back on, to
+  isolate whether `atomic_target_syms`'s pre-existing (this-ticket-independent) fold already fails to
+  reach the outer frame in this two-block shape on pure baseline -- that would mean gap 4 is a
+  pre-existing dormant bug in `atomic_target_syms`'s OWN propagation, not something gaps 1-3 introduce,
+  which would change the fix location entirely (fix the pre-existing propagation gap first, in
+  isolation, verify it does not regress anything on its own, THEN re-layer gaps 1-3 and the
+  `apply_pending_caller_var_writeback` gate on top).
+
+As before: do NOT re-attempt the `apply_pending_caller_var_writeback` gate without first resolving gap
+4 above -- it WILL reintroduce the `t/cross-thread-shared-var-writeback-coherence.t` regression,
+confirmed via `git checkout`/`git apply -p0` A/B bisection (not `git stash`) in this round.
+
 ## What's now known (2026-08-14 investigation, superseded above -- kept for history)
 
 `cargo run -- --dump-bytecode -e 'my $p = Promise.allof(start { 1 }, start { 2 }); await $p;'` shows
