@@ -120,7 +120,8 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
 E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), and F5 are closed;
 F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with an amended
-completion criterion — see its entry); F7 and the completion gates (G1-G4) remain open. See each
+completion criterion — see its entry); F7 is closed (with a role-body permanent-exception carve-out —
+see its entry); only the completion gates (G1-G4) remain open. See each
 box's entry below for its
 own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
@@ -2834,7 +2835,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   They stay retained alongside `run_resolved_method_celled`/`run_resolved_method_compiled_or_treewalk`
   for that reason, not merely pending walker cleanup. **This closes out F6's qualified-dispatch item;
   F6 has no further open code-migration slices.**
-- [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
+- [x] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
 
@@ -2879,6 +2880,31 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `ClassBodyOp`/`RoleBodyOp` `TokenRule` carve-out (declarations inside class/role/grammar bodies)
   is a separate, second slice, not bundled here per this box's own "no shared-helper by
   pattern-match" discipline.
+
+  **Slice 2 — class-body `token`/`rule` declarations (2026-08-17).** A class body's own package is
+  fixed and known at class-declaration compile time (unlike a role body's, whose composing package
+  is not known until composition), so a class-body `token`/`rule` statement can skip the
+  registration-time `run_block_raw` OTF recompile the same way slice 1 removed it at the top level.
+  `ClassBodyOp` gained a `TokenRule { plan: CompiledTokenDeclPlan }` variant (the plan-building
+  logic factored out of `add_token_decl_plan` into a shared `build_token_decl_plan(stmt)` free
+  function, reused by `classify_class_body_stmt`); `run_class_body` calls `register_token_decl`
+  straight from the plan's fields instead of falling into `ClassBodyOp::Other`'s raw-`Stmt` +
+  `run_block_raw` path. The regex body itself (`raw_body`) stays interpreter-executed, unchanged —
+  ADR-0009's own execution model. **Role-body `token`/`rule` declarations are deliberately left
+  as-is** (still `RoleBodyOp::Deferred`/`DeferredBodyOpKind::TokenRule`, carrying a raw `Stmt`): a
+  role's composing package genuinely is not known until composition (the same reason `Plain`
+  deferred statements also keep the raw-`Stmt` fallback, per D8-1/D8-2), so there is no compile-time
+  package to precompute a plan against — this is a permanent constraint, not a deferred slice 3.
+  Verified with `cargo test --lib` (835 tests, plus a new
+  `class_declarations_body_plan_types_token_rule_declarations` unit test replacing the now-stale
+  "excludes token/rule chunks" one), the full local `t/` suite (3197 files, 29769 tests, all
+  green), the full local grammar/token/rule-named `t/` subset (68 files, 462 tests) plus every
+  whitelisted grammar/regex roast file (`S05-*`/`S12-*` subset, 191 files, 7573 tests, including
+  `integration/advent2013-day18.t`) — all release, all green — `cargo build`/`clippy -- -D
+  warnings`/`fmt` clean, and a hand-built raku-verified table (grammar `token`/`rule` bodies, a
+  role-declared token composed into two different grammars, a grammar redeclared inside a loop
+  body — exercising registration running repeatedly) byte-identical to `raku` including the exit
+  code. This closes ADR-0019's F7 box's own scoped remaining work in full.
 
 ### Completion gates
 
@@ -2940,8 +2966,8 @@ each instruction.
 ## Implementation status
 
 The checklist above ("Execution plan and progress") is the authoritative, currently-maintained
-record of what has landed. Phases A-D and E1, E3-E11, F5 are closed; E2 (open cleanup, no longer
-gating), the rest of Phase F (F1-F4, F6, F7), and the completion gates are the remaining open work —
+record of what has landed. Phases A-D and E1, E3-E11, F5, F7 are closed; E2 (open cleanup, no longer
+gating), the rest of Phase F (F1-F4, F6), and the completion gates are the remaining open work —
 see their entries above for
 current status and the linked `todo/deep/adr0019-*.md` design docs for full design and slice
 history. Individual accomplishments

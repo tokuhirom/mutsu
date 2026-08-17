@@ -262,10 +262,12 @@ impl Compiler {
     /// [`Self::compile_decl_stmts_chunk_in_package`]'s doc comment for why
     /// the wrapper itself would compile to a no-op — mirroring
     /// `run_class_body_leave_phasers`'s per-phaser `run_block_raw(body)`
-    /// exactly. `token`/`rule` statements are excluded per the phase
-    /// preamble's ADR-0009 carve-out — they keep `chunk: None` and stay on
-    /// the registration-time `run_block_raw` path (D6-3e verifies this
-    /// explicitly once the driver cuts over). After this, `body_plan` is a
+    /// exactly. `token`/`rule` statements never reach this per-statement
+    /// chunk match at all — `crate::opcode::class_body_plan` classifies
+    /// them straight into `ClassBodyOp::TokenRule` (ADR-0019 F7 slice 2),
+    /// which carries its own typed plan and needs no `CompiledDeclExpr`
+    /// chunk (the regex body stays interpreter-executed per ADR-0009).
+    /// After this, `body_plan` is a
     /// complete, compiled mirror of `legacy_body` with zero consumers.
     ///
     /// `package_name` is `None` exactly when [`Self::compile_method_body_keys`]
@@ -324,13 +326,9 @@ impl Compiler {
                 | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw } => (chunk, raw),
                 _ => continue,
             };
-            if !matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. }) {
-                *chunk =
-                    Some(self.compile_decl_stmts_chunk_in_package(
-                        std::slice::from_ref(raw),
-                        package_name,
-                    ));
-            }
+            *chunk = Some(
+                self.compile_decl_stmts_chunk_in_package(std::slice::from_ref(raw), package_name),
+            );
         }
         ops
     }

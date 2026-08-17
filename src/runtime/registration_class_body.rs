@@ -181,6 +181,15 @@ impl Interpreter {
                 crate::opcode::ClassBodyOp::ProtoMethod { raw, .. } => {
                     self.class_body_proto_method_decl(&mut cx, raw)?;
                 }
+                crate::opcode::ClassBodyOp::TokenRule { plan } => {
+                    self.register_token_decl(
+                        &plan.name.resolve(),
+                        &plan.params,
+                        &plan.param_defs,
+                        &plan.raw_body,
+                        plan.multi,
+                    );
+                }
                 crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
                 | crate::opcode::ClassBodyOp::Other { chunk, raw } => {
                     self.class_body_other_stmt(&mut cx, raw, chunk.as_ref())?;
