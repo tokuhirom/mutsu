@@ -2733,6 +2733,68 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   and "commits the map AND does an eager `Proxy` auto-fetch" (1 site) — so no single shared wrapper
   will fit all 22 by pattern-match; each needs the same individual review this box's text already
   calls for. Left un-started; this note is the scoping only.
+
+  **Design conclusion (2026-08-17) — revising the "extend `dispatch_compiled_method`" plan above:
+  do NOT pursue it.** Traced `dispatch_compiled_method`'s own attribute source down one more level
+  (`call_compiled_method`, `vm_method_dispatch.rs`) before starting the extension the prior note
+  proposed, and found the proposed convergence target is unsound for a real subset of the 22 sites —
+  not merely more work than expected, but the wrong foundation:
+
+  `dispatch_compiled_method` derives its `attributes: AttrMap` **exclusively from `target.view()`**
+  (`ValueView::Instance{attributes,..} => Some(...)`, else empty) — this is what made the mixin
+  fallback slice above need the `_with_attrs_cell` sibling instead of a plain reuse. But
+  `call_compiled_method` itself (the shared primitive BOTH `dispatch_compiled_method` and
+  `run_resolved_method_celled` are built on) takes `attributes: &AttrMap` as an **explicit,
+  independent parameter** — confirmed by reading its body: the has-attr-alias scan, the
+  `$!x`/attributive-param setup, and (deeper, `reconcile_attrs`) the post-call attribute snapshot
+  all key off this parameter, not off `base`'s (the computed self value's) own `ValueView`. This
+  parameter is what actually seeds a method body's attribute reads/writes — `base`/`invocant` only
+  supplies `self`'s term identity and re-dispatch behavior, a separate concern.
+
+  `methods_qualified.rs:735` (the Mixin role-applied branch) proves this distinction is load-bearing,
+  not incidental: it builds `role_attrs` by layering the mixin's own `__mutsu_attr__` entries on top
+  of the inner instance's attribute snapshot — a value that exists **only as a plain `AttrMap`**,
+  with no backing `Gc<InstanceAttrs>` cell of its own (unlike the general mixin-fallback site this
+  session already migrated, where the cell genuinely was `inner`'s real cell). Even THIS session's
+  own new `dispatch_compiled_method_with_attrs_cell` helper cannot serve this site — it still requires
+  a real `&Gc<InstanceAttrs>`, and there isn't one to point to here. Only `call_compiled_method`'s raw
+  `&AttrMap` parameter admits a synthesized, cell-less map at all.
+
+  So `run_resolved_method_celled` is not a duplicate, diverging implementation of what
+  `dispatch_compiled_method` already provides (the actual defect that motivated deleting the
+  `run_instance_method` ad-hoc-resolver family) — it is a **correctly-scoped, necessary orchestration
+  layer built on the SAME shared core** (`call_compiled_method`), adding exactly the cold-path
+  concerns the hot VM-opcode path's own caller (`try_compiled_method_or_interpret_inner`) doesn't need
+  handled the same way: on-demand compile-in-place, delegation-forwarder fallback,
+  `pending_rw_writeback_sources` merge, and (one more piece found while re-reading its tail this
+  session — `class_dispatch.rs:621-626` — not previously called out) converting an unhandled
+  submethod `Failure` return into an `Err`, since a submethod's own call sites never reach the VM's
+  `CallMethod` opcode path directly. `dispatch_compiled_method` is the specialized, hot-path variant
+  (auto cell-derivation from `target`, an optional live-cell fast path, eager `Proxy` auto-fetch) —
+  not a superset `run_resolved_method_celled` duplicates, but a sibling built for a narrower case
+  (target IS the real receiving `Instance` with its own cell) that most calls hit but not all.
+
+  Generalizing `dispatch_compiled_method`/`call_compiled_method`'s return-value identity-preservation
+  logic (`vm_method_dispatch.rs:977-996`, itself keyed on `base.view()` being `Instance`) to also
+  cover a synthesized/cell-less `attributes` map would mean redesigning the single hottest dispatch
+  path in the interpreter for a purely internal-architecture win with no Raku-compatibility or
+  roast-count gain — failing this file's own gain/risk framing ("Gain = moving toward the correct
+  architecture... Risk = making the codebase worse... A temporary CI/roast failure is NOT a risk" —
+  the converse also holds: a change to the hottest path with no compatibility upside is not
+  automatically a "gain" just because it deletes a few hundred lines of a DIFFERENT, non-duplicate
+  file). This does not fit the pattern that made every other F6 slice in this box a clean win (a
+  genuinely duplicate/diverging ad-hoc resolver, replaced with the same modern resolver already used
+  elsewhere, at low risk to an already-cold or already-migrated call path).
+
+  **Recommendation: close this F6 sub-item as "investigated, revised" rather than "blocked pending
+  design."** `run_resolved_method_celled`/`run_resolved_method_compiled_or_treewalk` should be
+  RETAINED as-is — they are sound, necessary machinery, not the kind of technical debt F6 exists to
+  remove. (`run_resolved_instance_method`, `class_dispatch.rs:289` — the OTHER "resolved-path helper"
+  this box's original text bundled together with these two under one phrase — is unaffected by this
+  finding and remains genuinely dead-code-to-be-deleted: it is called only from the ad-hoc
+  `run_instance_method_celled` walker's own found-a-candidate tail, so it is removed for free once
+  that walker's own callers are gone, unrelated to today's finding.) **This closes out F6's
+  qualified-dispatch item; F6 has no further open code-migration slices.**
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
