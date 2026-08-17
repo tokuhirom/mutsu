@@ -2519,6 +2519,15 @@ pub struct Interpreter {
     /// set per active loop (ADR-0023). Bare names (no `$` sigil), matching
     /// env keys. Consulted by `block_captured_scalars` only; never persisted.
     pub(crate) active_loop_param_names: Vec<rustc_hash::FxHashSet<String>>,
+    /// Set once a `constant $name = ...` scalar has ever been declared in
+    /// this run (ADR-0022 Slice 5's `__mutsu_constant_var::` marker). Lets
+    /// `exec_set_local_op_inner` skip the marker-removal `format!` + env
+    /// lookup on every ordinary (non-constant) scalar `my`/`state` — the
+    /// overwhelming common case — since there is nothing to remove until a
+    /// `constant` scalar has actually been seen. Never reset to `false`;
+    /// once true the plain removal path runs as before (still correct, just
+    /// no longer free to skip).
+    pub(crate) any_constant_var_marker_set: bool,
     /// Per loop-body scope: what each body-local `my` name must be restored to
     /// when the loop exits. `Some(v)` is a genuine shadow (re-expose the outer
     /// binding's value); `None` means the name did not exist before the loop, so
