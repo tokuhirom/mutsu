@@ -57,4 +57,4 @@ Both probes from the campaign are exact hits against Rakudo v2026.06 and pinned 
 green.
 
 See also: `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` (ADR-0019 E9a),
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (design decision 2, redrawn).
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md` (design decision 2, redrawn).

@@ -1,7 +1,7 @@
 # ADR-0019 E9-pre: the raku ground-truth campaign for dispatch-deferral semantics
 
 Ran the mandatory pre-E9 verification campaign (ADR-0019 Phase E, design decision 3 in
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`) as its own dedicated session: every
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`) as its own dedicated session: every
 `samewith`/`nextsame`/`callsame`/`nextwith`/`lastcall`/wrap/proto chain-order scenario was
 probed against real raku (Rakudo v2026.06) before any conclusion was drawn, matching behaviors
 were pinned, divergences were ticketed, and no cursor implementation code was written.
@@ -31,6 +31,6 @@ Deliverables:
   the native Mu implementations, and a cosmetic `Signature.gist` invocant-format difference.
 
 The full scenario-by-scenario table (a-m plus bonus probes, verdict and artifact per row) lives
-in the E9-pre section of `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`, and the
+in the E9-pre section of `news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`, and the
 ADR's E9 checkbox carries the progress note. Next up in Phase E: the decision-2 re-draw, then
 E9a (method frames → cursor).

@@ -93,7 +93,7 @@ gets consulted for the case that reaches the interpreter at all.
 ## Where found
 
 Discovered during ADR-0019 E5c (`CallMethodDynamic` dispatch-ordering classification,
-`todo/deep/adr0019-e5-e7-entry-routing.md` §"E5c") while raku-verifying whether
+`news/2026-08/adr0019-e5-e7-entry-routing.md` §"E5c") while raku-verifying whether
 `HyperMethodCallDynamic`'s missing `skip_native`/`has_user_method` gate (inventory correction 4)
 produces observable divergence -- it does, but the same divergence traces back to a pre-existing,
 narrower-than-suspected bug (only `WHICH`/`WHY`, not the full MOP pseudo-method set) unrelated to

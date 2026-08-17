@@ -34,7 +34,7 @@ slice changes.
 one slice of an ongoing campaign: the last E5 measurement entry
 (`call_method_all_with_fallback`) and all cutover sub-slices
 (E5b/E5c/E5d) are still to do. Full taxonomy tables and sweep detail:
-`todo/deep/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
+`news/2026-08/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
 hyper non-mut paths (E5 step 3)") and
 `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` (E5
 bullet).

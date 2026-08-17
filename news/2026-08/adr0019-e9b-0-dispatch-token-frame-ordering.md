@@ -40,7 +40,7 @@ sentinel-exhaustion fallthrough to the paired method frame is preserved
 explicitly. Only genuine cross-stack nesting — a method deferral inside a sub
 wrapper, or vice versa — changes behavior, which is exactly the bug above.
 
-ADR-0019 E9b-0 (see `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`,
+ADR-0019 E9b-0 (see `news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`,
 "E9b design" § decision 4). Found and raku-confirmed during the E9b design
 pass; fixes
 `todo/tickets/callsame-in-method-consumes-enclosing-sub-wrap-chain.md`.

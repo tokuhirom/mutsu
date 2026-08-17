@@ -1,5 +1,11 @@
 # ADR-0019 E5/E6/E7 design: routing every call entry through the resolver
 
+**Status: E5, E6, and E7 are all closed** (see their own `[x]` entries in
+`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`, which cites this file for
+"full per-step detail"). Archived here from `todo/deep/` now that the box is fully landed; kept
+as the ADR's linked detail record, not as an open finding -- do not treat the "no code has
+landed" line below as current.
+
 Design pass for Phase E boxes E5 (ordinary VM method calls), E6 (mutation-aware and container
 calls), and E7 (metaobject, qualified, and re-entrant calls). Depends on the E4 resolver and E2
 rows (`adr0019-e2-e4-resolver-core.md`). These boxes rewrite the largest functions in the
@@ -2265,7 +2271,7 @@ all** — three cases pinned in `t/classhow-lookup-mro.t`:
   MRO-level textual search, not a dispatch simulation.
 - An inherited **multi** method is found — this fix's per-level "first def wins" shape generalizes
   unchanged to the inherited case (matching `raku`'s own answer for this shape); true multi/proto
-  candidate-SEQUENCE modeling across levels is explicitly E8's job (`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`),
+  candidate-SEQUENCE modeling across levels is explicitly E8's job (`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`),
   out of scope here.
 - A more-derived override still wins over an ancestor's same-named method (the MRO walk's
   most-derived-first order already guarantees this — pinned as a sanity check, not a new mechanism).
