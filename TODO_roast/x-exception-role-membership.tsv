@@ -1,0 +1,374 @@
+name	mro	roles_direct	roles_all
+X::AdHoc	X::AdHoc,Exception,Any,Mu		
+X::Adverb	X::Adverb,Exception,Any,Mu		
+X::Anon::Augment	X::Anon::Augment,Exception,Any,Mu	X::Comp	X::Comp
+X::Anon::Multi	X::Anon::Multi,Exception,Any,Mu	X::Comp	X::Comp
+X::ArrayShapeMismatch	X::ArrayShapeMismatch,Exception,Any,Mu		
+X::Assignment::ArrayShapeMismatch	X::Assignment::ArrayShapeMismatch,X::ArrayShapeMismatch,Exception,Any,Mu		
+X::Assignment::RO	X::Assignment::RO,Exception,Any,Mu		
+X::Assignment::RO::Comp	X::Assignment::RO::Comp,Exception,Any,Mu	X::Comp	X::Comp
+X::Assignment::ToShaped	X::Assignment::ToShaped,Exception,Any,Mu		
+X::Attribute::NoPackage	X::Attribute::NoPackage,Exception,Any,Mu	X::Comp	X::Comp
+X::Attribute::Package	X::Attribute::Package,Exception,Any,Mu	X::Comp	X::Comp
+X::Attribute::Regex	X::Attribute::Regex,X::Undeclared,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::Attribute::Required	X::Attribute::Required,Exception,Any,Mu	X::MOP	X::MOP
+X::Attribute::Scope::Package	X::Attribute::Scope::Package,Exception,Any,Mu	X::Comp	X::Comp
+X::Attribute::Undeclared	X::Attribute::Undeclared,X::Undeclared,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::Augment::NoSuchType	X::Augment::NoSuchType,Exception,Any,Mu	X::Comp	X::Comp
+X::Backslash::NonVariableDollar	X::Backslash::NonVariableDollar,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Backslash::UnrecognizedSequence	X::Backslash::UnrecognizedSequence,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Bind	X::Bind,Exception,Any,Mu		
+X::Bind::NativeType	X::Bind::NativeType,Exception,Any,Mu	X::Comp	X::Comp
+X::Bind::Rebind	X::Bind::Rebind,X::Bind,Exception,Any,Mu		
+X::Bind::Slice	X::Bind::Slice,Exception,Any,Mu		
+X::Bind::ZenSlice	X::Bind::ZenSlice,X::Bind::Slice,Exception,Any,Mu		
+X::Buf::AsStr	X::Buf::AsStr,Exception,Any,Mu		
+X::Buf::Pack	X::Buf::Pack,Exception,Any,Mu		
+X::Buf::Pack::NonASCII	X::Buf::Pack::NonASCII,Exception,Any,Mu		
+X::Caller::NotDynamic	X::Caller::NotDynamic,X::Symbol::Kind,Exception,Any,Mu		
+X::Cannot::Capture	X::Cannot::Capture,Exception,Any,Mu		
+X::Cannot::Empty	X::Cannot::Empty,Exception,Any,Mu		
+X::Cannot::Lazy	X::Cannot::Lazy,Exception,Any,Mu		
+X::Cannot::Map	X::Cannot::Map,Exception,Any,Mu		
+X::Cannot::New	X::Cannot::New,Exception,Any,Mu		
+X::Channel::ReceiveOnClosed	X::Channel::ReceiveOnClosed,Exception,Any,Mu		
+X::Channel::SendOnClosed	X::Channel::SendOnClosed,Exception,Any,Mu		
+X::Coerce	X::Coerce,Exception,Any,Mu		
+X::Coerce::Impossible	X::Coerce::Impossible,X::Coerce,Exception,Any,Mu		
+X::Coerce::Role	X::Coerce::Role,X::Coerce,Exception,Any,Mu	X::Wrapper	X::Wrapper
+X::Comp::AdHoc	X::Comp::AdHoc,X::AdHoc,Exception,Any,Mu	X::Comp	X::Comp
+X::Comp::BeginTime	X::Comp::BeginTime,Exception,Any,Mu	X::Comp	X::Comp
+X::Comp::FailGoal	X::Comp::FailGoal,Exception,Any,Mu	X::Comp	X::Comp
+X::Comp::Group	X::Comp::Group,Exception,Any,Mu		
+X::Comp::NYI	X::Comp::NYI,X::NYI,Exception,Any,Mu	X::Comp	X::Comp
+X::Comp::Trait::Invalid	X::Comp::Trait::Invalid,X::Trait::Invalid,Exception,Any,Mu	X::Comp,X::Trait	X::Comp,X::Trait,X::Trait
+X::Comp::Trait::NotOnNative	X::Comp::Trait::NotOnNative,X::Trait::NotOnNative,Exception,Any,Mu	X::Comp,X::Trait	X::Comp,X::Trait,X::Trait
+X::Comp::Trait::Scope	X::Comp::Trait::Scope,X::Trait::Scope,Exception,Any,Mu	X::Comp,X::Trait	X::Comp,X::Trait,X::Trait
+X::Comp::Trait::Unknown	X::Comp::Trait::Unknown,X::Trait::Unknown,Exception,Any,Mu	X::Comp,X::Trait	X::Comp,X::Trait,X::Trait
+X::Comp::TypeCheck	X::Comp::TypeCheck,X::TypeCheck,Exception,Any,Mu	X::Comp	X::Comp
+X::Comp::WheneverOutOfScope	X::Comp::WheneverOutOfScope,Exception,Any,Mu	X::Comp	X::Comp
+X::CompUnit::UnsatisfiedDependency	X::CompUnit::UnsatisfiedDependency,Exception,Any,Mu		
+X::Composition::NotComposable	X::Composition::NotComposable,Exception,Any,Mu	X::Comp	X::Comp
+X::Constructor::BadType	X::Constructor::BadType,Exception,Any,Mu	X::BadType	X::BadType
+X::Constructor::Positional	X::Constructor::Positional,Exception,Any,Mu		
+X::ControlFlow	X::ControlFlow,Exception,Any,Mu		
+X::ControlFlow::Return	X::ControlFlow::Return,X::ControlFlow,Exception,Any,Mu		
+X::DateTime::InvalidDeltaUnit	X::DateTime::InvalidDeltaUnit,Exception,Any,Mu	X::Temporal	X::Temporal
+X::DateTime::TimezoneClash	X::DateTime::TimezoneClash,Exception,Any,Mu	X::Temporal	X::Temporal
+X::Declaration::OurScopeInRole	X::Declaration::OurScopeInRole,Exception,Any,Mu	X::Comp	X::Comp
+X::Declaration::Scope	X::Declaration::Scope,Exception,Any,Mu	X::Comp	X::Comp
+X::Declaration::Scope::Multi	X::Declaration::Scope::Multi,X::Declaration::Scope,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::Delete	X::Delete,Exception,Any,Mu		
+X::Does::TypeObject	X::Does::TypeObject,Exception,Any,Mu		
+X::Dynamic::NotFound	X::Dynamic::NotFound,Exception,Any,Mu		
+X::Dynamic::Package	X::Dynamic::Package,Exception,Any,Mu	X::Comp	X::Comp
+X::Dynamic::Postdeclaration	X::Dynamic::Postdeclaration,Exception,Any,Mu	X::Comp	X::Comp
+X::EXPORTHOW::Conflict	X::EXPORTHOW::Conflict,Exception,Any,Mu	X::Comp	X::Comp
+X::EXPORTHOW::InvalidDirective	X::EXPORTHOW::InvalidDirective,Exception,Any,Mu	X::Comp	X::Comp
+X::EXPORTHOW::NothingToSupersede	X::EXPORTHOW::NothingToSupersede,Exception,Any,Mu	X::Comp	X::Comp
+X::Encoding::AlreadyRegistered	X::Encoding::AlreadyRegistered,Exception,Any,Mu	X::Encoding	X::Encoding
+X::Encoding::Unknown	X::Encoding::Unknown,Exception,Any,Mu	X::Encoding	X::Encoding
+X::Enum::NoValue	X::Enum::NoValue,Exception,Any,Mu		
+X::Eval::NoSuchLang	X::Eval::NoSuchLang,Exception,Any,Mu		
+X::Exhausted	X::Exhausted,Exception,Any,Mu		
+X::Experimental	X::Experimental,Exception,Any,Mu	X::Comp	X::Comp
+X::Export::NameClash	X::Export::NameClash,Exception,Any,Mu	X::Comp	X::Comp
+X::Hash::Store::OddNumber	X::Hash::Store::OddNumber,Exception,Any,Mu		
+X::HyperOp::Infinite	X::HyperOp::Infinite,Exception,Any,Mu		
+X::HyperOp::NonDWIM	X::HyperOp::NonDWIM,Exception,Any,Mu		
+X::HyperWhatever::Multiple	X::HyperWhatever::Multiple,Exception,Any,Mu		
+X::IO::BinaryAndEncoding	X::IO::BinaryAndEncoding,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::BinaryMode	X::IO::BinaryMode,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Chdir	X::IO::Chdir,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Chmod	X::IO::Chmod,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Chown	X::IO::Chown,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Closed	X::IO::Closed,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Copy	X::IO::Copy,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Cwd	X::IO::Cwd,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Dir	X::IO::Dir,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Directory	X::IO::Directory,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::DoesNotExist	X::IO::DoesNotExist,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Flush	X::IO::Flush,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Link	X::IO::Link,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Lock	X::IO::Lock,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Mkdir	X::IO::Mkdir,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Move	X::IO::Move,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::NotAChild	X::IO::NotAChild,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::NotAFile	X::IO::NotAFile,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Null	X::IO::Null,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Rename	X::IO::Rename,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Resolve	X::IO::Resolve,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Rmdir	X::IO::Rmdir,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Symlink	X::IO::Symlink,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Unknown	X::IO::Unknown,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IO::Unlink	X::IO::Unlink,Exception,Any,Mu	X::IO	X::IO,X::OS
+X::IllegalDimensionInShape	X::IllegalDimensionInShape,Exception,Any,Mu		
+X::IllegalOnFixedDimensionArray	X::IllegalOnFixedDimensionArray,Exception,Any,Mu		
+X::Immutable	X::Immutable,Exception,Any,Mu		
+X::Import::MissingSymbols	X::Import::MissingSymbols,Exception,Any,Mu		
+X::Import::NoSuchTag	X::Import::NoSuchTag,Exception,Any,Mu		
+X::Import::OnlystarProto	X::Import::OnlystarProto,Exception,Any,Mu	X::Comp	X::Comp
+X::Import::Positional	X::Import::Positional,Exception,Any,Mu		
+X::Import::Redeclaration	X::Import::Redeclaration,Exception,Any,Mu	X::Comp	X::Comp
+X::Inheritance::NotComposed	X::Inheritance::NotComposed,Exception,Any,Mu	X::MOP	X::MOP
+X::Inheritance::SelfInherit	X::Inheritance::SelfInherit,Exception,Any,Mu		
+X::Inheritance::UnknownParent	X::Inheritance::UnknownParent,Exception,Any,Mu		
+X::Inheritance::Unsupported	X::Inheritance::Unsupported,Exception,Any,Mu	X::Comp	X::Comp
+X::Invalid::ComputedValue	X::Invalid::ComputedValue,Exception,Any,Mu		
+X::Invalid::Value	X::Invalid::Value,Exception,Any,Mu		
+X::InvalidCodepoint	X::InvalidCodepoint,Exception,Any,Mu		
+X::InvalidType	X::InvalidType,Exception,Any,Mu	X::Comp	X::Comp
+X::InvalidTypeSmiley	X::InvalidTypeSmiley,Exception,Any,Mu	X::Comp	X::Comp
+X::Ism::Unknown	X::Ism::Unknown,Exception,Any,Mu		
+X::Item	X::Item,Exception,Any,Mu		
+X::Language::IncompatRevisions	X::Language::IncompatRevisions,Exception,Any,Mu		
+X::Language::ModRequired	X::Language::ModRequired,Exception,Any,Mu		
+X::Language::TooLate	X::Language::TooLate,Exception,Any,Mu		
+X::Language::Unsupported	X::Language::Unsupported,Exception,Any,Mu		
+X::LibEmpty	X::LibEmpty,Exception,Any,Mu	X::Comp	X::Comp
+X::LibNone	X::LibNone,Exception,Any,Mu	X::Comp	X::Comp
+X::Localizer::NoContainer	X::Localizer::NoContainer,Exception,Any,Mu		
+X::Lock::Async::NotLocked	X::Lock::Async::NotLocked,Exception,Any,Mu		
+X::Lock::ConditionVariable::Duplicate	X::Lock::ConditionVariable::Duplicate,Exception,Any,Mu		
+X::Lock::ConditionVariable::New	X::Lock::ConditionVariable::New,Exception,Any,Mu		
+X::Lock::ConditionVariable::NoMutex	X::Lock::ConditionVariable::NoMutex,Exception,Any,Mu		
+X::Lock::ConditionVariable::WrongThread	X::Lock::ConditionVariable::WrongThread,Exception,Any,Mu		
+X::Lock::Unlock::NoMutex	X::Lock::Unlock::NoMutex,Exception,Any,Mu		
+X::Lock::Unlock::WrongThread	X::Lock::Unlock::WrongThread,Exception,Any,Mu		
+X::Make::MatchRequired	X::Make::MatchRequired,Exception,Any,Mu		
+X::Match::Bool	X::Match::Bool,Exception,Any,Mu		
+X::Method::Duplicate	X::Method::Duplicate,Exception,Any,Mu		
+X::Method::InvalidQualifier	X::Method::InvalidQualifier,Exception,Any,Mu		
+X::Method::NotFound	X::Method::NotFound,Exception,Any,Mu		
+X::Method::Private::Permission	X::Method::Private::Permission,Exception,Any,Mu	X::Comp	X::Comp
+X::Method::Private::Unqualified	X::Method::Private::Unqualified,Exception,Any,Mu	X::Comp	X::Comp
+X::Mixin::NotComposable	X::Mixin::NotComposable,Exception,Any,Mu		
+X::Multi::Ambiguous	X::Multi::Ambiguous,Exception,Any,Mu		
+X::Multi::NoMatch	X::Multi::NoMatch,Exception,Any,Mu		
+X::MultipleTypeSmiley	X::MultipleTypeSmiley,Exception,Any,Mu	X::Comp	X::Comp
+X::MustBeParametric	X::MustBeParametric,Exception,Any,Mu		
+X::NQP::NotFound	X::NQP::NotFound,Exception,Any,Mu		
+X::NYI	X::NYI,Exception,Any,Mu		
+X::NYI::Available	X::NYI::Available,X::NYI,Exception,Any,Mu		
+X::NYI::BigInt	X::NYI::BigInt,Exception,Any,Mu		
+X::NoCoreRevision	X::NoCoreRevision,Exception,Any,Mu		
+X::NoDispatcher	X::NoDispatcher,Exception,Any,Mu		
+X::NoSuchSymbol	X::NoSuchSymbol,Exception,Any,Mu		
+X::NoZeroArgMeaning	X::NoZeroArgMeaning,Exception,Any,Mu		
+X::Nominalizable::NoKind	X::Nominalizable::NoKind,Exception,Any,Mu	X::Nominalizable	X::Nominalizable
+X::Nominalizable::NoWrappee	X::Nominalizable::NoWrappee,Exception,Any,Mu	X::Nominalizable	X::Nominalizable
+X::NotEnoughDimensions	X::NotEnoughDimensions,Exception,Any,Mu		
+X::NotFoundInRepository	X::NotFoundInRepository,Exception,Any,Mu		
+X::NotParametric	X::NotParametric,Exception,Any,Mu		
+X::NotSingleGrapheme	X::NotSingleGrapheme,Exception,Any,Mu		
+X::Numeric::CannotConvert	X::Numeric::CannotConvert,Exception,Any,Mu		
+X::Numeric::Confused	X::Numeric::Confused,Exception,Any,Mu		
+X::Numeric::DivideByZero	X::Numeric::DivideByZero,Exception,Any,Mu		
+X::Numeric::Overflow	X::Numeric::Overflow,Exception,Any,Mu		
+X::Numeric::Real	X::Numeric::Real,X::Numeric::CannotConvert,Exception,Any,Mu		
+X::Numeric::Underflow	X::Numeric::Underflow,Exception,Any,Mu		
+X::Numeric::Uninitialized	X::Numeric::Uninitialized,Exception,Any,Mu		
+X::Obsolete	X::Obsolete,Exception,Any,Mu	X::Comp	X::Comp
+X::OutOfRange	X::OutOfRange,Exception,Any,Mu		
+X::Package::SameNameAsEnclosing	X::Package::SameNameAsEnclosing,Exception,Any,Mu	X::Comp	X::Comp
+X::Package::Stubbed	X::Package::Stubbed,Exception,Any,Mu	X::Comp	X::Comp
+X::Package::UseLib	X::Package::UseLib,Exception,Any,Mu	X::Comp	X::Comp
+X::Pairup::OddNumber	X::Pairup::OddNumber,Exception,Any,Mu		
+X::Parameter::AfterDefault	X::Parameter::AfterDefault,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Parameter::BadType	X::Parameter::BadType,Exception,Any,Mu	X::BadType,X::Comp	X::BadType,X::Comp
+X::Parameter::Default	X::Parameter::Default,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::Default::TypeCheck	X::Parameter::Default::TypeCheck,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::InvalidConcreteness	X::Parameter::InvalidConcreteness,Exception,Any,Mu		
+X::Parameter::InvalidType	X::Parameter::InvalidType,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::MultipleTypeConstraints	X::Parameter::MultipleTypeConstraints,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::Named::SubsetTypeWithoutDefault	X::Parameter::Named::SubsetTypeWithoutDefault,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::Placeholder	X::Parameter::Placeholder,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::RW	X::Parameter::RW,Exception,Any,Mu		
+X::Parameter::Twigil	X::Parameter::Twigil,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::TypedSlurpy	X::Parameter::TypedSlurpy,Exception,Any,Mu	X::Comp	X::Comp
+X::Parameter::WrongOrder	X::Parameter::WrongOrder,Exception,Any,Mu	X::Comp	X::Comp
+X::ParametricConstant	X::ParametricConstant,Exception,Any,Mu		
+X::Phaser::Multiple	X::Phaser::Multiple,Exception,Any,Mu	X::Comp	X::Comp
+X::Phaser::PrePost	X::Phaser::PrePost,Exception,Any,Mu		
+X::PhaserExceptions	X::PhaserExceptions,Exception,Any,Mu		
+X::Placeholder::Attribute	X::Placeholder::Attribute,X::Placeholder::Block,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::Placeholder::Block	X::Placeholder::Block,Exception,Any,Mu	X::Comp	X::Comp
+X::Placeholder::Mainline	X::Placeholder::Mainline,X::Placeholder::Block,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::Placeholder::NonPlaceholder	X::Placeholder::NonPlaceholder,Exception,Any,Mu	X::Comp	X::Comp
+X::PoisonedAlias	X::PoisonedAlias,Exception,Any,Mu	X::Comp	X::Comp
+X::Pragma::CannotPrecomp	X::Pragma::CannotPrecomp,Exception,Any,Mu		
+X::Pragma::CannotWhat	X::Pragma::CannotWhat,Exception,Any,Mu		
+X::Pragma::MustOneOf	X::Pragma::MustOneOf,Exception,Any,Mu		
+X::Pragma::NoArgs	X::Pragma::NoArgs,Exception,Any,Mu		
+X::Pragma::OnlyOne	X::Pragma::OnlyOne,Exception,Any,Mu		
+X::Pragma::Unknown	X::Pragma::Unknown,Exception,Any,Mu		
+X::Pragma::UnknownArg	X::Pragma::UnknownArg,Exception,Any,Mu		
+X::Proc::Async::AlreadyStarted	X::Proc::Async::AlreadyStarted,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::BindOrUse	X::Proc::Async::BindOrUse,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::CharsOrBytes	X::Proc::Async::CharsOrBytes,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::MissingColsRows	X::Proc::Async::MissingColsRows,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::MustBeStarted	X::Proc::Async::MustBeStarted,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::OpenForWriting	X::Proc::Async::OpenForWriting,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::SupplyOrStd	X::Proc::Async::SupplyOrStd,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Async::TapBeforeSpawn	X::Proc::Async::TapBeforeSpawn,Exception,Any,Mu	X::Proc::Async	X::Proc::Async
+X::Proc::Unsuccessful	X::Proc::Unsuccessful,Exception,Any,Mu		
+X::Promise::CauseOnlyValidOnBroken	X::Promise::CauseOnlyValidOnBroken,Exception,Any,Mu		
+X::Promise::Combinator	X::Promise::Combinator,Exception,Any,Mu		
+X::Promise::Resolved	X::Promise::Resolved,Exception,Any,Mu		
+X::Promise::Vowed	X::Promise::Vowed,Exception,Any,Mu		
+X::PseudoPackage::InDeclaration	X::PseudoPackage::InDeclaration,Exception,Any,Mu	X::Comp	X::Comp
+X::QuoteWords::Missing::Closer	X::QuoteWords::Missing::Closer,Exception,Any,Mu	X::Comp	X::Comp
+X::REPL::InvalidEnvironment	X::REPL::InvalidEnvironment,Exception,Any,Mu		
+X::Range::CannotIterate	X::Range::CannotIterate,Exception,Any,Mu		
+X::Range::Incomparable	X::Range::Incomparable,Exception,Any,Mu		
+X::Range::InvalidArg	X::Range::InvalidArg,Exception,Any,Mu		
+X::Range::Rand::InvalidEndpoints	X::Range::Rand::InvalidEndpoints,Exception,Any,Mu		
+X::Redeclaration	X::Redeclaration,Exception,Any,Mu	X::Comp	X::Comp
+X::Redeclaration::Multi	X::Redeclaration::Multi,Exception,Any,Mu	X::Comp	X::Comp
+X::Redeclaration::Outer	X::Redeclaration::Outer,Exception,Any,Mu	X::Comp	X::Comp
+X::Role::Attribute::Conflicts	X::Role::Attribute::Conflicts,Exception,Any,Mu	X::Role::Attribute	X::Role::Attribute,X::RoleApplier
+X::Role::Attribute::Exists	X::Role::Attribute::Exists,Exception,Any,Mu	X::Role::Attribute	X::Role::Attribute,X::RoleApplier
+X::Role::BodyReturn	X::Role::BodyReturn,Exception,Any,Mu		
+X::Role::Group::Documenting	X::Role::Group::Documenting,Exception,Any,Mu		
+X::Role::Initialization	X::Role::Initialization,Exception,Any,Mu		
+X::Role::Instantiation	X::Role::Instantiation,Exception,Any,Mu	X::Wrapper	X::Wrapper
+X::Role::Parametric::NoSuchCandidate	X::Role::Parametric::NoSuchCandidate,Exception,Any,Mu		
+X::Role::Unimplemented::Multi	X::Role::Unimplemented::Multi,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier
+X::Role::Unresolved	X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier
+X::Role::Unresolved::Method	X::Role::Unresolved::Method,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier
+X::Role::Unresolved::Multi	X::Role::Unresolved::Multi,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier
+X::Role::Unresolved::Private	X::Role::Unresolved::Private,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier
+X::Routine::Unwrap	X::Routine::Unwrap,Exception,Any,Mu		
+X::Scheduler::CueInNaNSeconds	X::Scheduler::CueInNaNSeconds,Exception,Any,Mu		
+X::SecurityPolicy	X::SecurityPolicy,Exception,Any,Mu		
+X::SecurityPolicy::Eval	X::SecurityPolicy::Eval,X::SecurityPolicy,Exception,Any,Mu		
+X::Seq::Consumed	X::Seq::Consumed,Exception,Any,Mu		
+X::Seq::NotIndexable	X::Seq::NotIndexable,Exception,Any,Mu		
+X::Sequence::Deduction	X::Sequence::Deduction,Exception,Any,Mu		
+X::Sequence::Endpoint	X::Sequence::Endpoint,Exception,Any,Mu		
+X::Set::Coerce	X::Set::Coerce,Exception,Any,Mu		
+X::Signature::NameClash	X::Signature::NameClash,Exception,Any,Mu	X::Comp	X::Comp
+X::Signature::Placeholder	X::Signature::Placeholder,Exception,Any,Mu	X::Comp	X::Comp
+X::Str::InvalidCharName	X::Str::InvalidCharName,Exception,Any,Mu		
+X::Str::Match::x	X::Str::Match::x,Exception,Any,Mu		
+X::Str::Numeric	X::Str::Numeric,Exception,Any,Mu		
+X::Str::Sprintf::Directives::BadType	X::Str::Sprintf::Directives::BadType,Exception,Any,Mu		
+X::Str::Sprintf::Directives::Count	X::Str::Sprintf::Directives::Count,Exception,Any,Mu		
+X::Str::Sprintf::Directives::Unsupported	X::Str::Sprintf::Directives::Unsupported,Exception,Any,Mu		
+X::Str::Subst::Adverb	X::Str::Subst::Adverb,Exception,Any,Mu		
+X::Str::Trans::IllegalKey	X::Str::Trans::IllegalKey,Exception,Any,Mu		
+X::Str::Trans::InvalidArg	X::Str::Trans::InvalidArg,Exception,Any,Mu		
+X::StubCode	X::StubCode,Exception,Any,Mu		
+X::Subscript::Negative	X::Subscript::Negative,Exception,Any,Mu		
+X::Supply::Combinator	X::Supply::Combinator,Exception,Any,Mu		
+X::Supply::Migrate::Needs	X::Supply::Migrate::Needs,Exception,Any,Mu		
+X::Supply::New	X::Supply::New,Exception,Any,Mu		
+X::Symbol::Kind	X::Symbol::Kind,Exception,Any,Mu		
+X::Symbol::NotDynamic	X::Symbol::NotDynamic,X::Symbol::Kind,Exception,Any,Mu		
+X::Symbol::NotLexical	X::Symbol::NotLexical,X::Symbol::Kind,Exception,Any,Mu		
+X::Syntax::AddCategorical::TooFewParts	X::Syntax::AddCategorical::TooFewParts,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::AddCategorical::TooManyParts	X::Syntax::AddCategorical::TooManyParts,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Adverb	X::Syntax::Adverb,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::AmbiguousAdverb	X::Syntax::AmbiguousAdverb,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Argument::MOPMacro	X::Syntax::Argument::MOPMacro,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Augment::Adverb	X::Syntax::Augment::Adverb,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Augment::Illegal	X::Syntax::Augment::Illegal,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Augment::WithoutMonkeyTyping	X::Syntax::Augment::WithoutMonkeyTyping,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::BlockGobbled	X::Syntax::BlockGobbled,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::CannotMeta	X::Syntax::CannotMeta,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Coercer::TooComplex	X::Syntax::Coercer::TooComplex,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Comment::Embedded	X::Syntax::Comment::Embedded,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::ConditionalOperator::PrecedenceTooLoose	X::Syntax::ConditionalOperator::PrecedenceTooLoose,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::ConditionalOperator::SecondPartGobbled	X::Syntax::ConditionalOperator::SecondPartGobbled,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::ConditionalOperator::SecondPartInvalid	X::Syntax::ConditionalOperator::SecondPartInvalid,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Confused	X::Syntax::Confused,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Doc::Declarator::MissingDeclarand	X::Syntax::Doc::Declarator::MissingDeclarand,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::DuplicatedPrefix	X::Syntax::DuplicatedPrefix,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Extension::Category	X::Syntax::Extension::Category,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Extension::Null	X::Syntax::Extension::Null,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Extension::SpecialForm	X::Syntax::Extension::SpecialForm,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Extension::TooComplex	X::Syntax::Extension::TooComplex,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::InfixInTermPosition	X::Syntax::InfixInTermPosition,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::KeywordAsFunction	X::Syntax::KeywordAsFunction,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Malformed	X::Syntax::Malformed,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Malformed::Elsif	X::Syntax::Malformed::Elsif,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Missing	X::Syntax::Missing,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Name::Null	X::Syntax::Name::Null,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::NegatedPair	X::Syntax::NegatedPair,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::NoSelf	X::Syntax::NoSelf,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::NonAssociative	X::Syntax::NonAssociative,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::NonListAssociative	X::Syntax::NonListAssociative,X::Syntax::NonAssociative,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp,X::Syntax,X::Comp
+X::Syntax::Number::IllegalDecimal	X::Syntax::Number::IllegalDecimal,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Number::LiteralType	X::Syntax::Number::LiteralType,X::TypeCheck::Assignment,X::TypeCheck,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Number::RadixOutOfRange	X::Syntax::Number::RadixOutOfRange,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::P5	X::Syntax::P5,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::ParentAsHash	X::Syntax::ParentAsHash,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Perl5Var	X::Syntax::Perl5Var,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Pod::BeginWithDirective	X::Syntax::Pod::BeginWithDirective,Exception,Any,Mu	X::Pod,X::Syntax	X::Pod,X::Syntax,X::Comp
+X::Syntax::Pod::BeginWithoutEnd	X::Syntax::Pod::BeginWithoutEnd,Exception,Any,Mu	X::Pod,X::Syntax	X::Pod,X::Syntax,X::Comp
+X::Syntax::Pod::BeginWithoutIdentifier	X::Syntax::Pod::BeginWithoutIdentifier,Exception,Any,Mu	X::Pod,X::Syntax	X::Pod,X::Syntax,X::Comp
+X::Syntax::Pod::DeclaratorLeading	X::Syntax::Pod::DeclaratorLeading,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Pod::DeclaratorTrailing	X::Syntax::Pod::DeclaratorTrailing,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::Adverb	X::Syntax::Regex::Adverb,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::Alias::LongName	X::Syntax::Regex::Alias::LongName,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::InsignificantWhitespace	X::Syntax::Regex::InsignificantWhitespace,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::MalformedRange	X::Syntax::Regex::MalformedRange,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::NonQuantifiable	X::Syntax::Regex::NonQuantifiable,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::NullRegex	X::Syntax::Regex::NullRegex,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::QuantifierValue	X::Syntax::Regex::QuantifierValue,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::SolitaryBacktrackControl	X::Syntax::Regex::SolitaryBacktrackControl,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::SolitaryQuantifier	X::Syntax::Regex::SolitaryQuantifier,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::SpacesInBareRange	X::Syntax::Regex::SpacesInBareRange,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::UnrecognizedMetachar	X::Syntax::Regex::UnrecognizedMetachar,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::UnrecognizedModifier	X::Syntax::Regex::UnrecognizedModifier,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::Unspace	X::Syntax::Regex::Unspace,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Regex::Unterminated	X::Syntax::Regex::Unterminated,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Reserved	X::Syntax::Reserved,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Self::WithoutObject	X::Syntax::Self::WithoutObject,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Signature::InvocantMarker	X::Syntax::Signature::InvocantMarker,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Signature::InvocantNotAllowed	X::Syntax::Signature::InvocantNotAllowed,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Term::MissingInitializer	X::Syntax::Term::MissingInitializer,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Type::Adverb	X::Syntax::Type::Adverb,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::UnlessElse	X::Syntax::UnlessElse,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::BadType	X::Syntax::Variable::BadType,Exception,Any,Mu	X::BadType,X::Comp	X::BadType,X::Comp
+X::Syntax::Variable::ConflictingTypes	X::Syntax::Variable::ConflictingTypes,Exception,Any,Mu	X::Comp	X::Comp
+X::Syntax::Variable::IndirectDeclaration	X::Syntax::Variable::IndirectDeclaration,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::Initializer	X::Syntax::Variable::Initializer,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::Match	X::Syntax::Variable::Match,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::MissingInitializer	X::Syntax::Variable::MissingInitializer,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::Numeric	X::Syntax::Variable::Numeric,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::SignatureAssignment	X::Syntax::Variable::SignatureAssignment,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::SignatureWithoutInitializer	X::Syntax::Variable::SignatureWithoutInitializer,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Variable::Twigil	X::Syntax::Variable::Twigil,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::VirtualCall	X::Syntax::VirtualCall,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::WithoutElse	X::Syntax::WithoutElse,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Temporal::InvalidFormat	X::Temporal::InvalidFormat,Exception,Any,Mu	X::Temporal	X::Temporal
+X::Temporal::OutOfRange	X::Temporal::OutOfRange,X::OutOfRange,Exception,Any,Mu	X::Temporal	X::Temporal
+X::TooLateForREPR	X::TooLateForREPR,X::Comp,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
+X::TooManyDimensions	X::TooManyDimensions,Exception,Any,Mu		
+X::Trait::Invalid	X::Trait::Invalid,Exception,Any,Mu	X::Trait	X::Trait
+X::Trait::NotOnNative	X::Trait::NotOnNative,Exception,Any,Mu	X::Trait	X::Trait
+X::Trait::Scope	X::Trait::Scope,Exception,Any,Mu	X::Trait	X::Trait
+X::Trait::Unknown	X::Trait::Unknown,Exception,Any,Mu	X::Trait	X::Trait
+X::TypeCheck	X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Argument	X::TypeCheck::Argument,X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Assignment	X::TypeCheck::Assignment,X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Attribute::Default	X::TypeCheck::Attribute::Default,X::TypeCheck,Exception,Any,Mu	X::Comp	X::Comp
+X::TypeCheck::Binding	X::TypeCheck::Binding,X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Binding::Parameter	X::TypeCheck::Binding::Parameter,X::TypeCheck::Binding,X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Return	X::TypeCheck::Return,X::TypeCheck,Exception,Any,Mu		
+X::TypeCheck::Splice	X::TypeCheck::Splice,X::TypeCheck,Exception,Any,Mu	X::Comp	X::Comp
+X::Undeclared	X::Undeclared,Exception,Any,Mu	X::Comp	X::Comp
+X::Undeclared::Symbols	X::Undeclared::Symbols,Exception,Any,Mu	X::Comp	X::Comp
+X::UnitScope::Invalid	X::UnitScope::Invalid,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::UnitScope::MustHaveUnit	X::UnitScope::MustHaveUnit,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::UnitScope::TooLate	X::UnitScope::TooLate,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Useless::Declaration	X::Useless::Declaration,Exception,Any,Mu	X::Comp	X::Comp
+X::Value::Dynamic	X::Value::Dynamic,Exception,Any,Mu	X::Comp	X::Comp
+X::WheneverOutOfScope	X::WheneverOutOfScope,Exception,Any,Mu		
+X::Worry	X::Worry,Exception,Any,Mu		
+X::Worry::P5	X::Worry::P5,X::Worry,Exception,Any,Mu		
+X::Worry::P5::BackReference	X::Worry::P5::BackReference,X::Worry::P5,X::Worry,Exception,Any,Mu		
+X::Worry::P5::LeadingZero	X::Worry::P5::LeadingZero,X::Worry::P5,X::Worry,Exception,Any,Mu		
+X::Worry::P5::Reference	X::Worry::P5::Reference,X::Worry::P5,X::Worry,Exception,Any,Mu		
+X::Worry::Precedence::Range	X::Worry::Precedence::Range,X::Worry,Exception,Any,Mu		
