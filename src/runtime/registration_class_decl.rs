@@ -171,6 +171,17 @@ impl Interpreter {
             return Ok(Vec::new());
         }
 
+        // Track whether this registry entry came from a `my`-scoped
+        // declaration (see `Registry::lexical_classes`'s doc comment) so a
+        // later bare-name `has_class` query can tell a real package-scope
+        // class apart from a lexical one that is only still present because
+        // mutsu has no scope-exit cleanup for `registry().classes`.
+        if is_lexical {
+            self.registry_mut().lexical_classes.insert(name.to_string());
+        } else {
+            self.registry_mut().lexical_classes.remove(name);
+        }
+
         let (self_named_does_roles, deferred_custom_traits) =
             self.validate_class_parents(name, parents, does_parents, hidden_parents)?;
         let mut class_def = self.begin_class_def(

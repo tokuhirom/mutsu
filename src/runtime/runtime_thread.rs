@@ -556,6 +556,7 @@ impl Interpreter {
             import_scope_stack: Vec::new(),
             strict_mode: self.strict_mode,
             fatal_mode: self.fatal_mode,
+            suppress_cross_eval_class_redeclaration_check: false,
             our_vars: HashMap::new(),
             package_lexicals: self.package_lexicals.clone(),
             class_body_static_names: self.class_body_static_names.clone(),

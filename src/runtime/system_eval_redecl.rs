@@ -292,14 +292,22 @@ impl Interpreter {
                     let is_stub = body_is_stub(body);
                     // A non-stub, non-lexical class that already exists in the
                     // outer environment cannot be redeclared. Lexical classes
-                    // (`my class`) may shadow outer names. Only check
-                    // package-qualified names (containing `::`): simple names may
-                    // have leaked into the global registry from block-scoped
-                    // declarations (a known scoping limitation).
+                    // (`my class`) may shadow outer names -- both this
+                    // declaration (`!*is_lexical`) AND the pre-existing one it
+                    // would conflict with (`!lexical_classes.contains(..)`):
+                    // a `my class Foo {}` from an earlier, now-exited lexical
+                    // scope leaves `Foo` sitting in the registry under its
+                    // bare key (mutsu has no scope-exit cleanup for it), and
+                    // that must not block an unrelated `EVAL q[class Foo {}]`
+                    // any more than it would in real `raku` (verified:
+                    // `{ my class Foo {} }; EVAL q[class Foo {}]` raises no
+                    // error). See `Registry::lexical_classes`'s doc comment.
+                    let qualified = qualify_type_name(&name);
                     if !is_stub
                         && !*is_lexical
-                        && name.contains("::")
-                        && self.has_class(&qualify_type_name(&name))
+                        && !self.suppress_cross_eval_class_redeclaration_check
+                        && self.has_class(&qualified)
+                        && !self.registry().lexical_classes.contains(&qualified)
                     {
                         return Err(type_redeclaration(&name));
                     }

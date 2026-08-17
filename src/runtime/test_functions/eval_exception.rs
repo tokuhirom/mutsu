@@ -245,6 +245,14 @@ impl Interpreter {
         };
         let mut nested = Interpreter::new();
         nested.strict_mode = self.strict_mode;
+        // Real raku's `eval-lives-ok`/`eval-dies-ok` run their code via a
+        // Test.rakumod helper that calls `EVAL($code)` with no `context =>`
+        // argument, unlike `throws-like` (which passes the caller's own
+        // context) -- so a class the code declares does not conflict with a
+        // same-named class the calling program already has (verified against
+        // real raku). See the field's doc comment on `Interpreter` for the
+        // full explanation.
+        nested.suppress_cross_eval_class_redeclaration_check = true;
         if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
             nested.set_pid(pid.saturating_add(1));
         }
@@ -351,6 +359,14 @@ impl Interpreter {
         };
         let mut nested = Interpreter::new();
         nested.strict_mode = self.strict_mode;
+        // Real raku's `eval-lives-ok`/`eval-dies-ok` run their code via a
+        // Test.rakumod helper that calls `EVAL($code)` with no `context =>`
+        // argument, unlike `throws-like` (which passes the caller's own
+        // context) -- so a class the code declares does not conflict with a
+        // same-named class the calling program already has (verified against
+        // real raku). See the field's doc comment on `Interpreter` for the
+        // full explanation.
+        nested.suppress_cross_eval_class_redeclaration_check = true;
         if let Some(ValueView::Int(pid)) = self.env.get("*PID").map(Value::view) {
             nested.set_pid(pid.saturating_add(1));
         }
