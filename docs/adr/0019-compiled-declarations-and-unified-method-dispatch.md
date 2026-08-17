@@ -230,6 +230,45 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   (`vm_resolve_trivial_proto_candidate`) still need the raw body; dropping it is a later box.
   `news/2026-08/c8-proto-declarations-compiled-plans.md`.
 
+  **Scoping (2026-08-17, read-only, no code): investigated whether `legacy_body` can now be
+  dropped — conclusion is RETAIN, not a later box.** D9 already removed the same-shaped
+  `CompiledRoleDeclPlan::legacy_body` field this bullet's "following its own precedent" language
+  refers to, so `CompiledProtoDeclPlan::legacy_body` is now (`git grep` confirmed) the LAST
+  `legacy_body`-shaped payload anywhere in the codebase — the obvious next target once F7 closed
+  the token/rule carve-out. Traced every real reader, which turns out to be wider than this
+  bullet's own two-name list:
+  1. **Registration-time fact scans** (`register_proto_decl`'s `auto_signature_uses`/
+     `is_stub_routine_body` over `body`) are movable to compile time (D2a's precompute-facts
+     precedent), but alone that would not free the field's storage — three other consumers below
+     still need the raw `Vec<Stmt>` kept on `FunctionDef` itself.
+  2. **`Value::make_sub(...)` in `exec_register_proto_sub_op`** clones `body` into a `Sub` value
+     when applying a custom `trait_mod:<is>`; that `Sub` is a first-class callable a user program
+     can hold and invoke later through the ordinary Sub-calling convention, which tree-walks.
+  3. **`call_proto_function`** (reached from `call_function_fallback`, one call site,
+     `builtins_operators_fallback.rs`) is NOT dead or rare: the VM's opcode-level call dispatch
+     (`vm_call_func_ops.rs`) always tries the bytecode-first proto paths
+     (`vm_resolve_trivial_proto_candidate`, `vm_try_run_nontrivial_proto_body`) FIRST and falls
+     through to `call_function_fallback` only for what those explicitly decline (a winning
+     candidate that is not OTF-compilable — `where`/default/code-signature params, unsafe
+     `state`, an `is_interpreter_handled_function` name, or a hand-built `FunctionDef` outside
+     plan registration). `call_proto_function` IS the correct, necessary interpreter fallback for
+     exactly the cases the VM fast path already filtered out — this bullet's original framing was
+     right, not an unverified assumption this time.
+  4. **`run_proto_method`** (two call sites: `.new` dispatch and general `proto method` calls in
+     `methods_object_dispatch_new.rs`) is the ONLY dispatch mechanism for `proto method`/`proto
+     submethod` bodies — there is no bytecode path to prefer it over. Unlike an ordinary proto,
+     `is_method` protos are unconditionally excluded from `compile_sub_body` at plan-lowering time
+     (`compiler/stmt.rs`'s `if !*is_method && !trivial` gate) — giving a proto method's `{*}` body
+     its own compiled routine is a **capability that has never been built**, not a migration of an
+     existing one (the code's own comment calls this "Phase D territory"). That is a fresh
+     Phase-D/E-sized dispatch box on its own, not a cleanup of this one.
+
+  **Conclusion, mirroring F6's qualified-dispatch retain finding: keep `legacy_body`
+  permanently.** Every consumer traced one level deeper is either load-bearing (2/3/4) or
+  insufficient alone to free the field (1). Revisit only if proto-method bytecode compilation is
+  ever built as its own box; until then this is a permanent, justified compatibility payload, not
+  deferred work.
+
 ### Phase D — class and role plans become bytecode-native
 
 Two facts about the current walkers shape this phase. First, `register_class_decl` is a single
@@ -291,9 +330,10 @@ walkers wholesale is not possible before then.
     point lookup, and `class_def.methods`/`.attributes` vs. `MethodEntry` are already a single
     source of truth kept in lockstep by `sync_user_method_entries` — reading one over the other
     there is a lateral move, not a gain (see CLAUDE.md's "what gain and risk actually mean").
-  Full slice-by-slice history and the D2b/D2c-remainder design are in
+  Full slice-by-slice history and the D2b/D2c-remainder design lived in
   `todo/deep/adr0019-d2c-attribute-default-chunks.md` and
-  `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`.
+  `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`; both retired once D2's own progress
+  notes above and the linked `news/2026-08/` entries fully covered the same ground.
 - [x] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. Three
   independent walkers (class ~508 lines, role ~263, `augment class` ~105) each hand-built a
@@ -486,11 +526,15 @@ The resolver must cover every entry: six opcodes (`CallMethod`, `CallMethodMut`,
 non-opcode entries (`vm_call_method_with_values`/`vm_call_method_mut_with_values`, the
 `vm_run_instance_method` carrier, the two JIT shims, three `vm_call_helpers` fallback entries),
 and the `ArrayPush` fast-path opcode that bypasses method dispatch entirely. The detailed designs
-for this phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
+for this phase were `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1, retired once closed —
+its one live spin-off, mixin composition order nondeterminism, was tracked separately as
+`todo/tickets/mixin-role-order-not-tracked.md` and is now fixed, see
+`news/2026-08/mixin-role-application-order-tracked.md`),
 `todo/deep/adr0019-e2-e4-resolver-core.md` (E2/E3/E4),
 `todo/deep/adr0019-e5-e7-entry-routing.md` (E5/E6/E7), and
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11) — consult these for
-full slice-by-slice history; the checklist below keeps only the architectural outcome.
+`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11) — consult the ones that
+still exist for full slice-by-slice history; the checklist below keeps only the architectural
+outcome.
 
 - [x] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
   type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
@@ -583,7 +627,7 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   - [x] **E4a — sequence builder + shadow parity (user candidates only), 2026-08-10.** Landed
     `ResolvedSequence`/`ResolvedCandidate::User` and `resolve_sequence`, counter-verified against
     `resolve_method_with_owner_impl`'s real outcomes with zero behavior change.
-  - [ ] **E4b — authoritative switch at `should_bypass_native_fastpath` (`call_method_with_values`'s
+  - [x] **E4b — authoritative switch at `should_bypass_native_fastpath` (`call_method_with_values`'s
     one call site).** Thirteen investigation steps (2026-08-11) decomposed the ~110-line boolean
     chain into four disjoint categories and landed each at its locally optimal shape:
     - **Category 1 (receiver-shape safety gates)** mostly reduces to "the cascade itself already
@@ -624,6 +668,18 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `ResolvedCandidate` existing and being shadow-verified at its call sites — the box does not
   additionally require the VM opcode entries to *dispatch on* the `Native` candidate, since E5-E7
   independently and deliberately decided against that. **E4 is marked done.**
+  **(2026-08-17): E4b's own checkbox corrected to `[x]`** — the 2026-08-12 "E4 is marked done"
+  progress note above had already declared this sub-box closed (same pattern as E5's own
+  checkbox-correction note), but the checkbox itself was left unchecked. Retired
+  `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`: its own "status update"
+  section (an earlier snapshot from the same day) framed a few category-1 guard groups as "still
+  open, same methodology applies" candidates for removal, but category 1's paragraph above (a
+  later pass the same day) already confirms `Supplier`, most of `Proc::Async`, `IO::Handle`'s
+  three-method group, and `Stash.AT-KEY` landed as outright deletions, with only `Supply`'s list
+  vocabulary/lazy-`Match` forcing/`Hash.keys` staying as permanent hazards — superseding the
+  design doc's older framing rather than leaving genuine unfiled work behind. Any remaining sliver
+  (the unnamed rest of `Proc::Async`, `Stash.keys`/`.values`) is small enough to re-derive from
+  `native_fastpath_receiver_state_guard` directly if ever revisited, not worth a standalone ticket.
 - [x] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design (2026-08-10):** the cutover shape is "resolver decides, existing arms execute" — each
@@ -1002,8 +1058,9 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
   **Split in place (2026-08-15), following the C6/D2/E1-E11 precedent** — a read-site
   classification pass (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s sibling
-  survey, and the earlier `todo/deep/adr0019-f4-classdef-methods-still-load-bearing.md` scoping)
-  found `Registry::sync_user_method_entries` currently writes the canonical table FROM
+  survey, and an earlier scoping pass -- both now folded into this box's own progress notes below,
+  which fully supersede that scoping's now-deleted file) found `Registry::sync_user_method_entries`
+  currently writes the canonical table FROM
   `ClassDef::methods` (the opposite of what F4 wants), with ~15-20 files of live dispatch/MOP/
   BUILD-TWEAK read sites and ~10 files of write sites. That work does not fit one PR or one
   design decision, so it is now three sub-boxes:

@@ -172,7 +172,6 @@ same-day and no longer exist as files — don't go looking for them):
 | [forward-captured-code-var-snapshot](tickets/forward-captured-code-var-snapshot.md) | batteries §1 | M | Last blocker for a full CBOR::Simple `cbor-decode` round-trip. |
 | [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md) | batteries §1 | XL | A triage *queue* — several root causes already pulled out into their own deep/ tickets; remainder: Math::Interval, Native::Overflow, App::SudokuHelper, P5tie, Mathematica::Serializer::Encoder, Hash::Restricted, Crypt::RC4, Random::Choice. |
 | [same-role-composed-twice-multi-dispatch-picks-one-candidate](tickets/same-role-composed-twice-multi-dispatch-picks-one-candidate.md) | correctness §6 | M-L | `does R[Int] does R[Str]` composes both multi candidates but every call hits one of them (declaration-order tiebreak, not signature match); roast passes only by luck of exercising one arg type. |
-| [mixin-role-order-not-tracked](tickets/mixin-role-order-not-tracked.md) | correctness §6 | L | `MixinOverrides` has no application order, so chained `but`/`does` collisions resolve alphabetically instead of later-wins (`(0 but A) but Z` → mutsu `A`, raku `Z`). Also the E1-V2 nondeterminism the Phase E resolver will consume. |
 | [wildcard-handles-loses-to-builtin-cool-methods](tickets/wildcard-handles-loses-to-builtin-cool-methods.md) | correctness §6 | M | `handles *` delegation is consulted only after built-in Cool/Any dispatch, so any delegate method colliding with a builtin never forwards. |
 | [when-only-block-nonmatch-value-wrong](tickets/when-only-block-nonmatch-value-wrong.md) | correctness §6 | M | A `.map`/`.grep` block whose only statement is a non-matching `when` falls back to the original topic — `.grep({when Int {True}})` filters nothing. Step 1 is pinning raku's actual non-match value (probes disagree); the fallback is load-bearing for rw map/grep. |
 | [role-submethod-runtime-does-parameterized-value](tickets/role-submethod-runtime-does-parameterized-value.md) | correctness §6 | M | A parameterized role's own `$v` parameter is invisible to its BUILD/TWEAK on runtime `does`/`but` targets; needs a case survey of `class_role_param_bindings` reachability first. |
@@ -281,24 +280,26 @@ same-day and no longer exist as files — don't go looking for them):
   - [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) — [ADR-0021](../docs/adr/0021-argument-namedness-is-a-call-site-property.md) is now "Accepted (P1-P3a and P3 shipped; P4 cleanup and P5 measured perf follow-up remain)". This ticket named P1 alone as the fix for the live Cro `headers => [...]` blocker in `Cro::HTTP::Client`; re-run that repro (`tmp/hdr2.p6`-shaped case). If fixed, re-scope the file down to just the P4/P5 cleanup remainder (demote to P3) or retire it.
 - **Stale ADR-0019 Phase D design docs (8 files in `deep/`)** — still present, still
   done-stale (D0-D10 all closed; news has the landed entries):
-  `adr0019-d2c-attribute-default-chunks`, `adr0019-d2-remainder-attr-plan-lowering`,
-  `adr0019-d3-8-method-body-main-pass-compilation`, `adr0019-d4-parent-expr-chunks`,
-  `adr0019-d5-plan-driven-how-ops`, `adr0019-d6-d9-legacy-body-removal`,
-  `adr0019-d7-d8-role-plan-encoding`, `adr0019-e1-typeid-receiver-owner` — should be
-  retired to `news/` **after extracting the unfiled spin-offs they carry**:
-  - D3-8's follow-up list: **methods of a class declared inside a sub cannot
-    see the sub's lexicals** (real conformance bug, raku 42 / mutsu 0),
-    the `record_type_body_captures` double-compile, the
-    `class_dispatch.rs:497` per-call recompile, and `augment class` having no
-    declaration plan.
-  - D7/D8's V2 rider: the once-per-composition memo keying (`pun:`/`mixin:`
-    role-global, class path unguarded) still needs its raku case table.
-  - D2c-5 (optional): unify the two attribute-default env-setup shapes.
-  - E1's V2 (mixin order nondeterminism) is already filed as
-    [mixin-role-order-not-tracked](tickets/mixin-role-order-not-tracked.md).
-  - A new one this round: `adr0019-e4b-should-bypass-native-fastpath-decomposition.md`
-    also exists in `deep/` and reads like a D-phase-style completed-slice design
-    doc for the E4b box — not yet surveyed for spin-offs; do that before retiring it.
+  **RESOLVED 2026-08-17** — all 8 (`adr0019-d2c-attribute-default-chunks`,
+  `adr0019-d2-remainder-attr-plan-lowering`, `adr0019-d3-8-method-body-main-pass-compilation`,
+  `adr0019-d4-parent-expr-chunks`, `adr0019-d5-plan-driven-how-ops`,
+  `adr0019-d6-d9-legacy-body-removal`, `adr0019-d7-d8-role-plan-encoding`,
+  `adr0019-e1-typeid-receiver-owner`) deleted after extracting their unfiled spin-offs: the
+  D3-8 lexical-capture bug (raku 42 / mutsu 0) re-verified as already fixed, no ticket needed;
+  the `record_type_body_captures`/`class_dispatch.rs` compile-dedup remnants filed as
+  [adr0019-method-body-compile-dedup-remnants](tickets/adr0019-method-body-compile-dedup-remnants.md);
+  the D7/D8 once-per-composition memo-keying V2 filed as
+  [adr0019-role-composition-memo-guard-raku-case-table](deep/adr0019-role-composition-memo-guard-raku-case-table.md);
+  D2c-5 was already tracked inline in the ADR text, no separate ticket needed; E1's V2 (mixin
+  order nondeterminism) turned out to be already fixed and retired to
+  `news/2026-08/mixin-role-application-order-tracked.md` (the `mixin-role-order-not-tracked`
+  ticket this note and the stale table row above pointed at no longer exists).
+  **RESOLVED 2026-08-17:** `adr0019-e4b-should-bypass-native-fastpath-decomposition.md` was
+  surveyed and also retired — its own ADR box (E4b) turned out to already be functionally closed
+  (the ADR's own 2026-08-11/12 progress notes had declared it done; only the checkbox itself was
+  left unchecked, now corrected), and the design doc's "still open" guard-removal candidates were
+  themselves superseded the same day by a later, more authoritative conclusion in the ADR text.
+  No spin-off ticket needed.
 - Container tickets that are queues, not single fixes:
   [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md),
   [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md),
