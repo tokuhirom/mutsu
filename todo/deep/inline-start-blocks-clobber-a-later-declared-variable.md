@@ -7,6 +7,16 @@ pre-existing, unresolved interaction between `needs_env_sync` and the atomic-sca
 subsystem ("Gap 4" below) that needs its own root-cause investigation, not a quick patch. This is
 no longer a "pick it up and finish in a session" item.
 
+**Also blocks an OTF-compilation gate exclusion.** `todo/tickets/otf-compilation-gate-leftovers.md`
+(retired 2026-08-17, folded in here) tracked a *different* symptom of the same underlying
+capture-cell gap: `expr_needs_interpreter` (`src/vm/vm_call_func_ops.rs`, ~line 1996) forces any
+`start` block onto the slow interpreter fallback rather than the OTF-compiled path, because a
+recursive sub's `start` closure capturing a parameter gets clobbered by the recursive call's
+re-bind (regression pin: `t/start-block-return-value.t` test 3; proof of infeasibility and history
+in `news/2026-07.md`). The real fix for both is per-call capture cells / a sound cross-thread env
+signal — whoever resolves the bug below should re-check whether `expr_needs_interpreter`'s
+`"start"` exclusion can also be lifted at the same time.
+
 Extracted from PLAN.md §6 (2026-08-02); found 2026-07-23 while testing WASM concurrency, and
 re-verified on `main`2026-08-02 — it is not a WASM artefact. **Still reproduces 2026-08-14**, after
 the two prerequisite campaigns this ticket originally deferred to both completed
