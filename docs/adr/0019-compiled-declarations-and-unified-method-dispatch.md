@@ -2667,6 +2667,72 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   general-call-dispatch family: all 3 of its named sites are now migrated off the carrier.** The only
   remaining open F6 item is qualified-dispatch's shared helper (a different, larger problem — see
   this box's own note above, "qualified-dispatch's shared helper is a DIFFERENT, bigger problem").
+
+  **Scoping (2026-08-17, read-only, no code) — qualified-dispatch's shared helper.** A full grep of
+  every `run_resolved_method_compiled_or_treewalk`/`run_resolved_method_celled` call (excluding the
+  two definitions themselves) found **22 call sites across 14 files** — noticeably more than this
+  box's earlier "8+" estimate. By file: `methods_qualified.rs` (7 sites — the qualified-dispatch
+  module itself: role-concretization dispatch, the by-name qualifier dispatch main path, a
+  role-origin fallback, a role-definition fallback, a Mixin-wrapped role-applied branch, a
+  Mixin-wrapped by-MRO branch, and the non-Instance/type-object qualified path), `class.rs` (2,
+  BUILD-phase attribute-default method calls), `ctor_phase_plan.rs` (2, via the `_celled` core
+  directly — BUILD/TWEAK construction-phase running), `methods_instance_ops.rs` (3),
+  `methods_signature_shaped.rs` (3, `where`/type-constrained signature-shaped multi dispatch),
+  `methods_mixin_dispatch.rs`, `dispatch_proto.rs` (proto `{*}` redispatch, its own
+  `proto_dispatch_stack` push/pop wrapped around the call), `methods_call_dispatch.rs` (1, the mixin
+  private-method branch adjacent to the mixin fallback site this box just migrated),
+  `methods_walk.rs`, `types/role_mixin_class.rs` — one site each.
+
+  **Key finding — this is NOT a "wrong ad-hoc resolver" problem like `run_instance_method`'s was.**
+  Unlike that carrier (whose `resolve_method_with_owner_invocant` walk duplicated the E4 sequence
+  resolver and could disagree with it — the actual defect F6 exists to eliminate),
+  `run_resolved_method_celled` does no resolution of its own at all: every call site above has
+  ALREADY resolved `(owner_class, method_def)` through its own specific-purpose walk (a qualifier-
+  rooted MRO walk, a role-origin match, a proto candidate, a BUILD-phase attribute default, ...) —
+  correctly bypassing the general override-resolution rules on purpose, since a qualified call's
+  entire point is to skip them. `run_resolved_method_celled`'s actual job is "run this exact
+  already-resolved candidate as compiled bytecode, with on-demand compile-if-needed, delegation-
+  forwarder fallback, and `pending_rw_writeback_sources` MERGE (not restore) semantics for a nested
+  call's captured-outer writes" — three pieces of real, load-bearing logic that `dispatch_compiled_
+  method` (the fast VM-opcode path's own resolution-free core, and the ONLY part of the direct-
+  dispatch family that is actually resolution-free) does **not** provide:
+  1. **On-demand compile-in-place** (`compile_method_def_in_place_with_dist`) for a candidate reached
+     before its owner's registration compile pass, or added at runtime (a role method punned via
+     `does`, a custom-HOW method) — `dispatch_compiled_method` requires an already-compiled `cc`
+     handed in by its caller; `try_dispatch_compiled_method_direct[_as]`'s own `populate_uncompiled_
+     method` step does this, but re-resolves first (the exact thing qualified dispatch must avoid).
+  2. **Delegation-forwarder fallback** (`forward_resolved_delegation`) when the resolved candidate is
+     a synthesized `handles`-delegation forwarder (`compiled_code: None`, no body to compile) —
+     `dispatch_compiled_method` has no equivalent branch at all.
+  3. **`pending_rw_writeback_sources` merge-not-restore** around the call, so a sibling BUILD's
+     queued captured-outer write survives a nested `.new` (#3620) while the body's own writes also
+     propagate — this is normally the VM `CallMethod`/`CallMethodMut` opcode handler's job (drained
+     right after `dispatch_compiled_method` returns, per that function's own doc comment), which
+     none of these call sites go through since they are all reached from Rust-side dispatch logic,
+     not the bytecode loop.
+
+  So a real fix is not "swap the call" (the `try_dispatch_compiled_method_direct*` family is
+  categorically wrong here — it would re-resolve and risk picking the general override instead of
+  the qualifier-specific candidate, exactly the correctness bug this box's earlier note already
+  flagged) and not a rename either (`run_resolved_method_celled` already IS the resolution-free
+  helper this family needs — deleting it outright would mean re-inventing the three pieces above
+  inside `dispatch_compiled_method` first). The actual convergence work, should it be pursued, is
+  extending `dispatch_compiled_method` (or a new sibling next to it, mirroring this session's
+  `dispatch_compiled_method_with_attrs_cell` pattern) to cover on-demand-compile +
+  delegation-forwarder-fallback + writeback-merge, THEN retargeting these 22 call sites onto it and
+  deleting `run_resolved_method_celled`/`run_resolved_method_compiled_or_treewalk`. That is a
+  materially larger unit of work than any single-site F6 slice landed so far in this box (it touches
+  the VM's own compiled-dispatch core, not just one caller), genuinely deserving its own dedicated
+  design pass (up to and including an ADR update if the chosen shape changes `dispatch_compiled_
+  method`'s public contract) rather than a same-session extension of this slice. Per this box's own
+  "gather evidence before migrating" discipline: reconciliation-shape heterogeneity across the 22
+  sites is real and already visible even from a partial read — `methods_qualified.rs`'s 7 sites alone
+  split into "commits the returned attrs map back to the receiver" (3 sites), "discards the returned
+  map entirely, relying on `self`'s own live cell" (3 sites, all Mixin-invocant branches, matching
+  this session's own mixin-fallback finding that a Mixin invocant needs its OWN attrs-cell handling),
+  and "commits the map AND does an eager `Proxy` auto-fetch" (1 site) — so no single shared wrapper
+  will fit all 22 by pattern-match; each needs the same individual review this box's text already
+  calls for. Left un-started; this note is the scoping only.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
