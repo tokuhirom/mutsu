@@ -46,8 +46,15 @@ plan 4;
             $relay.emit($data);
         }
     }
-    my $up-tap = $upstream.tap(-> $ { });
 
+    # The downstream tap MUST subscribe to $relay before the upstream tap
+    # starts reading the socket and re-emitting: Supplier.emit does not
+    # buffer for late subscribers, so if the upstream read (on its own
+    # reader thread) raced ahead and emitted before this subscription
+    # existed, the emit would be silently lost and $done would never keep —
+    # observed as a load-sensitive hang (todo/tickets/supply-done-in-tap-
+    # callback-load-flaky.t.md: reproduced 10-25/24-40 runs under heavy CPU
+    # contention with the taps in the opposite order, 0/15 with this order).
     my $done = Promise.new;
     my $downstream = supply {
         whenever $relay -> $data {
@@ -55,6 +62,7 @@ plan 4;
         }
     }
     my $down-tap = $downstream.tap(-> $ { }, done => { $done.keep(True) });
+    my $up-tap = $upstream.tap(-> $ { });
 
     await Promise.anyof($done, Promise.in(10));
     ok $done.status ~~ Kept, 'done survives an emit that originated on a reader thread';
