@@ -48,8 +48,8 @@ pub(crate) use compile_consts::is_imported_function;
 pub(crate) use registry::{current_language_version, set_current_language_version};
 pub(crate) use registry::{declare_keyword_names, register_declare_keyword};
 pub(crate) use slang_modes::{
-    apply_slang_rule_override, set_slang_modes, slang_modes, slang_spaced_call,
-    slang_spaced_methodop,
+    apply_slang_rule_override, consume_slang_ident_trailing_punct, set_slang_modes, slang_modes,
+    slang_spaced_call, slang_spaced_methodop,
 };
 
 // `pub(super)` re-exports.

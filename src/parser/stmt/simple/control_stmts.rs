@@ -518,6 +518,14 @@ fn known_call_is_expression_prefix(input: &str, rest_after_call: &str) -> bool {
 /// Parse a known function call as statement.
 pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, name) = ident(input)?;
+    // Slang `identifier`/`name` override (ADR-0026 §2.3, Slangify's Piersing
+    // fixture): extend the scanned name with a trailing `?`/`!` BEFORE the
+    // known-call lookup below, so a user sub shadowing a known/imported name
+    // with a slang-suffixed name of its own (`sub pass?(|c) {...}`) is not
+    // mistaken for a call to the unsuffixed builtin (`pass`) with the `?`
+    // left dangling for the argument parser to misinterpret.
+    let mut name = name;
+    let rest = crate::parser::stmt::simple::consume_slang_ident_trailing_punct(&mut name, rest);
     if !is_known_call(&name) {
         return Err(PError::expected("known function call"));
     }

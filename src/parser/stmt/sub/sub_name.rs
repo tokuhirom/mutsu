@@ -352,6 +352,16 @@ pub(crate) fn parse_sub_name_inner(input: &str, allow_dispatch: bool) -> PResult
     {
         return Ok(result);
     }
+    // Slang `identifier`/`name` override (ADR-0026 §2.3, Slangify's Piersing
+    // fixture): a sub-declaration name may end in a trailing `?`/`!`
+    // (`sub pass?(|c) {...}`). Not applied to operator-category names
+    // (`infix:<+>` etc.) — Piersing's override has no bearing on those.
+    let mut base = base;
+    let rest = if is_op_category {
+        rest
+    } else {
+        crate::parser::stmt::simple::consume_slang_ident_trailing_punct(&mut base, rest)
+    };
     Ok((rest, base))
 }
 
