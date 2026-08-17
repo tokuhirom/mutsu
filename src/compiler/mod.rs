@@ -123,6 +123,59 @@ mod declaration_plan_tests {
         )));
     }
 
+    /// ADR-0019 G2 (architectural guard): a `token`/`rule` declaration —
+    /// whether at the top level (F7 slice 1) or inside a class body (F7
+    /// slice 2) — never leaves an executable `Stmt::TokenDecl`/`RuleDecl`
+    /// clone in the generic `stmt_pool`, mirroring the sub/class/proto
+    /// guard tests above. The regex body itself stays an opaque payload on
+    /// the typed plan (`CompiledTokenDeclPlan::raw_body`/`ClassBodyOp::TokenRule`'s
+    /// own `raw_body`) — ADR-0009's accepted execution model, not something
+    /// this guard checks.
+    #[test]
+    fn token_rule_declarations_leave_the_generic_statement_pool() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "token top_level { \\d+ }; class A { rule in_class { \\d+ } }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        assert!(
+            code.stmt_pool.iter().all(|stmt| !matches!(
+                stmt,
+                crate::ast::Stmt::TokenDecl { .. } | crate::ast::Stmt::RuleDecl { .. }
+            )),
+            "compiled token/rule declarations must not remain executable generic statements"
+        );
+
+        // Top-level: registers via RegisterDecl(CompiledDeclPlanRef::Token).
+        assert!(!code.token_decl_plans.is_empty());
+        assert!(
+            code.token_decl_plans
+                .iter()
+                .any(|plan| plan.name.as_str() == "top_level")
+        );
+        assert!(code.ops.iter().any(|op| matches!(
+            op,
+            crate::opcode::OpCode::RegisterDecl(idx)
+                if matches!(
+                    code.decl_plans.get(*idx as usize),
+                    Some(crate::opcode::CompiledDeclPlanRef::Token(_))
+                )
+        )));
+
+        // Class body: registers via ClassBodyOp::TokenRule, not Other/chunk.
+        let plan_a = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "A")
+            .expect("class A declaration plan");
+        assert!(plan_a.body_plan.iter().any(|op| matches!(
+            op,
+            crate::opcode::ClassBodyOp::TokenRule { plan }
+                if plan.name.as_str() == "in_class"
+        )));
+    }
+
     /// ADR-0019 C8: a non-trivial proto body compiles its `{*}`-rewritten
     /// dispatch once, at declaration time, instead of leaving the VM to
     /// rewrite and OTF-compile the AST on every call.
