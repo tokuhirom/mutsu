@@ -2361,29 +2361,33 @@ impl Interpreter {
                         .and_then(|v| v.as_int().map(|i| i as usize)),
                 );
             if let (Some(((cls, meth), idx)), Some(handle_id)) = (method_candidate_key, handle_id) {
-                return if self
-                    .registry_mut()
-                    .remove_method_wrap(&cls, &meth, idx, handle_id)
-                {
-                    Ok(Value::TRUE)
-                } else {
-                    Err(RuntimeError::new("Invalid WrapHandle: not wrapped"))
-                };
+                // A second `.restore()` on an already-restored handle is a
+                // no-op that answers `False`, not an error (raku: `$h.restore`
+                // is `True` once, `False` on every later call).
+                return Ok(Value::truth(
+                    self.registry_mut()
+                        .remove_method_wrap(&cls, &meth, idx, handle_id),
+                ));
             }
             let sub_id = attributes
                 .as_map()
                 .get("sub-id")
                 .and_then(|v| v.as_int().map(|i| i as u64));
             if let (Some(sub_id), Some(handle_id)) = (sub_id, handle_id) {
+                let mut removed = false;
                 if let Some(chain) = self.wrap_chains.get_mut(&sub_id) {
+                    let before = chain.len();
                     chain.retain(|(hid, _)| *hid != handle_id);
+                    removed = chain.len() != before;
                     if chain.is_empty() {
                         self.cleanup_wrap_name_entries(sub_id);
                     }
                 }
                 // Invalidate light-call caches so the sub re-resolves (see wrap).
                 self.fn_resolve_gen += 1;
-                return Ok(Value::TRUE);
+                // A second `.restore()` on an already-restored handle is a
+                // no-op that answers `False`, not `True` again (raku).
+                return Ok(Value::truth(removed));
             }
             return Err(RuntimeError::new(
                 "Invalid WrapHandle: missing sub-id or handle-id",
