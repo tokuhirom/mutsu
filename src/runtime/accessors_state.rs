@@ -318,7 +318,7 @@ impl Interpreter {
 
     /// Reverse of `state_key_display`. Used only by the `__mutsu_state_key::*`
     /// env metadata bridge (a closure's free-var state writeback path, see
-    /// `vm_closure_dispatch.rs`), which persists the key as a `Value::Str`
+    /// `vm_closure_dispatch.rs`), which persists the key as a string `Value`
     /// since `Env` is string-keyed.
     pub(crate) fn state_key_from_display(s: &str) -> (Symbol, Option<u64>) {
         if let Some(pos) = s.rfind("#c")
