@@ -50,6 +50,9 @@ impl Interpreter {
                 self.register_proto_token_decl(&name.resolve());
                 Ok(())
             }
+            Some(crate::opcode::CompiledDeclPlanRef::Token(plan_idx)) => {
+                self.exec_register_token_decl_op(code, plan_idx)
+            }
             None => Err(RuntimeError::new("RegisterDecl plan index out of bounds")),
         }
     }

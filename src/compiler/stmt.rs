@@ -3646,8 +3646,8 @@ impl Compiler {
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
-                let idx = self.code.add_stmt(stmt.clone());
-                self.code.emit(OpCode::RegisterToken(idx));
+                let idx = self.code.add_token_decl_plan(stmt);
+                self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::ProtoDecl {
                 name,

@@ -4634,11 +4634,6 @@ impl Interpreter {
                 self.exec_register_decl_op(code, *idx, compiled_fns)?;
                 *ip += 1;
             }
-            OpCode::RegisterToken(idx) => {
-                self.sync_source_line(code, *ip);
-                self.exec_register_token_op(code, *idx)?;
-                *ip += 1;
-            }
             OpCode::UseModule {
                 name_idx,
                 tags_idx,
