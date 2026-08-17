@@ -27,4 +27,26 @@ nok X::Comp::AdHoc.^does(X::Numeric), '.^does is not vacuously true';
 # that was exactly the bug the old splice risked generalising.
 nok X::Comp::AdHoc.^mro.map(*.^name).grep('X::Comp'), 'X::Comp is not an MRO entry (does-composed, not inherited)';
 
+# ADR-0029 Slice 3: the ~44 existing false-superclass rows (X::Syntax::Confused
+# inheriting X::Syntax was the ADR's headline example) are corrected the same
+# way, and ~257 previously-unregistered classes land using the same mechanism.
+
+is X::Syntax::Confused.^mro.map(*.^name).join(' '), 'X::Syntax::Confused Exception Any Mu',
+    'X::Syntax::Confused no longer false-inherits X::Syntax';
+is X::Syntax::Confused.^roles.map(*.^name).join(' '), 'X::Syntax X::Comp',
+    '.^roles is transitive: does X::Syntax, which itself does X::Comp';
+ok X::Syntax::Confused ~~ X::Syntax, 'does the direct role';
+ok X::Syntax::Confused ~~ X::Comp, 'does the transitively-composed role';
+
+# A previously-unregistered class (Slice 3's ~257 additions) constructs and
+# reports the real rakudo ancestry.
+is X::Coerce::Impossible.^mro.map(*.^name).join(' '), 'X::Coerce::Impossible X::Coerce Exception Any Mu',
+    'newly-registered class has its real intermediate ancestor';
+
+# throws-like's X::Comp::Group fallback (src/runtime/test_functions/throws_like.rs)
+# used to check only .mro for an X::Comp ancestor; corrected classes that DO
+# (rather than inherit) X::Comp need the composed-role-aware check too.
+throws-like 'given 42 { when SomeUndeclaredType { 1 }; default { 0 } }',
+    X::Comp::Group, 'X::Undeclared::Symbols (does X::Comp, does not inherit it) still matches X::Comp::Group in throws-like';
+
 done-testing;
