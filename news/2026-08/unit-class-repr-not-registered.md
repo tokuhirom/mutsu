@@ -38,4 +38,4 @@ so moving them earlier is safe.
 - `t/unit-class-repr-paren-trait.t` (new) — same assertion for the paren form
   (`is repr('CStruct')`), the ticket's original repro.
 
-PR [#TBD](https://github.com/tokuhirom/mutsu/pull/TBD).
+PR [#6600](https://github.com/tokuhirom/mutsu/pull/6600).
