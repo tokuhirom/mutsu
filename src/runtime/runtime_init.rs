@@ -1585,8 +1585,15 @@ impl Interpreter {
         );
 
         // Register additional X:: exception classes using a helper closure
-        // to reduce boilerplate.
-        let mut register_x = |name: &str, parent: &str| {
+        // to reduce boilerplate. `parent` is a real superclass and drives
+        // `parents`/`mro`, exactly as before. `does` (ADR-0029) is role
+        // membership, NEVER folded into `parents`/`mro` -- rakudo's `X::`
+        // role vocabulary (X::Comp, X::Syntax, ...) is composed, not
+        // inherited. Recorded here and written into the composed-role
+        // registries below, once `registry` (and its `role_parents`, for
+        // transitive flattening) exists.
+        let mut register_x_does: Vec<(String, Vec<String>)> = Vec::new();
+        let mut register_x = |name: &str, parent: &str, does: &[&str]| {
             let mut mro = vec![name.to_string()];
             // Walk up through existing classes to build full MRO
             let mut cur = parent.to_string();
@@ -1620,167 +1627,177 @@ impl Interpreter {
                     class_level_attrs: HashMap::new(),
                 },
             );
+            if !does.is_empty() {
+                register_x_does.push((
+                    name.to_string(),
+                    does.iter().map(|s| s.to_string()).collect(),
+                ));
+            }
         };
 
         // X::Comp hierarchy (compile-time errors)
-        register_x("X::Comp", "Exception");
-        register_x("X::Comp::Group", "X::Comp");
-        register_x("X::Comp::AdHoc", "X::Comp");
-        register_x("X::Comp::NYI", "X::Comp");
-        register_x("X::Composition::NotComposable", "Exception");
-        register_x("X::Value", "Exception");
-        register_x("X::Value::Dynamic", "X::Value");
+        register_x("X::Comp", "Exception", &[]);
+        register_x("X::Comp::Group", "X::Comp", &[]);
+        // X::Comp::AdHoc's real rakudo superclass is X::AdHoc; it does X::Comp
+        // (ADR-0029) rather than inheriting from it.
+        register_x("X::Comp::AdHoc", "X::AdHoc", &["X::Comp"]);
+        register_x("X::Comp::NYI", "X::Comp", &[]);
+        register_x("X::Composition::NotComposable", "Exception", &[]);
+        register_x("X::Value", "Exception", &[]);
+        register_x("X::Value::Dynamic", "X::Value", &[]);
 
         // X::Syntax hierarchy (syntax errors, subtypes of X::Comp)
-        register_x("X::Syntax", "X::Comp");
-        register_x("X::Syntax::Confused", "X::Syntax");
-        register_x("X::Syntax::Extension::Null", "X::Syntax");
-        register_x("X::Syntax::Missing", "X::Syntax");
-        register_x("X::Syntax::VirtualCall", "X::Syntax");
-        register_x("X::Syntax::NegatedPair", "X::Syntax");
-        register_x("X::Syntax::Malformed", "X::Syntax");
-        register_x("X::Syntax::Variable::Numeric", "X::Syntax");
-        register_x("X::Syntax::Variable::Initializer", "X::Syntax");
-        register_x("X::Syntax::Variable::IndirectDeclaration", "X::Syntax");
-        register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax");
-        register_x("X::Syntax::Number::LiteralType", "X::Syntax");
-        register_x("X::Syntax::Regex::Adverb", "X::Syntax");
-        register_x("X::Backslash::UnrecognizedSequence", "X::Backslash");
-        register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax");
-        register_x("X::Syntax::Regex::NullRegex", "X::Syntax");
-        register_x("X::Syntax::Regex::NonQuantifiable", "X::Syntax");
-        register_x("X::Syntax::Regex::QuantifierValue", "X::Syntax");
-        register_x("X::Syntax::Term::MissingInitializer", "X::Syntax");
-        register_x("X::Syntax::WithoutElse", "X::Syntax");
-        register_x("X::Syntax::UnlessElse", "X::Syntax");
-        register_x("X::Syntax::Reserved", "X::Syntax");
-        register_x("X::Syntax::KeywordAsFunction", "X::Syntax");
-        register_x("X::Syntax::Name::Null", "X::Syntax");
-        register_x("X::Syntax::Comment::Embedded", "X::Syntax");
-        register_x("X::Syntax::Signature", "X::Syntax");
+        register_x("X::Syntax", "X::Comp", &[]);
+        register_x("X::Syntax::Confused", "X::Syntax", &[]);
+        register_x("X::Syntax::Extension::Null", "X::Syntax", &[]);
+        register_x("X::Syntax::Missing", "X::Syntax", &[]);
+        register_x("X::Syntax::VirtualCall", "X::Syntax", &[]);
+        register_x("X::Syntax::NegatedPair", "X::Syntax", &[]);
+        register_x("X::Syntax::Malformed", "X::Syntax", &[]);
+        register_x("X::Syntax::Variable::Numeric", "X::Syntax", &[]);
+        register_x("X::Syntax::Variable::Initializer", "X::Syntax", &[]);
+        register_x("X::Syntax::Variable::IndirectDeclaration", "X::Syntax", &[]);
+        register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax", &[]);
+        register_x("X::Syntax::Number::LiteralType", "X::Syntax", &[]);
+        register_x("X::Syntax::Regex::Adverb", "X::Syntax", &[]);
+        register_x("X::Backslash::UnrecognizedSequence", "X::Backslash", &[]);
+        register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax", &[]);
+        register_x("X::Syntax::Regex::NullRegex", "X::Syntax", &[]);
+        register_x("X::Syntax::Regex::NonQuantifiable", "X::Syntax", &[]);
+        register_x("X::Syntax::Regex::QuantifierValue", "X::Syntax", &[]);
+        register_x("X::Syntax::Term::MissingInitializer", "X::Syntax", &[]);
+        register_x("X::Syntax::WithoutElse", "X::Syntax", &[]);
+        register_x("X::Syntax::UnlessElse", "X::Syntax", &[]);
+        register_x("X::Syntax::Reserved", "X::Syntax", &[]);
+        register_x("X::Syntax::KeywordAsFunction", "X::Syntax", &[]);
+        register_x("X::Syntax::Name::Null", "X::Syntax", &[]);
+        register_x("X::Syntax::Comment::Embedded", "X::Syntax", &[]);
+        register_x("X::Syntax::Signature", "X::Syntax", &[]);
         register_x(
             "X::Syntax::Signature::InvocantMarker",
             "X::Syntax::Signature",
+            &[],
         );
         register_x(
             "X::Syntax::Signature::InvocantNotAllowed",
             "X::Syntax::Signature",
+            &[],
         );
-        register_x("X::Syntax::NoSelf", "X::Syntax");
+        register_x("X::Syntax::NoSelf", "X::Syntax", &[]);
 
         // X::Obsolete (compile-time, subtype of X::Comp)
-        register_x("X::Obsolete", "X::Comp");
+        register_x("X::Obsolete", "X::Comp", &[]);
 
         // X::Undeclared hierarchy
-        register_x("X::Undeclared", "X::Comp");
-        register_x("X::Undeclared::Symbols", "X::Comp");
+        register_x("X::Undeclared", "X::Comp", &[]);
+        register_x("X::Undeclared::Symbols", "X::Comp", &[]);
 
         // An undeclared attribute is a compile-time error (does X::Comp).
-        register_x("X::Attribute::Undeclared", "X::Comp");
+        register_x("X::Attribute::Undeclared", "X::Comp", &[]);
 
         // X::Redeclaration
-        register_x("X::Redeclaration", "X::Comp");
+        register_x("X::Redeclaration", "X::Comp", &[]);
 
         // X::Assignment::RO
-        register_x("X::Assignment::RO", "Exception");
+        register_x("X::Assignment::RO", "Exception", &[]);
 
         // X::Hash::Store::OddNumber — odd number of elements assigned to a hash.
         // Constructible from user code with :found / :last accessors.
-        register_x("X::Hash::Store::OddNumber", "Exception");
+        register_x("X::Hash::Store::OddNumber", "Exception", &[]);
 
         // X::Str::Numeric
-        register_x("X::Str::Numeric", "Exception");
+        register_x("X::Str::Numeric", "Exception", &[]);
 
         // X::Str::Sprintf::Directives::Unsupported — unsupported sprintf directive.
-        register_x("X::Str::Sprintf::Directives::Unsupported", "Exception");
+        register_x("X::Str::Sprintf::Directives::Unsupported", "Exception", &[]);
 
         // X::Str::Match::x — invalid :x argument to .subst / s///
-        register_x("X::Str::Match::x", "Exception");
+        register_x("X::Str::Match::x", "Exception", &[]);
 
         // X::Multi::NoMatch / X::Multi::Ambiguous
-        register_x("X::Multi::NoMatch", "Exception");
-        register_x("X::Multi::Ambiguous", "Exception");
+        register_x("X::Multi::NoMatch", "Exception", &[]);
+        register_x("X::Multi::Ambiguous", "Exception", &[]);
 
         // X::OutOfRange
-        register_x("X::OutOfRange", "Exception");
+        register_x("X::OutOfRange", "Exception", &[]);
 
         // X::Method::NotFound
-        register_x("X::Method::NotFound", "Exception");
+        register_x("X::Method::NotFound", "Exception", &[]);
 
         // X::Immutable
-        register_x("X::Immutable", "Exception");
+        register_x("X::Immutable", "Exception", &[]);
 
         // X::Cannot::Lazy
-        register_x("X::Cannot::Lazy", "Exception");
-        register_x("X::Cannot::Capture", "Exception");
+        register_x("X::Cannot::Lazy", "Exception", &[]);
+        register_x("X::Cannot::Capture", "Exception", &[]);
 
         // X::Match::Bool
-        register_x("X::Match::Bool", "Exception");
+        register_x("X::Match::Bool", "Exception", &[]);
 
         // X::Adverb
-        register_x("X::Adverb", "Exception");
+        register_x("X::Adverb", "Exception", &[]);
 
         // X::ControlFlow::Return
-        register_x("X::ControlFlow::Return", "Exception");
+        register_x("X::ControlFlow::Return", "Exception", &[]);
 
         // X::Bind
-        register_x("X::Bind", "Exception");
-        register_x("X::Bind::NativeType", "X::Bind");
+        register_x("X::Bind", "Exception", &[]);
+        register_x("X::Bind::NativeType", "X::Bind", &[]);
         // Despite the name, `X::Bind::Slice` does not inherit `X::Bind` in
         // rakudo — its only parent is `Exception` (`.^parents(:local)`), and
         // `X::Bind::Slice ~~ X::Bind` is False there.
-        register_x("X::Bind::Slice", "Exception");
+        register_x("X::Bind::Slice", "Exception", &[]);
 
         // X::StubCode
-        register_x("X::StubCode", "Exception");
+        register_x("X::StubCode", "Exception", &[]);
 
         // X::Signature::Placeholder
-        register_x("X::Signature::Placeholder", "Exception");
+        register_x("X::Signature::Placeholder", "Exception", &[]);
 
         // X::Signature::NameClash
-        register_x("X::Signature::NameClash", "X::Comp");
+        register_x("X::Signature::NameClash", "X::Comp", &[]);
 
         // X::SecurityPolicy
-        register_x("X::SecurityPolicy", "Exception");
+        register_x("X::SecurityPolicy", "Exception", &[]);
 
         // X::NotEnoughDimensions
-        register_x("X::NotEnoughDimensions", "Exception");
+        register_x("X::NotEnoughDimensions", "Exception", &[]);
 
         // X::IO::Closed
-        register_x("X::IO::Closed", "Exception");
+        register_x("X::IO::Closed", "Exception", &[]);
 
         // X::IO path-resolution exceptions (IO::Path.resolve/:completely and
         // the ecosystem's child-secure pattern construct these from user code:
         // `X::IO::NotAChild.new: :path(...), :child(...)`).
-        register_x("X::IO::Resolve", "Exception");
-        register_x("X::IO::NotAChild", "Exception");
+        register_x("X::IO::Resolve", "Exception", &[]);
+        register_x("X::IO::NotAChild", "Exception", &[]);
 
         // X::Role subtypes
-        register_x("X::Role::Parametric::NoSuchCandidate", "Exception");
-        register_x("X::Role::Unimplemented::Multi", "Exception");
+        register_x("X::Role::Parametric::NoSuchCandidate", "Exception", &[]);
+        register_x("X::Role::Unimplemented::Multi", "Exception", &[]);
 
         // X::NYI
-        register_x("X::NYI", "Exception");
+        register_x("X::NYI", "Exception", &[]);
 
         // X::Method::Private::Permission
-        register_x("X::Method::Private::Permission", "Exception");
-        register_x("X::Method::Private::Unqualified", "Exception");
-        register_x("X::Routine::Unwrap", "Exception");
-        register_x("X::Str::Trans::InvalidArg", "Exception");
-        register_x("X::Str::Trans::IllegalKey", "Exception");
+        register_x("X::Method::Private::Permission", "Exception", &[]);
+        register_x("X::Method::Private::Unqualified", "Exception", &[]);
+        register_x("X::Routine::Unwrap", "Exception", &[]);
+        register_x("X::Str::Trans::InvalidArg", "Exception", &[]);
+        register_x("X::Str::Trans::IllegalKey", "Exception", &[]);
 
         // X::ParametricConstant
-        register_x("X::ParametricConstant", "Exception");
+        register_x("X::ParametricConstant", "Exception", &[]);
 
         // X::UnitScope::Invalid
-        register_x("X::UnitScope::Invalid", "Exception");
+        register_x("X::UnitScope::Invalid", "Exception", &[]);
 
         // X::Promise / X::Channel exceptions
-        register_x("X::Promise::Vowed", "Exception");
-        register_x("X::Promise::Resolved", "Exception");
-        register_x("X::Promise::CauseOnlyValidOnBroken", "Exception");
-        register_x("X::Channel::SendOnClosed", "Exception");
-        register_x("X::Channel::ReceiveOnClosed", "Exception");
+        register_x("X::Promise::Vowed", "Exception", &[]);
+        register_x("X::Promise::Resolved", "Exception", &[]);
+        register_x("X::Promise::CauseOnlyValidOnBroken", "Exception", &[]);
+        register_x("X::Channel::SendOnClosed", "Exception", &[]);
+        register_x("X::Channel::ReceiveOnClosed", "Exception", &[]);
 
         // ADR-0019 E2b (tenth slice, 2026-08-10): these X::* types are
         // constructed all over the interpreter (either directly via
@@ -1802,49 +1819,31 @@ impl Interpreter {
         // but mutsu already models it as an Instance the same way as every
         // other X::* here) -- both still belong under Exception for mutsu's
         // own CATCH/`.isa` semantics to be internally consistent.
-        register_x("X::Attribute::Required", "Exception");
-        register_x("X::Comp::FailGoal", "Exception");
-        register_x("X::CompUnit::UnsatisfiedDependency", "Exception");
-        register_x("X::ControlFlow", "Exception");
-        register_x("X::Declaration::OurScopeInRole", "Exception");
-        register_x("X::Dynamic::NotFound", "Exception");
-        register_x("X::IO::Unlink", "Exception");
-        register_x("X::IllegalDimensionInShape", "Exception");
-        register_x("X::Inheritance::SelfInherit", "Exception");
-        register_x("X::Inheritance::UnknownParent", "Exception");
-        register_x("X::Mixin::NotComposable", "Exception");
-        register_x("X::Parameter::BadType", "X::Parameter");
-        register_x("X::NoZeroArgMeaning", "Exception");
-        register_x("X::Numeric::CannotConvert", "Exception");
-        register_x("X::Numeric::DivideByZero", "Exception");
-        register_x("X::Numeric::Uninitialized", "Exception");
-        register_x("X::React::Died", "Exception");
-        register_x("X::Role::Composition::Conflict", "Exception");
-        register_x("X::Role::Instantiation", "Exception");
-        register_x("X::Seq::Consumed", "Exception");
-        register_x("X::Str::Sprintf::Directives::Count", "Exception");
-        register_x("X::Syntax::BlockGobbled", "Exception");
-        register_x("X::Syntax::CannotMeta", "Exception");
-        register_x("X::Syntax::Extension::Category", "Exception");
-        register_x("X::Syntax::Extension::TooComplex", "Exception");
-
-        // X::Comp::AdHoc does both X::Comp and X::AdHoc in rakudo (it is the
-        // compile-time wrapper around an ad-hoc die), so `$e ~~ X::AdHoc` must
-        // also be True. register_x only threads a single parent, so splice
-        // X::AdHoc into the MRO here (after the closure's borrow of `classes`
-        // has ended).
-        if let Some(def) = classes.get_mut("X::Comp::AdHoc") {
-            if !def.parents.iter().any(|p| p == "X::AdHoc") {
-                def.parents.push("X::AdHoc".to_string());
-            }
-            let x_adhoc = Symbol::intern("X::AdHoc");
-            if !def.mro.contains(&x_adhoc) {
-                let insert_at = def.mro.len().saturating_sub(1);
-                let mut mro: Vec<Symbol> = def.mro.to_vec();
-                mro.insert(insert_at, x_adhoc);
-                def.mro = mro.into();
-            }
-        }
+        register_x("X::Attribute::Required", "Exception", &[]);
+        register_x("X::Comp::FailGoal", "Exception", &[]);
+        register_x("X::CompUnit::UnsatisfiedDependency", "Exception", &[]);
+        register_x("X::ControlFlow", "Exception", &[]);
+        register_x("X::Declaration::OurScopeInRole", "Exception", &[]);
+        register_x("X::Dynamic::NotFound", "Exception", &[]);
+        register_x("X::IO::Unlink", "Exception", &[]);
+        register_x("X::IllegalDimensionInShape", "Exception", &[]);
+        register_x("X::Inheritance::SelfInherit", "Exception", &[]);
+        register_x("X::Inheritance::UnknownParent", "Exception", &[]);
+        register_x("X::Mixin::NotComposable", "Exception", &[]);
+        register_x("X::Parameter::BadType", "X::Parameter", &[]);
+        register_x("X::NoZeroArgMeaning", "Exception", &[]);
+        register_x("X::Numeric::CannotConvert", "Exception", &[]);
+        register_x("X::Numeric::DivideByZero", "Exception", &[]);
+        register_x("X::Numeric::Uninitialized", "Exception", &[]);
+        register_x("X::React::Died", "Exception", &[]);
+        register_x("X::Role::Composition::Conflict", "Exception", &[]);
+        register_x("X::Role::Instantiation", "Exception", &[]);
+        register_x("X::Seq::Consumed", "Exception", &[]);
+        register_x("X::Str::Sprintf::Directives::Count", "Exception", &[]);
+        register_x("X::Syntax::BlockGobbled", "Exception", &[]);
+        register_x("X::Syntax::CannotMeta", "Exception", &[]);
+        register_x("X::Syntax::Extension::Category", "Exception", &[]);
+        register_x("X::Syntax::Extension::TooComplex", "Exception", &[]);
 
         let mut interpreter = Self {
             user_declared_classes: std::collections::HashSet::new(),
@@ -2034,6 +2033,54 @@ impl Interpreter {
                             deferred_custom_traits: Vec::new(),
                         },
                     );
+                    // ADR-0029: role-shaped `X::` exception "namespaces".
+                    // Measured against real rakudo (2026-08-17), 59% of the
+                    // `X::` classes mutsu raises or tests against compose one
+                    // or more of these 14 marker roles rather than inheriting
+                    // from a same-named class -- `X::Comp`, `X::Syntax`,
+                    // `X::IO`, and `X::OS` are the heavily-used ones (135/69/
+                    // 22/22 classes respectively), the rest are 1-7 each. All
+                    // are empty-bodied here, as they are in rakudo too: mutsu's
+                    // exception machinery supplies the behaviour, these exist
+                    // purely so `.^roles`, `.^does`, and `~~` agree with
+                    // rakudo about which classes compose them. Registering
+                    // them as roles (not classes) also satisfies
+                    // `type_matching.rs`'s `resolve_role_key` gate for
+                    // type-object `~~` (e.g. `X::Comp::FailGoal ~~ X::Comp`).
+                    for role_name in [
+                        "X::Comp",
+                        "X::Syntax",
+                        "X::IO",
+                        "X::OS",
+                        "X::Trait",
+                        "X::Proc::Async",
+                        "X::BadType",
+                        "X::Temporal",
+                        "X::MOP",
+                        "X::Encoding",
+                        "X::Pod",
+                        "X::Wrapper",
+                        "X::RoleApplier",
+                        "X::RoleApplier::Method",
+                    ] {
+                        roles.insert(
+                            role_name.to_string(),
+                            RoleDef {
+                                attributes: Vec::new(),
+                                methods: HashMap::new(),
+                                is_stub_role: false,
+                                is_hidden: false,
+                                is_rw: false,
+                                captured_env: None,
+                                wildcard_handles: Vec::new(),
+                                role_id: 0,
+                                attribute_conflicts: Vec::new(),
+                                own_attribute_names: std::collections::HashSet::new(),
+                                deferred_body: Vec::new(),
+                                deferred_custom_traits: Vec::new(),
+                            },
+                        );
+                    }
                     // CompUnit::Repository role with required stub methods
                     {
                         let stub_body = vec![Stmt::Expr(Expr::Call {
@@ -2144,6 +2191,48 @@ impl Interpreter {
                     }
                     roles
                 };
+                // ADR-0029: role-to-role composition among the 14 `X::` marker
+                // roles above, verified against real rakudo (2026-08-17) --
+                // exactly two edges exist; the other twelve compose nothing.
+                registry
+                    .role_parents
+                    .insert("X::Syntax".to_string(), vec!["X::Comp".to_string()]);
+                registry
+                    .role_parents
+                    .insert("X::IO".to_string(), vec!["X::OS".to_string()]);
+                // ADR-0029: write `register_x`'s collected `does` lists into the
+                // composed-role registries that `.^roles`, `~~`, qualified
+                // `self.Role::meth` dispatch, and method-candidate collection
+                // already read (`class_composed_roles` /
+                // `class_direct_composed_roles` / `class_does_only_roles`).
+                // `class_composed_roles` is documented as the FLATTENED set, so
+                // walk `role_parents` here to pull in roles reached
+                // transitively through a composed role's own `does` (a class
+                // doing `X::Syntax` also does `X::Comp`).
+                for (class_name, does) in &register_x_does {
+                    let mut flattened: Vec<String> = does.clone();
+                    let mut seen: HashSet<String> = flattened.iter().cloned().collect();
+                    let mut i = 0;
+                    while i < flattened.len() {
+                        if let Some(parents) = registry.role_parents.get(&flattened[i]).cloned() {
+                            for p in parents {
+                                if seen.insert(p.clone()) {
+                                    flattened.push(p);
+                                }
+                            }
+                        }
+                        i += 1;
+                    }
+                    registry
+                        .class_composed_roles
+                        .insert(class_name.clone(), flattened);
+                    registry
+                        .class_direct_composed_roles
+                        .insert(class_name.clone(), does.clone());
+                    registry
+                        .class_does_only_roles
+                        .insert(class_name.clone(), does.clone());
+                }
                 let class_names: Vec<String> = registry.classes.keys().cloned().collect();
                 for class_name in class_names {
                     registry.sync_accessor_entries(crate::symbol::Symbol::intern(&class_name));
