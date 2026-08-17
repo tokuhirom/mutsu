@@ -67,6 +67,18 @@ impl Interpreter {
             ValueView::Instance { .. } | ValueView::Package(_)
         ) && self.native_lever_a_user_override(&target, method)
         {
+            // ADR-0019 F6: VM-level direct-dispatch path first (see
+            // `try_dispatch_compiled_method_direct_as`'s doc comment). `target`
+            // is a native value here (no attribute cell), so there is nothing
+            // for the original code's discarded `updated` map to propagate —
+            // matches the plain `Value` this returns.
+            let class_sym =
+                crate::symbol::Symbol::intern(crate::runtime::utils::value_type_name(&target));
+            if let Some(result) =
+                self.try_dispatch_compiled_method_direct_as(class_sym, &target, method, &args)
+            {
+                return result;
+            }
             let (result, _) = self.run_instance_method_at(
                 "generalcalldispatch",
                 crate::runtime::utils::value_type_name(&target),

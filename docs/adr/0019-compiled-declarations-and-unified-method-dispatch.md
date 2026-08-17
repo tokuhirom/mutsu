@@ -2580,6 +2580,43 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   notably exercises real `.new` construction across every bundled library, e.g. Cro/DBIish/
   JSON::Tiny). **This closes the new-dispatch family.** Remaining open families:
   general-call-dispatch, qualified-dispatch's shared helper.
+
+  **Progress (general-call-dispatch family, partial — 1 of 3 named sites, #TBD).** Migrated the
+  native-lever-A user-override branch at the very top of `call_method_with_values`
+  (`methods_call_dispatch.rs:~65`) onto `try_dispatch_compiled_method_direct_as`, the same explicit-
+  class-name variant the instance-ops value-type dispatch site used: `target` here is a plain native
+  value (Array/Str/Range/...), not `Instance`/`Package`, so the dispatch class comes from
+  `value_type_name(&target)` rather than `target.view()`. No attrs-cell propagation concern (native
+  values carry no attribute cell; the original code already discarded the carrier's `updated` map).
+  Verified with the full local `t/` suite (3191 files, all green), `t/augment-native-lever-a-methods.t`
+  plus an `rust-gdb` breakpoint on the fallback call confirming it never fires for that file, `cargo
+  build`/`clippy -- -D warnings`/`fmt` clean, the 314-file whitelisted
+  `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — same 7 non-whitelisted failures before/after),
+  and `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged).
+
+  **The other two general-call-dispatch sites are deliberately deferred, not attempted:**
+  - The `^metamethod` dispatch branch (`method ^foo(Mu) {...}`, `~line 584`) passes `invocant: None`
+    to `run_instance_method_at` even though `target` is Instance/Package — the VM caller already
+    prepends the type object as an explicit positional arg instead of binding it as `self`, per this
+    site's own comment. `try_dispatch_compiled_method_direct` always threads `target` as the bound
+    invocant into `dispatch_compiled_method`, which is a different calling convention (self-binding
+    vs. a plain leading positional) that could shift a compiled method's own positional-slot
+    accounting. This shape has **zero coverage in the local `t/` corpus** (`grep -rl 'method \^'
+    t/*.t` finds nothing) and only one roast file (`S14-traits/routines.t`), too thin a signal to
+    trust a behavior-changing swap here — left on `run_instance_method_at` pending either a wider
+    repro corpus or a helper variant that accepts an explicit invocant-vs-args split.
+  - The mixin fallback (`ValueView::Mixin(inner, mixins)` class-method branch, `~line 3960`) passes
+    `target.clone()` (the whole mixin wrapper) as invocant so a nested `self.foo` inside the method
+    re-dispatches through the mixin's role overrides, but separately extracts `inner`'s own
+    `AttrMap` and, after the call, manually commits the carrier's returned `updated` map back onto
+    `inner`'s attribute cell (`attributes.commit_attrs(updated)`) — because the invocant
+    (`target`, a `Mixin`) has no attribute cell of its own for `dispatch_compiled_method`'s automatic
+    commit path to find. `try_dispatch_compiled_method_direct`/`_as` only returns the plain `Value`
+    result, with no equivalent commit target when the invocant and the attribute-owning value
+    differ. Using it here would silently drop attribute mutations made by a class method invoked
+    through a mixin wrapper — a real correctness regression, not a missed optimization. Needs a new
+    helper shape (or this site's own bespoke wiring) that accepts an explicit attrs-cell to commit
+    through, separate from the dispatch invocant; left on `run_instance_method_at` until that exists.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
