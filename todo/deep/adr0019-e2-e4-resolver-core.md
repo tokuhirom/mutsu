@@ -1,5 +1,12 @@
 # ADR-0019 E2/E3/E4 design: native handler rows, the one resolver, and the resolved-call cache
 
+**Status: E3 and E4 are closed; E2 alone remains open**, as a non-gating cleanup (see the ADR's
+G4 closure note: "E2's exact-handler-ID catalog ... open cleanup, no longer gating dispatch
+correctness"). E2b coverage is driven to ~99% with a structural fallback in place, so the
+`native_call_unmodeled` counter and the row-completeness work below is the only live remnant of
+this doc; treat the E3/E4 sections as the ADR's linked closed-box detail record, and the "no code
+has landed for these boxes yet" line below as stale for E3/E4 specifically.
+
 Design pass for Phase E boxes E2 (exact handler IDs), E3 (generation-keyed resolved-call cache),
 and E4 (one MRO walk for native + user candidates). These three are one mechanism seen from
 three sides — the rows are what the resolver reads, the cache is where its result lives — so

@@ -2,7 +2,7 @@
 
 Follow-up to the E9-pre campaign (same day): the two probes run after the campaign PR
 confirmed a concrete replacement for the falsified part of E9's design decision 2, and the
-re-draw is now written into `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`
+re-draw is now written into `news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`
 ("E9 design decision 2 — REDRAWN") with the ADR's E9 checkbox carrying the progress note.
 
 The model: the deferral sequence is a FLAT expansion — concat over MRO classes of, per class,

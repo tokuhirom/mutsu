@@ -29,7 +29,7 @@ failed once and passed 5/5 on immediate re-runs — unrelated to this change).
 
 With all four E5 measurement sub-slices done, E5b (the `CallMethod`
 probe-section cutover to the E4 resolver decision) is next. Full detail:
-`todo/deep/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
+`news/2026-08/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
 call_method_all_with_fallback (E5 step 4)") and
 `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` (E5
 bullet).

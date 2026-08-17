@@ -537,11 +537,11 @@ for this phase were `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1, retired
 its one live spin-off, mixin composition order nondeterminism, was tracked separately as
 `todo/tickets/mixin-role-order-not-tracked.md` and is now fixed, see
 `news/2026-08/mixin-role-application-order-tracked.md`),
-`todo/deep/adr0019-e2-e4-resolver-core.md` (E2/E3/E4),
-`todo/deep/adr0019-e5-e7-entry-routing.md` (E5/E6/E7), and
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11) — consult the ones that
-still exist for full slice-by-slice history; the checklist below keeps only the architectural
-outcome.
+`todo/deep/adr0019-e2-e4-resolver-core.md` (E2/E3/E4, still open for E2's residual cleanup),
+`news/2026-08/adr0019-e5-e7-entry-routing.md` (E5/E6/E7, archived once closed), and
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11, archived once
+closed) — consult these for full slice-by-slice history; the checklist below keeps only the
+architectural outcome.
 
 - [x] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
   type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
@@ -752,7 +752,7 @@ outcome.
   traversed the registered class hierarchy, even though ordinary method *invocation* on a mixin
   worked correctly throughout — suggesting mixin receivers were systematically under-tested
   against introspection call paths before this box. **All of E7 (eight sub-slices) is closed.**
-  Full per-step detail in `todo/deep/adr0019-e5-e7-entry-routing.md`.
+  Full per-step detail in `news/2026-08/adr0019-e5-e7-entry-routing.md`.
 - [x] **E8 — Model multi/proto/submethod ordering in the candidate sequence.** Remove parallel
   multi and submethod resolver entry points without changing tie-breaking or role conflicts.
   Unifying the method-vs-sub ranking ladders is explicitly out of scope.
@@ -814,7 +814,7 @@ outcome.
   desync-prone parallel stacks into one `SamewithContext` stack).
   **All of E9 (E9-pre, E9a, E9b, E9c) is closed** (five PRs merged 2026-08-13: #6361/#6363/#6369/
   #6372/#6375). Full scenario tables and slice detail in
-  `todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`.
+  `news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`.
 - [x] **E10 — Move wrap/unwrap mutation into canonical entries.** Bump the generation and remove
   wrap-specific cache-clearing paths.
   **Landed 2026-08-13.** `Registry::method_wrap_chains` replaces the interpreter-level map; every

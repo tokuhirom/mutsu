@@ -61,7 +61,7 @@ this same latent role-coverage gap.
 ## Why this was found now
 
 ADR-0019 Phase E box E8a (`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`,
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`) added `Interpreter::resolve_sequence`
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`) added `Interpreter::resolve_sequence`
 -based shadow-checking of the `nextsame`/`callsame` deferral list
 (`Interpreter::shadow_check_deferral_sequence`, `src/runtime/resolution_sequence.rs`).
 `resolve_sequence` builds its candidate universe via `Registry::user_method_overloads` (the
@@ -70,7 +70,7 @@ own raw candidates. A `MUTSU_VM_STATS=1` sweep of `t/` (2026-08-12) found every 
 shadow mismatch traced to this one root cause (`real_len` one candidate ahead of `shadow_len`,
 the missing candidate always owned by an un-punned role reachable in the receiver's MRO) —
 see the E8a landing note in the ADR and in
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` for the exact file list and counts.
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md` for the exact file list and counts.
 
 ## Why this is not fixed inside E8a
 
@@ -82,7 +82,7 @@ is not a "shadow-only, zero-real-behavior-change" edit: `get_method_overloads` i
 `resolution_private_method.rs` sites). Populating previously-empty role entries could change a
 real dispatch OUTCOME for some MRO shape not covered by today's tests (most likely a genuine
 bugfix, but an unverified one), which is out of scope for a box whose own definition
-(`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`, E8a slice) is limited to adding
+(`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`, E8a slice) is limited to adding
 sequence structure and shadow-comparing it — not changing what any real call resolves to. E8a
 therefore left this as a **documented, accepted shadow-check divergence** (mirroring E4a's own
 accepted-divergence bucket for the winner probe) rather than fixing it inline.

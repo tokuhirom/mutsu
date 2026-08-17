@@ -1,5 +1,12 @@
 # ADR-0019 E8/E9/E10/E11 design: multi ordering, deferral cursors, wrap generations, arity retirement
 
+**Status: E8, E9, E10, and E11 are all closed** (see their own `[x]` entries in
+`docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`, which cites this file for
+"full scenario tables and slice detail"). Archived here from `todo/deep/` now that the box is
+fully landed; kept as the ADR's linked detail record, not as an open finding -- the later
+sections' "slice plan"/"not yet done" language describes work that has since landed; do not
+treat it as a live plan.
+
 Design pass for Phase E boxes E8 (multi/proto/submethod ordering in the candidate sequence),
 E9 (resolver cursors for `samewith`/`nextsame`/`callsame`/`nextwith`), E10 (wrap/unwrap into
 canonical entries + generation), and E11 (retire arity-specific lookup entry points). Depends

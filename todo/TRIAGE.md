@@ -116,9 +116,15 @@ E3/E10/E11 remain open.
 
 | Ticket | Axis | Effort | Why here |
 |---|---|---|---|
-| [adr0019-e8-e11-candidate-sequence-semantics](deep/adr0019-e8-e11-candidate-sequence-semantics.md) | correctness §6 | XL | The live front: E8 closed, E9-pre done, E9a partially landed, E9b design in progress today (2026-08-13). E10 (wraps under the registry generation, killing the global `has_any_wrap_chains` prefilter — a measurable perf win) and E11 (arity-probe retirement) not started. |
-| [adr0019-e5-e7-entry-routing](deep/adr0019-e5-e7-entry-routing.md) | correctness §6 | XL | All four E5 measurement slices landed; E5b (`CallMethod` cutover) is mid-flight and just found the native-row candidate does NOT reliably predict the real cascade's outcome (~2.4% mismatch) — a genuine blocker finding that rules out a naive "resolver decides, cascade never runs" cutover shape. |
-| [adr0019-e2-e4-resolver-core](deep/adr0019-e2-e4-resolver-core.md) | perf §4 | XL | E4 (one resolver, native rows folded in) is closed; E2b coverage driven ~99% (37904→~400 unmodeled hits) and no longer gates anything (structural fallback replaces the literal-zero gate). Open: E1 TypeId-authoritative cutover, E3 sequence cache (now unblocked). |
+**STALE as of 2026-08-17: ADR-0019 is now Accepted/Implemented (all G1-G4 gates closed, E1-E11
+and F3-F7 all `[x]`).** E8-E11 and E5-E7 are done and their design docs archived to
+`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md` and
+`news/2026-08/adr0019-e5-e7-entry-routing.md` respectively — not P1 work anymore. Only E2's
+residual, non-gating catalog cleanup remains open:
+
+| Ticket | Axis | Effort | Why here |
+|---|---|---|---|
+| [adr0019-e2-e4-resolver-core](deep/adr0019-e2-e4-resolver-core.md) | perf §4 | XL | E3/E4 closed; only E2 (exact handler-ID catalog) remains, and it no longer gates anything (structural fallback replaces the literal-zero coverage gate) — demote out of P1 on next full regen. |
 
 **ADR-0019 E8/E9 raku-divergence byproducts** — real, raku-confirmed bugs
 the verification campaign surfaced; several already root-caused with a

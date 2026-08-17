@@ -33,6 +33,6 @@ methodology exists to catch before a large cutover PR, not after.
 
 Full detail, mismatch examples, and the open next question (whether
 `CallMethod`'s existing `skip_native` gate already makes this moot for this
-one entry) are in `todo/deep/adr0019-e5-e7-entry-routing.md` §"E5b step 1"
+one entry) are in `news/2026-08/adr0019-e5-e7-entry-routing.md` §"E5b step 1"
 and `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md`
 (E5 bullet).

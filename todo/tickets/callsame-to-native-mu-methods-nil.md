@@ -82,6 +82,6 @@ could be pushed there too. But:
    reachable without step 1-2.
 
 Alternatively: re-verify at the ADR-0019 E9 cursor-design boundary
-(`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md`) if that lands first — its
-stated goal is "all four fallbacks [become] ordinary sequence tail entries", which would
-plausibly subsume this gap by construction.
+(`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md`, now closed and landed — the
+cursor rewrite itself stayed out of scope; re-check whether this gap survived the actual E9
+landing before assuming it's still open).

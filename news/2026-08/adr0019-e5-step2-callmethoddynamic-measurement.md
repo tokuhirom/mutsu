@@ -24,7 +24,7 @@ remaining E5 measurement entries (hyper non-mut paths,
 `call_method_all_with_fallback`) and all cutover sub-slices (E5b/E5c/E5d) that
 actually route dispatch through the resolver are still to do. Full taxonomy
 table and verification detail:
-`todo/deep/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
+`news/2026-08/adr0019-e5-e7-entry-routing.md` (§"Measurement slice results —
 CallMethodDynamic (E5 step 2)") and
 `docs/adr/0019-compiled-declarations-and-unified-method-dispatch.md` (E5
 bullet).
