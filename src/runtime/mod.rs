@@ -1511,6 +1511,28 @@ pub struct Interpreter {
     import_scope_stack: Vec<ImportScopeSnapshot>,
     pub(crate) strict_mode: bool,
     pub(crate) fatal_mode: bool,
+    /// True only on the throwaway nested `Interpreter` `eval-lives-ok`/
+    /// `eval-dies-ok` construct to run their code string (`test_fn_eval_lives_ok`/
+    /// `test_fn_eval_dies_ok` in `runtime/test_functions/eval_exception.rs`).
+    /// Real raku's own `Test.rakumod` implements both via a helper (`sub
+    /// eval_exception($code) { try { EVAL($code) }; $! }`) that calls `EVAL`
+    /// with NO explicit `context =>` argument -- unlike `throws-like`, which
+    /// explicitly passes `context => $caller-context` (the actual calling
+    /// program's lexical scope). An `EVAL` with no context defaults to the
+    /// lexical scope where the `EVAL` keyword is textually written, which for
+    /// `eval_exception` is Test.rakumod's own module scope, not the calling
+    /// program's -- so a `class Foo {}` inside `eval-lives-ok`'s string
+    /// installs under a package distinct from the caller's, and does NOT
+    /// conflict with a same-named class the calling program already declared
+    /// (verified against real raku: `class A {}; eval-lives-ok 'class A {}'`
+    /// lives). `throws-like`'s explicit caller context is why its EVAL'd
+    /// string DOES conflict with an outer same-named class (also verified).
+    /// mutsu provides `Test` natively (no real Test.rakumod compunit to
+    /// inherit a distinct package from), so this flag stands in for that:
+    /// it gates OFF `check_eval_class_redeclarations`'s cross-boundary
+    /// `has_class` check (the same-EVAL-string duplicate-declaration check
+    /// is unaffected) for the nested interpreter these two functions create.
+    pub(crate) suppress_cross_eval_class_redeclaration_check: bool,
     /// Persistent store for `our`-scoped variables.  Values are saved here
     /// by `SetGlobal` so they survive block-scope restoration (which only
     /// preserves env keys that existed before the block).

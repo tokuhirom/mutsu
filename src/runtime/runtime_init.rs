@@ -2190,6 +2190,7 @@ impl Interpreter {
             import_scope_stack: Vec::new(),
             strict_mode: false,
             fatal_mode: false,
+            suppress_cross_eval_class_redeclaration_check: false,
             our_vars: HashMap::new(),
             package_lexicals: HashMap::new(),
             class_body_static_names: HashMap::new(),

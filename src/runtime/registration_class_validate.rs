@@ -19,6 +19,7 @@ fn short_of(s: &str) -> &str {
 pub(super) struct ClassRegSnapshot {
     prev_class: Option<ClassDef>,
     prev_hidden: bool,
+    prev_lexical: bool,
     prev_hidden_defer: Option<rustc_hash::FxHashSet<String>>,
     prev_composed_roles: Option<Vec<String>>,
     prev_role_param_bindings: Option<rustc_hash::FxHashMap<String, Value>>,
@@ -37,6 +38,7 @@ impl ClassRegSnapshot {
         Self {
             prev_class: reg.classes.get(name).cloned(),
             prev_hidden: reg.hidden_classes.contains(name),
+            prev_lexical: reg.lexical_classes.contains(name),
             prev_hidden_defer: reg.hidden_defer_parents.get(name).cloned(),
             prev_composed_roles: reg.class_composed_roles.get(name).cloned(),
             prev_role_param_bindings: reg.class_role_param_bindings.get(name).cloned(),
@@ -57,6 +59,11 @@ impl ClassRegSnapshot {
             reg.hidden_classes.insert(name.to_string());
         } else {
             reg.hidden_classes.remove(name);
+        }
+        if self.prev_lexical {
+            reg.lexical_classes.insert(name.to_string());
+        } else {
+            reg.lexical_classes.remove(name);
         }
         if let Some(hidden) = self.prev_hidden_defer.clone() {
             reg.hidden_defer_parents.insert(name.to_string(), hidden);

@@ -143,6 +143,24 @@ pub(crate) struct Registry {
     pub(crate) cpointer_classes: HashSet<String>,
     /// Classes marked `is hidden` (excluded from `.^mro` etc.).
     pub(crate) hidden_classes: HashSet<String>,
+    /// Classes registered from a `my class`/`my role` declaration, keyed by
+    /// the same registry key as [`classes`](Self::classes) (their storage
+    /// name, which is normally the bare/qualified name but may be mangled —
+    /// see `exec_register_class_op`'s `storage_name` comment). A lexical
+    /// declaration is only visible in its own enclosing lexical scope and
+    /// never installs into the surrounding package's stash, so a query that
+    /// cares about *package-scope* visibility (e.g. `check_eval_class_
+    /// redeclarations`'s cross-`EVAL` redeclaration check) must exclude a
+    /// registry entry that is only here because a `my`-scoped declaration
+    /// executed earlier in the same process and — since mutsu has no
+    /// scope-exit cleanup for the shared `classes` map — is still sitting
+    /// under its bare key even though that lexical scope has long since
+    /// exited. Without this set, `Foo` from `{ my class Foo {} }` looks
+    /// indistinguishable from a real top-level `class Foo {}` to any later
+    /// bare-name `has_class` query, producing a false-positive redeclaration
+    /// error for an unrelated `EVAL q[class Foo {}]` (verified against real
+    /// `raku`, which allows it — see `t/eval-class-redeclaration-cross-boundary.t`).
+    pub(crate) lexical_classes: HashSet<String>,
     /// Forward-declared class stubs (`class Foo { ... }` declared later).
     pub(crate) class_stubs: HashSet<String>,
     /// Forward-declared package stubs.

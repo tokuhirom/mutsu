@@ -31,10 +31,16 @@ plan 6;
 }
 
 # Same-named class redeclared via EVAL (registry re-registration) is not
-# served a stale plan from the earlier class of the same name.
+# served a stale plan from the earlier class of the same name. Each EVAL
+# declares its `D` as `my class` -- a plain (package-scope) `class D {}` in
+# the second EVAL would be a genuine X::Redeclaration against the first
+# EVAL's `D` (verified against real raku: two sibling EVALs each declaring a
+# non-lexical class of the same name both install into the shared GLOBAL
+# package and conflict), so `my class` is what keeps each EVAL's `D` its own
+# independent, non-conflicting declaration.
 {
-    my $first = EVAL 'class D { has $.a }; D.new(a => 5).a';
-    my $second = EVAL 'class D { has $.a; has $.b = 7 }; my $d = D.new(a => 1); $d.a + $d.b';
+    my $first = EVAL 'my class D { has $.a }; D.new(a => 5).a';
+    my $second = EVAL 'my class D { has $.a; has $.b = 7 }; my $d = D.new(a => 1); $d.a + $d.b';
     is $first + $second, 13, "redeclared same-named class constructs with its own shape";
 }
 

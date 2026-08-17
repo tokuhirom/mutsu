@@ -7,7 +7,7 @@ plan 4;
 class Foo { };
 throws-like 'Mu.new(1)', X::Constructor::Positional, type => Mu,
     'Mu.new(1) throws X::Constructor::Positional';
-throws-like 'class Foo { }; Foo.new(1, 2, 3)', X::Constructor::Positional, type => Foo,
+throws-like 'Foo.new(1, 2, 3)', X::Constructor::Positional, type => Foo,
     'Foo.new(positionals) throws X::Constructor::Positional';
 
 # Valid named construction and positional-accepting built-ins are unaffected.
