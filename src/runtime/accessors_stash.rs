@@ -308,27 +308,28 @@ impl Interpreter {
         // PROCESS:: pseudo-package: exposes process-level dynamic variables
         // like $*PROGRAM, $*PID, %*ENV, @*ARGS, etc.
         // PROCESS::<$PROGRAM> looks up key "$PROGRAM" in the stash.
+        //
+        // Dynamic vars are visible across the whole caller chain (that's what
+        // makes them dynamic), not just the CURRENT frame's own `self.env` --
+        // a `PROCESS::<$X> = ...` set in an outer frame must still resolve
+        // from a callee (e.g. Log::Timeline's `PROCESS::<$LOG-TIMELINE-OUTPUT>`,
+        // set at the mainline and read from deep inside its logging subs). Reuse
+        // `dynamic_pseudo_stash_entries` (the same caller-chain walk backing
+        // `DYNAMIC::`) instead of only scanning `self.env`, which silently
+        // dropped every outer-frame dynamic once called from a sub.
         if package_name == "PROCESS" {
             let mut symbols: HashMap<String, Value> = HashMap::new();
-            for (key, val) in self.env.iter() {
-                let key_s = key.resolve();
-                // Dynamic variables stored as "*NAME" map to "$NAME" in the stash
-                if let Some(name) = key_s.strip_prefix('*')
-                    && !name.contains("::")
-                {
-                    symbols.insert(format!("${name}"), val.clone());
-                }
-                // Hash dynamic variables stored as "%*NAME" map to "%NAME" in the stash
-                if let Some(name) = key_s.strip_prefix("%*")
-                    && !name.contains("::")
-                {
-                    symbols.insert(format!("%{name}"), val.clone());
-                }
-                // Array dynamic variables stored as "@*NAME" map to "@NAME" in the stash
-                if let Some(name) = key_s.strip_prefix("@*")
-                    && !name.contains("::")
-                {
-                    symbols.insert(format!("@{name}"), val.clone());
+            for (key, val) in self.dynamic_pseudo_stash_entries() {
+                // `dynamic_pseudo_stash_entries` spells entries with the `*`
+                // twigil (`$*NAME`/`@*NAME`/`%*NAME`); PROCESS::'s stash keys
+                // drop it (`$NAME`/`@NAME`/`%NAME`), since the twigil is
+                // implicit in the PROCESS:: package itself.
+                if let Some(name) = key.strip_prefix("$*") {
+                    symbols.insert(format!("${name}"), val);
+                } else if let Some(name) = key.strip_prefix("@*") {
+                    symbols.insert(format!("@{name}"), val);
+                } else if let Some(name) = key.strip_prefix("%*") {
+                    symbols.insert(format!("%{name}"), val);
                 }
             }
             return Self::make_stash_instance(package, symbols);
