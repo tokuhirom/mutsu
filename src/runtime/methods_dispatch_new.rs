@@ -352,7 +352,7 @@ impl Interpreter {
         // being re-collected on every bless.
         let plan = self.native_ctor_plan(class_name);
         let cn_resolved = class_name.as_str();
-        let mut attributes = AttrMap::new();
+        let mut attributes = AttrMap::with_capacity(plan.class_attrs.len());
         let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
             Vec::new();
         for (attr, &attr_sym) in plan.class_attrs.iter().zip(plan.attr_syms.iter()) {
@@ -752,26 +752,28 @@ impl Interpreter {
     /// `Any` when untyped). Unlike `bless`, this does not evaluate
     /// `has $.x = EXPR` default expressions.
     fn create_default_attr_slots(&mut self, class_name: &str) -> AttrMap {
-        let mut attributes = AttrMap::new();
-        if self.registry().classes.contains_key(class_name) {
-            for attr in self.collect_class_attributes(class_name) {
-                let attr_name = attr.name;
-                let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
-                let val = match type_constraint.as_deref() {
-                    Some(
-                        "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
-                        | "uint32" | "uint64" | "byte" | "atomicint",
-                    ) => Value::int(0),
-                    Some("num" | "num32" | "num64") => Value::num(0.0),
-                    Some("str") => Value::str("".to_string()),
-                    Some(tc) => {
-                        let nominal = self.nominal_type_object_name_for_constraint(tc);
-                        Value::package(crate::symbol::Symbol::intern(&nominal))
-                    }
-                    None => Value::package(crate::symbol::Symbol::intern("Any")),
-                };
-                attributes.insert(attr_name, val);
-            }
+        if !self.registry().classes.contains_key(class_name) {
+            return AttrMap::new();
+        }
+        let class_attrs = self.collect_class_attributes(class_name);
+        let mut attributes = AttrMap::with_capacity(class_attrs.len());
+        for attr in class_attrs {
+            let attr_name = attr.name;
+            let type_constraint = self.get_attr_type_constraint(class_name, &attr_name);
+            let val = match type_constraint.as_deref() {
+                Some(
+                    "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                    | "uint32" | "uint64" | "byte" | "atomicint",
+                ) => Value::int(0),
+                Some("num" | "num32" | "num64") => Value::num(0.0),
+                Some("str") => Value::str("".to_string()),
+                Some(tc) => {
+                    let nominal = self.nominal_type_object_name_for_constraint(tc);
+                    Value::package(crate::symbol::Symbol::intern(&nominal))
+                }
+                None => Value::package(crate::symbol::Symbol::intern("Any")),
+            };
+            attributes.insert(attr_name, val);
         }
         attributes
     }

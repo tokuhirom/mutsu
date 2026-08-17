@@ -1961,10 +1961,10 @@ impl Interpreter {
         // interpolation).
         if !name.starts_with('@') && !name.starts_with('%') && !name.starts_with('&') {
             if is_constant {
-                self.any_constant_var_marker_set = true;
+                self.constant_var_names_seen.insert(name.to_string());
                 self.env_mut()
                     .insert(format!("__mutsu_constant_var::{name}"), Value::TRUE);
-            } else if is_vardecl && !is_bind && self.any_constant_var_marker_set {
+            } else if is_vardecl && !is_bind && self.constant_var_names_seen.contains(name) {
                 self.env_mut()
                     .remove(&format!("__mutsu_constant_var::{name}"));
             }

@@ -49,7 +49,7 @@ impl Interpreter {
             Default::default()
         };
 
-        let mut attrs = AttrMap::new();
+        let mut attrs = AttrMap::with_capacity(class_attrs.len());
         for arg in args {
             if let ValueView::Pair(key, val) = arg.view()
                 && !build_owned_attrs.contains(key.as_str())
