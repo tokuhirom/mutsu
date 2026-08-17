@@ -2475,6 +2475,26 @@ impl Interpreter {
                 {
                     return Ok(field);
                 }
+                // A bare type object's own instance-attribute accessor is
+                // meaningless (there is no instance to read from), so
+                // `should_bypass_native_fastpath`'s Package branch never
+                // routes here through the accessor and the call falls all
+                // the way to "no such method" instead. raku instead resolves
+                // to the real accessor and lets ITS body raise this error
+                // when it tries to read attribute storage that does not
+                // exist — reproduce that outcome directly for any public
+                // accessor name, generalizing the `.name`-only special case
+                // above (which needs its own arm since `.name` also has a
+                // type-name-introspection meaning).
+                if let ValueView::Package(name) = target.view()
+                    && args.is_empty()
+                    && self.has_public_accessor(&name.resolve(), method)
+                {
+                    return Err(RuntimeError::new(format!(
+                        "Cannot look up attributes in a {} type object. Did you forget a '.new'?",
+                        name.resolve()
+                    )));
+                }
                 Err(make_method_not_found_error(method, &type_name, false))
             }
         }
