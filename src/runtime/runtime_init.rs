@@ -1477,14 +1477,13 @@ impl Interpreter {
         classes.insert(
             "X::Parameter::InvalidConcreteness".to_string(),
             ClassDef {
-                parents: vec!["X::Parameter".to_string()],
+                // Despite the name, this does NOT inherit `X::Parameter` in
+                // rakudo (`.^parents(:local)` is `Exception` directly;
+                // `X::Parameter` is a bare package, not a class -- ADR-0029).
+                parents: vec!["Exception".to_string()],
                 attributes: Vec::new(),
                 native_methods: HashSet::new(),
-                mro: sym_mro(&[
-                    "X::Parameter::InvalidConcreteness",
-                    "X::Parameter",
-                    "Exception",
-                ]),
+                mro: sym_mro(&["X::Parameter::InvalidConcreteness", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1541,10 +1540,12 @@ impl Interpreter {
         classes.insert(
             "X::Numeric::Real".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                // Real superclass is `X::Numeric::CannotConvert`, not
+                // `Exception` directly (ADR-0029, verified against raku).
+                parents: vec!["X::Numeric::CannotConvert".to_string()],
                 attributes: Vec::new(),
                 native_methods: HashSet::new(),
-                mro: sym_mro(&["X::Numeric::Real", "Exception"]),
+                mro: sym_mro(&["X::Numeric::Real", "X::Numeric::CannotConvert", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1556,10 +1557,14 @@ impl Interpreter {
         classes.insert(
             "X::TypeCheck::Return".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                // Real superclass is `X::TypeCheck` (ADR-0029, verified
+                // against raku) -- unlike `X::TypeCheck::Argument` /
+                // `::Assignment` / `::Binding` above, this one was missing
+                // the intermediate ancestor.
+                parents: vec!["X::TypeCheck".to_string()],
                 attributes: Vec::new(),
                 native_methods: HashSet::new(),
-                mro: sym_mro(&["X::TypeCheck::Return", "Exception"]),
+                mro: sym_mro(&["X::TypeCheck::Return", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1571,10 +1576,13 @@ impl Interpreter {
         classes.insert(
             "X::Coerce::Impossible".to_string(),
             ClassDef {
-                parents: vec!["Exception".to_string()],
+                // Real superclass is `X::Coerce` (ADR-0029, verified against
+                // raku; `X::Coerce` itself is registered below via
+                // `register_x`).
+                parents: vec!["X::Coerce".to_string()],
                 attributes: Vec::new(),
                 native_methods: HashSet::new(),
-                mro: sym_mro(&["X::Coerce::Impossible", "Exception"]),
+                mro: sym_mro(&["X::Coerce::Impossible", "X::Coerce", "Exception"]),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),
@@ -1635,215 +1643,696 @@ impl Interpreter {
             }
         };
 
-        // X::Comp hierarchy (compile-time errors)
+        // Names raku itself does not recognise as real Exception
+        // subtypes (kept for now, unchanged -- out of ADR-0029's scope,
+        // see TODO_roast/x-exception-role-membership.tsv's generation
+        // script for how this was determined).
         register_x("X::Comp", "Exception", &[]);
-        register_x("X::Comp::Group", "X::Comp", &[]);
-        // X::Comp::AdHoc's real rakudo superclass is X::AdHoc; it does X::Comp
-        // (ADR-0029) rather than inheriting from it.
-        register_x("X::Comp::AdHoc", "X::AdHoc", &["X::Comp"]);
-        register_x("X::Comp::NYI", "X::Comp", &[]);
-        register_x("X::Composition::NotComposable", "Exception", &[]);
         register_x("X::Value", "Exception", &[]);
-        register_x("X::Value::Dynamic", "X::Value", &[]);
-
-        // X::Syntax hierarchy (syntax errors, subtypes of X::Comp)
         register_x("X::Syntax", "X::Comp", &[]);
-        register_x("X::Syntax::Confused", "X::Syntax", &[]);
-        register_x("X::Syntax::Extension::Null", "X::Syntax", &[]);
-        register_x("X::Syntax::Missing", "X::Syntax", &[]);
-        register_x("X::Syntax::VirtualCall", "X::Syntax", &[]);
-        register_x("X::Syntax::NegatedPair", "X::Syntax", &[]);
-        register_x("X::Syntax::Malformed", "X::Syntax", &[]);
-        register_x("X::Syntax::Variable::Numeric", "X::Syntax", &[]);
-        register_x("X::Syntax::Variable::Initializer", "X::Syntax", &[]);
-        register_x("X::Syntax::Variable::IndirectDeclaration", "X::Syntax", &[]);
-        register_x("X::Syntax::Variable::ConflictingTypes", "X::Syntax", &[]);
-        register_x("X::Syntax::Number::LiteralType", "X::Syntax", &[]);
-        register_x("X::Syntax::Regex::Adverb", "X::Syntax", &[]);
-        register_x("X::Backslash::UnrecognizedSequence", "X::Backslash", &[]);
-        register_x("X::Syntax::Regex::SolitaryQuantifier", "X::Syntax", &[]);
-        register_x("X::Syntax::Regex::NullRegex", "X::Syntax", &[]);
-        register_x("X::Syntax::Regex::NonQuantifiable", "X::Syntax", &[]);
-        register_x("X::Syntax::Regex::QuantifierValue", "X::Syntax", &[]);
-        register_x("X::Syntax::Term::MissingInitializer", "X::Syntax", &[]);
-        register_x("X::Syntax::WithoutElse", "X::Syntax", &[]);
-        register_x("X::Syntax::UnlessElse", "X::Syntax", &[]);
-        register_x("X::Syntax::Reserved", "X::Syntax", &[]);
-        register_x("X::Syntax::KeywordAsFunction", "X::Syntax", &[]);
-        register_x("X::Syntax::Name::Null", "X::Syntax", &[]);
-        register_x("X::Syntax::Comment::Embedded", "X::Syntax", &[]);
         register_x("X::Syntax::Signature", "X::Syntax", &[]);
+        register_x("X::React::Died", "Exception", &[]);
+        register_x("X::Role::Composition::Conflict", "Exception", &[]);
+
+        // ADR-0029 Slice 3: every row below is mechanically generated from
+        // TODO_roast/x-exception-role-membership.tsv (real raku .^mro /
+        // .^roles(:!transitive) output, captured by
+        // scripts/adr0029-capture-x-exception-data.py) and sorted by real
+        // mro depth so a parent always registers before its child. Do not
+        // hand-edit individual rows -- regenerate from the TSV instead.
+        register_x("X::Adverb", "Exception", &[]);
+        register_x("X::Anon::Augment", "Exception", &["X::Comp"]);
+        register_x("X::Anon::Multi", "Exception", &["X::Comp"]);
+        register_x("X::ArrayShapeMismatch", "Exception", &[]);
+        register_x("X::Assignment::RO", "Exception", &[]);
+        register_x("X::Assignment::RO::Comp", "Exception", &["X::Comp"]);
+        register_x("X::Assignment::ToShaped", "Exception", &[]);
+        register_x("X::Attribute::NoPackage", "Exception", &["X::Comp"]);
+        register_x("X::Attribute::Package", "Exception", &["X::Comp"]);
+        register_x("X::Attribute::Required", "Exception", &["X::MOP"]);
+        register_x("X::Attribute::Scope::Package", "Exception", &["X::Comp"]);
+        register_x("X::Augment::NoSuchType", "Exception", &["X::Comp"]);
+        register_x(
+            "X::Backslash::NonVariableDollar",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Backslash::UnrecognizedSequence",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Bind", "Exception", &[]);
+        register_x("X::Bind::NativeType", "Exception", &["X::Comp"]);
+        register_x("X::Bind::Slice", "Exception", &[]);
+        register_x("X::Buf::AsStr", "Exception", &[]);
+        register_x("X::Buf::Pack", "Exception", &[]);
+        register_x("X::Buf::Pack::NonASCII", "Exception", &[]);
+        register_x("X::Cannot::Capture", "Exception", &[]);
+        register_x("X::Cannot::Empty", "Exception", &[]);
+        register_x("X::Cannot::Lazy", "Exception", &[]);
+        register_x("X::Cannot::Map", "Exception", &[]);
+        register_x("X::Cannot::New", "Exception", &[]);
+        register_x("X::Channel::ReceiveOnClosed", "Exception", &[]);
+        register_x("X::Channel::SendOnClosed", "Exception", &[]);
+        register_x("X::Coerce", "Exception", &[]);
+        register_x("X::Comp::BeginTime", "Exception", &["X::Comp"]);
+        register_x("X::Comp::FailGoal", "Exception", &["X::Comp"]);
+        register_x("X::Comp::Group", "Exception", &[]);
+        register_x("X::Comp::WheneverOutOfScope", "Exception", &["X::Comp"]);
+        register_x("X::CompUnit::UnsatisfiedDependency", "Exception", &[]);
+        register_x("X::Composition::NotComposable", "Exception", &["X::Comp"]);
+        register_x("X::Constructor::BadType", "Exception", &["X::BadType"]);
+        register_x("X::Constructor::Positional", "Exception", &[]);
+        register_x("X::ControlFlow", "Exception", &[]);
+        register_x(
+            "X::DateTime::InvalidDeltaUnit",
+            "Exception",
+            &["X::Temporal"],
+        );
+        register_x("X::DateTime::TimezoneClash", "Exception", &["X::Temporal"]);
+        register_x("X::Declaration::OurScopeInRole", "Exception", &["X::Comp"]);
+        register_x("X::Declaration::Scope", "Exception", &["X::Comp"]);
+        register_x("X::Delete", "Exception", &[]);
+        register_x("X::Does::TypeObject", "Exception", &[]);
+        register_x("X::Dynamic::NotFound", "Exception", &[]);
+        register_x("X::Dynamic::Package", "Exception", &["X::Comp"]);
+        register_x("X::Dynamic::Postdeclaration", "Exception", &["X::Comp"]);
+        register_x("X::EXPORTHOW::Conflict", "Exception", &["X::Comp"]);
+        register_x("X::EXPORTHOW::InvalidDirective", "Exception", &["X::Comp"]);
+        register_x(
+            "X::EXPORTHOW::NothingToSupersede",
+            "Exception",
+            &["X::Comp"],
+        );
+        register_x(
+            "X::Encoding::AlreadyRegistered",
+            "Exception",
+            &["X::Encoding"],
+        );
+        register_x("X::Encoding::Unknown", "Exception", &["X::Encoding"]);
+        register_x("X::Enum::NoValue", "Exception", &[]);
+        register_x("X::Eval::NoSuchLang", "Exception", &[]);
+        register_x("X::Exhausted", "Exception", &[]);
+        register_x("X::Experimental", "Exception", &["X::Comp"]);
+        register_x("X::Export::NameClash", "Exception", &["X::Comp"]);
+        register_x("X::Hash::Store::OddNumber", "Exception", &[]);
+        register_x("X::HyperOp::Infinite", "Exception", &[]);
+        register_x("X::HyperOp::NonDWIM", "Exception", &[]);
+        register_x("X::HyperWhatever::Multiple", "Exception", &[]);
+        register_x("X::IO::BinaryAndEncoding", "Exception", &["X::IO"]);
+        register_x("X::IO::BinaryMode", "Exception", &["X::IO"]);
+        register_x("X::IO::Chdir", "Exception", &["X::IO"]);
+        register_x("X::IO::Chmod", "Exception", &["X::IO"]);
+        register_x("X::IO::Chown", "Exception", &["X::IO"]);
+        register_x("X::IO::Closed", "Exception", &["X::IO"]);
+        register_x("X::IO::Copy", "Exception", &["X::IO"]);
+        register_x("X::IO::Cwd", "Exception", &["X::IO"]);
+        register_x("X::IO::Dir", "Exception", &["X::IO"]);
+        register_x("X::IO::Directory", "Exception", &["X::IO"]);
+        register_x("X::IO::DoesNotExist", "Exception", &["X::IO"]);
+        register_x("X::IO::Flush", "Exception", &["X::IO"]);
+        register_x("X::IO::Link", "Exception", &["X::IO"]);
+        register_x("X::IO::Lock", "Exception", &["X::IO"]);
+        register_x("X::IO::Mkdir", "Exception", &["X::IO"]);
+        register_x("X::IO::Move", "Exception", &["X::IO"]);
+        register_x("X::IO::NotAChild", "Exception", &["X::IO"]);
+        register_x("X::IO::NotAFile", "Exception", &["X::IO"]);
+        register_x("X::IO::Null", "Exception", &["X::IO"]);
+        register_x("X::IO::Rename", "Exception", &["X::IO"]);
+        register_x("X::IO::Resolve", "Exception", &["X::IO"]);
+        register_x("X::IO::Rmdir", "Exception", &["X::IO"]);
+        register_x("X::IO::Symlink", "Exception", &["X::IO"]);
+        register_x("X::IO::Unknown", "Exception", &["X::IO"]);
+        register_x("X::IO::Unlink", "Exception", &["X::IO"]);
+        register_x("X::IllegalDimensionInShape", "Exception", &[]);
+        register_x("X::IllegalOnFixedDimensionArray", "Exception", &[]);
+        register_x("X::Immutable", "Exception", &[]);
+        register_x("X::Import::MissingSymbols", "Exception", &[]);
+        register_x("X::Import::NoSuchTag", "Exception", &[]);
+        register_x("X::Import::OnlystarProto", "Exception", &["X::Comp"]);
+        register_x("X::Import::Positional", "Exception", &[]);
+        register_x("X::Import::Redeclaration", "Exception", &["X::Comp"]);
+        register_x("X::Inheritance::NotComposed", "Exception", &["X::MOP"]);
+        register_x("X::Inheritance::SelfInherit", "Exception", &[]);
+        register_x("X::Inheritance::UnknownParent", "Exception", &[]);
+        register_x("X::Inheritance::Unsupported", "Exception", &["X::Comp"]);
+        register_x("X::Invalid::ComputedValue", "Exception", &[]);
+        register_x("X::Invalid::Value", "Exception", &[]);
+        register_x("X::InvalidCodepoint", "Exception", &[]);
+        register_x("X::InvalidType", "Exception", &["X::Comp"]);
+        register_x("X::InvalidTypeSmiley", "Exception", &["X::Comp"]);
+        register_x("X::Ism::Unknown", "Exception", &[]);
+        register_x("X::Item", "Exception", &[]);
+        register_x("X::Language::IncompatRevisions", "Exception", &[]);
+        register_x("X::Language::ModRequired", "Exception", &[]);
+        register_x("X::Language::TooLate", "Exception", &[]);
+        register_x("X::Language::Unsupported", "Exception", &[]);
+        register_x("X::LibEmpty", "Exception", &["X::Comp"]);
+        register_x("X::LibNone", "Exception", &["X::Comp"]);
+        register_x("X::Localizer::NoContainer", "Exception", &[]);
+        register_x("X::Lock::Async::NotLocked", "Exception", &[]);
+        register_x("X::Lock::ConditionVariable::Duplicate", "Exception", &[]);
+        register_x("X::Lock::ConditionVariable::New", "Exception", &[]);
+        register_x("X::Lock::ConditionVariable::NoMutex", "Exception", &[]);
+        register_x("X::Lock::ConditionVariable::WrongThread", "Exception", &[]);
+        register_x("X::Lock::Unlock::NoMutex", "Exception", &[]);
+        register_x("X::Lock::Unlock::WrongThread", "Exception", &[]);
+        register_x("X::Make::MatchRequired", "Exception", &[]);
+        register_x("X::Match::Bool", "Exception", &[]);
+        register_x("X::Method::Duplicate", "Exception", &[]);
+        register_x("X::Method::InvalidQualifier", "Exception", &[]);
+        register_x("X::Method::NotFound", "Exception", &[]);
+        register_x("X::Method::Private::Permission", "Exception", &["X::Comp"]);
+        register_x("X::Method::Private::Unqualified", "Exception", &["X::Comp"]);
+        register_x("X::Mixin::NotComposable", "Exception", &[]);
+        register_x("X::Multi::Ambiguous", "Exception", &[]);
+        register_x("X::Multi::NoMatch", "Exception", &[]);
+        register_x("X::MultipleTypeSmiley", "Exception", &["X::Comp"]);
+        register_x("X::MustBeParametric", "Exception", &[]);
+        register_x("X::NQP::NotFound", "Exception", &[]);
+        register_x("X::NYI", "Exception", &[]);
+        register_x("X::NYI::BigInt", "Exception", &[]);
+        register_x("X::NoCoreRevision", "Exception", &[]);
+        register_x("X::NoDispatcher", "Exception", &[]);
+        register_x("X::NoSuchSymbol", "Exception", &[]);
+        register_x("X::NoZeroArgMeaning", "Exception", &[]);
+        register_x(
+            "X::Nominalizable::NoKind",
+            "Exception",
+            &["X::Nominalizable"],
+        );
+        register_x(
+            "X::Nominalizable::NoWrappee",
+            "Exception",
+            &["X::Nominalizable"],
+        );
+        register_x("X::NotEnoughDimensions", "Exception", &[]);
+        register_x("X::NotFoundInRepository", "Exception", &[]);
+        register_x("X::NotParametric", "Exception", &[]);
+        register_x("X::NotSingleGrapheme", "Exception", &[]);
+        register_x("X::Numeric::CannotConvert", "Exception", &[]);
+        register_x("X::Numeric::Confused", "Exception", &[]);
+        register_x("X::Numeric::DivideByZero", "Exception", &[]);
+        register_x("X::Numeric::Overflow", "Exception", &[]);
+        register_x("X::Numeric::Underflow", "Exception", &[]);
+        register_x("X::Numeric::Uninitialized", "Exception", &[]);
+        register_x("X::Obsolete", "Exception", &["X::Comp"]);
+        register_x("X::OutOfRange", "Exception", &[]);
+        register_x("X::Package::SameNameAsEnclosing", "Exception", &["X::Comp"]);
+        register_x("X::Package::Stubbed", "Exception", &["X::Comp"]);
+        register_x("X::Package::UseLib", "Exception", &["X::Comp"]);
+        register_x("X::Pairup::OddNumber", "Exception", &[]);
+        register_x("X::Parameter::AfterDefault", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Parameter::BadType",
+            "Exception",
+            &["X::BadType", "X::Comp"],
+        );
+        register_x("X::Parameter::Default", "Exception", &["X::Comp"]);
+        register_x(
+            "X::Parameter::Default::TypeCheck",
+            "Exception",
+            &["X::Comp"],
+        );
+        register_x("X::Parameter::InvalidType", "Exception", &["X::Comp"]);
+        register_x(
+            "X::Parameter::MultipleTypeConstraints",
+            "Exception",
+            &["X::Comp"],
+        );
+        register_x(
+            "X::Parameter::Named::SubsetTypeWithoutDefault",
+            "Exception",
+            &["X::Comp"],
+        );
+        register_x("X::Parameter::Placeholder", "Exception", &["X::Comp"]);
+        register_x("X::Parameter::RW", "Exception", &[]);
+        register_x("X::Parameter::Twigil", "Exception", &["X::Comp"]);
+        register_x("X::Parameter::TypedSlurpy", "Exception", &["X::Comp"]);
+        register_x("X::Parameter::WrongOrder", "Exception", &["X::Comp"]);
+        register_x("X::ParametricConstant", "Exception", &[]);
+        register_x("X::Phaser::Multiple", "Exception", &["X::Comp"]);
+        register_x("X::Phaser::PrePost", "Exception", &[]);
+        register_x("X::PhaserExceptions", "Exception", &[]);
+        register_x("X::Placeholder::Block", "Exception", &["X::Comp"]);
+        register_x("X::Placeholder::NonPlaceholder", "Exception", &["X::Comp"]);
+        register_x("X::PoisonedAlias", "Exception", &["X::Comp"]);
+        register_x("X::Pragma::CannotPrecomp", "Exception", &[]);
+        register_x("X::Pragma::CannotWhat", "Exception", &[]);
+        register_x("X::Pragma::MustOneOf", "Exception", &[]);
+        register_x("X::Pragma::NoArgs", "Exception", &[]);
+        register_x("X::Pragma::OnlyOne", "Exception", &[]);
+        register_x("X::Pragma::Unknown", "Exception", &[]);
+        register_x("X::Pragma::UnknownArg", "Exception", &[]);
+        register_x(
+            "X::Proc::Async::AlreadyStarted",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::BindOrUse",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::CharsOrBytes",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::MissingColsRows",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::MustBeStarted",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::OpenForWriting",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::SupplyOrStd",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x(
+            "X::Proc::Async::TapBeforeSpawn",
+            "Exception",
+            &["X::Proc::Async"],
+        );
+        register_x("X::Proc::Unsuccessful", "Exception", &[]);
+        register_x("X::Promise::CauseOnlyValidOnBroken", "Exception", &[]);
+        register_x("X::Promise::Combinator", "Exception", &[]);
+        register_x("X::Promise::Resolved", "Exception", &[]);
+        register_x("X::Promise::Vowed", "Exception", &[]);
+        register_x("X::PseudoPackage::InDeclaration", "Exception", &["X::Comp"]);
+        register_x("X::QuoteWords::Missing::Closer", "Exception", &["X::Comp"]);
+        register_x("X::REPL::InvalidEnvironment", "Exception", &[]);
+        register_x("X::Range::CannotIterate", "Exception", &[]);
+        register_x("X::Range::Incomparable", "Exception", &[]);
+        register_x("X::Range::InvalidArg", "Exception", &[]);
+        register_x("X::Range::Rand::InvalidEndpoints", "Exception", &[]);
+        register_x("X::Redeclaration", "Exception", &["X::Comp"]);
+        register_x("X::Redeclaration::Multi", "Exception", &["X::Comp"]);
+        register_x("X::Redeclaration::Outer", "Exception", &["X::Comp"]);
+        register_x(
+            "X::Role::Attribute::Conflicts",
+            "Exception",
+            &["X::Role::Attribute"],
+        );
+        register_x(
+            "X::Role::Attribute::Exists",
+            "Exception",
+            &["X::Role::Attribute"],
+        );
+        register_x("X::Role::BodyReturn", "Exception", &[]);
+        register_x("X::Role::Group::Documenting", "Exception", &[]);
+        register_x("X::Role::Initialization", "Exception", &[]);
+        register_x("X::Role::Instantiation", "Exception", &["X::Wrapper"]);
+        register_x("X::Role::Parametric::NoSuchCandidate", "Exception", &[]);
+        register_x(
+            "X::Role::Unimplemented::Multi",
+            "Exception",
+            &["X::RoleApplier::Method", "X::RoleApplier"],
+        );
+        register_x(
+            "X::Role::Unresolved",
+            "Exception",
+            &["X::RoleApplier::Method", "X::RoleApplier"],
+        );
+        register_x("X::Routine::Unwrap", "Exception", &[]);
+        register_x("X::Scheduler::CueInNaNSeconds", "Exception", &[]);
+        register_x("X::SecurityPolicy", "Exception", &[]);
+        register_x("X::Seq::Consumed", "Exception", &[]);
+        register_x("X::Seq::NotIndexable", "Exception", &[]);
+        register_x("X::Sequence::Deduction", "Exception", &[]);
+        register_x("X::Sequence::Endpoint", "Exception", &[]);
+        register_x("X::Set::Coerce", "Exception", &[]);
+        register_x("X::Signature::NameClash", "Exception", &["X::Comp"]);
+        register_x("X::Signature::Placeholder", "Exception", &["X::Comp"]);
+        register_x("X::Str::InvalidCharName", "Exception", &[]);
+        register_x("X::Str::Match::x", "Exception", &[]);
+        register_x("X::Str::Numeric", "Exception", &[]);
+        register_x("X::Str::Sprintf::Directives::BadType", "Exception", &[]);
+        register_x("X::Str::Sprintf::Directives::Count", "Exception", &[]);
+        register_x("X::Str::Sprintf::Directives::Unsupported", "Exception", &[]);
+        register_x("X::Str::Subst::Adverb", "Exception", &[]);
+        register_x("X::Str::Trans::IllegalKey", "Exception", &[]);
+        register_x("X::Str::Trans::InvalidArg", "Exception", &[]);
+        register_x("X::StubCode", "Exception", &[]);
+        register_x("X::Subscript::Negative", "Exception", &[]);
+        register_x("X::Supply::Migrate::Needs", "Exception", &[]);
+        register_x("X::Supply::New", "Exception", &[]);
+        register_x("X::Symbol::Kind", "Exception", &[]);
+        register_x(
+            "X::Syntax::AddCategorical::TooFewParts",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::AddCategorical::TooManyParts",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Adverb", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::AmbiguousAdverb", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Argument::MOPMacro", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Augment::Adverb", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Augment::Illegal", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Augment::WithoutMonkeyTyping",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::BlockGobbled", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::CannotMeta", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Coercer::TooComplex",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Comment::Embedded", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::ConditionalOperator::PrecedenceTooLoose",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::ConditionalOperator::SecondPartGobbled",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::ConditionalOperator::SecondPartInvalid",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Confused", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Doc::Declarator::MissingDeclarand",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::DuplicatedPrefix", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Extension::Category",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Extension::Null", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Extension::SpecialForm",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Extension::TooComplex",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::InfixInTermPosition",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::KeywordAsFunction", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Malformed", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Malformed::Elsif", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Missing", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Name::Null", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::NegatedPair", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::NoSelf", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::NonAssociative", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Number::IllegalDecimal",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Number::RadixOutOfRange",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::P5", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::ParentAsHash", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::Perl5Var", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Pod::BeginWithDirective",
+            "Exception",
+            &["X::Pod", "X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Pod::BeginWithoutEnd",
+            "Exception",
+            &["X::Pod", "X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Pod::BeginWithoutIdentifier",
+            "Exception",
+            &["X::Pod", "X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Pod::DeclaratorLeading",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Pod::DeclaratorTrailing",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Regex::Adverb", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Regex::Alias::LongName",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::InsignificantWhitespace",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::MalformedRange",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::NonQuantifiable",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Regex::NullRegex", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Regex::QuantifierValue",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::SolitaryBacktrackControl",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::SolitaryQuantifier",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::SpacesInBareRange",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::UnrecognizedMetachar",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Regex::UnrecognizedModifier",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Regex::Unspace", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Regex::Unterminated",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Reserved", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Self::WithoutObject",
+            "Exception",
+            &["X::Syntax"],
+        );
         register_x(
             "X::Syntax::Signature::InvocantMarker",
-            "X::Syntax::Signature",
-            &[],
+            "Exception",
+            &["X::Syntax"],
         );
         register_x(
             "X::Syntax::Signature::InvocantNotAllowed",
-            "X::Syntax::Signature",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Term::MissingInitializer",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Type::Adverb", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::UnlessElse", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Variable::BadType",
+            "Exception",
+            &["X::BadType", "X::Comp"],
+        );
+        register_x(
+            "X::Syntax::Variable::ConflictingTypes",
+            "Exception",
+            &["X::Comp"],
+        );
+        register_x(
+            "X::Syntax::Variable::IndirectDeclaration",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Variable::Initializer",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Variable::Match", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Variable::MissingInitializer",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Variable::Numeric", "Exception", &["X::Syntax"]);
+        register_x(
+            "X::Syntax::Variable::SignatureAssignment",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x(
+            "X::Syntax::Variable::SignatureWithoutInitializer",
+            "Exception",
+            &["X::Syntax"],
+        );
+        register_x("X::Syntax::Variable::Twigil", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::VirtualCall", "Exception", &["X::Syntax"]);
+        register_x("X::Syntax::WithoutElse", "Exception", &["X::Syntax"]);
+        register_x("X::Temporal::InvalidFormat", "Exception", &["X::Temporal"]);
+        register_x("X::TooManyDimensions", "Exception", &[]);
+        register_x("X::Trait::Invalid", "Exception", &["X::Trait"]);
+        register_x("X::Trait::NotOnNative", "Exception", &["X::Trait"]);
+        register_x("X::Trait::Scope", "Exception", &["X::Trait"]);
+        register_x("X::Trait::Unknown", "Exception", &["X::Trait"]);
+        register_x("X::Undeclared", "Exception", &["X::Comp"]);
+        register_x("X::Undeclared::Symbols", "Exception", &["X::Comp"]);
+        register_x("X::UnitScope::Invalid", "Exception", &["X::Syntax"]);
+        register_x("X::UnitScope::MustHaveUnit", "Exception", &["X::Syntax"]);
+        register_x("X::UnitScope::TooLate", "Exception", &["X::Syntax"]);
+        register_x("X::Useless::Declaration", "Exception", &["X::Comp"]);
+        register_x("X::Value::Dynamic", "Exception", &["X::Comp"]);
+        register_x("X::WheneverOutOfScope", "Exception", &[]);
+        register_x("X::Worry", "Exception", &[]);
+        register_x(
+            "X::Assignment::ArrayShapeMismatch",
+            "X::ArrayShapeMismatch",
             &[],
         );
-        register_x("X::Syntax::NoSelf", "X::Syntax", &[]);
-
-        // X::Obsolete (compile-time, subtype of X::Comp)
-        register_x("X::Obsolete", "X::Comp", &[]);
-
-        // X::Undeclared hierarchy
-        register_x("X::Undeclared", "X::Comp", &[]);
-        register_x("X::Undeclared::Symbols", "X::Comp", &[]);
-
-        // An undeclared attribute is a compile-time error (does X::Comp).
-        register_x("X::Attribute::Undeclared", "X::Comp", &[]);
-
-        // X::Redeclaration
-        register_x("X::Redeclaration", "X::Comp", &[]);
-
-        // X::Assignment::RO
-        register_x("X::Assignment::RO", "Exception", &[]);
-
-        // X::Hash::Store::OddNumber — odd number of elements assigned to a hash.
-        // Constructible from user code with :found / :last accessors.
-        register_x("X::Hash::Store::OddNumber", "Exception", &[]);
-
-        // X::Str::Numeric
-        register_x("X::Str::Numeric", "Exception", &[]);
-
-        // X::Str::Sprintf::Directives::Unsupported — unsupported sprintf directive.
-        register_x("X::Str::Sprintf::Directives::Unsupported", "Exception", &[]);
-
-        // X::Str::Match::x — invalid :x argument to .subst / s///
-        register_x("X::Str::Match::x", "Exception", &[]);
-
-        // X::Multi::NoMatch / X::Multi::Ambiguous
-        register_x("X::Multi::NoMatch", "Exception", &[]);
-        register_x("X::Multi::Ambiguous", "Exception", &[]);
-
-        // X::OutOfRange
-        register_x("X::OutOfRange", "Exception", &[]);
-
-        // X::Method::NotFound
-        register_x("X::Method::NotFound", "Exception", &[]);
-
-        // X::Immutable
-        register_x("X::Immutable", "Exception", &[]);
-
-        // X::Cannot::Lazy
-        register_x("X::Cannot::Lazy", "Exception", &[]);
-        register_x("X::Cannot::Capture", "Exception", &[]);
-
-        // X::Match::Bool
-        register_x("X::Match::Bool", "Exception", &[]);
-
-        // X::Adverb
-        register_x("X::Adverb", "Exception", &[]);
-
-        // X::ControlFlow::Return
-        register_x("X::ControlFlow::Return", "Exception", &[]);
-
-        // X::Bind
-        register_x("X::Bind", "Exception", &[]);
-        register_x("X::Bind::NativeType", "X::Bind", &[]);
-        // Despite the name, `X::Bind::Slice` does not inherit `X::Bind` in
-        // rakudo — its only parent is `Exception` (`.^parents(:local)`), and
-        // `X::Bind::Slice ~~ X::Bind` is False there.
-        register_x("X::Bind::Slice", "Exception", &[]);
-
-        // X::StubCode
-        register_x("X::StubCode", "Exception", &[]);
-
-        // X::Signature::Placeholder
-        register_x("X::Signature::Placeholder", "Exception", &[]);
-
-        // X::Signature::NameClash
-        register_x("X::Signature::NameClash", "X::Comp", &[]);
-
-        // X::SecurityPolicy
-        register_x("X::SecurityPolicy", "Exception", &[]);
-
-        // X::NotEnoughDimensions
-        register_x("X::NotEnoughDimensions", "Exception", &[]);
-
-        // X::IO::Closed
-        register_x("X::IO::Closed", "Exception", &[]);
-
-        // X::IO path-resolution exceptions (IO::Path.resolve/:completely and
-        // the ecosystem's child-secure pattern construct these from user code:
-        // `X::IO::NotAChild.new: :path(...), :child(...)`).
-        register_x("X::IO::Resolve", "Exception", &[]);
-        register_x("X::IO::NotAChild", "Exception", &[]);
-
-        // X::Role subtypes
-        register_x("X::Role::Parametric::NoSuchCandidate", "Exception", &[]);
-        register_x("X::Role::Unimplemented::Multi", "Exception", &[]);
-
-        // X::NYI
-        register_x("X::NYI", "Exception", &[]);
-
-        // X::Method::Private::Permission
-        register_x("X::Method::Private::Permission", "Exception", &[]);
-        register_x("X::Method::Private::Unqualified", "Exception", &[]);
-        register_x("X::Routine::Unwrap", "Exception", &[]);
-        register_x("X::Str::Trans::InvalidArg", "Exception", &[]);
-        register_x("X::Str::Trans::IllegalKey", "Exception", &[]);
-
-        // X::ParametricConstant
-        register_x("X::ParametricConstant", "Exception", &[]);
-
-        // X::UnitScope::Invalid
-        register_x("X::UnitScope::Invalid", "Exception", &[]);
-
-        // X::Promise / X::Channel exceptions
-        register_x("X::Promise::Vowed", "Exception", &[]);
-        register_x("X::Promise::Resolved", "Exception", &[]);
-        register_x("X::Promise::CauseOnlyValidOnBroken", "Exception", &[]);
-        register_x("X::Channel::SendOnClosed", "Exception", &[]);
-        register_x("X::Channel::ReceiveOnClosed", "Exception", &[]);
-
-        // ADR-0019 E2b (tenth slice, 2026-08-10): these X::* types are
-        // constructed all over the interpreter (either directly via
-        // `Value::make_instance`, or via the `"X::Type: text"` message
-        // convention that `split_typed_message_convention` turns into a typed
-        // instance) but were never `register_x`'d, so their registry MRO
-        // dead-ended at themselves with no `Exception`/`Any`/`Mu` continuation
-        // at all -- found via `dispatch_owner_chain` on live samples
-        // (`X::ControlFlow.^mro` reported `X::ControlFlow, Any, Mu`, skipping
-        // `Exception` entirely). This is not just a coverage-counter artifact:
-        // it means `$exc ~~ Exception` and `$exc.isa(Exception)` were False
-        // for any of these until caught by a CATCH's own class-name-prefix
-        // matching, and `.defined`/`.so` fell through to a different
-        // dispatch path than every other exception. Every name below was
-        // confirmed against `raku -e '... .^mro».^name ...'` to have
-        // `Exception` as its sole direct parent, EXCEPT `X::Role::Composition::Conflict`
-        // (a mutsu-only name from the message convention above, not a real
-        // rakudo type) and `X::React::Died` (a role in rakudo, not a class,
-        // but mutsu already models it as an Instance the same way as every
-        // other X::* here) -- both still belong under Exception for mutsu's
-        // own CATCH/`.isa` semantics to be internally consistent.
-        register_x("X::Attribute::Required", "Exception", &[]);
-        register_x("X::Comp::FailGoal", "Exception", &[]);
-        register_x("X::CompUnit::UnsatisfiedDependency", "Exception", &[]);
-        register_x("X::ControlFlow", "Exception", &[]);
-        register_x("X::Declaration::OurScopeInRole", "Exception", &[]);
-        register_x("X::Dynamic::NotFound", "Exception", &[]);
-        register_x("X::IO::Unlink", "Exception", &[]);
-        register_x("X::IllegalDimensionInShape", "Exception", &[]);
-        register_x("X::Inheritance::SelfInherit", "Exception", &[]);
-        register_x("X::Inheritance::UnknownParent", "Exception", &[]);
-        register_x("X::Mixin::NotComposable", "Exception", &[]);
-        register_x("X::Parameter::BadType", "X::Parameter", &[]);
-        register_x("X::NoZeroArgMeaning", "Exception", &[]);
-        register_x("X::Numeric::CannotConvert", "Exception", &[]);
-        register_x("X::Numeric::DivideByZero", "Exception", &[]);
-        register_x("X::Numeric::Uninitialized", "Exception", &[]);
-        register_x("X::React::Died", "Exception", &[]);
-        register_x("X::Role::Composition::Conflict", "Exception", &[]);
-        register_x("X::Role::Instantiation", "Exception", &[]);
-        register_x("X::Seq::Consumed", "Exception", &[]);
-        register_x("X::Str::Sprintf::Directives::Count", "Exception", &[]);
-        register_x("X::Syntax::BlockGobbled", "Exception", &[]);
-        register_x("X::Syntax::CannotMeta", "Exception", &[]);
-        register_x("X::Syntax::Extension::Category", "Exception", &[]);
-        register_x("X::Syntax::Extension::TooComplex", "Exception", &[]);
+        register_x("X::Attribute::Regex", "X::Undeclared", &["X::Comp"]);
+        register_x("X::Attribute::Undeclared", "X::Undeclared", &["X::Comp"]);
+        register_x("X::Bind::Rebind", "X::Bind", &[]);
+        register_x("X::Bind::ZenSlice", "X::Bind::Slice", &[]);
+        register_x("X::Caller::NotDynamic", "X::Symbol::Kind", &[]);
+        register_x("X::Coerce::Role", "X::Coerce", &["X::Wrapper"]);
+        register_x("X::Comp::AdHoc", "X::AdHoc", &["X::Comp"]);
+        register_x("X::Comp::NYI", "X::NYI", &["X::Comp"]);
+        register_x(
+            "X::Comp::Trait::Invalid",
+            "X::Trait::Invalid",
+            &["X::Comp", "X::Trait"],
+        );
+        register_x(
+            "X::Comp::Trait::NotOnNative",
+            "X::Trait::NotOnNative",
+            &["X::Comp", "X::Trait"],
+        );
+        register_x(
+            "X::Comp::Trait::Scope",
+            "X::Trait::Scope",
+            &["X::Comp", "X::Trait"],
+        );
+        register_x(
+            "X::Comp::Trait::Unknown",
+            "X::Trait::Unknown",
+            &["X::Comp", "X::Trait"],
+        );
+        register_x("X::Comp::TypeCheck", "X::TypeCheck", &["X::Comp"]);
+        register_x("X::ControlFlow::Return", "X::ControlFlow", &[]);
+        register_x(
+            "X::Declaration::Scope::Multi",
+            "X::Declaration::Scope",
+            &["X::Comp"],
+        );
+        register_x("X::NYI::Available", "X::NYI", &[]);
+        register_x(
+            "X::Placeholder::Attribute",
+            "X::Placeholder::Block",
+            &["X::Comp"],
+        );
+        register_x(
+            "X::Placeholder::Mainline",
+            "X::Placeholder::Block",
+            &["X::Comp"],
+        );
+        register_x(
+            "X::Role::Unresolved::Method",
+            "X::Role::Unresolved",
+            &["X::RoleApplier::Method", "X::RoleApplier"],
+        );
+        register_x(
+            "X::Role::Unresolved::Multi",
+            "X::Role::Unresolved",
+            &["X::RoleApplier::Method", "X::RoleApplier"],
+        );
+        register_x(
+            "X::Role::Unresolved::Private",
+            "X::Role::Unresolved",
+            &["X::RoleApplier::Method", "X::RoleApplier"],
+        );
+        register_x("X::SecurityPolicy::Eval", "X::SecurityPolicy", &[]);
+        register_x("X::Symbol::NotDynamic", "X::Symbol::Kind", &[]);
+        register_x("X::Symbol::NotLexical", "X::Symbol::Kind", &[]);
+        register_x(
+            "X::Syntax::NonListAssociative",
+            "X::Syntax::NonAssociative",
+            &["X::Syntax"],
+        );
+        register_x("X::Temporal::OutOfRange", "X::OutOfRange", &["X::Temporal"]);
+        register_x(
+            "X::TypeCheck::Attribute::Default",
+            "X::TypeCheck",
+            &["X::Comp"],
+        );
+        register_x("X::TypeCheck::Splice", "X::TypeCheck", &["X::Comp"]);
+        register_x("X::Worry::P5", "X::Worry", &[]);
+        register_x("X::Worry::Precedence::Range", "X::Worry", &[]);
+        register_x(
+            "X::Syntax::Number::LiteralType",
+            "X::TypeCheck::Assignment",
+            &["X::Syntax"],
+        );
+        register_x("X::Worry::P5::BackReference", "X::Worry::P5", &[]);
+        register_x("X::Worry::P5::LeadingZero", "X::Worry::P5", &[]);
+        register_x("X::Worry::P5::Reference", "X::Worry::P5", &[]);
 
         let mut interpreter = Self {
             user_declared_classes: std::collections::HashSet::new(),
@@ -2036,7 +2525,7 @@ impl Interpreter {
                     // ADR-0029: role-shaped `X::` exception "namespaces".
                     // Measured against real rakudo (2026-08-17), 59% of the
                     // `X::` classes mutsu raises or tests against compose one
-                    // or more of these 14 marker roles rather than inheriting
+                    // or more of these marker roles rather than inheriting
                     // from a same-named class -- `X::Comp`, `X::Syntax`,
                     // `X::IO`, and `X::OS` are the heavily-used ones (135/69/
                     // 22/22 classes respectively), the rest are 1-7 each. All
@@ -2047,6 +2536,11 @@ impl Interpreter {
                     // them as roles (not classes) also satisfies
                     // `type_matching.rs`'s `resolve_role_key` gate for
                     // type-object `~~` (e.g. `X::Comp::FailGoal ~~ X::Comp`).
+                    // `X::Nominalizable` / `X::Role::Attribute` (Slice 3) were
+                    // not in the ADR's original 14 -- its corpus was a 303-name
+                    // roast/t sample; Slice 3's broader capture (roast/t plus
+                    // every `X::...` string literal in mutsu's own source)
+                    // surfaced these two additional roles the same way.
                     for role_name in [
                         "X::Comp",
                         "X::Syntax",
@@ -2062,6 +2556,8 @@ impl Interpreter {
                         "X::Wrapper",
                         "X::RoleApplier",
                         "X::RoleApplier::Method",
+                        "X::Nominalizable",
+                        "X::Role::Attribute",
                     ] {
                         roles.insert(
                             role_name.to_string(),

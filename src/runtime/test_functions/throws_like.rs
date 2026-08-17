@@ -359,11 +359,17 @@ impl Interpreter {
                         || self.registry().classes.get(cls).is_some_and(|def| {
                             def.mro.iter().any(|parent| parent == expected_normalized)
                         })
-                        // X::Comp::Group wraps compile-time errors: match any X::Comp subtype
-                        || (expected_normalized == "X::Comp::Group"
-                            && self.registry().classes.get(cls).is_some_and(|def| {
-                                def.mro.iter().any(|p| p == "X::Comp")
-                            }))
+                        // The expected type may be a role the actual exception DOES
+                        // rather than inherits (ADR-0029: rakudo's `X::` role
+                        // vocabulary -- X::Comp, X::Syntax, ... -- is composed, not
+                        // in the mro), e.g. `throws-like $code, X::Syntax` against an
+                        // exception that only does X::Syntax.
+                        || self.class_does_role(cls, expected_normalized)
+                        // X::Comp::Group wraps compile-time errors: match any class that
+                        // does X::Comp specifically, even though the expected type here
+                        // is X::Comp::Group itself (a deliberate broadening -- X::Comp::Group
+                        // is used as a generic "compile-time error" bucket in tests).
+                        || (expected_normalized == "X::Comp::Group" && self.class_does_role(cls, "X::Comp"))
                         // X::AdHoc wrapping a die'd string that encodes a type name
                         // (e.g., die "X::Syntax::UnlessElse: ..."): fall through to
                         // message-based matching below.
