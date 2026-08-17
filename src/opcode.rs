@@ -1897,7 +1897,6 @@ pub(crate) enum OpCode {
     /// throws `X::ControlFlow::Return` directly.
     ReturnFromNonRoutine(bool),
     RegisterDecl(u32),
-    RegisterToken(u32),
     RegisterEnum(u32),
     AugmentClass(u32),
     RegisterSubset(u32),
@@ -3269,6 +3268,28 @@ pub(crate) struct CompiledProtoDeclPlan {
     pub(crate) compiled_routine_key: Option<Symbol>,
 }
 
+/// A `token`/`rule` declaration plan (ADR-0019 F7). Unlike `CompiledSubDeclPlan`, a
+/// token/rule body is never bytecode-compiled — that stays interpreter-executed by
+/// design (ADR-0009's regex/grammar execution model) — so `raw_body` is kept as an
+/// opaque payload rather than a `compiled_routine_key`, mirroring
+/// `CompiledProtoDeclPlan::legacy_body`'s own precedent for the same reason.
+///
+/// `Stmt::TokenDecl`'s own `is_my`/`is_our` fields are not carried here: the
+/// pre-existing registration path (`register_token_decl`) never read them
+/// either (`exec_register_token_op`'s old match arm dropped them via `..`) —
+/// this plan preserves that exact fidelity rather than inventing unread
+/// fields. See `todo/deep/adr0019-f7-token-rule-declaration-typed-plan.md`
+/// ("Found while scoping") for why that drop was verified benign, not a live
+/// bug this box should fix.
+#[derive(Debug, Clone)]
+pub(crate) struct CompiledTokenDeclPlan {
+    pub(crate) name: Symbol,
+    pub(crate) params: Vec<String>,
+    pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) multi: bool,
+    pub(crate) raw_body: Vec<Stmt>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CompiledDeclPlanRef {
     Sub(u32),
@@ -3279,6 +3300,7 @@ pub(crate) enum CompiledDeclPlanRef {
     /// carries only a name — no signature, body, or traits — so the name is
     /// stored inline rather than indexing a pool of its own.
     ProtoToken(Symbol),
+    Token(u32),
 }
 
 #[derive(Debug, Clone)]
@@ -3307,6 +3329,9 @@ pub(crate) struct CompiledCode {
     pub(crate) class_decl_plans: Vec<CompiledClassDeclPlan>,
     pub(crate) role_decl_plans: Vec<CompiledRoleDeclPlan>,
     pub(crate) proto_decl_plans: Vec<CompiledProtoDeclPlan>,
+    /// `token`/`rule` declaration plans (ADR-0019 F7), mirroring
+    /// `proto_decl_plans`'s own shape.
+    pub(crate) token_decl_plans: Vec<CompiledTokenDeclPlan>,
     /// The single declaration-registration operand pool. `RegisterDecl(i)` selects one tagged
     /// typed plan here; declaration-specific metadata stays out of the hot opcode enum.
     pub(crate) decl_plans: Vec<CompiledDeclPlanRef>,
@@ -4079,6 +4104,7 @@ impl CompiledCode {
             class_decl_plans: Vec::new(),
             role_decl_plans: Vec::new(),
             proto_decl_plans: Vec::new(),
+            token_decl_plans: Vec::new(),
             decl_plans: Vec::new(),
             locals: Vec::new(),
             locals_sym: Vec::new(),
@@ -6488,6 +6514,42 @@ impl CompiledCode {
     pub(crate) fn add_proto_token_decl_plan(&mut self, name: Symbol) -> u32 {
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::ProtoToken(name));
+        idx
+    }
+
+    /// Record a `token`/`rule` declaration plan (ADR-0019 F7). `raw_body` stays
+    /// an opaque payload — a token/rule body is never bytecode-compiled, that
+    /// stays interpreter-executed by ADR-0009's own design — mirroring
+    /// `add_proto_decl_plan`'s `legacy_body` precedent for the same reason.
+    pub(crate) fn add_token_decl_plan(&mut self, stmt: &Stmt) -> u32 {
+        let (name, params, param_defs, body, multi) = match stmt {
+            Stmt::TokenDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+                ..
+            }
+            | Stmt::RuleDecl {
+                name,
+                params,
+                param_defs,
+                body,
+                multi,
+            } => (name, params, param_defs, body, *multi),
+            _ => panic!("add_token_decl_plan expects TokenDecl/RuleDecl"),
+        };
+        let plan_idx = self.token_decl_plans.len() as u32;
+        self.token_decl_plans.push(CompiledTokenDeclPlan {
+            name: *name,
+            params: params.clone(),
+            param_defs: param_defs.clone(),
+            multi,
+            raw_body: body.clone(),
+        });
+        let idx = self.decl_plans.len() as u32;
+        self.decl_plans.push(CompiledDeclPlanRef::Token(plan_idx));
         idx
     }
 

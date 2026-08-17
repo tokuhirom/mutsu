@@ -1028,35 +1028,24 @@ impl Interpreter {
         current
     }
 
-    pub(super) fn exec_register_token_op(
+    /// ADR-0019 F7: `token`/`rule` declarations register from a typed
+    /// `CompiledTokenDeclPlan` instead of a raw `Stmt` clone in `stmt_pool`.
+    /// `raw_body` stays an opaque payload — the body is interpreter-executed
+    /// by ADR-0009's own design, not bytecode-compiled.
+    pub(super) fn exec_register_token_decl_op(
         &mut self,
         code: &CompiledCode,
-        idx: u32,
+        plan_idx: u32,
     ) -> Result<(), RuntimeError> {
-        let stmt = &code.stmt_pool[idx as usize];
-        match stmt {
-            Stmt::TokenDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-                ..
-            }
-            | Stmt::RuleDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            } => {
-                self.register_token_decl(&name.resolve(), params, param_defs, body, *multi);
-                Ok(())
-            }
-            _ => Err(RuntimeError::new(
-                "RegisterToken expects TokenDecl/RuleDecl",
-            )),
-        }
+        let plan = &code.token_decl_plans[plan_idx as usize];
+        self.register_token_decl(
+            &plan.name.resolve(),
+            &plan.params,
+            &plan.param_defs,
+            &plan.raw_body,
+            plan.multi,
+        );
+        Ok(())
     }
 
     pub(super) fn exec_register_proto_sub_op(

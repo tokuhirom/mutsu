@@ -52,10 +52,11 @@ migrated, then are removed together with declaration-shaped entries in `stmt_poo
 registration can adopt the same representation later; they do not block retiring the three
 tree-walking paths named in ANALYSIS §1.1. Three more declaration opcodes are outside the three
 named paths but inside this decision's end state: `RegisterProtoSub` and `RegisterProtoToken`
-still index `stmt_pool` and are migrated by slice C8, while `RegisterToken` carries a *regex*
-body whose execution model is ADR-0009's — it is waived here the same way enum/subset are and
-adopts a typed plan together with the grammar-token work scoped in C6d-2 and Phase D's token
-note.
+still index `stmt_pool` and are migrated by slice C8; the top-level `RegisterToken` opcode is
+migrated by F7 (its own `CompiledTokenDeclPlan` keeps the *regex* body as an opaque payload — that
+body's execution model is ADR-0009's, waived here the same way enum/subset are), while the
+`ClassBodyOp`/`RoleBodyOp` `TokenRule` arm inside class/role/grammar bodies remains a raw-`Stmt`
+carve-out, scoped together with the grammar-token work in C6d-2 and Phase D's token note.
 
 ### 2. One registry owns every type×method entry
 
@@ -2855,6 +2856,29 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   precedent), and a found-while-scoping `is_my`/`is_our`-dropped-silently observation (spot-checked
   against `raku` and found benign, but worth a proper table before this code is touched) are in
   `todo/deep/adr0019-f7-token-rule-declaration-typed-plan.md`. Not started.
+
+  **Slice 1 — top-level `token`/`rule` declarations (2026-08-17).** Landed the recommended shape:
+  `CompiledTokenDeclPlan` (`name`/`params`/`param_defs`/`multi`/`raw_body`, `raw_body` kept opaque
+  per ADR-0009 — a token/rule body is never bytecode-compiled) and a new
+  `CompiledDeclPlanRef::Token(u32)` variant, mirroring `CompiledProtoDeclPlan`'s own shape. The
+  top-level `Stmt::TokenDecl`/`RuleDecl` compile arm now calls `add_token_decl_plan` + emits
+  `RegisterDecl(idx)` instead of cloning into `stmt_pool` + emitting the old dedicated
+  `RegisterToken(idx)` opcode, which is deleted outright (its own `exec_register_token_op`
+  handler replaced by `exec_register_token_decl_op`, reading the typed plan). `is_my`/`is_our`
+  are deliberately NOT carried onto the plan — the pre-existing path never read them either (the
+  old match arm dropped them via `..`), so the plan preserves exact fidelity rather than inventing
+  unread fields; the "Found while scoping" `is_my`/`is_our` question stays open as its own,
+  separate, not-yet-verified item. Verified with the full local `t/` suite (3194 files, all
+  green), the full local grammar/token/rule-named `t/` subset (68 files) plus every whitelisted
+  grammar/regex roast file (`S05-*`/`S12-*` whitelist subset, 190+19 files including
+  `integration/advent2013-day18.t`, ADR-0009's own pin test) — all release, all green —
+  `cargo test --lib` (835 tests, including `opcode_stays_small`, confirming `OpCode` shrank rather
+  than grew), `cargo build`/`clippy -- -D warnings`/`fmt` clean, and a hand-built raku-verified
+  table (`proto token`/`multi token :sym<>` variants, `rule` with a `+`-quantified subrule, a
+  `my token` lexical-scope leak check) byte-identical to `raku` including the exit code. The
+  `ClassBodyOp`/`RoleBodyOp` `TokenRule` carve-out (declarations inside class/role/grammar bodies)
+  is a separate, second slice, not bundled here per this box's own "no shared-helper by
+  pattern-match" discipline.
 
 ### Completion gates
 

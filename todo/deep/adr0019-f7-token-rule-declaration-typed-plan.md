@@ -1,5 +1,10 @@
 # ADR-0019 F7: scoping — grammar `token`/`rule` declarations are the only remaining raw-`Stmt` `Register*` path
 
+**Status update (2026-08-17):** Slice 1 (the top-level `RegisterToken` path this doc scopes) has
+landed — see ADR-0019's F7 box, "Slice 1 — top-level `token`/`rule` declarations," for the
+verification writeup. The second slice this doc calls out below (the `ClassBodyOp`/`RoleBodyOp`
+`TokenRule` carve-out inside class/role/grammar bodies) is still open.
+
 ## Summary
 
 F7's box text is "Delete obsolete declaration payloads and generic statement-pool entries. Remove
