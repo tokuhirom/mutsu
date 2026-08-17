@@ -35,6 +35,26 @@ impl Interpreter {
             ValueView::Package(name) => name,
             _ => return None,
         };
+        self.try_dispatch_compiled_method_direct_as(class_sym, target, method, args)
+    }
+
+    /// Same as `try_dispatch_compiled_method_direct`, but resolves against an
+    /// explicit `dispatch_class` symbol instead of deriving the owner class
+    /// from `target`'s own runtime type. Needed for "value-type dispatch" —
+    /// e.g. `augment class Array`/`augment class Routine` methods invoked on
+    /// a bare `Array`/`Sub` value, where the dispatch class (`"Array"`,
+    /// `"Routine"`, ...) is not the receiver's own `ValueView` variant, so
+    /// the plain `target.view()`-derived lookup above can't find it. `target`
+    /// itself is still passed through unchanged as the actual invocant
+    /// (`dispatch_compiled_method` binds it as `self` in the method body
+    /// regardless of the `cn`/owner class strings used for resolution).
+    pub(crate) fn try_dispatch_compiled_method_direct_as(
+        &mut self,
+        class_sym: crate::symbol::Symbol,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
         self.refresh_method_caches_for_generation();
         let cn = class_sym.as_str();
         let method_sym = crate::symbol::Symbol::intern(method);

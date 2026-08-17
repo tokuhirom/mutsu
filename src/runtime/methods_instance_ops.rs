@@ -1685,6 +1685,13 @@ impl Interpreter {
             }
             // Package (type object) dispatch -- check user-defined methods
             if self.has_user_method(&name.resolve(), method) {
+                // ADR-0019 F6: VM-level direct-dispatch path first (see
+                // `try_dispatch_compiled_method_direct`'s doc comment).
+                if let Some(result) =
+                    self.try_dispatch_compiled_method_direct(&target, method, &args)
+                {
+                    return result;
+                }
                 let attrs = AttrMap::new();
                 let (result, _updated) = self.run_instance_method_at(
                     "instanceops",
@@ -1730,6 +1737,18 @@ impl Interpreter {
                 None
             };
             if let Some(dispatch_class) = dispatch_class {
+                // ADR-0019 F6: VM-level direct-dispatch path first, resolving
+                // against the explicit `dispatch_class` (which may differ
+                // from `target`'s own runtime type — see
+                // `try_dispatch_compiled_method_direct_as`'s doc comment).
+                if let Some(result) = self.try_dispatch_compiled_method_direct_as(
+                    crate::symbol::Symbol::intern(dispatch_class),
+                    &target,
+                    method,
+                    &args,
+                ) {
+                    return result;
+                }
                 let attrs = AttrMap::new();
                 let (result, _updated) = self.run_instance_method_at(
                     "instanceops",
