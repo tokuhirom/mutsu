@@ -1,4 +1,6 @@
 use crate::ast::{AssignOp, Expr, PhaserKind, Stmt};
+use crate::value::Value;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static PHASER_TEMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -842,10 +844,40 @@ fn reorder_at_level(
             where_constraint,
         } = &stmt
         {
-            let has_init = !matches!(init_expr, Expr::Literal(v) if v.is_nil());
+            // A bare `my @a;`/`my %h;` (no explicit initializer) still parses
+            // with a sigil-based default literal (`Literal(Array([]))` /
+            // `Literal(Hash({}))`), not `Literal(NIL)` — so testing the
+            // initializer expression against a NIL literal wrongly treats
+            // those as "has an initializer" and splices a spurious `@a = []`
+            // reset into `rest`, clobbering any mutation a hoisted BEGIN
+            // performed on the array/hash between its declaration and this
+            // synthetic assign. The parser already marks a real explicit
+            // initializer with the `__has_initializer` custom trait (checked
+            // the same way at e.g. `compiler/stmt.rs`'s `has_init` sites) —
+            // use that instead of guessing from the expression shape.
+            let has_init = custom_traits.iter().any(|(n, _)| n == "__has_initializer");
+            // The hoisted bare declaration's interim value (before any real
+            // initializer in `rest` runs) must match what an uninitialized
+            // declaration of this sigil actually holds: `Nil` for a scalar,
+            // but an EMPTY container for `@`/`%` — never a raw `Nil` literal.
+            // Compiling a `@`-sigil VarDecl with a `Literal(NIL)` initializer
+            // goes through the same path as an explicit `@a = Nil` assignment,
+            // which itemizes the Nil into a ONE-ELEMENT array `[(Any)]`
+            // instead of leaving the array empty (S02-types/assigning-refs.t
+            // semantics for `@a = Nil` are correct there — they just don't
+            // apply to "no initializer at all"). Using the sigil-based empty
+            // default here avoids that trap for both the `!has_init` case
+            // (this literal IS the whole value) and the `has_init` case (this
+            // is a throwaway interim value overwritten by the `rest`-bucket
+            // Assign moments later).
+            let hoisted_default = match name.as_bytes().first() {
+                Some(b'@') => Expr::Literal(Value::real_array(Vec::new())),
+                Some(b'%') => Expr::Literal(Value::hash_with_data(Value::hash_arc(HashMap::new()))),
+                _ => Expr::Literal(Value::NIL),
+            };
             var_decls.push(Stmt::VarDecl {
                 name: name.clone(),
-                expr: Expr::Literal(crate::value::Value::NIL),
+                expr: hoisted_default,
                 type_constraint: type_constraint.clone(),
                 is_state: *is_state,
                 is_our: *is_our,
