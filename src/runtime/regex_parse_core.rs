@@ -235,6 +235,94 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     names
 }
 
+/// Try to consume a trailing quantifier (`*`, `+`, `?`, `**N..M`, `**{code}`,
+/// plus a frugal `?` modifier) from `chars`, the same shapes the main atom
+/// loop accepts after an ordinary atom. Returns `None` (leaving `chars`
+/// unconsumed) when no quantifier follows. Used by the
+/// `NON_DECLARATIVE_INTERP_MARK` span closer to let a quantifier bind to an
+/// entire interpolated `$var` span instead of only its last spliced char —
+/// see `todo/tickets/quantified-scalar-regex-interpolation-broken.md`.
+fn try_consume_quantifier(
+    chars: &mut std::iter::Peekable<std::str::Chars>,
+) -> Option<(RegexQuant, bool)> {
+    let mut lookahead = chars.clone();
+    while lookahead.peek().is_some_and(|ch| ch.is_whitespace()) {
+        lookahead.next();
+    }
+    if !lookahead
+        .peek()
+        .is_some_and(|ch| matches!(ch, '*' | '+' | '?'))
+    {
+        return None;
+    }
+    *chars = lookahead;
+    let mut starstar_frugal = false;
+    let quant = match chars.next().unwrap() {
+        '*' => {
+            if chars.peek() == Some(&'*') {
+                chars.next();
+                starstar_frugal = match chars.peek() {
+                    Some(&'?') => {
+                        chars.next();
+                        true
+                    }
+                    Some(&'!') => {
+                        chars.next();
+                        false
+                    }
+                    _ => false,
+                };
+                while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                    chars.next();
+                }
+                if chars.peek() == Some(&'{') {
+                    chars.next();
+                    let mut code = String::new();
+                    let mut depth = 1usize;
+                    for ch in chars.by_ref() {
+                        if ch == '{' {
+                            depth += 1;
+                            code.push(ch);
+                        } else if ch == '}' {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                            code.push(ch);
+                        } else {
+                            code.push(ch);
+                        }
+                    }
+                    RegexQuant::RepeatCode(code)
+                } else {
+                    let mut count_str = String::new();
+                    while chars.peek().is_some_and(|ch| {
+                        ch.is_ascii_digit() || matches!(ch, '.' | '*' | '^' | '_')
+                    }) {
+                        count_str.push(chars.next().unwrap());
+                    }
+                    let (min, max) = Interpreter::parse_quantifier_range(&count_str);
+                    RegexQuant::Repeat(min, max)
+                }
+            } else {
+                RegexQuant::ZeroOrMore
+            }
+        }
+        '+' => RegexQuant::OneOrMore,
+        '?' => RegexQuant::ZeroOrOne,
+        _ => unreachable!(),
+    };
+    let frugal = if starstar_frugal {
+        true
+    } else if !matches!(quant, RegexQuant::One) && chars.peek() == Some(&'?') {
+        chars.next();
+        true
+    } else {
+        false
+    };
+    Some((quant, frugal))
+}
+
 impl Interpreter {
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
@@ -747,9 +835,50 @@ impl Interpreter {
         // leak into a matched literal. Every `RegexToken` this loop pushes
         // while the flag is set is marked `from_runtime_interpolation`.
         let mut in_non_declarative_interp = false;
+        // Index into `tokens` where the current interpolation span started
+        // (set when the opening mark is seen). Used at the closing mark to
+        // check for a trailing quantifier and, if one follows, wrap the
+        // span's tokens into a single `Group` atom so the quantifier binds
+        // to the whole interpolated value instead of just its last spliced
+        // char — see `try_consume_quantifier`'s doc comment.
+        let mut interp_span_start: Option<usize> = None;
         while let Some(c) = chars.next() {
             if c == Self::NON_DECLARATIVE_INTERP_MARK {
                 in_non_declarative_interp = !in_non_declarative_interp;
+                if in_non_declarative_interp {
+                    interp_span_start = Some(tokens.len());
+                } else if let Some(start) = interp_span_start.take()
+                    && let Some((quant, frugal)) = try_consume_quantifier(&mut chars)
+                {
+                    let mut span_tokens: Vec<RegexToken> = tokens.split_off(start);
+                    if span_tokens.len() == 1 {
+                        // A single-char interpolated value: quantify that one
+                        // token directly instead of wrapping it in a Group.
+                        let mut token = span_tokens.pop().unwrap();
+                        token.quant = quant;
+                        token.frugal = frugal;
+                        tokens.push(token);
+                    } else if !span_tokens.is_empty() {
+                        tokens.push(RegexToken {
+                            atom: RegexAtom::Group(RegexPattern {
+                                tokens: span_tokens,
+                                anchor_start: false,
+                                anchor_end: false,
+                                ignore_case,
+                                ignore_mark,
+                            }),
+                            quant,
+                            named_capture: None,
+                            hash_capture: None,
+                            secondary_named_capture: None,
+                            force_list_capture: false,
+                            ratchet,
+                            frugal,
+                            separator: None,
+                            from_runtime_interpolation: true,
+                        });
+                    }
+                }
                 continue;
             }
             // In Raku, unescaped whitespace in regex is insignificant
