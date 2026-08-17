@@ -216,7 +216,11 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         ));
     }
     let (rest, name) = crate::parser::stmt::parse_raku_ident(input)?;
-    let name = normalize_raku_identifier(name);
+    let mut name = normalize_raku_identifier(name);
+    // Slang `identifier`/`name` override (ADR-0026 §2.3, Slangify's Piersing
+    // fixture): a bareword call/term identifier may end in a trailing `?`/`!`
+    // (`pass? "..."`).
+    let rest = crate::parser::stmt::simple::consume_slang_ident_trailing_punct(&mut name, rest);
 
     // C++ constructor syntax: `new TypeName` (indirect object notation) is
     // unsupported in Raku — `Foo.new` must be used instead. Detect `new`
