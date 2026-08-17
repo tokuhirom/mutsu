@@ -2799,6 +2799,25 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
 
+  **Scoping (2026-08-17, read-only, no code).** Read literally, this box's own completion criterion
+  is already satisfied: `RegisterSub`/`RegisterClass`/`RegisterRole` were consolidated into
+  `RegisterDecl(CompiledDeclPlanRef)` in Phase A4, and no sub/class/role declaration reads a raw
+  `Stmt` to decide what to register. The remaining work is what C6d-2, D6, and D9 each deferred
+  "until the token/rule work lands, then closed together with F7": grammar `token`/`rule`
+  declarations are the only `Register*` path left reading a raw `Stmt` end to end (top-level
+  `RegisterToken(idx)` and the `ClassBodyOp`/`RoleBodyOp` `TokenRule` arm inside class/role/grammar
+  bodies) that is not one of Phase A's/D10's own already-accepted permanent exceptions
+  (`AugmentClass`'s one-shot `stmt_pool`-fed walker; `RegisterEnum`/`RegisterSubset`, explicitly
+  deferred as non-blocking by Phase A). This is narrower and lower-risk than it sounds — the actual
+  registration path (`register_token_decl`/`insert_token_def`) is materially flatter than a
+  `SubDecl`'s (no redeclaration check, no attribute pre-scan, `compiled: None` always, since a
+  token/rule body is never bytecode-compiled — that stays exactly as ADR-0009 decided) — but it is
+  real, unstarted design/implementation work, not a trivial rename. Full survey, the concrete
+  `CompiledTokenDeclPlan` shape recommendation (mirroring C8's own `CompiledProtoDeclPlan`
+  precedent), and a found-while-scoping `is_my`/`is_our`-dropped-silently observation (spot-checked
+  against `raku` and found benign, but worth a proper table before this code is touched) are in
+  `todo/deep/adr0019-f7-token-rule-declaration-typed-plan.md`. Not started.
+
 ### Completion gates
 
 - [ ] **G1 — Full compatibility gate.** `make test`, `make roast`, GC stress, JIT stress, WASM, and
