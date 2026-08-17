@@ -137,7 +137,18 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             quoted: false,
         };
         let (r, _) = ws(r)?;
-        let (r, _) = opt_char(r, ';');
+        // Leave a trailing `;` for the caller: `my_decl_dispatch.rs`'s "my
+        // constant" branch applies `parse_statement_modifier` to this
+        // function's returned remainder, which itself checks for a leading
+        // `;` to know the statement is already terminated (no modifier
+        // possible). Consuming it here first made that check see the NEXT
+        // line's content instead and misparse a following `if`/`unless`/...
+        // statement as a dangling modifier condition
+        // (`todo/tickets/cbor-simple-typed-array-and-diagnostic-format-gaps.md`).
+        // A bare top-level `constant ...;` (no `my`) still parses fine: the
+        // statement-list driver skips a leftover `;` between statements
+        // generically (`stmt_list_with_mode`'s own `while input.starts_with(';')`
+        // loop).
         return Ok((
             r,
             Stmt::VarDecl {
@@ -171,7 +182,9 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
             super::super::simple::register_compile_time_constant(&name, s.to_string());
         }
         let (rest, _) = ws(rest)?;
-        let (rest, _) = opt_char(rest, ';');
+        // See the matching comment in the `.=` branch above: do not consume
+        // a trailing `;` here, so `parse_statement_modifier` (applied by
+        // `my_decl_dispatch.rs`'s "my constant" branch) can still see it.
         return Ok((
             rest,
             Stmt::VarDecl {
