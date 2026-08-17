@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 15;
 
 # ADR-0019 E10: `.wrap()` on a method CANDIDATE (`^lookup(...).candidates[N]`,
 # not a plain sub `&foo`) stores its wrapper in `Registry::method_wrap_chains`,
@@ -38,3 +38,20 @@ my $wh3 = Foo.^lookup('baz').candidates[0].wrap(-> $self, $x { callsame() + 1000
 is $inst.baz(1), 1002, 'wrapped multi candidate applies the wrapper';
 $wh3.restore;
 is $inst.baz(1), 2, '.restore() on a multi candidate WrapHandle removes the wrapper';
+
+# `.restore()` is idempotent -- a SECOND call on an already-restored handle
+# is a no-op that answers `False`, not an error and not `True` again
+# (todo/tickets/method-wrap-unwrap-restore-noop.md; the first `.restore()`
+# above used to silently no-op by looking in the wrong map and reporting
+# success regardless, and this second-call case threw "Invalid WrapHandle:
+# not wrapped" instead of returning False). Verified against Rakudo v2026.06.
+my $wh4 = Foo.^lookup('bar').candidates[0].wrap(-> $self, $x { callsame() + 100 });
+is $wh4.restore, True, '.restore() on a live method-candidate handle returns True';
+is $wh4.restore, False, 'a second .restore() on the same handle is a no-op returning False';
+is $inst.bar(5), 10, 'the method stays unwrapped after a redundant .restore()';
+
+# Same idempotency check for a plain sub wrap handle (the sibling code path).
+sub plain-fn($x) { $x * 3 }
+my $wh5 = &plain-fn.wrap(-> $x { callsame() + 1 });
+is $wh5.restore, True, '.restore() on a live sub WrapHandle returns True';
+is $wh5.restore, False, 'a second .restore() on the same sub handle is a no-op returning False';
