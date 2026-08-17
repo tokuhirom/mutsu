@@ -84,6 +84,28 @@ next step is `--dump-ast` on the minimal repro to see how the parser's
 statement-boundary detection after `my constant` differs from after a plain
 `my`.
 
+## Update (2026-08-18): the `my constant` + `elsif` parser bug is fixed
+
+The minimal repro from the 2026-08-14 update above is fixed
+(`src/parser/stmt/decl/constant_subset.rs`): `constant_decl` was eagerly
+consuming its own trailing `;` before returning, so when
+`my_decl_dispatch.rs`'s "my constant" branch applied
+`parse_statement_modifier` to the remainder, that function's own "if there's
+a semicolon, the statement is already terminated" check never fired (the
+`;` was already gone) — it instead misparsed the immediately-following
+`if`/`elsif`/... statement as a dangling statement modifier on the constant
+declaration. Fixed by leaving the `;` for the caller (matching how a plain
+`my $x = 5;` already behaves); pinned by
+`t/constant-elsif-statement-boundary.t`. `decode-sval`'s `if`/`elsif` chain
+in `Simple.rakumod:734` should now parse correctly — not yet re-verified
+against the full round-trip or the `06-typed-arrays.rakutest` /
+`01`-`05` file triage below, which remain open.
+
+(A related but separate bug was found and filed apart from this one:
+`todo/tickets/constant-statement-modifier-value-lost.md` — a GENUINE
+statement modifier on `constant`, e.g. `my constant $w = 11 if True;`, parses
+fine but the bound value is lost, `$w` reads back `Any` instead of `11`.)
+
 ## Reproduce
 
 ```sh
