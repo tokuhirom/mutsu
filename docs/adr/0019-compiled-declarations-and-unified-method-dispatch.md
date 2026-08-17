@@ -1,6 +1,6 @@
 # ADR-0019: Compile declarations and unify method dispatch entries
 
-- **Status**: Proposed
+- **Status**: Accepted/Implemented (2026-08-17)
 - **Date**: 2026-08-03
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md),
   [ANALYSIS.md §1.1, §3.3, §4-1](../../ANALYSIS.md)
@@ -116,15 +116,18 @@ box is checked only after that PR has merged to `main` with required CI green. R
 unchecked even if its original PR merged. PRs are sequential branches from the then-current
 `main`; this is not a stacked-PR plan.
 
-**Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
-optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
-E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), and F5 are closed;
-F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with an amended
-completion criterion — see its entry); F7 is closed (with a role-body permanent-exception carve-out —
-see its entry); of the completion gates, G1 is closed (satisfied by the `main` branch ruleset's
-required status checks, after closing a `jit-stress` required-check gap found while verifying it) and
-G2 is closed (all four architectural-guard clauses now have permanent tests); G3 is closed (no
-regression traced to any of its four named mechanisms — see its entry); G4 remains open. See
+**Status: Accepted/Implemented (2026-08-17), all four completion gates closed.** Phases A, B, and
+C are fully closed. Phase D is closed except for the optional, low-priority D2c-5 (tracked as
+`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`). Phase E is closed except E2
+(still-open cleanup, no longer gating — E1, E3-E11 are all closed). Phase F: F3, F4 (all of
+F4a/F4b/F4c), and F5 are closed; F1/F2 are done except a deliberately-parked fidelity slice; F6 is
+closed (with an amended completion criterion — see its entry); F7 is closed (with a role-body
+permanent-exception carve-out — see its entry). Of the completion gates, G1 is closed (satisfied
+by the `main` branch ruleset's required status checks, after closing a `jit-stress`
+required-check gap found while verifying it), G2 is closed (all four architectural-guard clauses
+now have permanent tests), G3 is closed (no regression traced to any of its four named
+mechanisms — see its entry), and G4 is closed (this status line and ANALYSIS.md §1.1/§3.3/§4-1
+were updated as G4's own action). See
 each
 box's entry below for its
 own status, and
@@ -3082,8 +3085,21 @@ outcome.
   to be tracked as ordinary perf work outside the ADR's scope
   (`todo/tickets/bench-ctor-construction-parity.md`), to be picked up opportunistically rather than
   gating ADR-0019's closure. **This closes G3.**
-- [ ] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
+- [x] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
   ANALYSIS §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
+
+  **Progress (2026-08-17).** G1-G3 closed (see their own entries). "All required slices above"
+  means every top-level box except the ones explicitly marked optional/no-longer-gating in this
+  file's "Current progress" line: D2c-5 (optional), E2 (open cleanup, no longer gating — its own
+  entry explicitly replaced the original "must reach zero" precondition), and F1/F2's fidelity
+  slice (deliberately parked, user-method half already done) — none of those block closure by the
+  ADR's own wording. Filed the one previously-untracked leftover
+  (`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`) so it survives the ADR no
+  longer being actively read. Status set to Accepted/Implemented above; ANALYSIS.md §1.1, §3.3,
+  and §4 item 1 rewritten to describe the closed architecture and point at the surviving tickets
+  instead of describing an in-progress migration, and its §7 roadmap/§8 ADR-ledger rows updated
+  to match (user decision, 2026-08-17: close now, pick up any remaining detail via separate
+  tickets rather than holding the ADR open for polish). **This closes G4 and ADR-0019.**
 
 ## Rejected alternatives
 
@@ -3131,10 +3147,15 @@ each instruction.
 
 ## Implementation status
 
-The checklist above ("Execution plan and progress") is the authoritative, currently-maintained
-record of what has landed. Phases A-D and E1, E3-E11, F5, F7 are closed; E2 (open cleanup, no longer
-gating), the rest of Phase F (F1-F4, F6), and the completion gates are the remaining open work —
-see their entries above for
-current status and the linked `todo/deep/adr0019-*.md` design docs for full design and slice
-history. Individual accomplishments
-are additionally recorded per-PR under `news/2026-08/`.
+**Accepted/Implemented (2026-08-17).** The checklist above ("Execution plan and progress") is the
+authoritative, currently-maintained record of what has landed. Phases A-D, E (all of E1/E3-E11),
+and F (F3, F4, F5, F6, F7; F1/F2 for their user-method half) are closed, and all four completion
+gates (G1-G4) are closed — see each box's own entry above for full design and slice history, and
+the linked `todo/deep/adr0019-*.md` docs for design detail that outlived the checklist.
+
+Deliberately non-gating residue remains, tracked as independent tickets rather than inside this
+ADR: E2's exact-handler-ID catalog (`todo/deep/adr0019-e2-e4-resolver-core.md`, open cleanup, no
+longer gating dispatch correctness), F1/F2's native-method introspection fidelity
+(`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`), and D2c-5's optional env-setup
+de-duplication (`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`). Individual
+accomplishments are additionally recorded per-PR under `news/2026-08/`.
