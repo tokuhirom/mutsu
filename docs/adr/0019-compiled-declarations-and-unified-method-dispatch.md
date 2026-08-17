@@ -2920,13 +2920,20 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `type_declarations_leave_the_generic_statement_pool` (A3, class/role),
   `nontrivial_proto_declarations_compile_their_dispatch_body` (C8, proto), and the new
   `token_rule_declarations_leave_the_generic_statement_pool` (F7, covering both the top-level and
-  class-body registration paths). No single test asserts the invariant for every declaration kind
-  at once — this is a real gap: a future declaration kind could regress `stmt_pool` without
-  tripping any existing test. The `legacy_body`/`dispatch bypasses MethodEntry`/`introspection
-  reads a hand name table` clauses have no dedicated guard tests yet, though each was verified
+  class-body registration paths), and now
+  `every_migrated_declaration_kind_together_leaves_the_generic_statement_pool` — one program
+  declaring `sub`/`proto sub`+`multi sub`/`token`/`rule`/`class` together (plus a class body's own
+  nested `method`/`token`/`rule`), checked against the top-level `stmt_pool`, every nested compiled
+  function's own `stmt_pool`, and each class body op's `Other`/`ClassSub` raw payload — closing the
+  "isolated per-kind tests could miss a kind-vs-kind interaction" gap the per-kind tests alone left
+  open. Deliberately excludes role bodies: `RoleBodyOp::Deferred` keeps a raw `Stmt` for ANY
+  deferred statement kind by design (a role's composing package is unknown until composition, ADR
+  D8-1/D8-2), so it is an accepted carve-out bucket, not a regression surface this sweep should
+  police. The `legacy_body`/`dispatch bypasses MethodEntry`/`introspection
+  reads a hand name table` clauses still have no dedicated guard tests, though each was verified
   ad hoc at its own closing box (e.g. D6-4/D9-5's `legacy_body` field removal, E4-E7's dispatch
   entry-routing verification, F1/F2's `.^methods`/`.^can` canonical-table cutover) — formalizing
-  those as permanent regression tests, and adding the missing "every declaration kind" sweep, is
+  those as permanent regression tests is
   still open, unscoped work.
 - [ ] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
   per-call owner scans, registry locking, or repeated string interning; cache-hit dispatch remains

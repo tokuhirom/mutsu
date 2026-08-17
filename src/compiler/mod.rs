@@ -176,6 +176,84 @@ mod declaration_plan_tests {
         )));
     }
 
+    /// ADR-0019 G2 (architectural guard, comprehensive sweep): one program
+    /// declaring every migrated declaration kind at once — top-level `sub`,
+    /// `proto sub`/`multi sub`, `token`, `rule`, `class`, and a class body's
+    /// own nested `method`/`token`/`rule` — leaves NO declaration-shaped
+    /// `Stmt` in `stmt_pool` (top level, nested compiled functions, or a
+    /// class body's own `ClassBodyOp::Other`/`ClassSub` raw payload). The
+    /// per-kind tests above each cover one declaration kind in isolation;
+    /// this test exists because that isolation could hide a kind-vs-kind
+    /// interaction (e.g. a nested declaration only regressing when a
+    /// sibling kind is also present) that no single-kind test would catch.
+    /// `stmt_pool` itself is not asserted empty — it also carries
+    /// non-declaration payloads (`gather` bodies, closures) — only that it
+    /// holds none of the six migrated declaration `Stmt` variants.
+    ///
+    /// A **role body** is deliberately NOT swept the same way: every
+    /// `RoleBodyOp::Deferred` statement (not just `token`/`rule`) keeps a
+    /// raw `Stmt` by design — a role's composing package is unknown until
+    /// composition (ADR-0019 D8-1/D8-2), so `Deferred` is the accepted
+    /// carve-out bucket for any deferred statement kind, not a regression
+    /// surface this guard should police.
+    #[test]
+    fn every_migrated_declaration_kind_together_leaves_the_generic_statement_pool() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "sub f($x) { $x };
+             proto sub p($x) {*}; multi sub p(Int $x) { $x };
+             token t1 { \\d+ };
+             rule r1 { \\d+ };
+             class C {
+                 method cm { 2 }
+                 token ct { 'y' }
+                 rule cr { 'z' }
+             }",
+        )
+        .expect("source parses");
+        let (code, compiled_fns) = Compiler::new().compile(&stmts);
+
+        let is_migrated_decl = |stmt: &Stmt| {
+            matches!(
+                stmt,
+                Stmt::SubDecl { .. }
+                    | Stmt::ProtoDecl { .. }
+                    | Stmt::TokenDecl { .. }
+                    | Stmt::RuleDecl { .. }
+                    | Stmt::ClassDecl { .. }
+                    | Stmt::RoleDecl { .. }
+            )
+        };
+        assert!(
+            code.stmt_pool.iter().all(|stmt| !is_migrated_decl(stmt)),
+            "top-level stmt_pool: {:?}",
+            code.stmt_pool
+        );
+        for function in compiled_fns.values() {
+            assert!(
+                function
+                    .code
+                    .stmt_pool
+                    .iter()
+                    .all(|stmt| !is_migrated_decl(stmt)),
+                "nested compiled-function stmt_pool: {:?}",
+                function.code.stmt_pool
+            );
+        }
+        for plan in &code.class_decl_plans {
+            for op in &plan.body_plan {
+                if let crate::opcode::ClassBodyOp::Other { raw, .. }
+                | crate::opcode::ClassBodyOp::ClassSub { raw, .. } = op
+                {
+                    assert!(
+                        !is_migrated_decl(raw),
+                        "class {} body op: {raw:?}",
+                        plan.name
+                    );
+                }
+            }
+        }
+    }
+
     /// ADR-0019 C8: a non-trivial proto body compiles its `{*}`-rewritten
     /// dispatch once, at declaration time, instead of leaving the VM to
     /// rewrite and OTF-compile the AST on every call.
