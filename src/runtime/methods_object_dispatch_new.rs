@@ -57,16 +57,26 @@ impl Interpreter {
         if !self.has_user_method(class_key, "new") {
             return Ok(None);
         }
-        let empty_attrs = AttrMap::new();
-        match self.run_instance_method_at(
-            "newdispatch",
-            class_key,
-            empty_attrs,
-            "new",
-            args.to_vec(),
-            None,
-        ) {
-            Ok((result, _updated)) => Ok(Some(result)),
+        // ADR-0019 F6: VM-level direct-dispatch path first (see
+        // `try_dispatch_compiled_method_direct`'s doc comment).
+        let target = Value::package(Symbol::intern(class_key));
+        let dispatched =
+            if let Some(result) = self.try_dispatch_compiled_method_direct(&target, "new", args) {
+                result
+            } else {
+                let empty_attrs = AttrMap::new();
+                self.run_instance_method_at(
+                    "newdispatch",
+                    class_key,
+                    empty_attrs,
+                    "new",
+                    args.to_vec(),
+                    None,
+                )
+                .map(|(v, _updated)| v)
+            };
+        match dispatched {
+            Ok(result) => Ok(Some(result)),
             Err(e) if e.is_multi_no_match() => Ok(None),
             Err(e) => Err(e),
         }
@@ -1442,14 +1452,25 @@ impl Interpreter {
                 if role.methods.contains_key("new") {
                     let role_name = class_name.resolve();
                     self.ensure_role_punned_to_class(&role_name)?;
-                    let dispatched = self.run_instance_method_at(
-                        "newdispatch",
-                        &class_name.resolve(),
-                        AttrMap::new(),
-                        "new",
-                        args.clone(),
-                        None,
-                    );
+                    // ADR-0019 F6: VM-level direct-dispatch path first (see
+                    // `try_dispatch_compiled_method_direct`'s doc comment).
+                    // `target` is the role's own type object, freshly punned
+                    // to a class above, so it already carries the right
+                    // `Package` symbol for resolution.
+                    let dispatched = if let Some(result) =
+                        self.try_dispatch_compiled_method_direct(&target, "new", &args)
+                    {
+                        result.map(|v| (v, AttrMap::new()))
+                    } else {
+                        self.run_instance_method_at(
+                            "newdispatch",
+                            &class_name.resolve(),
+                            AttrMap::new(),
+                            "new",
+                            args.clone(),
+                            None,
+                        )
+                    };
                     self.withdraw_role_pun(&role_name);
                     match dispatched {
                         Ok((result, _)) => {
@@ -1601,15 +1622,27 @@ impl Interpreter {
                 }
                 // Check for user-defined .new method first
                 if self.has_user_method(class_key, "new") {
-                    let empty_attrs = AttrMap::new();
-                    match self.run_instance_method_at(
-                        "newdispatch",
-                        &class_name.resolve(),
-                        empty_attrs,
-                        "new",
-                        args.clone(),
-                        None,
-                    ) {
+                    // ADR-0019 F6: VM-level direct-dispatch path first (see
+                    // `try_dispatch_compiled_method_direct`'s doc comment).
+                    // `target` is `Package(class_name)` here (see the
+                    // destructure above), matching the class name this site
+                    // has always dispatched against.
+                    let dispatched = if let Some(result) =
+                        self.try_dispatch_compiled_method_direct(&target, "new", &args)
+                    {
+                        result.map(|v| (v, AttrMap::new()))
+                    } else {
+                        let empty_attrs = AttrMap::new();
+                        self.run_instance_method_at(
+                            "newdispatch",
+                            &class_name.resolve(),
+                            empty_attrs,
+                            "new",
+                            args.clone(),
+                            None,
+                        )
+                    };
+                    match dispatched {
                         Ok((result, _updated)) => return Ok(result),
                         Err(e) => {
                             // If multi dispatch failed (no matching candidate),

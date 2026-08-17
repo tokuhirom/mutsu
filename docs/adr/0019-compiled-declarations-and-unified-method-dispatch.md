@@ -2548,6 +2548,38 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   **This closes the mut-dispatch family**: both its named sites (the native-lever-A branch, migrated
   in the prior mut-dispatch slice, and this general fallback) are now off the carrier. Remaining open
   families: new-dispatch, general-call-dispatch, qualified-dispatch's shared helper.
+
+  **Progress (new-dispatch family, all three sites — family closed, #TBD).** Migrated all three
+  `methods_object_dispatch_new.rs` sites onto `try_dispatch_compiled_method_direct`: the
+  augmented-builtin-`.new` fallback (`try_augmented_builtin_new`, invocant `None`, dispatches
+  against a freshly-constructed `Value::package(Symbol::intern(class_key))`), the role-punned
+  `.new` branch (dispatches against `target`, already the role's own type object freshly punned to
+  a class by the preceding `ensure_role_punned_to_class` call), and the general new-dispatch
+  fallback (dispatches against `target`, which is `Package(class_name)` throughout `dispatch_new`
+  by construction — every `Instance` receiver is redirected to `Value::package(class_name)` before
+  reaching this point). Each site wraps the direct-dispatch attempt to produce the exact same
+  `Result<(Value, AttrMap), RuntimeError>` shape the site's own (unmodified) downstream
+  error-handling logic already expects — e.g. the general fallback's proto-method/positional-arg/
+  default-constructor fallthrough chain, and `try_augmented_builtin_new`'s
+  `is_multi_no_match -> Ok(None)` translation — so none of that existing logic needed to change,
+  only the single `run_instance_method_at` call each site made.
+
+  Gathered evidence with the same temporary env-gated probe technique (removed before commit)
+  across the full local `t/` corpus: the augmented-builtin-`.new` site fell back 100% of the time
+  (4/4, all in `t/augment-builtin-datetime.t`, which fully passes either way — the fast resolver
+  path apparently doesn't cover this augmented-native-type shape, so this site gets no speed
+  benefit yet but is still correctly carrier-free-by-default with a safe fallback); the role-pun
+  site hit the direct path 4/7 times (`t/role-instantiation.t` et al., all pass); the general
+  fallback hit 13/58 times, with the majority of fallbacks tracing to value-dependent `multi method
+  new` candidates (`t/multi-new-default-fallback.t`, `t/proto-new-no-match.t`, ...) — the same
+  cacheable-multi-gate shape already validated safe by the mut-dispatch family's own evidence, not
+  a new risk. Verified with the full local `t/` suite (3191 files, all green — no recursion, no
+  regression), `cargo build`/`clippy -- -D warnings`/`fmt` clean, the 314-file whitelisted
+  `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted files fail
+  identically before/after), and `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged —
+  notably exercises real `.new` construction across every bundled library, e.g. Cro/DBIish/
+  JSON::Tiny). **This closes the new-dispatch family.** Remaining open families:
+  general-call-dispatch, qualified-dispatch's shared helper.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
