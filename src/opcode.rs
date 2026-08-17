@@ -2922,11 +2922,21 @@ pub(crate) enum ClassBodyOp {
         chunk: Option<CompiledDeclExpr>,
         raw: Stmt,
     },
+    /// A `token`/`rule` declaration inside a class body (ADR-0019 F7 slice
+    /// 2), precomputed as a typed [`CompiledTokenDeclPlan`] instead of
+    /// falling into `Other`'s raw-`Stmt` fallback. A class body's own
+    /// package is fixed and known at class-declaration compile time
+    /// (unlike a role body's, whose composing package is only known at
+    /// composition — see [`RoleBodyOp::Deferred`]/`DeferredBodyOpKind::TokenRule`,
+    /// which keeps the raw-`Stmt` fallback for exactly that reason), so
+    /// `run_class_body` calls `register_token_decl` straight from this
+    /// plan's fields instead of OTF-recompiling the statement through
+    /// `run_block_raw` on every registration. The regex body itself
+    /// (`raw_body`) stays interpreter-executed, unchanged — ADR-0009's own
+    /// execution model, not something this migration touches.
+    TokenRule { plan: CompiledTokenDeclPlan },
     /// Everything else (`use`/`need`, nested `class`/`role`, BEGIN/CHECK,
-    /// EVAL, `my`/`our` lexicals, `token`/`rule` declarations, ...).
-    /// `token`/`rule` statements are excluded from D6/D9's compiled-chunk
-    /// cutover (the phase preamble's ADR-0009 carve-out) and keep `chunk:
-    /// None` permanently — every other kind gets one in D6-3b.
+    /// EVAL, `my`/`our` lexicals, ...).
     Other {
         chunk: Option<CompiledDeclExpr>,
         raw: Stmt,
@@ -3008,6 +3018,9 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
             name: *name,
             chunk: None,
             raw: stmt.clone(),
+        },
+        Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => ClassBodyOp::TokenRule {
+            plan: build_token_decl_plan(stmt),
         },
         _ => ClassBodyOp::Other {
             chunk: None,
@@ -3288,6 +3301,40 @@ pub(crate) struct CompiledTokenDeclPlan {
     pub(crate) param_defs: Vec<ParamDef>,
     pub(crate) multi: bool,
     pub(crate) raw_body: Vec<Stmt>,
+}
+
+/// Build a [`CompiledTokenDeclPlan`] from a `Stmt::TokenDecl`/`RuleDecl`.
+/// Shared by `CompiledCode::add_token_decl_plan` (the top-level
+/// `RegisterDecl(Token)` path, ADR-0019 F7 slice 1) and
+/// `classify_class_body_stmt` (`ClassBodyOp::TokenRule`, slice 2) — a pure
+/// function of the raw statement, needing no compiler state, since a
+/// token/rule declaration has no computed name/trait to compile.
+fn build_token_decl_plan(stmt: &Stmt) -> CompiledTokenDeclPlan {
+    let (name, params, param_defs, body, multi) = match stmt {
+        Stmt::TokenDecl {
+            name,
+            params,
+            param_defs,
+            body,
+            multi,
+            ..
+        }
+        | Stmt::RuleDecl {
+            name,
+            params,
+            param_defs,
+            body,
+            multi,
+        } => (name, params, param_defs, body, *multi),
+        _ => panic!("build_token_decl_plan expects TokenDecl/RuleDecl"),
+    };
+    CompiledTokenDeclPlan {
+        name: *name,
+        params: params.clone(),
+        param_defs: param_defs.clone(),
+        multi,
+        raw_body: body.clone(),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -6522,32 +6569,8 @@ impl CompiledCode {
     /// stays interpreter-executed by ADR-0009's own design — mirroring
     /// `add_proto_decl_plan`'s `legacy_body` precedent for the same reason.
     pub(crate) fn add_token_decl_plan(&mut self, stmt: &Stmt) -> u32 {
-        let (name, params, param_defs, body, multi) = match stmt {
-            Stmt::TokenDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-                ..
-            }
-            | Stmt::RuleDecl {
-                name,
-                params,
-                param_defs,
-                body,
-                multi,
-            } => (name, params, param_defs, body, *multi),
-            _ => panic!("add_token_decl_plan expects TokenDecl/RuleDecl"),
-        };
         let plan_idx = self.token_decl_plans.len() as u32;
-        self.token_decl_plans.push(CompiledTokenDeclPlan {
-            name: *name,
-            params: params.clone(),
-            param_defs: param_defs.clone(),
-            multi,
-            raw_body: body.clone(),
-        });
+        self.token_decl_plans.push(build_token_decl_plan(stmt));
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Token(plan_idx));
         idx

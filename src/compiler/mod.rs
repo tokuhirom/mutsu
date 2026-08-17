@@ -439,12 +439,14 @@ mod declaration_plan_tests {
         ));
     }
 
-    /// ADR-0019 D6-3b: `token`/`rule` declarations are excluded from the
-    /// `Other`-chunk compile — the phase preamble's ADR-0009 carve-out —
-    /// and keep `chunk: None`, staying on the registration-time
-    /// `run_block_raw` path until their own dedicated slice.
+    /// ADR-0019 F7 slice 2: `token`/`rule` declarations inside a class body
+    /// classify into their own typed `ClassBodyOp::TokenRule` plan instead
+    /// of falling into `Other`'s raw-`Stmt` fallback — they need no
+    /// `CompiledDeclExpr` chunk (the regex body stays interpreter-executed
+    /// per ADR-0009), but the registration shell (name/params/multi) is
+    /// precomputed just like the top-level `RegisterDecl(Token)` path.
     #[test]
-    fn class_declarations_body_plan_excludes_token_rule_chunks() {
+    fn class_declarations_body_plan_types_token_rule_declarations() {
         let (stmts, _) =
             crate::parse_dispatch::parse_source("class A { token t { a }; rule r { a } }")
                 .expect("source parses");
@@ -460,18 +462,26 @@ mod declaration_plan_tests {
         let token_rule_ops: Vec<&ClassBodyOp> = plan_a
             .body_plan
             .iter()
-            .filter(|op| {
-                matches!(
-                    op,
-                    ClassBodyOp::Other { raw, .. }
-                        if matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. })
-                )
-            })
+            .filter(|op| matches!(op, ClassBodyOp::TokenRule { .. }))
             .collect();
         assert_eq!(token_rule_ops.len(), 2, "ops: {token_rule_ops:?}");
-        for op in token_rule_ops {
-            assert!(matches!(op, ClassBodyOp::Other { chunk: None, .. }));
-        }
+        let names: Vec<String> = token_rule_ops
+            .iter()
+            .map(|op| {
+                let ClassBodyOp::TokenRule { plan } = op else {
+                    unreachable!()
+                };
+                plan.name.resolve()
+            })
+            .collect();
+        assert_eq!(names, vec!["t".to_string(), "r".to_string()]);
+        assert!(
+            plan_a
+                .body_plan
+                .iter()
+                .all(|op| !matches!(op, ClassBodyOp::Other { raw, .. }
+                    if matches!(raw, Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. })))
+        );
     }
 
     /// ADR-0019 D6-3d: `ClassBodyOp::LeavePhaser`'s chunk must compile the
