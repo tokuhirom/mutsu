@@ -54,3 +54,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0026](0026-slang-activation-architecture.md) | Slang activation — bundle Slangify + Slang::Tuxic verbatim, map recognized grammar-mixin overrides onto parser modes | Accepted |
 | [0027](0027-loop-frozen-value-capture-cascade.md) | Loop-frozen value captures cascade through nested closure creation — frame-owned vouching gated on the live value kind | Accepted (Slice 1 implemented; Slices 2-3 planned) |
 | [0028](0028-supply-schedule-on-deferred-tap-delivery.md) | `Supply.schedule-on` genuinely defers tap delivery — callback shims at the tap-registration chokepoint, with a serialized per-tap drain | Proposed |
+| [0029](0029-exception-class-role-membership.md) | Built-in `X::` exception ancestry is role membership, not a single parent — register it through the existing composed-role path | Proposed (design complete; implementation not started) |
