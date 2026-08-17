@@ -582,18 +582,38 @@ impl Interpreter {
         // The caller (VM) already prepends the type object to args.
         // Route through run_instance_method to execute the method body.
         if method.starts_with('^') && method.len() > 1 && !Self::is_classhow_method(&method[1..]) {
-            let class_name = match target.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                ValueView::Package(name) => Some(name.resolve()),
+            let class_sym = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name),
+                ValueView::Package(name) => Some(name),
                 _ => None,
             };
-            if let Some(cn) = class_name
-                && self.has_user_method(&cn, method)
+            if let Some(class_sym) = class_sym
+                && self.has_user_method(class_sym.as_str(), method)
             {
+                // ADR-0019 F6: VM-level direct-dispatch path first (see
+                // `try_dispatch_compiled_method_direct_as`'s doc comment).
+                // A metamethod's `self` is never the receiver: the carrier
+                // below always resolves `invocant: None` + empty attributes
+                // to `Value::package(cn)` (`run_instance_method_celled`'s own
+                // `inv_value` fallback), so passing that SAME synthesized
+                // package value as the direct helper's `target` reproduces
+                // identical invocant semantics — no calling-convention shift,
+                // since the type object the metamethod actually receives is
+                // already `args[0]` (prepended by the VM caller), not this
+                // invocant.
+                let dispatch_target = Value::package(class_sym);
+                if let Some(result) = self.try_dispatch_compiled_method_direct_as(
+                    class_sym,
+                    &dispatch_target,
+                    method,
+                    &args,
+                ) {
+                    return result;
+                }
                 let attrs = AttrMap::new();
                 let (result, _) = self.run_instance_method_at(
                     "generalcalldispatch",
-                    &cn,
+                    class_sym.as_str(),
                     attrs,
                     method,
                     args,

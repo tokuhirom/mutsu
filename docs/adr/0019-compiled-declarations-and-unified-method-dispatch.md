@@ -2594,17 +2594,36 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — same 7 non-whitelisted failures before/after),
   and `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged).
 
-  **The other two general-call-dispatch sites are deliberately deferred, not attempted:**
-  - The `^metamethod` dispatch branch (`method ^foo(Mu) {...}`, `~line 584`) passes `invocant: None`
-    to `run_instance_method_at` even though `target` is Instance/Package — the VM caller already
-    prepends the type object as an explicit positional arg instead of binding it as `self`, per this
-    site's own comment. `try_dispatch_compiled_method_direct` always threads `target` as the bound
-    invocant into `dispatch_compiled_method`, which is a different calling convention (self-binding
-    vs. a plain leading positional) that could shift a compiled method's own positional-slot
-    accounting. This shape has **zero coverage in the local `t/` corpus** (`grep -rl 'method \^'
-    t/*.t` finds nothing) and only one roast file (`S14-traits/routines.t`), too thin a signal to
-    trust a behavior-changing swap here — left on `run_instance_method_at` pending either a wider
-    repro corpus or a helper variant that accepts an explicit invocant-vs-args split.
+  **Progress (general-call-dispatch family, `^metamethod` site migrated, #TBD).** Wrote
+  `t/metamethod-dispatch.t` first (6 cases: type-object receiver, inherited metamethod, extra
+  positional args after the prepended type object, calling through a live instance, and repeated
+  calls proving the body actually executes with retained `my`-scoped class state) — this shape had
+  **zero coverage in the local `t/` corpus** before this slice (`grep -rl 'method \^' t/*.t` found
+  nothing), only `roast/S14-traits/routines.t`'s indirect `is foo`-trait/`wrap` interaction test.
+  Confirmed against `raku` (all 6 cases match). Re-reading the calling convention this box's prior
+  note flagged as the blocker: `run_instance_method_celled`'s own `inv_value` derivation resolves
+  `invocant: None` + this site's hardcoded-empty `AttrMap::new()` to `Value::package(receiver_class_
+  name)` — i.e. even on today's carrier, `self` inside a metamethod is NEVER the real receiver, only
+  a synthesized type-object value (matching `raku`'s own `self.WHO` returning an empty/type-like
+  value there, not the instance). `dispatch_compiled_method` performs the identical `attrs_empty ->
+  Value::package(cn)` computation when its own `target` carries no attribute cell. So passing that
+  SAME synthesized `Value::package(class_sym)` as `try_dispatch_compiled_method_direct_as`'s
+  `target` reproduces bit-identical invocant semantics — no calling-convention shift after all; the
+  type object the metamethod body actually receives as its own first declared param continues to
+  arrive via `args[0]` (still prepended by the VM caller), entirely independent of the invocant
+  value threaded into `dispatch_compiled_method`, since positional-param binding and `self`-binding
+  are separate code paths (`call_compiled_method`'s `base`/`invocant` computation vs. its
+  `bind_function_args_values` call over `args`). Migrated the branch to try
+  `try_dispatch_compiled_method_direct_as(class_sym, &Value::package(class_sym), method, &args)`
+  first, falling back to `run_instance_method_at("generalcalldispatch", ...)` on `None`, same
+  pattern as every other migrated site. Verified with the full local `t/` suite (3193 files, all
+  green), the new `t/metamethod-dispatch.t`, `roast/S14-traits/routines.t` (release), the standard
+  314-file whitelisted `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7
+  non-whitelisted files fail identically before/after, matching every prior slice in this box),
+  `cargo build`/`clippy -- -D warnings`/`fmt` clean, and `scripts/battery-testsuite.sh` (GATE
+  PASSED, 245/271 unchanged).
+
+  **The remaining general-call-dispatch site is still deliberately deferred, not attempted:**
   - The mixin fallback (`ValueView::Mixin(inner, mixins)` class-method branch, `~line 3960`) passes
     `target.clone()` (the whole mixin wrapper) as invocant so a nested `self.foo` inside the method
     re-dispatches through the mixin's role overrides, but separately extracts `inner`'s own
