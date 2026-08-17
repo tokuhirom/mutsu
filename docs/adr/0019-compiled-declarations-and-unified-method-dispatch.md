@@ -121,7 +121,9 @@ optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, n
 E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), and F5 are closed;
 F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with an amended
 completion criterion — see its entry); F7 is closed (with a role-body permanent-exception carve-out —
-see its entry); only the completion gates (G1-G4) remain open. See each
+see its entry); of the completion gates, G1 is closed (satisfied by the `main` branch ruleset's
+required status checks, after closing a `jit-stress` required-check gap found while verifying it);
+G2-G4 remain open. See each
 box's entry below for its
 own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
@@ -2965,8 +2967,26 @@ outcome.
 
 ### Completion gates
 
-- [ ] **G1 — Full compatibility gate.** `make test`, `make roast`, GC stress, JIT stress, WASM, and
+- [x] **G1 — Full compatibility gate.** `make test`, `make roast`, GC stress, JIT stress, WASM, and
   bundled-library suites pass with no new quarantine.
+
+  **Progress (2026-08-17).** Read literally, this is not a one-time run to perform — it is what the
+  `main` branch ruleset's required status checks already enforce on every merge: the `test` job runs
+  `make test`-equivalent steps (unit tests, `prove t/`, `make roast`) plus the bundled-library gate
+  (`scripts/battery-testsuite.sh`, moved to run on every PR per its own comment in `ci.yml`, not just
+  post-merge); `gc-stress` and `jit-stress` re-run the same `t/`+roast suites under the GC and JIT
+  stress configurations; `wasm-e2e` covers the WASM target. "No new quarantine" is enforced
+  separately by `make check-flaky-list`'s review-date expiry inside the `test` job. Since branch
+  protection only lets a green PR reach `main`, every one of these has already passed on every commit
+  currently on `main`.
+
+  Verifying this against the actual ruleset (`gh api repos/tokuhirom/mutsu/rulesets/12935729`) found
+  a real gap: `jit-stress` runs on every PR and its own job comment calls every step a "BLOCKING
+  gate," but it was **absent** from `required_status_checks` (`test`/`wasm-e2e`/`gc-stress`/
+  `changes`/`miri` only) — so a failing `jit-stress` would not actually have blocked auto-merge.
+  Fixed by adding `jit-stress` to the ruleset's required status checks (2026-08-17), so G1's own
+  premise now holds for real rather than by accident. This was a repository-settings change (not a
+  code diff), made with the user's explicit go-ahead after presenting the gap.
 - [ ] **G2 — Architectural guard tests.** Tests fail if a migrated declaration enters
   `stmt_pool`, retains `legacy_body`, dispatch bypasses `MethodEntry`, or introspection reads a hand
   name table.
