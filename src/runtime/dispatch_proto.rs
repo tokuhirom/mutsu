@@ -324,6 +324,15 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let cn = match target.view() {
             ValueView::Instance { class_name, .. } => class_name.resolve(),
+            // A type-object invocant (`P.m(5)`, not `P.new.m(5)`): a
+            // non-trivial `proto method` body must still run (raku:
+            // `proto(5) / int(5)`), same as for an instance invocant. `new`
+            // is excluded — it already has its own proto interception in
+            // `dispatch_new`/`methods_object_dispatch_new.rs`, reached
+            // before this generic method-call path, so widening the gate to
+            // it here would risk double-running that constructor's proto
+            // body instead of leaving it to the dedicated leg.
+            ValueView::Package(name) if method != "new" => name.resolve(),
             _ => return None,
         };
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
