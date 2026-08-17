@@ -3988,6 +3988,23 @@ impl Interpreter {
                     }
                 }
                 if self.class_has_method(&cls, method) {
+                    // ADR-0019 F6: VM-level direct-dispatch path first (see
+                    // `dispatch_compiled_method_with_attrs_cell`'s doc comment).
+                    // `self` must stay bound to the Mixin wrapper (`target`) so a
+                    // nested `self.foo` inside the method redispatches through the
+                    // mixin's role overrides, but the real attribute storage lives
+                    // on `inner` — so the real cell is threaded through explicitly
+                    // rather than derived from `target`'s own (nonexistent)
+                    // attribute cell.
+                    if let Some(result) = self.try_dispatch_compiled_method_direct_with_attrs_cell(
+                        class_name,
+                        &target,
+                        &attributes,
+                        method,
+                        &args,
+                    ) {
+                        return result;
+                    }
                     let attrs = attributes.to_map();
                     let (result, updated) = self.run_instance_method_at(
                         "generalcalldispatch",

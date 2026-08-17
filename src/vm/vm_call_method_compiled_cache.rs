@@ -411,6 +411,70 @@ impl Interpreter {
         Ok(result)
     }
 
+    /// Variant of [`Self::dispatch_compiled_method`] for callers whose bound
+    /// `self`/invocant carries no attribute cell of its own — e.g. a role-mixin
+    /// wrapper (`ValueView::Mixin`), whose real attribute storage lives on a
+    /// DIFFERENT value (the mixin's `inner` instance) — but where `self` must
+    /// still be the wrapper itself so a nested `self.foo` inside the method
+    /// redispatches through the mixin's role overrides. `attrs_cell` supplies
+    /// the actual attribute storage to read from and commit mutations back
+    /// onto; `target` is the value bound as `self`.
+    ///
+    /// Always takes the slow (`call_compiled_method`) path, never the fast
+    /// (`call_compiled_method_fast`) one: the fast path's live-cell
+    /// optimization reads attributes directly off `self`'s own `ValueView`,
+    /// which requires `self` to literally be `ValueView::Instance` — not true
+    /// here by construction, so there is no live cell for it to find. This is
+    /// an acceptable trade for a cold path (role-mixin class-method dispatch),
+    /// matching ADR-0019 F6's box note that the general-call-dispatch family's
+    /// mixin fallback "needs a new helper shape" rather than reusing
+    /// `try_dispatch_compiled_method_direct`/`_as` as-is (those would silently
+    /// derive an empty attribute map from the wrapper and drop mutations).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn dispatch_compiled_method_with_attrs_cell(
+        &mut self,
+        cn: &str,
+        owner_class: &str,
+        method: &str,
+        method_def: &std::sync::Arc<crate::runtime::MethodDef>,
+        cc: &std::sync::Arc<CompiledCode>,
+        target: Value,
+        attrs_cell: &crate::gc::Gc<crate::value::InstanceAttrs>,
+        args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        let empty_fns = CompiledFns::default();
+        let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
+        let attributes = attrs_cell.to_map();
+        let pushed_dispatch = loan_env!(
+            self,
+            push_method_dispatch_frame(cn, method, &args, target.clone(),)
+        );
+        let invocant = Some(target);
+        let result = self.call_compiled_method(
+            cn,
+            owner_class,
+            method,
+            method_def,
+            cc,
+            &attributes,
+            args,
+            invocant,
+            fns_ref,
+        );
+        if pushed_dispatch {
+            self.pop_method_dispatch();
+        }
+        self.pop_method_samewith_context();
+        let (result, reconciled) = result?;
+        // Same "only commit a `:=`-adjusted snapshot" reasoning as
+        // `dispatch_compiled_method`: an unadjusted result equals the cell
+        // already, so a whole-map write would race with concurrent cell-CAS.
+        if let Some(m) = &reconciled {
+            attrs_cell.commit_attrs(m.clone());
+        }
+        Ok(result)
+    }
+
     /// Pre-compute and cache fast dispatch eligibility for a method.
     pub(crate) fn try_populate_fast_cache(
         &mut self,
