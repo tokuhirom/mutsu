@@ -392,6 +392,50 @@ impl Interpreter {
         })?
     }
 
+    /// When a user `gist`/`Str`/`raku` override calls `nextsame`/`callsame`
+    /// and the user MRO is exhausted, Mu's native default implementation is
+    /// the final base candidate — it is not a `MethodDef`, so the regular MRO
+    /// chain never reaches it (mirrors `native_array_storage_next_candidate`).
+    /// Reads invocant/args off `method_dispatch_stack` when a frame exists
+    /// (a multi/wrapped override), falling back to the samewith context and
+    /// `self` for a plain single-candidate compiled method, which pushes no
+    /// `method_dispatch_stack` frame at all.
+    ///
+    /// `gist`/`raku` route through `default_instance_repr` (the
+    /// `ClassName.new(...)` rendering); a plain instance has no comparable
+    /// default `Str` method to defer to (Rakudo's own default is an
+    /// identity-ish `ClassName<objectid>`, not reproducible here), so `Str`
+    /// uses the same generic `ClassName()` fallback `Value`'s `Display`
+    /// impl already renders for an instance with no better answer.
+    fn native_any_base_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ctx = self.samewith_context_stack.last().cloned()?;
+        if !matches!(ctx.name.as_str(), "gist" | "Str" | "raku") {
+            return None;
+        }
+        let invocant = self
+            .method_dispatch_stack
+            .last()
+            .map(|f| f.invocant.clone())
+            .or_else(|| ctx.invocant.clone())
+            .or_else(|| self.env.get("self").cloned())?;
+        if ctx.name == "Str" {
+            return Some(Ok(Value::str(invocant.to_string_value())));
+        }
+        let args: Vec<Value> = match override_args {
+            Some(a) => a.to_vec(),
+            None => self
+                .method_dispatch_stack
+                .last()
+                .map(|f| f.args.clone())
+                .or_else(|| ctx.args.clone())
+                .unwrap_or_default(),
+        };
+        self.default_instance_repr(&invocant, &ctx.name, &args)
+    }
+
     /// When a user-overridden grammar `parse`/`subparse`/`parsefile` calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`) and the user MRO is
     /// exhausted, the NATIVE grammar parse is the final base candidate. It is not
@@ -588,6 +632,10 @@ impl Interpreter {
                         res?
                     } else if let Some(res) =
                         self.native_array_storage_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
+                        self.native_any_base_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else {
@@ -1161,6 +1209,19 @@ impl Interpreter {
         // The native array behavior on the backing `__mutsu_array_storage` is
         // still the correct base candidate.
         if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
+            let result = res?;
+            if tail_call {
+                return Err(RuntimeError {
+                    return_value: Some(result),
+                    ..RuntimeError::new("")
+                });
+            }
+            return Ok(result);
+        }
+        // Same no-frame shape as above, for a `gist`/`Str`/`raku` override
+        // (`method gist() { "custom+" ~ callsame }`) with no wrap/multi/role
+        // complications.
+        if let Some(res) = self.native_any_base_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError {

@@ -3824,6 +3824,14 @@ pub(crate) struct CompiledCode {
     /// after every interpreter-native call, which kept such routines
     /// permanently out of the name-keyed call caches by accident.)
     pub(crate) uses_callframe: bool,
+    /// True if this code directly calls `callsame`/`nextsame`/`callwith`/
+    /// `nextwith`. Set during `emit()`. The compiled method fast paths
+    /// (`call_compiled_method`/`call_compiled_method_fast`) push a
+    /// `SamewithContext` only when this is set, so a plain method call that
+    /// never defers pays no per-call String/Vec clone — see
+    /// `todo/tickets/callsame-to-native-mu-methods-nil.md` for why an
+    /// unconditional push was rejected on hot-path cost grounds.
+    pub(crate) uses_dispatcher: bool,
     /// True if this code is the body of a `supply { … }` block — the lambda
     /// `Supply.on-demand` is handed, recognised by its generated emitter
     /// parameter (`__mutsu_supply_emitter_N`, see `supply_method_call`).
@@ -4176,6 +4184,7 @@ impl CompiledCode {
             reads_topic: false,
             has_once: false,
             uses_callframe: false,
+            uses_dispatcher: false,
             source_line: None,
             is_pointy_block: false,
             has_env_writes: false,
@@ -6008,6 +6017,23 @@ impl CompiledCode {
                 }
                 _ => {}
             }
+        }
+        if !self.uses_dispatcher
+            && let OpCode::CallFunc { name_idx, .. }
+            | OpCode::CallFuncNamed { name_idx, .. }
+            // `callsame`/`nextsame`/`callwith`/`nextwith` written with no
+            // parens/args (the common case) compile as a bareword term read
+            // (`GetBareWord`), not a call opcode — `exec_get_bare_word_op`
+            // dispatches those four names specially at runtime.
+            | OpCode::GetBareWord(name_idx) = &op
+            && let Some(v) = self.constants.get(*name_idx as usize)
+            && let ValueView::Str(s) = v.view()
+            && matches!(
+                s.as_str(),
+                "callsame" | "nextsame" | "callwith" | "nextwith"
+            )
+        {
+            self.uses_dispatcher = true;
         }
         if !self.has_calls {
             // Every call opcode -- any of these can invoke a callee that writes

@@ -35,6 +35,153 @@ impl Interpreter {
                 .any(|s| s.resolve() == resolved_owner)
     }
 
+    /// Mu's default `.gist`/`.raku`/`.perl` rendering for a plain user
+    /// instance (`ClassName.new(...)`, with special cases for `is Array`
+    /// subclasses, `ObjAt`/`ValueObjAt`, `X::AdHoc`, schedulers,
+    /// `IO::Path::Parts`, `Stash`). Returns `None` when `method`/`args`
+    /// don't qualify (e.g. `.Str`, or a non-empty arg list) or `target`
+    /// isn't an Instance.
+    ///
+    /// Factored out of `dispatch_instance_and_fallback`'s no-user-override
+    /// fast path below so `native_any_base_next_candidate`
+    /// (`src/runtime/builtins_dispatch_next.rs`) can reach the SAME default
+    /// when `callsame`/`nextsame` from inside a user `gist`/`raku` override
+    /// exhausts the MRO — that caller deliberately bypasses the
+    /// `has_user_method` gate the original site applies below (the whole
+    /// point of that fallback is to reach this default despite the override
+    /// existing).
+    pub(crate) fn default_instance_repr(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            id: target_id,
+        } = target.view()
+        else {
+            return None;
+        };
+        let has_coercion_gist = target.does_check("Real")
+            || target.does_check("Numeric")
+            || target.does_check("Stringy")
+            || self.has_user_method(&class_name.resolve(), "Bridge");
+        let is_callable_instance = matches!(
+            class_name.resolve().as_str(),
+            "Method"
+                | "Submethod"
+                | "Sub"
+                | "Routine"
+                | "Block"
+                | "Code"
+                | "WhateverCode"
+                | "Callable"
+        );
+        let gist_default = method == "gist" && !has_coercion_gist && !is_callable_instance;
+        if !((method == "raku" || method == "perl" || gist_default) && args.is_empty()) {
+            return None;
+        }
+        if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
+            return Some(self.call_method_with_values(storage, method, vec![]));
+        }
+        if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
+            let which = attributes
+                .as_map()
+                .get("WHICH")
+                .map(|v| v.to_string_value())
+                .unwrap_or_default();
+            if method == "gist" {
+                return Some(Ok(Value::str(which)));
+            }
+            return Some(Ok(Value::str(format!(
+                "{}.new(\"{}\")",
+                class_name.resolve(),
+                which
+            ))));
+        }
+        if class_name.resolve() == "X::AdHoc"
+            && (method == "raku" || method == "perl")
+            && let attr_map = attributes.as_map()
+            && let Some(payload) = attr_map
+                .get("payload")
+                .or_else(|| attr_map.get("message"))
+                .cloned()
+        {
+            let payload_raku = self
+                .call_method_with_values(payload.clone(), "raku", vec![])
+                .map(|v| v.to_string_value())
+                .unwrap_or_else(|_| payload.to_string_value());
+            return Some(Ok(Value::str(format!(
+                "X::AdHoc.new(payload => {payload_raku})"
+            ))));
+        }
+        match class_name.resolve().as_str() {
+            cls @ ("ThreadPoolScheduler" | "CurrentThreadScheduler") => {
+                return Some(Ok(Value::str(
+                    crate::builtins::methods_0arg::raku_repr::scheduler_raku_repr(cls),
+                )));
+            }
+            "Supplier" => {
+                return Some(Ok(Value::str(
+                    "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
+                )));
+            }
+            "IO::Path::Parts" => {
+                let attr_map = attributes.as_map();
+                let rendered: Vec<String> = ["volume", "dirname", "basename"]
+                    .iter()
+                    .map(|k| {
+                        let v = attr_map
+                            .get(*k)
+                            .cloned()
+                            .unwrap_or_else(|| Value::str_from(""));
+                        self.call_method_with_values(v.clone(), "raku", vec![])
+                            .map(|r| r.to_string_value())
+                            .unwrap_or_else(|_| v.to_string_value())
+                    })
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "IO::Path::Parts.new({})",
+                    rendered.join(",")
+                ))));
+            }
+            "Stash" if method == "raku" || method == "perl" => {
+                let symbols = attributes
+                    .as_map()
+                    .get("symbols")
+                    .cloned()
+                    .unwrap_or_else(|| Value::hash(HashMap::new()));
+                return Some(Ok(Value::str(
+                    crate::builtins::methods_0arg::raku_repr::raku_value(&symbols),
+                )));
+            }
+            _ => {}
+        }
+        let class_key = class_name.resolve();
+        let display_name = crate::value::user_facing_type_name(&class_key);
+        self.raku_leaf_active.push(target_id);
+        let public_attrs = self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
+        if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == target_id) {
+            self.raku_leaf_active.remove(pos);
+        }
+        let cycle_hit = self.raku_leaf_cycle_hit.remove(&target_id);
+        let body = if public_attrs.is_empty() {
+            format!("{}.new", display_name)
+        } else {
+            format!("{}.new({})", display_name, public_attrs.join(", "))
+        };
+        if cycle_hit {
+            return Some(Ok(Value::str(format!(
+                "(my \\{} = {})",
+                Self::raku_leaf_backref_name(&class_key, target_id),
+                body
+            ))));
+        }
+        Some(Ok(Value::str(body)))
+    }
+
     /// Dispatch method calls for Instance values and handle all fallback paths.
     ///
     /// This is called from `call_method_with_values` after the main method name
@@ -1060,168 +1207,12 @@ impl Interpreter {
             // `say F.new(:z(5))` → `F.new(z => 5)`), unless the class defines its
             // own `gist`. Without this, a defined instance gisted as `F()` (the
             // type-object form), e.g. `say $obj`, `$obj.=meth` round-trips.
-            // A class that does Real/Numeric/Stringy keeps its coercion-based
-            // gist (`class Plain does Real { method Bridge {...} }` gists as its
-            // number, not `Plain.new(...)`), so fall through for those. The
-            // numeric coercion is also recognized via a `Bridge` method (mirrors
-            // the native-bypass check), since `does Real` is not always visible
-            // to `does_check`.
-            let has_coercion_gist = target.does_check("Real")
-                || target.does_check("Numeric")
-                || target.does_check("Stringy")
-                || matches!(target.view(), ValueView::Instance { class_name, .. }
-                    if self.has_user_method(&class_name.resolve(), "Bridge"));
-            // Callable instances (Method/Sub/…) gist by name (`foo`), not as
-            // `Method.new(...)`, so keep their built-in gist.
-            let is_callable_instance = matches!(target.view(), ValueView::Instance { class_name, .. }
-                if matches!(class_name.resolve().as_str(),
-                    "Method" | "Submethod" | "Sub" | "Routine"
-                        | "Block" | "Code" | "WhateverCode" | "Callable"));
-            let gist_default = method == "gist" && !has_coercion_gist && !is_callable_instance;
-            if (method == "raku" || method == "perl" || gist_default)
-                && args.is_empty()
-                && !self.has_user_method(&class_name.resolve(), method)
+            // See `default_instance_repr` for the rendering itself (shared with
+            // `native_any_base_next_candidate`'s callsame/nextsame fallback).
+            if !self.has_user_method(&class_name.resolve(), method)
+                && let Some(result) = self.default_instance_repr(&target, method, &args)
             {
-                // An `is Array` subclass instance gists/rakus as its backing
-                // array (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic
-                // `Class.new`. Delegate to the storage array's own repr method.
-                if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
-                    return self.call_method_with_values(storage, method, vec![]);
-                }
-                if class_name == Symbol::intern("ObjAt")
-                    || class_name == Symbol::intern("ValueObjAt")
-                {
-                    let which = attributes
-                        .as_map()
-                        .get("WHICH")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    // `.gist` (like `.Str`) shows the bare WHICH (`Int|42`);
-                    // only `.raku`/`.perl` show the `ValueObjAt.new("Int|42")`
-                    // constructor form.
-                    if method == "gist" {
-                        return Ok(Value::str(which));
-                    }
-                    return Ok(Value::str(format!(
-                        "{}.new(\"{}\")",
-                        class_name.resolve(),
-                        which
-                    )));
-                }
-                // X::AdHoc's raku-visible attribute is `payload` (mutsu stores the
-                // die string under `message`/`payload`); render it as
-                // `X::AdHoc.new(payload => "...")` rather than the bare `.new`.
-                if class_name.resolve() == "X::AdHoc"
-                    && (method == "raku" || method == "perl")
-                    && let attr_map = attributes.as_map()
-                    && let Some(payload) = attr_map
-                        .get("payload")
-                        .or_else(|| attr_map.get("message"))
-                        .cloned()
-                {
-                    let payload_raku = self
-                        .call_method_with_values(payload.clone(), "raku", vec![])
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|_| payload.to_string_value());
-                    return Ok(Value::str(format!(
-                        "X::AdHoc.new(payload => {payload_raku})"
-                    )));
-                }
-                // Schedulers and Supplier are native instances with no
-                // registered class attributes, so the generic attribute walk
-                // below would render a bare `.new`; Rakudo shows their fixed
-                // raku-visible attributes (an unset `uncaught_handler` is the
-                // `Callable` type object, a fresh taplist is an empty
-                // `Supplier::TapList`).
-                match class_name.resolve().as_str() {
-                    cls @ ("ThreadPoolScheduler" | "CurrentThreadScheduler") => {
-                        return Ok(Value::str(
-                            crate::builtins::methods_0arg::raku_repr::scheduler_raku_repr(cls),
-                        ));
-                    }
-                    "Supplier" => {
-                        return Ok(Value::str(
-                            "Supplier.new(taplist => Supplier::TapList.new)".to_string(),
-                        ));
-                    }
-                    // IO::Path::Parts is a Positional in Rakudo, so its .raku
-                    // (and .gist, which equals .raku) renders the three parts
-                    // positionally via each part's own .raku, joined by `,`
-                    // (`IO::Path::Parts.new("C:","/some/dir","foo.txt")`) — NOT
-                    // the generic named-attribute walk, which has no fixed
-                    // ordering and would emit `volume => ...` pairs.
-                    "IO::Path::Parts" => {
-                        let attr_map = attributes.as_map();
-                        let rendered: Vec<String> = ["volume", "dirname", "basename"]
-                            .iter()
-                            .map(|k| {
-                                let v = attr_map
-                                    .get(*k)
-                                    .cloned()
-                                    .unwrap_or_else(|| Value::str_from(""));
-                                self.call_method_with_values(v.clone(), "raku", vec![])
-                                    .map(|r| r.to_string_value())
-                                    .unwrap_or_else(|_| v.to_string_value())
-                            })
-                            .collect();
-                        return Ok(Value::str(format!(
-                            "IO::Path::Parts.new({})",
-                            rendered.join(",")
-                        )));
-                    }
-                    // A Stash is a Hash subclass in Rakudo: its .raku is the
-                    // symbols hash literal (`{:Bar(Foo::Bar)}`), not `Stash.new`.
-                    // (.gist/.Str — the package name — are handled on the fast
-                    // path in dispatch_core_repr.)
-                    "Stash" if method == "raku" || method == "perl" => {
-                        let symbols = attributes
-                            .as_map()
-                            .get("symbols")
-                            .cloned()
-                            .unwrap_or_else(|| Value::hash(HashMap::new()));
-                        return Ok(Value::str(
-                            crate::builtins::methods_0arg::raku_repr::raku_value(&symbols),
-                        ));
-                    }
-                    _ => {}
-                }
-                // Collect public attributes for .raku representation. Mark this
-                // instance as being rendered so a reference cycle back to it
-                // (`$obj.myself[0] = $obj`) renders as a backreference name
-                // instead of recursing (see `dispatch_raku_leaf` in
-                // `runtime::methods_raku_dispatch`); when that happened, wrap
-                // the result in Rakudo's `(my \Bug_48 = Bug.new(...))` binding.
-                let class_key = class_name.resolve();
-                let display_name = crate::value::user_facing_type_name(&class_key);
-                let instance_id = match target.view() {
-                    ValueView::Instance { id, .. } => Some(id),
-                    _ => None,
-                };
-                if let Some(id) = instance_id {
-                    self.raku_leaf_active.push(id);
-                }
-                let public_attrs =
-                    self.collect_public_raku_attrs(&class_key, &(attributes).as_map());
-                let mut cycle_hit = false;
-                if let Some(id) = instance_id {
-                    if let Some(pos) = self.raku_leaf_active.iter().rposition(|x| *x == id) {
-                        self.raku_leaf_active.remove(pos);
-                    }
-                    cycle_hit = self.raku_leaf_cycle_hit.remove(&id);
-                }
-                let body = if public_attrs.is_empty() {
-                    format!("{}.new", display_name)
-                } else {
-                    format!("{}.new({})", display_name, public_attrs.join(", "))
-                };
-                if cycle_hit && let Some(id) = instance_id {
-                    return Ok(Value::str(format!(
-                        "(my \\{} = {})",
-                        Self::raku_leaf_backref_name(&class_key, id),
-                        body
-                    )));
-                }
-                return Ok(Value::str(body));
+                return result;
             }
             if method == "name" && args.is_empty() {
                 return Ok(attributes
