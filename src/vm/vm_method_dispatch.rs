@@ -263,6 +263,20 @@ impl Interpreter {
         let saved_var_bindings = self.take_var_bindings();
 
         self.push_method_class(owner_class.to_string());
+        // A plain (non-multi, non-wrapped) compiled method pushes no
+        // `method_dispatch_stack` frame, so callsame/nextsame's exhausted-MRO
+        // fallback (`native_any_base_next_candidate` et al.) has nothing to
+        // key off unless this body actually calls one — gated on
+        // `uses_dispatcher` so the overwhelming majority of method calls, which
+        // never defer, pay no per-call String/Vec clone.
+        if cc.uses_dispatcher {
+            self.push_method_samewith_context(
+                receiver_class_name,
+                method_name,
+                &args,
+                Some(base.clone()),
+            );
+        }
 
         // Detect role context: use the pre-computed role_origin stored on the
         // MethodDef (set during role composition) instead of expensive fingerprint
@@ -432,6 +446,9 @@ impl Interpreter {
                         }
                         if !self.type_matches_value(expected, &base) {
                             self.restore_var_bindings(saved_var_bindings);
+                            if cc.uses_dispatcher {
+                                self.pop_method_samewith_context();
+                            }
                             self.pop_method_class();
                             self.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
@@ -576,6 +593,9 @@ impl Interpreter {
             Ok(bindings) => bindings,
             Err(e) => {
                 self.restore_var_bindings(saved_var_bindings);
+                if cc.uses_dispatcher {
+                    self.pop_method_samewith_context();
+                }
                 self.pop_method_class();
                 self.set_current_package(saved_package.clone());
                 self.stack.truncate(saved_stack_depth);
@@ -788,6 +808,9 @@ impl Interpreter {
             self.restore_var_bindings(restored_bindings);
 
             self.pop_routine();
+            if cc.uses_dispatcher {
+                self.pop_method_samewith_context();
+            }
             self.pop_method_class();
         } else {
             // Sync locals back to env
@@ -907,6 +930,9 @@ impl Interpreter {
             self.restore_var_bindings(restored_bindings);
 
             self.pop_routine();
+            if cc.uses_dispatcher {
+                self.pop_method_samewith_context();
+            }
             self.pop_method_class();
             self.set_current_package(saved_package.clone());
             // A name the callee env held that the merge did not carry into the
@@ -1293,6 +1319,15 @@ impl Interpreter {
         }
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class(owner_class.to_string());
+        // See the matching comment in `call_compiled_method`.
+        if cc.uses_dispatcher {
+            self.push_method_samewith_context(
+                receiver_class_name,
+                method_name,
+                &args,
+                Some(base.clone()),
+            );
+        }
 
         // Save/restore the current package only when this dispatch actually
         // switches it (rare) — the unconditional save cloned a String per call.
@@ -1355,6 +1390,9 @@ impl Interpreter {
                 {
                     // Type mismatch — fall back to slow path for proper error
                     self.restore_var_bindings(saved_var_bindings);
+                    if cc.uses_dispatcher {
+                        self.pop_method_samewith_context();
+                    }
                     self.pop_method_class();
                     if let Some(pkg) = saved_package {
                         self.set_current_package(pkg);
@@ -1751,6 +1789,9 @@ impl Interpreter {
         self.restore_var_bindings(restored_bindings);
 
         self.pop_routine();
+        if cc.uses_dispatcher {
+            self.pop_method_samewith_context();
+        }
         self.pop_method_class();
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
