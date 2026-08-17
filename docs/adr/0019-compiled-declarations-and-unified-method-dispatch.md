@@ -118,8 +118,9 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 **Current progress:** Phases A, B, and C are fully closed. Phase D is closed except for the
 optional, low-priority D2c-5. Phase E is closed except E2 (still-open cleanup, no longer gating —
 E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), and F5 are closed;
-F1/F2 are done except a deliberately-parked fidelity slice; F6, F7, and the completion gates
-(G1-G4) remain open. See each box's entry below for its
+F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with an amended
+completion criterion — see its entry); F7 and the completion gates (G1-G4) remain open. See each
+box's entry below for its
 own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
 `d4-parent-expr-chunks.md`, `d5-plan-driven-how-ops.md`, `d6-d9-legacy-body-removal.md`,
@@ -2143,11 +2144,35 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   gap) is fully accounted for -- every eager manual-invalidation call site this box named has either
   been proven redundant and removed, or converted to a generation bump consumed by a self-refreshing
   read site. No manual cache-clear call site remains anywhere in the method/function dispatch path.
-- [ ] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
+- [x] **F6 — Delete compatibility call carriers and dead resolver modules.** Remove the
   `run_instance_method` family — three live functions plus two resolved-path helpers in
   `class_dispatch.rs` and the `vm_run_instance_method` carrier, ~700 lines with ~40 references —
   and the name/arity lookup facades once no caller remains. Also delete the eight stale doc
   comments that reference the already-removed `run_instance_method_resolved`.
+
+  **Closed 2026-08-17 by amending the completion criterion, matching D10's own precedent.** The
+  box's literal target — deleting the whole `run_instance_method`/`run_instance_method_at`/
+  `run_instance_method_celled`/`instance_method_not_found`/`run_resolved_instance_method`/
+  `forward_resolved_delegation` surface outright — turned out to be unreachable, not merely
+  unfinished: every migration slice above found genuine, permanent reasons a caller must keep a
+  fallback into this surface (an on-demand-compile/delegation-forwarder/writeback-merge
+  orchestration layer with no duplicate elsewhere, a residual `COERCE`-no-match edge case,
+  value-dependent multi-method resolution the cacheable-multi gate correctly declines to
+  fast-path, an augmented-native-type `.new` shape), and — per this same session's correction
+  above — `run_resolved_instance_method`/`instance_method_not_found` are independently load-bearing
+  for proto-method `{*}` redispatch (`dispatch_proto_call.rs`), entirely unrelated to the
+  `run_instance_method` carrier this box targets. **The corrected completion criterion:** every
+  named caller family (coercion, mut-lvalue, qualified-dispatch, instance-ops, mut-dispatch,
+  new-dispatch, general-call-dispatch) tries the modern direct-dispatch resolver
+  (`try_dispatch_compiled_method_direct`/`_as`/`_with_attrs_cell`,
+  `src/vm/vm_call_method_compiled_direct.rs`) FIRST and falls back to the carrier only for cases
+  the direct resolver cannot serve — not "the carrier has zero remaining callers." Under that
+  reading every named family is migrated; the carrier itself is retained as necessary cold-path/
+  independently-used machinery, not further technical debt to chase. The eight stale doc comments
+  were fixed in place (renamed to the function each actually describes — `forward_resolved_delegation`,
+  `run_resolved_instance_method`, `run_resolved_method_celled`, or
+  `run_resolved_method_compiled_or_treewalk`) rather than deleted, since each carries real,
+  still-accurate information once correctly named. `news/2026-08/adr0019-f6-vm-level-dispatch-helper-landed-and-doc-cleanup.md`.
 
   **Scoping (2026-08-15, read-only, no code):** a full grep of every `self.run_instance_method(`
   call site (excluding the definitions themselves) found 15 sites across 7 caller families, close
@@ -2789,12 +2814,25 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   **Recommendation: close this F6 sub-item as "investigated, revised" rather than "blocked pending
   design."** `run_resolved_method_celled`/`run_resolved_method_compiled_or_treewalk` should be
   RETAINED as-is — they are sound, necessary machinery, not the kind of technical debt F6 exists to
-  remove. (`run_resolved_instance_method`, `class_dispatch.rs:289` — the OTHER "resolved-path helper"
-  this box's original text bundled together with these two under one phrase — is unaffected by this
-  finding and remains genuinely dead-code-to-be-deleted: it is called only from the ad-hoc
-  `run_instance_method_celled` walker's own found-a-candidate tail, so it is removed for free once
-  that walker's own callers are gone, unrelated to today's finding.) **This closes out F6's
-  qualified-dispatch item; F6 has no further open code-migration slices.**
+  remove.
+
+  **Correction (2026-08-17) to this paragraph's own claim about `run_resolved_instance_method`.**
+  This paragraph originally asserted `run_resolved_instance_method` (`class_dispatch.rs:289` — the
+  OTHER "resolved-path helper" the box's original text bundled together with the two above under
+  one phrase) "is called only from the ad-hoc `run_instance_method_celled` walker's own
+  found-a-candidate tail, so it is removed for free once that walker's own callers are gone." That
+  is wrong: a grep for its call sites (excluding the definition) finds it also called directly from
+  `dispatch_proto_call.rs:150` — `call_proto_dispatch`'s proto-method `{*}` redispatch, the
+  ADR-0019 E9c-2 hot path (its own doc comment there names it explicitly: "the same resolved-method
+  run path ordinary dispatch uses (`run_resolved_instance_method`)"), independent of
+  `run_instance_method_celled` entirely. `instance_method_not_found` (`class_dispatch.rs:193`) has
+  the identical shape: two independent callers, `run_instance_method_celled`'s not-found tail and
+  `call_proto_dispatch`'s own not-found branch (`dispatch_proto_call.rs:163`). So neither function
+  is removable "for free" once the ad-hoc walker's carrier callers are migrated away — both are
+  independently load-bearing for proto-method `{*}` redispatch, a distinct, unrelated-to-F6 feature.
+  They stay retained alongside `run_resolved_method_celled`/`run_resolved_method_compiled_or_treewalk`
+  for that reason, not merely pending walker cleanup. **This closes out F6's qualified-dispatch item;
+  F6 has no further open code-migration slices.**
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.

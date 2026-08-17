@@ -5,7 +5,7 @@ pub(super) const ATTR_ALIAS_META_PREFIX: &str = "__mutsu_attr_alias::";
 
 impl Interpreter {
     /// Call a compiled method body (MethodDef with compiled_code).
-    /// Mirrors `Interpreter::run_instance_method_resolved` but executes bytecode.
+    /// Mirrors `Interpreter::run_resolved_method_celled` but executes bytecode.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn call_compiled_method(
         &mut self,
@@ -259,7 +259,7 @@ impl Interpreter {
 
         // Clear var_bindings so attribute aliases from outer interpreter-level
         // method calls don't leak into compiled method locals (e.g. `x → !x`
-        // from run_instance_method_resolved shadowing a local parameter `x`).
+        // from forward_resolved_delegation shadowing a local parameter `x`).
         let saved_var_bindings = self.take_var_bindings();
 
         self.push_method_class(owner_class.to_string());

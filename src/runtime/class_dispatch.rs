@@ -435,7 +435,7 @@ impl Interpreter {
         }
         // §B: run the resolved (non-wrapped) candidate as compiled bytecode via the
         // VM-native `call_compiled_method` instead of the tree-walk
-        // `run_instance_method_resolved` recompile-each-call path. The MRO frame is
+        // `forward_resolved_delegation` recompile-each-call path. The MRO frame is
         // already pushed above, so the candidate's own `nextsame`/`callsame`
         // continues this chain. This is the hot path for multi-method dispatch and
         // `samewith` re-dispatch reached through `call_method_with_values`
@@ -461,7 +461,7 @@ impl Interpreter {
     /// §B: run an already-resolved method/submethod candidate as compiled bytecode
     /// (`call_compiled_method`). A candidate with no `compiled_code` is compiled
     /// on-demand in place first (`compile_method_def_in_place`), so the only thing that
-    /// still reaches `run_instance_method_resolved` is a `handles`-delegation forwarder
+    /// still reaches `forward_resolved_delegation` is a `handles`-delegation forwarder
     /// (#3658 — its former tree-walk method-execution arm has been deleted). Same
     /// `(result, attrs-to-commit)` contract at every resolved-candidate call site (the
     /// `run_instance_method` general dispatch and the construction/destruction
