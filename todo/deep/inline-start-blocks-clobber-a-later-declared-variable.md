@@ -1,5 +1,12 @@
 # Two inline `start` blocks write their stale captured env over a variable declared after them
 
+**Reclassified from `todo/tickets/` to `todo/deep/` on 2026-08-17** (per `todo/README.md`'s
+tickets-vs-deep split): three separate sessions (2026-08-15, 2026-08-16, 2026-08-17) have each
+made real progress and each hit a genuine, hard blocker before landing a fix — most recently a
+pre-existing, unresolved interaction between `needs_env_sync` and the atomic-scalar-cell RMW
+subsystem ("Gap 4" below) that needs its own root-cause investigation, not a quick patch. This is
+no longer a "pick it up and finish in a session" item.
+
 Extracted from PLAN.md §6 (2026-08-02); found 2026-07-23 while testing WASM concurrency, and
 re-verified on `main`2026-08-02 — it is not a WASM artefact. **Still reproduces 2026-08-14**, after
 the two prerequisite campaigns this ticket originally deferred to both completed
