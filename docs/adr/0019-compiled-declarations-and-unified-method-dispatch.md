@@ -627,7 +627,7 @@ outcome.
   - [x] **E4a — sequence builder + shadow parity (user candidates only), 2026-08-10.** Landed
     `ResolvedSequence`/`ResolvedCandidate::User` and `resolve_sequence`, counter-verified against
     `resolve_method_with_owner_impl`'s real outcomes with zero behavior change.
-  - [ ] **E4b — authoritative switch at `should_bypass_native_fastpath` (`call_method_with_values`'s
+  - [x] **E4b — authoritative switch at `should_bypass_native_fastpath` (`call_method_with_values`'s
     one call site).** Thirteen investigation steps (2026-08-11) decomposed the ~110-line boolean
     chain into four disjoint categories and landed each at its locally optimal shape:
     - **Category 1 (receiver-shape safety gates)** mostly reduces to "the cascade itself already
@@ -668,6 +668,18 @@ outcome.
   `ResolvedCandidate` existing and being shadow-verified at its call sites — the box does not
   additionally require the VM opcode entries to *dispatch on* the `Native` candidate, since E5-E7
   independently and deliberately decided against that. **E4 is marked done.**
+  **(2026-08-17): E4b's own checkbox corrected to `[x]`** — the 2026-08-12 "E4 is marked done"
+  progress note above had already declared this sub-box closed (same pattern as E5's own
+  checkbox-correction note), but the checkbox itself was left unchecked. Retired
+  `todo/deep/adr0019-e4b-should-bypass-native-fastpath-decomposition.md`: its own "status update"
+  section (an earlier snapshot from the same day) framed a few category-1 guard groups as "still
+  open, same methodology applies" candidates for removal, but category 1's paragraph above (a
+  later pass the same day) already confirms `Supplier`, most of `Proc::Async`, `IO::Handle`'s
+  three-method group, and `Stash.AT-KEY` landed as outright deletions, with only `Supply`'s list
+  vocabulary/lazy-`Match` forcing/`Hash.keys` staying as permanent hazards — superseding the
+  design doc's older framing rather than leaving genuine unfiled work behind. Any remaining sliver
+  (the unnamed rest of `Proc::Async`, `Stash.keys`/`.values`) is small enough to re-derive from
+  `native_fastpath_receiver_state_guard` directly if ever revisited, not worth a standalone ticket.
 - [x] **E5 — Route ordinary VM method calls through the resolver.** Cover zero/n-arg and named-call
   opcodes while retaining mutation/writeback semantics at the caller boundary.
   **Design (2026-08-10):** the cutover shape is "resolver decides, existing arms execute" — each

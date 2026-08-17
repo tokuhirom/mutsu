@@ -294,9 +294,12 @@ same-day and no longer exist as files — don't go looking for them):
   order nondeterminism) turned out to be already fixed and retired to
   `news/2026-08/mixin-role-application-order-tracked.md` (the `mixin-role-order-not-tracked`
   ticket this note and the stale table row above pointed at no longer exists).
-  - `adr0019-e4b-should-bypass-native-fastpath-decomposition.md` still exists in `deep/` and
-    reads like a D-phase-style completed-slice design doc for the E4b box — still not surveyed
-    for spin-offs; do that before retiring it.
+  **RESOLVED 2026-08-17:** `adr0019-e4b-should-bypass-native-fastpath-decomposition.md` was
+  surveyed and also retired — its own ADR box (E4b) turned out to already be functionally closed
+  (the ADR's own 2026-08-11/12 progress notes had declared it done; only the checkbox itself was
+  left unchecked, now corrected), and the design doc's "still open" guard-removal candidates were
+  themselves superseded the same day by a later, more authoritative conclusion in the ADR text.
+  No spin-off ticket needed.
 - Container tickets that are queues, not single fixes:
   [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md),
   [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md),
