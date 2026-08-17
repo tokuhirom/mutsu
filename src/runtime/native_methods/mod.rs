@@ -280,6 +280,15 @@ impl Interpreter {
                 | "Encoding::Decoder"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
+                // `IO::Socket::Async::Listener` has no native MUTABLE method (its
+                // real `tap`/`act` handler is immutable, dispatched by the sibling
+                // `call_native_instance_method`) -- listed here only to
+                // short-circuit the MRO-walk fallback below. Its MRO includes
+                // `Supply` (for `~~ Supply` smartmatch parity with raku), which
+                // would otherwise make that walk match `Supply` and route here to
+                // the wrong (generic, non-functional) `native_supply_mut` instead
+                // of falling through to the real handler.
+                | "IO::Socket::Async::Listener"
         ) {
             Some(class_name.to_string())
         } else {
