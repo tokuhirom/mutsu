@@ -501,6 +501,18 @@ impl Interpreter {
                             // uninitialized scalar: it reads as the Any type
                             // object, like `my $x` (S03-operators/context.t).
                             Ok(Value::package(Symbol::intern("Any")))
+                        } else if self.strict_mode && !Self::strict_read_exempt(name) {
+                            // Read-side counterpart of the `SetGlobal` write
+                            // check above: a plain scalar name that resolved
+                            // through NONE of the real stores tried above
+                            // (env, unit/package/module lexicals, `our`-vars,
+                            // per-call state, ...) is genuinely undeclared —
+                            // `use strict` must reject it instead of silently
+                            // yielding Nil (`my $x = $y;` under `use strict`).
+                            // `strict_read_exempt` carves out the pseudo-
+                            // variable / dynamic-scope shapes `GetGlobal`
+                            // also carries that are not ordinary lexicals.
+                            Err(self.strict_undeclared_error(name))
                         } else {
                             Ok(Value::NIL)
                         }

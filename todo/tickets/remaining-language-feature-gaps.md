@@ -40,21 +40,42 @@ repro was used. Closing as resolved; re-open with a genuine failing repro if one
 `==>>` / `<<==` and `~<` / `~>` are still unimplemented/unspecified **in Rakudo itself**, so they still
 cannot be started (no oracle) — unchanged from the original filing.
 
-## 2. Typed-exception gaps needing compile-time scope analysis — still open
+## 2. Typed-exception gaps needing compile-time scope analysis
 
-- strict-mode undeclared-variable detection
-- cross-`EVAL` detection of class redeclaration
-- `X::Redeclaration::Outer`
+- ~~strict-mode undeclared-variable detection~~ — **resolved 2026-08-17**, see below.
+- cross-`EVAL` detection of class redeclaration — still open
+- `X::Redeclaration::Outer` — still open
 
-All three need compile-time scope analysis that mutsu does not currently perform; each is
-non-trivial on its own. Re-verified the first bullet 2026-08-14:
+The remaining two bullets need compile-time scope analysis that mutsu does not currently perform;
+each is non-trivial on its own and is left for a future session.
+
+### strict-mode undeclared-variable *read* detection — resolved 2026-08-17
 
 ```raku
-use strict; my $x = $y;
+use strict; my $x = $y; say "no error";
 ```
 
-`raku`: compile-time `X::Undeclared` ("Variable '$y' is not declared..."). mutsu: exits 0, no error at
-all — `$y` is silently treated as an undeclared-but-tolerated read. Still open.
+`raku` dies at compile time with `X::Undeclared` ("Variable '$y' is not declared..."); mutsu used to
+exit 0 and print `no error` — `$y` was silently read as Nil.
+
+`use strict` already had a WRITE-side check (`SetGlobal` in `src/vm/vm_exec_dispatch.rs`) but no
+symmetric READ-side check. Added one to the tail of the `OpCode::GetGlobal` handler — the one place a
+scalar-variable read falls through every real store (env, unit/package/module lexicals, `our`-vars,
+per-call state, escaping-`our` captures, ...) and would otherwise silently yield `Value::NIL` for a
+name that resolves nowhere. When `self.strict_mode` is set and the name isn't one of several
+pseudo-variable / dynamic-scope shapes `GetGlobal` also carries (dynamic vars `$*FOO`, compile-time
+pseudo vars `$?FOO`, internal `__`-prefixed temporaries, `::`-qualified names, bare `$!`/`$/`, and
+`$0`/`$1`/... positional captures — see `Interpreter::strict_read_exempt` in
+`src/vm/vm_value_helpers.rs`), it now raises the same `X::Undeclared` the write side already throws
+(`strict_undeclared_error`).
+
+Array/hash sigil reads (`GetArrayVar`/`GetHashVar`) are separate opcodes and were not touched — the
+ticket's repro and the write-side precedent are both scalar-only.
+
+Verified: full local `t/` suite (3191 files, 29730 tests) clean; targeted roast sweep
+(`S02-names-vars`, `S04-declarations`, `S06-signature`, `S12-*`) shows only pre-existing,
+unrelated failures (none mention `Undeclared`); the dedicated `roast/S02-names/strict.t` (already
+whitelisted) still passes in full. New pinned test: `t/strict-undeclared-variable-read.t`.
 
 ## 3. `exits-ok($code, $exit, $reason)` — already implemented, ticket was stale
 
