@@ -174,7 +174,7 @@ impl Interpreter {
     ///
     /// env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a custom
     /// HOW method (e.g. `method type_check(Mu $, Mu \c) { ++$counter; … }`) runs
-    /// via the slow `run_instance_method_resolved` path, which merges its
+    /// via the slow `run_resolved_instance_method` path, which merges its
     /// captured-outer scalar writes back into env but does NOT set `env_dirty` or
     /// record a precise writeback. The caller slot is then refreshed only by the
     /// blanket pull — a no-op under double-OFF. Worse, the counter is a

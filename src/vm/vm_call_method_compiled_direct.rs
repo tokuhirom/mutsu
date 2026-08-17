@@ -18,8 +18,9 @@ impl Interpreter {
     /// a call back into `call_method_with_values`/`call_method_mut_with_values`
     /// itself recurses whenever the modern resolver falls through to the same
     /// fallback again for the same `(target, method)` — confirmed as a real,
-    /// reproducible stack overflow, not a theoretical concern (see
-    /// `todo/deep/adr0019-f6-vm-level-dispatch-helper-needed.md`). This helper
+    /// reproducible stack overflow, not a theoretical concern (see ADR-0019's
+    /// F6 box, "Negative result (instance-ops family, attempted and reverted)").
+    /// This helper
     /// exists so those sites can migrate off the carrier without that hazard:
     /// unlike `call_method_with_values`, it performs no accessor-vs-method
     /// arbitration and never calls either dispatch entry point, so it cannot

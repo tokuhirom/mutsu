@@ -8,7 +8,7 @@ impl Interpreter {
     /// compile in `run_resolved_method_compiled_or_treewalk`. An empty body is
     /// compiled too (to a trivial body returning Nil/self) so that empty `BUILD`/
     /// `TWEAK`/`method foo {}` stubs no longer fall through to the tree-walk
-    /// `run_instance_method_resolved` — leaving only delegation forwarders there.
+    /// `forward_resolved_delegation` — leaving only delegation forwarders there.
     ///
     /// Seeds the compiler's distribution context so `$?DISTRIBUTION` inside the
     /// method body resolves to the owning module's distribution (rather than Nil).

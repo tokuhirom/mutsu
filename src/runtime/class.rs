@@ -81,7 +81,7 @@ impl Interpreter {
                     continue;
                 }
                 // Clone DESTROY overloads out and drop the guard before re-entering
-                // user code (run_instance_method_resolved).
+                // user code (run_resolved_method_compiled_or_treewalk).
                 if !self.registry().classes.contains_key(mro_class) {
                     continue;
                 }

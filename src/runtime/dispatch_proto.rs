@@ -329,7 +329,7 @@ impl Interpreter {
         let (owner, proto) = self.lookup_proto_method(&cn, method)?;
         // env_dirty substrate (docs/captured-outer-cell-sharing.md §10): a multi
         // candidate dispatched through the proto body's `{*}` runs via the slow
-        // `run_instance_method_resolved` path, which merges captured-outer caller
+        // `run_resolved_instance_method` path, which merges captured-outer caller
         // scalar writes (e.g. `multi method l(%t,*@l){ $r ~= '%'; ... }` mutating
         // a caller lexical `$r`) back into env but does NOT set `env_dirty` or
         // record a precise writeback. So the owning caller slot was refreshed only
