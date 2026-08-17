@@ -634,6 +634,9 @@ impl Interpreter {
         list_items: &[Value],
         from_end: bool,
     ) -> Result<Option<(usize, Value)>, RuntimeError> {
+        // Look through a role-mixed callable the same way `.map`/`.grep` do
+        // -- see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`.
+        let func = func.map(Self::unwrap_callable_mixin);
         if let Some(func_ref) = func.as_ref()
             && let Some(res) = self.try_first_match_batched(func_ref, list_items, from_end)
         {

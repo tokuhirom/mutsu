@@ -139,12 +139,34 @@ impl Interpreter {
         }
     }
 
+    /// A role-mixed callable (`&foo but R1`, `&foo.^mixin(R1)`) wraps a
+    /// Sub/Routine/WeakSub in a `ValueView::Mixin`; every call site that
+    /// needs to actually invoke a callable, or decide whether a value IS
+    /// one, must look through that wrapper the same way `mixin_iteration_target`
+    /// unwraps a Mixin-wrapped collection for `.map`/`.grep` iteration.
+    /// Without this, `(1,2,3).map(&double but R1)` either failed a
+    /// callable pre-check or died with "Callable expected" once past it
+    /// (see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`).
+    pub(crate) fn unwrap_callable_mixin(func: Value) -> Value {
+        if let ValueView::Mixin(inner, _) = func.view()
+            && matches!(
+                inner.view(),
+                ValueView::Sub(_) | ValueView::Routine { .. } | ValueView::WeakSub(_)
+            )
+        {
+            inner.as_ref().clone()
+        } else {
+            func
+        }
+    }
+
     pub(crate) fn call_sub_value(
         &mut self,
         func: Value,
         args: Vec<Value>,
         merge_all: bool,
     ) -> Result<Value, RuntimeError> {
+        let func = Self::unwrap_callable_mixin(func);
         // Upgrade WeakSub to Sub transparently
         let func = match func.view() {
             ValueView::WeakSub(weak) => match weak.upgrade() {

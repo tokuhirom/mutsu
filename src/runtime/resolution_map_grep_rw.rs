@@ -347,6 +347,12 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
+        // Look through a role-mixed callable (`&foo but R1`) so the
+        // compile-once fast path below (which requires a bare `Sub`) still
+        // takes it, instead of silently falling through to smartmatch-style
+        // filtering (which never truthily matches a Mixin, dropping every
+        // element) -- see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`.
+        let func = func.map(Self::unwrap_callable_mixin);
         if let Some(func_ref) = func.as_ref()
             && let ValueView::Sub(data) = func_ref.view()
         {

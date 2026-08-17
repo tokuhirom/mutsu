@@ -80,6 +80,12 @@ impl Interpreter {
                 _ => return None,
             }
         }
+        // Look through a role-mixed callable (`&foo but R1`) so both legs
+        // below (the batched Sub fast path and `VmFirstMatcher`'s own Sub
+        // check) see a bare Sub, instead of falling through to smartmatch
+        // (which never truthily matches a Mixin, silently returning Nil) --
+        // see `todo/tickets/map-rejects-role-mixed-sub-as-callable.md`.
+        let func = func.map(Self::unwrap_callable_mixin);
 
         let items = crate::runtime::utils::value_to_list(target);
         // Setup-once batched scan for a plain `Sub` matcher (one compile +
@@ -122,6 +128,7 @@ impl Interpreter {
                 _ => return None,
             }
         }
+        let func = func.map(Self::unwrap_callable_mixin);
 
         // No matcher: `.first` is just the first element.
         let Some(func) = func else {
