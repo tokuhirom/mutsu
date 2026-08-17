@@ -2767,6 +2767,37 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "user",
                 );
+                // ADR-0019 F6: VM-level direct-dispatch path first (see
+                // `try_dispatch_compiled_method_direct`'s doc comment). `target`
+                // and `attributes` share the same underlying cell (ADR-0013),
+                // and `dispatch_compiled_method` already commits any reconciled
+                // attribute map back through that cell, so a fresh
+                // `attributes.to_map()` read after the call reflects the
+                // post-mutation state without needing the carrier's own
+                // returned snapshot (same reasoning as the mut-lvalue and
+                // instance-ops families' own migrations).
+                if let Some(result) =
+                    self.try_dispatch_compiled_method_direct(&target, method, &args)
+                {
+                    let result = result?;
+                    let updated_clone = attributes.to_map();
+                    self.env.insert(
+                        target_var.to_string(),
+                        Value::instance_sharing_cell(&attributes, class_name, target_id),
+                    );
+                    if !self.in_lvalue_assignment
+                        && let ValueView::Proxy { fetcher, .. } = result.view()
+                    {
+                        return self.proxy_fetch(
+                            fetcher,
+                            Some(target_var),
+                            &class_name.resolve(),
+                            &updated_clone,
+                            target_id,
+                        );
+                    }
+                    return Ok(result);
+                }
                 let (result, updated) = self.run_instance_method_at(
                     "mutdispatch",
                     &class_name.resolve(),

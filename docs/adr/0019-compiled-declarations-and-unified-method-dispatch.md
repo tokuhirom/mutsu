@@ -2526,6 +2526,28 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   does with the returned value beyond the resolved method (same "no shared-helper-by-pattern-match"
   discipline this box has followed throughout), but now has the same concrete, verified-safe
   direct-dispatch path (`try_dispatch_compiled_method_direct`/`_as`) to migrate onto.
+
+  **Progress (mut-dispatch family, remaining site — family closed, #TBD).** Migrated the general
+  mut-dispatch fallback (`call_method_mut_with_values`'s own `has_user_method(...)` branch,
+  `methods_mut_dispatch.rs:~2763`) onto `try_dispatch_compiled_method_direct`, falling back to
+  `run_instance_method_at("mutdispatch", ...)` when it returns `None`. Same write-back reasoning as
+  the instance-ops and mut-lvalue families: `target` and `attributes` share the cell
+  (`Value::instance_sharing_cell`/ADR-0013), so a fresh `attributes.to_map()` read after the direct
+  call reflects the post-mutation state without the carrier's own returned snapshot. Gathered
+  evidence with the same temporary env-gated probe technique as the instance-ops slice (removed
+  before commit): across the full local `t/` corpus the direct path hit 107/111 times, falling back
+  only for value-dependent multi-method resolution the modern resolver's cacheable-multi gate
+  correctly declines to fast-path (`t/multi-method.t`, `t/multi-new-default-fallback.t`,
+  `t/multi-num-param-strictness.t` — all pass either way). Verified with the full local `t/` suite
+  (3191 files; one run hit `t/supply-done-in-tap-callback-is-not-a-failure.t` test 3, a
+  thread-emit-timing Supply test unrelated to method dispatch — 5/5 direct reruns and a full
+  suite re-run were clean, consistent with load-sensitive flakiness rather than a regression),
+  `cargo build`/`clippy -- -D warnings`/`fmt` clean, the 314-file whitelisted
+  `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted files fail
+  identically before/after), and `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged).
+  **This closes the mut-dispatch family**: both its named sites (the native-lever-A branch, migrated
+  in the prior mut-dispatch slice, and this general fallback) are now off the carrier. Remaining open
+  families: new-dispatch, general-call-dispatch, qualified-dispatch's shared helper.
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.
