@@ -122,8 +122,9 @@ E1, E3-E11 are all closed). Phase F has started: F3, F4 (all of F4a/F4b/F4c), an
 F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with an amended
 completion criterion — see its entry); F7 is closed (with a role-body permanent-exception carve-out —
 see its entry); of the completion gates, G1 is closed (satisfied by the `main` branch ruleset's
-required status checks, after closing a `jit-stress` required-check gap found while verifying it);
-G2-G4 remain open. See each
+required status checks, after closing a `jit-stress` required-check gap found while verifying it) and
+G2 is closed (all four architectural-guard clauses now have permanent tests); G3-G4 remain open. See
+each
 box's entry below for its
 own status, and
 `todo/deep/adr0019-*.md` for the underlying design docs — `d2-remainder-attr-plan-lowering.md`,
@@ -2987,7 +2988,7 @@ outcome.
   Fixed by adding `jit-stress` to the ruleset's required status checks (2026-08-17), so G1's own
   premise now holds for real rather than by accident. This was a repository-settings change (not a
   code diff), made with the user's explicit go-ahead after presenting the gap.
-- [ ] **G2 — Architectural guard tests.** Tests fail if a migrated declaration enters
+- [x] **G2 — Architectural guard tests.** Tests fail if a migrated declaration enters
   `stmt_pool`, retains `legacy_body`, dispatch bypasses `MethodEntry`, or introspection reads a hand
   name table.
 
@@ -3006,12 +3007,31 @@ outcome.
   open. Deliberately excludes role bodies: `RoleBodyOp::Deferred` keeps a raw `Stmt` for ANY
   deferred statement kind by design (a role's composing package is unknown until composition, ADR
   D8-1/D8-2), so it is an accepted carve-out bucket, not a regression surface this sweep should
-  police. The `legacy_body`/`dispatch bypasses MethodEntry`/`introspection
-  reads a hand name table` clauses still have no dedicated guard tests, though each was verified
-  ad hoc at its own closing box (e.g. D6-4/D9-5's `legacy_body` field removal, E4-E7's dispatch
-  entry-routing verification, F1/F2's `.^methods`/`.^can` canonical-table cutover) — formalizing
-  those as permanent regression tests is
-  still open, unscoped work.
+  police.
+
+  **Progress (2026-08-17, remaining three clauses closed):**
+  - `legacy_body`: new `legacy_body_survives_only_on_the_proto_decl_plan` (same module) compiles a
+    program with a sub, a non-trivial proto, a role, and a class together and Debug-formats one plan
+    of each kind, asserting the `legacy_body:` field boundary is absent from
+    `CompiledSubDeclPlan`/`CompiledClassDeclPlan`/`CompiledRoleDeclPlan` and present on
+    `CompiledProtoDeclPlan` — the one deliberate, permanent exception C8 already decided to keep. A
+    field-boundary check on `Debug` output is a real runtime guard here (not a tautology): none of
+    these four structs derive `Default`, so every field is always populated and a reintroduced
+    `legacy_body` would show up verbatim.
+  - `dispatch bypasses MethodEntry`: new `class_def_carries_no_method_mirror_field` Debug-formats a
+    default-constructed `ClassDef` (`runtime/decl_types.rs`, given a `Debug` derive for this test)
+    and asserts no `methods:` field boundary appears (distinct from the legitimate `native_methods:`
+    field). This one specifically needed the runtime check rather than relying on the compiler alone:
+    unlike the plan structs above, `ClassDef` derives `Default`, so a reintroduced `methods` field
+    would compile silently everywhere and default to empty rather than forcing any call site to
+    notice.
+  - `introspection reads a hand name table`: already covered by the pre-existing
+    `raw_rows_cover_every_introspection_name_in_order` (`src/builtins/native_method_row.rs`), which
+    F3's cutover repurposed from a one-time verification into a live regression guard — introspection
+    (`builtin_method_entries`) and `RAW_ROWS`'s `INTROSPECTABLE`-flagged subset are asserted equal, in
+    order, for every builtin owner, on every test run. No new test needed for this clause.
+
+  All four G2 sub-clauses are now enforced by permanent, always-run tests. This closes G2.
 - [ ] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
   per-call owner scans, registry locking, or repeated string interning; cache-hit dispatch remains
   generation-checked O(1).

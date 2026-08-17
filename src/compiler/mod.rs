@@ -1011,6 +1011,96 @@ mod declaration_plan_tests {
             }
         }
     }
+
+    /// ADR-0019 G2 (architectural guard): `legacy_body` was dropped from
+    /// `CompiledSubDeclPlan`/`CompiledClassDeclPlan`/`CompiledRoleDeclPlan` by
+    /// C6/D6/D9 — reintroducing it on any of the three would be a regression
+    /// to the tree-walk era this ADR exists to retire. `CompiledProtoDeclPlan`
+    /// is the one deliberate, permanent exception (C8's own scoping note:
+    /// `call_proto_function`'s interpreter fallback and
+    /// `vm_resolve_trivial_proto_candidate` both still need it), so this test
+    /// asserts the field is present there and absent everywhere else, rather
+    /// than banning the name outright. `Vec<T>`'s derived `Debug` never omits
+    /// a field, so a struct-literal field boundary check on the formatted
+    /// output ("legacy_body:", not a bare substring match — `alternate_body`
+    /// or similar would otherwise false-negative) is a real regression guard,
+    /// not a tautology: it fails to compile only if the field is renamed, and
+    /// fails at runtime if it is reintroduced under this exact name.
+    #[test]
+    fn legacy_body_survives_only_on_the_proto_decl_plan() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "sub f($x) { $x };
+             proto sub p($x) {*}; multi sub p(Int $x) { $x };
+             role R { method rm { 1 } };
+             class C does R { method cm { 2 } }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let has_legacy_body_field = |debug: &str| debug.contains("legacy_body:");
+
+        let sub_plan = code
+            .sub_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "f")
+            .expect("sub f declaration plan");
+        assert!(
+            !has_legacy_body_field(&format!("{sub_plan:?}")),
+            "CompiledSubDeclPlan must not carry legacy_body"
+        );
+
+        let class_plan = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "C")
+            .expect("class C declaration plan");
+        assert!(
+            !has_legacy_body_field(&format!("{class_plan:?}")),
+            "CompiledClassDeclPlan must not carry legacy_body"
+        );
+
+        let role_plan = code
+            .role_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "R")
+            .expect("role R declaration plan");
+        assert!(
+            !has_legacy_body_field(&format!("{role_plan:?}")),
+            "CompiledRoleDeclPlan must not carry legacy_body"
+        );
+
+        let proto_plan = code
+            .proto_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "p")
+            .expect("proto sub p declaration plan");
+        assert!(
+            has_legacy_body_field(&format!("{proto_plan:?}")),
+            "CompiledProtoDeclPlan is the one accepted permanent legacy_body exception (C8)"
+        );
+    }
+
+    /// ADR-0019 G2 (architectural guard): dispatch must resolve every method
+    /// call through the canonical `Registry`/`MethodEntry` table, never
+    /// through a per-`ClassDef` method mirror — F4c removed `ClassDef::methods`
+    /// for exactly this reason. This is a compile-time guard: `ClassDef`
+    /// (`runtime/decl_types.rs`) derives `Default`, so a stray reintroduction
+    /// of a `methods` field would not break any existing construction site
+    /// (it would just default silently, unlike the plan structs above, which
+    /// have no `Default` impl). A field-boundary Debug check on a real,
+    /// non-default-constructed `ClassDef` is the guard: it fails to compile
+    /// if the field is renamed, and fails at runtime if `methods` (exactly —
+    /// not `native_methods`, which is unrelated and legitimately present) is
+    /// reintroduced.
+    #[test]
+    fn class_def_carries_no_method_mirror_field() {
+        let debug = format!("{:?}", crate::runtime::ClassDef::default());
+        assert!(
+            !debug.contains(" methods:") && !debug.starts_with("methods:"),
+            "ClassDef must not carry a `methods` field — dispatch reads only \
+             from the canonical Registry/MethodEntry table (ADR-0019 F4c): {debug}"
+        );
+    }
 }
 mod const_fold;
 mod decl_plan;

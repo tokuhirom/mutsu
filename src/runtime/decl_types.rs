@@ -15,7 +15,7 @@ use crate::value::Value;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-#[derive(Clone, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ClassDef {
     pub(crate) parents: Vec<String>,
     // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
