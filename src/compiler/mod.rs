@@ -308,6 +308,47 @@ mod declaration_plan_tests {
         assert!(plan.compiled_routine_key.is_none());
     }
 
+    /// ADR-0019 C8 scoping (2026-08-17): a `proto method`/`proto submethod`
+    /// NEVER compiles a dispatch body, even with a non-trivial body, unlike a
+    /// package-level proto sub above. Giving a proto method's `{*}` body its
+    /// own compiled routine is unbuilt capability (`run_proto_method` still
+    /// tree-walks `CompiledProtoDeclPlan::legacy_body` for every proto
+    /// method call) — this is the load-bearing fact behind that scoping
+    /// note's "RETAIN `legacy_body`" conclusion. If this test ever needs to
+    /// change, the scoping note's conclusion needs revisiting too.
+    #[test]
+    fn nontrivial_proto_method_declarations_compile_no_dispatch_body() {
+        let (stmts, _) = crate::parse_dispatch::parse_source(
+            "class C { proto method f($x) { say 'before'; {*} }; multi method f(Int $x) { $x } }",
+        )
+        .expect("source parses");
+        let (code, _) = Compiler::new().compile(&stmts);
+
+        let class_plan = code
+            .class_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "C")
+            .expect("class C declaration plan");
+        let chunk = class_plan
+            .body_plan
+            .iter()
+            .find_map(|op| match op {
+                crate::opcode::ClassBodyOp::ProtoMethod { chunk, .. } => chunk.as_ref(),
+                _ => None,
+            })
+            .expect("proto method f compiled as a ClassBodyOp::ProtoMethod chunk");
+        let plan = chunk
+            .code
+            .proto_decl_plans
+            .iter()
+            .find(|plan| plan.name.as_str() == "f" && plan.is_method)
+            .expect("proto method f declaration plan");
+        assert!(
+            plan.compiled_routine_key.is_none(),
+            "a proto method never compiles its own dispatch body, trivial or not"
+        );
+    }
+
     /// ADR-0019 D1: a class declaration's stub-ness and `trusts` targets are
     /// precomputed at plan lowering, so registration never re-walks the body
     /// to judge them (`check_class_role_redeclaration`, `publish_class_shell`).

@@ -230,6 +230,45 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
   (`vm_resolve_trivial_proto_candidate`) still need the raw body; dropping it is a later box.
   `news/2026-08/c8-proto-declarations-compiled-plans.md`.
 
+  **Scoping (2026-08-17, read-only, no code): investigated whether `legacy_body` can now be
+  dropped — conclusion is RETAIN, not a later box.** D9 already removed the same-shaped
+  `CompiledRoleDeclPlan::legacy_body` field this bullet's "following its own precedent" language
+  refers to, so `CompiledProtoDeclPlan::legacy_body` is now (`git grep` confirmed) the LAST
+  `legacy_body`-shaped payload anywhere in the codebase — the obvious next target once F7 closed
+  the token/rule carve-out. Traced every real reader, which turns out to be wider than this
+  bullet's own two-name list:
+  1. **Registration-time fact scans** (`register_proto_decl`'s `auto_signature_uses`/
+     `is_stub_routine_body` over `body`) are movable to compile time (D2a's precompute-facts
+     precedent), but alone that would not free the field's storage — three other consumers below
+     still need the raw `Vec<Stmt>` kept on `FunctionDef` itself.
+  2. **`Value::make_sub(...)` in `exec_register_proto_sub_op`** clones `body` into a `Sub` value
+     when applying a custom `trait_mod:<is>`; that `Sub` is a first-class callable a user program
+     can hold and invoke later through the ordinary Sub-calling convention, which tree-walks.
+  3. **`call_proto_function`** (reached from `call_function_fallback`, one call site,
+     `builtins_operators_fallback.rs`) is NOT dead or rare: the VM's opcode-level call dispatch
+     (`vm_call_func_ops.rs`) always tries the bytecode-first proto paths
+     (`vm_resolve_trivial_proto_candidate`, `vm_try_run_nontrivial_proto_body`) FIRST and falls
+     through to `call_function_fallback` only for what those explicitly decline (a winning
+     candidate that is not OTF-compilable — `where`/default/code-signature params, unsafe
+     `state`, an `is_interpreter_handled_function` name, or a hand-built `FunctionDef` outside
+     plan registration). `call_proto_function` IS the correct, necessary interpreter fallback for
+     exactly the cases the VM fast path already filtered out — this bullet's original framing was
+     right, not an unverified assumption this time.
+  4. **`run_proto_method`** (two call sites: `.new` dispatch and general `proto method` calls in
+     `methods_object_dispatch_new.rs`) is the ONLY dispatch mechanism for `proto method`/`proto
+     submethod` bodies — there is no bytecode path to prefer it over. Unlike an ordinary proto,
+     `is_method` protos are unconditionally excluded from `compile_sub_body` at plan-lowering time
+     (`compiler/stmt.rs`'s `if !*is_method && !trivial` gate) — giving a proto method's `{*}` body
+     its own compiled routine is a **capability that has never been built**, not a migration of an
+     existing one (the code's own comment calls this "Phase D territory"). That is a fresh
+     Phase-D/E-sized dispatch box on its own, not a cleanup of this one.
+
+  **Conclusion, mirroring F6's qualified-dispatch retain finding: keep `legacy_body`
+  permanently.** Every consumer traced one level deeper is either load-bearing (2/3/4) or
+  insufficient alone to free the field (1). Revisit only if proto-method bytecode compilation is
+  ever built as its own box; until then this is a permanent, justified compatibility payload, not
+  deferred work.
+
 ### Phase D — class and role plans become bytecode-native
 
 Two facts about the current walkers shape this phase. First, `register_class_decl` is a single
