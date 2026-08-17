@@ -129,6 +129,19 @@ impl AttrMap {
         Self::default()
     }
 
+    /// Like [`Self::new`] but pre-sized for `capacity` entries, so a
+    /// construction path that knows its final attribute count up front (e.g.
+    /// `bless`/`CREATE`/the native default ctor, all driven by a per-class
+    /// attribute list of known length) avoids `hashbrown`'s incremental
+    /// `reserve_rehash` growth on every `insert`.
+    #[inline]
+    pub(crate) fn with_capacity(capacity: usize) -> Self {
+        Self(FxHashMap::with_capacity_and_hasher(
+            capacity,
+            Default::default(),
+        ))
+    }
+
     #[inline]
     pub(crate) fn get<K: AttrKey>(&self, key: K) -> Option<&Value> {
         let sym = key.lookup_symbol()?;

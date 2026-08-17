@@ -85,9 +85,41 @@ TWEAK submethod dispatch chain? Symbol interning of 20 distinct attribute names 
   be extended) to count allocations per `bless`/`TWEAK` call directly — deterministic, environment-
   independent, and answers "how many allocations does constructing a 20-attr object cost" without
   needing symbolized call graphs at all.
-- If the allocation count turns out to be dominated by the attribute-cell `HashMap<Symbol, Value>`
-  construction itself (one per instance, 20 inserts each), consider whether `bless` can pre-size
-  the map from the class's known attribute count instead of growing it via repeated `insert`
-  (avoiding `hashbrown::RawTable::reserve_rehash`, which showed up in the flat profile).
 - Re-run the same A/B methodology from this session (build 7/31 and HEAD, `MUTSU_JIT=off`,
   order-swapped) once a fix lands, to confirm the drift actually narrows.
+
+## 2026-08-17 (later session): `AttrMap` pre-sizing
+
+Picked up the "pre-size the map from the class's known attribute count" idea from the previous
+session's next-steps list and landed it: `AttrMap::with_capacity` (new method) is now used at the
+three construction sites that already know their final attribute count up front from a per-class
+list —
+
+- `dispatch_bless`'s default-attribute-value loop (`plan.class_attrs.len()`)
+- `create_default_attr_slots` (the `CREATE` path, `collect_class_attributes(..).len()`)
+- `build_native_default_instance` (the native default-ctor fast path, `class_attrs.len()`)
+
+— avoiding `hashbrown`'s incremental `RawTable::reserve_rehash` growth (visible in the flat
+profile at ~2% `hashbrown::HashMap::insert`/`SipHasher::write`) when the final size is already
+known. `cargo build` + `cargo clippy -- -D warnings` clean; `t/class*.t t/bless*.t t/new*.t
+t/attribute*.t t/role*.t t/mixin*.t t/create*.t` (998 tests) and the full `t/` suite (29792 tests)
+pass.
+
+Local A/B (worktree baseline at `main` HEAD `3a3a2713b` vs this change, `MUTSU_JIT=off`,
+min-of-12/15 per side, order-swapped across three rounds) on a machine under variable background
+load (uptime load average 6-13 on 12 cores during measurement):
+
+- `bench-ctor` (20 attributes): consistently faster across all three rounds — roughly 10-20%
+  (e.g. round 3: new 0.39s vs baseline 0.49s). This is the shape the fix targets.
+- `bench-class` (3 attributes): no consistent direction, differences within noise — expected,
+  since a 3-entry map barely pays incremental-growth cost either way.
+
+This is a small, structurally-safe change (pre-sizing a `HashMap` never changes its contents), so
+it was not gated on a clean local measurement — the project convention is that documented bench
+numbers come from the bench CI trend (`bench-history.tsv`), not local runs, and this container's
+load made a tight local confirmation unreliable regardless. Left this ticket open rather than
+closing it: `env_deep_copies` (S2, `todo/tickets/bench-ctor-construction-parity.md`) and the
+GC-candidate-push family are still diffuse cost, matching the "no single hot function dominates"
+conclusion from the earlier profile. Next dedicated-session step is still the counting-allocator
+build (previous section) if further attribution is wanted, or checking the bench-CI trend after
+this PR merges to see how much of the 7/31-vs-HEAD drift narrows.
