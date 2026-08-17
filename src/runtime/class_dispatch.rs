@@ -23,7 +23,28 @@ impl Interpreter {
                     let key = k.to_string_value();
                     parts.push(self.format_named_arg_profile(&key, v));
                 }
-                _ => parts.push(crate::value::types::what_type_name(a)),
+                // A positional argument's type in the profile carries its
+                // `:D`/`:U` definedness smiley (`Array:D`, `Array:U` for the
+                // bare type object) the same way the invocant does in
+                // `make_multi_no_match_error_detailed` — verified against
+                // `raku` directly. A named argument's value does NOT (raku
+                // renders `:y(Array)`, never `:y(Array:D)`), so this only
+                // applies here, not in `format_named_arg_profile`.
+                _ => {
+                    let smiley = if matches!(
+                        a.view(),
+                        ValueView::Package(_) | ValueView::ParametricRole { .. }
+                    ) {
+                        ":U"
+                    } else {
+                        ":D"
+                    };
+                    parts.push(format!(
+                        "{}{}",
+                        crate::value::types::what_type_name(a),
+                        smiley
+                    ));
+                }
             }
         }
         parts.join(", ")

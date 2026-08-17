@@ -346,9 +346,14 @@ impl Interpreter {
                         continue;
                     }
                     // Skip the implicit `*%_` slurpy named param; we append it
-                    // explicitly at the end of every candidate signature.
-                    if pd.named
-                        && (pd.slurpy || pd.double_slurpy)
+                    // explicitly at the end of every candidate signature. Not
+                    // gated on `pd.named`: `implicit_method_named_slurpy_param`
+                    // (method_signature_shared.rs) sets `named: false` on this
+                    // param even though its `%`-sigiled name makes it a named
+                    // slurpy, so requiring `pd.named` here let it fall through
+                    // to the normal per-param rendering and produced a
+                    // duplicate `Any *%_, *%_` tail.
+                    if (pd.slurpy || pd.double_slurpy)
                         && (pd.name == "%_" || pd.name == "_" || pd.name.is_empty())
                     {
                         continue;
