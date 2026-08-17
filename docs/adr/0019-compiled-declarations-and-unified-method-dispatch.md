@@ -2623,19 +2623,50 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   `cargo build`/`clippy -- -D warnings`/`fmt` clean, and `scripts/battery-testsuite.sh` (GATE
   PASSED, 245/271 unchanged).
 
-  **The remaining general-call-dispatch site is still deliberately deferred, not attempted:**
-  - The mixin fallback (`ValueView::Mixin(inner, mixins)` class-method branch, `~line 3960`) passes
-    `target.clone()` (the whole mixin wrapper) as invocant so a nested `self.foo` inside the method
-    re-dispatches through the mixin's role overrides, but separately extracts `inner`'s own
-    `AttrMap` and, after the call, manually commits the carrier's returned `updated` map back onto
-    `inner`'s attribute cell (`attributes.commit_attrs(updated)`) — because the invocant
-    (`target`, a `Mixin`) has no attribute cell of its own for `dispatch_compiled_method`'s automatic
-    commit path to find. `try_dispatch_compiled_method_direct`/`_as` only returns the plain `Value`
-    result, with no equivalent commit target when the invocant and the attribute-owning value
-    differ. Using it here would silently drop attribute mutations made by a class method invoked
-    through a mixin wrapper — a real correctness regression, not a missed optimization. Needs a new
-    helper shape (or this site's own bespoke wiring) that accepts an explicit attrs-cell to commit
-    through, separate from the dispatch invocant; left on `run_instance_method_at` until that exists.
+  **Progress (general-call-dispatch family, mixin fallback site — family closed, #TBD).** Built the
+  "new helper shape" this box's own prior note called for: `dispatch_compiled_method_with_attrs_cell`
+  (`vm_call_method_compiled_cache.rs`) and its resolve-and-dispatch wrapper
+  `try_dispatch_compiled_method_direct_with_attrs_cell` (`vm_call_method_compiled_direct.rs`), a
+  sibling of `dispatch_compiled_method`/`try_dispatch_compiled_method_direct_as` that takes an
+  EXPLICIT `attrs_cell: &Gc<InstanceAttrs>` separate from the dispatch invocant `target`, instead of
+  deriving the cell from `target.view()`. Always takes the slow (`call_compiled_method`) path, never
+  the fast (`call_compiled_method_fast`) one: the fast path's live-cell optimization reads attributes
+  directly off `self`'s own `ValueView`, which requires `self` to literally be `ValueView::Instance` —
+  not true for a `Mixin` wrapper, so there is no live cell for it to find; an acceptable trade for
+  this cold path (role-mixin class-method dispatch is not hot-loop code). Confirmed the existing
+  carrier path itself (`run_resolved_instance_method`, `class_dispatch.rs:593`) never performs the
+  compiled VM opcode path's eager `ValueView::Proxy` auto-fetch either (that logic lives only in
+  `dispatch_compiled_method`'s own tail, called from the VM's `CallMethod` opcode handler and
+  `try_dispatch_compiled_method_direct[_as]`, never from the tree-walk-carrier's own
+  `call_compiled_method` call) — so omitting it from the new helper is not a NEW behavior gap, it
+  matches the site's pre-migration behavior exactly (no roast/local-`t/` file combines a mixin class
+  method with a `Proxy`-returning `is rw` accessor, confirmed by `grep -l Proxy t/*.t | xargs grep -l
+  'mixin\|but role'` finding nothing).
+
+  Migrated the mixin fallback (`ValueView::Mixin(inner, mixins)` class-method branch,
+  `methods_call_dispatch.rs:~3990`) to try `try_dispatch_compiled_method_direct_with_attrs_cell`
+  first — passing `class_name`/`target` (the Mixin wrapper, so nested `self.foo` still redispatches
+  through the mixin's role overrides) and `attributes` (the `GcRef` destructured from `inner`'s own
+  `ValueView::Instance`, deref-coercing to the `&Gc<InstanceAttrs>` the helper wants) — falling back
+  to `run_instance_method_at("generalcalldispatch", ...)` on `None`, same pattern as every other F6
+  migration in this box. This site already had solid pre-existing local `t/` coverage (unlike the
+  `^metamethod` site above): `t/mixin-inherited-method-self-dispatch.t` (8 cases: direct/inherited
+  override via both mixin forms, attribute-mutation persistence through an inherited method,
+  multi-hop self-dispatch, args), `t/mixin-private-method-self-dispatch.t` (5 cases, the sibling
+  private-method branch just above this one — unchanged by this slice), and
+  `t/mixin-compiled-attr-writeback.t` (9 cases: scalar/array/hash attribute mutation through a
+  compiled mixin method, multi `.*` dispatch, nested self-dispatch back to a class method) — all
+  re-verified green after the migration, including every attribute-mutation-persistence case. Per
+  this box's own "gather evidence before migrating" discipline, no NEW test file was needed here
+  (contrast the `^metamethod` site, which had zero coverage and got `t/metamethod-dispatch.t`
+  first). Verified with the full local `t/` suite (3193 files, all green), the three named mixin
+  test files individually, `cargo build`/`clippy -- -D warnings`/`fmt` clean, the 314-file
+  whitelisted `S04`/`S06`/`S09`/`S12`/`S14` roast subset (release — the same 7 non-whitelisted files
+  fail identically before/after, matching every prior slice in this box), and
+  `scripts/battery-testsuite.sh` (GATE PASSED, 245/271 unchanged). **This closes the
+  general-call-dispatch family: all 3 of its named sites are now migrated off the carrier.** The only
+  remaining open F6 item is qualified-dispatch's shared helper (a different, larger problem — see
+  this box's own note above, "qualified-dispatch's shared helper is a DIFFERENT, bigger problem").
 - [ ] **F7 — Delete obsolete declaration payloads and generic statement-pool entries.** Remove old
   `Register*` compatibility code and assert that migrated sub/class/role declarations retain no
   executable source AST.

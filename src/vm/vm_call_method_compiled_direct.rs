@@ -105,4 +105,67 @@ impl Interpreter {
             None,
         ))
     }
+
+    /// Same as `try_dispatch_compiled_method_direct_as`, but for a `self`/
+    /// invocant that carries no attribute cell of its own — `attrs_cell`
+    /// supplies the real attribute storage separately (see
+    /// `dispatch_compiled_method_with_attrs_cell`'s doc comment). Used by the
+    /// role-mixin class-method dispatch fallback, where `target` is the
+    /// `Mixin` wrapper (so nested `self.foo` redispatches through the mixin's
+    /// role overrides) but the actual attributes live on the mixin's `inner`
+    /// instance.
+    pub(crate) fn try_dispatch_compiled_method_direct_with_attrs_cell(
+        &mut self,
+        class_sym: crate::symbol::Symbol,
+        target: &Value,
+        attrs_cell: &crate::gc::Gc<crate::value::InstanceAttrs>,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        self.refresh_method_caches_for_generation();
+        let cn = class_sym.as_str();
+        let method_sym = crate::symbol::Symbol::intern(method);
+        let (owner_class, method_def) =
+            self.resolve_method_cached(cn, method, class_sym, method_sym, args, target)?;
+        if let Some(result) = self.check_method_wrap_chain(
+            cn,
+            owner_class.as_str(),
+            method,
+            &method_def,
+            target,
+            args,
+        ) {
+            return Some(result);
+        }
+        let (owner_class, method_def) = if method_def.compiled_code.is_some() {
+            (owner_class, method_def)
+        } else if !method_def.body.is_empty()
+            && let Some((owner, def)) =
+                self.populate_uncompiled_method(cn, owner_class.as_str(), method, args, target)
+        {
+            let cache_key = (class_sym, method_sym);
+            self.method_resolve_cache
+                .insert(cache_key, Some((owner, def.clone())));
+            if !def.is_multi {
+                self.last_method_resolve = Some((class_sym, method_sym, owner, def.clone()));
+            }
+            (owner, def)
+        } else {
+            return None;
+        };
+        let cc = method_def
+            .compiled_code
+            .clone()
+            .expect("compiled_code set above");
+        Some(self.dispatch_compiled_method_with_attrs_cell(
+            cn,
+            owner_class.as_str(),
+            method,
+            &method_def,
+            &cc,
+            target.clone(),
+            attrs_cell,
+            args.to_vec(),
+        ))
+    }
 }
