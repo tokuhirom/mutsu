@@ -300,6 +300,41 @@ impl Interpreter {
         err
     }
 
+    /// True when a `GetGlobal` read of `name` that resolved through none of
+    /// the real stores (env, unit/package/module lexicals, `our`-vars,
+    /// per-call state, ...) should still NOT be reported as undeclared by
+    /// `use strict`, because it is one of several pseudo-variable / dynamic-
+    /// scope shapes `GetGlobal` also carries that are not ordinary lexicals:
+    ///
+    /// - `*`-prefixed dynamic variables (`$*FOO`): an undeclared dynamic var
+    ///   is a *runtime* "Dynamic variable ... not found" error in real Raku,
+    ///   raised unconditionally (not gated by `use strict`) by a mechanism
+    ///   mutsu does not implement yet (see the read-side ticket this
+    ///   exemption came from) — `use strict` must not invent a different
+    ///   error for the same case.
+    /// - `?`-prefixed compile-time pseudo vars (`$?CLASS`, `$?FILE`, ...):
+    ///   these are validated by a separate compile-time mechanism in real
+    ///   Raku (also unconditional, not `use strict`-gated); out of scope
+    ///   here.
+    /// - Internal compiler temporaries (leading `__`), mirroring the
+    ///   `SetGlobal` write-side check.
+    /// - Fully-qualified names (containing `::`), mirroring the `SetGlobal`
+    ///   write-side check.
+    /// - Bare `$!` / `$/` (the exception/match magic vars with no twigil
+    ///   attached) and pure-digit names (`$0`, `$1`, ... positional
+    ///   captures): all legitimately read as Nil when unset, in both raku
+    ///   and mutsu, regardless of `use strict`.
+    pub(super) fn strict_read_exempt(name: &str) -> bool {
+        name.is_empty()
+            || name.starts_with('*')
+            || name.starts_with('?')
+            || name.starts_with("__")
+            || name.contains("::")
+            || name == "!"
+            || name == "/"
+            || name.bytes().all(|b| b.is_ascii_digit())
+    }
+
     /// Check if a bare word is a pseudo-package name (MY, OUTER, CORE, etc.)
     pub(crate) fn is_pseudo_package_bare(name: &str) -> bool {
         crate::runtime::Interpreter::is_pseudo_package_name(name)
