@@ -70,8 +70,14 @@ Implemented** — declaration registration compiles to typed plans, and one Type
 with a generation-checked O(1) cache serves every dispatch entry (§1.1, §3.3). Its own
 completion-gate investigation (G3) also found and fixed two real perf regressions, unrelated to
 the ADR's own mechanisms (§1.1). What is left of that campaign is deliberately non-gating
-residue, now tracked as independent tickets rather than inside the ADR. The active center
-moves to the exception type model and two missing policy/concurrency decisions.
+residue, now tracked as independent tickets rather than inside the ADR. **ADR-0029 (X:: exception
+role membership) also landed its mechanism and data (Slices 1-3, 2026-08-17/18)**: `X::` ancestry
+is now registered as role composition through the existing composed-role registry, not folded
+into single-inheritance `parents`/`mro`, and 357/373 real rakudo `Exception` subtypes match
+byte-for-byte (§7). The active center moves to the still-missing batteries-adoption-policy
+decision, plus ADR-0029's own deferred measurement slice. (The other "missing decision" this
+document used to track, a shared worker pool, is no longer missing: ADR-0020 was written and
+accepted, all three implementation slices landed 2026-08-05 — found while updating §8 below.)
 
 Where to look first:
 - §1: what architectural work remains (§1.8-§1.10 are new)
@@ -442,9 +448,10 @@ priority reset, performance is polish and is not used as a ranking criterion her
 
 The ranking rule, stated so it can be argued with:
 
-1. **Design prerequisites before data sweeps or concurrency implementation.** Exception roles
-   need a type-metadata decision; a worker pool needs an `await` decision; batteries policy
-   needs a durable adoption boundary.
+1. **Design prerequisites before data sweeps or concurrency implementation.** Batteries policy
+   needs a durable adoption boundary. (Exception roles and the shared worker pool had the same
+   shape of prerequisite — ADR-0029 and ADR-0020 respectively — and both are now resolved: see
+   below.)
 2. **Severity can override the queue only when the task is actionable.** A new crash artifact
    makes the Proc::Async SIGSEGV P0; without one, blind local loops have already been measured
    as unproductive.
@@ -454,20 +461,35 @@ The ranking rule, stated so it can be argued with:
    feature forces it open.
 4. Feature breadth with no downstream consumer remains last.
 
+**Exception role/type registration** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`,
+ADR-0029) is omitted from the table below rather than ranked, for the same reason completed
+campaigns are omitted: the correctness work is done. ADR-0029's mechanism (`register_x` gained
+a `does` parameter writing role composition into the existing `class_composed_roles` registry,
+never folded into single-inheritance `parents`/`mro`) and its data (regenerated from a
+mechanical raku capture, `TODO_roast/x-exception-role-membership.tsv`) both landed 2026-08-17/18
+(#6590/#6591/#6595). Of 373 real rakudo `Exception` subtypes measured, 357 now match byte-for-byte
+(up from 43 wrong `.^mro` / 52 wrong `.^roles` at the ADR's own measurement time); the 16
+remaining are a raku `.^roles` transitive-dedup quirk (15, cosmetic — the composed-role *set*
+matches, only a duplicate-entry count differs) and one class whose real rakudo shape
+(`is X::Comp`, a role-as-superclass pun) `register_x` cannot express. What is **not** done is
+ADR-0029's own Slice 4 (re-running the honest measurement sweep under the vendored real `Test`
+module) — that is blocked on the separate, still-open `todo/deep/vendor-real-test-module.md`,
+so the ADR's Status stays `Proposed` and its owning todo/deep ticket stays open until that sweep
+is actually runnable.
+
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Exception role/type registration and error parity** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`) | correctness / type model | 124 core `X::` names cannot be constructed as types, and prefix-as-parent is semantically wrong because Rakudo expresses most membership through roles. Collect the role/MRO data now; align implementation with ADR-0019's TypeId/MRO resolver model rather than creating a second registry. |
-| 2 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
-| 3 | **Write the shared-worker-pool Proposed ADR** (`todo/deep/shared-worker-pool-adr.md`) | concurrency design | Thread-per-task at 19 sites reserves 256 MiB each. A bounded pool deadlocks nested blocking `await` without continuations, and idle workers must cooperate with GC stop-the-world. The next deliverable is the decision, not implementation. |
-| 4 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices, not part of the worker-pool design. |
-| 5 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
-| 6 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. `registration_class_decl.rs` (2927 lines, §1.1) is the next walker due for deletion once a MOP feature forces it open; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
-| 7 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
+| 1 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
+| 2 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices. |
+| 3 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
+| 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. `registration_class_decl.rs` (2927 lines, §1.1) is the next walker due for deletion once a MOP feature forces it open; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
+| 5 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
-Explicitly **not** ranked as current architecture work: completed ADR-0013/0015-P3b/0016/0018
-campaigns; optional ADR-0015 P3c; ADR-0016's deliberately deferred eager replay carriers;
-roast whitelist chasing; and perf levers with no goal-item consumer. They become candidates
-only when new evidence or a real downstream dependency changes that premise.
+Explicitly **not** ranked as current architecture work: completed ADR-0013/0015-P3b/0016/0018/
+0019/0020/0029 (mechanism+data) campaigns; optional ADR-0015 P3c; ADR-0016's deliberately
+deferred eager replay carriers; roast whitelist chasing; and perf levers with no goal-item
+consumer. They become candidates only when new evidence or a real downstream dependency
+changes that premise.
 
 ---
 
@@ -491,15 +513,20 @@ The rev11 corrections remain valid; rev12 adds the closure/progress deltas below
 | 0016 span-based captures | Status and all five phases remain accurate; the standing `view()` invariant was prose-only in rev11. | `match_materializations` now exposes each first lazy-node force under `MUTSU_VM_STATS=1`; capture-name keys are also interned. Deliberate replay/snapshot residue remains deferred. |
 | 0018 slot-addressed lexical capture | Added after rev11 to own the env-writeback/lexical-slot fused campaign. | Accepted and implemented; it replaces rev11's completed roadmap rows rather than remaining a current task. |
 | 0019 compiled declarations and unified dispatch | Added after rev11 to own §1.1/§3.3/§4-1 as one phased migration. | **Accepted/Implemented (2026-08-17).** All four completion gates (G1-G4) closed; the ADR's own execution checklist remains the historical record. Deliberately non-gating residue (native-method introspection fidelity, the E2 handler-ID catalog, D2c-5) now lives in independent tickets, not the ADR. |
+| 0020 shared worker pool | New (2026-08-05), not previously in this ledger; found while adding the ADR-0029 row below and cross-checking §7's stale "write the worker-pool ADR" roadmap row. | **Accepted, all three implementation slices landed 2026-08-05.** Superseded and removed the §7 roadmap row and the §8 "missing ADR" call-out that both still described it as undecided; the ADR's own text is the historical record, not re-audited further here. |
+| 0029 X:: exception role membership | New (2026-08-17), covered here rather than left drifting immediately. | **Status: Proposed; Slices 1-3 (mechanism + data landing) shipped 2026-08-17/18** (#6590/#6591/#6595, §7 roadmap note above). Slice 4 (the honest re-measurement sweep under the vendored real `Test` module) is blocked on the separate, still-open `todo/deep/vendor-real-test-module.md` — Status intentionally stays `Proposed` rather than being flipped to `Accepted` ahead of that. |
 | 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0014, 0017 | Accurate; 0004 and 0009 already carry closing addenda. | No change. |
 | 0002 | Historical gate record; still accurate. | No change. |
 
-Two **missing** ADRs are worth writing, and are listed here rather than drafted unilaterally:
+**Not reviewed in this pass:** ADRs 0021-0028 (`0021-argument-namedness-is-a-call-site-property.md`
+through `0028-supply-schedule-on-deferred-tap-delivery.md`) were all written after rev12's
+"19 ADRs" count and are not yet folded into this ledger. A future revision should re-run this
+section's method (read every ADR's Status line against the tree) rather than trust this
+addendum's partial coverage.
 
-1. **A shared worker pool** — PLAN §6 has specified its content in detail for over two weeks
-   ("the central question is not pool sizing — it is what `await` does to a pooled worker"),
-   and the decision is being made by default in the meantime (19 spawn sites, 256 MiB each).
-2. **The batteries adoption policy** — "grow the interpreter until the real upstream module
+One **missing** ADR remains worth writing, and is listed here rather than drafted unilaterally:
+
+1. **The batteries adoption policy** — "grow the interpreter until the real upstream module
    runs verbatim (rung 2); native provision (rung 3) is banned" is a load-bearing,
    costly-to-reverse decision recorded only in `BATTERIES.md` and CLAUDE.md as a user
    decision. Its rejected alternative (native reimplementation) and its named exceptions
@@ -519,3 +546,14 @@ severity, and actionability.*
 row were updated in place to describe the closed architecture and point at the tickets tracking
 its non-gating residue. Other findings/metrics in this document were not re-verified as part of
 this addendum.*
+*2026-08-18 addendum (not a full rev13 re-verification): ADR-0029 (X:: exception role
+membership) landed its mechanism and data, Slices 1-3 (#6590/#6591/#6595) — 357/373 real
+rakudo `Exception` subtypes now match `.^mro`/`.^roles` exactly; §0 summary, the §7 roadmap
+(exception item removed from the ranked table), and §8's ADR ledger were updated to describe
+this. Slice 4 (the honest measurement sweep) is explicitly recorded as still blocked on
+`todo/deep/vendor-real-test-module.md`, so ADR-0029's Status stays `Proposed`. Auditing §8 for
+that row also surfaced that ADR-0020 (shared worker pool) already exists and is Accepted, all
+three implementation slices landed 2026-08-05 — the §7 roadmap's stale "write the ADR" row and
+§8's "missing ADR" call-out for it were removed to match. The same pass found ADRs 0021-0028
+also exist and are not yet covered by §8's ledger — flagged there, not investigated as part of
+this addendum. No other section was re-verified.*
