@@ -60,3 +60,25 @@ The second option is probably right long-term, but check whether
 apply unconditionally to every `call_compiled_closure` caller (e.g. map/grep
 callback invocations, which also route through this function) or whether it
 needs to stay opt-in per call site.
+
+## Update (2026-08-18): still not reduced to a failing repro
+
+Tried several shapes that plausibly route through `call_compiled_closure`
+without the tree-walk tail, all matched `raku` correctly (so not the gap, or
+mutsu takes a different path that happens to still apply the rw/LazyList
+handling):
+
+- `my &f = sub () is rw { $x }; &f() = 42;` (anon `is rw` block as a
+  first-class value) — correct in both.
+- A `sub` returning a `LazyList` (`.map` over a `Range`) via a first-class
+  code var, mutated after binding into `@a` — correct in both.
+- `sub f() is rw { $x }; my &g = &f; (&g)() = 7;` (named `is rw` sub
+  rebound to a code var, invoked via `.()`) — correct in both.
+
+Still an open static-audit finding, not a confirmed bug — whoever picks this
+up next should try invoking specifically through the `data.compiled_routine.is_some()`
+fork this ticket names (`src/runtime/resolution_call_sub.rs` ~417-431) with an
+explicit trace/breakpoint to confirm THAT fork is actually taken for one of
+these shapes, rather than guessing black-box from the `raku`-vs-mutsu output
+alone — the negative results above don't rule out the gap, they just didn't
+happen to hit the code path in question.
