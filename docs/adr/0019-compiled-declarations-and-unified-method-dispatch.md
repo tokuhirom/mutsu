@@ -2913,6 +2913,21 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
 - [ ] **G2 — Architectural guard tests.** Tests fail if a migrated declaration enters
   `stmt_pool`, retains `legacy_body`, dispatch bypasses `MethodEntry`, or introspection reads a hand
   name table.
+
+  **Progress (2026-08-17):** the `stmt_pool` clause already has scattered per-declaration-kind
+  coverage, one test per migrated kind, all in `src/compiler/mod.rs`'s `declaration_plan_tests`
+  module: `sub_declarations_leave_the_generic_statement_pool` (A2),
+  `type_declarations_leave_the_generic_statement_pool` (A3, class/role),
+  `nontrivial_proto_declarations_compile_their_dispatch_body` (C8, proto), and the new
+  `token_rule_declarations_leave_the_generic_statement_pool` (F7, covering both the top-level and
+  class-body registration paths). No single test asserts the invariant for every declaration kind
+  at once — this is a real gap: a future declaration kind could regress `stmt_pool` without
+  tripping any existing test. The `legacy_body`/`dispatch bypasses MethodEntry`/`introspection
+  reads a hand name table` clauses have no dedicated guard tests yet, though each was verified
+  ad hoc at its own closing box (e.g. D6-4/D9-5's `legacy_body` field removal, E4-E7's dispatch
+  entry-routing verification, F1/F2's `.^methods`/`.^can` canonical-table cutover) — formalizing
+  those as permanent regression tests, and adding the missing "every declaration kind" sweep, is
+  still open, unscoped work.
 - [ ] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
   per-call owner scans, registry locking, or repeated string interning; cache-hit dispatch remains
   generation-checked O(1).
