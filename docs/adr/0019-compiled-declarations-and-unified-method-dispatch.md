@@ -330,9 +330,10 @@ walkers wholesale is not possible before then.
     point lookup, and `class_def.methods`/`.attributes` vs. `MethodEntry` are already a single
     source of truth kept in lockstep by `sync_user_method_entries` — reading one over the other
     there is a lateral move, not a gain (see CLAUDE.md's "what gain and risk actually mean").
-  Full slice-by-slice history and the D2b/D2c-remainder design are in
+  Full slice-by-slice history and the D2b/D2c-remainder design lived in
   `todo/deep/adr0019-d2c-attribute-default-chunks.md` and
-  `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`.
+  `todo/deep/adr0019-d2-remainder-attr-plan-lowering.md`; both retired once D2's own progress
+  notes above and the linked `news/2026-08/` entries fully covered the same ground.
 - [x] **D3 — Encode class methods and submethods as compiled candidates.** Install ordinary, multi,
   proto, private, rw, wrap, BUILD, and TWEAK metadata without walking `Stmt::MethodDecl`. Three
   independent walkers (class ~508 lines, role ~263, `augment class` ~105) each hand-built a
@@ -525,11 +526,15 @@ The resolver must cover every entry: six opcodes (`CallMethod`, `CallMethodMut`,
 non-opcode entries (`vm_call_method_with_values`/`vm_call_method_mut_with_values`, the
 `vm_run_instance_method` carrier, the two JIT shims, three `vm_call_helpers` fallback entries),
 and the `ArrayPush` fast-path opcode that bypasses method dispatch entirely. The detailed designs
-for this phase are `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1),
+for this phase were `todo/deep/adr0019-e1-typeid-receiver-owner.md` (E1, retired once closed —
+its one live spin-off, mixin composition order nondeterminism, was tracked separately as
+`todo/tickets/mixin-role-order-not-tracked.md` and is now fixed, see
+`news/2026-08/mixin-role-application-order-tracked.md`),
 `todo/deep/adr0019-e2-e4-resolver-core.md` (E2/E3/E4),
 `todo/deep/adr0019-e5-e7-entry-routing.md` (E5/E6/E7), and
-`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11) — consult these for
-full slice-by-slice history; the checklist below keeps only the architectural outcome.
+`todo/deep/adr0019-e8-e11-candidate-sequence-semantics.md` (E8/E9/E10/E11) — consult the ones that
+still exist for full slice-by-slice history; the checklist below keeps only the architectural
+outcome.
 
 - [x] **E1 — Introduce stable `TypeId` and receiver-owner resolution.** Resolve concrete values,
   type objects, user classes, builtin subclasses, role mixins, and representation aliases to an
@@ -1041,8 +1046,9 @@ full slice-by-slice history; the checklist below keeps only the architectural ou
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
   **Split in place (2026-08-15), following the C6/D2/E1-E11 precedent** — a read-site
   classification pass (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s sibling
-  survey, and the earlier `todo/deep/adr0019-f4-classdef-methods-still-load-bearing.md` scoping)
-  found `Registry::sync_user_method_entries` currently writes the canonical table FROM
+  survey, and an earlier scoping pass -- both now folded into this box's own progress notes below,
+  which fully supersede that scoping's now-deleted file) found `Registry::sync_user_method_entries`
+  currently writes the canonical table FROM
   `ClassDef::methods` (the opposite of what F4 wants), with ~15-20 files of live dispatch/MOP/
   BUILD-TWEAK read sites and ~10 files of write sites. That work does not fit one PR or one
   design decision, so it is now three sub-boxes:
