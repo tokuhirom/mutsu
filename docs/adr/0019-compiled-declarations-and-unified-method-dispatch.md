@@ -123,7 +123,8 @@ F1/F2 are done except a deliberately-parked fidelity slice; F6 is closed (with a
 completion criterion — see its entry); F7 is closed (with a role-body permanent-exception carve-out —
 see its entry); of the completion gates, G1 is closed (satisfied by the `main` branch ruleset's
 required status checks, after closing a `jit-stress` required-check gap found while verifying it) and
-G2 is closed (all four architectural-guard clauses now have permanent tests); G3-G4 remain open. See
+G2 is closed (all four architectural-guard clauses now have permanent tests); G3 is closed (no
+regression traced to any of its four named mechanisms — see its entry); G4 remains open. See
 each
 box's entry below for its
 own status, and
@@ -3032,9 +3033,55 @@ outcome.
     order, for every builtin owner, on every test run. No new test needed for this clause.
 
   All four G2 sub-clauses are now enforced by permanent, always-run tests. This closes G2.
-- [ ] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
+- [x] **G3 — Performance gate.** Benchmarks show no regression from initialization probing,
   per-call owner scans, registry locking, or repeated string interning; cache-hit dispatch remains
   generation-checked O(1).
+
+  **Progress (2026-08-17).** The dispatch clause ("cache-hit dispatch remains generation-checked
+  O(1)") closed earlier, as part of E3 (`resolved_seq_cache`, keyed by `(TypeId, Symbol,
+  CallShape)` — see E3's own progress note above, including its 2026-08-14 bench-CI parity check).
+
+  The remaining clause — no regression from the four named ADR-0019 mechanisms — was investigated
+  by direct A/B (worktree builds of the pre-Phase-E commit `426b36cd1` vs current `main`,
+  `MUTSU_JIT=off`, order-swap-verified) in
+  `todo/deep/adr0019-g3-diffuse-bless-allocation-cost.md`. That surfaced real regressions on
+  `time-parts`, `debug-guard`, `bench-ctor`, and `bench-class`, but **every regression that was
+  actually traced to a cause turned out to be unrelated to ADR-0019's own mechanisms**:
+  - `time-parts` bisected to a single commit, `0448be29a` (ADR-0022 Slice 5, an unconditional
+    `format!` + `HashMap::remove` on every plain scalar `my`/`state` declaration to clear a
+    `constant`-shadowing marker) — fixed in #6575 by gating the removal on a program-wide "any
+    constant ever declared" flag.
+  - `debug-guard` turned out to be a second bug in that *same* ADR-0022 mechanism, missed by
+    #6575: the program-wide flag made *any* `constant` anywhere in the program (e.g.
+    `benchmarks/debug-guard.raku`'s `constant DEBUG = False`) force the removal cost onto every
+    subsequent unrelated `my`/`state` declaration for the rest of the run, not just ones that could
+    plausibly shadow that constant. Fixed in #6579 by replacing the program-wide bool with a
+    per-name `FxHashSet<String>`.
+  - `bench-ctor`/`bench-class` did **not** bisect to a single commit — a `perf record` flat profile
+    (call-graph attribution was not usable in this environment; see the ticket's "Tooling blocker"
+    section) showed cost spread across `malloc`/`free`, NaN-boxed value GC/refcount bookkeeping,
+    `hashbrown`/`SipHasher`, and thread-local access, with no single dominant function and no
+    owner-scan-, registry-lock-, or string-interning-specific symbol standing out. This reads as
+    general per-construction allocation/GC/hashing cost, not a mechanism G3 names. #6579 also
+    landed one concrete slice of this (`AttrMap::with_capacity`, pre-sizing the attribute map at
+    the three construction sites that already know their final size), narrowing but not closing the
+    gap; the rest (`env_deep_copies`, GC candidate-push churn) is explicitly blocked on the
+    closure-upvalue-cell prerequisite (`docs/vm-single-store.md` §3), a separate, already-tracked
+    architectural campaign, not an ADR-0019 regression.
+  - The other five pre-existing "seen"-gate marker families in `env.rs`
+    (`CLOSURE_META_KEY_SEEN`/`BOUND_KEY_SEEN`/`BOUND_SLICE_KEY_SEEN`/`ELEM_INDEX_META_SEEN`/
+    `PLACEHOLDER_KEY_SEEN`) were checked for the same per-program-vs-per-name flaw the
+    `debug-guard` bug exposed: verified via a temporary instrumented build that all five stay
+    `false` (no cost paid) on `bench-ctor`/`bench-class`/`debug-guard` and on a trivial program
+    (prelude loading does not trip them), so this is not a live issue for the mechanisms G3 covers.
+
+  Net: this investigation did not find a single regression attributable to initialization probing,
+  per-call owner scans, registry locking, or repeated string interning — the four things G3 asks
+  about. The `bench-ctor`/`bench-class` diffuse allocation cost that remains is real but
+  orthogonal (general construction-path cost, not an ADR-0019-introduced mechanism) and continues
+  to be tracked as ordinary perf work outside the ADR's scope
+  (`todo/tickets/bench-ctor-construction-parity.md`), to be picked up opportunistically rather than
+  gating ADR-0019's closure. **This closes G3.**
 - [ ] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
   ANALYSIS §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
 
