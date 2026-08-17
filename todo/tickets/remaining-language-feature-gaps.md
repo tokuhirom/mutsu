@@ -44,10 +44,39 @@ cannot be started (no oracle) — unchanged from the original filing.
 
 - ~~strict-mode undeclared-variable detection~~ — **resolved 2026-08-17**, see below.
 - cross-`EVAL` detection of class redeclaration — still open
-- `X::Redeclaration::Outer` — still open
+- ~~`X::Redeclaration::Outer`~~ — **already implemented, ticket was stale.** Verified 2026-08-17:
+  `find_outer_redeclaration` (`src/parser/outer_redecl.rs`, wired into `src/parser/mod.rs`) already
+  detects exactly this case and matches `raku`'s message byte-for-byte:
 
-The remaining two bullets need compile-time scope analysis that mutsu does not currently perform;
-each is non-trivial on its own and is left for a future session.
+  ```raku
+  sub s($i is copy) { for 1..3 { say $i; my $i = 1; } }
+  s(5);
+  # both raku and mutsu: ===SORRY!=== ... Lexical symbol '$i' is already bound to an outer symbol...
+  ```
+
+  Not clear when this landed relative to the ticket's 2026-08-02 filing (no dedicated `news/` entry
+  found); nothing left to do here.
+
+The remaining bullet (cross-`EVAL` class redeclaration) needs compile-time scope analysis that
+mutsu does not currently perform across an `EVAL` boundary; left for a future session.
+
+### cross-`EVAL` detection of class redeclaration — still open
+
+```raku
+class Foo {}; EVAL q[class Foo {}]; say "no redeclaration error"
+# raku:  compile-time error, "Redeclaration of symbol 'Foo'."
+# mutsu: prints "no redeclaration error" -- the EVAL's class declaration silently shadows/replaces
+#        the outer one instead of being rejected
+```
+
+Re-verified 2026-08-17. The `EVAL`'d source is compiled as its own unit and does not currently
+consult the set of classes/packages already declared in the enclosing (non-`EVAL`) scope before
+allowing a `class`/`role`/`package`/`grammar` declaration with the same name — this is the cross-
+compilation-unit-boundary check that needs building. A same-unit (non-`EVAL`) redeclaration of a
+class is presumably already handled elsewhere (worth checking before assuming this needs new
+machinery from scratch — search for how ordinary same-file class redeclaration is currently
+detected, if at all, and see whether it can be extended to consult the calling frame's declared-
+package set when compiling an `EVAL`).
 
 ### strict-mode undeclared-variable *read* detection — resolved 2026-08-17
 
