@@ -8,7 +8,7 @@ use Test;
 # against `raku`: `B.^lookup('foo').defined` is `True` for `class B is A {}`
 # when `foo` is declared only on `A`.
 
-plan 14;
+plan 17;
 
 # (a) The exact confirmed repro: a method declared on a parent class only.
 class A1 { method foo { "A1::foo" } }
@@ -81,5 +81,32 @@ nok N1.^find_method("boot").defined,
     '.^find_method does NOT find an ancestor submethod (unlike .^lookup)';
 ok M1.can("boot"), '.can finds a submethod on its own declaring class';
 nok N1.can("boot"), '.can does NOT find an ancestor submethod (unlike .^lookup)';
+
+# `.^lookup`/`.^find_method` must never surface a private method by its bare
+# (unqualified, no `!`) name -- real Raku answers Nil unconditionally, even
+# from inside the declaring class itself. `classhow_lookup`'s per-level
+# `defs.first()` used not to check `is_private`.
+class O1 {
+    method !secret { "shh" }
+    method pub { self.^lookup("secret").defined }
+}
+nok O1.^lookup("secret").defined,
+    '.^lookup does not surface a private method by its bare name';
+nok O1.new.pub,
+    '.^lookup does not surface a private method even from inside the declaring class';
+
+# `.^find_method(name).candidates` used to miss an inherited MULTI method
+# family entirely when the receiver has no own override:
+# `classhow_lookup_all_candidates` decided multi-ness from the receiver's
+# own class rather than the class that actually owns the resolved method,
+# so an inherited-only multi family fell into the (wrong) single-candidate
+# branch and looked up a nonexistent own-class def, yielding an empty list.
+class P1 {
+    multi method greet(Int $x) { "int $x" }
+    multi method greet(Str $x) { "str $x" }
+}
+class Q1 is P1 {}
+is Q1.^find_method("greet").candidates.elems, 2,
+    '.^find_method(...).candidates finds a full inherited multi family';
 
 done-testing;

@@ -54,6 +54,15 @@ impl Interpreter {
                 let Some(defs) = registry.user_method_overloads(owner_str, method_name) else {
                     continue;
                 };
+                // `.^lookup`/`.^find_method` never surface a private method by
+                // its bare (unqualified, no `!`) name -- real Raku answers
+                // `Nil` even from inside the declaring class itself. Every
+                // other visibility-aware dispatch path already skips
+                // `is_private` defs (`resolve_method_with_owner_impl`'s
+                // `Public` filtering, `resolve_sequence`'s
+                // `MethodVisibility::Public` tier); this lookup's `defs.first()`
+                // did not.
+                let defs: Vec<MethodDef> = defs.into_iter().filter(|d| !d.is_private).collect();
                 let Some(first) = defs.first() else {
                     continue;
                 };
@@ -294,20 +303,37 @@ impl Interpreter {
                 .is_some_and(|defs| defs.iter().any(|d| d.is_multi))
         };
 
+        let mut stack = Vec::new();
+        let mro = registry
+            .compute_class_mro(class_name, &mut stack)
+            .unwrap_or_else(|_| vec![class_name.to_string()]);
+
+        // The class that actually resolves `method_name` may be an ancestor,
+        // not `class_name` itself (`class B is A {}` inheriting `A`'s
+        // `method`/`multi method foo`) — walk the MRO (most-derived first)
+        // for the first level with an own def, mirroring the MRO walk
+        // `classhow_lookup` does for its own non-multi tier. Multi-ness must
+        // be decided from THIS owning level, not the receiver's own class:
+        // checking `class_name` directly missed an inherited multi family
+        // entirely when the receiver has no own override.
+        let owning_class = mro
+            .iter()
+            .find(|cls| registry.user_method_overloads(cls, method_name).is_some())
+            .cloned()
+            .unwrap_or_else(|| class_name.to_string());
+
         // Build the owner list base-class-first. A non-multi resolved method
         // does not combine across the MRO — it is its own sole candidate.
-        let owners: Vec<String> = if class_method_is_multi(class_name) {
-            let mut stack = Vec::new();
-            let mut mro = registry
-                .compute_class_mro(class_name, &mut stack)
-                .unwrap_or_else(|_| vec![class_name.to_string()]);
-            mro.reverse();
+        let owners: Vec<String> = if class_method_is_multi(&owning_class) {
+            let mut mro_base_first = mro;
+            mro_base_first.reverse();
             // Only classes whose own `method_name` is multi join the family.
-            mro.into_iter()
+            mro_base_first
+                .into_iter()
                 .filter(|owner| class_method_is_multi(owner))
                 .collect()
         } else {
-            vec![class_name.to_string()]
+            vec![owning_class]
         };
 
         let mut out = Vec::new();
