@@ -9,7 +9,7 @@ use Test;
 # (Text::CSV's `%predef-hooks<not-empty> = %predef-hooks<not_empty>;` alias
 # rows assigned Any because the RHS read an empty hash.)
 
-plan 6;
+plan 7;
 
 class C {
     my %predef = a => 1, b => 2;
@@ -37,3 +37,13 @@ class D {
     method peek { %hidden.elems }
 }
 is D.peek, 1, "sibling class my hash stays intact";
+
+# Write-side twin: a plain scalar reassignment by a LATER body statement
+# compiles package-qualified (SetGlobal("E::x")) while the declaration
+# flushed to env under the bare name -- the qualified write must win.
+class E {
+    my $x = 10;
+    $x = 20;
+    method x { $x }
+}
+is E.x, 20, "class-body scalar reassignment by a later statement is visible to methods";
