@@ -84,12 +84,31 @@ impl Interpreter {
                 {
                     return None;
                 }
-                // Skip `our` package vars: their authoritative value lives in the
-                // qualified `our` store and can be set from outside the package;
-                // a bare declaration-time snapshot here would stale-shadow it.
                 let qualified = format!("{name}::{bare}");
-                if self.get_our_var(&qualified).is_some() || self.env.contains_key(&qualified) {
-                    return None;
+                if declared_statics.contains(bare.as_str()) {
+                    // A declared `my` static reassigned by a LATER body
+                    // statement compiles the write package-qualified
+                    // (`emit_set_named_var`), and the SetGlobal handler mirrors
+                    // every package-qualified write into `our_vars` too (not
+                    // only genuine `our` declarations — see the `set_our_var`
+                    // call in vm_exec_dispatch.rs's SetGlobal arm), so check
+                    // both stores for the qualified key and prefer it over the
+                    // stale bare declaration-time snapshot.
+                    if let Some(qv) = self
+                        .get_our_var(&qualified)
+                        .cloned()
+                        .or_else(|| self.env.get(&qualified).cloned())
+                    {
+                        return Some((bare, qv));
+                    }
+                } else {
+                    // Skip `our` package vars: their authoritative value lives
+                    // in the qualified `our` store and can be set from outside
+                    // the package; a bare declaration-time snapshot here would
+                    // stale-shadow it.
+                    if self.get_our_var(&qualified).is_some() || self.env.contains_key(&qualified) {
+                        return None;
+                    }
                 }
                 // Skip the short-name binding a *nested* package declaration left
                 // in this body's env. `class O { class I { class C {} } }` binds a
