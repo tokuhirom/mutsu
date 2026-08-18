@@ -303,22 +303,15 @@ impl Interpreter {
                 Self::add_sub_signature_locals(param_defs, &mut inner);
                 self.find_undeclared_var_in_body(body, &inner)
             }
-            Stmt::ClassDecl { body, .. } | Stmt::RoleDecl { body, .. } => {
-                // Attributes become `$!x` / `$.x` (and a bare `$x` only for
-                // `has $x` aliases). Methods in the body see them in scope.
-                let mut inner = declared.clone();
-                Self::add_class_attributes(body, &mut inner);
-                // Class-body lexicals (`my @a`) are also in scope for sibling
-                // statements/methods; collect them all up front.
-                for s in body {
-                    Self::collect_declared_vars(s, &mut inner);
-                }
-                for s in body {
-                    if let Some(result) = self.find_undeclared_var_in_stmt(s, &inner) {
-                        return Some(result);
-                    }
-                }
-                None
+            Stmt::ClassDecl {
+                body, is_hidden, ..
+            } => self.check_class_or_role_body_undeclared(body, declared, *is_hidden),
+            Stmt::RoleDecl { body, .. } => {
+                // A role's AST has no `is_hidden` concept -- the registry-level
+                // `role_def.is_hidden` flag set later (`registration_role_body.rs`)
+                // gates method-resolution *visibility*, unrelated to whether the
+                // implicit `*%_` slurpy is inserted; role methods always get one.
+                self.check_class_or_role_body_undeclared(body, declared, false)
             }
             _ => None,
         }
@@ -375,6 +368,81 @@ impl Interpreter {
         } else {
             Expr::Var(name.trim_start_matches('$').to_string())
         }
+    }
+
+    /// Check a class/role body statement-by-statement. Like the old combined
+    /// `Stmt::ClassDecl | Stmt::RoleDecl` arm, but a `Stmt::MethodDecl` inside
+    /// is checked with the class/role's own implicit-`*%_`/`*@_` rules seeded
+    /// into its scope (mirroring `method_signature_shared::
+    /// effective_method_param_defs`/`needs_direct_positional_placeholder_die`)
+    /// instead of only the user-written signature -- otherwise a method body
+    /// that legitimately reads `%_`/`@_` (every signature-less method gets an
+    /// implicit `*%_`, and a body that reads a bare `@_` directly still binds
+    /// any call arity before a runtime die) was wrongly flagged as
+    /// `X::Undeclared` when reached through `EVAL`/`throws-like`'s string
+    /// form, even though calling the same method directly works fine. See
+    /// todo/tickets/eval-undeclared-check-blind-to-implicit-method-slurpy.md.
+    fn check_class_or_role_body_undeclared(
+        &self,
+        body: &[Stmt],
+        declared: &HashSet<String>,
+        class_is_hidden: bool,
+    ) -> Option<(&'static str, String, Vec<String>)> {
+        // Attributes become `$!x` / `$.x` (and a bare `$x` only for
+        // `has $x` aliases). Methods in the body see them in scope.
+        let mut inner = declared.clone();
+        Self::add_class_attributes(body, &mut inner);
+        // Class-body lexicals (`my @a`) are also in scope for sibling
+        // statements/methods; collect them all up front.
+        for s in body {
+            Self::collect_declared_vars(s, &mut inner);
+        }
+        for s in body {
+            let Stmt::MethodDecl {
+                params,
+                param_defs,
+                body: method_body,
+                ..
+            } = s
+            else {
+                if let Some(result) = self.find_undeclared_var_in_stmt(s, &inner) {
+                    return Some(result);
+                }
+                continue;
+            };
+            if let Some(r) = Self::find_undeclared_var_in_param_wheres(param_defs) {
+                return Some(r);
+            }
+            let mut method_scope = inner.clone();
+            Self::add_routine_locals(params, method_body, &mut method_scope);
+            Self::add_sub_signature_locals(param_defs, &mut method_scope);
+            let effective = crate::method_signature_shared::effective_method_param_defs(
+                param_defs,
+                class_is_hidden,
+            );
+            for pd in &effective {
+                if !pd.name.is_empty() {
+                    method_scope
+                        .insert(pd.name.trim_start_matches(['$', '@', '%', '&']).to_string());
+                }
+            }
+            // A signature-less method body that reads a bare `@_` directly
+            // still binds any call arity (before dying with a specific
+            // message at call time) -- seed it too so this pre-check does not
+            // flag it as X::Undeclared ahead of that real runtime behavior.
+            // Unlike `%_`, this does not depend on `class_is_hidden`.
+            if param_defs.is_empty() {
+                let (use_positional, _) =
+                    crate::method_signature_shared::auto_signature_uses(method_body);
+                if use_positional {
+                    method_scope.insert("_".to_string());
+                }
+            }
+            if let Some(result) = self.find_undeclared_var_in_body(method_body, &method_scope) {
+                return Some(result);
+            }
+        }
+        None
     }
 
     /// Seed a lexical scope with a routine's parameters and any variables its
