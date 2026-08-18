@@ -79,6 +79,14 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
                 }
                 targets.insert(t);
             }
+            OpCode::StateVarInitGuard(_, jump_to) => {
+                let t = *jump_to as usize;
+                if t < start || t > end {
+                    crate::vm::vm_stats::record_jit_bailout(op);
+                    return None;
+                }
+                targets.insert(t);
+            }
             other => {
                 crate::vm::vm_stats::record_jit_bailout(other);
                 return None;
@@ -523,6 +531,38 @@ fn build(
                 };
                 let t = *t as usize;
                 let cond = call_helper(&mut b, sigs.s1, cond_fn, &[interp])?;
+                let next = b.create_block();
+                if t <= i {
+                    let poll = b.create_block();
+                    b.ins().brif(cond, poll, &[], next, &[]);
+                    b.switch_to_block(poll);
+                    call_helper(
+                        &mut b,
+                        sigs.v1,
+                        helpers::safepoint as *const () as usize,
+                        &[interp],
+                    );
+                    b.ins().jump(block_at[&t], &[]);
+                } else {
+                    b.ins().brif(cond, block_at[&t], &[], next, &[]);
+                }
+                b.switch_to_block(next);
+            }
+            OpCode::StateVarInitGuard(_, jump_to) => {
+                // Conditional branch keyed on `state`-var init-once status
+                // (the opcode's own `key_idx`, not a stack value): the cond
+                // helper returns 1 when the jump must be taken (already
+                // initialized -- it also pushes the NIL placeholder the
+                // interpreter arm pushes on that path), 0 to fall through
+                // and run the initializer.
+                let opidx = b.ins().iconst(types::I32, i as i64);
+                let cond = call_helper(
+                    &mut b,
+                    sigs.s_code_u32,
+                    helpers::state_var_init_guard_cond as *const () as usize,
+                    &[interp, codep, opidx],
+                )?;
+                let t = *jump_to as usize;
                 let next = b.create_block();
                 if t <= i {
                     let poll = b.create_block();
