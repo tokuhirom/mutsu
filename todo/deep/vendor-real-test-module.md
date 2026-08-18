@@ -2122,3 +2122,21 @@ still worth fixing for the same reason. Pin:
 `t/closure-captured-bang-var-through-code-param.t`. `t/exception-methods.t`
 now passes fully under both `Test` providers; full local `t/` suite (3222
 files) and `cargo clippy -- -D warnings` both clean.
+
+## `exception-role-membership.t` and `malformed-syntax-classes.t` triaged, not fixed (2026-08-18)
+
+Two more residue items, both already-known gaps rather than new findings:
+
+- `exception-role-membership.t`'s one failure is the `when SomeUndeclaredType
+  { }` gobbling gap — already investigated and reverted twice above ("Both
+  prerequisites fixed... and the `when` broadening *still* isn't safe").
+  Nothing new to add; not re-attempted.
+- `malformed-syntax-classes.t`'s one failure (`my @a = 1, => 2` expecting
+  `X::Syntax::InfixInTermPosition`) is a genuinely new gap: the class is
+  registered but nothing in the parser ever raises it — not the usual
+  "diagnosis exists but gets flattened" shape this campaign has fixed several
+  times. Filed as `todo/tickets/infix-in-term-position-not-diagnosed.md`
+  (also blocks the same subtest in `roast/S32-exceptions/misc2.t`); deferred
+  rather than attempted inline given this repo's parser needs the same
+  full-corpus verification discipline as the `when`-broadening attempts
+  above, which is more than a single-session slice.
