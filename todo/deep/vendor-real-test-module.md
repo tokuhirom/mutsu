@@ -2083,3 +2083,16 @@ ticket, whose own diagnosis ("needs a real topic stack") was wrong — worth
 noting since its "Other roast files combining a `for` loop with
 `throws-like`/`eval-lives-ok`/`eval-dies-ok`" candidates list is now the
 right starting point for re-measuring the residue with this fix in.
+
+## `warn-resumes-at-the-raise-site.t` investigated, not yet fixed (2026-08-18)
+
+Picked up the next item from the 2026-08-18 `t/` residue list above. Not the
+topic-splice bug either, and not a `Test`-shape problem: a `sub` with a
+`CONTROL { when CX::Warn { ...; .resume } }` handler, whose caller re-assigns
+its multi-value return into already-declared scalars (`($x, $y, $z) = f(...)`
+called more than once), gets a stale (function-entry-default) value for the
+**first** target on the *second and later* calls — but only once `use Test;`
+has loaded the real, large vendored module; an empty synthetic module does
+not trigger it, ruling out "any module load" as the cause. Root cause not
+yet found (JIT and bare-name collision were both ruled out). Full repro and
+findings: `todo/deep/control-warn-resume-list-assign-first-target-stale-on-repeat-call.md`.
