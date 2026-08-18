@@ -266,6 +266,29 @@ impl Interpreter {
                 .iter()
                 .map(|p| self.lexical_env_remap_name(p))
                 .collect();
+            // Register CUnion / CStruct / CPointer repr *before* running the
+            // class body: a `unit class Foo is repr('CStruct'); has ...; say
+            // Foo.REPR;` folds every trailing statement (including that
+            // `say`) into the class body (`parser::stmt::stmtlist`'s
+            // mainline-capture), which `register_class_decl` below executes
+            // as part of registration itself — so a self-referential
+            // `Foo.REPR` read during the body observes whatever was
+            // registered so far. Doing this only *after* `register_class_decl`
+            // returns (as it used to) left it permanently P6opaque for the
+            // `unit class` form, since by the time control returned here the
+            // body (and its `.REPR` read) had already run. The block form
+            // (`class Foo is repr(...) { ... }; say Foo.REPR;`) is unaffected
+            // either way, since its `say` is a separate mainline statement
+            // that only runs after this whole op completes.
+            if let Some(repr_name) = repr {
+                if repr_name == "CUnion" {
+                    self.register_cunion_class(&storage_name);
+                } else if repr_name == "CStruct" {
+                    self.register_cstruct_class(&storage_name);
+                } else if repr_name == "CPointer" {
+                    self.register_cpointer_class(&storage_name);
+                }
+            }
             // TODO: Detect redeclaration of package-scoped classes across
             // EVAL boundaries (X::Redeclaration). Currently deferred because
             // distinguishing EVAL re-definitions from normal re-execution
@@ -315,16 +338,6 @@ impl Interpreter {
             }
             // Compile method bodies to bytecode for the fast path
             self.compile_class_methods(&storage_name);
-            // Register CUnion / CStruct repr if present
-            if let Some(repr_name) = repr {
-                if repr_name == "CUnion" {
-                    self.register_cunion_class(&storage_name);
-                } else if repr_name == "CStruct" {
-                    self.register_cstruct_class(&storage_name);
-                } else if repr_name == "CPointer" {
-                    self.register_cpointer_class(&storage_name);
-                }
-            }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             // The bare name resolves to the (possibly mangled) storage name so
