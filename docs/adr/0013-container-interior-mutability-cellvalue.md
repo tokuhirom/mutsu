@@ -426,6 +426,18 @@ current soundness posture finds. It now states the posture that actually holds: 
 is `Arc`-backed for an aliased write, there is one primitive, and reintroducing an
 `as_ptr as *mut` cast is the thing not to do.
 
+**One shape this primitive does not cover (noted 2026-08-19, no reopening).** §8's audit rule —
+"a `Deref`'d `&T` must not be used after the write" — excludes a whole category this ADR never
+had a call site for: a **read-path cache fill under a shared borrow the caller keeps using**, where
+the write happens *inside* a `&self` accessor that then returns a reference derived from that same
+`&self`. `ArrayData::sync_native_items` is exactly that, and it is unsound today for an unrelated
+reason (a `*const Self as *mut Self` cast on plain fields). `gc_contents_mut` is **not** the fix
+for it — adopting it there would leave the shape UB while making it *look* audited. That case is
+decided separately in [ADR-0030](0030-native-array-decode-cache-interior-mutability.md), which
+adds a field-level `UnsafeCell` sibling and the rule for choosing between the two. Nothing above
+changes; this note exists so a reader does not generalize `gc_contents_mut` past its measured
+contract.
+
 ---
 
 *This ADR is Accepted (mechanism 2b; placement per §7; status per §8). If the mechanism judgment

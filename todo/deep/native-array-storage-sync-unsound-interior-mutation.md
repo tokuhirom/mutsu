@@ -171,3 +171,137 @@ Affected: `src/value/value_collections.rs` (`ArrayData::items`,
 `items_mut`, `sync_native_items`), `src/value/mod.rs` (`ArrayData` struct
 definition), `src/gc/gc_ptr.rs` (`gc_contents_mut` — the existing sound
 chokepoint this likely needs to route through instead).
+
+---
+
+## Proposed design (2026-08-19)
+
+Designed out in full as **[ADR-0030](../../docs/adr/0030-native-array-decode-cache-interior-mutability.md)**
+(`Proposed`). That ADR is the authority; this section is the summary and the
+corrections it makes to the analysis above.
+
+### Correction 1: `gc_contents_mut` is the wrong fix, and the ticket's closing paragraph is wrong to suggest it
+
+The "Why this is `todo/deep`" section ends by proposing that the fix "should
+probably extend that SAME blessed mechanism". It should not, for two independent
+reasons:
+
+- **It would not fix the bug.** ADR-0013 §8 *measured* this shape on the pinned
+  nightly and recorded it as UB under both Stacked and Tree Borrows: "a `&T`
+  taken before the write and used after it". `items()` is definitionally that
+  row — the caller Derefs `&ArrayData` out of the `Gc`, the write happens under
+  it, and `&self.items` is derived from it afterwards. `gc_contents_mut` fixes
+  how the *pointer is derived*; the hazard here is the caller's live `&self`,
+  which the primitive's own `# Safety` clause explicitly disclaims. Adopting it
+  would move the code under a safety comment that does not cover it — strictly
+  worse than the status quo, because the UB would then look audited.
+- **It cannot be reached.** `sync_native_items` has `&self`; an enclosing
+  `Gc<ArrayData>` cannot be recovered from a `&ArrayData`. Changing the
+  signature to take the handle re-signatures every `items()` site *and* kills
+  `impl Deref for ArrayData` — `Deref::deref` takes `&self` and cannot be
+  handed a `Gc`. That is the same thousands-of-sites change as shape 1.
+
+The right primitive is a **field-level `UnsafeCell`** (wrapped in a
+`SyncUnsafeCell<T>` newtype carrying the `unsafe impl Sync` that
+`GcBox<ArrayData>: Sync` requires), which makes the shared borrow
+`SharedReadWrite` over those bytes so the write does not pop it. ADR-0013's
+primitive is for *handle-holding structural writes*; this is a *read-path cache
+fill*. Two primitives, one rule for choosing, both safety docs naming the other.
+
+### Correction 2: shape 1's cost is undercounted above
+
+The section above sizes shape 1 at "37 sites". That is only the direct
+`items()` calls — but `impl Deref for ArrayData` **is** `self.items()`, so every
+`&*array_data` in the interpreter reads through this chokepoint. The real figure
+is thousands, which is also why an ADR-0013-style "state the obligation and
+audit the call sites" resolution is not available here: 62 enumerable sites can
+be audited, `Deref` cannot.
+
+### The design, in brief
+
+Collapse `native_storage` / `native_dirty` / `native_snapshot` into one
+optional heap allocation, with the cache behind the cell:
+
+```rust
+pub struct ArrayData {
+    items: Vec<Value>,                    // authoritative for an ordinary array
+    native: Option<Box<NativeBacking>>,   // None for the overwhelming majority
+    // ...unchanged metadata fields
+}
+struct NativeBacking { node: Gc<BufData>, cache: SyncUnsafeCell<DecodeCache> }
+struct DecodeCache { generations: Vec<Box<Vec<Value>>>, dirty: bool, snapshot: Option<Vec<u8>> }
+```
+
+- **`items()` keeps its `&self` signature**, so all 37 `items()` and 62
+  `items_mut()` call sites are untouched. The three fields are private, so
+  nothing outside `src/value/` names them; external access already goes through
+  `native_storage_node()` / `native_storage_address()` /
+  `native_repr_body_address()`, which keep their signatures.
+- **Ordinary arrays pay nothing** — the non-native arm is a plain field read
+  behind a discriminant check the current code already performs.
+- **The generation graveyard** is what makes it sound rather than merely
+  well-typed: a re-sync pushes a *new* `Box<Vec<Value>>` instead of overwriting
+  the slot, so a `&Vec<Value>` handed out earlier stays valid by construction.
+  Growth is bounded by *observed C writes*, not by reads (the snapshot
+  comparison short-circuits an unchanged buffer), and every `&mut self` method
+  prunes it — the borrow checker there proves no shared borrow is live.
+
+### Three more defects found while designing, all in the same twenty lines
+
+1. **`items_mut()` never syncs before marking dirty.** If C wrote the buffer and
+   Raku has not read the array since, `items` is stale; marking dirty makes the
+   next sync take the *encode* branch and write that stale cache back over the
+   native bytes, discarding the C write. A plain logic bug, present in debug too.
+2. **The read path clones the entire native buffer on every access.**
+   `let current_bytes = node.bytes.clone();` exists only to compare against the
+   snapshot, so every `items()` — every element read of a native array —
+   allocates and copies the whole payload. A slice comparison needs no
+   allocation.
+3. **`ptr::write` leaks the superseded `Vec<Value>`** (it does not drop). That
+   leak is load-bearing by accident: it is the only reason an outstanding
+   `&Vec<Value>` does not dangle today. The graveyard replaces it with a
+   bounded, reclaimed version of the same property.
+
+### The blast radius is wider than subtest 6 — a second repro
+
+Written for the design pass; it is a **lost write**, not just a stale read, and
+it hits a different index than the one written:
+
+```raku
+my int @a = 10, 20, 30;
+my $payload = nativecast(CArray[int64], nativecast(MVMArrayB, Pointer.new(@a.WHERE)).any);
+$payload[2] = 99;   # C writes index 2; Raku has not read @a since
+@a[0] = 7;          # a Raku-side write to a *different* index
+say "{ @a[0] } { @a[2] }";
+```
+
+`target/debug/mutsu` prints `7 99`; `target/release/mutsu` prints **`7 30`** —
+the C write is gone. (Rakudo segfaults on this program: a retained `VMArray`
+body pointer is only valid until the container resizes, per ADR-0015 §5.3. Raku
+is not a usable oracle for this shape; the debug build is.)
+
+### Migration and verification
+
+Five ordered steps in ADR-0030 §4. Step 1 — the two plain logic bugs above (1
+and 2) — is ~10 lines, fixes real lost writes in *both* builds, and is worth
+landing on its own ahead of the representation change, since it makes the
+remaining failure attributable to the UB alone.
+
+Acceptance is release/debug **equality**, not either build's absolute result:
+
+```sh
+cargo build --release
+timeout 30 target/release/mutsu t/native-array-storage.t     # 8/8, was failing subtest 6
+```
+
+### Miri: the CI gate cannot currently see this code
+
+The Severity section above asks whether CI's `miri` job covers this function.
+**The trigger does; the filter does not.** `scripts/ci-docs-only.sh --gc-value`
+already classifies `src/value/**` as gc-value, so the job fires — but the step
+runs `cargo miri test ... --lib gc::`, a substring filter that reaches `gc::`
+and `value::value_gc::` and would **not** match a new
+`value::native_cache_shapes::` module. Without widening it the job goes green
+having executed none of the new probes. ADR-0030 §5 makes that widening a
+required step and specifies the five shapes the probe module must pin, modeled
+on `src/gc/borrow_shapes.rs`.
