@@ -1,5 +1,24 @@
 # `CBOR::Simple`'s own upstream suite fails broadly outside the narrow slice Cro::HTTP/Log::Timeline exercise
 
+> **Update (2026-08-19): the `01-basic.rakutest` "No matching candidates for proto sub: matches"
+> failure (test 12) is NOT a CBOR::Simple bug at all — root-caused and reduced to a 6-line,
+> CBOR-independent repro.** The vendored test file's own `use lib $*PROGRAM.sibling('lib');`
+> (a computed, non-literal `use lib` argument, used to find its sibling `CodecMatches.rakumod`)
+> defers that module's declarations from becoming visible to mutsu's PARSER until mainline
+> execution reaches the `use` statement — unlike `-I` or a literal `use lib 'path'`, whose
+> declarations ARE visible to the parser before it processes later statements in the same file.
+> By the time the parser reaches `matches -18446744073709551616, '...'` (a bareword call to a
+> multi sub whose declaration it does not yet statically know about), the negative-number first
+> argument's leading `-` misparses, splitting the call into a 1-arg statement plus a dangling
+> string literal — which is exactly why every failing `matches` call in this file has a NEGATIVE
+> first argument and every passing one is positive. Full mechanism, the isolating 2x2 test
+> matrix, and why this needs a `todo/deep` (not a quick fix) are in
+> `todo/deep/use-lib-dynamic-path-defers-declaration-visibility-to-parser.md`. **Re-running the
+> CBOR::Simple suite with an explicit `-I <path-to-t/lib>` instead of letting the file's own
+> `use lib $*PROGRAM.sibling('lib')` resolve it should route around this bug** and let the
+> `01`/`03`/`04`/`06` triage below continue on real per-file issues, if any remain, without this
+> noise. Not attempted this session — the next session picking this up should start there.
+
 ## Symptom
 
 Bundling `CBOR::Simple` (a `Log::Timeline` → `Cro::HTTP` dependency, see
@@ -153,3 +172,26 @@ bug, not a proto-dispatch bug at all.
 **Next steps for whoever picks this up:** reduce the `01-basic.rakutest`
 nested-array decode aliasing bug (test 68) and the stack overflow into a
 standalone repro (not yet attempted) before touching `03`/`04`/`06`.
+
+## Update (2026-08-19): the `01-basic.rakutest` blocker before test 68 was a general parser bug, not CBOR::Simple's — worked around, test 68's bug confirmed still real but is STATE-dependent
+
+The "No matching candidates for proto sub: matches" failure that stopped the file at test 12 is a
+general `use lib`-with-a-computed-argument parser bug, unrelated to CBOR::Simple — full
+root-cause and a 6-line standalone repro are in
+`todo/deep/use-lib-dynamic-path-defers-declaration-visibility-to-parser.md`. Running the file with
+an explicit `-I <path-to-t/lib>` (bypassing its own `use lib $*PROGRAM.sibling('lib');`) routes
+around it: `mutsu -I modules/CBOR-Simple/lib -I modules/TinyFloats/lib -I
+<cbor-simple-checkout>/t/lib <cbor-simple-checkout>/t/01-basic.rakutest` now reaches **test 68/74**
+(1-67 pass), reproducing exactly the nested-array decode aliasing bug + stack overflow this
+ticket's 2026-08-18 update already found.
+
+**Important correction for whoever reduces test 68 next:** decoding the SAME CBOR blob
+(`9F01820203820405FF`) in ISOLATION (a fresh `use CBOR::Simple; cbor-decode(Buf.new(0x9F, 0x01,
+0x82, 0x02, 0x03, 0x82, 0x04, 0x05, 0xFF))` with nothing else in the program) produces the
+CORRECT `$[1, [2, 3], [4, 5]]` on current `main` — verified directly. The bug only reproduces
+after the other 67 subtests' worth of accumulated program state (many prior `cbor-encode`/
+`cbor-decode` calls, `matches` multi-dispatch resolutions, etc.) — i.e. it is NOT simply "decoding
+this exact blob is broken", it needs a warm/stale cache or similar accumulated state to trigger.
+Reducing it will need trimming the FULL file from the top (keeping all/most prior subtests) rather
+than isolating just the failing blob, or bisecting which EARLIER subtest(s) are the prerequisite —
+neither attempted yet.
