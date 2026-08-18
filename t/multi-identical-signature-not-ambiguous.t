@@ -1,5 +1,5 @@
 use Test;
-plan 3;
+plan 4;
 
 # Two `multi` candidates whose declared signatures are byte-identical are
 # not a meaningful overload in Rakudo -- it silently runs whichever was
@@ -27,3 +27,14 @@ multi sub sep-diff(;; Any $v) { "any" }
 multi sub sep-diff(;; Int $v) { "int" }
 dies-ok { sep-diff(1) },
     "candidates differing only after ';;' are still genuinely ambiguous";
+
+# Regression guard: the "identical signature is not ambiguous" leniency does
+# NOT extend to two purely *positional* duplicate declarations (no named
+# parameter at all on either side) -- Rakudo's dispatcher only takes the
+# lenient trial-bind path when a named parameter is present.
+# roast/integration/advent2011-day24.t pins exactly this shape
+# (`multi sub Slurp($filename) {...}` declared twice).
+multi sub Slurp2($filename) { "first" }
+multi sub Slurp2($filename) { "second" }
+dies-ok { Slurp2("x") },
+    "two purely positional duplicate declarations are still genuinely ambiguous";

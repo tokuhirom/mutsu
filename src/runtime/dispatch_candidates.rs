@@ -191,14 +191,35 @@ impl Interpreter {
             // Rakudo's own trait handlers work the same way). Rakudo does
             // not raise X::Multi::Ambiguous for this — it silently runs
             // whichever was declared first, exactly like `matches[0]`
-            // already is post-sort. A pair that merely *ties on narrowness*
-            // while differing in some way the shape comparison above can't
-            // see (e.g. two distinctly-named-but-untyped named params) is
-            // NOT covered by this and still falls through to the ambiguity
-            // error below.
-            if tied
-                .iter()
-                .all(|def| Self::candidate_signatures_identical(&matches[0], def))
+            // already is post-sort.
+            //
+            // BUT this is only true when the candidates declare a named
+            // parameter at all (`best_has_named`, already computed above).
+            // Rakudo's dispatcher does NOT extend the same leniency to two
+            // purely *positional* duplicate declarations — a named param
+            // (typed or not) routes dispatch through a trial-bind/"first one
+            // that binds wins" path that never reaches the strict LTM/MRO
+            // narrowness comparison a purely-positional signature does:
+            //
+            // ```raku
+            // multi sub f(Int $x, :$bar!) {"first"}; multi sub f(Int $x, :$bar!) {"second"};
+            // f(1, :bar);      # "first", not ambiguous
+            // multi sub g($x) {"first"};             multi sub g($x) {"second"};
+            // g(1);            # X::Multi::Ambiguous
+            // ```
+            //
+            // (`roast/integration/advent2011-day24.t` pins the positional
+            // case staying ambiguous: two verbatim-duplicate
+            // `multi sub Slurp($filename) {...}` with no named param at all.)
+            // A pair that merely *ties on narrowness* while differing in some
+            // way the shape comparison above can't see (e.g. two
+            // distinctly-named-but-untyped named params) is NOT covered by
+            // this either and still falls through to the ambiguity error
+            // below.
+            if best_has_named
+                && tied
+                    .iter()
+                    .all(|def| Self::candidate_signatures_identical(&matches[0], def))
             {
                 return Some(matches.remove(0));
             }
