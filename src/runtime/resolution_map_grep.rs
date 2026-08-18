@@ -196,6 +196,20 @@ pub(crate) fn push_block_declared_keys(
             touched_keys.push(name);
         }
     }
+    // A `my $*x` REdeclaration inside the block is likewise block-private and
+    // must be reverted when the inline loop finishes — without this, the last
+    // iteration's `my $*CWD = $_` in a `.map` block leaked into the caller's
+    // `$*CWD` (roast S32-io/indir.t). No `free_var_syms` exemption here:
+    // dynamic reads compile to by-name `GetGlobal` (no local slot), so a
+    // declared-and-read dynamic always registers as a free var, and the
+    // exemption would defeat the restore. A plain `$*x = ...` write-through is
+    // not a declaration, never lands in this set, and still propagates.
+    for k in &code.dynamic_declared_sym {
+        let name = k.resolve();
+        if !touched_keys.contains(&name) {
+            touched_keys.push(name);
+        }
+    }
 }
 
 impl Interpreter {

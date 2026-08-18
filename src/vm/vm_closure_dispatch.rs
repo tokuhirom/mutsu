@@ -1303,6 +1303,15 @@ impl Interpreter {
                     // is also a free var refers to the outer binding for its
                     // pre-declaration uses, so its writeback is kept.
                     && (!cc.my_declared_sym.contains(k) || cc.free_var_syms.contains(k))
+                    // A `my $*x` REdeclared in THIS closure's body is scoped to
+                    // this invocation (same rule as `exec_block_scope_op`'s
+                    // `block_declared` check): a dynamic propagates only through
+                    // the live dynamic chain while the frame is alive, never via
+                    // lexical writeback after it returns. No free-var exemption —
+                    // see `CompiledCode::dynamic_declared_sym`. A plain
+                    // `$*x = ...` write-through is not in the set and still
+                    // propagates to the declaring caller.
+                    && !cc.dynamic_declared_sym.contains(k)
                     && (!local_names.contains(k) || captured_names.contains(k))
                 {
                     // Don't leak captured-only variables to callers that don't have
