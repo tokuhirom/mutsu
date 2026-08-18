@@ -340,19 +340,31 @@ impl Interpreter {
                 // A method's own invocant is bound from its args further below,
                 // after this merge, so it still wins over the captured value.
                 self.env_mut().insert_sym(*k, v.clone());
-            } else if !cc.is_routine && k.with_str(|s| s == "_") {
-                // `$_` (the topic) is LEXICAL in a block: a block lexically captures
-                // `$_` from its creation scope and must see that value when called
-                // from another routine. The don't-overwrite default hides it because
-                // the caller (a `sub`) resets `$_` to Any (line below), which ends
-                // up in the parent env that `entry_or_insert_sym` finds and stops at.
+            } else if !cc.is_routine && k.with_str(|s| s == "_" || s == "!") {
+                // `$_` (the topic) and `$!` (the last error) are LEXICAL in a
+                // block: a block lexically captures them from its creation
+                // scope and must see those values when called from another
+                // routine. The don't-overwrite default (`entry_or_insert_sym`,
+                // which checks the chain-walking `contains_key_sym`) hides
+                // them because the caller (a `sub`) already reset its OWN
+                // `$_`/`$!` before calling this block, so the closure's
+                // freshly-empty overlay sees the CALLER's fresh reset via the
+                // parent chain and treats that as "already present" — losing
+                // the closure's own captured value entirely:
                 //
                 //     given 42 { my &b = { say $_ }; call-block(&b) }
+                //     sub f(&code) { my $d=1; try { code(); $d=0 } }
+                //     try { 1+1 }; f { $!.message }   # dies-ok's own shape
                 //
-                // Without this, `$_` inside the block is Any (the callee routine's
-                // fresh topic) instead of 42. Routines reset `$_` explicitly (at the
-                // `is_routine && !param` guard in call_compiled_function_named_inner),
-                // so this overwrite is safe for non-routine blocks only.
+                // Without this, `$_`/`$!` inside the block are the callee
+                // routine's fresh `Any`/`Nil` instead of the creation scope's
+                // real values — `f { $!.message }` above silently returned
+                // `Nil` instead of dying, since `Nil.message` doesn't raise
+                // the way `Any.message` does (`t/exception-methods.t`).
+                // Routines reset both explicitly (`$_` at the `is_routine &&
+                // !param` guard in `call_compiled_function_named_inner`; `$!`
+                // just below in this function), so this overwrite is safe for
+                // non-routine blocks only.
                 self.env_mut().insert_sym(*k, v.clone());
             } else {
                 self.env_mut().entry_or_insert_sym(*k, v.clone());
@@ -625,8 +637,18 @@ impl Interpreter {
             );
         }
 
-        // Raku: $! is scoped per routine — fresh Nil on entry
-        if !data.name.is_empty() {
+        // Raku: $! is scoped per routine — fresh Nil on entry. Gated on
+        // `cc.is_routine`, matching the `$_` reset just above: a bare block
+        // bound to a `&`-sigiled parameter (`sub f(&code) { code() }`, called
+        // as `f { $!.message }`) picks up that parameter's name for
+        // introspection (`&?ROUTINE`/backtrace naming) even though it is not
+        // a routine boundary. The old `!data.name.is_empty()` guard fired for
+        // such a block too, clobbering its correctly-captured `$!` (installed
+        // by the merge above) with `Nil` before the body ran — so
+        // `dies-ok { $!.message }` never actually died (`Nil.message` doesn't
+        // raise the way `Any.message` does), losing a die the caller expected
+        // to observe.
+        if cc.is_routine {
             self.env_mut()
                 .insert_sym(crate::symbol::Symbol::intern("!"), Value::NIL);
         }
