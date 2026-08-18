@@ -1569,7 +1569,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
             } else {
                 exprs.remove(0)
             };
-            add_xor_sink_warnings(&expr);
+            add_xor_sink_warnings(&expr, crate::parser::primary::current_line_number(input));
             return Ok((r, Stmt::Expr(expr)));
         }
 
@@ -1589,7 +1589,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
         return Ok((r, Stmt::Block(stmts)));
     }
 
-    add_xor_sink_warnings(&expr);
+    add_xor_sink_warnings(&expr, crate::parser::primary::current_line_number(input));
     if let Expr::DoStmt(stmt) = expr.clone()
         && let Stmt::VarDecl { .. } = stmt.as_ref()
     {

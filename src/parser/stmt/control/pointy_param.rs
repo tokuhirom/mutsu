@@ -37,11 +37,14 @@ pub(crate) fn parse_pointy_param(input: &str) -> PResult<'_, ParamDef> {
         } else if r2.starts_with('{') || r2.starts_with(',') || r2.starts_with("-->") {
             // Type-only parameter in pointy block (e.g., `-> True { }`, `-> Int { }`)
             let tc_for_bool = if tc == "True" || tc == "False" {
-                super::super::super::add_parse_warning(format!(
-                    "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
-                    tc,
-                    if tc == "True" { "succeed" } else { "fail" }
-                ));
+                super::super::super::add_parse_warning(
+                    format!(
+                        "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
+                        tc,
+                        if tc == "True" { "succeed" } else { "fail" }
+                    ),
+                    crate::parser::primary::current_line_number(input),
+                );
                 "Bool".to_string()
             } else {
                 tc.clone()

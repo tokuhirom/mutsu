@@ -354,10 +354,13 @@ fn integer_impl(input: &str, warn: bool) -> PResult<'_, Expr> {
                 suggested_digits
             }
         );
-        super::super::add_parse_warning(format!(
-            "Potential difficulties:\n    Leading 0 does not indicate octal in Raku; use {} for octal values (found {}).",
-            suggested, literal
-        ));
+        super::super::add_parse_warning(
+            format!(
+                "Potential difficulties:\n    Leading 0 does not indicate octal in Raku; use {} for octal values (found {}).",
+                suggested, literal
+            ),
+            super::current_line_number(input),
+        );
     }
     // Check for scientific notation on integer: 42e0 → Num(42.0)
     if rest.starts_with('e') || rest.starts_with('E') {

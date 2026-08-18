@@ -91,10 +91,13 @@ pub(crate) fn validate_param_trait<'a>(
     input: &'a str,
 ) -> PResult<'a, ()> {
     if existing_traits.iter().any(|t| t == trait_name) {
-        add_parse_warning(format!(
-            "Potential difficulties:\n    Duplicate 'is {}' trait",
-            trait_name
-        ));
+        add_parse_warning(
+            format!(
+                "Potential difficulties:\n    Duplicate 'is {}' trait",
+                trait_name
+            ),
+            crate::parser::primary::current_line_number(input),
+        );
     }
     // Consume an optional parenthesized trait argument, e.g. `is encoded('utf8')`.
     Ok((skip_optional_trait_arg(input), ()))

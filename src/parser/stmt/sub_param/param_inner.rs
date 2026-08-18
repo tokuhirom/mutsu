@@ -501,11 +501,14 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
                     || r2.starts_with('{')
                     || r2.starts_with("-->"))
             {
-                crate::parser::add_parse_warning(format!(
-                    "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
-                    tc,
-                    if tc == "True" { "succeed" } else { "fail" }
-                ));
+                crate::parser::add_parse_warning(
+                    format!(
+                        "Potential difficulties:\n    Literal values in signatures are smartmatched against and smartmatch with `{}` will always {}. Use the `where` clause instead.",
+                        tc,
+                        if tc == "True" { "succeed" } else { "fail" }
+                    ),
+                    crate::parser::primary::current_line_number(r2),
+                );
                 let mut p = super::helpers::make_param("__type_only__".to_string());
                 p.type_constraint = Some("Bool".to_string());
                 p.named = named;

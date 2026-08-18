@@ -198,8 +198,14 @@ impl Interpreter {
     pub(crate) fn write_warn_to_stderr(&mut self, message: &str) {
         // Rakudo appends the warn location ("  in sub foo at file line N") to
         // every warning. Skip when the message already carries location lines
-        // (some warn sites bake their own "  in block <unit> at ..." suffix).
-        let msg = if message.contains("\n  in ") {
+        // (some warn sites bake their own "  in block <unit> at ..." suffix;
+        // every parser-level warning bakes a "\n    at FILE:LINE" suffix via
+        // `parser::add_parse_warning` — appending the current-execution
+        // backtrace on top of that would print the WRONG location, since a
+        // parse warning fires while the VM is mid-executing an unrelated
+        // `use`/`EVAL`/module-load statement, not the line the warning is
+        // actually about).
+        let msg = if message.contains("\n  in ") || message.contains("\n    at ") {
             format!("{}\n", message)
         } else {
             let bt = self.build_backtrace_string();

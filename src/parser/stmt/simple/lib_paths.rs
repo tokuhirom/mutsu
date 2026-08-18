@@ -20,11 +20,6 @@ pub fn set_parser_program_path(path: Option<String>) {
     });
 }
 
-/// Read the program path registered for the current parse (for diagnostics).
-pub(crate) fn parser_program_path() -> Option<String> {
-    PROGRAM_PATH.with(|p| p.borrow().clone())
-}
-
 /// Install the file the compilation unit about to be parsed came from, and
 /// return the previous one so the caller can restore it. Module parses nest
 /// (a module's `use` triggers another `load_module` mid-parse), so this is a

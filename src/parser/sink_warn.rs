@@ -19,7 +19,8 @@ use crate::value::ValueView;
 
 /// Entry point: emit sink-context warnings for the mainline statement list.
 pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
-    walk_stmts(stmts, false);
+    let line = std::cell::Cell::new(1i64);
+    walk_stmts(stmts, false, &line);
     // A `gather { ... }` block evaluates its body in sink context regardless of
     // where the `gather` appears (mainline, an initializer, inside a sub, an
     // argument, ...). Scan the whole tree for gather blocks and warn their
@@ -34,11 +35,12 @@ pub(super) fn add_sink_warnings(stmts: &[Stmt]) {
 /// the final real statement.
 pub(super) fn add_sink_warnings_value_tail(stmts: &[Stmt]) {
     let last_real = stmts.iter().rposition(|s| !matches!(s, Stmt::SetLine(_)));
+    let line = std::cell::Cell::new(1i64);
     for (i, stmt) in stmts.iter().enumerate() {
         if Some(i) == last_real {
             continue;
         }
-        walk_stmt(stmt, false);
+        walk_stmt(stmt, false, &line);
     }
     scan_gathers_stmts(stmts);
 }
@@ -130,8 +132,12 @@ fn scan_gathers_expr(expr: &Expr) {
     match expr {
         Expr::Gather(body) => {
             // The gather body is in sink context. Warn its useless statements,
-            // then keep scanning for gathers nested inside it.
-            walk_stmts(body, false);
+            // then keep scanning for gathers nested inside it. This is a
+            // separate top-level scan (not fed a `line` from an enclosing
+            // walk), so it starts its own tracker -- corrected immediately
+            // by the body's own leading `SetLine` marker.
+            let line = std::cell::Cell::new(1i64);
+            walk_stmts(body, false, &line);
             scan_gathers_stmts(body);
         }
         Expr::Grouped(e)
@@ -233,18 +239,24 @@ fn scan_gathers_expr(expr: &Expr) {
 
 /// Walk a sink-context statement list. `nil_hint` is true when these statements
 /// are the body of a loop/topicalizer modifier, where Raku suggests using `Nil`
-/// to suppress the warning.
-fn walk_stmts(stmts: &[Stmt], nil_hint: bool) {
+/// to suppress the warning. `line` tracks the source line a sink warning
+/// found here should be attributed to: it starts at whatever the caller last
+/// saw and is updated on every `Stmt::SetLine` marker encountered, mirroring
+/// how the compiler/runtime derive "current line" from the same markers
+/// (this pass runs post-parse over the whole `Stmt` tree, so there is no raw
+/// source-text position left to compute it from directly).
+fn walk_stmts(stmts: &[Stmt], nil_hint: bool, line: &std::cell::Cell<i64>) {
     for stmt in stmts {
-        walk_stmt(stmt, nil_hint);
+        walk_stmt(stmt, nil_hint, line);
     }
 }
 
-fn walk_stmt(stmt: &Stmt, nil_hint: bool) {
+fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
     match stmt {
-        Stmt::Expr(e) => warn_expr_sink(e, nil_hint),
+        Stmt::SetLine(n) => line.set(*n),
+        Stmt::Expr(e) => warn_expr_sink(e, nil_hint, line.get()),
         // Bare blocks and parser desugaring blocks stay in sink context.
-        Stmt::Block(body) | Stmt::SyntheticBlock(body) => walk_stmts(body, false),
+        Stmt::Block(body) | Stmt::SyntheticBlock(body) => walk_stmts(body, false, line),
         // Loop / topicalizer bodies are sunk. The "(use Nil instead...)" hint is
         // only emitted for the statement-modifier form (`1 while 0`), not the
         // block form (`while 0 { 1 }`); the modifier desugaring leaves the body
@@ -252,15 +264,15 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool) {
         Stmt::For { body, .. }
         | Stmt::Given { body, .. }
         | Stmt::While { body, .. }
-        | Stmt::Loop { body, .. } => walk_stmts(body, is_modifier_body(body)),
+        | Stmt::Loop { body, .. } => walk_stmts(body, is_modifier_body(body), line),
         // Conditionals are sunk but do not suggest `Nil`.
         Stmt::If {
             then_branch,
             else_branch,
             ..
         } => {
-            walk_stmts(then_branch, false);
-            walk_stmts(else_branch, false);
+            walk_stmts(then_branch, false, line);
+            walk_stmts(else_branch, false, line);
         }
         // A `when`/`default` block's final statement is the block's *value* —
         // `when` succeeds out of the enclosing topicalizer with it — so it is not
@@ -268,7 +280,7 @@ fn walk_stmt(stmt: &Stmt, nil_hint: bool) {
         // and mutsu warned for both; the spurious warning fired even on a branch
         // that never ran (`when 'darwin' { skip-rest, "…" }` in a Linux-only
         // test file). Everything before the last statement is still sunk.
-        Stmt::When { body, .. } | Stmt::Default(body) => walk_stmts(sunk_prefix(body), false),
+        Stmt::When { body, .. } | Stmt::Default(body) => walk_stmts(sunk_prefix(body), false, line),
         // Everything else (declarations, calls, say/print, assignments, and the
         // bodies of subs/classes/etc.) is not analysed for sink warnings.
         _ => {}
@@ -294,38 +306,38 @@ fn is_modifier_body(body: &[Stmt]) -> bool {
 
 /// Warn for an expression evaluated in sink context. Comma lists distribute the
 /// sink to each element.
-fn warn_expr_sink(expr: &Expr, nil_hint: bool) {
+fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     match expr {
-        Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint),
+        Expr::Grouped(inner) => warn_expr_sink(inner, nil_hint, line),
         // A bare comma list `1, 2` distributes sink to each element. An empty
         // `()` is itself a useless value.
         Expr::ArrayLiteral(elems) => {
             if elems.is_empty() {
-                emit("()".to_string(), nil_hint);
+                emit("()".to_string(), nil_hint, line);
             } else {
                 for e in elems {
-                    warn_expr_sink(e, nil_hint);
+                    warn_expr_sink(e, nil_hint, line);
                 }
             }
         }
         _ => {
             if let Some(desc) = describe_useless(expr) {
-                emit(desc, nil_hint);
+                emit(desc, nil_hint, line);
             }
         }
     }
 }
 
-fn emit(desc: String, nil_hint: bool) {
+fn emit(desc: String, nil_hint: bool, line: i64) {
     let suffix = if nil_hint {
         " (use Nil instead to suppress this warning)"
     } else {
         ""
     };
-    super::add_parse_warning(format!(
-        "Useless use of {} in sink context{} (line 1)",
-        desc, suffix
-    ));
+    super::add_parse_warning(
+        format!("Useless use of {} in sink context{}", desc, suffix),
+        line,
+    );
 }
 
 /// Returns the description (the "X" in "Useless use of X in sink context") if

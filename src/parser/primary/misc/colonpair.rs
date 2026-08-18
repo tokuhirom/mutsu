@@ -581,11 +581,14 @@ pub(crate) fn colonpair_expr(input: &str) -> PResult<'_, Expr> {
                 // Raku emits a compile-time "Potential difficulties" warning unless
                 // the lexical `no worries` pragma is in effect.
                 if !crate::parser::stmt::simple::worries_suppressed() {
-                    crate::parser::add_parse_warning(format!(
-                        "Pair with <> really means an empty list, not null string; \
-                         use :{name}('') to represent the null string, \
-                         or :{name}() to represent the empty list more accurately"
-                    ));
+                    crate::parser::add_parse_warning(
+                        format!(
+                            "Pair with <> really means an empty list, not null string; \
+                             use :{name}('') to represent the null string, \
+                             or :{name}() to represent the empty list more accurately"
+                        ),
+                        crate::parser::primary::current_line_number(rest),
+                    );
                 }
                 return Ok((
                     r,
