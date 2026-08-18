@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 12;
 
 sub req-opt($a, $b?) { }
 is &req-opt.arity, 1, 'arity counts required positional params only';
@@ -28,3 +28,13 @@ is (-> *%a { }).count, 0, 'slurpy named pointy param does not increase count';
     my &g = &A::f.assuming(A.new);
     is g(3), 6, 'assuming on our method with explicit invocant binds correctly';
 }
+
+# A raw-capture param (`|c`) contributes 0 to arity (it isn't a required
+# positional) and makes count Inf (it captures any number of further args).
+# See todo/tickets/signature-arity-count-wrong-for-capture-params.md.
+sub foo(|c) { }
+is &foo.arity, 0, 'raw-capture param does not count toward arity';
+is &foo.count, Inf, 'raw-capture param makes count infinite';
+
+sub bar($a, |c) { }
+is &bar.arity, 1, 'a leading positional before a raw-capture still counts';
