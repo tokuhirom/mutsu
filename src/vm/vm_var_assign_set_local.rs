@@ -1336,10 +1336,24 @@ impl Interpreter {
             // outer call frame) OR same-scope rebinding (`:=` on existing vars).
             // ContainerRef ensures bidirectional container sharing: writing to
             // either variable updates both, matching Raku's binding semantics.
-            let source_in_outer_frame = self
-                .call_frames
-                .iter()
-                .any(|f| f.saved_env.contains_key(&resolved_source));
+            // The topic (`_`) and the arg pseudo-vars are a fresh per-call binding
+            // on EVERY routine frame (see the `is_routine` reset in
+            // `vm_call_named_inner.rs`), not a genuine lexical any one ancestor
+            // frame "owns" — so `contains_key` is trivially true for almost every
+            // frame on the stack. Treating that as "the source lives in an outer
+            // frame" made a plain `my $ex := $_;` (as `Test.rakumod`'s `throws-like`
+            // does inside its `CATCH { default { ... } }`) promote `_` itself to a
+            // shared `ContainerRef` cell and splice that cell into EVERY ancestor
+            // frame's own saved env below — permanently corrupting an unrelated
+            // caller's topic with the bound value. A `:=` bind only needs to
+            // capture `_`'s CURRENT referent in the target name; `_` itself must
+            // never be promoted or written back into any ancestor frame.
+            let is_percall_pseudo_var = matches!(resolved_source.as_str(), "_" | "@_" | "%_" | "!");
+            let source_in_outer_frame = !is_percall_pseudo_var
+                && self
+                    .call_frames
+                    .iter()
+                    .any(|f| f.saved_env.contains_key(&resolved_source));
             let source_in_same_scope = code.locals.iter().any(|n| n == &resolved_source);
             // `my @a := @$n` deref-bind (Slice 2c): the parser conflates `@$n`
             // (deref of a scalar `$n` that holds an array by reference) with the
@@ -1462,7 +1476,7 @@ impl Interpreter {
                     // unrelated same-index local (e.g. a callee's `@p` landing on a
                     // caller's `$config`). Gate the locals write on the frame owning
                     // the name.
-                    if frame.saved_env.contains_key(&effective_source) {
+                    if frame.saved_env.contains_key_own_tier(&effective_source) {
                         frame
                             .saved_env
                             .insert(effective_source.clone(), container.clone());
@@ -1552,7 +1566,7 @@ impl Interpreter {
                     // parent frame's `saved_locals` when that frame actually owns the
                     // source lexical (its saved env holds the name) — otherwise the
                     // callee's slot index clobbers an unrelated same-index local.
-                    if frame.saved_env.contains_key(&resolved_source) {
+                    if frame.saved_env.contains_key_own_tier(&resolved_source) {
                         frame
                             .saved_env
                             .insert(resolved_source.clone(), container.clone());

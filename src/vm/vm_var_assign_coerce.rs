@@ -665,7 +665,7 @@ impl Interpreter {
             // write a parent frame's `saved_locals` when that frame owns the source
             // lexical (its saved env holds the name), else the callee slot index
             // clobbers an unrelated same-index local.
-            if frame.saved_env.contains_key(&resolved_source) {
+            if frame.saved_env.contains_key_own_tier(&resolved_source) {
                 frame
                     .saved_env
                     .insert(resolved_source.clone(), container.clone());

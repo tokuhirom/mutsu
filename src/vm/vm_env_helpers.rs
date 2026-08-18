@@ -1774,7 +1774,7 @@ impl Interpreter {
                 self.locals[idx] = container.clone();
             }
             for frame in self.call_frames.iter_mut().rev() {
-                if frame.saved_env.contains_key(&name) {
+                if frame.saved_env.contains_key_own_tier(&name) {
                     frame.saved_env.insert(name.clone(), container.clone());
                 }
             }
