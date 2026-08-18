@@ -598,12 +598,27 @@ impl Compiler {
                         attrs,
                     ));
                 } else {
-                    // No outer declaration → X::Undeclared
-                    return Some(Value::str(format!(
-                        "X::Undeclared: Variable '${}' is not declared. \
-                         Did you mean '$^{}'?",
-                        bare_name, bare_name
-                    )));
+                    // No outer declaration → X::Undeclared. Verified against
+                    // `raku`: a bare `$name` preceding its own `$^name` does
+                    // NOT get a "Did you mean" suggestion (the placeholder is
+                    // not a candidate the suggestion mechanism considers) —
+                    // it falls to the same default message as the
+                    // nested-placeholder-shadow case below.
+                    let symbol = format!("${}", bare_name);
+                    let mut attrs = std::collections::HashMap::new();
+                    attrs.insert("name".to_string(), Value::str(symbol.clone()));
+                    attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+                    attrs.insert("post".to_string(), Value::str(symbol.clone()));
+                    attrs.insert("highexpect".to_string(), Value::array(vec![]));
+                    attrs.insert("suggestions".to_string(), Value::array(vec![]));
+                    attrs.insert(
+                        "message".to_string(),
+                        Value::str(format!(
+                            "Variable '{}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?",
+                            symbol
+                        )),
+                    );
+                    return Some(Value::make_instance(Symbol::intern("X::Undeclared"), attrs));
                 }
             }
         }
@@ -627,10 +642,21 @@ impl Compiler {
             // blocks, slipped arguments" case).
             && !params.iter().any(|p| p == &bare_name)
         {
-            return Some(Value::str(format!(
-                "X::Undeclared: Variable '${}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?",
-                bare_name
-            )));
+            let symbol = format!("${}", bare_name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("name".to_string(), Value::str(symbol.clone()));
+            attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
+            attrs.insert("post".to_string(), Value::str(symbol.clone()));
+            attrs.insert("highexpect".to_string(), Value::array(vec![]));
+            attrs.insert("suggestions".to_string(), Value::array(vec![]));
+            attrs.insert(
+                "message".to_string(),
+                Value::str(format!(
+                    "Variable '{}' is not declared. Perhaps you forgot a 'sub' if this was\nintended to be part of a signature?",
+                    symbol
+                )),
+            );
+            return Some(Value::make_instance(Symbol::intern("X::Undeclared"), attrs));
         }
         None
     }
