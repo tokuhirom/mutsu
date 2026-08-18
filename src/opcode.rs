@@ -3560,6 +3560,20 @@ pub(crate) struct CompiledCode {
     /// var (used before its declaration, so it refers to the outer binding)
     /// keeps the writeback.
     pub(crate) my_declared_sym: rustc_hash::FxHashSet<Symbol>,
+    /// Dynamic variables `my`-REdeclared in THIS code's body (`my $*x = ...`,
+    /// env-keyed `*x`). Kept separate from `my_declared_sym`, whose consumers
+    /// (e.g. ADR-0024 free-var slot binding in `vm_register_sub_ops.rs`)
+    /// document that it holds only plain `my` lexicals. A fresh `my $*x`
+    /// redeclaration is scoped to its block/closure invocation exactly like a
+    /// plain `my`, so the map/grep inline-loop save/restore
+    /// (`push_block_declared_keys`) and the closure-exit caller-writeback scan
+    /// must treat it as body-private — while a plain `$*x = ...` write-through
+    /// to an existing outer dynamic (never in this set) propagates out.
+    /// Unlike `my_declared_sym` there is no "also a free var" exemption:
+    /// every dynamic READ compiles to a by-name `GetGlobal` (no local slot),
+    /// so a declared-and-read dynamic always looks like a free var, and the
+    /// exemption would swallow the set whole.
+    pub(crate) dynamic_declared_sym: rustc_hash::FxHashSet<Symbol>,
     /// The subset of `my_declared_sym` bound by a `my enum` — its type name and
     /// every variant name. Unlike a `my` variable these get no local slot, so
     /// every bareword read of one looks like a free variable to
@@ -4196,6 +4210,7 @@ impl CompiledCode {
             supply_emitter_sym: None,
             inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),
+            dynamic_declared_sym: rustc_hash::FxHashSet::default(),
             my_declared_enum_sym: rustc_hash::FxHashSet::default(),
             for_loop_param_syms: rustc_hash::FxHashSet::default(),
             expr_declared_syms: rustc_hash::FxHashSet::default(),

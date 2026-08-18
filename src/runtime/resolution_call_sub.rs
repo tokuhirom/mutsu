@@ -891,6 +891,14 @@ impl Interpreter {
                     || body_declared
                         .as_ref()
                         .is_some_and(|(declared, free)| declared.contains(&k) && !free.contains(&k))
+                    // A `my $*x` REdeclaration is invocation-scoped too. Its own
+                    // set, with no free-var exemption — dynamic reads always
+                    // register as free vars (by-name GetGlobal, no slot). See
+                    // `CompiledCode::dynamic_declared_sym`.
+                    || data
+                        .compiled_code
+                        .as_ref()
+                        .is_some_and(|cc| cc.dynamic_declared_sym.contains(&k))
             };
             if merge_all {
                 for (k, v) in self.env.iter() {

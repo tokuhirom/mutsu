@@ -559,14 +559,19 @@ impl Interpreter {
                 if k == "_" || k == "__mutsu_sigilless_alias::_" {
                     continue;
                 }
-                // Dynamic variables (e.g. $*VAR) are scoped to the block:
-                // restore to the saved value rather than propagating the inner value.
-                if k.starts_with("*") {
-                    continue;
-                }
                 // Variables declared with `my` inside this block should not
                 // propagate their values to the outer scope. Restore the outer
-                // scope's original value instead.
+                // scope's original value instead. This also covers a
+                // block-local `my $*x`/`my @*x`/`my %*x` redeclaration
+                // (env-keyed `*x`/`@*x`/`%*x`) via the same `block_declared`
+                // membership check -- but a plain reassignment of an
+                // ALREADY-EXISTING dynamic var (`$*x = ...`, or a
+                // `PROCESS::<$x> = ...` pseudo-stash write, which stores
+                // through the identical `*x` env key) is NOT in
+                // `block_declared` and correctly falls through to propagate,
+                // matching real Raku: a dynamic-variable *write* mutates the
+                // existing container and is visible after the block exits,
+                // only a fresh `my $*x` redeclaration is block-scoped.
                 //
                 // A name-derived metadata key (`__mutsu_type::o`,
                 // `__mutsu_hash_key_type::o`) is not itself in `block_declared`
@@ -624,8 +629,11 @@ impl Interpreter {
             // `saved[idx]` IS the outer value; a fresh `my` slot's pre-block value
             // is Nil.
             for (idx, name) in code.locals.iter().enumerate() {
+                // Dynamic-var slots (`*x`) are NOT blanket-reverted: like the
+                // env-restore loop above, only a fresh `my $*x` redeclaration
+                // (in `block_declared`) is block-scoped; a plain write-through
+                // to an existing outer dynamic propagates.
                 let non_propagating = name == "_"
-                    || name.starts_with('*')
                     || code
                         .local_sym(idx)
                         .is_some_and(|s| block_declared.contains(&s));
@@ -652,7 +660,10 @@ impl Interpreter {
                 let is_block_declared = code
                     .local_sym(idx)
                     .is_some_and(|s| block_declared.contains(&s));
-                let non_propagating = name == "_" || name.starts_with('*') || is_block_declared;
+                // Dynamic-var slots are handled like the env-restore loop
+                // above: only a genuine block-local `my $*x` (in
+                // `block_declared`) reverts; a plain write-through propagates.
+                let non_propagating = name == "_" || is_block_declared;
                 if non_propagating && !state_slots.contains(&idx) {
                     if is_block_declared {
                         if owned_slots.contains(&idx) {

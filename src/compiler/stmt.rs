@@ -1109,6 +1109,24 @@ impl Compiler {
                 // cross the frame and are excluded.
                 if !*is_state && !*is_our && !*is_dynamic && !name.starts_with('*') {
                     self.code.my_declared_sym.insert(Symbol::intern(name));
+                } else if !*is_state && !*is_our && name.starts_with('*') {
+                    // A `my $*x` REdeclaration is block/invocation-scoped just
+                    // like a plain `my`, but lives in its own set — see
+                    // `CompiledCode::dynamic_declared_sym`. Consumed by the
+                    // map/grep inline-loop save/restore and the closure-exit
+                    // caller-writeback scan so the fresh binding never leaks
+                    // out of the frame that made it, while a plain `$*x = ...`
+                    // write-through (not a declaration) still propagates.
+                    // BOTH env spellings are recorded: every dynamic write
+                    // maintains a `$*x` twin key alongside `*x`
+                    // (`set_env_with_main_alias_sym`'s `twigil_dynamic_alias`
+                    // mirror), and a read of `*x` falls back to `$*x`, so
+                    // restoring/skipping only the bare key would leave the
+                    // declaration readable through the twin.
+                    self.code.dynamic_declared_sym.insert(Symbol::intern(name));
+                    self.code
+                        .dynamic_declared_sym
+                        .insert(Symbol::intern(&format!("${}", name)));
                 }
                 // An inline `where` constraint on a scalar/sigilless variable
                 // (e.g. `my $x where * > 0`, `my Int $n where { $_ %% 2 }`,
