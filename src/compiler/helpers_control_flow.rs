@@ -509,6 +509,17 @@ impl Compiler {
     fn compile_resolved_branch_body(&mut self, stmts: &[Stmt]) {
         if stmts.len() == 1 && matches!(stmts[0], Stmt::If { .. }) {
             self.compile_stmt(&stmts[0]);
+        } else if Self::has_block_leave_worthy_phasers(stmts) {
+            // Mirrors the ordinary `Stmt::If` arm's own check (`stmt.rs`): a
+            // branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block
+            // scope whose LEAVE must fire when the branch exits, even though
+            // folding away a compile-time-constant condition (`if True {
+            // LEAVE ... }`, ADR-0006 §2.2) skips the jump/condition
+            // evaluation around it. This doc comment used to just say
+            // "mirrors" the ordinary arm without actually doing so for this
+            // one case. Deliberately `has_block_leave_worthy_phasers`, not
+            // `has_block_enter_leave_phasers` — see that function's doc.
+            self.compile_phaser_block_scope(stmts, false);
         } else if Self::body_mutates_topic(stmts) {
             self.synthetic_block_body = true;
             self.compile_stmt(&Stmt::Block(stmts.to_vec()));

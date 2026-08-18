@@ -77,6 +77,36 @@ impl Compiler {
         })
     }
 
+    /// Like [`Self::has_block_enter_leave_phasers`], but restricted to the
+    /// phaser kinds that actually need `compile_phaser_block_scope`'s
+    /// LEAVE-on-any-exit machinery: ENTER/LEAVE/KEEP/UNDO. PRE/POST are
+    /// excluded on purpose — they are plain inline truthiness checks (see
+    /// `compile_pre_phasers`/`compile_post_phasers`) with no unwind-safety
+    /// need, and the loop-phaser lowering in this module synthesizes
+    /// `given $topic { POST { ... } }`/`given $topic { PRE { ... } }`
+    /// wrappers whose body is *solely* a re-wrapped `Stmt::Phaser` node (see
+    /// `post_ph`/`pre_ph` below, which — unlike `enter_ph`/`leave_ph` — keep
+    /// the wrapper because `PhaserKind::Pre`/`Post`'s own compile arm needs
+    /// it). Routing that phaser-only body through `compile_phaser_block_scope`
+    /// left its "value-producing statements" section empty, so the block's
+    /// own topic binding was never threaded to the POST-phase run of
+    /// `compile_post_phasers` — the pushed value read back as `Nil` instead
+    /// of the loop's per-iteration topic.
+    pub(super) fn has_block_leave_worthy_phasers(stmts: &[Stmt]) -> bool {
+        stmts.iter().any(|s| {
+            matches!(
+                s,
+                Stmt::Phaser {
+                    kind: PhaserKind::Enter
+                        | PhaserKind::Leave
+                        | PhaserKind::Keep
+                        | PhaserKind::Undo,
+                    ..
+                }
+            )
+        })
+    }
+
     /// The body of a FIRST/NEXT/LAST phaser as a single statement. A
     /// statement-form phaser (parsed as `[SyntheticBlock([stmt])]`) shares the
     /// enclosing block's lexical scope, so it is spliced in scope-less; a
