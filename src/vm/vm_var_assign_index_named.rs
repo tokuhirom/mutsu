@@ -2587,7 +2587,13 @@ impl Interpreter {
         } else if env_key.starts_with('%') {
             self.coerce_hash_var_value(&env_key, val)?
         } else {
-            Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val))
+            let stored =
+                Self::itemize_scalar_store(&env_key, Self::normalize_scalar_assignment_value(val));
+            // `PROCESS::<$x> = Nil` decays to the `Any` type object, matching
+            // an ordinary untyped scalar assignment (`reset_nil_untyped_scalar`,
+            // the same helper `SetLocal` uses) — see
+            // todo/tickets/process-dynamic-write-nil-not-decayed-to-any.md.
+            self.reset_nil_untyped_scalar(&env_key, stored)
         };
         self.env_mut().insert(env_key, val.clone());
         Ok(val)
