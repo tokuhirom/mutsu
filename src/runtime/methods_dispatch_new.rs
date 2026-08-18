@@ -377,62 +377,71 @@ impl Interpreter {
             // BUILD left the attribute alone, so the slot is seeded with the
             // no-initializer value now (runtime/attr_build_defaults.rs).
             let is_deferred = plan.has_build && default.is_some();
-            let val =
-                if !is_deferred && let Some(lit_val) = default.as_ref().and_then(|a| a.literal()) {
-                    // Fast path: simple literal defaults (e.g. native type
-                    // defaults like Int(0)) don't need interpretation.
-                    lit_val.clone()
-                } else if !is_deferred && let Some(arg) = default {
-                    self.eval_decl_trait_arg(arg)?
-                } else if *sigil == '@' || *sigil == '%' {
-                    // An `is Type` container trait (`has %.h is TypeConverter`)
-                    // builds an instance of that type, exactly like `dispatch_new`'s
-                    // `seed_attr_value` — a plain empty container here would strip
-                    // the type (DBIish's `has %.Converter is DBDish::TypeConverter`
-                    // lost its STORE/convert-function surface through bless).
-                    if let Some(type_name) = plan.attr_is_types.get(attr_name).cloned() {
-                        self.build_is_type_container(&type_name, *sigil)
-                    } else if *sigil == '@' {
-                        // A `@`-sigil attribute with no default is an empty Array,
-                        // not Nil (matches `dispatch_new`). Leaving it Nil makes
-                        // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
-                        let mut arr = Value::real_array(Vec::new());
-                        if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
-                            arr = self.tag_container_metadata(
-                                arr,
-                                super::ContainerTypeInfo {
-                                    value_type: tc,
-                                    key_type: None,
-                                    declared_type: None,
-                                },
-                            );
-                        }
-                        arr
-                    } else {
-                        // A `%`-sigil attribute with no default is an empty Hash.
-                        Value::hash(HashMap::new())
+            let val = if !is_deferred
+                && let Some(lit_val) = default.as_ref().and_then(|a| a.literal())
+            {
+                // Fast path: simple literal defaults (e.g. native type
+                // defaults like Int(0)) don't need interpretation.
+                lit_val.clone()
+            } else if !is_deferred && let Some(arg) = default {
+                // Bind `self`/`?CLASS`/the already-set attributes and switch
+                // to the class package for class-scoped sub lookups — the
+                // shared per-default env-setup (ADR-0019 D2c-5) also used by
+                // `dispatch_new` and the native default-ctor fast path.
+                // `.bless` needs this exactly like `.new` does: a default
+                // expression referencing a class-scoped `sub` or a bare
+                // nested-class type name resolves the same way either way.
+                let temp_self = Value::make_instance(class_name, attributes.clone());
+                self.eval_attr_default_expr(cn_resolved, class_name, arg, &temp_self, &attributes)?
+            } else if *sigil == '@' || *sigil == '%' {
+                // An `is Type` container trait (`has %.h is TypeConverter`)
+                // builds an instance of that type, exactly like `dispatch_new`'s
+                // `seed_attr_value` — a plain empty container here would strip
+                // the type (DBIish's `has %.Converter is DBDish::TypeConverter`
+                // lost its STORE/convert-function surface through bless).
+                if let Some(type_name) = plan.attr_is_types.get(attr_name).cloned() {
+                    self.build_is_type_container(&type_name, *sigil)
+                } else if *sigil == '@' {
+                    // A `@`-sigil attribute with no default is an empty Array,
+                    // not Nil (matches `dispatch_new`). Leaving it Nil makes
+                    // `@!attr.elems` return 1 (Any.elems) and corrupts guards.
+                    let mut arr = Value::real_array(Vec::new());
+                    if let Some(tc) = plan.type_constraints.get(attr_name).cloned() {
+                        arr = self.tag_container_metadata(
+                            arr,
+                            super::ContainerTypeInfo {
+                                value_type: tc,
+                                key_type: None,
+                                declared_type: None,
+                            },
+                        );
                     }
+                    arr
                 } else {
-                    // Native types have zero/empty defaults instead of Nil.
-                    // The plan's type_constraints carry the same MRO-wide map
-                    // `get_attr_type_constraint` would walk per attribute.
-                    // A non-native attribute with no default seeds its nominal
-                    // type object (`has $!z` reads as Any, `has Int $!x` as Int),
-                    // matching raku — not Nil.
-                    match plan.type_constraints.get(attr_name).map(String::as_str) {
-                        Some(
-                            "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8"
-                            | "uint16" | "uint32" | "uint64" | "byte" | "atomicint",
-                        ) => Value::int(0),
-                        Some("num" | "num32" | "num64") => Value::num(0.0),
-                        Some("str") => Value::str("".to_string()),
-                        Some(tc) => {
-                            let nominal = self.nominal_type_object_name_for_constraint(tc);
-                            Value::package(crate::symbol::Symbol::intern(&nominal))
-                        }
-                        None => Value::package(crate::symbol::Symbol::intern("Any")),
+                    // A `%`-sigil attribute with no default is an empty Hash.
+                    Value::hash(HashMap::new())
+                }
+            } else {
+                // Native types have zero/empty defaults instead of Nil.
+                // The plan's type_constraints carry the same MRO-wide map
+                // `get_attr_type_constraint` would walk per attribute.
+                // A non-native attribute with no default seeds its nominal
+                // type object (`has $!z` reads as Any, `has Int $!x` as Int),
+                // matching raku — not Nil.
+                match plan.type_constraints.get(attr_name).map(String::as_str) {
+                    Some(
+                        "int" | "int8" | "int16" | "int32" | "int64" | "uint" | "uint8" | "uint16"
+                        | "uint32" | "uint64" | "byte" | "atomicint",
+                    ) => Value::int(0),
+                    Some("num" | "num32" | "num64") => Value::num(0.0),
+                    Some("str") => Value::str("".to_string()),
+                    Some(tc) => {
+                        let nominal = self.nominal_type_object_name_for_constraint(tc);
+                        Value::package(crate::symbol::Symbol::intern(&nominal))
                     }
-                };
+                    None => Value::package(crate::symbol::Symbol::intern("Any")),
+                }
+            };
             if is_deferred {
                 deferred_defaults.push(super::attr_build_defaults::DeferredAttrDefault {
                     name: attr_name.clone(),

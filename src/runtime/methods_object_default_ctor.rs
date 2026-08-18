@@ -203,78 +203,18 @@ impl Interpreter {
                 }
                 None if default_expr.is_some() => {
                     let arg = default_expr.as_ref().unwrap();
-                    // Bind `self` and the already-set attributes, switch to the
-                    // class package for class-scoped sub lookups, evaluate, then
-                    // restore everything — per the interpreter's per-default setup.
+                    // Bind `self`/`?CLASS`/the already-set attributes, switch to
+                    // the class package for class-scoped sub lookups, evaluate,
+                    // then restore everything — the shared per-default env-setup
+                    // (ADR-0019 D2c-5) also used by `dispatch_new`/`dispatch_bless`.
                     let temp_self = Value::make_instance(class_name, attrs.clone());
-                    let old_self = self.env.get("self").cloned();
-                    let old_anon = self.env.get("__ANON_STATE__").cloned();
-                    // `::?CLASS` in a default (e.g. `has $.v = ::?CLASS.^ver`)
-                    // resolves through `?CLASS`; bind it to the class being built
-                    // (it is otherwise unset here, leaving `::?CLASS` as `Any`).
-                    let old_class = self.env.get("?CLASS").cloned();
-                    self.env.insert(
-                        "?CLASS".to_string(),
-                        Value::package(crate::symbol::Symbol::intern(cn_resolved)),
+                    let result = self.eval_attr_default_expr(
+                        cn_resolved,
+                        class_name,
+                        arg,
+                        &temp_self,
+                        &attrs,
                     );
-                    self.env.insert("self".to_string(), temp_self.clone());
-                    self.env.insert("__ANON_STATE__".to_string(), temp_self);
-                    let mut saved_attr_env: Vec<(String, Option<Value>)> = Vec::new();
-                    for (a_name, a_val) in &attrs {
-                        let bang = format!("!{}", a_name);
-                        let dot = format!(".{}", a_name);
-                        saved_attr_env.push((bang.clone(), self.env.get(&bang).cloned()));
-                        saved_attr_env.push((dot.clone(), self.env.get(&dot).cloned()));
-                        self.env.insert(bang, a_val.clone());
-                        self.env.insert(dot, a_val.clone());
-                    }
-                    let saved_package = self.current_package();
-                    if self.has_class_scoped_subs(cn_resolved) {
-                        self.set_current_package(cn_resolved.to_string());
-                    }
-                    // Mark the class under construction so a bare nested-class
-                    // type name in the default (e.g. `has Inner $.x` whose default
-                    // is the `Inner` type object) resolves to `<Class>::Inner`,
-                    // even though no method-class / package context is active here.
-                    let saved_constructing = self.constructing_class.take();
-                    self.constructing_class = Some(cn_resolved.to_string());
-                    let result = self.eval_decl_trait_arg(arg);
-                    self.constructing_class = saved_constructing;
-                    self.set_current_package(saved_package);
-                    for (key, old_val) in saved_attr_env {
-                        match old_val {
-                            Some(v) => {
-                                self.env.insert(key, v);
-                            }
-                            None => {
-                                self.env.remove(&key);
-                            }
-                        }
-                    }
-                    match old_self {
-                        Some(v) => {
-                            self.env.insert("self".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("self");
-                        }
-                    }
-                    match old_anon {
-                        Some(v) => {
-                            self.env.insert("__ANON_STATE__".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("__ANON_STATE__");
-                        }
-                    }
-                    match old_class {
-                        Some(v) => {
-                            self.env.insert("?CLASS".to_string(), v);
-                        }
-                        None => {
-                            self.env.remove("?CLASS");
-                        }
-                    }
                     let val = match result {
                         Ok(val) => val,
                         Err(e) => {

@@ -117,8 +117,8 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 `main`; this is not a stacked-PR plan.
 
 **Status: Accepted/Implemented (2026-08-17), all four completion gates closed.** Phases A, B, and
-C are fully closed. Phase D is closed except for the optional, low-priority D2c-5 (tracked as
-`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`). Phase E is closed except E2
+C are fully closed. Phase D is fully closed (D2c-5, its last optional item, landed 2026-08-19).
+Phase E is closed except E2
 (still-open cleanup, no longer gating — E1, E3-E11 are all closed). Phase F: F3, F4 (all of
 F4a/F4b/F4c), and F5 are closed; F1/F2 are done except a deliberately-parked fidelity slice; F6 is
 closed (with an amended completion criterion — see its entry); F7 is closed (with a role-body
@@ -326,9 +326,14 @@ walkers wholesale is not possible before then.
     (#6071), and a `Compiled`-chunk "value block" fed through `call_compiled_closure` silently
     returned `Nil` — fixed with a `SubData::is_decl_expr_thunk` marker that routes such thunks
     through a shared `run_decl_code` helper instead of the ordinary closure-call convention.
-    - [ ] **D2c-5 (optional)** — collapse the three near-duplicated default-evaluation env-setup
-      shapes (class walker, default ctor, `dispatch_new`) into one; gated on raku-verifying shape
-      B's `has_class_scoped_subs` special case first. Not started, low priority.
+    - [x] **D2c-5 (optional)** — collapse the three near-duplicated default-evaluation env-setup
+      shapes (class walker, default ctor, `dispatch_bless`) into one. Raku-verifying the
+      `has_class_scoped_subs` special case first found the three sites did NOT already agree:
+      `dispatch_bless` had no env setup at all (a class-scoped `sub` or bare nested-class-type
+      default worked via `.new` but threw via `.bless`), and the default ctor's
+      `has_class_scoped_subs`-gated package switch missed a class-scoped `constant` default (not
+      just `sub`s). Collapsed onto `eval_attr_default_expr` as the single implementation, fixing
+      both bugs as a side effect. `news/2026-08/adr0019-d2c5-collapse-default-eval-env-setup.md`.
   - [x] **D2d — Publish generated accessors through the canonical table.** `MethodEntry` gained an
     `accessor` arm so the hot per-dispatch-call point lookups (`has_public_accessor`,
     `resolve_user_method_or_accessor`) probe the table instead of scanning `ClassDef::attributes`.
@@ -3155,7 +3160,7 @@ the linked `todo/deep/adr0019-*.md` docs for design detail that outlived the che
 
 Deliberately non-gating residue remains, tracked as independent tickets rather than inside this
 ADR: E2's exact-handler-ID catalog (`todo/deep/adr0019-e2-e4-resolver-core.md`, open cleanup, no
-longer gating dispatch correctness), F1/F2's native-method introspection fidelity
-(`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`), and D2c-5's optional env-setup
-de-duplication (`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`). Individual
-accomplishments are additionally recorded per-PR under `news/2026-08/`.
+longer gating dispatch correctness), and F1/F2's native-method introspection fidelity
+(`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`). D2c-5's optional env-setup
+de-duplication landed 2026-08-19 (`news/2026-08/adr0019-d2c5-collapse-default-eval-env-setup.md`).
+Individual accomplishments are additionally recorded per-PR under `news/2026-08/`.

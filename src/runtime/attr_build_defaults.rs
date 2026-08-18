@@ -281,9 +281,19 @@ impl Interpreter {
     /// Evaluate one `has $.x = <expr>` initializer with `self_val` bound as
     /// `self` and every already-initialized attribute reachable as `$!a` / `$.a`
     /// (so `has $.c = $!a + $!b` and `has $.total = self.a + self.b` work), in
-    /// the class's own package so class-scoped subs resolve. Shared by the
-    /// pre-BUILD pass and the post-BUILD pass above, which differ only in what
-    /// `self_val` is: a snapshot instance before BUILD, the real instance after.
+    /// the class's own package so class-scoped subs resolve, and with
+    /// `class_key` marked as the class under construction so a bare nested-class
+    /// type name in the default (e.g. `has Inner $.x` defaulting to the `Inner`
+    /// type object) resolves too.
+    ///
+    /// This is the single env-setup shape for evaluating an attribute default,
+    /// shared by every construction path: the pre-BUILD attribute fill in
+    /// `dispatch_new` (`methods_object_dispatch_new.rs`), the post-BUILD deferred
+    /// pass above (which differs only in what `self_val` is: a snapshot instance
+    /// before BUILD, the real instance after), the native default-constructor
+    /// fast path (`build_native_default_instance`), and `dispatch_bless`
+    /// (ADR-0019 D2c-5 — see `todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`
+    /// before this ticket's resolution moved it to `news/`).
     pub(crate) fn eval_attr_default_expr(
         &mut self,
         class_key: &str,
@@ -294,6 +304,13 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         let old_self = self.env.get("self").cloned();
         self.env.insert("self".to_string(), self_val.clone());
+        // A compiled method-body chunk always carries an implicit `__ANON_STATE__`
+        // param alongside `self` (see `compile_routine_closure_body`); mirror that
+        // here so an anonymous-`$`-referencing default resolves the same way a
+        // method body would.
+        let old_anon = self.env.get("__ANON_STATE__").cloned();
+        self.env
+            .insert("__ANON_STATE__".to_string(), self_val.clone());
         // `::?CLASS` in a default (e.g. `has $.Version = ::?CLASS.^ver` composed
         // from a role) resolves through `?CLASS`; bind it to the class being built.
         let old_class = self.env.get("?CLASS").cloned();
@@ -312,7 +329,14 @@ impl Interpreter {
         // (e.g. `sub inner`) are found when evaluating the initializer.
         let saved_package = self.current_package();
         self.set_current_package(class_key.to_string());
+        // Mark the class under construction so a bare nested-class type name in
+        // the default resolves within its owning class even where no
+        // method-class stack frame is active (`resolve_suppressed_type`'s
+        // `constructing_class` fallback).
+        let saved_constructing = self.constructing_class.take();
+        self.constructing_class = Some(class_key.to_string());
         let result = self.eval_decl_trait_arg(arg);
+        self.constructing_class = saved_constructing;
         self.set_current_package(saved_package);
         for (key, old_val) in saved_attr_env {
             if let Some(v) = old_val {
@@ -325,6 +349,11 @@ impl Interpreter {
             self.env.insert("self".to_string(), old);
         } else {
             self.env.remove("self");
+        }
+        if let Some(old) = old_anon {
+            self.env.insert("__ANON_STATE__".to_string(), old);
+        } else {
+            self.env.remove("__ANON_STATE__");
         }
         if let Some(old) = old_class {
             self.env.insert("?CLASS".to_string(), old);
