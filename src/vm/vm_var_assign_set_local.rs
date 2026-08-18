@@ -1632,18 +1632,29 @@ impl Interpreter {
                         name,
                         Self::normalize_scalar_assignment_value(val),
                     );
+                    self.check_container_cell_constraint(&arc, &val)?;
+                    Value::store_through_cell(&arc, &val);
                 } else {
-                    // Container identity (§3.1): re-apply the element-type +
-                    // `array[T]` metadata so a typed native array written through
-                    // its shared cell (`my @b := @a; @a = ...`) keeps its identity.
-                    // The metadata-tagging block further below is bypassed by this
-                    // early return, so it must be applied here.
+                    // Container identity (§3.1): re-apply the element/key-type
+                    // metadata so a typed native array or typed/object hash
+                    // written through its shared cell (`my @b := @a; @a = ...`,
+                    // a loop-var alias, or a scalar-container-share cell) keeps
+                    // its identity. The metadata-tagging block further below is
+                    // bypassed by this early return, so it must be applied here.
                     let name = name.clone();
                     let old = arc.lock().unwrap().clone();
-                    val = self.array_container_writethrough_value(&name, val, &old)?;
+                    val = if name.starts_with('%') {
+                        self.hash_container_writethrough_value(&name, val, &old)?
+                    } else {
+                        self.array_container_writethrough_value(&name, val, &old)?
+                    };
+                    self.check_container_cell_constraint(&arc, &val)?;
+                    // Write back into the EXISTING backing `Gc` (instead of
+                    // swapping the cell to a fresh pointer) so any other
+                    // holder of the old container (e.g. the outer `%ao` a
+                    // loop-var `%a` is aliased to) observes this mutation.
+                    Self::cell_store_preserving_container_identity(&arc, &val);
                 }
-                self.check_container_cell_constraint(&arc, &val)?;
-                Value::store_through_cell(&arc, &val);
                 self.flush_local_to_env(code, idx);
                 return Ok(());
             }
