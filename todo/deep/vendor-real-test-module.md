@@ -2189,3 +2189,59 @@ Verified against `raku` for every case in the new pin. Pin: `t/multi-identical-s
 A related but **out of scope** pre-existing gap noticed while writing the pin (reproduces identically on `main`, not touched here): `multi sub f(Int $x, :$a) {...}; multi sub f(Int $x, :$b) {...}; f(1)` — two candidates differing only in an *untyped, optional* named parameter's name, called with neither named arg supplied — is wrongly `X::Multi::Ambiguous` in mutsu; `raku` picks the first-declared candidate (same declaration-order rule the fix above formalizes, just not extended to this narrower "both apply, differ only in an unused optional named" case).
 
 **Correction, caught by CI (`make roast`) before merge, not locally:** the first version of this fix was too broad. It applied the "byte-identical signature is not ambiguous" leniency unconditionally, but Rakudo does **not** extend it to two purely *positional* duplicate declarations with no named parameter at all — `roast/integration/advent2011-day24.t` (whitelisted) deliberately pins `multi sub Slurp($filename) {...}` declared twice as genuinely `X::Multi::Ambiguous`, and the broad version silently ran the first one instead, which meant `throws-like { EVAL $ambiguous ~ ... }` never threw and the extra `fail "Yuck!..."` TAP line threw off every following subtest's numbering (`Failed tests: 6, 9`, `planned 8 but ran 9`). Confirmed against `raku` directly that the presence of *any* named parameter (typed or not, required or not) is the actual dividing line — `multi sub f(Int $x, :$bar!) {...}` twice: first wins, not ambiguous; `multi sub g(Int $x) {...}` twice: `X::Multi::Ambiguous` — matching the existing `candidate_declares_named`/`best_has_named` narrowness dimension already computed a few lines above in the same function. Gated the exemption on `best_has_named`, added a fourth pin assertion for the positional-duplicate case, and re-verified `roast/integration/advent2011-day24.t` passes again. Locally `make test`/the targeted roast files this session ran were not enough to catch this — worth remembering `roast/integration/*` (real-world code samples, not spec-focused) exercises shapes the topic-focused suites (`S06-multi`) don't happen to hit; a broader `roast/integration/*.t` sweep is cheap and worth doing by default for any dispatch-adjacent change.
+
+## `for-modifier-placeholder-scope.t` closed: a bare-name-before-placeholder conflict was raised as a plain string, not a typed instance (2026-08-18)
+
+Next `t/` residue item from the 2026-08-18 list above. The one failing subtest
+(`a bare '$b' in a statement before its '$^b' is undeclared`) reported the
+right *message* (`X::Undeclared: Variable '$b' is not declared. Did you
+mean '$^b'?`) but the wrong *class*: `.^name` came back `X::AdHoc`, not
+`X::Undeclared`. mutsu's native `throws-like` masked this — it matches on
+`err.message.contains("X::Undeclared")` (`test_functions/throws_like.rs`),
+so the message-embedded class name alone was enough to pass under the native
+provider — but the real module's `throws-like` does a genuine `.^name` /
+`~~` check.
+
+**Root cause, same shape as the several `typed-exception-class-from-the-
+message-convention` fixes earlier in this file:**
+`Compiler::check_placeholder_conflicts` (`helpers_call_args.rs`) has two
+branches that detect a bare `$name` used before/instead of its own `$^name`
+placeholder. One neighbor branch a few lines above already builds a real
+`Value::make_instance(Symbol::intern("X::Placeholder::NonPlaceholder"),
+attrs)`; both of *these* two branches instead built a bare `Value::str(format!
+("X::Undeclared: ..."))` — a plain string die payload, which the `Die`
+opcode wraps as `X::AdHoc` with that string as its `payload`, not a
+typed exception at all. Confirmed via `rust-gdb -batch` breakpoints on both
+`vm_value_helpers.rs`'s `strict_undeclared_error` and
+`system_eval_vars.rs`'s `check_eval_undeclared_vars` that *neither* of those
+(already-correctly-typed) undeclared-variable paths was even reached for this
+repro — the string literally came from `helpers_call_args.rs` instead, found
+by grepping for the exact message text once the two likely candidates ruled
+themselves out.
+
+Fixed by building a real `X::Undeclared` instance in both branches (`name`,
+`symbol`, `post`, `highexpect`, `suggestions`, `message` attrs, matching the
+shape `RuntimeError::undeclared_variable`/`strict_undeclared_error` already
+use elsewhere). While fixing the first branch, also caught and fixed an
+independent message-wording bug found by checking against `raku` directly:
+that branch said `"Did you mean '$^b'?"`, but `raku -e 'EVAL q[my $f = { say
+$b; say $^b }; $f(1)]'` never offers `$^b` as a suggestion for the bare `$b`
+read — real Raku's suggestion mechanism doesn't consider placeholders as
+candidates for a scalar typo-suggestion, so it falls to the same default
+`"Perhaps you forgot a 'sub' if this was\nintended to be part of a
+signature?"` wording the sibling branch already used. Both branches now emit
+that message, byte-identical to `raku` in both repro shapes.
+
+Pin: `t/undeclared-bare-var-before-placeholder-typed-exception.t` (4
+assertions: `isa-ok`/`.message` for both branches — the bare-name-precedes-
+own-placeholder shape, and the bare-name-shadowed-by-a-nested-block's-own-
+placeholder shape, the latter needing the `{ ... }()` immediate-call form to
+actually route through the fixed branch rather than the unrelated,
+already-correctly-typed runtime fallback that a bare `{ ... }` statement
+block falls to when it has no placeholder of its own). Full local `t/` suite
+(3239 files, 30012 tests) and the placeholder-related roast files
+(`S06-signature/{named,mixed,positional,slurpy}-placeholders.t`,
+`S04-declarations/implicit-parameter.t`,
+`S04-blocks-and-statements/pointy.t`) clean under both `Test` providers;
+`cargo clippy -- -D warnings` clean. `t/for-modifier-placeholder-scope.t` now
+passes fully under `MUTSU_REAL_TEST=1`.
