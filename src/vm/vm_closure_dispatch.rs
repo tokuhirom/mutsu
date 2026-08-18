@@ -558,12 +558,21 @@ impl Interpreter {
 
         // Handle implicit $_ for bare blocks (no explicit params, single arg)
         let uses_positional = data.params.iter().any(|p| p != "_" && !p.starts_with(':'));
+        // A plain bare block (`data.params` empty, no placeholder/pointy
+        // params at all) that reads `@_` in its body wants the positional
+        // args left as `@_`, not aliased onto `$_` too — matching the
+        // tree-walk `call_sub_value` branch (`resolution_call_sub.rs`),
+        // which already runs this same `auto_signature_uses` scan. Without
+        // this, `{ say "@_[]" }.(1,2,3)` bound `$_` to the first arg even
+        // though the body never reads `$_`.
+        let body_uses_positional = data.params.is_empty()
+            && crate::method_signature_shared::auto_signature_uses(&data.body).0;
         if !uses_positional
             && !data.params.is_empty()
             && data.params.iter().all(|p| p.starts_with('$'))
         {
             // Named params with placeholders: handled by bind_function_args_values
-        } else if !uses_positional && !args.is_empty() {
+        } else if !uses_positional && !body_uses_positional && !args.is_empty() {
             if let Some(first) = args
                 .iter()
                 .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
