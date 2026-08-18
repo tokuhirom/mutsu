@@ -501,7 +501,7 @@ impl Interpreter {
                 // This env write happened without a call opcode, so a leaf
                 // closure between the raise site and the installing frame would
                 // otherwise drop it on return. See `inline_control_env_writes`.
-                self.inline_control_env_writes += 1;
+                self.inline_control_env_writes.push(Symbol::intern(name));
             }
         }
 

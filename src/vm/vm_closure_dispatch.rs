@@ -748,10 +748,11 @@ impl Interpreter {
             .any(|n| !n.is_empty() && data.env.contains_key(n));
         // A resume-safe CONTROL handler run inline at a warn raise site inside
         // this body writes the *installing* frame's lexicals into this frame's
-        // env, with no call opcode to mark the mutation. Snapshot the counter so
-        // the return path can force the caller-writeback scan a leaf closure
-        // would otherwise skip. See `Interpreter::inline_control_env_writes`.
-        let inline_control_writes_at_entry = self.inline_control_env_writes;
+        // env, with no call opcode to mark the mutation. Snapshot the log length
+        // so the return path can force the caller-writeback scan a leaf closure
+        // would otherwise skip, AND exempt the names written meanwhile from the
+        // "unchanged capture" skip below. See `Interpreter::inline_control_env_writes`.
+        let inline_control_writes_at_entry = self.inline_control_env_writes.len();
 
         let let_mark = self.let_saves_len();
         // Package-scoped name resolution: run the body under the closure's
@@ -1214,7 +1215,7 @@ impl Interpreter {
             || !rw_bindings.is_empty()
             || cc.has_calls
             || cc.has_env_writes
-            || self.inline_control_env_writes != inline_control_writes_at_entry;
+            || self.inline_control_env_writes.len() != inline_control_writes_at_entry;
         // Whether any closure-writeback metadata key (sigilless readonly/alias,
         // state-var, predictive-seq) may exist in any env. The common program
         // creates none, so this stays false and the per-call metadata scans
@@ -1271,6 +1272,15 @@ impl Interpreter {
             // free var of THIS closure (`cap({ note … $seen = 1 })`), so the
             // free_var recording below misses it.
             let mut caller_writeback: Vec<Symbol> = Vec::new();
+            // Names a resume-safe CONTROL handler wrote into an ANCESTOR
+            // frame's lexical during this call (see `inline_control_env_writes`
+            // above). Such a write must always propagate even when its value
+            // happens to equal the closure's own capture-time snapshot — that
+            // equality is coincidence (e.g. the caller's variable already held
+            // the handler's target value from an earlier call), not proof the
+            // name was never really mutated.
+            let inline_control_written =
+                &self.inline_control_env_writes[inline_control_writes_at_entry..];
             for (k, v) in self.env().iter() {
                 if unchanged_free.contains(k) {
                     continue;
@@ -1338,6 +1348,7 @@ impl Interpreter {
                     // instances (a captured `Text::CSV.new` object).
                     if captured_names.contains(k)
                         && !cc.free_var_syms.contains(k)
+                        && !inline_control_written.contains(k)
                         && data.env.get_sym(*k).is_some_and(|captured| {
                             crate::runtime::utils::values_identical(captured, v)
                         })
