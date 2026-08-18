@@ -76,6 +76,16 @@ impl Interpreter {
 
     pub(crate) fn resolve_proto_function(&self, name: &str) -> Option<FunctionDef> {
         if name.contains("::") {
+            // A `my`-scoped (non-`our`) proto/multi in a module is exported
+            // and callable under its short name, but is never in the package
+            // stash — a package-qualified call to it must stay unresolved,
+            // exactly like the plain-sub gate in `dispatch_resolve.rs`
+            // (`qualified_name_hidden_here`). This lookup previously skipped
+            // that gate entirely, so `Pkg::protoName(...)` wrongly succeeded
+            // from outside the module even without `our`.
+            if self.qualified_name_hidden_here(name) {
+                return None;
+            }
             return self
                 .registry()
                 .proto_functions
