@@ -2,6 +2,31 @@ use super::*;
 use crate::symbol::Symbol;
 use crate::value::ValueView;
 
+/// A name-based `Routine` value (a proto/multi export with no single
+/// candidate to bind, e.g. `my &plan = do { use Test; &plan }` capturing
+/// `Test`'s `proto sub plan`) whose own `(package, name)` offers nothing new
+/// to try beyond re-searching `name` under the SAME unqualified/`GLOBAL`
+/// package that just failed to resolve it. Redispatching such a value via
+/// `eval_call_on_value` re-enters `call_sub_value` -> `call_function` ->
+/// `call_function_fallback` with the identical bare name, which finds the
+/// identical `env["&name"]` binding again -- an unbounded cycle that
+/// stack-overflows instead of raising a catchable error (see
+/// `todo/tickets/routine-value-self-recursion-after-import-scope-pop.md`,
+/// now `news/2026-08/`; hit once the import scope that installed the
+/// original proto/multi has popped, so the registry lookups earlier in this
+/// function have already all failed).
+///
+/// A `Routine` naming a genuinely DIFFERENT, qualified package is not
+/// excluded here: `call_sub_value`'s own package-qualified branch may still
+/// resolve it there, so redispatching can legitimately find something new.
+fn is_dead_end_self_referential_routine(v: &Value, name: &str) -> bool {
+    matches!(
+        v.view(),
+        ValueView::Routine { package, name: rname, .. }
+            if rname.resolve() == name && (package.is_empty() || package.resolve() == "GLOBAL")
+    )
+}
+
 impl Interpreter {
     pub(crate) fn call_function_fallback(
         &mut self,
@@ -731,17 +756,15 @@ impl Interpreter {
         let callable_from_plain = self.env.get(name).cloned();
         if let Some(callable) = callable_from_code_sigil
             .filter(|v| {
-                matches!(
-                    v.view(),
-                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                )
+                matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                    || (matches!(v.view(), ValueView::Routine { .. })
+                        && !is_dead_end_self_referential_routine(v, name))
             })
             .or_else(|| {
                 callable_from_plain.filter(|v| {
-                    matches!(
-                        v.view(),
-                        ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
-                    )
+                    matches!(v.view(), ValueView::Sub(_) | ValueView::WeakSub(_))
+                        || (matches!(v.view(), ValueView::Routine { .. })
+                            && !is_dead_end_self_referential_routine(v, name))
                 })
             })
         {
