@@ -3546,7 +3546,17 @@ impl Interpreter {
                 return Err(RuntimeError::succeed_signal());
             }
             OpCode::ReactDone => {
-                return Err(RuntimeError::react_done_signal());
+                // `done` outside any react/supply drive loop is an ordinary
+                // catchable `X::ControlFlow`, not an escaping signal — same
+                // dynamic-scope reasoning as `next`/`last`/`redo` above. See
+                // `runtime::react_done_handler_depth` for why this has to be
+                // a per-thread depth rather than an `Interpreter` field: a
+                // `whenever` callback often runs on a scheduler worker thread
+                // distinct from the one that started the react/supply.
+                if !crate::runtime::react_done_handler_depth::react_done_handler_in_scope() {
+                    return Err(RuntimeError::react_done_signal());
+                }
+                return Err(RuntimeError::done_signal());
             }
             OpCode::SupplyBodyDone => {
                 return Err(RuntimeError::supply_body_done_signal());

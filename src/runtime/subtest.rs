@@ -134,7 +134,13 @@ impl Interpreter {
             return Some(Err(RuntimeError::supply_terminate_signal()));
         }
         let cb = self.supply_stream_consumers[idx].consumer_cb.clone();
-        match self.call_sub_value(cb, vec![value.clone()], true) {
+        // The `match` below handles `is_react_done()` raised anywhere in this
+        // call's dynamic extent — see `runtime::react_done_handler_depth`.
+        let _react_done_handler =
+            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
+        let cb_result = self.call_sub_value(cb, vec![value.clone()], true);
+        drop(_react_done_handler);
+        match cb_result {
             Err(e) if e.is_react_done() => {
                 self.supply_stream_consumers[idx].done = true;
                 for close_cb in

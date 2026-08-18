@@ -1132,7 +1132,14 @@ impl Interpreter {
                         // cleanly: stop emitting and fall through to the done
                         // callback. It must not surface as a runtime error (this is
                         // how `(1..Inf).Supply.tap({ ...; done if ... })` terminates).
-                        match self.call_sub_value(tap_cb.clone(), vec![v.clone()], true) {
+                        // The `match` below handles `is_react_done()`/`is_last()`
+                        // raised anywhere in this call's dynamic extent — see
+                        // `runtime::react_done_handler_depth`.
+                        let _react_done_handler =
+                            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
+                        let tap_result = self.call_sub_value(tap_cb.clone(), vec![v.clone()], true);
+                        drop(_react_done_handler);
+                        match tap_result {
                             Ok(_) => {}
                             Err(err)
                                 if err.is_react_done()
