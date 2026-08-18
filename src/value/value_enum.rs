@@ -1,11 +1,25 @@
 use super::*;
 
 impl EnumValue {
-    /// Return the integer value, or 0 for string/generic enums.
+    /// Return the integer value, or 0 for string enums.
+    ///
+    /// A `Generic` enum value (any non-Int/Bool/Str variant initializer —
+    /// e.g. a `BigInt` that fit back into `i64` after arithmetic, or a
+    /// `Rat`/`Num`-valued enum) numifies its wrapped `Value` rather than
+    /// blindly returning 0: `enum E (B => 9223372036854775808 - 2**64)`
+    /// (one past `i64::MAX`, negated back into range) stores as `Generic`
+    /// even though its value is a perfectly ordinary `i64`.
     pub fn as_i64(&self) -> i64 {
         match self {
             EnumValue::Int(i) => *i,
-            EnumValue::Str(_) | EnumValue::Generic(_) => 0,
+            EnumValue::Str(_) => 0,
+            EnumValue::Generic(v) => match v.view() {
+                ValueView::Int(i) => i,
+                ValueView::BigInt(n) => n.to_i64().unwrap_or(0),
+                ValueView::Num(f) => f as i64,
+                ValueView::Bool(b) => i64::from(b),
+                _ => 0,
+            },
         }
     }
 

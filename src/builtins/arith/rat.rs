@@ -34,43 +34,20 @@ pub(crate) fn rat_div_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
     rat_from_i128_or_num(n, d)
 }
 
-/// Convert i128 numerator/denominator to Rat, or Num on overflow.
-/// Raku spec: Rat denominators are limited to uint64 range.
-/// When the denominator exceeds this after GCD reduction, degrade to Num.
+/// Convert i128 numerator/denominator to a Rat/BigRat, or Num only when the
+/// DENOMINATOR itself (after GCD reduction) exceeds uint64 range.
+///
+/// A large NUMERATOR alone (the common case: `9223372036854775807 + 0.1`,
+/// where the sum's integer part exceeds i64::MAX but the denominator stays a
+/// small 10) must NOT degrade to a lossy `Num` — real Rakudo's `Rat` keeps an
+/// arbitrary-precision numerator with a small denominator exactly (`.WHAT`
+/// still reports `Rat`; mutsu represents that as `BigRat`, which prints
+/// identically). Delegates to `make_big_rat_arith`, which already implements
+/// this exact distinction for the BigRat-based arithmetic path — this
+/// function previously duplicated (and got wrong) the same GCD+overflow
+/// logic for the plain-Rat i128 fast path.
 pub(crate) fn rat_from_i128_or_num(n: i128, d: i128) -> Value {
-    if d == 0 {
-        return if n == 0 {
-            Value::rat_raw(0, 0)
-        } else if n > 0 {
-            Value::rat_raw(1, 0)
-        } else {
-            Value::rat_raw(-1, 0)
-        };
-    }
-    // Normalize sign
-    let (mut n, mut d) = if d < 0 { (-n, -d) } else { (n, d) };
-    // GCD
-    fn gcd128(mut a: i128, mut b: i128) -> i128 {
-        a = a.abs();
-        b = b.abs();
-        while b != 0 {
-            let t = b;
-            b = a % b;
-            a = t;
-        }
-        a
-    }
-    let g = gcd128(n, d);
-    if g != 0 {
-        n /= g;
-        d /= g;
-    }
-    // Check if result fits in i64 (denominator must also fit in uint64 per Raku spec)
-    if let (Ok(n64), Ok(d64)) = (i64::try_from(n), i64::try_from(d)) {
-        return Value::rat_raw(n64, d64);
-    }
-    // Overflow: degrade to Num
-    Value::num(n as f64 / d as f64)
+    crate::value::make_big_rat_arith(NumBigInt::from(n), NumBigInt::from(d))
 }
 
 /// Check if BigRat arithmetic is needed: at least one operand requires BigInt precision

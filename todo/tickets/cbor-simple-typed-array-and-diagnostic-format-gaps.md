@@ -113,3 +113,43 @@ git clone https://github.com/japhb/CBOR-Simple.git /tmp/cbor-simple
 cd /tmp/cbor-simple && git checkout 0.1.4
 timeout 20 mutsu -I /path/to/mutsu/modules/CBOR-Simple/lib -I /path/to/mutsu/modules/TinyFloats/lib t/06-typed-arrays.rakutest
 ```
+
+## Update (2026-08-18): root-caused and fixed the "No matching candidates for proto sub: matches" fatal in `01`/`04`
+
+That symptom was a misleading downstream effect, not a real multi-dispatch
+bug: `CBOR::Simple`'s own integer-boundary constants
+(`enum CBORMinMax (... CBOR_Min_NInt_63Bit => -9223372036854775808, ...)`)
+made `cbor-encode`'s `CBOR_Min_NInt_63Bit <= $_ <= CBOR_Max_UInt_63Bit`
+chained comparison wrongly reject every negative integer, so `cbor-encode`
+produced the wrong CBOR blob for any negative value (tag-3 BigInt instead of
+compact native encoding) — a general interpreter bug (`arith_negate` not
+downcasting a BigInt negation back to `Int` when it lands in `i64` range,
+combined with `EnumValue::as_i64` returning `0` for the resulting
+BigInt-backed `Generic` enum variant), unrelated to `CBOR::Simple` itself.
+Fixed in `news/2026-08/bigint-negate-i64-min-downcast.md`. The "No matching
+candidates" error was `CodecMatches.rakumod`'s own `matches` multi silently
+running out of test count/exiting oddly after enough subtest assertions
+failed earlier in the file — a real symptom, but downstream of the encoding
+bug, not a proto-dispatch bug at all.
+
+**Re-measured after the fix:**
+
+- `01-basic.rakutest`: now runs to test 68/74 (previously died at test 12) —
+  1-67 pass; test 68 fails on a **different, new** bug: `cbor-decode` of a
+  nested-array structure (`9F01820203820405FF`) returns
+  `$[1, [4, 5], [4, 5]]` instead of `$[1, [2, 3], [4, 5]]` — looks like a
+  decoded sub-array aliasing/caching bug (the first nested array's decoded
+  value gets overwritten by the second). The run then hits a **stack
+  overflow** shortly after (`thread '<unknown>' has overflowed its stack`) —
+  needs its own investigation, not yet started.
+- `02-malformed.rakutest`, `05-malformed-tags.rakutest`: already mostly
+  passing before this fix (94/94 and 23/23 with only 1-2 stray failures each
+  per a fresh run) — not re-verified whether the encoding fix changed
+  anything here, likely unrelated (malformed-input tests don't exercise
+  valid negative-integer encoding).
+- `03-diagnostic.rakutest`, `04-tags.rakutest`, `06-typed-arrays.rakutest`:
+  not re-triaged this round.
+
+**Next steps for whoever picks this up:** reduce the `01-basic.rakutest`
+nested-array decode aliasing bug (test 68) and the stack overflow into a
+standalone repro (not yet attempted) before touching `03`/`04`/`06`.
