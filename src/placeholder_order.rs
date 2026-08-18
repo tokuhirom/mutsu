@@ -25,18 +25,54 @@ use crate::ast::{CallArg, Expr, Stmt};
 /// Check if a bare variable reference (`$name` or `$name = ...`) appears
 /// before the corresponding placeholder variable (`$^name`) in statement
 /// order, within this block's own placeholder scope (see module docs).
+///
+/// This must be a single left-to-right walk across all of `stmts`, not two
+/// independent whole-statement containment checks: `$b + $^b` in ONE
+/// statement has the placeholder appear textually after the bare use, but
+/// checking "does this statement contain `$^b` anywhere" before "does it
+/// contain a bare `$b` anywhere" sees both as true regardless of their
+/// relative position within the expression tree, so the ordering violation
+/// was missed for same-statement cases. `OrderState` threads a running
+/// "have we passed the placeholder yet" flag through the walk itself,
+/// mirroring AST child evaluation order (e.g. left-then-right for
+/// `Expr::Binary`), so a bare use is only flagged if the placeholder truly
+/// has not been evaluated yet at that point in the tree.
 pub(crate) fn bare_precedes_placeholder(stmts: &[Stmt], bare_name: &str) -> bool {
-    let ph_name = format!("^{}", bare_name);
-    let mut ph_seen = false;
+    let ph_name = format!("^{bare_name}");
+    let mut state = OrderState {
+        bare_name,
+        ph_name: &ph_name,
+        ph_seen: false,
+        bare_before: false,
+    };
     for stmt in stmts {
-        if stmt_contains_var_named(stmt, &ph_name) {
-            ph_seen = true;
-        }
-        if !ph_seen && stmt_references_bare(stmt, bare_name) {
+        order_check_stmt(stmt, &mut state);
+        if state.bare_before {
             return true;
         }
     }
     false
+}
+
+/// Running state for the order-sensitive walk in `bare_precedes_placeholder`.
+struct OrderState<'a> {
+    bare_name: &'a str,
+    ph_name: &'a str,
+    ph_seen: bool,
+    bare_before: bool,
+}
+
+impl OrderState<'_> {
+    fn visit_var(&mut self, name: &str) {
+        if self.bare_before {
+            return;
+        }
+        if name == self.ph_name {
+            self.ph_seen = true;
+        } else if name == self.bare_name && !self.ph_seen {
+            self.bare_before = true;
+        }
+    }
 }
 
 /// Find a bare name that is referenced in `body`'s own placeholder scope
@@ -67,14 +103,6 @@ pub(crate) fn bare_name_shadowed_by_nested_placeholder(
         }
     }
     None
-}
-
-/// Check if a statement contains a variable reference `Var(name)`, within
-/// this block's own placeholder scope.
-fn stmt_contains_var_named(stmt: &Stmt, var_name: &str) -> bool {
-    let mut found = false;
-    check_bare_var_stmt(stmt, var_name, &mut found);
-    found
 }
 
 /// Check if a statement references a bare variable (`Var(name)` or an
@@ -396,6 +424,301 @@ fn check_bare_var_expr(expr: &Expr, var_name: &str, found: &mut bool) {
             for (_, v) in pairs {
                 if let Some(e) = v {
                     check_bare_var_expr(e, var_name, found);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Order-sensitive statement walk used by `bare_precedes_placeholder`.
+/// Mirrors `check_bare_var_stmt`'s scope-boundary decisions exactly, but
+/// visits both the bare name and the placeholder name in one pass via
+/// `OrderState::visit_var`, so relative position within an expression tree
+/// is preserved.
+fn order_check_stmt(stmt: &Stmt, state: &mut OrderState) {
+    if state.bare_before {
+        return;
+    }
+    match stmt {
+        Stmt::Expr(e)
+        | Stmt::Return(e)
+        | Stmt::Die(e)
+        | Stmt::Fail(e)
+        | Stmt::Take(e, _)
+        | Stmt::Goto(e) => {
+            order_check_expr(e, state);
+        }
+        Stmt::VarDecl { expr, .. } => order_check_expr(expr, state),
+        Stmt::Assign { name, expr, .. } => {
+            // The assignment target is itself a variable reference.
+            state.visit_var(name);
+            order_check_expr(expr, state);
+        }
+        Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+            for e in es {
+                order_check_expr(e, state);
+            }
+        }
+        Stmt::Call { args, .. } => {
+            for arg in args {
+                match arg {
+                    CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
+                        order_check_expr(e, state)
+                    }
+                    CallArg::Named { value: Some(e), .. } => order_check_expr(e, state),
+                    CallArg::Named { value: None, .. } => {}
+                }
+            }
+        }
+        Stmt::If { cond, .. } => order_check_expr(cond, state),
+        Stmt::While { cond, body, .. } => {
+            order_check_expr(cond, state);
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Stmt::For {
+            iterable,
+            body,
+            is_statement_modifier,
+            ..
+        } => {
+            order_check_expr(iterable, state);
+            if *is_statement_modifier {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
+            }
+        }
+        Stmt::Loop { body, .. } | Stmt::React { body } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Stmt::Whenever { supply, .. } => order_check_expr(supply, state),
+        Stmt::Block(body)
+        | Stmt::SyntheticBlock(body)
+        | Stmt::Default(body)
+        | Stmt::Catch(body)
+        | Stmt::Control(body)
+        | Stmt::RoleDecl { body, .. } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Stmt::Phaser { body, .. } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Stmt::Given {
+            topic,
+            body,
+            is_statement_modifier,
+        } => {
+            order_check_expr(topic, state);
+            if *is_statement_modifier {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
+            }
+        }
+        Stmt::When { cond, body } => {
+            order_check_expr(cond, state);
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Stmt::Let { value, index, .. } => {
+            if let Some(e) = value {
+                order_check_expr(e, state);
+            }
+            if let Some(e) = index {
+                order_check_expr(e, state);
+            }
+        }
+        Stmt::TempMethodAssign {
+            method_args, value, ..
+        } => {
+            for e in method_args {
+                order_check_expr(e, state);
+            }
+            order_check_expr(value, state);
+        }
+        Stmt::Label { stmt, .. } => order_check_stmt(stmt, state),
+        Stmt::SubsetDecl {
+            predicate: Some(predicate),
+            ..
+        } => order_check_expr(predicate, state),
+        _ => {}
+    }
+}
+
+/// Order-sensitive expression walk used by `bare_precedes_placeholder`.
+/// Mirrors `check_bare_var_expr`'s scope-boundary decisions exactly, but
+/// visits both the bare name and the placeholder name in one pass via
+/// `OrderState::visit_var`, so relative position within the tree is
+/// preserved (e.g. left-then-right for `Expr::Binary`).
+fn order_check_expr(expr: &Expr, state: &mut OrderState) {
+    if state.bare_before {
+        return;
+    }
+    match expr {
+        Expr::Var(name) => state.visit_var(name),
+        Expr::Binary { left, right, .. } => {
+            order_check_expr(left, state);
+            order_check_expr(right, state);
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => order_check_expr(expr, state),
+        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+            order_check_expr(target, state);
+            for a in args {
+                order_check_expr(a, state);
+            }
+        }
+        Expr::DynamicMethodCall {
+            target,
+            name_expr,
+            args,
+            ..
+        }
+        | Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            order_check_expr(target, state);
+            order_check_expr(name_expr, state);
+            for a in args {
+                order_check_expr(a, state);
+            }
+        }
+        Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+            for a in args {
+                order_check_expr(a, state);
+            }
+        }
+        Expr::CallOn { target, args } => {
+            order_check_expr(target, state);
+            for a in args {
+                order_check_expr(a, state);
+            }
+        }
+        Expr::Index { target, index, .. } => {
+            order_check_expr(target, state);
+            order_check_expr(index, state);
+        }
+        Expr::IndexAssign {
+            target,
+            index,
+            value,
+            ..
+        } => {
+            order_check_expr(target, state);
+            order_check_expr(index, state);
+            order_check_expr(value, state);
+        }
+        Expr::MultiDimIndexAssign {
+            target,
+            dimensions,
+            value,
+        } => {
+            order_check_expr(target, state);
+            for d in dimensions {
+                order_check_expr(d, state);
+            }
+            order_check_expr(value, state);
+        }
+        Expr::Ternary {
+            cond,
+            then_expr,
+            else_expr,
+        } => {
+            order_check_expr(cond, state);
+            order_check_expr(then_expr, state);
+            order_check_expr(else_expr, state);
+        }
+        Expr::AssignExpr { expr, .. } | Expr::PositionalPair(expr) | Expr::ZenSlice(expr) => {
+            order_check_expr(expr, state)
+        }
+        Expr::Exists { target, arg, .. } => {
+            order_check_expr(target, state);
+            if let Some(a) = arg {
+                order_check_expr(a, state);
+            }
+        }
+        Expr::ArrayLiteral(es)
+        | Expr::BracketArray(es, _)
+        | Expr::StringInterpolation(es)
+        | Expr::CaptureLiteral(es) => {
+            for e in es {
+                order_check_expr(e, state);
+            }
+        }
+        Expr::AnonSubParams {
+            body,
+            is_whatever_code: true,
+            ..
+        }
+        | Expr::Lambda {
+            body,
+            is_whatever_code: true,
+            ..
+        } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
+        Expr::Block(stmts) | Expr::Gather(stmts) => {
+            for s in stmts {
+                order_check_stmt(s, state);
+            }
+        }
+        Expr::DoBlock { body, .. } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Expr::DoStmt(stmt) => order_check_stmt(stmt, state),
+        Expr::Try { body, catch } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+            if let Some(c) = catch {
+                for s in c {
+                    order_check_stmt(s, state);
+                }
+            }
+        }
+        Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
+            for s in body {
+                order_check_stmt(s, state);
+            }
+        }
+        Expr::Reduction { expr, .. }
+        | Expr::Eager(expr)
+        | Expr::Itemize(expr)
+        | Expr::Grouped(expr)
+        | Expr::DeitemizeForBind(expr) => order_check_expr(expr, state),
+        Expr::HyperOp { left, right, .. }
+        | Expr::HyperFuncOp { left, right, .. }
+        | Expr::MetaOp { left, right, .. } => {
+            order_check_expr(left, state);
+            order_check_expr(right, state);
+        }
+        Expr::InfixFunc { left, right, .. } => {
+            order_check_expr(left, state);
+            for e in right {
+                order_check_expr(e, state);
+            }
+        }
+        Expr::Hash(pairs) => {
+            for (_, v) in pairs {
+                if let Some(e) = v {
+                    order_check_expr(e, state);
                 }
             }
         }
