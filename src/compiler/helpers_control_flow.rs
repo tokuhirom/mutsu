@@ -261,7 +261,13 @@ impl Compiler {
         // receives the condition value as that placeholder (like `-> $a`), so
         // `if 42 { $^a.say }` prints 42. Bind the first scalar placeholder
         // (`$^a` → env key `^a`); a valid block takes only the one condition value.
-        let cond_placeholder: Option<String> = if binding_var.is_none() {
+        //
+        // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER (including the
+        // synthetic `If` `with`/`without` desugar to) has no block of its own,
+        // so this binding does not apply: `sub f { $^a if $^n }` must bind
+        // `$^a` to the sub's own placeholder argument, not to the modifier's
+        // boolean condition result (`$^n.defined`/truthiness).
+        let cond_placeholder: Option<String> = if binding_var.is_none() && !is_statement_modifier {
             crate::ast::collect_placeholders_shallow(then_branch)
                 .into_iter()
                 .find(|n| n.starts_with('^'))

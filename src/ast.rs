@@ -2231,7 +2231,13 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_expr_shallow(e, out);
             }
         }
-        Stmt::If { cond, .. } => {
+        Stmt::If {
+            cond,
+            then_branch,
+            else_branch,
+            is_statement_modifier,
+            ..
+        } => {
             // The `if` condition is evaluated in THIS block's scope, so a
             // placeholder there (`if $^a { ... }`) is this block's parameter. The
             // then/else branches are their OWN `{}` block scopes, so a placeholder
@@ -2239,7 +2245,24 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
             // condition value — it is NOT this block's parameter (matches Raku;
             // see the If placeholder handling in compile_if_value). So we do NOT
             // descend into the branches here.
+            //
+            // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER has no block
+            // of its own — `$^a if $^n` and `$^a with $^n` both evaluate the
+            // modified statement in the ENCLOSING scope (`sub f { $^a if $^n }`
+            // binds `$^a` to the sub's own first placeholder argument, mirroring
+            // the `For`/`Given` modifier arms above), so its placeholders must be
+            // collected here too. `with`/`without` desugar to this synthetic
+            // `If` (see `parser::stmt::modifier`), so this also fixes the
+            // shadowing bug reported for those.
             collect_ph_expr_shallow(cond, out);
+            if *is_statement_modifier {
+                for s in then_branch {
+                    collect_ph_stmt_shallow(s, out);
+                }
+                for s in else_branch {
+                    collect_ph_stmt_shallow(s, out);
+                }
+            }
         }
         Stmt::While { cond, body, .. } => {
             collect_ph_expr_shallow(cond, out);
