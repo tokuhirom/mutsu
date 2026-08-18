@@ -68,3 +68,5 @@ that comparison exposed that its attribute `HashMap`'s iteration order
 depends on each compile's own `Symbol`-interning history, not just its
 content. Fixed by extending the test's existing ID-normalization helpers
 with one that sorts `AttrMap({...})` entries before comparing.
+
+PR [#6606](https://github.com/tokuhirom/mutsu/pull/6606).
