@@ -8,9 +8,13 @@ use super::*;
 /// several paths, so this unions the bare-function `match name` in `builtins.rs`,
 /// the arity dispatchers in `builtins/functions/dispatch_*.rs`, the coercion
 /// names (`Str`/`Int`/`Numeric`/...), the term builtins (`now`/`time`/`rand`/
-/// `pi`/`tau`/`e`/`i`) and the module/import statement keywords (`use`/`need`/
-/// `import`) that parse as calls. Being permissive here only suppresses false
-/// positives; a genuinely undeclared user routine is still flagged.
+/// `pi`/`tau`/`e`/`i`), the CORE term constants that also parse as calls
+/// (`True`/`False`/`Inf`/`NaN` — see `undeclared_routines::CORE_TERM_CONSTANTS`,
+/// which is what actually answers `X::Undeclared` for these once this pre-pass
+/// defers to the runtime fallback) and the module/import statement keywords
+/// (`use`/`need`/`import`) that parse as calls. Being permissive here only
+/// suppresses false positives; a genuinely undeclared user routine is still
+/// flagged.
 pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "BEGIN",
     "Bag",
@@ -21,11 +25,14 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "Cool",
     "EVAL",
     "EVALFILE",
+    "False",
     "FatRat",
     "HOW",
+    "Inf",
     "Int",
     "Mix",
     "MixHash",
+    "NaN",
     "Num",
     "Numeric",
     "QX",
@@ -37,6 +44,7 @@ pub(crate) const EVAL_KNOWN_ROUTINE_NAMES: &[&str] = &[
     "Str",
     "Stringy",
     "Sub",
+    "True",
     "UNBASE",
     "Uni",
     "VAR",
