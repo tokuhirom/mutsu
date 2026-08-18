@@ -152,10 +152,13 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
             // Parse the trait name (Raku identifier: may include hyphens and apostrophes)
             let (r, trait_name) = parse_raku_ident(r)?;
             if seen_traits.contains(&trait_name.to_string()) {
-                add_parse_warning(format!(
-                    "Potential difficulties:\n    Duplicate 'is {}' trait",
-                    trait_name
-                ));
+                add_parse_warning(
+                    format!(
+                        "Potential difficulties:\n    Duplicate 'is {}' trait",
+                        trait_name
+                    ),
+                    crate::parser::primary::current_line_number(input),
+                );
             }
             seen_traits.push(trait_name.to_string());
             if trait_name == "export" {

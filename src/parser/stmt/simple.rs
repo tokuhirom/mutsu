@@ -38,10 +38,10 @@ mod slang_use;
 mod user_ops;
 
 // `pub` re-exports.
+pub(crate) use lib_paths::parser_source_file;
 pub use lib_paths::{
     clear_parser_lib_paths, set_parser_lib_paths, set_parser_program_path, set_parser_source_file,
 };
-pub(crate) use lib_paths::{parser_program_path, parser_source_file};
 
 // `pub(crate)` re-exports.
 pub(crate) use compile_consts::is_imported_function;
@@ -244,7 +244,7 @@ fn flatten_xor_chain_terms<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
     out.push(expr);
 }
 
-pub(super) fn add_xor_sink_warnings(expr: &Expr) {
+pub(super) fn add_xor_sink_warnings(expr: &Expr, line: i64) {
     let mut terms = Vec::new();
     flatten_xor_chain_terms(expr, &mut terms);
     if terms.len() < 2 {
@@ -254,10 +254,10 @@ pub(super) fn add_xor_sink_warnings(expr: &Expr) {
         if let Expr::Literal(lit) = term
             && let ValueView::Str(s) = lit.view()
         {
-            add_parse_warning(format!(
-                "Useless use of constant string \"{}\" in sink context (line 1)",
-                *s
-            ));
+            add_parse_warning(
+                format!("Useless use of constant string \"{}\" in sink context", *s),
+                line,
+            );
         }
     }
 }

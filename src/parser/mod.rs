@@ -107,15 +107,26 @@ fn take_eval_value_tail() -> bool {
     EVAL_VALUE_TAIL.with(|f| f.replace(false))
 }
 
-/// Add a warning message during parsing. Collected and emitted after parse
-/// completes. Tags the message with the file currently being parsed
-/// (`parser_source_file()`) so a later drain can tell which source produced
-/// it — see `PARSE_WARNINGS`. Callers need not (and do not) pass the file
-/// themselves; it is snapshotted here so this stays a drop-in replacement
-/// for the earlier bare-`String` bookkeeping.
-pub(super) fn add_parse_warning(msg: String) {
+/// Add a warning message during parsing, tagged with `line` (1-based, the
+/// caller's own position — see [`primary::current_line_number`]). Collected
+/// and emitted after parse completes. Also tags the message with the file
+/// currently being parsed (`parser_source_file()`), which is swapped per
+/// compilation unit (unlike `parser_program_path()`, which stays pinned to
+/// the top-level script) — so a warning raised while parsing a `use`d
+/// module's own source correctly names that module's file, not the
+/// importer's — see `PARSE_WARNINGS`. Both are baked directly into the
+/// stored message text (an `"\n    at FILE:LINE"` suffix, mirroring
+/// Rakudo's own compile-warning location line) rather than kept as separate
+/// tuple fields, so the location survives the precompilation-cache
+/// round-trip for free (`ParseEffects::warnings` only persists the message
+/// text — see `take_parse_warnings`'s callers). `write_warn_to_stderr`
+/// recognizes this suffix and skips appending its own (wrong, current-
+/// execution-position) backtrace.
+pub(super) fn add_parse_warning(msg: String, line: i64) {
     let file = stmt::simple::parser_source_file();
-    PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, msg)));
+    let display_file = file.as_deref().unwrap_or("-e");
+    let tagged = format!("{msg}\n    at {display_file}:{line}");
+    PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
 }
 
 /// Record a detected VCS conflict marker (`<<<<<<<` ... `>>>>>>>` block) at the

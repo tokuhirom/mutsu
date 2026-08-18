@@ -671,13 +671,13 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     // `is rw` on a private attribute generates no accessor, so the trait does
     // nothing — rakudo reports "Potential difficulties: useless use of 'is rw'".
     if is_rw && !is_public && !is_alias {
-        let line = crate::parser::primary::current_line_number(traits_start);
-        let file =
-            crate::parser::stmt::simple::parser_program_path().unwrap_or_else(|| "-e".to_string());
-        crate::parser::add_parse_warning(format!(
-            "Potential difficulties:\n    useless use of 'is rw' on {}!{}\n    at {}:{}",
-            sigil as char, name, file, line
-        ));
+        crate::parser::add_parse_warning(
+            format!(
+                "Potential difficulties:\n    useless use of 'is rw' on {}!{}",
+                sigil as char, name
+            ),
+            crate::parser::primary::current_line_number(traits_start),
+        );
     }
 
     // Postfix container typing: has $.a of Int; has @.a of Int; has %.h of Str;
