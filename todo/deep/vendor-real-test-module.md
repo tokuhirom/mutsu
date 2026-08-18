@@ -2245,3 +2245,30 @@ block falls to when it has no placeholder of its own). Full local `t/` suite
 `S04-blocks-and-statements/pointy.t`) clean under both `Test` providers;
 `cargo clippy -- -D warnings` clean. `t/for-modifier-placeholder-scope.t` now
 passes fully under `MUTSU_REAL_TEST=1`.
+
+## `proto-new-no-match.t` closed: a mutsu-only test-file bug, not an interpreter gap (2026-08-18)
+
+Next residue item. `throws-like`'s second call declared `class Polar { ... }`
+a second time (a *different* string, same class name as the first
+`throws-like` call a few lines above). Under the real module this failed
+with `Got: X::Redeclaration` instead of the expected `X::Comp::BeginTime`.
+**Verified directly against `raku` with the real `Test` module** that this
+is not a mutsu bug at all: `raku`'s own `EVAL` is not isolated between
+separate `throws-like` calls either, so a second top-level `class Polar { }`
+genuinely collides with the first `EVAL`'s declaration and raises
+`X::Redeclaration` there too — reproduced byte-for-byte, including the exact
+"Got: X::Redeclaration" / "Exception message: Redeclaration of symbol
+'Polar'." wording. mutsu's *native* `throws-like` masked this because it
+spins up a fresh nested `Interpreter` per call (per the "Where the alias
+stands" section far above), so the two `class Polar` declarations never
+actually shared a registry there — an isolation the real module's `EVAL`
+genuinely does not provide.
+
+Fixed by renaming the class in the second `throws-like`'s EVAL string
+(`PolarConst`, verified against `raku` to restore the intended
+`X::Comp::BeginTime` wrapping `X::Multi::NoMatch` behavior with zero
+interpreter changes). No pin needed beyond the existing file, which now
+passes under both `Test` providers. This is the same "test file to correct"
+category several `t/` residue items have fallen into before — always check
+the exact repro against `raku` (with the real module, not just plain
+`EVAL`) before assuming an interpreter gap.

@@ -33,11 +33,17 @@ Q.new(0e0)', X::Constructor::Positional,
 
 # A `constant` initializer is evaluated at BEGIN time, so an uncaught exception
 # while evaluating it surfaces as X::Comp::BeginTime with the original nested.
-throws-like 'class Polar {
+# The class here is deliberately named differently from the `Polar` above:
+# real Raku's own `EVAL` is not isolated between separate `throws-like`
+# calls, so a second top-level `class Polar { }` would collide with the
+# first EVAL's declaration and raise X::Redeclaration instead (verified
+# directly against `raku`) — a genuinely different, unrelated error this
+# test is not about.
+throws-like 'class PolarConst {
     proto method new(|) { * }
     multi method new(Real \mag, Real \theta) { }
 }
-constant j = Polar.new(0e0)', X::Comp::BeginTime, exception => X::Multi::NoMatch,
+constant j = PolarConst.new(0e0)', X::Comp::BeginTime, exception => X::Multi::NoMatch,
     'constant init exception wraps in X::Comp::BeginTime (nested X::Multi::NoMatch)';
 
 throws-like 'constant boom = die "kaboom"', X::Comp::BeginTime,
