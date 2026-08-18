@@ -387,7 +387,9 @@ impl Interpreter {
     ) -> i64 {
         info.params
             .iter()
-            .filter(|p| !p.named && !p.slurpy && !p.has_default && !p.optional_marker)
+            .filter(|p| {
+                !p.named && !p.slurpy && !p.is_capture && !p.has_default && !p.optional_marker
+            })
             .count() as i64
     }
 
@@ -397,7 +399,7 @@ impl Interpreter {
             if p.named || (p.slurpy && p.sigil == '%') {
                 continue;
             }
-            if p.slurpy {
+            if p.slurpy || p.is_capture {
                 return None;
             }
             count += 1;
