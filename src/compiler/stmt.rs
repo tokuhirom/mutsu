@@ -3010,7 +3010,19 @@ impl Compiler {
                     // solely a re-wrapped `Stmt::Phaser` node; routing that
                     // phaser-only body through `compile_phaser_block_scope`
                     // left its topic unset, breaking POST/PRE inside loops.
-                    self.compile_phaser_block_scope(body, false);
+                    //
+                    // `result_on_stack: true` (unlike the `Stmt::If` arm's
+                    // `false`): the ordinary (non-phaser) `else` branch below
+                    // already leaves the body's tail value on the stack via
+                    // `compile_when_tail_stmt` for `exec_given_op`'s `last`
+                    // tracking, with `$_` staying the given's own topic the
+                    // whole time. `result_on_stack: false` instead routes the
+                    // tail value through `SetTopic` — reassigning `$_` to the
+                    // body's own last-statement value — which clobbered the
+                    // topic a LEAVE phaser needs (`given open $path, :w { LEAVE
+                    // .close; say $_ }` made `.close` see the `say`'s `Bool`
+                    // result instead of the file handle).
+                    self.compile_phaser_block_scope(body, true);
                 } else if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
