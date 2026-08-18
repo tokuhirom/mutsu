@@ -29,4 +29,4 @@ nonexistent `Test::*` module, asserting the stderr note names the module,
 the script still runs to completion (exit 0, later assertions still
 execute), and `require` of the same nonexistent module is unaffected.
 
-PR [#TBD](https://github.com/tokuhirom/mutsu/pull/TBD).
+PR [#6604](https://github.com/tokuhirom/mutsu/pull/6604).
