@@ -39,4 +39,4 @@ larger fork-`call_sub_value`-into-`call_compiled_closure` proposal for
 feature parity between the two closure-invocation paths — independent of
 that larger effort.
 
-PR [#TBD](https://github.com/tokuhirom/mutsu/pull/TBD).
+PR [#6601](https://github.com/tokuhirom/mutsu/pull/6601).
