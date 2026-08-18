@@ -2006,3 +2006,61 @@ whitelisted roast files (`S02-types/fatrat.t`, `S02-types/num.t`,
 `S32-num/cool-num.t`, `S32-num/fatrat.t`, `S03-metaops/infix.t`,
 `S03-operators/infixed-function.t`, `S06-operator-overloading/infix.t`)
 clean on a release build.
+
+## Re-measured 2026-08-18: t/ residue down to 17, and the single largest roast cluster is `S03-metaops/infix.t`
+
+Fresh `scripts/test-module-sweep.sh` run (debug build): `t/` is down to
+**3175/3209 clean, 17 regressed under the real `Test`** (mostly individual
+gaps already named earlier in this file — `is-lazy-io-lines.t`,
+`proxy-list-transparency.t`, `subscript-adverbs.t`,
+`throws-like-gather-sink.t`, `whatever-code-fixes.t`,
+`undeclared-when-type.t` — plus several new small ones not yet triaged:
+`emit-done-controlflow.t`/`take-without-gather.t` (`emit without supply or
+react`), `error-reporting-quality.t`, `exception-methods.t`,
+`exception-role-membership.t`, `for-modifier-placeholder-scope.t`,
+`malformed-syntax-classes.t`, `proto-new-no-match.t`,
+`undeclared-symbol-exception-class.t`,
+`user-trait-mod-does-not-consume-every-trait.t`,
+`warn-resumes-at-the-raise-site.t`).
+
+A full `roast-whitelist.txt` sweep (1436 files, release build) followed by an
+alone/4x-timeout re-check of every raw regression: **141/1436 genuine
+regressions** — up from the 90 last recorded here on 2026-08-14, despite
+several individual fixes landing in between (2026-08-15/16 rounds above).
+Not investigated further this session (the user explicitly said not to chase
+why the count moved) — worth a fresh look next time this ticket is picked
+up, since a rising count while unrelated general-interpreter work lands
+implies something is regressing under `MUTSU_REAL_TEST=1` that nothing
+currently monitors (this mode is not in CI).
+
+Sorted by failed-subtest count, one file dominates: **`roast/S03-metaops/infix.t`,
+171 of 2086 tests failing** (the file aborts mid-run on an unrelated,
+pre-existing `Attempt to divide 4 by zero` a bit further in — same abort
+point as before this session, not a new regression). Second place is
+`S03-operators/range.t` at 40/181; nothing else exceeds 10.
+
+Root-caused and partially fixed — full writeup, including a fix that was
+tried, verified to make the file pass 5076/5076, and then **reverted** for
+regressing 6 `t/` files, is in
+`todo/deep/hash-pointy-param-writeback-loses-object-hash-identity.md`. Short
+version: a `for`-loop hash pointy-block parameter aliased to an object hash
+(`%ao{Any}`) loses its object-hash identity (`key_type`, `.WHICH`-keying) the
+moment anything stores back into the loop's own bare name, because two
+independent "materialize a fresh plain hash" coercion passes
+(`coerce_hash_var_value` and the always-unconditional
+`coerce_typed_container_assignment`) both assume every `%name = value` store
+is a brand-new `my`-style declaration, with no way to recognize a write-through
+re-store of an existing bound alias. The one genuinely *shipped* fix from
+this investigation — `hyper_op_pair`'s hash-scalar branches (the *symbolic*
+`%h{Any} >>op>> scalar` path, `vm_hyper_ops.rs`) dropping object-hash
+identity — is unrelated to `S03-metaops/infix.t` itself (which always calls
+through a lexical `&op`/`&metaop`, a different code path that was already
+metadata-correct) but is a real, independently-pinned bug
+(`t/hyper-hash-scalar-object-hash-type.t`).
+
+The deep-ticket writeup names the actual fix shape needed: a hash analogue of
+`Interpreter::quanthash_store_preserving_identity` (container-identity
+in-place write via the audited `gc_contents_mut` unsafe primitive, ADR-0013
+§8), gated the same way `inplace_old_hash` already is. Deferred to a
+dedicated session — the `unsafe` aliasing contract needs careful auditing
+against every hash-value caller, not a fold-in alongside an unrelated fix.

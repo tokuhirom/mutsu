@@ -321,6 +321,10 @@ impl Interpreter {
         }
         // Hyper op between a hash and a scalar: apply the op to each value with
         // the scalar broadcast over every key (`%h >>*>> 4`, `2 <<**<< %h`).
+        // The key set is untouched, so object-hash / typed-hash identity
+        // (`key_type`/`value_type`/`declared_type`/`original_keys`) carries
+        // straight over from the source hash -- otherwise `%h{Any} >>op>> 3`
+        // silently demotes to a plain Hash.
         if let ValueView::Hash(map) = left.view()
             && !Self::is_listy(right)
         {
@@ -330,7 +334,12 @@ impl Interpreter {
                 let v = self.hyper_op_pair(op, value, right, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::hash_with_data(Value::hash_arc(result)));
+            let mut data = crate::value::HashData::new(result);
+            data.key_type = map.key_type.clone();
+            data.value_type = map.value_type.clone();
+            data.declared_type = map.declared_type.clone();
+            data.original_keys = map.original_keys.clone();
+            return Ok(Value::hash_with_data(Value::hash_arc(data)));
         }
         if let ValueView::Hash(map) = right.view()
             && !Self::is_listy(left)
@@ -341,7 +350,12 @@ impl Interpreter {
                 let v = self.hyper_op_pair(op, left, value, dwim_left, dwim_right)?;
                 result.insert(key.clone(), v);
             }
-            return Ok(Value::hash_with_data(Value::hash_arc(result)));
+            let mut data = crate::value::HashData::new(result);
+            data.key_type = map.key_type.clone();
+            data.value_type = map.value_type.clone();
+            data.declared_type = map.declared_type.clone();
+            data.original_keys = map.original_keys.clone();
+            return Ok(Value::hash_with_data(Value::hash_arc(data)));
         }
         // A Pair leaf broadcasts the op into its `.value`, keeping `.key`
         // unchanged (https://github.com/rakudo/rakudo/issues/4700). Only
