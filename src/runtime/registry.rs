@@ -340,6 +340,23 @@ pub(crate) struct Registry {
     /// play. The actual proto bodies live in `MethodEntry::proto`
     /// (`method_entries`), read per-owner via [`Registry::method_entry_proto`].
     pub(crate) has_proto_methods: bool,
+    /// Compiled bytecode for a `proto method`/`proto submethod` body, keyed by
+    /// `(owner, method_name)`. ADR-0019 D3-8 (`todo/tickets/
+    /// adr0019-method-body-compile-dedup-remnants.md` item 2) never covered
+    /// proto method bodies: `Interpreter::run_proto_method` used to rebuild an
+    /// uncompiled `MethodDef` and recompile the body from AST on EVERY call
+    /// (via the on-demand-compile path in `run_resolved_method_celled`), not
+    /// just once at registration. Cleared for a key whenever
+    /// [`Registry::set_proto_method`] installs a new body there (class
+    /// redeclaration / EVAL), so a stale compile can never survive a real
+    /// body change.
+    pub(crate) proto_compiled_cache: HashMap<
+        MethodEntryKey,
+        (
+            Arc<crate::opcode::CompiledCode>,
+            Option<Arc<crate::opcode::CompiledFns>>,
+        ),
+    >,
 }
 
 impl Registry {
@@ -459,15 +476,54 @@ impl Registry {
         method_name: &str,
         def: FunctionDef,
     ) {
-        self.method_entries
-            .entry(MethodEntryKey {
-                owner: Symbol::intern(class_name),
-                name: Symbol::intern(method_name),
-            })
-            .or_default()
-            .proto = Some(def);
+        let key = MethodEntryKey {
+            owner: Symbol::intern(class_name),
+            name: Symbol::intern(method_name),
+        };
+        self.method_entries.entry(key).or_default().proto = Some(def);
+        self.proto_compiled_cache.remove(&key);
         self.has_proto_methods = true;
         self.bump_method_generation();
+    }
+
+    /// Cached compiled bytecode for a proto method body, if this exact
+    /// `(owner, method_name)` proto has already been compiled once by
+    /// [`Self::set_proto_compiled`]. See `proto_compiled_cache`'s field doc.
+    pub(crate) fn get_proto_compiled(
+        &self,
+        owner: &str,
+        method_name: &str,
+    ) -> Option<(
+        Arc<crate::opcode::CompiledCode>,
+        Option<Arc<crate::opcode::CompiledFns>>,
+    )> {
+        self.proto_compiled_cache
+            .get(&MethodEntryKey {
+                owner: Symbol::intern(owner),
+                name: Symbol::intern(method_name),
+            })
+            .cloned()
+    }
+
+    /// Cache a proto method body's compiled bytecode after the first
+    /// on-demand compile, so every later call reuses it instead of
+    /// recompiling from AST. See `proto_compiled_cache`'s field doc.
+    pub(crate) fn set_proto_compiled(
+        &mut self,
+        owner: &str,
+        method_name: &str,
+        compiled: (
+            Arc<crate::opcode::CompiledCode>,
+            Option<Arc<crate::opcode::CompiledFns>>,
+        ),
+    ) {
+        self.proto_compiled_cache.insert(
+            MethodEntryKey {
+                owner: Symbol::intern(owner),
+                name: Symbol::intern(method_name),
+            },
+            compiled,
+        );
     }
 
     /// The `MethodEntry.proto` column at exactly `(class_name, method_name)`

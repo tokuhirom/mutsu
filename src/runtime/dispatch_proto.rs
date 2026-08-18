@@ -261,7 +261,7 @@ impl Interpreter {
         proto: FunctionDef,
     ) -> Result<Value, RuntimeError> {
         let rewritten = Self::rewrite_proto_dispatch_stmts(&proto.body);
-        let method_def = MethodDef {
+        let mut method_def = MethodDef {
             lexical_package: proto.package.resolve(),
             params: proto.params.clone(),
             param_defs: proto.param_defs.clone(),
@@ -283,6 +283,28 @@ impl Interpreter {
             source_file: proto.source_file.clone(),
             role_param_bindings: None,
         };
+        // ADR-0019 D3-8 never compiled proto method bodies at plan-lowering
+        // time (`todo/tickets/adr0019-method-body-compile-dedup-remnants.md`
+        // item 2): without this cache, `method_def` above always started with
+        // `compiled_code: None`, forcing `run_resolved_method_compiled_or_treewalk`'s
+        // on-demand-compile path to recompile the SAME proto body from AST on
+        // every single call rather than once. Reuse a prior compile of this
+        // exact `(owner_class, method_name)` proto if one exists; otherwise
+        // compile once here and cache it for every later call.
+        if let Some((cc, fns)) = self.registry().get_proto_compiled(owner_class, method_name) {
+            method_def.compiled_code = Some(cc);
+            method_def.compiled_fns = fns;
+        } else {
+            let dist = self.resolve_package_distribution(owner_class);
+            Self::compile_method_def_in_place_with_dist(&mut method_def, owner_class, dist);
+            if let Some(cc) = method_def.compiled_code.clone() {
+                self.registry_mut().set_proto_compiled(
+                    owner_class,
+                    method_name,
+                    (cc, method_def.compiled_fns.clone()),
+                );
+            }
+        }
         let attributes = match invocant.view() {
             ValueView::Instance { attributes, .. } => attributes.as_map().clone(),
             _ => crate::value::AttrMap::new(),
