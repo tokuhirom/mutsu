@@ -60,7 +60,12 @@ impl Compiler {
                     *is_statement_modifier,
                 );
             }
-            Stmt::Given { topic, body, .. } => {
+            Stmt::Given {
+                topic,
+                body,
+                is_statement_modifier,
+                ..
+            } => {
                 // An lvalue container *element* topic (`do given @a[i]`, which
                 // `.=Int with @a[i]` desugars to — see modifier.rs) aliases
                 // that element rw, same as the statement-position Given arm
@@ -102,9 +107,19 @@ impl Compiler {
                 }
                 // A scalar placeholder in the body binds the topic, same as
                 // the statement-position Given arm (`do given 5 { $^a + 1 }`).
-                if let Some(ph) = crate::ast::collect_placeholders_shallow(body)
-                    .into_iter()
-                    .find(|n| n.starts_with('^'))
+                //
+                // A `given`/`with`/`without` STATEMENT MODIFIER (including the
+                // synthetic `Given` `with`/`without` desugar to) introduces no
+                // block, so a placeholder in its body belongs to the enclosing
+                // routine and is already bound as one of its parameters —
+                // mirrors the matching `!is_statement_modifier` guard on the
+                // statement-position Given arm in `stmt.rs`. Rebinding it to
+                // the topic here made `sub w1 { "a=$^a" with $^n }` read the
+                // topic for `$^a` instead of the sub's own first argument.
+                if !is_statement_modifier
+                    && let Some(ph) = crate::ast::collect_placeholders_shallow(body)
+                        .into_iter()
+                        .find(|n| n.starts_with('^'))
                 {
                     self.code.emit(OpCode::Dup);
                     self.emit_set_named_var(&ph);

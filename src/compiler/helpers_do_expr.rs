@@ -168,8 +168,13 @@ impl Compiler {
         // A bare `do if EXPR { ... $^a ... }` / `(if EXPR { ... })` block receives
         // the condition value as `@_` and as a scalar placeholder (like `-> $a`),
         // so `do if 9 { $^a + 1 }` is 10. Mirrors `compile_if_value`.
+        //
+        // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER (including the
+        // synthetic `If` `with`/`without` desugar to) has no block of its own,
+        // so this binding does not apply — mirrors the same guard in
+        // `compile_if_value`.
         let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
-        let cond_placeholder: Option<String> = if binding_var.is_none() {
+        let cond_placeholder: Option<String> = if binding_var.is_none() && !is_statement_modifier {
             crate::ast::collect_placeholders_shallow(then_branch)
                 .into_iter()
                 .find(|n| n.starts_with('^'))
