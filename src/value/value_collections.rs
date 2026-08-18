@@ -180,6 +180,11 @@ impl ArrayData {
 
     /// Mutably borrow the element vector through the representation chokepoint.
     pub(crate) fn items_mut(&mut self) -> &mut Vec<Value> {
+        // Sync first: if native-side code wrote the buffer since the last
+        // read, `items` is stale. Marking dirty without syncing would make
+        // the next sync encode that stale cache back over the native bytes,
+        // silently discarding the native write.
+        self.sync_native_items();
         self.native_dirty = self.native_storage.is_some();
         &mut self.items
     }
@@ -247,8 +252,7 @@ impl ArrayData {
         let Some(node) = &self.native_storage else {
             return;
         };
-        let current_bytes = node.bytes.clone();
-        if !self.native_dirty && self.native_snapshot.as_ref() == Some(&current_bytes) {
+        if !self.native_dirty && self.native_snapshot.as_deref() == Some(node.bytes.as_slice()) {
             return;
         }
         let (bytes, decoded) = if self.native_dirty {
@@ -258,7 +262,7 @@ impl ArrayData {
             )
         } else {
             (
-                current_bytes.clone(),
+                node.bytes.clone(),
                 crate::value::value_buf::decode_storage(node),
             )
         };
