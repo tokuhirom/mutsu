@@ -712,10 +712,45 @@ impl Compiler {
         }
     }
 
+    /// Whether `expr` is directly a list-assignment call
+    /// (`__mutsu_assign_callable_lvalue(ArrayLiteral([...]), [], rhs)`, the
+    /// parser's lowering of `($a, $b) = ...`) to existing variables — the same
+    /// shape `expr_call.rs`'s list-assign branch matches. Used only to decide
+    /// whether the statement's own synthetic result value (needed for a
+    /// chained/nested assignment, useless when the statement itself sinks its
+    /// value) can be skipped; see `Compiler::sunk_list_assign_result`.
+    fn is_list_assign_call(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Call { name, args }
+                if name.resolve() == "__mutsu_assign_callable_lvalue"
+                    && args.len() == 3
+                    && matches!(&args[0], Expr::ArrayLiteral(targets) if targets.iter().all(|t| {
+                        matches!(
+                            t,
+                            Expr::Var(_)
+                                | Expr::ArrayVar(_)
+                                | Expr::HashVar(_)
+                                | Expr::Whatever
+                                | Expr::Index { .. }
+                                | Expr::MultiDimIndex { .. }
+                        ) || matches!(t, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+                    }))
+        )
+    }
+
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
         match stmt {
             Stmt::Expr(expr) => {
+                // See `Compiler::sunk_list_assign_result` — the statement's
+                // value is about to be unconditionally discarded below, so a
+                // top-level list assignment doesn't need to build its own
+                // aliased result list.
+                if Self::is_list_assign_call(expr) {
+                    self.sunk_list_assign_result = true;
+                }
                 self.compile_condition_expr(expr);
+                self.sunk_list_assign_result = false;
                 // Assignment statements are wanted, not sunk (rakudo): storing
                 // an unhandled Failure via `%h{$k} = ...;` / `@a[$i] = ...;`
                 // (also with an `if`/`with` statement modifier) must not throw
