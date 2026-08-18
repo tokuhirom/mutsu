@@ -2345,3 +2345,45 @@ callee share those bare names. Filed as
 `todo/deep/sunk-list-reassign-leaks-containerref-into-shared-env.md`.
 `t/warn-resumes-at-the-raise-site.t` therefore stays in the `t/` residue list
 below pending that ticket.
+
+## `t/warn-resumes-at-the-raise-site.t` fully closed: the sunk-list-reassign leak (2026-08-19)
+
+The ticket above is fixed —
+`news/2026-08/sunk-list-reassign-containerref-leak.md`. Root cause confirmed
+with `rust-gdb -batch` breakpoints (conditional on the declaring statement's
+local slot index, then backtraces off `Env::insert`/`insert_sym` hits, no
+rebuild needed per hypothesis): a bare (sunk) list-reassignment statement's
+own discarded rvalue was compiled unconditionally (`WrapVarRef`+`MakeArray`,
+boxing each target into a shared `ContainerRef` written into the flat `env`),
+even though a `SinkPop` immediately discards it. The stale cell then got
+picked up by the next unrelated closure literal sharing the same env keys,
+because `capture_closure_env` under `reflective_name_access_possible()`
+snapshots a closure's *entire* flat env at creation time rather than just its
+real free variables — so `{ warn "boom3" }`, which never references
+`x`/`y`/`z`, still captured them, and its closure-entry merge force-
+overwrote `f`'s own freshly-declared locals with the stale cell.
+
+Fixed at the compiler: `Stmt::Expr` now recognizes a top-level list-
+reassignment to existing variables and sets a one-shot flag consumed
+immediately inside the list-assign compilation (before the RHS or any
+chained/nested assignment is compiled), skipping the discarded result-list
+construction entirely. Verified against `raku` that the non-sunk cases
+(consumed as an argument, `my $l = (...) = ...`) still preserve list-element
+container aliasing. Pin:
+`t/sunk-list-reassign-does-not-leak-containerref.t`. Full local `t/` suite
+(3244 files, 30044 tests) and `cargo clippy -- -D warnings` both clean; the
+two unrelated `t/io-socket-async-*.t` failures in the same run reproduced
+identically on the pre-fix binary (confirmed by `git stash`-ing the change
+and rebuilding) and pass individually — pre-existing parallel-load flakes,
+not a regression. `t/warn-resumes-at-the-raise-site.t` now passes 8/8 under
+`MUTSU_REAL_TEST=1`.
+
+`t/` residue is now down to 8 (from the 9 named in the 2026-08-18 evening
+re-measure above, minus this file): `exception-role-membership.t`,
+`is-lazy-io-lines.t` (×2 assertions), `malformed-syntax-classes.t`,
+`proxy-list-transparency.t`, `subscript-adverbs.t` (×2),
+`throws-like-gather-sink.t`, `undeclared-when-type.t`, and
+`has-attr-binding.t` — all already triaged/ticketed above. Worth a fresh
+`scripts/test-module-sweep.sh` run next session to confirm and re-measure the
+roast side (`S03-metaops/infix.t` and the other roast regressions named in
+the 2026-08-18 sections above were not re-swept this session).

@@ -1448,6 +1448,22 @@ pub(crate) struct Compiler {
     /// would write the shared cell back into `$a` and create a self-referential
     /// `ContainerRef` cycle (infinite loop on the next read).
     suppress_list_var_alias: bool,
+    /// Set by `Stmt::Expr` for exactly one call, when the top-level statement
+    /// expression is directly a list-assignment (`($a,$b) = ...;`, no `my`)
+    /// whose own rvalue is unconditionally discarded by the `SinkPop` that
+    /// follows. Consumed (and cleared) immediately inside the list-assignment
+    /// handling in `expr_call.rs`, before any nested/chained sub-expression
+    /// (e.g. the RHS, or a chained `($a,$b) = (($c,$d) = ...)`) is compiled —
+    /// only the outermost call's own synthetic result-list construction is
+    /// affected. When true, that construction is skipped entirely (a cheap
+    /// `Nil` placeholder is pushed instead of the real
+    /// `WrapVarRef`+`MakeArray` sequence): building the real aliased list
+    /// would box each target back into a shared `ContainerRef` cell and write
+    /// it into the flat `env`, purely to be popped and discarded — and worse,
+    /// that stale cell corrupts the NEXT reader of the same (flat, unscoped)
+    /// env key, since env is a single namespace shared across frames. See
+    /// `todo/deep/sunk-list-reassign-leaks-containerref-into-shared-env.md`.
+    sunk_list_assign_result: bool,
     /// Constant-folding state (ADR-0006 §2.1), shared with every child compiler
     /// of this compilation unit so an operator declaration found while compiling
     /// a sub body disables folding for the whole unit.
@@ -1544,6 +1560,7 @@ impl Compiler {
             is_mainline: false,
             suppress_pair_capture: false,
             suppress_list_var_alias: false,
+            sunk_list_assign_result: false,
             synthetic_block_body: false,
             suppress_loop_block_state_reset: false,
             next_try_is_bare_block: false,

@@ -312,6 +312,11 @@ impl Compiler {
             })
         {
             // ($a, $b, ...) = expr -- list assignment to existing variables
+            // Consume the sunk-result flag immediately, before compiling the
+            // RHS or anything else below: a chained/nested list assignment
+            // used as THIS one's RHS (`($a,$b) = (($c,$d) = ...)`) must not
+            // inherit it — its own result value is genuinely consumed here.
+            let sunk_result = std::mem::take(&mut self.sunk_list_assign_result);
             // 1. Compile the RHS and flatten to a list
             self.compile_expr(&args[2]);
             // Store RHS in a temp variable for indexing
@@ -526,6 +531,22 @@ impl Compiler {
             // its `.elems` is the number of targets. A `*` (Whatever) target is a
             // discard slot and contributes nothing; `@`/`%` slurpy targets
             // contribute their (flattened) contents.
+            //
+            // When the caller already told us this value is about to be
+            // unconditionally discarded (a bare `($a,$b) = ...;` statement,
+            // `sunk_result`), skip building it: the real construction tags each
+            // target with `WrapVarRef` and boxes it into a shared `ContainerRef`
+            // cell written into the flat `env` (list-element container
+            // aliasing, so a later mutation of `$a` is visible through the
+            // returned list) — worthless work when nothing reads the result,
+            // and actively harmful, since that stale cell then corrupts the
+            // NEXT by-name reader of the same env key (see
+            // `todo/deep/sunk-list-reassign-leaks-containerref-into-shared-env.md`).
+            if sunk_result {
+                let nil_idx = self.code.add_constant(Value::NIL);
+                self.code.emit(OpCode::LoadConst(nil_idx));
+                return;
+            }
             // An inline `my $x` target was already declared+assigned in the loop
             // above; read it back as its plain Var/ArrayVar/HashVar so this does
             // NOT re-run the declaration (which would re-initialize it to Nil).
