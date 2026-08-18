@@ -2272,3 +2272,35 @@ passes under both `Test` providers. This is the same "test file to correct"
 category several `t/` residue items have fallen into before — always check
 the exact repro against `raku` (with the real module, not just plain
 `EVAL`) before assuming an interpreter gap.
+
+## Re-measured 2026-08-18 (evening): `t/` residue down to 9, `error-reporting-quality.t` already fixed as a side effect
+
+Fresh `scripts/test-module-sweep.sh` run (debug build, 8-way): **9 / 3224
+regressed** (down from 17 at the top of this section). `error-reporting-quality.t`
+— one of the "new, not yet triaged" files named there — is no longer in the
+regression list at all: both `Test` providers pass it cleanly now (confirmed
+directly, no code change needed), almost certainly a side effect of one of
+the other general fixes landed the same day (topic-splice / multi-dispatch /
+placeholder fixes above). Nothing to do there.
+
+The remaining 9, none newly investigated this pass except the one below:
+`exception-role-membership.t`, `is-lazy-io-lines.t` (×2 assertions),
+`malformed-syntax-classes.t`, `proxy-list-transparency.t`,
+`subscript-adverbs.t` (×2), `throws-like-gather-sink.t`, `undeclared-when-type.t`,
+`warn-resumes-at-the-raise-site.t` (×2) — all already named/triaged/ticketed
+earlier in this file — **plus one new file**: `has-attr-binding.t`, whose one
+failing assertion ("binding $!x tracks source changes") is a genuine, deep
+VM bug, not a `Test`-shape difference — full writeup, root cause trace, and
+suggested fix shape in
+`todo/deep/attr-bind-source-write-lost-through-nested-sub-call-chain.md`.
+Short version: a `$!x := $var` attribute bind's shared cell is silently lost
+when the write to `$var` happens back through a multi-frame sub/closure call
+chain (`lives-ok { $obj.bind() }` specifically) — `VmCallFrame` has no
+per-frame reference to its own `CompiledCode`, so the ancestor-frame
+propagation loop in `vm_var_assign_set_local.rs` that's supposed to splice
+the freshly-bound `ContainerRef` back into every frame that owns the source
+variable can never correctly index into `saved_locals` for a cross-frame free
+variable. Possibly the same root cause as
+`todo/deep/control-warn-resume-list-assign-first-target-stale-on-repeat-call.md`
+(same "only reproduces through a real, multi-frame `Test` module call chain"
+shape) — worth investigating together.
