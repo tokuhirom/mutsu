@@ -39,11 +39,25 @@ impl Compiler {
     ) -> Option<Symbol> {
         let mut effective_param_defs =
             crate::method_signature_shared::effective_method_param_defs(param_defs, is_hidden);
-        crate::method_signature_shared::apply_auto_positional_slurpy(
+        // Raku methods never get an implicit `*@_` (unlike subs) -- a
+        // signature-less method body that reads a bare `@_` directly is
+        // rejected instead, matching the do{}-nested sibling shape
+        // (`Compiler::compile_do_block_expr`). Swap in the synthetic
+        // die-only body rather than the real one when detected; every other
+        // bit of method compilation below (param defs, closure body
+        // compilation, fingerprint/key) proceeds unchanged on that body.
+        let owned_die_body;
+        let body = if crate::method_signature_shared::needs_direct_positional_placeholder_die(
             apply_auto_positional_slurpy && param_defs.is_empty(),
             body,
             &mut effective_param_defs,
-        );
+        ) {
+            owned_die_body =
+                crate::method_signature_shared::direct_positional_placeholder_die_body();
+            owned_die_body.as_slice()
+        } else {
+            body
+        };
         let effective_params: Vec<String> = effective_param_defs
             .iter()
             .map(|p| p.name.clone())
@@ -266,6 +280,116 @@ mod d3_8a_byte_parity_tests {
         out
     }
 
+    /// An instance value baked directly into bytecode as a `LoadConst`
+    /// (e.g. the `X::Placeholder::Block` this box's own placeholder-die
+    /// bodies embed) carries a process-wide auto-incrementing identity `id`
+    /// field in its `Debug` output — assigned at construction time, so it
+    /// differs between the two independent `Value::make_instance` calls this
+    /// test pair's main-pass and runtime-registration compiles each make,
+    /// exactly like [`normalize_symbol_ids`]/[`normalize_closure_ordinals`]
+    /// already normalize away for the same reason. Only matches a genuine
+    /// `id: NNN` field (word-boundary-guarded so it cannot clip the tail of
+    /// an unrelated field name).
+    fn normalize_instance_ids(s: &str) -> String {
+        let marker = "id: ";
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(pos) = rest.find(marker) {
+            let boundary_ok = rest[..pos]
+                .chars()
+                .next_back()
+                .is_none_or(|c| !c.is_alphanumeric() && c != '_');
+            out.push_str(&rest[..pos + marker.len()]);
+            rest = &rest[pos + marker.len()..];
+            if !boundary_ok {
+                continue;
+            }
+            let digits_end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            if digits_end > 0 {
+                out.push('N');
+                rest = &rest[digits_end..];
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    /// An instance's attribute map (`InstanceAttrs`) is backed by an
+    /// `FxHashMap`, whose iteration/`Debug` order is a function of each
+    /// key's `Symbol` hash — which, per [`normalize_symbol_ids`]'s doc
+    /// comment, differs between the two independent compiles this test
+    /// pair performs even for an identically-ordered sequence of
+    /// `attrs.insert(...)` calls (each compile interns symbols against a
+    /// different global table state, landing the *same* string in a
+    /// *different* bucket). Normalizing the printed `Symbol(...)` text
+    /// alone (`normalize_symbol_ids`) does not fix this: the order was
+    /// already baked in before formatting. Find each `AttrMap({...})`
+    /// block and sort its top-level `Key: Value` entries lexically so the
+    /// comparison is order-independent, mirroring what a real `AttrMap`
+    /// (semantically a set of key/value pairs, not an ordered list) should
+    /// be compared as.
+    fn normalize_attr_map_order(s: &str) -> String {
+        let marker = "AttrMap({";
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s;
+        while let Some(pos) = rest.find(marker) {
+            out.push_str(&rest[..pos + marker.len()]);
+            rest = &rest[pos + marker.len()..];
+            // Scan to the matching `})`, tracking nesting depth over every
+            // bracket kind that can appear in a Debug-formatted `Value`.
+            let mut depth = 0i32;
+            let mut end = None;
+            for (i, c) in rest.char_indices() {
+                match c {
+                    '{' | '(' | '[' => depth += 1,
+                    '}' | ')' | ']' => {
+                        if depth == 0 && c == '}' && rest[i + 1..].starts_with(')') {
+                            end = Some(i);
+                            break;
+                        }
+                        depth -= 1;
+                    }
+                    _ => {}
+                }
+            }
+            let Some(end) = end else {
+                // No matching close found (shouldn't happen for well-formed
+                // Debug output) -- leave the rest untouched rather than panic.
+                out.push_str(rest);
+                return out;
+            };
+            let body = &rest[..end];
+            let mut entries: Vec<&str> = Vec::new();
+            let mut entry_start = 0usize;
+            let mut depth = 0i32;
+            let bytes = body.as_bytes();
+            let mut i = 0usize;
+            while i < body.len() {
+                match bytes[i] {
+                    b'{' | b'(' | b'[' => depth += 1,
+                    b'}' | b')' | b']' => depth -= 1,
+                    b',' if depth == 0 => {
+                        entries.push(body[entry_start..i].trim());
+                        entry_start = i + 1;
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+            let last = body[entry_start..].trim();
+            if !last.is_empty() {
+                entries.push(last);
+            }
+            entries.sort_unstable();
+            out.push_str(&entries.join(", "));
+            rest = &rest[end..];
+        }
+        out.push_str(rest);
+        out
+    }
+
     /// Compile `source` two ways and return `(Debug of the main-pass
     /// compiled method body's CompiledCode, Debug of the runtime-registered
     /// MethodDef's CompiledCode)` for `method_name` on `type_name` (a class
@@ -332,7 +456,11 @@ mod d3_8a_byte_parity_tests {
                 panic!("no registered compiled_code for {type_name}::{method_name}")
             });
         let runtime_debug = format!("{runtime_code:?}");
-        let normalize = |s: &str| normalize_symbol_ids(&normalize_closure_ordinals(s));
+        let normalize = |s: &str| {
+            normalize_attr_map_order(&normalize_instance_ids(&normalize_symbol_ids(
+                &normalize_closure_ordinals(s),
+            )))
+        };
         (normalize(&main_pass_debug), normalize(&runtime_debug))
     }
 
@@ -418,8 +546,11 @@ mod d3_8a_byte_parity_tests {
 
     #[test]
     fn auto_positional_slurpy_method_byte_parity() {
-        // No explicit signature but reads bare `@_` -> the class-body walker
-        // auto-inserts a `*@_` slurpy (`apply_auto_positional_slurpy`).
+        // No explicit signature but reads bare `@_` directly -> Raku methods
+        // never get an implicit `*@_` (unlike subs), so the class-body
+        // walker swaps in the synthetic die-only body
+        // (`needs_direct_positional_placeholder_die`) on both the main-pass
+        // and runtime-registration sides.
         let source = "class Sink { method drain { @_.elems } }";
         let (main_pass, runtime) = compiled_code_pair(source, "Sink", "drain");
         assert_eq!(main_pass, runtime);

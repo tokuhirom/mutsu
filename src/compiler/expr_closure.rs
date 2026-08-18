@@ -41,37 +41,6 @@ fn collect_whatever_expr_decls(body: &[Stmt], out: &mut std::collections::HashSe
 use crate::symbol::Symbol;
 
 impl Compiler {
-    /// Build an `X::Placeholder::Mainline` (`kind == "mainline"`) or
-    /// `X::Placeholder::Block` exception value for a placeholder variable used
-    /// where no signature-capable block can capture it.
-    pub(super) fn placeholder_scope_error(kind: &str, placeholder: &str) -> Value {
-        let (type_name, message) = if kind == "mainline" {
-            (
-                "X::Placeholder::Mainline",
-                format!(
-                    "Cannot use placeholder parameter {} outside of a sub or block",
-                    placeholder
-                ),
-            )
-        } else {
-            (
-                "X::Placeholder::Block",
-                format!(
-                    "Placeholder variable '{}' may not be used here because the \
-                     surrounding block does not take a signature.",
-                    placeholder
-                ),
-            )
-        };
-        let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(message));
-        attrs.insert(
-            "placeholder".to_string(),
-            Value::str(placeholder.to_string()),
-        );
-        Value::make_instance(Symbol::intern(type_name), attrs)
-    }
-
     /// If `body` uses a placeholder variable directly (not captured by any inner
     /// signature-capable block), emit an `X::Placeholder::Block` die and return
     /// true. Used for class/role bodies, which do not take a signature.
@@ -80,7 +49,7 @@ impl Compiler {
             .into_iter()
             .next()
         {
-            let err = Self::placeholder_scope_error("block", &ph);
+            let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
             self.code.emit(OpCode::Die);
