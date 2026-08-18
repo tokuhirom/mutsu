@@ -1,5 +1,5 @@
 use Test;
-plan 6;
+plan 9;
 
 my $ok = "";
 sub succeeds() {
@@ -46,3 +46,33 @@ try {
     }
 }
 is $block_ng, "U", "UNDO runs on exceptional block exit";
+
+# KEEP/UNDO on normal completion are decided by the trailing value's
+# DEFINEDNESS, not its truthiness -- verified against real raku. See
+# todo/tickets/keep-undo-decided-by-value-truthiness-not-completion.md.
+my $falsy_defined = "";
+{
+    KEEP { $falsy_defined ~= "K"; }
+    UNDO { $falsy_defined ~= "U"; }
+    0;
+}
+is $falsy_defined, "K", "KEEP runs for a falsy-but-defined trailing value (0)";
+
+my $undefined = "";
+{
+    KEEP { $undefined ~= "K"; }
+    UNDO { $undefined ~= "U"; }
+    Any;
+}
+is $undefined, "U", "UNDO runs for an undefined (Any) trailing value";
+
+# A named routine returning a falsy-but-defined value via `return` also
+# runs KEEP, not UNDO.
+my $ret_falsy = "";
+sub returns-falsy() {
+    KEEP { $ret_falsy ~= "K"; }
+    UNDO { $ret_falsy ~= "U"; }
+    return 0;
+}
+returns-falsy();
+is $ret_falsy, "K", "KEEP runs for a falsy-but-defined `return` value (0)";
