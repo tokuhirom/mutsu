@@ -592,6 +592,24 @@ impl Env {
         global_base().is_some_and(|b| b.contains_key(&key))
     }
 
+    /// True if `key` is declared in THIS frame's own overlay tier specifically
+    /// -- unlike [`contains_key`](Self::contains_key)/[`contains_key_sym`](Self::contains_key_sym),
+    /// this does NOT walk the parent chain or fall through to the global base.
+    ///
+    /// A saved call frame's "propagate a promoted `ContainerRef` cell to every
+    /// ancestor frame that owns this lexical" writeback (the `:=`/box-on-capture
+    /// paths in `vm_var_assign_set_local.rs`/`vm_var_assign_coerce.rs`/
+    /// `vm_exec_dispatch.rs`/`vm_env_helpers.rs`) must use this, not the
+    /// chain-walking `contains_key`: a frame merely being able to *see* a name
+    /// through its parent chain does not mean that frame *declares* it, and for
+    /// a name that is essentially always chain-visible (the topic `$_`, `$!`)
+    /// the chain-walking check is true for nearly every frame on the call
+    /// stack, corrupting each one's own overlay with the bound cell.
+    #[inline]
+    pub fn contains_key_own_tier(&self, key: &str) -> bool {
+        self.inner.contains_key(&Symbol::intern(key))
+    }
+
     /// Copy-on-write access to the inner map for mutation. Equivalent to
     /// `Arc::make_mut`, but when stats are enabled it records an actual
     /// O(env_size) deep copy whenever the env is shared (the real dual-store

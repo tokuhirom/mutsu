@@ -2064,3 +2064,22 @@ in-place write via the audited `gc_contents_mut` unsafe primitive, ADR-0013
 §8), gated the same way `inplace_old_hash` already is. Deferred to a
 dedicated session — the `unsafe` aliasing contract needs careful auditing
 against every hash-value caller, not a fold-in alongside an unrelated fix.
+
+## Second-place regression closed: `S03-operators/range.t`'s topic corruption (2026-08-18)
+
+The 40/181 second-place regression named above (`S03-operators/range.t`) is
+fixed, and it was NOT a `Test`-shape problem at all — it was the same general
+topic-corruption bug root-caused (correctly, this time) in
+`news/2026-08/bind-topic-does-not-splice-into-ancestor-frames.md`:
+`Test.rakumod`'s `throws-like` does `my $ex := $_;` inside its
+`CATCH { default { ... } }`, and mutsu's `:=` bind machinery treated the
+topic — chain-visible from nearly every frame on the call stack, since every
+routine writes a fresh `$_` into its own env on entry — as a genuine outer
+lexical worth splicing a shared cell into every ancestor frame. Fixed at the
+five "propagate a promoted cell to ancestor frames" sites; `range.t` now
+passes fully under both `Test` providers. This closes out the previously
+open `todo/deep/module-catch-default-topic-leaks-to-callers-for-loop.md`
+ticket, whose own diagnosis ("needs a real topic stack") was wrong — worth
+noting since its "Other roast files combining a `for` loop with
+`throws-like`/`eval-lives-ok`/`eval-dies-ok`" candidates list is now the
+right starting point for re-measuring the residue with this fix in.
