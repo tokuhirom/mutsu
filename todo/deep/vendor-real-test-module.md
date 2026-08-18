@@ -2300,7 +2300,39 @@ per-frame reference to its own `CompiledCode`, so the ancestor-frame
 propagation loop in `vm_var_assign_set_local.rs` that's supposed to splice
 the freshly-bound `ContainerRef` back into every frame that owns the source
 variable can never correctly index into `saved_locals` for a cross-frame free
-variable. Possibly the same root cause as
-`todo/deep/control-warn-resume-list-assign-first-target-stale-on-repeat-call.md`
-(same "only reproduces through a real, multi-frame `Test` module call chain"
-shape) — worth investigating together.
+variable. Possibly the same root cause as the (now-fixed, see below)
+`warn`-resume caller-var collision bug — same "only reproduces through a
+real, multi-frame `Test` module call chain" shape — worth investigating
+together.
+
+## `warn-resumes-at-the-raise-site.t` root-caused and mostly fixed (2026-08-19)
+
+Picked back up the `warn-resumes-at-the-raise-site.t` investigation from
+above. Root-caused and fixed:
+`news/2026-08/control-warn-resume-caller-var-name-collision.md`. Short
+version: `Interpreter::call_compiled_closure_with_topic`'s closure-return env
+writeback has a guard meant to stop a closure's own untouched captured
+binding from leaking into a same-named caller lexical (`captured_names`
+present + live value identical to the closure's capture-time snapshot ⇒
+skip). That guard is a false positive when the "no change" is coincidental —
+specifically when a resume-safe `CONTROL` handler
+(`try_resume_safe_control_inline`) writes an ANCESTOR frame's lexical
+in-band during the call, and that write happens to reproduce a value the
+closure's own blanket env-capture snapshot already held (e.g. the caller
+variable already equals the `CONTROL` handler's target value from an earlier
+call in the same program). `inline_control_env_writes` changed from a
+counter to a `Vec<Symbol>` log of the names actually written, so the
+writeback scan can exempt them from the skip. Pin:
+`t/control-warn-resume-caller-var-name-collision.t` (spawns a subprocess with
+`MUTSU_REAL_TEST=1` — a synthetic module with many declared subs does not
+reproduce it, only the real vendored `Test.rakumod` does, so the trigger
+needs the real switch on even though the bug itself is a general interpreter
+bug unrelated to `Test`).
+
+This does **not** fully close the file: test 8 (a role-composed `Numeric`
+type object's default `.Numeric`, the third of three chained resumable-warn
+calls, dispatched through `methods_call_dispatch.rs`'s interpreted path) has
+a *different* bug that survives the fix — filed separately as
+`todo/deep/control-warn-third-chained-call-through-method-dispatch-corrupts-env.md`.
+`t/warn-resumes-at-the-raise-site.t` therefore stays in the `t/` residue list
+below pending that ticket.
