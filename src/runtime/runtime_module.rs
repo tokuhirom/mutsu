@@ -397,7 +397,19 @@ impl Interpreter {
             // (HTTP::UserAgent's `t/001-meta` skips itself that way).
             match self.load_module(module) {
                 Ok(()) => Ok(()),
-                Err(err) if err.is_unsatisfied_dependency() => Ok(()),
+                Err(err) if err.is_unsatisfied_dependency() => {
+                    // Still non-fatal (real raku hard-errors here, but mutsu
+                    // deliberately tolerates a missing Test::* helper for
+                    // compatibility — see the comment above), but a fully
+                    // silent no-op can mask a genuinely missing dependency
+                    // (a typo, not a deliberately-unvendored helper) behind
+                    // a test file that quietly runs zero assertions. A
+                    // stderr note at least leaves a trace in a CI log.
+                    self.write_warn_to_stderr(&format!(
+                        "WARNING: could not find module {module} to use, ignoring"
+                    ));
+                    Ok(())
+                }
                 Err(err) => Err(err),
             }
         } else {
