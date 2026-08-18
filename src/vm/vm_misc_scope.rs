@@ -559,14 +559,19 @@ impl Interpreter {
                 if k == "_" || k == "__mutsu_sigilless_alias::_" {
                     continue;
                 }
-                // Dynamic variables (e.g. $*VAR) are scoped to the block:
-                // restore to the saved value rather than propagating the inner value.
-                if k.starts_with("*") {
-                    continue;
-                }
                 // Variables declared with `my` inside this block should not
                 // propagate their values to the outer scope. Restore the outer
-                // scope's original value instead.
+                // scope's original value instead. This also covers a
+                // block-local `my $*x`/`my @*x`/`my %*x` redeclaration
+                // (env-keyed `*x`/`@*x`/`%*x`) via the same `block_declared`
+                // membership check -- but a plain reassignment of an
+                // ALREADY-EXISTING dynamic var (`$*x = ...`, or a
+                // `PROCESS::<$x> = ...` pseudo-stash write, which stores
+                // through the identical `*x` env key) is NOT in
+                // `block_declared` and correctly falls through to propagate,
+                // matching real Raku: a dynamic-variable *write* mutates the
+                // existing container and is visible after the block exits,
+                // only a fresh `my $*x` redeclaration is block-scoped.
                 //
                 // A name-derived metadata key (`__mutsu_type::o`,
                 // `__mutsu_hash_key_type::o`) is not itself in `block_declared`
