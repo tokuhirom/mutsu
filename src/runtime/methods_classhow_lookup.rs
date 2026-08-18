@@ -51,28 +51,69 @@ impl Interpreter {
             let owner_str = owner_sym.as_str();
             let defs_all: Vec<MethodDef> = {
                 let registry = self.registry();
-                let Some(defs) = registry.user_method_overloads(owner_str, method_name) else {
-                    continue;
-                };
-                // `.^lookup`/`.^find_method` never surface a private method by
-                // its bare (unqualified, no `!`) name -- real Raku answers
-                // `Nil` even from inside the declaring class itself. Every
-                // other visibility-aware dispatch path already skips
-                // `is_private` defs (`resolve_method_with_owner_impl`'s
-                // `Public` filtering, `resolve_sequence`'s
-                // `MethodVisibility::Public` tier); this lookup's `defs.first()`
-                // did not.
-                let defs: Vec<MethodDef> = defs.into_iter().filter(|d| !d.is_private).collect();
-                let Some(first) = defs.first() else {
-                    continue;
-                };
-                // A submethod (`is_my`) is visible only at its own declaring
-                // level for `.^find_method`/`.can` (`include_ancestor_
-                // submethods = false`) -- `.^lookup` has no such restriction.
-                if first.is_my && owner_str != class_name_str && !include_ancestor_submethods {
+                let usable = registry
+                    .user_method_overloads(owner_str, method_name)
+                    // `.^lookup`/`.^find_method` never surface a private method by
+                    // its bare (unqualified, no `!`) name -- real Raku answers
+                    // `Nil` even from inside the declaring class itself. Every
+                    // other visibility-aware dispatch path already skips
+                    // `is_private` defs (`resolve_method_with_owner_impl`'s
+                    // `Public` filtering, `resolve_sequence`'s
+                    // `MethodVisibility::Public` tier); this lookup's `defs.first()`
+                    // did not.
+                    .map(|defs| {
+                        defs.into_iter()
+                            .filter(|d| !d.is_private)
+                            .collect::<Vec<MethodDef>>()
+                    })
+                    .filter(|defs| {
+                        defs.first().is_some_and(|first| {
+                            // A submethod (`is_my`) is visible only at its own
+                            // declaring level for `.^find_method`/`.can`
+                            // (`include_ancestor_submethods = false`) --
+                            // `.^lookup` has no such restriction.
+                            !(first.is_my
+                                && owner_str != class_name_str
+                                && !include_ancestor_submethods)
+                        })
+                    });
+                if let Some(defs) = usable {
+                    defs
+                } else if let Some(proto) = registry.method_entry_proto(owner_str, method_name) {
+                    // A `proto method`/`proto submethod` with no candidates yet
+                    // (`proto method bar {*}` alone) has no `user_method_overloads`
+                    // row at all, so it was invisible to `.^lookup`/`.^find_method`/
+                    // `.can` even though real Raku reports it as a defined method —
+                    // see news/2026-08/proto-method-visible-to-find-method.md. Build
+                    // the same synthetic `MethodDef` shape `run_proto_method`
+                    // (`dispatch_proto.rs`) already uses to actually DISPATCH a
+                    // proto, so introspection and dispatch agree on what the proto
+                    // looks like as a method.
+                    vec![MethodDef {
+                        lexical_package: proto.package.resolve(),
+                        params: proto.params.clone(),
+                        param_defs: proto.param_defs.clone(),
+                        body: std::sync::Arc::new(proto.body.clone()),
+                        is_rw: false,
+                        is_private: false,
+                        is_multi: false,
+                        is_my: false,
+                        role_origin: None,
+                        original_role: None,
+                        return_type: None,
+                        compiled_code: None,
+                        compiled_fns: None,
+                        delegation: None,
+                        is_default: false,
+                        deprecated_message: None,
+                        is_submethod: false,
+                        captured_env: None,
+                        source_file: proto.source_file.clone(),
+                        role_param_bindings: None,
+                    }]
+                } else {
                     continue;
                 }
-                defs
             };
             let first = &defs_all[0];
             let has_multi = defs_all.iter().any(|d| d.is_multi);
