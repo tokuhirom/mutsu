@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 11;
 
 # A placeholder parameter ($^b) declares its block's $b under the *plain*
 # name, so a bare $b written before the $^b that declares it is
@@ -51,3 +51,16 @@ lives-ok 'my $b = 99; my $f = { for 1 { $^b }; say $b }; $f(42)',
 
 eval-dies-ok 'my $g = { my $h = { $^c }; say $c }; $g()',
     '$^c inside a nested closure does not declare the outer $c (X::Undeclared)';
+
+# --- Same-STATEMENT ordering: the placeholder check previously compared
+# whole-statement containment ("does this statement mention $^b anywhere" vs
+# "does it mention bare $b anywhere") rather than walking the expression tree
+# in evaluation order, so a bare use appearing textually before the
+# placeholder inside the SAME expression (not just an earlier statement) was
+# missed. See todo/tickets/bare-precedes-placeholder-same-statement-order.md. ---
+
+eval-dies-ok 'my $f = { $b + $^b }; $f(3)',
+    'bare $b before $^b within the SAME expression is X::Undeclared';
+
+lives-ok 'my $f = { $^b + $b }; $f(3)',
+    '$^b before bare $b within the same expression stays legal';
