@@ -129,7 +129,7 @@ const STMT_PARSERS: &[StmtParser] = &[
     decl::need_stmt,
     class::unit_module_stmt,
     decl::my_decl,
-    decl::constant_decl,
+    decl::constant_stmt,
     class::augment_class_decl,
     class::anon_class_decl,
     class::class_decl,
