@@ -88,6 +88,16 @@ fn try_split_decl_modifier(stmt: &Stmt, effective_cond: &Expr) -> Option<Stmt> {
     if *is_state {
         return None;
     }
+    // A `constant` binding is resolved at compile time and does not respect a
+    // runtime statement modifier at all -- `raku` evaluates `constant $w = 11
+    // if False;` unconditionally (confirmed against real raku: `$w` reads back
+    // `11` even under a `False` condition, with no warning). So drop the
+    // modifier entirely rather than gating the initializer like a normal `my`
+    // variable would: keep the original declaration (with its real
+    // initializer) as-is.
+    if custom_traits.iter().any(|(n, _)| n == "__constant") {
+        return Some(stmt.clone());
+    }
     // Only sigil'd variables are hoistable here; a sigilless `\x` or other form
     // is left untouched.
     let is_array = name.starts_with('@');
