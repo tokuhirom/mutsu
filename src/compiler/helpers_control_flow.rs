@@ -323,7 +323,7 @@ impl Compiler {
         // re-cloned per execution — see `OpCode::ResetStateLocals`.
         let then_state_reset = self.emit_branch_state_reset(then_branch, is_statement_modifier);
         if Self::has_block_enter_leave_phasers(then_branch) {
-            self.compile_phaser_block_scope(then_branch, true);
+            self.compile_phaser_block_scope(then_branch, PhaserBlockResult::Push);
         } else {
             self.compile_stmts_value(then_branch);
         }
@@ -340,7 +340,7 @@ impl Compiler {
         } else {
             let else_state_reset = self.emit_branch_state_reset(else_branch, is_statement_modifier);
             if Self::has_block_enter_leave_phasers(else_branch) {
-                self.compile_phaser_block_scope(else_branch, true);
+                self.compile_phaser_block_scope(else_branch, PhaserBlockResult::Push);
             } else {
                 self.compile_stmts_value(else_branch);
             }
@@ -519,7 +519,7 @@ impl Compiler {
             // "mirrors" the ordinary arm without actually doing so for this
             // one case. Deliberately `has_block_leave_worthy_phasers`, not
             // `has_block_enter_leave_phasers` — see that function's doc.
-            self.compile_phaser_block_scope(stmts, false);
+            self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
         } else if Self::body_mutates_topic(stmts) {
             self.synthetic_block_body = true;
             self.compile_stmt(&Stmt::Block(stmts.to_vec()));

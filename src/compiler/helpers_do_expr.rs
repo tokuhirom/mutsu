@@ -79,7 +79,7 @@ impl Compiler {
                 isolate_decls_idx: u32::MAX,
             });
             let saved = self.push_dynamic_scope_lexical();
-            self.compile_phaser_block_scope(body, true);
+            self.compile_phaser_block_scope(body, PhaserBlockResult::Push);
             self.pop_dynamic_scope_lexical(saved);
             self.code.patch_body_end(do_idx);
             return;
