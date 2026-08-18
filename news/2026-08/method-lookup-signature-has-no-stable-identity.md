@@ -45,3 +45,5 @@ across repeated `.^find_method(...).signature` reads, object identity
 on the same class or the same method name on different classes. Also
 manually verified multi-candidate signatures stay correctly distinguished
 (`.candidates[0].signature` vs `.candidates[1].signature`).
+
+PR [#6612](https://github.com/tokuhirom/mutsu/pull/6612).
