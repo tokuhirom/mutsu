@@ -79,6 +79,48 @@ impl Interpreter {
         Ok(val)
     }
 
+    /// Container identity (§3.1): the `%`-sigil analogue of
+    /// [`array_container_writethrough_value`], for a whole-container
+    /// reassignment of a `%` variable whose slot holds a shared
+    /// `ContainerRef` cell (a `:=`-bound alias `my %b := %a`, a loop-var
+    /// alias `for %src -> %a`, or a cell installed by the scalar-container-
+    /// share promotion when `%a` was passed into a `Mu $x` parameter).
+    /// Re-applies the key/value-type metadata (and, for an object hash, the
+    /// `.WHICH`-encoded key invariant via `tag_container_metadata`) so a
+    /// typed/object hash written through its shared cell keeps its identity
+    /// (`%a.WHAT === Hash[Any,Any]`) instead of being silently demoted to a
+    /// plain `Hash`. Non-`%` names, and non-Hash `raw` values, return `raw`
+    /// unchanged.
+    pub(super) fn hash_container_writethrough_value(
+        &mut self,
+        name: &str,
+        raw: Value,
+        old: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if !name.starts_with('%') || !matches!(raw.view(), ValueView::Hash(..)) {
+            return Ok(raw);
+        }
+        let mut val = self.coerce_typed_container_assignment(name, raw, false)?;
+        // Prefer a declared constraint (`my Int %a{Any}`); otherwise inherit
+        // the type identity of the container currently held by the shared
+        // cell. A bound/aliased object hash has no `var_type_constraint` on
+        // the alias name — its key/value-type identity lives in the cell's
+        // embedded metadata, which a whole reassignment must keep.
+        let info = if let Some(value_type) = loan_env!(self, var_type_constraint(name)) {
+            Some(crate::runtime::ContainerTypeInfo {
+                declared_type: None,
+                value_type,
+                key_type: loan_env!(self, var_hash_key_constraint(name)),
+            })
+        } else {
+            self.container_type_metadata(old)
+        };
+        if let Some(info) = info {
+            val = self.tag_container_metadata(val, info);
+        }
+        Ok(val)
+    }
+
     pub(super) fn normalize_scalar_assignment_value(val: Value) -> Value {
         let is_nilish = |v: &Value| match v.view() {
             ValueView::Nil => true,
