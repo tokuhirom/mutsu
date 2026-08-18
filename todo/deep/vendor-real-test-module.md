@@ -2096,3 +2096,29 @@ has loaded the real, large vendored module; an empty synthetic module does
 not trigger it, ruling out "any module load" as the cause. Root cause not
 yet found (JIT and bare-name collision were both ruled out). Full repro and
 findings: `todo/deep/control-warn-resume-list-assign-first-target-stale-on-repeat-call.md`.
+
+## `t/exception-methods.t` closed: `$!` was not lexical in a `&`-param block (2026-08-18)
+
+Same investigation session, next residue item. `dies-ok { $!.message }` (the
+real `dies-ok`'s own shape: `sub dies-ok(Callable $code, ...) { ...; try {
+$code(); $death = 0 } ... }`) silently reported "did not die" instead of
+dying — `Nil.message` doesn't raise the way `Any.message` does, and the block
+was reading `Nil` instead of the caller's real `$!`.
+
+Root cause: `vm_closure_dispatch.rs`'s closure-entry merge already force-
+installs a captured `$_` over the don't-overwrite default (`entry_or_insert_sym`,
+which uses the chain-walking `contains_key_sym`) for exactly this reason — see
+the comment there — but had no matching case for `$!`. A block bound to a
+`&`-sigiled parameter and called from inside a `sub` therefore saw the
+*caller sub's own* fresh `$!` (reset to `Nil` on that sub's own entry,
+visible through the parent chain) instead of its own captured value from its
+creation scope. Fixed by adding `$!` to the same force-install branch as
+`$_`, and separately corrected an unrelated but adjacent bug in the same
+function: the "`$!` is scoped per routine" reset just below was gated on
+`!data.name.is_empty()` (true for a `&`-bound block, which picks up its
+parameter's name for introspection) instead of `cc.is_routine` (matching the
+`$_` reset's own, correct guard) — harmless once the capture fix landed, but
+still worth fixing for the same reason. Pin:
+`t/closure-captured-bang-var-through-code-param.t`. `t/exception-methods.t`
+now passes fully under both `Test` providers; full local `t/` suite (3222
+files) and `cargo clippy -- -D warnings` both clean.
