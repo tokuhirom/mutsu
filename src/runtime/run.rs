@@ -936,31 +936,42 @@ impl Interpreter {
         Ok(())
     }
 
+    /// See the VM-side twin, `Interpreter::should_run_success_queue`
+    /// (`src/vm/vm_misc_block.rs`), for the KEEP/UNDO rule this implements:
+    /// the trailing value's definedness, not its truthiness.
     fn should_run_success_queue_raw(
         body_result: &Result<(), RuntimeError>,
         current_topic: Option<&Value>,
     ) -> bool {
         match body_result {
-            Ok(()) => current_topic.cloned().unwrap_or(Value::NIL).truthy(),
+            Ok(()) => crate::runtime::types::value_is_defined(
+                &current_topic.cloned().unwrap_or(Value::NIL),
+            ),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::NIL).truthy()
+                crate::runtime::types::value_is_defined(
+                    &e.return_value.clone().unwrap_or(Value::NIL),
+                )
             }
             Err(_) => false,
         }
     }
 
+    /// See `should_run_success_queue_raw`.
     fn should_run_success_queue_vm(
         body_result: &Result<Option<Value>, RuntimeError>,
         current_topic: Option<&Value>,
     ) -> bool {
         match body_result {
-            Ok(value) => value
-                .clone()
-                .or_else(|| current_topic.cloned())
-                .unwrap_or(Value::NIL)
-                .truthy(),
+            Ok(value) => crate::runtime::types::value_is_defined(
+                &value
+                    .clone()
+                    .or_else(|| current_topic.cloned())
+                    .unwrap_or(Value::NIL),
+            ),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::NIL).truthy()
+                crate::runtime::types::value_is_defined(
+                    &e.return_value.clone().unwrap_or(Value::NIL),
+                )
             }
             Err(_) => false,
         }

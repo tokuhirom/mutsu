@@ -19,14 +19,23 @@ impl Interpreter {
             || err.is_react_done())
     }
 
+    /// KEEP/UNDO (and LEAVE's success/failure queue split) are decided by the
+    /// trailing value's DEFINEDNESS, not its truthiness: `{ 0 }` / `{ False }`
+    /// / `{ "" }` / `{ () }` all still run KEEP in real Raku (they are
+    /// falsy-but-defined), while `{ Any }` / `{ Nil }` / a phaser-only block
+    /// with no value statement at all (implicit `Nil`) run UNDO. An
+    /// exceptional exit (an exception, `fail`, or an interrupted loop control
+    /// flow like `last`/`next`/`redo`, whose `return_value` is `None` and so
+    /// reads as undefined `Nil`) also runs UNDO. See
+    /// `todo/tickets/keep-undo-decided-by-value-truthiness-not-completion.md`.
     pub(super) fn should_run_success_queue(
         body_result: &Result<(), RuntimeError>,
         current_value: Option<Value>,
     ) -> bool {
         match body_result {
-            Ok(()) => current_value.unwrap_or(Value::NIL).truthy(),
+            Ok(()) => runtime::types::value_is_defined(&current_value.unwrap_or(Value::NIL)),
             Err(e) if !Self::is_exceptional_block_exit(e) => {
-                e.return_value.clone().unwrap_or(Value::NIL).truthy()
+                runtime::types::value_is_defined(&e.return_value.clone().unwrap_or(Value::NIL))
             }
             Err(_) => false,
         }

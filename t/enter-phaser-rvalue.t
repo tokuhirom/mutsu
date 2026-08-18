@@ -5,7 +5,7 @@ use Test;
 # the ENTER section runs before the body-result baseline is recorded, so a
 # trailing ENTER yielded Nil.
 
-plan 18;
+plan 19;
 
 # Sub whose only statement is an ENTER phaser.
 sub only-enter() { ENTER 'SANDMAN' }
@@ -62,14 +62,26 @@ my $str2;
 }
 is $str2, 'K1 ', 'block ending in a truthy value runs KEEP';
 
-# A block ending in a falsy value runs UNDO.
+# A block ending in a falsy-but-DEFINED value (0, not Any/Nil) still runs
+# KEEP -- KEEP/UNDO are decided by definedness, not truthiness (verified
+# against real raku; see
+# todo/tickets/keep-undo-decided-by-value-truthiness-not-completion.md).
 my $str3;
 {
     KEEP { $str3 ~= 'K1 ' }
     UNDO { $str3 ~= 'U1 ' }
     0;
 }
-is $str3, 'U1 ', 'block ending in a falsy value runs UNDO';
+is $str3, 'K1 ', 'block ending in a falsy-but-defined value still runs KEEP';
+
+# A block ending in an undefined value (Any) runs UNDO.
+my $str4;
+{
+    KEEP { $str4 ~= 'K1 ' }
+    UNDO { $str4 ~= 'U1 ' }
+    Any;
+}
+is $str4, 'U1 ', 'block ending in an undefined value runs UNDO';
 
 # ENTER value does not leak out of a nested block (stack discipline).
 sub nested-enter() {
