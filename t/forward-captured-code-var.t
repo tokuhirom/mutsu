@@ -14,13 +14,12 @@ plan 6;
 #
 # NOTE: each subtest below uses its own unique sub/lexical names rather than
 # reusing e.g. `&f`/`&g`/`outer` across separate top-level blocks. Reusing
-# the same `&`-sigil names across sibling blocks hits a SEPARATE, pre-existing
-# compiler bug (`outer_code_var_names`/`local_map` leaking a declaration
-# across sibling block scopes instead of resetting at the block boundary,
-# affecting bare-call forward references too — see
-# todo/tickets/sibling-block-code-var-name-leak.md) that is unrelated to this
-# fix; using unique names keeps this file a clean pin of the forward-capture
-# fix alone.
+# the same `&`-sigil names across sibling blocks was a SEPARATE bug
+# (`outer_code_var_names`/`local_map` leaking a declaration across sibling
+# block scopes instead of resetting at the block boundary; now fixed and
+# pinned by t/sibling-block-code-var-name-leak.t) -- kept as unique names
+# here regardless, to keep this file a clean pin of the forward-capture fix
+# alone.
 
 {
     # Minimal repro from the bug ticket: `&f` is forward-DECLARED first, then
