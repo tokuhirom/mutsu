@@ -905,7 +905,21 @@ impl Interpreter {
             let plan_mismatch = matches!(state.planned, Some(planned) if planned != ran);
             if state.failed > 0 {
                 self.emit_test_summary_diag(state.planned, ran, state.failed);
-                return Err(RuntimeError::new("Test failures"));
+                // "Some assertions failed" is an ordinary non-zero exit, not
+                // an uncaught runtime error -- rakudo prints only the TAP
+                // diagnostics above, with no extra "Runtime error: ..." line.
+                // Matches the bail-out branch above: set exit_code and
+                // return Ok rather than surfacing this as an Err. Only
+                // default to 1 when nothing set a more specific exit code
+                // already (e.g. `RAKU_TEST_DIE_ON_FAIL` sets 255 mid-run,
+                // before `finish()` ever runs) -- this used to work by
+                // accident, since main()'s Err handler only fell back to 1
+                // when `exit_code` was still 0; preserve that precedence
+                // explicitly now that this path returns Ok instead of Err.
+                if self.exit_code == 0 {
+                    self.exit_code = 1;
+                }
+                return Ok(());
             }
             if plan_mismatch {
                 if let Some(planned) = state.planned {
@@ -916,7 +930,7 @@ impl Interpreter {
                 }
                 // Dubious: exit code 255
                 self.exit_code = 255;
-                return Err(RuntimeError::new("Test failures"));
+                return Ok(());
             }
         }
         Ok(())
