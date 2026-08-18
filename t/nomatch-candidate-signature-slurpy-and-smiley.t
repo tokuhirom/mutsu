@@ -32,4 +32,42 @@ my $err2 = try {
 };
 like $!.message, /'baz(Bar:D: Array:U)'/, 'a bare type-object argument gets the :U smiley';
 
+# `format_method_candidate_signatures`'s per-param loop never branched on
+# `pd.named`, so a named param rendered as a positional (`Any $x` instead of
+# `:$x!`). See news/2026-08/candidate-signature-named-param-format.md.
+class Foo {
+    multi method bar(:$x!) { }
+}
+my $err3 = try {
+    Foo.new.bar(y => [1, 2, 3]);
+};
+is $!.message,
+   "Cannot resolve caller bar(Foo:D: :y(Array)); none of these signatures matches:\n"
+   ~ "    (Foo \$:: :\$x!, *\%_)",
+   'a required named param renders as :$x!, not a positional';
+
+class C {
+    multi method m(:$y) { }
+    multi method m(Int $a) { }
+}
+my $err4 = try {
+    C.new.m("hi", "there");
+};
+is $!.message,
+   "Cannot resolve caller m(C:D: Str:D, Str:D); none of these signatures matches:\n"
+   ~ "    (C \$:: :\$y, *\%_)\n"
+   ~ "    (C \$:: Int \$a, *\%_)",
+   'an optional named param renders as :$y, no trailing bang';
+
+class D {
+    multi method n(Int :$y!) { }
+}
+my $err5 = try {
+    D.new.n(z => "hi");
+};
+is $!.message,
+   "Cannot resolve caller n(D:D: :z(Str)); none of these signatures matches:\n"
+   ~ "    (D \$:: Int :\$y!, *\%_)",
+   'a typed required named param keeps its type: Int :$y!';
+
 done-testing;
