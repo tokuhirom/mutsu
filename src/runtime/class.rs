@@ -358,23 +358,37 @@ impl Interpreter {
                     {
                         continue;
                     }
-                    let ty = pd.type_constraint.as_deref().unwrap_or("Any");
                     let sigil_prefix = if pd.slurpy || pd.double_slurpy {
                         "*"
                     } else {
                         ""
                     };
-                    let var = if pd.name.is_empty() {
+                    let name = if pd.name.is_empty() {
                         String::new()
                     } else if pd.name.starts_with('$')
                         || pd.name.starts_with('@')
                         || pd.name.starts_with('%')
                     {
-                        format!(" {}{}", sigil_prefix, pd.name)
+                        format!("{}{}", sigil_prefix, pd.name)
                     } else {
-                        format!(" {}${}", sigil_prefix, pd.name)
+                        format!("{}${}", sigil_prefix, pd.name)
                     };
-                    parts.push(format!("{}{}", ty, var));
+                    // A named param renders as `:$name` (dropping the
+                    // redundant `Any` type raku's own gist omits for an
+                    // untyped named param), with a trailing `!` when
+                    // required and none when optional — e.g. `:$x!`,
+                    // `Int :$y!`. A positional param keeps the existing
+                    // `{type} $name` shape.
+                    parts.push(if pd.named {
+                        let bang = if pd.required { "!" } else { "" };
+                        match pd.type_constraint.as_deref() {
+                            Some(ty) => format!("{ty} :{name}{bang}"),
+                            None => format!(":{name}{bang}"),
+                        }
+                    } else {
+                        let ty = pd.type_constraint.as_deref().unwrap_or("Any");
+                        format!("{ty} {name}")
+                    });
                 }
                 let invocant_pd = def.param_defs.iter().find(|pd| pd.is_invocant);
                 let inv_type = invocant_pd
