@@ -138,10 +138,25 @@ impl Compiler {
     /// the set to recognise a bare call `x1(...)` as a read of the lexical
     /// `&x1` that the child must capture (see
     /// `CompiledCode::outer_code_var_names`).
+    ///
+    /// Filtered against `self.local_scopes` (the live scope-frame stack), NOT
+    /// `self.local_map` directly: `local_map` is monotonic and deliberately
+    /// keeps a name mapped to its slot after the scope that declared it has
+    /// closed (`pop_local_scope`'s doc comment — needed so a POPPED SIBLING
+    /// block's slot can be reused by a same-named later declaration). Using
+    /// `local_map` here treated that leftover mapping as "still in scope",
+    /// so a closure compiled in a sibling block that reused an earlier
+    /// sibling's `&`-name (`{ my &g = -> { f() }; my &f = ... }` followed by
+    /// another `{ my &g = -> { f() }; my &f = ... }`) wrongly inherited the
+    /// FIRST block's now-dead `&f` slot as an "outer code var", instead of
+    /// falling back to the dynamic-name-lookup path the first (genuinely
+    /// forward-referencing) block itself correctly used — see
+    /// `todo/tickets/sibling-block-code-var-name-leak.md` (now `news/2026-08/`).
     pub(super) fn inherit_outer_code_var_names(&self, child: &mut Compiler) {
         child.code.outer_code_var_names = self
-            .local_map
-            .keys()
+            .local_scopes
+            .iter()
+            .flat_map(|frame| frame.keys())
             .filter(|k| k.starts_with('&'))
             .cloned()
             .chain(self.code.outer_code_var_names.iter().cloned())
