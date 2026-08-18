@@ -1,5 +1,16 @@
 # A when-only block's non-match value is still wrong outside map/grep/first
 
+**Reclassified from `todo/tickets/` (2026-08-18):** the ticket's own analysis
+already concluded a point fix isn't safe — the general fix means making
+`exec_when_op` push a value onto the VM stack on every non-match, which is a
+statement-sequencing invariant change with three separate call sites
+(`compile_unit`, `compile_block_inline`, every loop-body compiler) that must
+be updated in lockstep or the interpreter silently accumulates or loses stack
+values across unrelated statements — a correctness-critical, hard-to-detect
+class of bug if any one site is missed. All three repro probes below were
+re-confirmed reproducing on `main` as of 2026-08-18 (unchanged from the
+original write-up). Filing here rather than attempting a narrow patch.
+
 `todo/tickets/when-only-block-nonmatch-value-wrong.md` fixed the value a
 `when`/`default`-tail block evaluates to when nothing matches, for the four
 inline `.map`/`.grep`/`.first` fast paths. The same wrong-value disease
