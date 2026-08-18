@@ -1467,6 +1467,26 @@ pub(crate) struct Compiler {
     outer_constant_values: HashMap<String, Value>,
 }
 
+/// How [`Compiler::compile_phaser_block_scope`] should dispose of a
+/// phaser-bearing block's trailing value.
+pub(super) enum PhaserBlockResult {
+    /// Leave the value on the VM stack for the caller to consume (an
+    /// expression-context block, e.g. a `do { ... }` block or an `if`/`given`
+    /// used as an expression).
+    Push,
+    /// Route the value through the topic register as this compiled unit's
+    /// own implicit return value. Only safe when `stmts` is a fresh call
+    /// frame's own body (a routine's compiled body) — that frame's topic
+    /// register is its own, so this cannot leak into a caller's `$_`.
+    ReturnViaTopic,
+    /// Discard the value entirely, without touching the topic. Used for
+    /// same-frame statement contexts (a bare `{ ... }` statement, an
+    /// `if`/`given` body compiled as a statement) where the enclosing
+    /// scope's live `$_` (e.g. a `given`'s topicalized value) must survive
+    /// the body's own trailing statement.
+    Discard,
+}
+
 impl Compiler {
     pub(crate) fn new() -> Self {
         Self {
@@ -2975,7 +2995,7 @@ impl Compiler {
             self.compile_implicit_try(stmts);
             self.code.emit(OpCode::SetTopic);
         } else if self.is_routine && Self::has_block_enter_leave_phasers(stmts) {
-            self.compile_phaser_block_scope(stmts, false);
+            self.compile_phaser_block_scope(stmts, PhaserBlockResult::ReturnViaTopic);
         } else {
             for (i, stmt) in stmts.iter().enumerate() {
                 let is_last = i == stmts.len() - 1;
@@ -3011,7 +3031,10 @@ impl Compiler {
                             // block value via the topic (matching the SetTopic the
                             // inline path emits).
                             if Self::has_block_enter_leave_phasers(body) {
-                                self.compile_phaser_block_scope(body, false);
+                                self.compile_phaser_block_scope(
+                                    body,
+                                    PhaserBlockResult::ReturnViaTopic,
+                                );
                                 continue;
                             }
                             // A genuine source `{ ... }` is a Raku callframe; a
@@ -3081,11 +3104,17 @@ impl Compiler {
     /// semantics (trailing ENTER as block value, `SetLine`-marker handling) stay
     /// in one place.
     ///
-    /// `result_on_stack` selects how the block's value is delivered: `false`
-    /// (statement context) routes it through the topic (`SetTopic`, stack-neutral);
-    /// `true` (expression context, e.g. `do { ... }`) leaves it on the value stack
-    /// for the enclosing `DoBlockExpr` to consume.
-    pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], result_on_stack: bool) {
+    /// `mode` selects how the block's trailing value is disposed of — see
+    /// [`PhaserBlockResult`]. Do NOT use `ReturnViaTopic` for a same-frame
+    /// statement context (a bare block statement, an `if`/`given` body): real
+    /// Raku never sets `$_` from a block's own trailing statement value (`{
+    /// 1; 2 }` does not make `$_` become `2`), and `SetTopic` there would
+    /// clobber whatever `$_` the enclosing scope (e.g. a `given`'s
+    /// topicalized value) already has live, since such a body shares the
+    /// current frame's topic register rather than getting a fresh one. It is
+    /// only safe for a routine's own compiled body, which always runs in its
+    /// own fresh call frame (see `news/2026-08/given-if-block-scope-topic-clobber.md`).
+    pub(super) fn compile_phaser_block_scope(&mut self, stmts: &[Stmt], mode: PhaserBlockResult) {
         let idx = self.code.emit(OpCode::BlockScope {
             pre_end: 0,
             enter_end: 0,
@@ -3174,7 +3203,13 @@ impl Compiler {
                 self.compile_stmt(s);
             }
             self.code.emit(OpCode::LoadEnterResult);
-            if !result_on_stack {
+            // `Discard` behaves like `Push` here (the value stays on the VM
+            // stack through the LEAVE/KEEP/UNDO/POST sections below, so their
+            // truthy/falsy KEEP-vs-UNDO check and any POST-phaser read of it
+            // still see the real value) -- the trailing `Pop` that actually
+            // discards it is emitted once, after those sections, at the very
+            // end of this function.
+            if matches!(mode, PhaserBlockResult::ReturnViaTopic) {
                 self.code.emit(OpCode::SetTopic);
             }
         } else {
@@ -3187,18 +3222,26 @@ impl Compiler {
                 .rposition(|s| !matches!(s, Stmt::SetLine(_)));
             for (i, s) in body_stmts.iter().enumerate() {
                 if Some(i) == last_value_idx {
-                    if result_on_stack {
-                        self.compile_last_stmt_as_value(s);
-                    } else {
-                        self.compile_last_stmt_as_topic(s);
+                    match mode {
+                        // `Discard` leaves the value on the stack too (see the
+                        // trailing `Pop` at the end of this function) so the
+                        // LEAVE/KEEP/UNDO/POST sections below can still see it.
+                        PhaserBlockResult::Push | PhaserBlockResult::Discard => {
+                            self.compile_last_stmt_as_value(s)
+                        }
+                        PhaserBlockResult::ReturnViaTopic => self.compile_last_stmt_as_topic(s),
                     }
                 } else {
                     self.compile_stmt(s);
                 }
             }
-            // A phaser-only block (no value-producing statement) in expression
-            // context still needs a value on the stack for the consumer.
-            if result_on_stack && last_value_idx.is_none() {
+            // A phaser-only block (no value-producing statement) still needs a
+            // value on the stack: for `Push`, the consumer needs one; for
+            // `Discard`, the trailing `Pop` at the end of this function always
+            // runs and needs something to pop.
+            if matches!(mode, PhaserBlockResult::Push | PhaserBlockResult::Discard)
+                && last_value_idx.is_none()
+            {
                 self.emit_nil_value();
             }
         }
@@ -3248,5 +3291,11 @@ impl Compiler {
         self.code.patch_block_post_start(idx);
         Self::compile_post_phasers(self, stmts);
         self.code.patch_loop_end(idx);
+        // `Discard` kept the value on the stack through the sections above (so
+        // KEEP/UNDO's truthy check and POST's topic read see the real value);
+        // now that they have run, actually discard it.
+        if matches!(mode, PhaserBlockResult::Discard) {
+            self.code.emit(OpCode::Pop);
+        }
     }
 }

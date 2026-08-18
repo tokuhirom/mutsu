@@ -48,7 +48,7 @@ impl Compiler {
                 // A tail block with ENTER/LEAVE/... phasers must run them through a
                 // real `BlockScope` rather than being inlined (which drops them).
                 if Self::has_block_enter_leave_phasers(inner) {
-                    self.compile_phaser_block_scope(inner, true);
+                    self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
                 } else {
                     self.compile_block_inline(inner);
                 }
@@ -192,7 +192,7 @@ impl Compiler {
                         // `result_on_stack` keeps its value on the stack, matching
                         // the inline path.
                         if Self::has_block_enter_leave_phasers(inner) {
-                            self.compile_phaser_block_scope(inner, true);
+                            self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
                         } else if matches!(stmt, Stmt::Block(_)) {
                             // Genuine source `{ ... }` is a callframe.
                             self.compile_bare_block_inline(inner);

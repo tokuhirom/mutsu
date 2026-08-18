@@ -815,7 +815,7 @@ impl Compiler {
                     self.next_try_is_bare_block = false;
                     self.code.emit(OpCode::Pop);
                 } else if Self::has_block_enter_leave_phasers(stmts) {
-                    self.compile_phaser_block_scope(stmts, false);
+                    self.compile_phaser_block_scope(stmts, PhaserBlockResult::Discard);
                 } else if Self::has_let_deep(stmts) {
                     // Block contains `let`/`temp` — wrap in LetBlock for save/restore
                     let idx = self.code.emit(OpCode::LetBlock { body_end: 0 });
@@ -2073,7 +2073,7 @@ impl Compiler {
                     // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real
                     // block scope: its LEAVE must fire when the branch exits
                     // (OO::Monitors unlocks its monitor lock this way).
-                    self.compile_phaser_block_scope(then_branch, false);
+                    self.compile_phaser_block_scope(then_branch, PhaserBlockResult::Discard);
                 } else if Self::body_mutates_topic(then_branch) {
                     self.synthetic_block_body = true;
                     self.compile_stmt(&Stmt::Block(then_branch.clone()));
@@ -2101,7 +2101,7 @@ impl Compiler {
                     if else_branch.len() == 1 && matches!(else_branch[0], Stmt::If { .. }) {
                         self.compile_stmt(&else_branch[0]);
                     } else if Self::has_block_enter_leave_phasers(else_branch) {
-                        self.compile_phaser_block_scope(else_branch, false);
+                        self.compile_phaser_block_scope(else_branch, PhaserBlockResult::Discard);
                     } else if Self::body_mutates_topic(else_branch) {
                         self.synthetic_block_body = true;
                         self.compile_stmt(&Stmt::Block(else_branch.clone()));
@@ -3011,18 +3011,26 @@ impl Compiler {
                     // phaser-only body through `compile_phaser_block_scope`
                     // left its topic unset, breaking POST/PRE inside loops.
                     //
-                    // `result_on_stack: true` (unlike the `Stmt::If` arm's
-                    // `false`): the ordinary (non-phaser) `else` branch below
-                    // already leaves the body's tail value on the stack via
-                    // `compile_when_tail_stmt` for `exec_given_op`'s `last`
-                    // tracking, with `$_` staying the given's own topic the
-                    // whole time. `result_on_stack: false` instead routes the
-                    // tail value through `SetTopic` — reassigning `$_` to the
-                    // body's own last-statement value — which clobbered the
-                    // topic a LEAVE phaser needs (`given open $path, :w { LEAVE
-                    // .close; say $_ }` made `.close` see the `say`'s `Bool`
-                    // result instead of the file handle).
-                    self.compile_phaser_block_scope(body, true);
+                    // This is a *statement*-context `given` (an expression-
+                    // context one, e.g. `do given ... { ... }`, compiles
+                    // through a different, `Push`-mode path) sharing the
+                    // enclosing frame's `$_` register. `PhaserBlockResult::
+                    // Discard` (not `ReturnViaTopic`, unlike the `Stmt::If`
+                    // arm before this same fix): routing the body's own
+                    // trailing value through `SetTopic` reassigned `$_` to
+                    // it, clobbering the topic a LEAVE phaser needs (`given
+                    // open $path, :w { LEAVE .close; say $_ }` made `.close`
+                    // see `say`'s `Bool` result instead of the file handle,
+                    // breaking roast/S32-io/open.t and spurt.t). `Discard`
+                    // still lets the value survive on the stack through
+                    // LEAVE/KEEP/UNDO/POST (so their own checks/reads still
+                    // see it), then pops it once at the very end instead of
+                    // ever routing it through `$_` -- verified against real
+                    // raku for both statement-context `given` (a trailing
+                    // sink-context warning, same as raku) and `do given`
+                    // expression context (the value still comes through
+                    // correctly, via the separate `Push`-mode path).
+                    self.compile_phaser_block_scope(body, PhaserBlockResult::Discard);
                 } else if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
                     self.code.emit(OpCode::Pop);
