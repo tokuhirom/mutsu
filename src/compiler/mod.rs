@@ -2935,7 +2935,7 @@ impl Compiler {
                 .into_iter()
                 .next()
         {
-            let err = Self::placeholder_scope_error("mainline", &ph);
+            let err = crate::method_signature_shared::placeholder_scope_error("mainline", &ph);
             let idx = self.code.add_constant(err);
             self.code.emit(OpCode::LoadConst(idx));
             self.code.emit(OpCode::Die);

@@ -93,21 +93,25 @@ impl Interpreter {
                 pd.type_constraint = Some(tc.replace("::?CLASS", cx.name));
             }
         }
-        // Auto-detect @_ usage in methods without explicit signatures.
-        // ADR-0019 D3-9: `decl.uses_bare_positional_args` is precomputed at
-        // plan-lowering time, so this reads a bool instead of re-scanning
-        // `decl.body` on every registration.
-        crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
-            decl.param_defs.is_empty(),
-            decl.uses_bare_positional_args,
-            &mut effective_param_defs,
-        );
-        // Mirror the same auto-slurpy insertion onto the pre-substitution
-        // snapshot: it depends only on names/slurpy-ness (never on
-        // `type_constraint` content), so it commutes with the substitution
-        // above and this stays byte-identical to what `compile_method_body`
-        // computed.
-        crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
+        // Raku methods never get an implicit `*@_` (unlike subs) -- a
+        // signature-less method body that reads a bare `@_` directly (ADR-
+        // 0019 D3-9's precomputed `uses_bare_positional_args`, so this reads
+        // a bool instead of re-scanning `decl.body`) is rejected instead:
+        // the installed `MethodDef` body below is swapped for the synthetic
+        // die-only body, matching `Compiler::compile_method_body`'s
+        // identical check so the byte-parity match further down still
+        // lines up. Mirror the same implicit-`*@_` insertion onto the
+        // pre-substitution snapshot: it depends only on names/slurpy-ness
+        // (never on `type_constraint` content), so it commutes with the
+        // substitution above and stays byte-identical to what
+        // `compile_method_body` computed.
+        let needs_placeholder_die =
+            crate::method_signature_shared::needs_direct_positional_placeholder_die_from_flag(
+                decl.param_defs.is_empty(),
+                decl.uses_bare_positional_args,
+                &mut effective_param_defs,
+            );
+        crate::method_signature_shared::needs_direct_positional_placeholder_die_from_flag(
             decl.param_defs.is_empty(),
             decl.uses_bare_positional_args,
             &mut raw_param_defs_for_key_check,
@@ -153,7 +157,11 @@ impl Interpreter {
             lexical_package: cx.saved_package.clone(),
             params: effective_params.clone(),
             param_defs: effective_param_defs.clone(),
-            body: std::sync::Arc::new(decl.body.clone()),
+            body: std::sync::Arc::new(if needs_placeholder_die {
+                crate::method_signature_shared::direct_positional_placeholder_die_body()
+            } else {
+                decl.body.clone()
+            }),
             is_rw: decl.is_rw,
             is_private: decl.is_private,
             is_multi: decl.multi,

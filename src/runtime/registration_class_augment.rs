@@ -232,16 +232,18 @@ impl Interpreter {
                             &decl.param_defs,
                             false,
                         );
-                    // Auto-detect @_ usage in methods without explicit
-                    // signatures. ADR-0019 D3-9: `decl.uses_bare_positional_args`
-                    // is precomputed inside `CompiledMethodDecl::from_stmt`
-                    // (the `decl` built just above), so this reads a bool
-                    // instead of a second scan of `decl.body`.
-                    crate::method_signature_shared::apply_auto_positional_slurpy_from_flag(
-                        decl.param_defs.is_empty(),
-                        decl.uses_bare_positional_args,
-                        &mut effective_param_defs,
-                    );
+                    // Raku methods never get an implicit `*@_` (unlike subs)
+                    // -- a signature-less method body that reads a bare `@_`
+                    // directly (ADR-0019 D3-9's precomputed
+                    // `decl.uses_bare_positional_args`) is rejected instead:
+                    // the installed body below is swapped for the synthetic
+                    // die-only body, mirroring `class_body_method_decl`.
+                    let needs_placeholder_die =
+                        crate::method_signature_shared::needs_direct_positional_placeholder_die_from_flag(
+                            decl.param_defs.is_empty(),
+                            decl.uses_bare_positional_args,
+                            &mut effective_param_defs,
+                        );
                     let effective_params: Vec<String> = effective_param_defs
                         .iter()
                         .map(|p| p.name.clone())
@@ -250,7 +252,11 @@ impl Interpreter {
                         lexical_package: self.current_package(),
                         params: effective_params.clone(),
                         param_defs: effective_param_defs.clone(),
-                        body: std::sync::Arc::new(decl.body.clone()),
+                        body: std::sync::Arc::new(if needs_placeholder_die {
+                            crate::method_signature_shared::direct_positional_placeholder_die_body()
+                        } else {
+                            decl.body.clone()
+                        }),
                         is_rw: decl.is_rw,
                         is_private: decl.is_private,
                         is_multi: decl.multi,
