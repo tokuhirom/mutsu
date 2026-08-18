@@ -2785,19 +2785,30 @@ impl Interpreter {
                 // Peek (do not pop): a trailing unhandled Failure must be thrown
                 // so the enclosing CATCH handler (or `try`) sees it, while a
                 // normal value remains on the stack as the block's return value.
-                if let Some(val) = self.stack.last() {
-                    if let Some(err) = self.failure_to_runtime_error_if_unhandled(val) {
-                        return Err(err);
-                    }
-                    // Under `use fatal`, a block/routine that returns a reified
-                    // list/Seq whose element is an unhandled Failure throws too
-                    // (`use fatal; { "a".map: *.Int }()`).
-                    if self.fatal_mode
-                        && let Some(err) = self.unhandled_failure_in_list_for_fatal(val)
-                    {
-                        return Err(err);
-                    }
+                if let Some(val) = self.stack.last()
+                    && let Some(err) = self.failure_to_runtime_error_if_unhandled(val)
+                {
+                    return Err(err);
                 }
+                // Deliberately no `unhandled_failure_in_list_for_fatal` descent
+                // here: unlike a bare Failure (created directly in this frame,
+                // so `self.fatal_mode` here really does describe the state it
+                // was made under), a reified list/Seq may be the *return value*
+                // of a call that crossed its own `call_compiled_closure` save/
+                // restore boundary — by the time control gets back here,
+                // `self.fatal_mode` has been restored to *this* frame's state,
+                // which can differ from the state the list's elements were
+                // actually produced under (e.g. `try { c() }` where `c`'s own
+                // body ran with fatal off, but `try` restores fatal on for its
+                // own tail-position check). Checking the restored, ambient
+                // value here retroactively imposed the try's fatal-ness on a
+                // Failure the callee legitimately created as soft
+                // (`t/whatever-code-fixes.t`, "without fatal, a map of
+                // Failures is a soft list"). `.map`/`.grep`'s own native loop
+                // (`resolution_map_grep.rs`) already throws at the correct,
+                // per-element time using the fatal state active while each
+                // element is actually computed, so this redundant recheck can
+                // only ever be *wrong*, never additionally correct.
                 *ip += 1;
             }
             OpCode::WarnSuppressPush => {
@@ -2953,16 +2964,15 @@ impl Interpreter {
                             {
                                 return Err(err);
                             }
-                            // Under `use fatal`, sinking a reified list/Seq whose
-                            // element is an unhandled Failure also throws (e.g.
-                            // `use fatal; "a".map: *.Int`). Non-fatal code keeps
-                            // its soft-Failure lists (a plain `[Failure]` sink is a
-                            // no-op without fatal).
-                            if self.fatal_mode
-                                && let Some(err) = self.unhandled_failure_in_list_for_fatal(&val)
-                            {
-                                return Err(err);
-                            }
+                            // Deliberately no `unhandled_failure_in_list_for_fatal`
+                            // descent here — see the identical note on
+                            // `OpCode::ThrowIfFailure` above: the ambient
+                            // `self.fatal_mode` at this sink can be the
+                            // *caller's* restored state, not the state the
+                            // sunk list's elements were actually produced
+                            // under, and `.map`/`.grep`'s own native loop
+                            // already enforces `use fatal` at the correct,
+                            // per-element time.
                             // Sinking a Proc with non-zero exitcode throws X::Proc::Unsuccessful
                             if let ValueView::Instance {
                                 class_name,
