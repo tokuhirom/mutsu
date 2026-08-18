@@ -2329,10 +2329,19 @@ reproduce it, only the real vendored `Test.rakumod` does, so the trigger
 needs the real switch on even though the bug itself is a general interpreter
 bug unrelated to `Test`).
 
-This does **not** fully close the file: test 8 (a role-composed `Numeric`
-type object's default `.Numeric`, the third of three chained resumable-warn
-calls, dispatched through `methods_call_dispatch.rs`'s interpreted path) has
-a *different* bug that survives the fix — filed separately as
-`todo/deep/control-warn-third-chained-call-through-method-dispatch-corrupts-env.md`.
+This does **not** fully close the file: test 8 has a *different*, deeper bug
+that survives the fix. Root-caused (2026-08-19) as unrelated to method
+dispatch (the original suspicion) — it reproduces with three plain `warn`
+calls sharing the caller's variable names, with no method dispatch involved
+at all: a *sunk, statement-level list reassignment* (`($x,$y,$z) = f(...);`,
+as opposed to a `my (...) = f(...);` declaration) emits a discarded
+alias-array construction whose `WrapVarRef` handling boxes the reassigned
+names into shared `ContainerRef` cells and writes them into the flat,
+cross-frame `env` store — even though the array is immediately thrown away.
+That leaks a stale `ContainerRef` into `env["x"]`/`env["y"]`/`env["z"]`,
+corrupting the *next* call's env-by-name reads (specifically
+`try_resume_safe_control_inline`'s handler-locals seed) once the caller and
+callee share those bare names. Filed as
+`todo/deep/sunk-list-reassign-leaks-containerref-into-shared-env.md`.
 `t/warn-resumes-at-the-raise-site.t` therefore stays in the `t/` residue list
 below pending that ticket.
