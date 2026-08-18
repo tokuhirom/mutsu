@@ -961,7 +961,7 @@ mod declaration_plan_tests {
             .filter(|op| {
                 matches!(
                     op,
-                    RoleBodyOp::Deferred { raw }
+                    RoleBodyOp::Deferred { raw, .. }
                         if !matches!(raw.as_ref(), Stmt::SetLine(_))
                 )
             })

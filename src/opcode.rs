@@ -2906,6 +2906,15 @@ pub(crate) enum ClassBodyOp {
         name: Symbol,
         chunk: Option<CompiledDeclExpr>,
         raw: Stmt,
+        /// See [`ClassBodyOp::Other::is_swallowable`]. Always `false` for a
+        /// `sub` declaration (a `Stmt::SubDecl` never matches the
+        /// BEGIN/EVAL shapes), computed here anyway so `class_body_other_stmt`
+        /// (which handles both `ClassSub` and `Other`) reads one flag.
+        is_swallowable: bool,
+        /// See [`ClassBodyOp::Other::is_compile_time_phaser`]. Always
+        /// `false` for a `sub` declaration, for the same reason as
+        /// `is_swallowable` above.
+        is_compile_time_phaser: bool,
     },
     /// `our &baz ::= &bar` — alias a method under a new name.
     CodeAlias {
@@ -2940,6 +2949,18 @@ pub(crate) enum ClassBodyOp {
     Other {
         chunk: Option<CompiledDeclExpr>,
         raw: Stmt,
+        /// Whether `raw` is a `BEGIN` phaser or an `EVAL` call (ADR-0019
+        /// D10 follow-up), precomputed here so `class_body_other_stmt`
+        /// reads a flag instead of re-matching `raw`'s shape at
+        /// registration time to decide whether to swallow a failure so the
+        /// class still registers.
+        is_swallowable: bool,
+        /// Whether `raw` is a `BEGIN`/`CHECK` phaser (ADR-0019 D10
+        /// follow-up), precomputed here so `class_body_other_stmt` reads a
+        /// flag instead of re-matching `raw`'s shape to decide whether a
+        /// `has`-attribute declaration it executes should attach to the
+        /// class being defined.
+        is_compile_time_phaser: bool,
     },
 }
 
@@ -3018,6 +3039,8 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
             name: *name,
             chunk: None,
             raw: stmt.clone(),
+            is_swallowable: is_swallowable_class_body_stmt(stmt),
+            is_compile_time_phaser: is_compile_time_phaser_stmt(stmt),
         },
         Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => ClassBodyOp::TokenRule {
             plan: build_token_decl_plan(stmt),
@@ -3025,8 +3048,42 @@ fn classify_class_body_stmt(stmt: &Stmt) -> ClassBodyOp {
         _ => ClassBodyOp::Other {
             chunk: None,
             raw: stmt.clone(),
+            is_swallowable: is_swallowable_class_body_stmt(stmt),
+            is_compile_time_phaser: is_compile_time_phaser_stmt(stmt),
         },
     }
+}
+
+/// Whether a class-body statement is a `BEGIN` phaser or an `EVAL` call
+/// (ADR-0019 D10 follow-up) — see [`ClassBodyOp::Other::is_swallowable`].
+fn is_swallowable_class_body_stmt(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Phaser {
+            kind: crate::ast::PhaserKind::Begin,
+            ..
+        }
+    ) || matches!(
+        stmt,
+        Stmt::Call { name: fn_name, .. }
+            if fn_name.resolve() == "EVAL"
+    ) || matches!(
+        stmt,
+        Stmt::Expr(Expr::Call { name: fn_name, .. })
+            if fn_name.resolve() == "EVAL"
+    )
+}
+
+/// Whether a class-body statement is a `BEGIN`/`CHECK` phaser (ADR-0019 D10
+/// follow-up) — see [`ClassBodyOp::Other::is_compile_time_phaser`].
+fn is_compile_time_phaser_stmt(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Phaser {
+            kind: crate::ast::PhaserKind::Begin | crate::ast::PhaserKind::Check,
+            ..
+        }
+    )
 }
 
 /// One `does`/`hides`/`is hidden` clause from a role's own body, as a typed
@@ -3088,7 +3145,14 @@ pub(crate) enum RoleBodyOp {
     /// second-largest gap small), `Attr`/`Method`/`Parent` here are all
     /// marker-sized, so an unboxed `Stmt` would trip
     /// `clippy::large_enum_variant`.
-    Deferred { raw: Box<Stmt> },
+    Deferred {
+        raw: Box<Stmt>,
+        /// Whether `raw` is itself the `__mutsu_stub_die`/`__mutsu_stub_warn`
+        /// stub-marker call (ADR-0019 D10 follow-up), precomputed here so
+        /// `walk_role_body` reads a flag instead of re-matching `raw`'s
+        /// shape at registration time.
+        is_stub_marker: bool,
+    },
 }
 
 /// Lower a role body into its ordered, typed op mirror (ADR-0019 D7-4),
@@ -3112,9 +3176,21 @@ fn classify_role_body_stmt(stmt: &Stmt) -> RoleBodyOp {
         Stmt::MethodDecl { .. } => RoleBodyOp::Method,
         Stmt::DoesDecl { .. } => RoleBodyOp::Parent,
         _ => RoleBodyOp::Deferred {
+            is_stub_marker: is_stub_marker_stmt(stmt),
             raw: Box::new(stmt.clone()),
         },
     }
+}
+
+/// Whether `stmt` is the `__mutsu_stub_die`/`__mutsu_stub_warn` stub-marker
+/// call the parser synthesizes for a stubbed role/method body (ADR-0019 D10
+/// follow-up). See [`RoleBodyOp::Deferred::is_stub_marker`].
+fn is_stub_marker_stmt(stmt: &Stmt) -> bool {
+    matches!(
+        stmt,
+        Stmt::Expr(Expr::Call { name, .. })
+            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+    )
 }
 
 /// How a deferred role-body statement's package resolves at composition

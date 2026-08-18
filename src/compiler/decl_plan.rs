@@ -320,7 +320,7 @@ impl Compiler {
                 continue;
             }
             let (chunk, raw) = match op {
-                crate::opcode::ClassBodyOp::Other { chunk, raw }
+                crate::opcode::ClassBodyOp::Other { chunk, raw, .. }
                 | crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
                 | crate::opcode::ClassBodyOp::CodeAlias { chunk, raw }
                 | crate::opcode::ClassBodyOp::ProtoMethod { chunk, raw } => (chunk, raw),
@@ -611,7 +611,7 @@ impl Compiler {
         crate::opcode::role_body_plan(body)
             .into_iter()
             .filter_map(|op| match op {
-                crate::opcode::RoleBodyOp::Deferred { raw } => Some(raw),
+                crate::opcode::RoleBodyOp::Deferred { raw, .. } => Some(raw),
                 _ => None,
             })
             // `RoleBodyOp::Deferred`'s catch-all (D7-4) also matches

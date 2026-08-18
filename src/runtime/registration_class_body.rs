@@ -6,7 +6,6 @@
 
 use super::registration_class::AttrValidationCtx;
 use super::*;
-use crate::ast::PhaserKind;
 use crate::symbol::Symbol;
 
 /// Shared state of the class-body walk, passed by `&mut` to the per-statement
@@ -190,9 +189,26 @@ impl Interpreter {
                         plan.multi,
                     );
                 }
-                crate::opcode::ClassBodyOp::ClassSub { chunk, raw, .. }
-                | crate::opcode::ClassBodyOp::Other { chunk, raw } => {
-                    self.class_body_other_stmt(&mut cx, raw, chunk.as_ref())?;
+                crate::opcode::ClassBodyOp::ClassSub {
+                    chunk,
+                    raw,
+                    is_swallowable,
+                    is_compile_time_phaser,
+                    ..
+                }
+                | crate::opcode::ClassBodyOp::Other {
+                    chunk,
+                    raw,
+                    is_swallowable,
+                    is_compile_time_phaser,
+                } => {
+                    self.class_body_other_stmt(
+                        &mut cx,
+                        raw,
+                        chunk.as_ref(),
+                        *is_swallowable,
+                        *is_compile_time_phaser,
+                    )?;
                 }
             }
             // Check if any new functions were registered under the class package
@@ -348,6 +364,8 @@ impl Interpreter {
         cx: &mut ClassBodyCx<'_>,
         stmt: &Stmt,
         chunk: Option<&crate::opcode::CompiledDeclExpr>,
+        is_swallowable: bool,
+        is_compile_time_phaser: bool,
     ) -> Result<(), RuntimeError> {
         // An anonymous method (`method { $!x }`) parses as an
         // `AnonSubParams` expression statement (with an implicit
@@ -363,21 +381,9 @@ impl Interpreter {
         // BEGIN phasers and EVAL calls in class bodies may fail
         // (e.g. `BEGIN EVAL q[has $.x]` or `EVAL q[has $.x]`).
         // Swallow errors from these so the class still registers.
-        let is_swallowable = matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin,
-                ..
-            }
-        ) || matches!(
-            stmt,
-            Stmt::Call { name: fn_name, .. }
-                if fn_name.resolve() == "EVAL"
-        ) || matches!(
-            stmt,
-            Stmt::Expr(Expr::Call { name: fn_name, .. })
-                if fn_name.resolve() == "EVAL"
-        );
+        // `is_swallowable` is precomputed at plan-classification time
+        // (`crate::opcode::is_swallowable_class_body_stmt`, ADR-0019 D10
+        // follow-up) instead of re-matching `stmt`'s shape here.
         self.registry_mut()
             .classes
             .insert(cx.name.to_string(), cx.class_def.clone());
@@ -392,13 +398,8 @@ impl Interpreter {
         // q[has $.x]` runs after the class is composed, so its
         // attribute must NOT take (roast S12-attributes/class.t
         // test 21 asserts `.x` then throws X::Method::NotFound).
-        let is_compile_time_phaser = matches!(
-            stmt,
-            Stmt::Phaser {
-                kind: PhaserKind::Begin | PhaserKind::Check,
-                ..
-            }
-        );
+        // `is_compile_time_phaser` is precomputed the same way
+        // (`crate::opcode::is_compile_time_phaser_stmt`).
         let saved_defining = if is_compile_time_phaser {
             Some(self.defining_class.replace(cx.name.to_string()))
         } else {

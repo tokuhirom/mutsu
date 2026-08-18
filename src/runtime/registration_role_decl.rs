@@ -165,10 +165,8 @@ impl Interpreter {
                 crate::opcode::RoleBodyOp::Method => {
                     self.role_body_method_decl(cx)?;
                 }
-                crate::opcode::RoleBodyOp::Deferred { raw } => {
-                    if let Stmt::Expr(Expr::Call { name, .. }) = raw.as_ref()
-                        && (name == "__mutsu_stub_die" || name == "__mutsu_stub_warn")
-                    {
+                crate::opcode::RoleBodyOp::Deferred { is_stub_marker, .. } => {
+                    if *is_stub_marker {
                         cx.role_def.is_stub_role = true;
                     }
                     // Every other statement (non-method/non-attribute/non-`does`,
