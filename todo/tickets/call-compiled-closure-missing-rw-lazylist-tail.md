@@ -82,3 +82,40 @@ explicit trace/breakpoint to confirm THAT fork is actually taken for one of
 these shapes, rather than guessing black-box from the `raku`-vs-mutsu output
 alone — the negative results above don't rule out the gap, they just didn't
 happen to hit the code path in question.
+
+## Update (2026-08-18): breakpoint at the fork itself never fires for either `&g()` or `(&g)()`
+
+Set an unconditional `rust-gdb -batch` breakpoint directly at
+`src/runtime/resolution_call_sub.rs:439` (the `if data.compiled_routine.is_some()`
+line) and ran both:
+
+```raku
+my $x = 1;
+sub f() is rw { $x }
+my &g = &f;
+&g() = 42;    # variant A
+(&g)() = 42;  # variant B
+say $x;
+```
+
+The breakpoint was **never hit** for either variant — the program ran to
+completion and printed `42` (correct) without ever stopping. So neither
+`&g()` nor `(&g)()` even reaches `call_sub_value` at all, let alone this
+fork; the call must compile to a direct VM call opcode
+(`vm_call_on_value`/a dedicated call-on-code-value path) that has its own
+rw-proxy handling, separate from `call_sub_value`'s tree-walk tail this
+ticket is about.
+
+This narrows the search: a *confirmed* repro needs a call path that
+genuinely funnels through `call_sub_value` (not a direct `&sub()` call) AND
+lands in the `compiled_routine.is_some()` fork specifically — grep
+`src/runtime/resolution_call_sub.rs:439`'s callers list above (map/grep/sort
+callbacks, `.first(&pred)`, module export subs, `EVAL`-installed routines,
+`Promise`/`Supply` tap callbacks) for a shape where the callback is 1) a
+*named*, already-declared routine (so `compiled_routine` is populated,
+unlike an anon block) that is 2) `is rw`, and 3) whose return value is used
+in an lvalue position by the caller. `is rw` map/grep callbacks are unusual
+in Raku (the callback return isn't normally assigned-to), so a real-world
+trigger may not exist — worth reconsidering whether this is a live gap at
+all versus dead code on an unreachable combination, before sinking further
+gdb time into it.
