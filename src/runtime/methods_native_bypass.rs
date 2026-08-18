@@ -495,9 +495,13 @@ impl Interpreter {
         });
     }
 
-    /// Check if a Mixin's role mixins define the given method.
-    /// Used so that role-method dispatch on punned role instances takes
-    /// precedence over the built-in Cool fallbacks (e.g. `.uc`).
+    /// Check if a Mixin's role mixins define the given method (either a real
+    /// declared method, or a public attribute's auto-generated accessor —
+    /// `has $.sum` makes `sum` a method-shaped read just as much as an
+    /// explicit `method sum {...}` would). Used so that role-method dispatch
+    /// on punned role instances takes precedence over the built-in Cool
+    /// fallbacks (e.g. `.uc`, or `List.sum` shadowing a mixed-in `$.sum`
+    /// attribute — see t/mixin-attribute-shadowed-by-builtin-method.t).
     pub(crate) fn mixin_role_has_method(&self, target: &Value, method: &str) -> bool {
         // Tag probe first — a `view()` on a lazy Match would materialize it.
         if !target.is_mixin_value() {
@@ -511,7 +515,11 @@ impl Interpreter {
                 continue;
             };
             if let Some(role) = self.registry().roles.get(role_name)
-                && role.methods.contains_key(method)
+                && (role.methods.contains_key(method)
+                    || role
+                        .attributes
+                        .iter()
+                        .any(|a| a.is_public && a.name == method))
             {
                 return true;
             }
