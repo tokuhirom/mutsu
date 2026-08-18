@@ -60,3 +60,5 @@ entirely). Asserts the subprocess exits with a normal positive error code
 (mutsu's `Proc` reports a crashed child's exit code as `-1`, not the
 128+signal a shell would) and that stderr no longer contains the
 stack-overflow abort message.
+
+PR [#6608](https://github.com/tokuhirom/mutsu/pull/6608).
