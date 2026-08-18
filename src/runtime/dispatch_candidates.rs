@@ -181,12 +181,86 @@ impl Interpreter {
             if default_candidates.len() == 1 {
                 return Some(default_candidates[0].clone());
             }
+            // Two candidates whose *entire* declared signature (not just its
+            // dispatch shape, which drops named-parameter names) is
+            // byte-identical are not a meaningful overload — they are a
+            // duplicate declaration, e.g. a module `is export`ing a
+            // `multi sub trait_mod:<is>(Routine:D $r, :$test-assertion!)`
+            // that a user file also declares verbatim itself (both
+            // `Test.rakumod` and a test file legitimately do this, since
+            // Rakudo's own trait handlers work the same way). Rakudo does
+            // not raise X::Multi::Ambiguous for this — it silently runs
+            // whichever was declared first, exactly like `matches[0]`
+            // already is post-sort.
+            //
+            // BUT this is only true when the candidates declare a named
+            // parameter at all (`best_has_named`, already computed above).
+            // Rakudo's dispatcher does NOT extend the same leniency to two
+            // purely *positional* duplicate declarations — a named param
+            // (typed or not) routes dispatch through a trial-bind/"first one
+            // that binds wins" path that never reaches the strict LTM/MRO
+            // narrowness comparison a purely-positional signature does:
+            //
+            // ```raku
+            // multi sub f(Int $x, :$bar!) {"first"}; multi sub f(Int $x, :$bar!) {"second"};
+            // f(1, :bar);      # "first", not ambiguous
+            // multi sub g($x) {"first"};             multi sub g($x) {"second"};
+            // g(1);            # X::Multi::Ambiguous
+            // ```
+            //
+            // (`roast/integration/advent2011-day24.t` pins the positional
+            // case staying ambiguous: two verbatim-duplicate
+            // `multi sub Slurp($filename) {...}` with no named param at all.)
+            // A pair that merely *ties on narrowness* while differing in some
+            // way the shape comparison above can't see (e.g. two
+            // distinctly-named-but-untyped named params) is NOT covered by
+            // this either and still falls through to the ambiguity error
+            // below.
+            if best_has_named
+                && tied
+                    .iter()
+                    .all(|def| Self::candidate_signatures_identical(&matches[0], def))
+            {
+                return Some(matches.remove(0));
+            }
             self.pending_dispatch_error =
                 Some(self.ambiguous_multi_dispatch_error(name, args, &tied));
             return None;
         }
 
         Some(matches.remove(0))
+    }
+
+    /// True when `a` and `b` declare the exact same *full* parameter list
+    /// (every declared param, not just the dispatch-visible ones), position
+    /// for position: same type constraint, same
+    /// `named`/`required`/`slurpy`/`multi_invocant` flags, and — for a
+    /// *named* parameter only — the same name (a positional parameter's
+    /// variable name is not semantically significant for dispatch: `foo(Int
+    /// $x)` and `foo(Int $y)` are the same declaration as far as a caller is
+    /// concerned).
+    ///
+    /// Deliberately over `def.param_defs` rather than
+    /// [`Self::dispatch_visible_params`] (used for narrowness comparison):
+    /// two candidates that agree on every dispatch-visible param but differ
+    /// after a `;;` long-name separator — `multi f(;; Any $v)` vs
+    /// `multi f(;; Int $v)` — have empty (and therefore trivially "equal")
+    /// dispatch-visible lists, yet are genuinely different declarations that
+    /// Rakudo *does* still report as ambiguous (`t/multi-sig.t`). Comparing
+    /// the full list also catches named-parameter *names* that
+    /// [`Self::candidate_dispatch_shape`] does not carry, so `:$bar!` and
+    /// `:$baz!` are correctly seen as different even though both are untyped
+    /// named params of the same shape.
+    fn candidate_signatures_identical(a: &FunctionDef, b: &FunctionDef) -> bool {
+        a.param_defs.len() == b.param_defs.len()
+            && a.param_defs.iter().zip(b.param_defs.iter()).all(|(x, y)| {
+                (x.name == y.name || !x.named)
+                    && x.named == y.named
+                    && x.required == y.required
+                    && x.slurpy == y.slurpy
+                    && x.multi_invocant == y.multi_invocant
+                    && x.type_constraint == y.type_constraint
+            })
     }
 
     /// Whether any *named* parameter of `def` carries a type constraint.
