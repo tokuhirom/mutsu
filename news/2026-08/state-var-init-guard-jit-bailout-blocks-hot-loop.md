@@ -38,4 +38,4 @@ assignment shape `state.t` uses, each called well above the default
 `MUTSU_JIT_THRESHOLD=100` hotness bar, plus a cold (below-threshold) sanity
 case. `MUTSU_VM_STATS=1` on this file confirms zero bailouts.
 
-PR [#TBD](https://github.com/tokuhirom/mutsu/pull/TBD).
+PR [#6602](https://github.com/tokuhirom/mutsu/pull/6602).
