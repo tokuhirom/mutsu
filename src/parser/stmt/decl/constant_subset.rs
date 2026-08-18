@@ -6,6 +6,7 @@ use super::helpers::{
     parse_export_trait_tags, parse_sigilless_decl_name, register_term_symbol_from_decl_name,
 };
 use super::parse_comma_or_expr;
+use super::parse_statement_modifier;
 use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::Value;
@@ -204,6 +205,26 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
     // A `constant` with no `=`/`:=` initializer is a compile-time error
     // (`constant foo;` → X::Syntax::Missing, what => 'initializer').
     Err(missing_initializer_error())
+}
+
+/// Bare (no `my`/`our`) `constant` declaration, as dispatched from the
+/// top-level `STMT_PARSERS` table. `constant_decl` itself never applies a
+/// trailing statement modifier -- that is normally the `my`/`our` wrapper's
+/// job (`my_decl_dispatch.rs`/`my_decl_helpers.rs`, called directly, not
+/// through this table). The bare form has no such wrapper, so without this
+/// it left `if COND`/`unless COND` completely unconsumed after a bare
+/// `constant $w = 1 if True;`, and the statement-list driver then tried to
+/// parse "if True;" as a brand-new `if` control statement (no block ->
+/// `X::Syntax::Missing: Missing block`) instead of a modifier. `constant` is
+/// resolved at compile time and (per real raku) evaluates unconditionally
+/// regardless of the modifier's condition (see `try_split_decl_modifier`'s
+/// `__constant` special case for the `my constant` sibling); this wrapper
+/// just needs the modifier's condition CONSUMED so the following statement
+/// parses correctly -- `parse_statement_modifier` already drops the
+/// condition for a `__constant`-tagged VarDecl.
+pub(in crate::parser::stmt) fn constant_stmt(input: &str) -> PResult<'_, Stmt> {
+    let (rest, stmt) = constant_decl(input)?;
+    parse_statement_modifier(rest, stmt)
 }
 
 /// X::Syntax::Missing for a `constant` declaration that has no initializer.
