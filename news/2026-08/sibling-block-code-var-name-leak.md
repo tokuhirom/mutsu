@@ -48,3 +48,5 @@ repro, the sub-declaration variant, and three separate sibling blocks in a
 row. `t/forward-captured-code-var.t`'s note about avoiding shared names
 across siblings updated to point at the new pin instead of the (now closed)
 ticket.
+
+PR [#6607](https://github.com/tokuhirom/mutsu/pull/6607).
