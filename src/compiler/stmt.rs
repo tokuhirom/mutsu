@@ -2997,13 +2997,19 @@ impl Compiler {
                 });
                 let saved_scope =
                     (!*is_statement_modifier).then(|| self.push_dynamic_scope_lexical());
-                if Self::has_block_enter_leave_phasers(body) {
+                if Self::has_block_leave_worthy_phasers(body) {
                     // Unlike `Stmt::If`'s body, a `given` body was compiled
                     // by iterating and compiling each statement in place —
                     // an un-lowered `Stmt::Phaser { kind: Leave, .. }` alone
                     // compiles to a no-op, so its LEAVE never fired. Mirrors
-                    // the `Stmt::If` arm's own `has_block_enter_leave_phasers`
-                    // check.
+                    // the `Stmt::If` arm's own check. Deliberately
+                    // `has_block_leave_worthy_phasers`, not
+                    // `has_block_enter_leave_phasers` — the loop-phaser
+                    // lowering (`helpers_phasers.rs`) synthesizes a `given
+                    // $topic { POST { ... } }`/`PRE` wrapper whose body is
+                    // solely a re-wrapped `Stmt::Phaser` node; routing that
+                    // phaser-only body through `compile_phaser_block_scope`
+                    // left its topic unset, breaking POST/PRE inside loops.
                     self.compile_phaser_block_scope(body, false);
                 } else if Self::has_catch_or_control(body) {
                     self.compile_implicit_try(body);
