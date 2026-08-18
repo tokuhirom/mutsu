@@ -71,3 +71,5 @@ cosmetic formatting is out of scope here; no test asserts on it).
 (duplicate `is export` on its line 5), asserting the warning names the
 module's own file and line 5, not the importer's `-e line 1`, and that no
 duplicate backtrace is appended on top.
+
+PR [#6605](https://github.com/tokuhirom/mutsu/pull/6605).
