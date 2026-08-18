@@ -1,4 +1,4 @@
-# TRIAGE — prioritized snapshot of todo/ (2026-08-13)
+# TRIAGE — prioritized snapshot of todo/ (2026-08-19)
 
 A ranked index of every open finding under `todo/tickets/` and `todo/deep/`,
 so a session can pick the next ticket without re-reading all of them.
@@ -9,314 +9,232 @@ conflicts `todo/` exists to avoid. A stale row is fine; the per-ticket files
 stay the source of truth. Regenerate the whole file when it has drifted too
 far (re-survey every ticket, re-score, rewrite).
 
-Surveyed 2026-08-13: **132 files** (52 `deep/`, 80 `tickets/`). Since the
-2026-08-10 survey (111 files): **13 resolved** (all fixed, merged into a
-sibling ticket, or closed as non-reproducing — see Housekeeping for the
-per-file mapping) and **34 newly filed**, dominated by two fast-moving
-campaigns: ADR-0019 Phase E's E8/E9 raku-ground-truth verification pass
-(closed E8 outright and spawned ~10 method-dispatch/wrap divergence
-tickets, several already fixed same-day) and the new ADR-0025
-captured-scalar-cells cluster (a soundness campaign with a live Cro
-blocker). Two previously-P1 tickets (`regex-alternation-ltm-longest-literal-prefix`,
-`pair-namedness-is-a-value-property-not-a-call-site-property`) look
-resolved by ADR-0022/ADR-0021 shipping but were not re-verified this pass —
-flagged in Housekeeping rather than silently dropped.
+Surveyed 2026-08-19: **80 files** (66 `deep/`, 14 `tickets/`) — down sharply
+from the 2026-08-13 survey's 132, meaning ~52 tickets resolved or were
+folded into other tickets in six days. This regen also **changes the ranking
+axis**. The 2026-08-13 file ranked primarily by *campaign* (which multi-PR
+effort a ticket belonged to). That grouping is gone. This file ranks
+primarily by two axes instead:
+
+1. **Correctness class** — does the bug corrupt memory/data silently
+   (soundness), produce a wrong answer in common code (broad correctness),
+   produce a wrong answer only in a narrow/rare construct (narrow
+   correctness), or just produce a bad diagnostic (diagnostics)?
+2. **Breadth of impact** — does it affect "any Raku program using construct
+   X", or does it block one specific dist/battery, or is it a narrow repro
+   with nothing currently depending on it?
+
+**Performance items are pulled into their own section**, separate from the
+correctness ranking, because the right unit of work for them is different:
+several are mid-measurement (a round of profiling already in progress, a
+specific next lever already identified) and the productive move is to batch
+them into one profiling-heavy session rather than interleave them with
+correctness fixes. A ticket only lives in the perf section if its *own next
+step* is measurement/profiling, or the fix is perf-only or blocked purely
+on a design/perf tradeoff — a perf-flavored ticket that also fixes a real
+wrong answer stays in the correctness tables.
+
+Old campaign identities (ADR-0019 Phase E, ADR-0025, vendor-real-Test, Cro,
+...) are preserved as a parenthetical on each row where relevant, since they
+still tell you which other tickets share root causes — but they no longer
+determine the row's position.
 
 ## How the ranking works
 
-Each ticket gets two independent scores, both shown in the tables:
+- **Tier S — Soundness.** Crashes (SEGV/panic), memory unsafety, or *silent
+  data corruption* (a variable, container, or environment write that is
+  wrong and nothing detects it). Always highest priority regardless of
+  effort — these are the ones that erode trust in "if it doesn't crash, the
+  answer is right."
+- **Tier B — Correctness, broad impact.** A wrong answer or missing
+  capability in a common/fundamental construct (closures, dispatch,
+  Supply/whenever, basic types), or a bug that blocks an entire dist/battery
+  slot. Subdivided into B1 (broad language-construct correctness — the
+  highest-leverage fixes, since they aren't tied to one dist) and B2
+  (batteries/dist-blocking — real but scoped to unblocking one bundled
+  library).
+- **Tier N — Correctness, narrow impact / diagnostics.** Wrong answer in a
+  rare/edge-case construct with no known blocked test, or a
+  wrong/missing *error message* (not a wrong answer).
+- **Perf — needs measurement.** Batch these into one profiling session; see
+  the section intro above.
+- **Icebox.** Blocked on an ADR/design decision, an explicit user call, or
+  is a pure decision/measurement record with no action attached. Also
+  houses very-low-priority optional polish (zero behavior change).
 
-- **Axis** — which project goal the fix advances. Weights follow PLAN.md:
-  - `batteries §1` — bundled libraries, Cro, dist compat, mzef. The main effort; highest weight.
-  - `Test-vendor §1` — the vendor-real-`Test` campaign specifically (a batteries item large enough to be its own axis).
-  - `soundness` — SEGV, lost updates, silently-swallowed exceptions, memory unsafety. Always high weight.
-  - `correctness §6` — wrong answers or missing diagnostics that roast does not see.
-  - `concurrency §5` — supply/whenever/thread semantics.
-  - `errors §5` — error-message and backtrace quality.
-  - `perf §4` — de-prioritized polish; mutsu already beats raku almost everywhere.
-  - `roast §3` — mined out; lowest weight.
-  - `record` — a decision/measurement record, not actionable work.
-- **Effort** — implementation size: **S** (narrow, one session), **M** (one
-  session, several subsystems), **L** (multi-session), **XL** (needs an
-  ADR/design pass first).
+**Effort** (S/M/L/XL) is shown but does not change tier — an XL soundness
+bug still outranks an S-effort narrow-correctness bug.
 
-**Tier = axis weight × measured impact.** Effort is displayed but does not
-lower a tier — an XL item with P1 impact stays P1, with the ADR as its first
-deliverable. Items whose *sound* fix is blocked on a mechanism that does not
-exist yet (array/hash element cells, cell-based closure capture) drop to
-Icebox regardless of impact, so nobody burns a session re-discovering the
-blocker. ⚡ marks S-effort quick wins.
+---
 
-Tiers:
+## Tier S — Soundness (crashes, memory unsafety, silent data corruption)
 
-- **P1 — now.** Directly advances a PLAN §1 goal or fixes a crash-class bug, and is actionable today.
-- **P2 — next.** Concrete blocked tests/dists or wrong-answer bugs; pick when P1 is saturated.
-- **P3 — later.** Cosmetic, low-leverage, or perf polish. Batch the ⚡ ones.
-- **Icebox.** Blocked on a design campaign or an explicit user decision. Do not start ad hoc.
+Ordered roughly by how confirmed/reproducible the defect is, then by how
+common the triggering pattern is.
 
-## P1 — now
-
-Five campaigns dominate this tier; most P1 rows are named blockers of one of
-them, so progress compounds.
-
-### Campaign: Cro (the web-framework battery slot, PLAN §1 B1)
-
-Down from 8 rows to 4 since 2026-08-10 — five blockers fixed this window
-(slurpy-mask thread survival, `Promise(supply{})` off-thread drive, session
-counter isolation, subset-type nominalization, a pointy-block trait misparse).
-`docs/batteries/web-framework.md`'s own baseline numbers (Cro::HTTP 1/28,
-Cro::Core 1/9) predate this window and are stale; re-measure before quoting them.
-
-| Ticket | Axis | Effort | Why here |
+| Ticket | Breadth | Effort | Why here |
 |---|---|---|---|
-| [second-preserving-instance-body-blob-returns-empty-in-same-supply-body](deep/second-preserving-instance-body-blob-returns-empty-in-same-supply-body.md) | concurrency §5 | L | NEW. Sole remaining failure ("check 4") in Cro::HTTP2's `http2-request-parser.rakutest`: a second concurrently-open stream's `Supplier::Preserving`-backed body reads empty despite correct emit/done — no minimal repro found yet. |
-| [async-listener-not-freed-when-relistening-in-a-loop](tickets/async-listener-not-freed-when-relistening-in-a-loop.md) | batteries §1 | L | Unresolved: the original stale-`$tap`/multi-address bugs are fixed, but the 3rd+ round of re-binding a port to a Cro server still gets empty response bodies — blocks the whole multi-server auth/session/log-file suite family. |
-| [for-multi-param-array-hash-shadow-clobbers-outer-container](tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md) | correctness §6 | L | Unresolved: the scalar case fix was incomplete for slot-less names, and the `@`/`%`-sigil case is fully unfixed (container-handle aliasing bug in `vm_for_loop_body.rs`). |
-| [named-parameter-type-constraints-are-not-enforced](tickets/named-parameter-type-constraints-are-not-enforced.md) | correctness §6 | M | Unresolved: type constraints on *named* params are parsed then ignored (positionals are checked) — Cro router's 400 Bad Request branch is unreachable, bad requests fall through to 404. |
+| [native-array-storage-sync-unsound-interior-mutation](deep/native-array-storage-sync-unsound-interior-mutation.md) | Any NativeCall pointer write-through into a native array's backing store | L | **Confirmed genuine UB** (`*const→*mut` cast on a non-`Cell` field) causing a deterministic *release-only* miscompile — independent of any one test, could manifest unpredictably as compiler/inlining changes. |
+| [inline-start-blocks-clobber-a-later-declared-variable](deep/inline-start-blocks-clobber-a-later-declared-variable.md) | `Promise.allof(start{...}, start{...})` — an idiomatic concurrency pattern | XL | Confirmed, reproducible silent corruption of a variable to `Nil`. Three separate fix attempts across three sessions each found a deeper layered bug (`needs_env_sync` vs. atomic-cell RMW); explicitly "no longer pick-up-and-finish." |
+| [attribute-bind-severed-by-unrelated-later-call](deep/attribute-bind-severed-by-unrelated-later-call.md) | `$!x := $var`-style attribute bind aliasing, inside any framework callback (test harness, event handler) | L | An attribute bind silently stops tracking its source after an *unrelated* later method call touches other env state — real-world risk for the common "bind an attribute to a caller container" idiom, not `Test`-specific. |
+| [attr-bind-source-write-lost-through-nested-sub-call-chain](deep/attr-bind-source-write-lost-through-nested-sub-call-chain.md) | Same bind family, triggered by a multi-frame call chain (e.g. `lives-ok { $obj.bind() }`) | L | Root-caused to `VmCallFrame` having no per-frame `CompiledCode`/locals-name reference, so cross-frame free-variable container promotion silently no-ops. Same underlying disease as the row above; investigate together. |
+| [env-var-write-invisible-to-spawn-after-a-thread](deep/env-var-write-invisible-to-spawn-after-a-thread.md) | Any program combining `%*ENV` writes, a spawned OS thread (Supply/socket/timer tap), and a later subprocess spawn with default env inheritance | M-L | A `%*ENV` write silently stops reaching a spawned child's *default* environment once any thread has ever run — `std::env::set_var`'s documented cross-thread UB hazard, or a mutsu-thread-setup interaction, not yet distinguished. |
+| [control-warn-resume-list-assign-first-target-stale-on-repeat-call](deep/control-warn-resume-list-assign-first-target-stale-on-repeat-call.md) | A `CONTROL { when CX::Warn { ...; .resume } }` sub, called 2+ times, whose result feeds a caller-side multi-value list assignment | M-L | Confirmed deterministic (not a race): the first LHS slot of the caller's list-assignment goes stale on the second call, only after `use Test;` loads the real vendored module — general `.resume`/list-assign interaction, not `Test`-specific. |
+| [cue-loop-lexical-shared-lane-residue](deep/cue-loop-lexical-shared-lane-residue.md) | A loop-redeclared lexical mutated inside a `.cue`/`cas`/atomic callback | XL | Confirmed root cause (a stale plain-`env` value read as the atomic base on the first tick of a new round), but **three independent fix attempts each broke something else** (FD ownership, free-var-completeness, a `Nil`-mask interaction never root-caused) — needs an ADR-level design pass covering the whole `clone_for_thread*` family, not another patch attempt. |
+| [expr-decl-writes-through-captured-cell](deep/expr-decl-writes-through-captured-cell.md) | Any closure that captures a caller lexical and later expression-declares a same-named `my` inside the callee | M-L | Silent corruption of the CALLER's outer variable through a captured `ContainerRef` cell — a general scoping bug, not an edge case. |
+| [bare-name-type-constraint-store-is-scope-blind](deep/bare-name-type-constraint-store-is-scope-blind.md) | `@`/`%`-typed lexicals in routines; typed scalars inside `if`/`while`/loop bodies | M-L | Silent loss of type enforcement across scope boundaries (a callee's typed lexical can poison or lose enforcement for a same-named caller variable). Scalars in routines/genuine blocks are already fixed; containers and `if`/`while`/loop bodies remain. |
+| [adr0025-slice2-implementation-plan](deep/adr0025-slice2-implementation-plan.md) | Closures capturing a creator-reassigned scalar via call-arg storage; a live Cro test race | XL | The ADR-0025 soundness campaign's concrete next step (decl-site cells for every vouch-refused captured scalar), including its own Step-0 cross-thread race fix in `http2-response-serializer.rakutest` (confirmed genuinely racy — 4/8 pass, 4/8 fail on a pristine binary — not deterministic). |
+| [closure-read-only-capture-loses-to-caller-env-same-name](deep/closure-read-only-capture-loses-to-caller-env-same-name.md) | Same family; core defect **already fixed** (slice 1) | M | Kept open only as the historical record for the still-open Step-0 race (now tracked in the row above) and a spun-off `for`-loop hijack ticket. Don't re-diagnose the core defect — it's resolved. |
+| [compiled-fns-default-breaks-nested-subs-outside-methods](deep/compiled-fns-default-breaks-nested-subs-outside-methods.md) | Any routine (not just methods) declaring a nested `sub`, once `legacy_body` is dropped | L | Currently masked by the `legacy_body` tree-walk fallback (~17 call sites pass an empty `CompiledFns` table instead of the real one). A confirmed live reproducer exists (`Test::Util`'s own `_is-eqv` shape). **Landmine, not yet live-broken** — but explicitly blocks the ADR-0019 C6e architecture goal of removing `legacy_body`; do not attempt that removal before this lands. |
+| [promise-spawn-segv-under-load](deep/promise-spawn-segv-under-load.md) | Many concurrent `Promise.start` (4000+) under CPU contention | M-L | Confirmed reproducible SEGV (guard-page stack overflow on a spawned-thread's `JoinHandle` drop), ~6-8% under load in the jit-stress config. Fix direction is known: a uniform spawned-thread stack budget, and/or not holding a `JoinHandle` on the deep dispatch path. |
+| [panic-unwind-leaks-side-channel-call-state](deep/panic-unwind-leaks-side-channel-call-state.md) | Any panic caught mid-call whose resuming code depends on `current_package`/pragma state | M | The `call_frames`/locals corruption half of this is **already fixed**; what remains is `current_package` and pragma state, saved/restored as plain Rust locals outside `VmCallFrame`, so they leak on unwind too. Narrower now, but a real gap. |
+| [cathandle-real-test-is-deeply-infinite-recursion](deep/cathandle-real-test-is-deeply-infinite-recursion.md) | `is-deeply` on an `IO::CatHandle`-backed lazy Seq, only under the experimental `MUTSU_REAL_TEST=1` flag | M | Confirmed stack-overflow-or-hang (not merely "deep") — genuinely unbounded recursion. Not currently release-reachable (native `Test` provider is the default), but blocks the vendor-real-Test campaign flip. |
+| [procasync-stress-segv](deep/procasync-stress-segv.md) | `roast/S17-procasync/stress.t`'s 1200-iteration `Proc::Async`+signal+timer churn test | — | One CI-only SEGV observed, not reproduced in 22 local runs or on retry. **Not actionable without a fresh crash-report artifact** — monitor via the crash-reporter (`tmp/crash/<pid>.txt`), don't spend a session chasing it blind. Do NOT quarantine — a crash is a poor quarantine candidate. |
 
-### Campaign: ADR-0025 — captured scalar cells are value-kind blind (soundness)
+## Tier B — Correctness, broad impact
 
-New since 2026-08-10. [ADR-0025](../docs/adr/0025-captured-scalar-cells-value-kind-blind.md)
-is Accepted, slice 1 shipped. Slice 1 fixed the core hijack/staleness defect
-(a closure's captured read-only scalar losing to a caller-scope variable of
-the same name); slice 2 is the concrete next step, widening decl-site cell
-coverage — which will also surface more instances of the adjacent bug below.
+### B1 — broad language-construct correctness (not tied to one dist)
 
-| Ticket | Axis | Effort | Why here |
+| Ticket | Breadth | Effort | Why here |
 |---|---|---|---|
-| [adr0025-slice2-implementation-plan](deep/adr0025-slice2-implementation-plan.md) | soundness | XL | The campaign's concrete next step: decl-site cells for every vouch-refused captured scalar, plus its own Step 0 (a cross-thread race fix for `http2-response-serializer.rakutest` test 18 — a live Cro test) and mandatory perf-canary gates. |
-| [closure-read-only-capture-loses-to-caller-env-same-name](deep/closure-read-only-capture-loses-to-caller-env-same-name.md) | soundness | M-L | Core defect fixed by slice 1; kept open only for the same Step-0 race (now owned by the slice2 plan above) and a spun-off nested-whenever ticket. |
-| [expr-decl-writes-through-captured-cell](deep/expr-decl-writes-through-captured-cell.md) | soundness | L | Adjacent, not campaign-blocked: expression-position `my` writes through an inherited `ContainerRef` cell instead of shadowing it — slice 2's broader cell coverage will expose this more often, so worth fixing alongside it. |
+| [method-calls-never-push-caller-frame](deep/method-calls-never-push-caller-frame.md) | Any method body using `CALLER::`, `callframe()`, `PROCESS::`, or `DYNAMIC::` (a common OO + dynamic-var idiom) | L/XL | All 5 method-dispatch paths never push a caller-env frame, so dynamic-var/introspection reads from inside ANY method are wrong or `Nil`. Confirmed with flat, non-role repros. Blocks the `Log::Timeline` battery. |
+| [blind-slip-flattening-in-fixed-arity-calls](deep/blind-slip-flattening-in-fixed-arity-calls.md) | Any fixed-arity sub/method call whose argument merely *evaluates to* an `Empty`/Slip-shaped value (not just `\|EXPR`) | L | A runtime value-shape-based flattening mechanism silently drops such arguments instead of passing them as one value — cross-cutting VM change across 4 call-dispatch files. |
+| [element-itemization-lost-in-scalar-binding](deep/element-itemization-lost-in-scalar-binding.md) | `.raku`/`.gist` of arrays-of-arrays, implicit-topic iteration, list-destructuring bind write-through, hash-value reads | M-L per slice | Array/hash *elements* are stored bare instead of as Scalar containers (raku's real model) — the bind-side half is already fixed; the store-side half remains its own measured campaign (not folded into any GC/ADR-0001 blocker anymore — that constraint was superseded). |
+| [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) | Any code that iterates Pairs and hands them to a typed `multi` (e.g. `Cro::HTTP::Client`'s header handling) | mostly done, residual M | mutsu encodes named-vs-positional on the *value*; raku decides it at the *call site*. ADR-0021 P1-P3a/P3 already shipped (method-boundary parity, hash-derived pairs); P4/P5 cleanup remains. Re-verify the originally-blocking Cro repro before re-scoping down. |
+| [for-loop-rw-element-alias-lost-through-deferred-closure](deep/for-loop-rw-element-alias-lost-through-deferred-closure.md) | `for @arr -> $v is rw {...}` combined with a closure that escapes the loop and is called later — an ordinary closure-capture pattern | XL | Binds a snapshot instead of a live alias; wrong answer in fairly ordinary code. Root cause is architectural (no element-level `ContainerRef`), needs its own share-vs-bind design at the element-store layer. |
+| [deferred-seq-materialization-destroys-the-original](deep/deferred-seq-materialization-destroys-the-original.md) | Any deferred/lazy `Seq` inspected twice (even just `.defined` then `.Str`); blocks the vendor-real-Test flip broadly, plus a large family of `try`-block laziness divergences that will self-resolve once this lands | M | Materializing a deferred Seq abandons the original `Arc`, so a second access on the SAME variable reports "already consumed." raku reifies in place via `.cache`. The sound fix (write pulled items back through the original `Arc`) also fixes ~13 documented `try`/laziness divergences for free — but will make mutsu *stricter* in those cells, so a full roast-whitelist sweep is mandatory when it lands. |
+| [listops-are-not-real-multi-subs](deep/listops-are-not-real-multi-subs.md) | Any user/module `multi` sub sharing a name with `splice`/`push`/etc. (blocks `String::Splice` entirely) | L | `splice`/`push`/... are hardcoded VM opcodes, not real multi-subs, so a user candidate for these names is unreachable — architecturally significant gap. |
+| [whenever-expression-position-needs-real-design](deep/whenever-expression-position-needs-real-design.md) | Any code holding onto a live `whenever`'s `Tap` handle from inside `react`/`supply` (Cro-style or hand-written Supply/Channel consumers managing their own tap lifecycle) | L/XL | Two independent bugs: the parser doesn't recognize `whenever` as an expression term at all (fragments into 4 orphaned statements), AND the one existing narrow mechanism that partially supports it clobbers the wrong variable and doesn't even bind a real `Tap`. Needs design across parser/AST/compiler/VM — not a one-shot patch. |
+| [schedule-on-live-transform-operators-bypass-deferral](deep/schedule-on-live-transform-operators-bypass-deferral.md) | `.map`/`.grep`/`.do`/`.flat` applied to a `.schedule-on()`'d Supply | L | Still deliver synchronously despite scheduling (ADR-0028 slice 1 fixed direct taps; this is the remaining immediate-registration transform-op category). Design is sketched concretely (a new `__ScheduledTransformApply` shim), 4 files, needs its own test matrix. |
+| [module-file-scope-array-and-hash-still-share-the-caller](deep/module-file-scope-array-and-hash-still-share-the-caller.md) | Any module whose file-scope `@`/`%` collides by name with the loading scope's own variable (the scalar case is already fixed) | XL | Silent data corruption of module state on name collision. Blocks the vendor-real-Test campaign (`Test.rakumod`'s own `@vars`), costs a whole roast integration file. Fix is a large canonical-slot refactor across ~120+ call sites — deferred twice already. |
+| [exception-class-hierarchy-is-mostly-unregistered](deep/exception-class-hierarchy-is-mostly-unregistered.md) | Any `throws-like X ~~ Y`-shaped hierarchy check; mutsu's own compiler emits one of the unregistered classes | XL | 124 of mutsu's own `X::` exception classes aren't registered types (`.new`/`isa`/`~~` fail on them). Needs a role-vs-prefix parentage design before mechanical generation. |
+| [sigilless-alias-assignment-skips-type-constraint](deep/sigilless-alias-assignment-skips-type-constraint.md) | Any `my \x := $typed_var; x = ...` sigilless bind-alias write (blocks `Native::Overflow`'s whole suite: plans 30, runs 0) | M-L | A compile-time name-keyed type-constraint map has no entry for a sigilless alias name, so the type check is silently skipped. Sound fix is container-carried type constraints (same family as ADR-0013's interior-mutability work) — narrow compile-time patch would miss cross-function-boundary and computed-index cases. |
+| [nextsame-in-wrap-closure-lexical-return-target](deep/nextsame-in-wrap-closure-lexical-return-target.md) | Any `.wrap()` closure (or any nested Block) containing a bare `return`/`nextsame` | L | `return`/`nextsame` should target the LEXICALLY enclosing Routine (raku); mutsu's mechanism is purely dynamic-stack-based, so it targets the nearest routine frame on the call stack instead — a genuine architecture gap in closure-to-Routine binding, verified against 3 raku variants. |
+| [eval-context-frame-owns-the-return-target](deep/eval-context-frame-owns-the-return-target.md) | Real `Test.rakumod`'s `throws-like '<code with return>'` (every such assertion under the vendored module) | M | `EVAL ..., context => $frame` takes the *package* from the context but not the *frame*, so a `return` in the snippet returns from the wrong routine instead of raising a catchable `X::ControlFlow::Return`. |
+| [return-outside-routine-uncatchable-inside-nested-run](deep/return-outside-routine-uncatchable-inside-nested-run.md) | `gather { return 1 }` (or similar) evaluated via `EVAL`, inside a `try`/`CATCH` | M-L | An escaping `return` inside a nested run (EVAL, `throws-like`) is never converted to a catchable exception until the TRUE top of the program — it aborts past any surrounding `try`/`CATCH`. The existing guard was already tuned once for a different regression; needs a repro matrix covering both directions before touching it again. |
+| [pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form](deep/pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form.md) | Any class overriding `.WHICH`/`.WHY` (a documented custom-value-identity idiom), called via bareword or `.$m()`/`."$m"()` | M | Two independent, redundant "skip native pseudo dispatch" mechanisms across 5 call sites, neither aware `WHICH`/`WHY` (unlike the other 6 MOP pseudo-methods) are genuinely overridable. Real but likely rare in practice. |
+| [comp-group-multi-error-bundling-unsupported](deep/comp-group-multi-error-bundling-unsupported.md) | `X::Comp::Group`-typed `throws-like` assertions (5 known roast files) | M/L | Rakudo can bundle multiple simultaneous compile diagnoses into one exception; mutsu's parser stops at the first fatal error. Needs a scoped multi-error-accumulation mechanism, not a per-case patch — write an ADR if it touches core parser control flow. |
+| [array-literal-nil-not-decayed-at-construction](deep/array-literal-nil-not-decayed-at-construction.md) | `[Nil]` array-literal construction (`eqv`, sub-arg passing, typed-array element checks) | M | A real semantic gap, but low-moderate severity: narrow practical surface (most code never round-trips a bare `Nil` array element through `eqv`), and the naive fix has a known second casualty (a typed-array leniency mutsu currently has that raku doesn't) requiring its own audit. |
+| [regex-alternation-ltm-longest-literal-prefix](deep/regex-alternation-ltm-longest-literal-prefix.md) | Any regex/grammar relying on `\|` LTM tie-breaking | **verify, likely resolved** | ADR-0022 (all 5 slices) shipped 2026-08-09 per the design doc's own header, but this file's body predates that and the originally-blocking Cro repro / roast subtests were not re-verified after the ship. Re-run before trusting either direction. |
+| [when-nonmatch-value-outside-map-grep](deep/when-nonmatch-value-outside-map-grep.md) | A `when`/`default`-tail block used as a direct closure call, `do { when ... }`, or a bare `given`/`when` statement (the `.map`/`.grep`/`.first` fast paths are already fixed) | M | A non-matching `when`-tail block still evaluates to `Nil`/`Any` instead of the correct falsy value in every context except the 4 already-fixed inline fast paths. The general fix (push the value in `exec_when_op`) is a statement-sequencing invariant change across 3 compiler call sites that must move in lockstep — a point fix was explicitly rejected as unsafe by its own prior investigation. |
 
-### Campaign: vendor the real `Test` module (PLAN §1, batteries policy)
+### B2 — batteries / dist-blocking correctness (real bugs, scoped to unblocking one bundled library)
 
-| Ticket | Axis | Effort | Why here |
+| Ticket | Blocks | Effort | Why here |
 |---|---|---|---|
-| [vendor-real-test-module](deep/vendor-real-test-module.md) | Test-vendor §1 | XL | The campaign header. Regression count driven 343→315→301→255→190→113 (last hard full-sweep number, 2026-08-04) via continuous fixes; step 3 (flip the default) hasn't started. Read this before any row below — its own text explicitly retracts three earlier "almost done" calls each disproven by the next session's clustered fixes. |
-| [interpreter-call-path-in-hot-loops](deep/interpreter-call-path-in-hot-loops.md) | perf §4 | L | The one perf axis where mutsu loses to raku, and the real blocker for the flip: real-`Test` inflates heavy roast files past the 30s budget (`state.t` 67× deficit traced here). Attack row B (file-scope sub call) next. |
-| [use-inside-a-block-leaks-to-the-enclosing-scope](tickets/use-inside-a-block-leaks-to-the-enclosing-scope.md) | Test-vendor §1 | M | Remaining env half of import scoping; defeats selective imports in real-Test roast files. |
-| [cache-on-a-lazy-seq-must-not-answer-seq](deep/cache-on-a-lazy-seq-must-not-answer-seq.md) | soundness | M | Crash-class: real `is-deeply(Seq,Seq)` recurses to a stack-overflow abort because `.cache` still answers `Seq`. |
-| [deferred-seq-materialization-destroys-the-original](deep/deferred-seq-materialization-destroys-the-original.md) | correctness §6 | M | Even `.defined` guts a deferred Seq; breaks any `is $fh.lines, <A B C>` under the real module. |
-| [nil-method-warnings-are-not-a-resumable-cx-warn](tickets/nil-method-warnings-are-not-a-resumable-cx-warn.md) | Test-vendor §1 | M | NEW. `Nil.Real`/`.Int`/`.Str` warnings bypass the catchable `CX::Warn` mechanism real `Test::Util`'s `warns-like` needs; narrow residue currently worked around by keeping two files on the native fallback. |
+| [p5tie-container-protocol-and-array-parse-bug](deep/p5tie-container-protocol-and-array-parse-bug.md) | `P5tie` dist entirely | L | Needs a real `Stash.BIND-KEY` container-tie protocol (MOP-level, not a stopgap per BATTERIES.md rung-3 ban) plus an unrelated parse bug in one file. |
+| [trait-mod-does-not-callable-and-no-variable-mop](deep/trait-mod-does-not-callable-and-no-variable-mop.md) | `Hash::Restricted` dist (dies immediately on load) | L | Needs a real `Variable` MOP object plus `trait_mod:<does>` as a genuinely callable multi sub — check corpus-wide need before investing, per its own note. |
+| [user-postcircumfix-index-not-dispatched-for-instances](deep/user-postcircumfix-index-not-dispatched-for-instances.md) | `Array::Rounded` (16/35 still failing) | M-L (down from XL — read path fixed) | The *read*-path dispatch gap for user `postcircumfix:<[ ]>` is fixed and pinned. Still open: the assignment path, the native-term capture (`&postcircumfix:<[ ]>` doesn't exist as a callable), and an unrelated constant-alias `is`-trait gap. |
+| [nativecall-types-package-qualification](deep/nativecall-types-package-qualification.md) | `.^name`/`.raku`/error-message consistency for NativeCall types; blocks nothing currently whitelisted | M/L | `Pointer`/`CArray`/etc. report bare names where raku reports `NativeCall::Types::`-qualified ones. The "real" fix (qualify the registry key) has a **confirmed correctness trap**: it breaks ordinary `Pointer[T]`/`CArray[T]` marshalling that the OpenSSL/`IO::Socket::SSL` battery depends on. Needs an ADR choosing between display-only qualification (safe, permanent divergence) and the real fix (needs ~15 call-site audits first). |
+| [nativehelpers-blob-moarvm-guts](deep/nativehelpers-blob-moarvm-guts.md) | Database battery slot (`DBIish`/`DB::SQLite`) | L | Design settled (ADR-0015 Accepted, all 4 phases). Tier 1 (load-time contracts) done; P0 (CStruct field writes, `.^array_type`) and P1-P2 (CArray/CStruct native storage) done. Remaining: P3b (`array[T]`) and P3c (reference-element `CArray`). |
+| [template-engines-blocked-on-mutsu](deep/template-engines-blocked-on-mutsu.md) | Template battery slot candidates (`Template6`, `Template::Jinja2`, `Template::HAML`, `SP6`, `Template::Classic`) | L (cluster) | `Template::Mustache` (chosen slot) and `Template::Mojo` are essentially done. `Template6` is the natural next pick (runner-up candidate, would give the survey a real second option); the rest are ordinary compat work, each a fresh data point on real-world grammar/list divergence. |
+| [cbor-simple-typed-array-and-diagnostic-format-gaps](tickets/cbor-simple-typed-array-and-diagnostic-format-gaps.md) | `CBOR::Simple`'s own upstream suite (doesn't block Cro/Log::Timeline, which only need a narrow slice) | M | Actively being worked — 3 of ~4 root causes found and fixed this week (forward-captured-code-var, a `my constant`+`elsif` parser bug, a BigInt-negate downcast bug). Residual: a nested-array decode aliasing bug + a stack overflow in `01-basic.rakutest` test 68+, and `03`/`04`/`06` not yet triaged. |
+| [cold-supply-whenever-source-replayed-not-tapped](deep/cold-supply-whenever-source-replayed-not-tapped.md) | `Test::Scheduler` dist (last known blocker) | L | A cold on-demand Supply used as a `whenever` source is replayed synchronously instead of tapped, so async emissions (promises, timers) never reach the outer body — architecture change (give it a supplier, tap it) touching completion accounting used by many other consumers. |
+| [subtest-compiled-dispatch-breaks-class-registry-restore](deep/subtest-compiled-dispatch-breaks-class-registry-restore.md) | Was a live Cro::HTTP middleware regression (already reverted, so not currently broken); a second, independent bug remains | M | The reverted perf attempt aside, `subtest`'s registry snapshot/restore genuinely erases a class registration whose type object escaped the subtest via a captured variable — a real, pre-existing bug on both dispatch paths. |
+| [second-preserving-instance-body-blob-returns-empty-in-same-supply-body](deep/second-preserving-instance-body-blob-returns-empty-in-same-supply-body.md) | Cro::HTTP2's `http2-request-parser.rakutest` (sole remaining failure) | L | The second of two concurrently-open HTTP/2 streams' `Supplier::Preserving`-backed body reads empty despite correct `emit`/`done`. No Cro-independent minimal repro found yet after two attempts — needs a closer repro (emit-before-data-arrives timing) before a real fix attempt. |
 
-### Campaign: ADR-0019 Phase E — the unified dispatch resolver
+## Tier N — Correctness, narrow impact / diagnostics
 
-**E8 fully closed since the last survey** (E8a/b/c, 2026-08-12: candidates
-now carry `level`/`stored_idx`, proto methods folded into `MethodEntry`).
-**E9-pre — the mandatory raku-ground-truth campaign — is also done**: 12
-scenarios pinned (green under both raku and mutsu), 8 real divergences
-found and filed as tickets (the byproduct table below). **E9a landed**
-the cross-MRO multi deferral-order fix (two raku-predicted probes, both
-exact hits); the `DispatchCursor` struct itself is deferred. **E9b is in
-active design as of today** (wrap chains → cursor-prefix entries), already
-surfacing two more raku divergences. E5/E6/E7 entry-routing cutover work
-continues in parallel (E5b just found a real ~2.4% native-vs-cascade
-mismatch rate that blocks a naive "trust the row" cutover). E1/E2(residual)/
-E3/E10/E11 remain open.
-
-| Ticket | Axis | Effort | Why here |
+| Ticket | Category | Effort | Why here |
 |---|---|---|---|
-**STALE as of 2026-08-17: ADR-0019 is now Accepted/Implemented (all G1-G4 gates closed, E1-E11
-and F3-F7 all `[x]`).** E8-E11 and E5-E7 are done and their design docs archived to
-`news/2026-08/adr0019-e8-e11-candidate-sequence-semantics.md` and
-`news/2026-08/adr0019-e5-e7-entry-routing.md` respectively — not P1 work anymore. Only E2's
-residual, non-gating catalog cleanup remains open:
+| [keep-undo-decided-by-value-truthiness-not-completion](tickets/keep-undo-decided-by-value-truthiness-not-completion.md) ⚡ | correctness-narrow | S-M | `KEEP`/`UNDO` should be decided by normal-completion-vs-exception, not the block's trailing value's truthiness — a block ending in `0`/`False` should still run `KEEP`. Fix site is precisely named (`should_run_success_queue`); a good quick win, and an existing test asserts the wrong behavior and needs correcting alongside the fix. |
+| [infix-in-term-position-not-diagnosed](tickets/infix-in-term-position-not-diagnosed.md) | diagnostics | M | `X::Syntax::InfixInTermPosition` is registered but nothing in the parser ever raises it — falls back to a generic `X::Syntax::Confused`. Needs careful parser-combinator surgery (many "expected a term" sites share code) verified against full `t/`+roast. |
+| [mark-context-flags-leak-across-live-call-boundary](deep/mark-context-flags-leak-across-live-call-boundary.md) | correctness-narrow (broad latent risk) | L | A `:=` bind's VM "mark context" flag leaks into a subsequent real function call, corrupting typed-array declarations inside the callee. Narrow trigger today (blocks `Crypt::RC4`), but 7 sibling one-shot flags share the same unscoped-to-call-frame architecture — worth fixing generally, not just for this one flag. |
+| [method-entries-never-covers-unpunned-roles](deep/method-entries-never-covers-unpunned-roles.md) | correctness-narrow (masked today) | L | The canonical ADR-0019 method-entries table never includes an un-punned role's own methods. Currently masked by dispatch flattening; a naive direct fix already caused a real multi-dispatch regression (reverted) — needs the `any_failed` deferral logic redesigned first. |
+| [placeholder-scope-loop-while-block-boundaries](deep/placeholder-scope-loop-while-block-boundaries.md) | correctness-narrow / diagnostics | M | `while`/`loop`/bare-`{}` each have a genuinely *different* raku placeholder-scoping rule (not one shared "boundary" fix) — no roast test currently depends on any of the three, but needs individual raku-verification per construct before touching the shared boundary-detection code (which affects arity of unrelated existing blocks). |
+| [plain-classes-answer-cool-only-builtin-methods](deep/plain-classes-answer-cool-only-builtin-methods.md) | diagnostics (mutsu too lenient) | M-L | `G.new.uc` should die (`.uc` is `Cool`-only) but silently answers via a generic stringify-fallback. A straightforward MRO gate was tried and reverted — it broke 6 files where a builtin type (`DateTime.Date`, `Instant.abs`, ...) genuinely implements the same-named method directly, independent of `Cool`. Needs a properly-scoped "does this (class, method) pair have a real native row" predicate. |
+| [ltm-inline-unbounded-quantifier-vs-array-tie](deep/ltm-inline-unbounded-quantifier-vs-array-tie.md) | correctness-narrow | L | On a runtime-length LTM tie, rakudo structurally prefers an inline unbounded quantifier; mutsu's two independently-evolved LTM engines just compare end positions. No known blocked test. |
+| [adr0019-role-composition-memo-guard-raku-case-table](deep/adr0019-role-composition-memo-guard-raku-case-table.md) | correctness question, unresolved | S-M | Whether raku memoizes a role's deferred-body re-execution per-role, per-target, or not at all on recomposition is not yet established against real raku — build the case table before deciding a fix. |
+| [is-run-after-raku-read-swallows-child-spawn](deep/is-run-after-raku-read-swallows-child-spawn.md) | correctness-narrow | M | `t/`-only repro (2nd+ `is_run` call referencing `$*RAKU`+`use v6.x` never spawns its child); doesn't reproduce in any current whitelisted test. |
+| [begin-rat-divzero-escapes-wrapping](tickets/begin-rat-divzero-escapes-wrapping.md) | correctness-narrow, deliberately deprioritized | S | A single-case divergence from an apparent Rakudo implementation quirk (lazy `Rat` div-by-zero not wrapped in `X::Comp::BeginTime`, unlike every other exception shape). Its own investigation recommends NOT chasing this — near-zero real-world benefit, would couple the phaser-wrap mechanism to `Rat`'s internals. |
+| [process-dynamic-write-nil-not-decayed-to-any](tickets/process-dynamic-write-nil-not-decayed-to-any.md) | correctness-narrow | S | `PROCESS::<$x> = Nil` stores a literal `Nil` instead of decaying to `Any`, unlike ordinary scalar assignment. Narrow, no roast dependency. |
+| [wide-buffer-bit-accessor-width-divergence](tickets/wide-buffer-bit-accessor-width-divergence.md) | correctness-narrow, **recommend not fixing** | — | `read-ubits`/`write-bits` on a >1-byte-element buffer diverges from MoarVM in a way that looks like leaked, non-portable MoarVM memory-layout behavior rather than a defined Raku semantic (probed extensively). Zero roast coverage, zero real dist impact (every `Digest` call site uses width-1 buffers). Leave unfixed unless something concrete surfaces. |
 
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [adr0019-e2-e4-resolver-core](deep/adr0019-e2-e4-resolver-core.md) | perf §4 | XL | E3/E4 closed; only E2 (exact handler-ID catalog) remains, and it no longer gates anything (structural fallback replaces the literal-zero coverage gate) — demote out of P1 on next full regen. |
+---
 
-**ADR-0019 E8/E9 raku-divergence byproducts** — real, raku-confirmed bugs
-the verification campaign surfaced; several already root-caused with a
-concrete fix direction, none yet landed (some sibling divergences named in
-the design docs, e.g. `role-shadowed-method-in-defer-chain`,
-`explicit-child-proto-assumes-parent-candidates`, were apparently fixed
-same-day and no longer exist as files — don't go looking for them):
+## Perf — needs measurement (batch these into one profiling-heavy session)
 
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [method-entries-never-covers-unpunned-roles](deep/method-entries-never-covers-unpunned-roles.md) | correctness §6 | L | Found via a real `t/`-suite sweep, not a synthetic probe; feeds 4 production dispatch sites (ctor plan, method cache, private-method resolution, winner selection) — needs a raku-verified per-shape pass before landing. |
-| [wrap-chain-skipped-inside-foreign-wrap-dispatch](tickets/wrap-chain-skipped-inside-foreign-wrap-dispatch.md) | correctness §6 | M | E9b design-pass finding (raku-confirmed): the global `is_inside_wrap_dispatch` guard silently drops an unrelated method's wrap chain whenever any other wrap is live. |
-| [callsame-in-method-consumes-enclosing-sub-wrap-chain](tickets/callsame-in-method-consumes-enclosing-sub-wrap-chain.md) | correctness §6 | M-L | E9b design-pass finding: cross-stack (sub-wrap vs method) frame-priority bug in `dispatch_next_candidate`; well-scoped fix (E9b's own `dispatch_token` stamping) but no named blocking test yet. |
-| [callsame-to-native-mu-methods-nil](tickets/callsame-to-native-mu-methods-nil.md) | correctness §6 | M-L | E9-pre campaign finding: any override of `gist`/`Str`/`raku`/`new` calling `callsame` gets Nil/Any instead of the native Mu implementation — a fairly fundamental OO idiom. |
-| [method-wrap-unwrap-restore-noop](tickets/method-wrap-unwrap-restore-noop.md) | correctness §6 | M | E9-pre campaign finding (scenario f'): method wraps can never be removed (`.restore`/`.unwrap` both no-op/throw); interim fix (search-and-remove) is self-contained pending E10a. |
-| [proto-method-body-skipped-for-type-object-invocant](tickets/proto-method-body-skipped-for-type-object-invocant.md) | correctness §6 | M | `proto method` bodies with side effects never run for type-object invocants (`P.m(5)`), only for instances. |
-| [lastcall-in-wrapper-nextsame-swallows-output](tickets/lastcall-in-wrapper-nextsame-swallows-output.md) | correctness §6 | L | Unscoped probe finding (not yet even a proposed fix); note a sibling `lastcall`-in-wrapper-then-`callsame` divergence was already fixed same-day (#6349) — re-check this one hasn't been folded in before starting. |
-| [classhow-lookup-all-candidates-non-multi-mro-gap](tickets/classhow-lookup-all-candidates-non-multi-mro-gap.md) | correctness §6 | S | Split out of the same E7-step-5 introspection work for "one bug per sub-PR" discipline; niche but cheap — bundle with the row below. |
-| [classhow-lookup-surfaces-private-methods](tickets/classhow-lookup-surfaces-private-methods.md) | correctness §6 | S | `.^lookup` leaks private methods by bare name; same E7 split as the row above. |
-| [nomatch-candidate-signature-slurpy-and-smiley](tickets/nomatch-candidate-signature-slurpy-and-smiley.md) | errors §5 | S | Cosmetic only: duplicate `*%_` and missing `:D`/`:U` in `X::Multi::NoMatch` messages; dispatch itself is already correct. |
+These are all mid-campaign: each has already had at least one measurement
+round, and the productive next step is more profiling/benchmarking, not a
+guessed code change. Running them together amortizes the profiler-setup
+cost and keeps perf work from interleaving with correctness fixes above.
 
-### Soundness: blocks the legacy_body-removal architecture goal (ADR-0019 C6e)
-
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [compiled-fns-default-breaks-nested-subs-outside-methods](deep/compiled-fns-default-breaks-nested-subs-outside-methods.md) | soundness | L | ~17 call sites pass an empty `CompiledFns::default()` instead of the real table — nested-sub declarations silently no-op once the `legacy_body` tree-walk fallback is dropped. Confirmed live reproducer; explicitly "do NOT re-attempt dropping legacy_body before this lands." |
-
-### Standalone quick wins (ordinary-code wrong answers / CI health)
-
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [s17-supply-syntax-burns-600-cpu-seconds](tickets/s17-supply-syntax-burns-600-cpu-seconds.md) | perf §4 | M | `S17-supply/syntax.t` burns ~610 CPU-s (11:1 CPU:wall — a busy-wait somewhere in the react runtime) and already produced a jit-stress CI timeout; it is the whole margin of the roast budget. |
-| [s17-supply-syntax-gc-stress-budget](deep/s17-supply-syntax-gc-stress-budget.md) | perf §4 / roast §3 | M | NEW sibling of the row above: the same file deterministically blows the gc-stress CI timeout budget (reproduced 4/4), already killed a PR's gc-stress job. |
-| [sub-rw-writeback-may-also-leak-attr-shaped-source-into-caller-env](tickets/sub-rw-writeback-may-also-leak-attr-shaped-source-into-caller-env.md) | soundness | S-M | NEW. Unverified sibling of an already-fixed method-path attribute-corruption bug (same shape that broke a real Cro test); soundness axis plus a concrete suggested repro make it worth verifying first. |
-| [array-subclass-push-returns-storage-not-self](tickets/array-subclass-push-returns-storage-not-self.md) ⚡ | correctness §6 | S | NEW. Wrong-identity bug on `is Array` subclass `.push` with a concrete fix site named. |
-| [class-body-scalar-reassignment-lost](tickets/class-body-scalar-reassignment-lost.md) ⚡ | correctness §6 | S | NEW. A class-body `my $x` write lands under the wrong env key; two named one-line fix directions, found via the CSV campaign but not needed by it. |
-| [regex-comment-containing-pipe-char-confuses-top-level-alternation-split](tickets/regex-comment-containing-pipe-char-confuses-top-level-alternation-split.md) ⚡ | correctness §6 | S | NEW. `\|` inside a `#` regex comment is misread as alternation; fix is reusing comment-skip logic already duplicated elsewhere. |
-| [role-mixin-hash-attr-default-not-coerced](tickets/role-mixin-hash-attr-default-not-coerced.md) ⚡ | correctness §6 | S | NEW. `has %.h = (...)` default not coerced to Hash on `does`/`but` mixin; one-line fix mirroring 10 other call sites. |
-| [retire-native-test-util-overrides](tickets/retire-native-test-util-overrides.md) ⚡ | Test-vendor §1 | S | Mechanical: add missing `use Test::Util` to `t/` callers, then delete the dead native handlers. |
-
-## P2 — next
-
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [yamlish-grammar-layer](tickets/yamlish-grammar-layer.md) | batteries §1 | L | YAML battery candidate fails deep in its own grammar; 5 upstream test files with partial pass rates. |
-| [template-engines-blocked-on-mutsu](deep/template-engines-blocked-on-mutsu.md) | batteries §1 | L | Cluster survey; Mustache (chosen slot) now 11/13, Jinja2 load-blocker fixed. Template6 is the next natural pick. |
-| [template-mojo-residual-failures](tickets/template-mojo-residual-failures.md) ⚡ | batteries §1 | S | Nearly resolved; the one open item is really a pointer to the sigspace ticket below. |
-| [rule-sigspace-does-not-consume-trailing-whitespace](tickets/rule-sigspace-does-not-consume-trailing-whitespace.md) | correctness §6 | S-M | `rule`/`:sigspace` doesn't insert the implicit `<.ws>` after the last atom — blocks Template::Mojo's `03-capture.rakutest` layer 2. |
-| [nativehelpers-blob-moarvm-guts](deep/nativehelpers-blob-moarvm-guts.md) | batteries §1 | L | Gates the database battery slot (DBIish/DB::SQLite). Design settled (ADR-0015 Accepted); P3b/P3c execution remains. |
-| [cold-supply-whenever-source-replayed-not-tapped](deep/cold-supply-whenever-source-replayed-not-tapped.md) | batteries §1 | L | Last known blocker for the Test::Scheduler dist (T-037): a cold supply must be tapped, not replayed. |
-| [forward-captured-code-var-snapshot](tickets/forward-captured-code-var-snapshot.md) | batteries §1 | M | Last blocker for a full CBOR::Simple `cbor-decode` round-trip. |
-| [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md) | batteries §1 | XL | A triage *queue* — several root causes already pulled out into their own deep/ tickets; remainder: Math::Interval, Native::Overflow, App::SudokuHelper, P5tie, Mathematica::Serializer::Encoder, Hash::Restricted, Crypt::RC4, Random::Choice. |
-| [same-role-composed-twice-multi-dispatch-picks-one-candidate](tickets/same-role-composed-twice-multi-dispatch-picks-one-candidate.md) | correctness §6 | M-L | `does R[Int] does R[Str]` composes both multi candidates but every call hits one of them (declaration-order tiebreak, not signature match); roast passes only by luck of exercising one arg type. |
-| [wildcard-handles-loses-to-builtin-cool-methods](tickets/wildcard-handles-loses-to-builtin-cool-methods.md) | correctness §6 | M | `handles *` delegation is consulted only after built-in Cool/Any dispatch, so any delegate method colliding with a builtin never forwards. |
-| [when-only-block-nonmatch-value-wrong](tickets/when-only-block-nonmatch-value-wrong.md) | correctness §6 | M | A `.map`/`.grep` block whose only statement is a non-matching `when` falls back to the original topic — `.grep({when Int {True}})` filters nothing. Step 1 is pinning raku's actual non-match value (probes disagree); the fallback is load-bearing for rw map/grep. |
-| [role-submethod-runtime-does-parameterized-value](tickets/role-submethod-runtime-does-parameterized-value.md) | correctness §6 | M | A parameterized role's own `$v` parameter is invisible to its BUILD/TWEAK on runtime `does`/`but` targets; needs a case survey of `class_role_param_bindings` reachability first. |
-| [native-ctor-gate-reads-is-required-as-type-constraint](tickets/native-ctor-gate-reads-is-required-as-type-constraint.md) | soundness | M | The native-fast-ctor gate binds required-ness where it means to test the attribute's type constraint — wrong fact, effect uncharacterized; mostly repro construction. |
-| [whenever-parameter-type-constraint-is-not-enforced](tickets/whenever-parameter-type-constraint-is-not-enforced.md) | errors §5 | M | `whenever $s -> Int $x {}` silently drops the type — cost is diagnosis time (the Cro chunked-body leak surfaced as "No such method" instead of a binding failure). `.tap` already enforces, which narrows the fix. |
-| [infix-word-name-is-never-a-listop-call](tickets/infix-word-name-is-never-a-listop-call.md) | correctness §6 | M | A declared sub named after an infix word (`before`, `min`, …) can never be called paren-less; needs the identifier parser to consult the declared-sub table in term position only. Not currently blocking (Cro's `before`/`after` happen to work). |
-| [listops-are-not-real-multi-subs](deep/listops-are-not-real-multi-subs.md) | correctness §6 | XL | `splice`/`push`/etc. are special-cased opcodes, not real multi-subs — a user/module `multi` for these names is unreachable. Blocks String::Splice entirely. |
-| [sigilless-constant-invisible-in-nested-sub-inside-module](tickets/sigilless-constant-invisible-in-nested-sub-inside-module.md) | correctness §6 | L | `constant \NAME` inside non-unit `module`/`package` invisible to a nested `sub`; blocks all 16 subtests of the RSV dist. Root cause fully traced, needs a design choice. |
-| [bare-block-as-infix-operand-not-recognized](deep/bare-block-as-infix-operand-not-recognized.md) | correctness §6 | L | A leading `{ ... }` before an infix never looks ahead to see if it should be a term — blocks PSpec dist's `xxx` custom-operator idiom. |
-| [user-postcircumfix-index-not-dispatched-for-instances](deep/user-postcircumfix-index-not-dispatched-for-instances.md) | correctness §6 | XL | A user `multi sub postcircumfix:<[ ]>` is never consulted for `@obj[...]` — real, general, spec'd operator-overload gap; blocks Array::Rounded (16/35 failing). |
-| [promise-spawn-segv-under-load](deep/promise-spawn-segv-under-load.md) | soundness | L | Reproducible SEGV (guard-page stack overflow on `Promise.start` threads, ~6-8% under contention); fix direction is a uniform spawned-thread stack budget. |
-| [supply-lines-drops-channel-backed-supplies](tickets/supply-lines-drops-channel-backed-supplies.md) | concurrency §5 | M | `.lines` on a real-socket Supply silently emits nothing — the most natural socket idiom. |
-| [head-on-a-channel-backed-supply-drops-every-value](tickets/head-on-a-channel-backed-supply-drops-every-value.md) | concurrency §5 | M | Same family: every combinator through `make_supply_from_values` drops channel-backed sources; `.head` is the repro. |
-| [procasync-stdout-is-not-incremental](tickets/procasync-stdout-is-not-incremental.md) | concurrency §5 | M | Output only arrives at child exit → parent/child handshakes deadlock; the streaming-reader shape already exists for sockets. |
-| [supply-block-lexical-leaks-through-thread-lane](tickets/supply-block-lexical-leaks-through-thread-lane.md) | concurrency §5 | M | Residual cross-thread half of a mostly-fixed lexical-privacy bug; the needed info (`authoritative_captures`) already exists. |
-| [schedule-on-live-transform-operators-bypass-deferral](deep/schedule-on-live-transform-operators-bypass-deferral.md) | concurrency §5 | L | NEW. ADR-0028 Supply-scheduling gap: `.map`/`.grep`/`.do`/`.flat` bypass `schedule-on` deferral. Unrelated to ADR-0025 despite superficially similar "captured/deferred" framing. |
-| [bare-name-type-constraint-store-is-scope-blind](deep/bare-name-type-constraint-store-is-scope-blind.md) | correctness §6 | L | NEW. Sibling architectural disease to ADR-0025 (a global bare-name map, not a value cell): type constraints on `@`/`%` and mainline blocks still leak cross-scope. |
-| [module-file-scope-array-and-hash-still-share-the-caller](tickets/module-file-scope-array-and-hash-still-share-the-caller.md) | Test-vendor §1 | L | Sibling of a fixed scalar bug: a module's file-scope `@`/`%` still shares the caller's env key. Costs a whole roast integration file. |
-| [local-tests-rely-on-a-lenient-native-is](tickets/local-tests-rely-on-a-lenient-native-is.md) | Test-vendor §1 | M | Six remaining `t/` files in the "raku fails it too" bucket, each an independent triage. |
-| [callframe-line-and-file-come-from-different-frames](tickets/callframe-line-and-file-come-from-different-frames.md) | errors §5 | M | Failure locations under the real `Test` point into unrelated frames — affects `throws-like` reporting in at least 4 sweep files. |
-| [eval-context-frame-owns-the-return-target](deep/eval-context-frame-owns-the-return-target.md) | Test-vendor §1 | M | Real `throws-like '<code with return>'` reports "did not die"; three coordinated changes, all specified. |
-| [sinking-a-try-blocks-discarded-value-escapes-the-try](tickets/sinking-a-try-blocks-discarded-value-escapes-the-try.md) | Test-vendor §1 | L | Aborts `roast/integration/advent2009-day20.t` after 11/21 assertions under real Test; two independent wrongs. |
-| [exception-class-hierarchy-is-mostly-unregistered](deep/exception-class-hierarchy-is-mostly-unregistered.md) | correctness §6 | XL | 124 unregistered `X::` classes; mutsu's own compiler emits one of them. Needs the role-vs-prefix parentage design first. |
-| [multi-candidates-declaration-order](tickets/multi-candidates-declaration-order.md) | correctness §6 | M | `&foo.candidates` order is hash-bucket-dependent, not declaration order — can dispatch the wrong candidate. Reader-side sort is trivial but may be cheaper after ADR-0019 Phase E lands (E8 now closed, so this may already be easier — re-check before starting). |
-| [parameter-objects-have-no-stable-identity](tickets/parameter-objects-have-no-stable-identity.md) | correctness §6 | M | `Signature.params` builds a fresh `Parameter` every access; the Cro-blocking case already shipped via a narrower replay mechanism, this is the honest cached-Parameter version. |
-| [quantified-scalar-regex-interpolation-broken](tickets/quantified-scalar-regex-interpolation-broken.md) | correctness §6 | M-L | NEW. `$s?`/`$s+` never matches — general regex-interpolation gap; the splice approach needs replacing with a real atom/token. Deferred since Text::CSV doesn't need it. |
-| [statement-level-begin-side-effects-lost-with-later-vardecl-splits](tickets/statement-level-begin-side-effects-lost-with-later-vardecl-splits.md) | correctness §6 | M | NEW. Silent data loss when a `BEGIN {}` push runs before a later VarDecl split reorders statements; needs bytecode/gdb investigation of container identity. |
-| [dollar-dot-dynamic-method-name-should-require-callable](tickets/dollar-dot-dynamic-method-name-should-require-callable.md) | correctness §6 | M | NEW, standalone (not an ADR-0019 byproduct). `.$m()` silently accepts a bare string as a method name instead of requiring Callable/`CALL-ME`. |
-| [package-receiver-attribute-accessor-wrong-error](tickets/package-receiver-attribute-accessor-wrong-error.md) | errors §5 | M | NEW, standalone. Classic beginner mistake (`Foo.x` without `.new`) reports "no such method" instead of raku's "did you forget a `.new`" — common pattern. |
-
-## P3 — later
-
-| Ticket | Axis | Effort | Why here |
-|---|---|---|---|
-| [wasm-start-and-channel-trap](deep/wasm-start-and-channel-trap.md) | batteries §1 | M | Two tutorial-site lessons; small mechanism but the synchronous-`start` semantics need thought. |
-| [http-server-tiny-async-serving-remainder](tickets/http-server-tiny-async-serving-remainder.md) | concurrency §5 | L | Humming-Bird is no longer the web target; the general whenever/control-flow bugs it names are tracked in the concurrency family above. |
-| [digest-dist-blockers](tickets/digest-dist-blockers.md) | batteries §1 | M | Dist already bundled and ~90% of this file is struck-through "FIXED"; residue is wide-buffer bit accessors and a `with`-modifier placeholder gap. Candidate to trim/archive (see Housekeeping). |
-| `nativecall-surface-gaps` (file removed) | batteries §1 | — | RESOLVED-ish: merged 2026-08-10 into `nativecall-pointer-short-name.md` below. |
-| [nativecall-pointer-short-name](tickets/nativecall-pointer-short-name.md) | batteries §1 | M | Now absorbs `nativecall-surface-gaps`; only the `NativeCall::Types::` prefix naming (cosmetic `.^name`) remains open. |
-| `pointy-block-custom-param-trait-parse-time-check-fails-for-large-modules` (file removed) | batteries §1 | — | RESOLVED 2026-08-12: parser was misparsing `is` trait args on pointy-block params (intermittent "unknown trait" on Cro::HTTP::Router). |
-| [procasync-stress-segv](deep/procasync-stress-segv.md) | soundness | L | Real memory unsafety but ~1-in-dozens CI-only, no local repro; *monitor* — the crash reporter now uploads artifacts, wait for the next occurrence. |
-| [state-write-through-is-skipped-in-a-jit-compiled-range](tickets/state-write-through-is-skipped-in-a-jit-compiled-range.md) | soundness | M | No deterministic repro today; the `state_vars` rekey half is worth doing on its own merits. |
-| [computed-monitor-method-call-in-a-loop-still-leaks-the-topic](tickets/computed-monitor-method-call-in-a-loop-still-leaks-the-topic.md) | correctness §6 | S-M | Only the three-way combination (computed name × monitor × loop) still clobbers `$_`; entry point identified, nothing known blocked (Cro calls monitors by literal name). |
-| [closure-capture-shadowed-by-colliding-callee-parameter](deep/closure-capture-shadowed-by-colliding-callee-parameter.md) | correctness §6 | L | Real trap (three ingredients needed) but two narrow fixes already regressed — belongs to the env-layering cluster, do not poke at it narrowly. |
-| [stored-regex-loses-its-defining-scope-lexicals](tickets/stored-regex-loses-its-defining-scope-lexicals.md) | correctness §6 | L | Two hard divergences, nothing measured blocked today. |
-| [ltm-inline-unbounded-quantifier-vs-array-tie](deep/ltm-inline-unbounded-quantifier-vs-array-tie.md) | correctness §6 | L | On a runtime length tie, rakudo prefers the branch with an inline unbounded quantifier (boundedness-aware NFA); mutsu's two independently-evolved LTM engines both just compare end positions. No known blocked test. |
-| [code-var-mention-remakes-the-sub](tickets/code-var-mention-remakes-the-sub.md) | correctness §6 | L | `&f.WHICH` unstable; entangled with `wrap_chains` identity — decide where the canonical Sub lives first (ADR-0019 E10 touches the same store; E10 hasn't started, so still blocked). |
-| `role-our-scoped-attribute-not-rejected` (file removed) | errors §5 | — | RESOLVED 2026-08-10: `our $.attr` in a role now dies `X::Declaration::OurScopeInRole` at compile time. |
-| [subtest-recompiles-block-from-ast-every-call](tickets/subtest-recompiles-block-from-ast-every-call.md) | perf §4 | M-L | The common `subtest "name" => {…}` call form misses the `SubtestScope` bytecode path and recompiles the block from AST every call — the residual source of nonzero `method_body_runtime_compiles` in subtest-heavy files. Not a correctness bug. |
-| [adr0019-d10-precompute-stub-and-swallow-flags](tickets/adr0019-d10-precompute-stub-and-swallow-flags.md) ⚡ | record | S | Zero-behavior-change polish; its own text says "do opportunistically if touching these files for another reason, otherwise skip". |
-| [duplicated-prefix-question-mark](tickets/duplicated-prefix-question-mark.md) | roast §3 | M | Single roast test divergence; needs the `Z??`/`X??` CannotMeta sorrow to become the primary diagnosis first. |
-| [repeat-call-loses-backtrace-frame](tickets/repeat-call-loses-backtrace-frame.md) | errors §5 | L | Second call loses its frame; wants `RoutineFrame` symbol-interning first (hot path). |
-| [module-parse-warning-reported-twice](tickets/module-parse-warning-reported-twice.md) | errors §5 | M | Cosmetic duplicate warning with wrong attribution; fix needs new origin-tracking plumbing. |
-| [bare-precedes-placeholder-nested-block](tickets/bare-precedes-placeholder-nested-block.md) | errors §5 | M | False-negative diagnostic only, no miscompile; re-express on the existing placeholder collectors. |
-| [two-terms-in-a-row-is-not-a-parse-error](tickets/two-terms-in-a-row-is-not-a-parse-error.md) | errors §5 | M | Missing diagnostic; per-site guard-list re-decisions, and a wrong guard *rejects valid programs* — full roast as review. |
-| [test-assertion-trait-is-not-introspectable](deep/test-assertion-trait-is-not-introspectable.md) | Test-vendor §1 | L | Only costs wrong line numbers in failure output; three coupled mechanisms (trait resolution ordering, `.^mixin`, backtrace walk). |
-| [our-var-and-its-package-name-are-two-slots](tickets/our-var-and-its-package-name-are-two-slots.md) | roast §3 | L | One roast test; the sound fix is a shared cell (container-representation family) — near-Icebox, listed here because the repro is tiny. |
-| [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md) | correctness §6 | mixed | A container: multi-line feeds (S) and `exits-ok` (S) are pickable; the typed-exception rows need scope analysis (L each). |
-| `typed-buf-native-interop-holes` (file removed) | correctness §6 | — | RESOLVED (closed, no fix needed) 2026-08-10: items 2-4 were already fixed; item 1 re-verified as non-reproducing. |
-| [magic-vars-should-be-built-lazily](tickets/magic-vars-should-be-built-lazily.md) | perf §4 | M | Startup metric polish; slice 1 done, profile before designing slice 2. |
-| [bench-ctor-construction-parity](tickets/bench-ctor-construction-parity.md) | perf §4 | L | The only bench where mutsu is slower (1.17-1.35×); remaining slices lean on the closure-env-capture-cost Icebox item. |
-| [digest-ripemd-start-per-block-overhead](tickets/digest-ripemd-start-per-block-overhead.md) | perf §4 | L | `t/ripemd.t` 295s→119s after major perf work but still exceeds the 120s CI gate margin; profile is now flat, needs one more diminishing-return lever. |
-| [yaml-parse-throughput](tickets/yaml-parse-throughput.md) | perf §4 | XL | Correct (81/81) but ~5× raku; next round is structural (ADR-0016 P2/P5), not another call site. |
-| [adr0016-p5-match-consumer-inventory](deep/adr0016-p5-match-consumer-inventory.md) | perf §4 | L | The 72-site inventory that gates lazy `Match` (feeds the row above). |
-| [c6d-interpreter-body-sites-are-mostly-token-bodies](deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md) | perf §4 | L | Nearly complete: most sub-items landed; remaining scope is grammar token/rule bodies (belongs to ADR-0009/Phase D handoff). |
-| [slang-piersing-identifier-name-overrides](tickets/slang-piersing-identifier-name-overrides.md) | batteries §1 | L | NEW. Slangify's `identifier`/`name` rule overrides (trailing `?`/`!`) aren't supported; needs a new parser mode surveyed across many identifier call sites. Not urgent — Slang::Tuxic already provides gate coverage. |
-| [pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form](deep/pseudo-method-which-why-user-override-ignored-in-bareword-and-dynamic-form.md) | correctness §6 | L | NEW. `.WHICH`/`.WHY` user overrides ignored except via quoted-literal call; two redundant dispatch mechanisms need auditing together. Real-world usage likely rare. |
-| [supply-done-in-tap-callback-load-flaky.t](tickets/supply-done-in-tap-callback-load-flaky.t.md) | concurrency §5 / record | S | NEW. Measured 10/24 failure rate under 24-way parallel load (evidence-standard-satisfying); next step is root-cause or a formal `flaky-tests.txt` quarantine per policy. |
-
-## Icebox — blocked on a design campaign or an explicit decision
-
-| Ticket | Axis | Blocked on |
+| Ticket | Status | Why batch it here |
 |---|---|---|
-| [needs-env-sync-blanket-removal](deep/needs-env-sync-blanket-removal.md) | perf §4 | Explicitly a fused campaign (lexical-slot + per-slot precision); a narrow probe deterministically broke four pinned mechanisms. De-prioritized 2026-07. |
-| [shared-store-bare-name-collision-across-unrelated-frames](deep/shared-store-bare-name-collision-across-unrelated-frames.md) | concurrency §5 | Re-verified 2026-08-13: every concrete instance found so far has still been fixed elsewhere (most recently the multi-param `for` loop + two more env-key fixes brought `http-session-inmemory` to 10/13); no known blocked test drives the store-keying redesign. **Not** the same bug as the (now-resolved) Cro session-counter ticket — that redirected to and was fixed via a different deep ticket entirely; don't conflate the two. |
-| [captured-outer-pair-container-alias](deep/captured-outer-pair-container-alias.md) | correctness §6 | ADR-0001 element-cell / container-representation mechanism. |
-| [subscript-p-pair-is-a-snapshot-not-a-container](deep/subscript-p-pair-is-a-snapshot-not-a-container.md) | correctness §6 | Same: needs an `array_element_cell` API (ADR-0001); the tempting locals-scan patch is explicitly wrong. |
-| [inline-start-blocks-clobber-a-later-declared-variable](tickets/inline-start-blocks-clobber-a-later-declared-variable.md) | correctness §6 | Cell-based capture work (write back only what the thread mutated); no call-site special case allowed. |
-| [otf-compilation-gate-leftovers](tickets/otf-compilation-gate-leftovers.md) | perf §4 | Per-call capture cells / caller-slot mechanism; "just remove the gate" frontier is exhausted. |
-| [closure-env-capture-cost](deep/closure-env-capture-cost.md) | perf §4 | Two-tier capture + epoch design; belongs with the Slice F env work. Cheap shapes are ruled out as unsound. |
-| [cue-loop-lexical-shared-lane-residue](tickets/cue-loop-lexical-shared-lane-residue.md) | concurrency §5 | ADR-0010/Track-B-adjacent per-binding cell mechanism; a loop-redeclared lexical mutated inside a `.cue` callback retains the previous iteration's value. |
-| [bundle-json-tiny-instead-of-emulating](tickets/bundle-json-tiny-instead-of-emulating.md) | batteries §1 | A deliberate decision: real JSON::Tiny is >1000× slower on zef's metadata path; JSON::Fast needs 42 `nqp::` ops. Ask the user before moving. |
-| [rakuast-remaining](deep/rakuast-remaining.md) | correctness §6 | Multi-campaign backlog (ADR-0011); pick slices by user impact, not cadence. |
-| [nativecall-cannot-be-vendored](deep/nativecall-cannot-be-vendored.md) | record | Not actionable — a measurement record with explicit reopen conditions. Keep. |
-| [for-loop-rw-element-alias-lost-through-deferred-closure](deep/for-loop-rw-element-alias-lost-through-deferred-closure.md) | soundness | NEW. Array-*element*-level `ContainerRef` aliasing (the old scalar-array-sharing Slice 2b) — needs its own share-vs-bind design at the element-store layer. Superficially ADR-0025-shaped but architecturally unrelated. |
-| [element-itemization-lost-in-scalar-binding](deep/element-itemization-lost-in-scalar-binding.md) | correctness §6 | NEW. Store-side Scalar-container itemization for array/hash elements — its own measured campaign, no closure-capture involvement despite the superficial resemblance to the ADR-0025 cluster. |
+| [yaml-parse-throughput](tickets/yaml-parse-throughput.md) | Round 9 of an ongoing, heavily-instrumented campaign; correct (81/81) but 5-35x raku on some files | The methodology (VM_STATS diffing, gdb hit-count sweeps to find the dominant `view()`/materialization call site) is well-established and has closed several real drift regressions already. **ADR-0016 (all 5 phases, including P5 lazy `Match`) fully landed 2026-07-31** and delivered a real ~4x wall-clock win (round 6 confirmed) — round 5's "next round is ADR-0016 P2/P5 territory" prediction is stale; the file is now past that, chasing a post-P5 drift (ratio crept back from ~25 to ~34-46) with no dominant call site identified yet. |
+| [digest-ripemd-start-per-block-overhead](tickets/digest-ripemd-start-per-block-overhead.md) | `t/ripemd.t` 295s → 119s already (9/9 correct); still exceeds the 120s CI gate margin | The flat post-optimization profile (no single dominant function: refcount 4.7%, symbol caches 5.5%, malloc+free 12%, ...) means the next lever needs a fresh profile, not a guess. One more ~20% win needed to whitelist. |
+| [adr0019-g3-diffuse-bless-allocation-cost](deep/adr0019-g3-diffuse-bless-allocation-cost.md) | bench-ctor/bench-class construction cost is diffuse across many small alloc/hash/GC-refcount ops | Explicitly blocked on getting a working call-graph profiler or counting allocator — two smaller findings from the same investigation already landed. |
+| [bench-ctor-construction-parity](tickets/bench-ctor-construction-parity.md) | The only bench where mutsu is slower than raku (1.17-1.35x); S1 and S5 landed | S2 is confirmed blocked on the closure-upvalue-cell prerequisite (`docs/vm-single-store.md`); S3's suggested directions are already implemented. What's left needs the same profiler work as the G3 row above — pair them. |
+| [interpreter-call-path-in-hot-loops](deep/interpreter-call-path-in-hot-loops.md) | Mostly resolved (13.8x → ~2x for the isolated hot-loop shape) | The file's own conclusion redirects further work to `eval-block-value-recompiles-every-call.md` below — don't re-measure the already-closed shape, go straight to that ticket. |
+| [eval-block-value-recompiles-every-call](deep/eval-block-value-recompiles-every-call.md) | A real, measured perf issue (per-call AST recompile for any first-class block/closure Value); one fix attempt already reverted after finding a 2.4x regression on a different shape | Has a documented, specific verification protocol (VM_STATS before/after on BOTH a no-nested-sub and a nested-sub repro, since CI doesn't catch perf regressions) — exactly the kind of ticket that needs a dedicated measurement session, not a quick patch. A 2026-08-14 Fable design consultation left a concrete recommended sequencing (cache compiled results first, since it fixes both named costs as one mechanism). |
 
-## Housekeeping
+### Perf — direction already known (lower priority than the above; no fresh measurement needed)
 
-- **13 tickets resolved since 2026-08-10** (mapped by reading the deleting commit / matching `news/` entry):
-  - `pointy-block-custom-param-trait-parse-time-check-fails-for-large-modules` → fixed, `news/2026-08/pointy-block-custom-param-trait-parse-time-check-resolved.md`.
-  - `concurrent-http-sessions-share-one-instances-count-attribute` → narrowed 2026-08-10 to a `for`-loop sibling-binding bug, fixed via ADR-0023 the same day, `news/2026-08/for-loop-param-binding-provenance-spawn-capture.md`. **Not** the same as the still-open `shared-store-bare-name-collision-across-unrelated-frames` Icebox item — those are separate root causes; don't reconflate them.
-  - `constant-declared-from-a-begin-is-rejected` → fixed, `news/2026-08/constant-begin-initializer-readonly.md`.
-  - `metaop-over-range-base-is-unsupported` → fixed, `news/2026-08/metaop-range-base.md`.
-  - `multi-arg-type-keys-package-collision` → fixed, `news/2026-08/multi-arg-type-keys-package-collision.md`.
-  - `named-capture-absent-from-current-match-leaks-stale-value` → fixed, `news/2026-08/named-capture-absent-from-current-match.md`.
-  - `nativecall-surface-gaps` → merged into `nativecall-pointer-short-name.md` (still open, see P3).
-  - `parameter-type-not-nominalized-for-user-subsets` → fixed, `news/2026-08/parameter-nominalize-user-subsets-and-typecheck-parameter-object.md`.
-  - `promise-supply-coercion-drives-react-on-calling-thread` → fixed, `news/2026-08/promise-supply-coercion-async-drive.md`.
-  - `role-our-scoped-attribute-not-rejected` → fixed, `news/2026-08/role-our-scoped-attribute-not-rejected.md`.
-  - `role-submethod-array-hash-attr-key-mismatch` → fixed, `news/2026-08/role-submethod-array-hash-attr-key.md`.
-  - `slurpy-hash-param-in-start-block-reads-stale-value-across-sequential-calls` → fixed, `news/2026-08/slurpy-param-mask-survives-into-spawned-thread-body.md` (don't confuse with the distinct sibling fix `news/2026-08/hash-slurpy-param-thread-mask.md`).
-  - `typed-buf-native-interop-holes` → closed without a fix; item 1 re-verified as non-reproducing, nothing to record.
-- **Two previously-P1 Cro tickets likely resolved but NOT re-verified this pass — verify and close, don't leave them stale:**
-  - [regex-alternation-ltm-longest-literal-prefix](deep/regex-alternation-ltm-longest-literal-prefix.md) — [ADR-0022](../docs/adr/0022-regex-alternation-ltm-ranking.md) is now "Accepted; all five slices implemented and merged" (2026-08-09), but this ticket file's own text hasn't been updated to say so. Re-run the named Cro repro (`http-router.rakutest` test 61) and the 3 `S05-metasyntax/longest-alternative.t` subtests; if green, retire to `news/`.
-  - [pair-namedness-is-a-value-property-not-a-call-site-property](deep/pair-namedness-is-a-value-property-not-a-call-site-property.md) — [ADR-0021](../docs/adr/0021-argument-namedness-is-a-call-site-property.md) is now "Accepted (P1-P3a and P3 shipped; P4 cleanup and P5 measured perf follow-up remain)". This ticket named P1 alone as the fix for the live Cro `headers => [...]` blocker in `Cro::HTTP::Client`; re-run that repro (`tmp/hdr2.p6`-shaped case). If fixed, re-scope the file down to just the P4/P5 cleanup remainder (demote to P3) or retire it.
-- **Stale ADR-0019 Phase D design docs (8 files in `deep/`)** — still present, still
-  done-stale (D0-D10 all closed; news has the landed entries):
-  **RESOLVED 2026-08-17** — all 8 (`adr0019-d2c-attribute-default-chunks`,
-  `adr0019-d2-remainder-attr-plan-lowering`, `adr0019-d3-8-method-body-main-pass-compilation`,
-  `adr0019-d4-parent-expr-chunks`, `adr0019-d5-plan-driven-how-ops`,
-  `adr0019-d6-d9-legacy-body-removal`, `adr0019-d7-d8-role-plan-encoding`,
-  `adr0019-e1-typeid-receiver-owner`) deleted after extracting their unfiled spin-offs: the
-  D3-8 lexical-capture bug (raku 42 / mutsu 0) re-verified as already fixed, no ticket needed;
-  the `record_type_body_captures`/`class_dispatch.rs` compile-dedup remnants filed as
-  [adr0019-method-body-compile-dedup-remnants](tickets/adr0019-method-body-compile-dedup-remnants.md);
-  the D7/D8 once-per-composition memo-keying V2 filed as
-  [adr0019-role-composition-memo-guard-raku-case-table](deep/adr0019-role-composition-memo-guard-raku-case-table.md);
-  D2c-5 was already tracked inline in the ADR text, no separate ticket needed; E1's V2 (mixin
-  order nondeterminism) turned out to be already fixed and retired to
-  `news/2026-08/mixin-role-application-order-tracked.md` (the `mixin-role-order-not-tracked`
-  ticket this note and the stale table row above pointed at no longer exists).
-  **RESOLVED 2026-08-17:** `adr0019-e4b-should-bypass-native-fastpath-decomposition.md` was
-  surveyed and also retired — its own ADR box (E4b) turned out to already be functionally closed
-  (the ADR's own 2026-08-11/12 progress notes had declared it done; only the checkbox itself was
-  left unchecked, now corrected), and the design doc's "still open" guard-removal candidates were
-  themselves superseded the same day by a later, more authoritative conclusion in the ADR text.
-  No spin-off ticket needed.
-- Container tickets that are queues, not single fixes:
-  [dist-test-suite-failures-batch](tickets/dist-test-suite-failures-batch.md),
-  [remaining-language-feature-gaps](tickets/remaining-language-feature-gaps.md),
-  [digest-dist-blockers](tickets/digest-dist-blockers.md). Pull one row out,
-  fix it as its own PR, and note it in the container file only if the row list
-  changes.
-- Near-resolved residue files worth a trim/close pass in a future session
-  (not done here — this is an index regen, not a cleanup pass):
-  `digest-dist-blockers.md` (~90% struck-through FIXED sections),
-  `template-mojo-residual-failures.md` (only open item duplicates
-  `rule-sigspace-does-not-consume-trailing-whitespace.md`),
-  `c6d-interpreter-body-sites-are-mostly-token-bodies.md` (only C6d-2 and a
-  Phase-D handoff remain), `nativecall-surface-gaps.md` (already merged, could
-  be deleted rather than left as a redirect stub).
+| Ticket | Effort | Why here |
+|---|---|---|
+| [call-compiled-closure-lacks-merge-all-and-dual-persistence-store](deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md) | L | Architecture prerequisite for the `eval-block-value-recompiles-every-call` "larger fix" — a recommended ADR framing and sequencing already exists (bug-parity fixes → `CapturePriority` mode → dispatch-eligibility fix → unconditional fork → delete the tree-walk branch). Pick up once the perf-measure row above reaches that stage. |
+| [c6d-interpreter-body-sites-are-mostly-token-bodies](deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md) | L | Nearly complete — C6d-1/3/4/5 all landed. Remaining scope (C6d-2, grammar token/rule bodies) is a regex-execution-model question that should be scoped against ADR-0009, not the OTF gate. |
+| [adr0019-e2-e4-resolver-core](deep/adr0019-e2-e4-resolver-core.md) | XL | E3/E4 closed; only E2 (exact handler-ID catalog) remains, and it no longer gates anything (a structural fallback replaced the coverage gate). Demote out of active work. |
+| [adr0019-f1-f2-introspection-canonical-source](deep/adr0019-f1-f2-introspection-canonical-source.md) | S | Mechanism slice (Sub-vs-Instance unification, `.package`/`.signature` defaults) already landed. Remaining work is reactive per-case fidelity overrides on native-method introspection — fix opportunistically when a real assertion demands it, not proactively. |
+
+---
+
+## Icebox — blocked on design/decision, or explicit low-priority record
+
+| Ticket | Blocked on / why |
+|---|---|
+| [captured-outer-pair-container-alias](deep/captured-outer-pair-container-alias.md) | Needs the ADR-0001 element-cell / container-representation mechanism. Explicitly: do not special-case Pair construction or snapshot-copy around it. |
+| [subscript-p-pair-is-a-snapshot-not-a-container](deep/subscript-p-pair-is-a-snapshot-not-a-container.md) | Same blocker — needs an `array_element_cell` API. The tempting "widen the env scan" patch is explicitly the wrong direction (doubles down on an already-wrong heuristic). |
+| [shared-store-bare-name-collision-across-unrelated-frames](deep/shared-store-bare-name-collision-across-unrelated-frames.md) | Re-verified 2026-08-13: every concrete instance found so far has been fixed elsewhere (multi-param `for` loop binding, two env-key fixes). **No known blocked test currently drives the store-keying redesign** — re-measure before starting rather than picking this up speculatively. |
+| [rakuast-remaining](deep/rakuast-remaining.md) | A multi-campaign backlog (ADR-0011). Its own text says to pick slices by user impact, not cadence — needs a user/strategic decision on which read/construction/lowering gap matters next, not more investigation. |
+| [nativecall-cannot-be-vendored](deep/nativecall-cannot-be-vendored.md) | Not actionable — a measurement record with explicit reopen conditions (NQP/QAST, MoarVM dispatch programs, 61 missing `nqp::` ops). Keep as reference, don't re-derive. |
+| [call-compiled-closure-missing-rw-lazylist-tail](tickets/call-compiled-closure-missing-rw-lazylist-tail.md) | Confirmed by static audit only — not yet reduced to a failing repro despite two rounds of trying plausible shapes. Low priority until a concrete repro exists; a documented next debugging step (breakpoint at the exact fork site) is recorded for whoever picks it up. |
+| [bare-failure-sink-is-consumption-time-not-creation-time](tickets/bare-failure-sink-is-consumption-time-not-creation-time.md) | Architecturally large (raku decides fatal-vs-soft at Failure *construction*, stamped per-instance; mutsu decides at ~33 scattered consumption sites with zero knowledge of `fatal_mode`). Confirmed pre-existing, narrow practical trigger — not blocking anything in progress. |
+| [adr0019-d10-precompute-stub-and-swallow-flags](tickets/adr0019-d10-precompute-stub-and-swallow-flags.md) ⚡ | Zero-behavior-change polish. Its own text: "do opportunistically if touching these files for another reason, otherwise skip." |
+| [adr0019-d2c5-collapse-default-eval-env-setup](tickets/adr0019-d2c5-collapse-default-eval-env-setup.md) | Explicitly optional in the ADR-0019 checklist. Pure de-duplication (3 near-identical env-setup shapes), no missing feature. Gated on raku-verifying one special case first. |
+| [adr0019-method-body-compile-dedup-remnants](tickets/adr0019-method-body-compile-dedup-remnants.md) | Low priority; one of its two items may already be dead code post the Phase E dispatch-resolver unification — confirm reachability before touching. |
+
+---
+
+## Housekeeping notes
+
+- **[adr0016-p5-match-consumer-inventory](deep/adr0016-p5-match-consumer-inventory.md) is stale and should be archived.**
+  Verified directly against `docs/adr/0016-span-based-captures-and-lazy-match.md`:
+  ADR-0016's status line says **all five phases have landed** (P1-P5, last one
+  2026-07-31), and this file's own header says to `git mv` it to `news/` once
+  P5's seam lands — it has. Not a live blocker for `yaml-parse-throughput`
+  (that ticket has since moved past ADR-0016 into a post-P5 drift
+  investigation, corrected above); this file is pure historical record now.
+- **This regen did not verify every "likely resolved" flag from the
+  2026-08-13 survey.** [regex-alternation-ltm-longest-literal-prefix](deep/regex-alternation-ltm-longest-literal-prefix.md)
+  (Tier B1) is the one carried-over case — its design doc (ADR-0022) says
+  shipped, the ticket file itself doesn't reflect that. Re-run its named
+  repros before either closing it or trusting it's still broken.
+- **[vendor-real-test-module](deep/vendor-real-test-module.md)** (XL, its own axis — not tabulated in Tier
+  B above because it's a 2300-line campaign log, not a single fix) continues
+  to be the single largest source of newly-discovered general interpreter
+  bugs in this survey: several Tier S and Tier B1 rows above
+  (`deferred-seq-materialization-destroys-the-original`,
+  `module-file-scope-array-and-hash-still-share-the-caller`,
+  `eval-context-frame-owns-the-return-target`,
+  `return-outside-routine-uncatchable-inside-nested-run`,
+  `cathandle-real-test-is-deeply-infinite-recursion`,
+  `subscript-p-pair-is-a-snapshot-not-a-container`,
+  `comp-group-multi-error-bundling-unsupported`,
+  `infix-in-term-position-not-diagnosed`) were found by that campaign's `t/`
+  residue sweep, not independently. Fixing any of them also moves that
+  campaign forward — read `vendor-real-test-module.md`'s own tail section
+  before picking one, since it tracks which roast files each residual gap
+  blocks.
+- **13 tickets/files referenced by the 2026-08-13 survey no longer exist**
+  in `todo/tickets/`/`todo/deep/` as of this regen (e.g.
+  `async-listener-not-freed-when-relistening-in-a-loop`,
+  `named-parameter-type-constraints-are-not-enforced`,
+  `wrap-chain-skipped-inside-foreign-wrap-dispatch`,
+  `callsame-to-native-mu-methods-nil`, the whole ADR-0019 E8/E9
+  raku-divergence byproduct table, most of the P2/P3 rows from that
+  survey). This regen did not individually trace each to its resolving PR
+  or `news/` entry — assume fixed/merged/closed unless a fresh repro says
+  otherwise. If you need the paper trail for one of them, `git log
+  --diff-filter=D -- todo/` on the filename is the fastest way to find the
+  deleting commit.
