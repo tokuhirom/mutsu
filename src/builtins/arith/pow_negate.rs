@@ -353,7 +353,17 @@ pub(crate) fn arith_negate(val: Value) -> Result<Value, RuntimeError> {
                 Ok(Value::num(-(i as f64)))
             }
         }
-        ValueView::BigInt(i) => Ok(Value::bigint(-(**i).clone())),
+        // Negating a BigInt can bring the result back into i64 range (the
+        // canonical case: `9223372036854775808` — one past i64::MAX, so it
+        // parses as BigInt — negated is exactly i64::MIN, which fits).
+        // `from_bigint` downcasts when possible; the raw `bigint` constructor
+        // does not, leaving a BigInt-tagged Value that downstream numeric
+        // extraction (`EnumValue::as_i64`, the NaN-box `as_int` fast path)
+        // does not expect for a value that should be a plain Int — a
+        // `-9223372036854775808` enum constant's own `.Int` coercion still
+        // worked (it goes through `EnumValue::to_value`), but arithmetic
+        // fast paths reading it as a plain Int silently saw 0 instead.
+        ValueView::BigInt(i) => Ok(Value::from_bigint(-(**i).clone())),
         ValueView::Num(f) => Ok(Value::num(-f)),
         ValueView::Rat(n, d) => {
             if let Some(neg) = n.checked_neg() {
