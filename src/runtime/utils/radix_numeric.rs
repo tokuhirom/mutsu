@@ -144,7 +144,13 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
         | ValueView::BigRat(_, _)
         | ValueView::Complex(_, _) => val.clone(),
         ValueView::Bool(b) => Value::int(if b { 1 } else { 0 }),
-        ValueView::Enum { value, .. } => Value::int(value.as_i64()),
+        // Numify the enum's own underlying value rather than forcing an
+        // Int: an Int-valued enum stays exact, a Str-valued enum parses
+        // numerically (matching real raku -- and `.as_i64()`'s always-0
+        // fallback for Str, which would be wrong here), and a Rat/Num/BigInt-
+        // valued enum (`EnumValue::Generic`) keeps its fractional/exact
+        // value instead of truncating to Int.
+        ValueView::Enum { value, .. } => coerce_to_numeric(value.to_value()),
         ValueView::Str(s) => {
             if let Some(v) = crate::runtime::str_numeric::parse_raku_str_to_numeric(&s) {
                 v
