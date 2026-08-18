@@ -378,23 +378,43 @@ impl Interpreter {
             full_param_defs.push(Self::make_invocant_param(owner));
         }
         full_param_defs.extend(method_def.param_defs.iter().cloned());
-        let sig_info =
-            crate::value::signature::param_defs_to_sig_info(&full_param_defs, return_type.clone());
-        // Thread an owner key so a parameter's own `#=`/`#|` doc comment is
-        // reachable through `.signature.params[N].WHY` -- mirrors
-        // `sub_signature_value`'s owner-key format exactly (`"ClassName::
-        // name"`), without which `__mutsu_owner_sub` was never set on the
-        // Parameter object and the comment was unreachable (roast
-        // S26-documentation/why-trailing.t's "invocant comment" case).
-        let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
-        attrs.insert(
-            "signature".to_string(),
-            crate::value::signature::make_signature_value_with_owner(
+        // Cache the materialized Signature under a stable per-(owner, name,
+        // candidate) key when one is available (a real candidate, not the
+        // synthetic multi dispatcher -- mirrors the `__mutsu_lookup_
+        // candidate_idx`/`package`/`__mutsu_method_callable` gate just
+        // above), so repeated `.^find_method(...).signature` reads for the
+        // SAME declaration return the same `Signature`/`Parameter` objects
+        // instead of a fresh, un-mixin-able one every time -- see
+        // `crate::value::signature::SubSignatureKey::Method`'s doc comment.
+        let method_sig_cache_key = owner_class.filter(|_| !is_dispatcher).map(|owner| {
+            crate::value::signature::SubSignatureKey::from_method(owner, name, candidate_idx)
+        });
+        if let Some(key) = &method_sig_cache_key
+            && let Some(cached) = crate::value::signature::cached_sub_signature(key)
+        {
+            attrs.insert("signature".to_string(), cached);
+        } else {
+            let sig_info = crate::value::signature::param_defs_to_sig_info(
+                &full_param_defs,
+                return_type.clone(),
+            );
+            // Thread an owner key so a parameter's own `#=`/`#|` doc comment
+            // is reachable through `.signature.params[N].WHY` -- mirrors
+            // `sub_signature_value`'s owner-key format exactly (`"ClassName::
+            // name"`), without which `__mutsu_owner_sub` was never set on the
+            // Parameter object and the comment was unreachable (roast
+            // S26-documentation/why-trailing.t's "invocant comment" case).
+            let owner_key = owner_class.map(|owner| format!("{owner}::{name}"));
+            let signature = crate::value::signature::make_signature_value_with_owner(
                 sig_info,
                 owner_key,
                 Some(self),
-            ),
-        );
+            );
+            if let Some(key) = method_sig_cache_key {
+                crate::value::signature::cache_sub_signature(key, signature.clone());
+            }
+            attrs.insert("signature".to_string(), signature);
+        }
 
         // Return type
         let rt = return_type.unwrap_or_else(|| "Mu".to_string());

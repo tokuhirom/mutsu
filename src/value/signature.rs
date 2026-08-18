@@ -121,6 +121,19 @@ pub(crate) enum SubSignatureKey {
     Routine(std::sync::Arc<crate::opcode::CompiledFunction>),
     Code(std::sync::Arc<crate::opcode::CompiledCode>),
     Id(u64),
+    /// A method looked up via `.^lookup`/`.^find_method`
+    /// (`classhow_lookup_impl`), keyed on `"{owner}::{name}#{candidate_idx}"`.
+    /// Unlike the sub case, there is no `Arc<CompiledFunction>`/
+    /// `Arc<CompiledCode>` to reuse here: `classhow_lookup_impl` builds the
+    /// `Method` Instance (and its `Signature`) straight from the AST
+    /// `MethodDef` stored in the registry on every call, with neither field
+    /// set — so without this variant, every `.^find_method(...).signature`
+    /// read fell back to `Id`, which is fresh per call and never hits (see
+    /// `todo/tickets/method-lookup-signature-has-no-stable-identity.md`, now
+    /// `news/2026-08/`). The candidate index disambiguates same-named `multi`
+    /// candidates, matching the sub-side comment above on why a name-only key
+    /// is wrong.
+    Method(String),
 }
 
 impl PartialEq for SubSignatureKey {
@@ -129,6 +142,7 @@ impl PartialEq for SubSignatureKey {
             (Self::Routine(a), Self::Routine(b)) => std::sync::Arc::ptr_eq(a, b),
             (Self::Code(a), Self::Code(b)) => std::sync::Arc::ptr_eq(a, b),
             (Self::Id(a), Self::Id(b)) => a == b,
+            (Self::Method(a), Self::Method(b)) => a == b,
             _ => false,
         }
     }
@@ -142,6 +156,7 @@ impl std::hash::Hash for SubSignatureKey {
             Self::Routine(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
             Self::Code(a) => (std::sync::Arc::as_ptr(a) as usize).hash(state),
             Self::Id(id) => id.hash(state),
+            Self::Method(key) => key.hash(state),
         }
     }
 }
@@ -155,6 +170,9 @@ impl SubSignatureKey {
     }
     pub(crate) fn from_id(id: u64) -> Self {
         Self::Id(id)
+    }
+    pub(crate) fn from_method(owner: &str, name: &str, candidate_idx: usize) -> Self {
+        Self::Method(format!("{owner}::{name}#{candidate_idx}"))
     }
 }
 
