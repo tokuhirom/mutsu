@@ -260,7 +260,7 @@ impl Interpreter {
                 }
             }
 
-            let candidates =
+            let (candidates, any_failed) =
                 self.resolve_methods_per_mro_level(&class_name.resolve(), method, &args);
             if !candidates.is_empty() {
                 let mut attrs = attributes.to_map();
@@ -288,6 +288,12 @@ impl Interpreter {
                     out.push(result);
                 }
                 attributes.commit_attrs(attrs);
+                // Every already-resolved level ran (side effects included,
+                // matching Rakudo); only now report the level(s) that
+                // couldn't resolve a matching candidate for these args.
+                if any_failed {
+                    return Err(make_multi_no_match_error(method));
+                }
                 return Ok(out);
             }
             // If the method is defined but no multi candidate matched,
@@ -321,7 +327,8 @@ impl Interpreter {
         {
             let class_name = name.resolve();
             if self.registry().classes.contains_key(class_name.as_str()) {
-                let candidates = self.resolve_methods_per_mro_level(&class_name, method, &args);
+                let (candidates, any_failed) =
+                    self.resolve_methods_per_mro_level(&class_name, method, &args);
                 if !candidates.is_empty() {
                     let mut out = Vec::with_capacity(candidates.len());
                     for (resolved_owner, method_def) in candidates {
@@ -335,6 +342,9 @@ impl Interpreter {
                             Some(target.clone()),
                         )?;
                         out.push(result);
+                    }
+                    if any_failed {
+                        return Err(make_multi_no_match_error(method));
                     }
                     return Ok(out);
                 }

@@ -731,13 +731,26 @@ impl Interpreter {
 
     /// Resolve methods for .*/,+ dispatch: one resolution per MRO level.
     /// For multi methods, dispatches through the proto at each level.
-    /// Returns empty vec if any level has the method but no candidate matches.
+    ///
+    /// Returns `(matches, any_failed)`. `any_failed` is true only when a
+    /// defining MRO level's own multi candidates don't cover this call's
+    /// arguments — mirroring real Rakudo, where `.*name`/`.+name` invokes
+    /// each level in order and raises the moment a level fails to resolve,
+    /// WITHOUT undoing the side effects of levels that already ran
+    /// successfully before it. The caller must still invoke every entry in
+    /// `matches` (in order) before consulting `any_failed`, so that those
+    /// earlier levels' side effects happen exactly as they would in Rakudo;
+    /// only after that should it report a dispatch error instead of a
+    /// successful result. A single level's own signature mismatch used to
+    /// discard the WHOLE result (every other level's match too), turning a
+    /// partial success into total silence — see
+    /// news/2026-08/mro-level-any-failed-partial-match.md.
     pub(crate) fn resolve_methods_per_mro_level(
         &mut self,
         class_name: &str,
         method_name: &str,
         arg_values: &[Value],
-    ) -> Vec<(Symbol, MethodDef)> {
+    ) -> (Vec<(Symbol, MethodDef)>, bool) {
         let mro = self.class_mro(class_name);
         let mut defining_levels: Vec<Symbol> = Vec::new();
         for cn in mro.iter() {
@@ -755,7 +768,7 @@ impl Interpreter {
             }
         }
         if defining_levels.is_empty() {
-            return Vec::new();
+            return (Vec::new(), false);
         }
         let any_multi = defining_levels.iter().any(|cn| {
             self.registry()
@@ -764,7 +777,10 @@ impl Interpreter {
         });
         if !any_multi {
             // Non-multi: use the standard resolution
-            return self.resolve_all_methods_with_owner(class_name, method_name, arg_values);
+            return (
+                self.resolve_all_methods_with_owner(class_name, method_name, arg_values),
+                false,
+            );
         }
         // Multi methods: dispatch through proto at each level
         let mut matches = Vec::new();
@@ -782,10 +798,7 @@ impl Interpreter {
                 any_failed = true;
             }
         }
-        if any_failed {
-            return Vec::new();
-        }
         self.drop_flattened_role_duplicates(&mut matches);
-        matches
+        (matches, any_failed)
     }
 }
