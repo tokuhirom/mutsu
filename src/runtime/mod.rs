@@ -385,6 +385,7 @@ mod ops_set;
 mod output_sink;
 pub(crate) mod phasers;
 mod react_died;
+pub(crate) mod react_done_handler_depth;
 mod receiver_class;
 pub(crate) mod regex;
 pub(crate) mod regex_parse;

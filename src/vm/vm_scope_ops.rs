@@ -42,7 +42,13 @@ impl Interpreter {
         // Enter react mode: whenever blocks will register subscriptions
         self.enter_react();
         let saved_depth = self.stack.len();
+        // A bare `done` written directly in the react body's own top level
+        // (not inside a `whenever`) is handled by the `body_done` check just
+        // below — see `runtime::react_done_handler_depth`.
+        let _react_done_handler =
+            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
         let run_result = self.run_range(code, body_start, end, compiled_fns);
+        drop(_react_done_handler);
         self.stack.truncate(saved_depth);
 
         // If `done;` was called in the react body, skip the event loop —

@@ -522,6 +522,20 @@ impl RuntimeError {
                     // nothing further up will take it, and rakudo's `try` catches
                     // it (`try { take 1 }` leaves `$!` = "take without gather").
                     | Some(Control::Take)
+                    // `emit` only ever becomes an Err when there is no dynamically
+                    // enclosing supply/react to consume it (the raise site checks
+                    // `active_supply_emitters`/`supply_emit_buffer` first) — same
+                    // position as `take`.
+                    | Some(Control::Emit)
+                    // `done`/`ReactDone` is raised unconditionally at the opcode
+                    // (it must keep propagating through nested `try`s to reach its
+                    // react/supply drive loop), so unlike the others above it is
+                    // NOT always illegal — the raise site picks between the plain,
+                    // exception-less `done_signal()` for the legitimate case and
+                    // this `react_done_signal()` (which carries an exception) only
+                    // when no drive loop is dynamically active. The `exception.is_some()`
+                    // guard above is what tells the two apart here.
+                    | Some(Control::ReactDone)
             )
     }
 
@@ -579,12 +593,28 @@ impl RuntimeError {
         }
     }
 
+    /// The genuine, still-propagating `done` signal — raised at the `done`
+    /// opcode when a react/supply drive loop is dynamically active somewhere
+    /// up the call stack. Carries no exception (mirrors `last_signal`/
+    /// `next_signal`/`redo_signal`): `try` must let it keep propagating
+    /// rather than convert it into a caught exception early, since the
+    /// eventual handler is the drive loop's own `is_react_done()` check, not
+    /// necessarily the nearest `try`.
+    pub(crate) fn done_signal() -> Self {
+        Self {
+            control: Some(Control::ReactDone),
+            ..Self::new("")
+        }
+    }
+
+    /// `done` raised with **no** react/supply drive loop dynamically active —
+    /// see [`Self::done_signal`] for the legitimate counterpart. When `done`
+    /// propagates unhandled this way, it
+    /// becomes X::ControlFlow with illegal=>"done", enclosing=>"supply or
+    /// react". Pre-set the exception so throws-like / CATCH can match the
+    /// correct type; [`Self::is_illegal_control`] is what makes `try` convert
+    /// it into a caught exception immediately instead of passing it through.
     pub(crate) fn react_done_signal() -> Self {
-        // When `done` propagates unhandled (no enclosing supply/react), it
-        // becomes X::ControlFlow with illegal=>"done", enclosing=>"supply or
-        // react". Pre-set the exception so throws-like / CATCH can match the
-        // correct type; the supply/react runtime consumes the `is_react_done`
-        // flag before this exception is ever observed.
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("illegal".to_string(), Value::str("done".to_string()));
         attrs.insert(

@@ -55,6 +55,13 @@ impl Interpreter {
         {
             self.clear_closure_captured_state_for(data.id);
         }
+        // Every `whenever`/`LAST`/`QUIT`/`CLOSE` callback body dispatches
+        // through here, on whichever thread actually runs it, so a `done`
+        // raised anywhere in its dynamic extent (directly or via a nested
+        // sub call) has a react/supply drive loop to terminate — see
+        // `runtime::react_done_handler_depth`.
+        let _react_done_handler =
+            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
         let topic = args.first().cloned();
         self.vm_call_map_block(cb, args, topic, false)
     }

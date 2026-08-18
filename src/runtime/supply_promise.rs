@@ -63,6 +63,11 @@ impl Interpreter {
         if let Some(ref e) = emitter {
             self.active_supply_emitters.push(e.clone());
         }
+        // This function's own `match` below handles a `done`/`is_react_done()`
+        // signal raised anywhere in the tap body's dynamic extent (directly or
+        // via a nested sub call) — see `runtime::react_done_handler_depth`.
+        let _react_done_handler =
+            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
         let res = self.call_sub_value(tap, args, propagate_return);
         if emitter.is_some() {
             self.active_supply_emitters.pop();
@@ -278,7 +283,13 @@ impl Interpreter {
                     for (i, cb) in cbs.into_iter().enumerate() {
                         let args = if i == 0 { vec![result.clone()] } else { vec![] };
                         self.supply_emit_buffer.push(Vec::new());
+                        // The check below handles `is_react_done()`/`is_last()`
+                        // from this body's dynamic extent — see
+                        // `runtime::react_done_handler_depth`.
+                        let _react_done_handler =
+                            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
                         let res = self.call_sub_value(cb, args, true);
+                        drop(_react_done_handler);
                         let captured = self.supply_emit_buffer.pop().unwrap_or_default();
                         for c in captured.into_iter().rev() {
                             queue.push_front(c);
@@ -703,7 +714,13 @@ impl Interpreter {
             captured: &mut Vec<Value>,
         ) -> Result<(), RuntimeError> {
             this.supply_emit_buffer.push(Vec::new());
+            // The caller below handles `is_react_done()`/`is_last()` from this
+            // body's dynamic extent (directly or via a nested sub call) — see
+            // `runtime::react_done_handler_depth`.
+            let _react_done_handler =
+                crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
             let res = this.call_sub_value(cb, args, true);
+            drop(_react_done_handler);
             let mut emitted = this.supply_emit_buffer.pop().unwrap_or_default();
             captured.append(&mut emitted);
             res.map(|_| ())
@@ -815,7 +832,12 @@ impl Interpreter {
             last_value: &mut Value,
         ) -> Result<(), RuntimeError> {
             this.supply_emit_buffer.push(Vec::new());
+            // The caller below handles `is_react_done()`/`is_last()` from this
+            // body's dynamic extent — see `runtime::react_done_handler_depth`.
+            let _react_done_handler =
+                crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
             let res = this.call_sub_value(cb, args, true);
+            drop(_react_done_handler);
             let emitted = this.supply_emit_buffer.pop().unwrap_or_default();
             if let Some(last) = emitted.last() {
                 *last_value = last.clone();

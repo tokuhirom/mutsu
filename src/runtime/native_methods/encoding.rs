@@ -590,6 +590,11 @@ impl Interpreter {
             }
             for (value, end_cb, is_done_marker) in units {
                 Self::sleep_for_supply_delay(delay_seconds);
+                // Handled below by the `is_react_done()`/`is_last()`/
+                // `is_supply_body_done()` arm on this reader thread — see
+                // `runtime::react_done_handler_depth`.
+                let _react_done_handler =
+                    crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
                 let result = match end_cb {
                     Some((end, _)) if is_done_marker => interp.invoke_done_callback(end),
                     Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
@@ -597,6 +602,7 @@ impl Interpreter {
                         .call_sub_value(cb.clone(), vec![value], true)
                         .map(|_| ()),
                 };
+                drop(_react_done_handler);
                 // Flush stdout (check both the per-interpreter buffer and the
                 // shared thread output buffer used by thread clones).
                 if !interp.output_sink().output.is_empty() {
