@@ -294,6 +294,32 @@ pub(super) unsafe extern "C" fn jump_if_not_nil_cond(interp: *mut Interpreter) -
     }
 }
 
+/// `OpCode::StateVarInitGuard` condition: keyed on the opcode's own
+/// `key_idx` (not a stack value) rather than the tested-value stack slot the
+/// other `*_cond` shims read. Mirrors the interpreter arm
+/// (`vm_exec_dispatch.rs`) exactly: when the state var is already
+/// initialized, pushes the `NIL` placeholder `StateVarInit` discards and
+/// returns 1 (jump past the RHS initializer); otherwise returns 0 (fall
+/// through and run it).
+pub(super) unsafe extern "C" fn state_var_init_guard_cond(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+) -> u32 {
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    let OpCode::StateVarInitGuard(key_idx, _) = &code.ops[op_idx as usize] else {
+        unreachable!("jit state_var_init_guard shim on a non-StateVarInitGuard opcode")
+    };
+    let base_key = crate::symbol::Symbol::from_id(*key_idx);
+    let scoped_key = interp.scoped_state_key(base_key);
+    if interp.get_state_var(scoped_key).is_some() {
+        interp.stack.push(Value::NIL);
+        1
+    } else {
+        0
+    }
+}
+
 /// `OpCode::Return`. Status OK means a rebound `&return` ran and execution
 /// continues at the next opcode; otherwise the return signal (or the rebound
 /// call's error) is parked and reported as ERR, exactly like the interpreter

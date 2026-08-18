@@ -147,6 +147,12 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::ExitPointyTopic
             | OpCode::PushEnterResult
             | OpCode::LoadEnterResult
+            // `state` variable one-time initialization store, guarded by
+            // `StateVarInitGuard` (see the explicit arm in
+            // `vm_jit_compile.rs::compile_range`/`build`). Infallible,
+            // straight-line -- never touches `ip` beyond the `+= 1` its own
+            // `exec_one` arm does.
+            | OpCode::StateVarInit(..)
             // Always-throwing terminator (records its own resume point)
             | OpCode::Die
     )
