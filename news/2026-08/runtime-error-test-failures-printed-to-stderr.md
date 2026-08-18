@@ -39,3 +39,5 @@ and a short plan, both asserting exit status and the absence of the
 `RAKU_TEST_DIE_ON_FAIL` interaction during development — a first version of
 this fix regressed its `:255status` expectation to `1` by clobbering the
 already-set exit code; full `make test` caught it before landing.
+
+PR [#6611](https://github.com/tokuhirom/mutsu/pull/6611).
