@@ -59,6 +59,16 @@ jobs:
         with:
           shared-key: "ci-bench"
 
+      # See .github/workflows/ci.yml's "Use canonical apt mirror" step for why:
+      # the default runner apt-mirrors.txt (azure.archive.ubuntu.com first) has
+      # been observed hanging indefinitely.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+
       - name: Install rakudo (for the ratio baseline)
         # Best-effort: if the package is unavailable the script records NA
         # ratios and the absolute mutsu numbers are still appended.

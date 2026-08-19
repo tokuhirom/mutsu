@@ -110,6 +110,19 @@ jobs:
           # from main without every PR writing its own entry and evicting others.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # The default GitHub-hosted runner apt mirror config (mirror+file
+      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
+      # been observed hanging indefinitely on noble-updates/backports/security
+      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
+      # with zero relation to the PR's diff. Pin the canonical archive instead
+      # of trusting the mirror list.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+
       - name: Install prove + mold
         run: sudo apt-get update && sudo apt-get install -y perl mold
 
@@ -545,6 +558,19 @@ jobs:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # The default GitHub-hosted runner apt mirror config (mirror+file
+      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
+      # been observed hanging indefinitely on noble-updates/backports/security
+      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
+      # with zero relation to the PR's diff. Pin the canonical archive instead
+      # of trusting the mirror list.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+
       - name: Install prove + mold
         run: sudo apt-get update && sudo apt-get install -y perl mold
 
@@ -683,6 +709,19 @@ jobs:
         with:
           shared-key: "ci-linux"
           save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The default GitHub-hosted runner apt mirror config (mirror+file
+      # against /etc/apt/apt-mirrors.txt, azure.archive.ubuntu.com first) has
+      # been observed hanging indefinitely on noble-updates/backports/security
+      # until the job's own timeout cancels it (2026-08-19, PRs #6684 #6691) --
+      # with zero relation to the PR's diff. Pin the canonical archive instead
+      # of trusting the mirror list.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
 
       - name: Install prove + mold
         run: sudo apt-get update && sudo apt-get install -y perl mold
