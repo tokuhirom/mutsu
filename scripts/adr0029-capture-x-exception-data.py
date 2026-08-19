@@ -48,6 +48,12 @@ TEST_ASSERTION_RE = re.compile(
 SRC_LITERAL_RE = re.compile(r'"(X::[A-Za-z0-9_:]+)"')
 
 
+def _roles_set(roles_all: str) -> frozenset[str]:
+    """Comma-joined `.^roles` list -> the set of role names, dropping raku's
+    duplicate-emission artifact (ADR-0029 residue R3)."""
+    return frozenset(r for r in roles_all.split(",") if r)
+
+
 def derive_name_list() -> list[str]:
     names: set[str] = set()
     for base in (REPO_ROOT / "t", REPO_ROOT / "roast"):
@@ -117,7 +123,20 @@ def main() -> None:
                 mutsu_mro, _mutsu_roles_direct, mutsu_roles_all = mutsu_shape
                 if mutsu_mro != raku_mro:
                     category = "wrong_mro"
-                elif mutsu_roles_all != raku_roles_all:
+                elif _roles_set(mutsu_roles_all) != _roles_set(raku_roles_all):
+                    # ADR-0029 residue R3: compare the composed-role *set*, not
+                    # the raw comma-joined string. Real rakudo's `.^roles`
+                    # emits a role twice when it is reached both directly and
+                    # through a superclass (e.g. `X::Comp,X::Comp` for a class
+                    # that both does X::Comp itself and inherits a class that
+                    # also does X::Comp); mutsu dedups. The composed-role SET
+                    # is what every real observable (`~~`, `.^does`,
+                    # method-candidate collection) reads, so a set match is
+                    # the correct verdict. The raw rakudo string is still kept
+                    # verbatim in `raku_roles_all` below -- nothing is lost,
+                    # only the pass/fail verdict is normalised. mutsu must NOT
+                    # be taught to replicate the duplicate emission -- that is
+                    # a rakudo implementation detail, not a semantic.
                     category = "wrong_roles"
                 else:
                     category = "match"

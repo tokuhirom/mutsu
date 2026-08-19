@@ -1673,12 +1673,46 @@ impl Interpreter {
         // subtypes (kept for now, unchanged -- out of ADR-0029's scope,
         // see TODO_roast/x-exception-role-membership.tsv's generation
         // script for how this was determined).
+        //
+        // ADR-0029 residue R4 (dual registration, deliberately kept): `X::Comp`
+        // and `X::Syntax` are ALSO seeded as `RoleDef`s below (see the 16-name
+        // marker-role loop), so each of these two names is both a `ClassDef`
+        // here and a `RoleDef` there. In real rakudo neither is a class
+        // (`X::Comp.HOW` is `ParametricRoleGroupHOW`), and mutsu already
+        // answers that correctly -- `.HOW.^name` resolves through the role
+        // registration, so the `ClassDef` shadow here does not leak into
+        // metaobject introspection. It is kept, not deleted, because it is
+        // load-bearing for two things: (1) `register_x`'s parent-walk MRO
+        // synthesis below resolves `parent` names through `classes`, so
+        // `X::TooLateForREPR`'s `parent = "X::Comp"` (R2, immediately below)
+        // and `X::Syntax::Signature`'s `parent = "X::Syntax"` both depend on
+        // a `ClassDef` existing for the name; (2) removing it without
+        // rerouting both dependants would need a second, non-`classes`-backed
+        // parent-resolution path in `register_x`, which is more machinery for
+        // no observable gain. See
+        // todo/deep/exception-class-hierarchy-is-mostly-unregistered.md R4.
         register_x("X::Comp", "Exception", &[]);
         register_x("X::Value", "Exception", &[]);
         register_x("X::Syntax", "X::Comp", &[]);
         register_x("X::Syntax::Signature", "X::Syntax", &[]);
         register_x("X::React::Died", "Exception", &[]);
         register_x("X::Role::Composition::Conflict", "Exception", &[]);
+
+        // ADR-0029 residue R2: `X::TooLateForREPR` is rakudo's one
+        // "role-as-superclass pun" in this vocabulary -- `X::Comp` is
+        // simultaneously a real MRO entry AND a composed role for this single
+        // class. Verified against real raku (2026-08-19):
+        //   X::TooLateForREPR.^mro             -> (X::TooLateForREPR X::Comp Exception Any Mu)
+        //   X::TooLateForREPR.^parents(:local) -> (X::Comp)
+        //   X::TooLateForREPR.^roles           -> (X::Comp)
+        // This is the one documented, data-verified exception to "a marker
+        // role name never appears in a class's `.^mro`" -- see
+        // t/exception-role-membership.t and
+        // todo/deep/exception-class-hierarchy-is-mostly-unregistered.md R2.
+        // It is expressible here (and not elsewhere) only because `X::Comp`
+        // is dual-registered as a `ClassDef` immediately above (R4), which
+        // `register_x`'s parent walk resolves.
+        register_x("X::TooLateForREPR", "X::Comp", &["X::Comp"]);
 
         // ADR-0029 Slice 3: every row below is mechanically generated from
         // TODO_roast/x-exception-role-membership.tsv (real raku .^mro /
@@ -2713,15 +2747,23 @@ impl Interpreter {
                     }
                     roles
                 };
-                // ADR-0029: role-to-role composition among the 14 `X::` marker
-                // roles above, verified against real rakudo (2026-08-17) --
-                // exactly two edges exist; the other twelve compose nothing.
+                // ADR-0029: role-to-role composition among the 16 `X::` marker
+                // roles above, re-verified against real rakudo (2026-08-19,
+                // see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
+                // R1) -- exactly three edges exist; the other thirteen compose
+                // nothing. (Slice 3 grew the marker-role list from the ADR's
+                // original 14 to 16 without re-running this measurement, which
+                // is how `X::Role::Attribute does X::RoleApplier` was missed.)
                 registry
                     .role_parents
                     .insert("X::Syntax".to_string(), vec!["X::Comp".to_string()]);
                 registry
                     .role_parents
                     .insert("X::IO".to_string(), vec!["X::OS".to_string()]);
+                registry.role_parents.insert(
+                    "X::Role::Attribute".to_string(),
+                    vec!["X::RoleApplier".to_string()],
+                );
                 // ADR-0029: write `register_x`'s collected `does` lists into the
                 // composed-role registries that `.^roles`, `~~`, qualified
                 // `self.Role::meth` dispatch, and method-candidate collection

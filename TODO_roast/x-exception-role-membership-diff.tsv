@@ -1,17 +1,1 @@
 name	category	raku_mro	mutsu_mro	raku_roles_all	mutsu_roles_all
-X::Attribute::Regex	wrong_roles	X::Attribute::Regex,X::Undeclared,Exception,Any,Mu	X::Attribute::Regex,X::Undeclared,Exception,Any,Mu	X::Comp,X::Comp	X::Comp
-X::Attribute::Undeclared	wrong_roles	X::Attribute::Undeclared,X::Undeclared,Exception,Any,Mu	X::Attribute::Undeclared,X::Undeclared,Exception,Any,Mu	X::Comp,X::Comp	X::Comp
-X::Comp::Trait::Invalid	wrong_roles	X::Comp::Trait::Invalid,X::Trait::Invalid,Exception,Any,Mu	X::Comp::Trait::Invalid,X::Trait::Invalid,Exception,Any,Mu	X::Comp,X::Trait,X::Trait	X::Comp,X::Trait
-X::Comp::Trait::NotOnNative	wrong_roles	X::Comp::Trait::NotOnNative,X::Trait::NotOnNative,Exception,Any,Mu	X::Comp::Trait::NotOnNative,X::Trait::NotOnNative,Exception,Any,Mu	X::Comp,X::Trait,X::Trait	X::Comp,X::Trait
-X::Comp::Trait::Scope	wrong_roles	X::Comp::Trait::Scope,X::Trait::Scope,Exception,Any,Mu	X::Comp::Trait::Scope,X::Trait::Scope,Exception,Any,Mu	X::Comp,X::Trait,X::Trait	X::Comp,X::Trait
-X::Comp::Trait::Unknown	wrong_roles	X::Comp::Trait::Unknown,X::Trait::Unknown,Exception,Any,Mu	X::Comp::Trait::Unknown,X::Trait::Unknown,Exception,Any,Mu	X::Comp,X::Trait,X::Trait	X::Comp,X::Trait
-X::Declaration::Scope::Multi	wrong_roles	X::Declaration::Scope::Multi,X::Declaration::Scope,Exception,Any,Mu	X::Declaration::Scope::Multi,X::Declaration::Scope,Exception,Any,Mu	X::Comp,X::Comp	X::Comp
-X::Placeholder::Attribute	wrong_roles	X::Placeholder::Attribute,X::Placeholder::Block,Exception,Any,Mu	X::Placeholder::Attribute,X::Placeholder::Block,Exception,Any,Mu	X::Comp,X::Comp	X::Comp
-X::Placeholder::Mainline	wrong_roles	X::Placeholder::Mainline,X::Placeholder::Block,Exception,Any,Mu	X::Placeholder::Mainline,X::Placeholder::Block,Exception,Any,Mu	X::Comp,X::Comp	X::Comp
-X::Role::Attribute::Conflicts	wrong_roles	X::Role::Attribute::Conflicts,Exception,Any,Mu	X::Role::Attribute::Conflicts,Exception,Any,Mu	X::Role::Attribute,X::RoleApplier	X::Role::Attribute
-X::Role::Attribute::Exists	wrong_roles	X::Role::Attribute::Exists,Exception,Any,Mu	X::Role::Attribute::Exists,Exception,Any,Mu	X::Role::Attribute,X::RoleApplier	X::Role::Attribute
-X::Role::Unresolved::Method	wrong_roles	X::Role::Unresolved::Method,X::Role::Unresolved,Exception,Any,Mu	X::Role::Unresolved::Method,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier
-X::Role::Unresolved::Multi	wrong_roles	X::Role::Unresolved::Multi,X::Role::Unresolved,Exception,Any,Mu	X::Role::Unresolved::Multi,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier
-X::Role::Unresolved::Private	wrong_roles	X::Role::Unresolved::Private,X::Role::Unresolved,Exception,Any,Mu	X::Role::Unresolved::Private,X::Role::Unresolved,Exception,Any,Mu	X::RoleApplier::Method,X::RoleApplier,X::RoleApplier::Method,X::RoleApplier	X::RoleApplier::Method,X::RoleApplier
-X::Syntax::NonListAssociative	wrong_roles	X::Syntax::NonListAssociative,X::Syntax::NonAssociative,Exception,Any,Mu	X::Syntax::NonListAssociative,X::Syntax::NonAssociative,Exception,Any,Mu	X::Syntax,X::Comp,X::Syntax,X::Comp	X::Syntax,X::Comp
-X::TooLateForREPR	missing	X::TooLateForREPR,X::Comp,Exception,Any,Mu		X::Comp,X::Comp	
