@@ -41,6 +41,19 @@ impl Interpreter {
     /// an uncatchable `handle_alloc_error` abort that `try {}` cannot recover
     /// from. (raku aborts with a MoarVM panic on the same input.)
     ///
+    /// **This guard is only as good as the allocator's answer, which is a
+    /// property of the host, not of mutsu.** `try_reserve` reports failure only
+    /// when the kernel actually refuses the mapping, i.e. when the request
+    /// exceeds the ~128 TiB user address space, or when `vm.overcommit_memory`
+    /// is `0`/`2` and the heuristic rejects it. Under `vm.overcommit_memory=1`
+    /// (common in containers) a 80 TiB reservation *succeeds* and the `resize`
+    /// below then faults in pages until the machine dies. Nothing here bounds
+    /// the request itself, so do not write a test that asserts the catchable
+    /// error: its verdict would be owned by `/proc/sys/vm/overcommit_memory`.
+    /// Bounding the request needs a deterministic cap decided up front (raku
+    /// does exactly that for string repeat: max 4294967295 graphemes); until
+    /// that exists this stays a best-effort mitigation.
+    ///
     /// `pub(crate)` so other fallible allocation sites (e.g. shaped-array
     /// construction in `make_shaped_array`) can reuse the same guard.
     pub(crate) fn autoviv_resize(

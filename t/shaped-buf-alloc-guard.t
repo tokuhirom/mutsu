@@ -2,10 +2,19 @@ use Test;
 
 # An absurd declared shape (`my @a[1e15]`) or buffer size (`Buf.allocate(1e15)`)
 # must throw a catchable exception instead of aborting the process via an
-# unrecoverable allocation failure (`handle_alloc_error`). This completes the
-# autoviv/string-repeat allocation guard (see t/autoviv-index-guard.t): every
-# user-controlled-size allocation now reserves fallibly before allocating.
-# raku itself aborts here with a MoarVM panic.
+# unrecoverable allocation failure (`handle_alloc_error`): every
+# user-controlled-size allocation reserves fallibly before allocating. raku
+# itself aborts here with a MoarVM panic.
+#
+# The sizes below are chosen so the kernel refuses the mapping on *every* host:
+# 99999999999999 elements is 800 TiB (shaped, 8 bytes/slot) and 100 TiB (Buf),
+# both past the ~128 TiB user address space, so `mmap` fails regardless of
+# `vm.overcommit_memory`. Keep them that way. A companion test that used
+# 9999999999999 (80 TiB, which *fits* in the address space) was deleted in
+# 2026-08 precisely because it did not: under `vm.overcommit_memory=1` the
+# reservation succeeded and the test became a multi-GB hang. Do not lower these
+# numbers, and do not add cases whose request could plausibly be satisfied --
+# `try_reserve` cannot bound a request the kernel is willing to hand out.
 
 plan 17;
 
