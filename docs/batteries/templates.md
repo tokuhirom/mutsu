@@ -93,7 +93,7 @@ Enough to start root-causing; none of these are module rot, since raku runs them
 | --- | --- |
 | `Template::Mustache` | `Use of Nil in string context` from the `TOP` grammar action (`lib/Template/Mustache.rakumod:136`), reached via `parse-template` |
 | `Template6` | same warning, from `Parser.compile` — a `q:to/RAKU/` heredoc whose `\qq[$safe-delimiter]` / `\qq[$segment]` come out empty |
-| `Template::Jinja2` | `Cannot call private method without permission` at `Renderer.rakumod` load time — **22 of 23 files die on it**, the single biggest lever in the table |
+| `Template::Jinja2` | Two bugs, both reduced 2026-08-19. `01-lexer` fails on its own because a literal `{` inside `<-[{]>` makes mutsu's assertion scanner miss the class's closing `>`, swallowing the `+` and every atom after it; the other 22 files die at `Renderer.rakumod` load time on `Cannot call private method without permission`, because a qualified `$obj!Renderer::meth` inside `module Template::Jinja2::Renderer` compares the short owner name against the fully-qualified caller |
 | `Template::Mojo` | `No such method 'characters' for invocant of type 'Match'` — the grammar's `token characters` is not being resolved as a subrule (`.characters` is not a raku method either, so mutsu is falling back to method dispatch where it should be a named capture) |
 | `Template::Nest::Fast` | `Use of Nil in string context` |
 | `Template::Classic` | `X::Method::NotFound: Unknown method value dispatch (fallback dispatch)` |
@@ -107,6 +107,20 @@ Confirmed and separately filed so far:
 
 - `todo/tickets/q-heredoc-interpolates-qq-escape.md` — `Q:to/…/` wrongly honours
   `\qq[…]`; raku leaves it literal. Found while reducing the `Template6` failure.
+  (Fixed 2026-07-26; it was **not** the `Template6` blocker.)
+- `todo/tickets/regex-brace-paren-inside-char-class-swallows-rest-of-pattern.md`
+  — a literal `{` / `(` written inside a `<[...]>` char class makes
+  `scan_angle_assertion_body()` miss the assertion's closing `>`, so the
+  quantifier and every following atom are silently dropped. Reduced from
+  `Template::Jinja2`'s `01-lexer` (0/15 → 15/15 with the brace escaped by hand),
+  but it is a general grammar-slang bug: `<-[{]>+` ("text up to the next opening
+  delimiter") is idiomatic in template and config grammars.
+- `todo/tickets/qualified-private-method-call-uses-short-owner-name.md` — a
+  qualified private call `$obj!Renderer::meth` written inside
+  `module Template::Jinja2::Renderer` is rejected because the statically-checked
+  owner name is compared as written against the fully-qualified caller class.
+  This is what makes `Template::Jinja2` unloadable; it is **distinct** from the
+  private-method-in-closure bug fixed in #5466.
 - `todo/deep/template-engines-blocked-on-mutsu.md` — this matrix as a work item.
 
 ## How the field was surveyed
@@ -151,10 +165,13 @@ version and its own suite run under both `raku` and `target/debug/mutsu`
   `Template::Classic` embed Raku code. For "a small web blog", logic-free plus
   the host program's own code is the safer default, and it is what most of the
   ecosystem picked.
-- **`Template::Jinja2` deserves a second look after its blocker is fixed** — it
-  is the newest of the field (2026-04-29), 22/23 under raku, and its single mutsu
-  error kills 22 files at once, so it may be the cheapest of all to unblock. Its
-  ecosystem standing is weak (2 dependents, both by the same author).
+- **`Template::Jinja2` deserves a second look after its blockers are fixed** — it
+  is the newest of the field (2026-04-29), 22/23 under raku, and as of the
+  2026-08-19 reduction both of its mutsu blockers are **one-function interpreter
+  bugs** (a char-class scanning bug and a private-method permission check), one
+  of which kills 22 files at once. So it stays the cheapest of the field to
+  unblock. Its ecosystem standing is weak (2 dependents, both by the same
+  author).
 - **`Template::Protone` and `ERK` were never in contention**: they ship no tests
   at all, so there is nothing to gate at release time — a structural problem for
   a battery whose whole verification story is `scripts/battery-testsuite.sh`.
