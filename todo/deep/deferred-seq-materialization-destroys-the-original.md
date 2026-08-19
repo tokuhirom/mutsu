@@ -1,5 +1,25 @@
 # Materializing a deferred `Seq` destroys the value it was asked about
 
+> **Design: [ADR-0034](../../docs/adr/0034-seq-reification-is-in-place-and-distinct-from-consumption.md)**
+> (`Proposed`, 2026-08-19). Read it before implementing — it supersedes the "Where" and
+> "The fix" sections below on two points, both verified with `rust-gdb` breakpoints and
+> `raku` oracle runs:
+>
+> 1. **The headline repro does not go through the deferred-`Seq` arm this ticket names.**
+>    `IO::Handle.lines` produces a `ValueView::LazyIoLines`, not a deferred-iterator `Seq`;
+>    `seq_take_deferred_iter` and `seq_consume` are never called on it. The site that fires
+>    is `force_if_lazy_io_lines` (`src/vm/vm_helpers_lazy.rs:14`) called from
+>    `src/vm/vm_call_method_mut_ops.rs:656`. That is why the `.defined` exemption this ticket
+>    tried had no observable effect — `.defined` is exempt in the *`Seq`* list, and this value
+>    is not a `Seq`. A fix confined to `methods_call_dispatch.rs` cannot close this ticket.
+>    (The deferred-`Seq` arm *does* have the described defect too; ADR-0034 §1.3 row 5 shows it
+>    silently returning `''` on the second call rather than throwing.)
+> 2. **"Reify in place" is necessary but not sufficient.** The deeper defect is that mutsu has
+>    *one* operation where rakudo has two: `.cache` (reify into the Seq, idempotent) and
+>    `.iterator`/`.list` (steal the source, once). mutsu's single "materialize" does both, so its
+>    default is "consume" with four disagreeing exemption lists bolted on. ADR-0034 §1.4 has the
+>    measured raku-vs-mutsu consumption matrix.
+
 A second method call on the same `Seq` throws, where raku answers:
 
 ```
@@ -96,6 +116,16 @@ Two narrower options were tried and rejected:
 
 Pin candidates: the two-call repro above, `.defined`-then-`.Str`, and
 `t/is-lazy-io-lines.t` under `MUTSU_REAL_TEST=1`.
+
+**Superseded by ADR-0034 §2/§3.** The "transfer the pulled items to the old `Arc`" option is
+rejected there not as dishonest spelling but as *undefined behavior*: `Arc<Vec<Value>>` contains no
+`UnsafeCell`, so writing through a `*mut` derived from the live `&Vec<Value>` is the identical
+construct ADR-0030 §1.1 found miscompiling under release optimization. The accepted shape is an
+`Arc<SeqBody>` whose element generations sit behind the already-shipped `SyncUnsafeCell`, with
+`Deref<Target = Vec<Value>>` so the 330 `ValueView::Seq(..)` read sites compile unchanged. Two
+further probes decide it: a `.cache` writeback keyed on the receiver's *name* (the band-aid that
+makes `my $a = …lines; $a.cache; $a.List` work today) cannot reach the same Seq one call frame away,
+nor a second alias `my $e = $d` — so the fix has to land in the value, not in an env slot.
 
 ## Residual try-cell divergences (2026-08-14)
 
