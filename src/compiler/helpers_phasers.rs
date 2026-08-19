@@ -129,28 +129,45 @@ impl Compiler {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn rewrite_next_targets_in_stmt(
         stmt: &Stmt,
         current_loop_label: Option<&str>,
         next_ph: &[Stmt],
         leave_ph: &[Stmt],
+        undo_ph: &[Stmt],
         in_nested_loop: bool,
     ) -> Stmt {
         match stmt {
             Stmt::Next(label)
                 if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop) =>
             {
+                // Verified against real `raku` (`todo/tickets/loop-body-keep-undo-not-run-on-last-next.md`):
+                // an explicit `next` runs its NEXT phasers FIRST (synchronously,
+                // as part of the `next` transfer itself), THEN the value-based
+                // KEEP/UNDO decision, THEN LEAVE. An early `next` means the
+                // iteration's trailing value is undefined (`return_value` is
+                // `None`), which per the definedness rule in
+                // `should_run_success_queue` always routes to UNDO, never KEEP.
+                // This order (NEXT, UNDO, LEAVE) is the OPPOSITE of the normal
+                // (uninterrupted) fall-through order (KEEP/UNDO, LEAVE, NEXT) —
+                // both verified separately against `raku`.
                 let mut wrapped = Vec::new();
-                wrapped.extend(leave_ph.iter().cloned());
                 wrapped.extend(next_ph.iter().cloned());
+                wrapped.extend(undo_ph.iter().cloned());
+                wrapped.extend(leave_ph.iter().cloned());
                 wrapped.push(stmt.clone());
                 Stmt::SyntheticBlock(wrapped)
             }
             Stmt::Last(label)
                 if Self::next_targets_current_loop(label, current_loop_label, in_nested_loop)
-                    && !leave_ph.is_empty() =>
+                    && (!leave_ph.is_empty() || !undo_ph.is_empty()) =>
             {
-                let mut wrapped = leave_ph.to_vec();
+                // Same reasoning as the `next` case above (verified against
+                // `raku`): UNDO (never KEEP) then LEAVE before the actual `last`.
+                let mut wrapped = Vec::new();
+                wrapped.extend(undo_ph.iter().cloned());
+                wrapped.extend(leave_ph.iter().cloned());
                 wrapped.push(stmt.clone());
                 Stmt::SyntheticBlock(wrapped)
             }
@@ -168,6 +185,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     in_nested_loop,
                 ),
                 else_branch: Self::rewrite_next_targets_in_stmts(
@@ -175,6 +193,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     in_nested_loop,
                 ),
                 binding_var: binding_var.clone(),
@@ -184,6 +203,7 @@ impl Compiler {
                 current_loop_label,
                 next_ph,
                 leave_ph,
+                undo_ph,
                 in_nested_loop,
             )),
             Stmt::SyntheticBlock(body) => {
@@ -192,6 +212,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     in_nested_loop,
                 ))
             }
@@ -202,6 +223,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     in_nested_loop,
                 )),
             },
@@ -212,6 +234,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     true,
                 ),
                 label: label.clone(),
@@ -239,6 +262,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     true,
                 ),
                 label: label.clone(),
@@ -263,6 +287,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     true,
                 ),
                 repeat: *repeat,
@@ -272,11 +297,13 @@ impl Compiler {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn rewrite_next_targets_in_stmts(
         stmts: &[Stmt],
         current_loop_label: Option<&str>,
         next_ph: &[Stmt],
         leave_ph: &[Stmt],
+        undo_ph: &[Stmt],
         in_nested_loop: bool,
     ) -> Vec<Stmt> {
         stmts
@@ -287,6 +314,7 @@ impl Compiler {
                     current_loop_label,
                     next_ph,
                     leave_ph,
+                    undo_ph,
                     in_nested_loop,
                 )
             })
@@ -464,7 +492,15 @@ impl Compiler {
         next_ph.reverse();
         // LEAVE phasers run in LIFO (reverse declaration) order per Raku spec
         let leave_ph_reversed: Vec<Stmt> = leave_ph.iter().rev().cloned().collect();
-        let body_main = if next_ph.is_empty() && leave_ph_reversed.is_empty() {
+        // KEEP/UNDO phasers must also be dispatched when the iteration exits
+        // early via `last`/`next`: per the definedness rule (see
+        // `should_run_success_queue`), an interrupted iteration's trailing
+        // value is undefined, which always routes to UNDO, never KEEP — see
+        // `todo/tickets/loop-body-keep-undo-not-run-on-last-next.md`. So the
+        // rewrite also has to run whenever UNDO phasers are present, even with
+        // no NEXT/LEAVE phaser declared.
+        let body_main = if next_ph.is_empty() && leave_ph_reversed.is_empty() && undo_ph.is_empty()
+        {
             body_main
         } else {
             Self::rewrite_next_targets_in_stmts(
@@ -472,6 +508,7 @@ impl Compiler {
                 label,
                 &next_ph,
                 &leave_ph_reversed,
+                &undo_ph,
                 false,
             )
         };
