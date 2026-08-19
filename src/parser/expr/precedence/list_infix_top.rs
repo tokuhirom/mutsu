@@ -113,7 +113,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
 
     fn maybe_wrap_lhs(left: &mut Expr) {
         if contains_whatever(left) && !matches!(left, Expr::Whatever) {
-            *left = wrap_whatevercode(left);
+            *left = Expr::WhateverCurry(Box::new(left.clone()));
         }
     }
 
@@ -139,7 +139,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                 )
             })?;
             if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
-                right = wrap_whatevercode(&right);
+                right = Expr::WhateverCurry(Box::new(right));
             }
             maybe_wrap_lhs(&mut left);
             left = wrap_left_exclusive_sequence(

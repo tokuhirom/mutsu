@@ -52,7 +52,8 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1` — **designed, see
+- WhateverCode such as `* + 1` — **Phase 1 (deferral) shipped, Phases 2-4 (RakuAST
+  read/write, thunk-barrier correctness fix) not started — see
   [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
@@ -61,7 +62,7 @@ Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
 
-### Designed: WhateverCode (ADR-0033)
+### Designed, Phase 1 shipped: WhateverCode (ADR-0033)
 
 `* + 1` was picked first because it is the highest-frequency construct on the list
 (`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
@@ -77,6 +78,14 @@ Rakudo's model — a leaf split (`Expr::Whatever` value vs `Expr::WhateverArg` a
 an `Expr::WhateverCurry` scope marker, closure construction moved to the compiler, and a
 single `whatever_curry::plant` shared by the parser and `rakuast::lower` — in four
 phases, the first of which is behaviour-preserving.
+
+Phase 1 (the behaviour-preserving deferral) shipped 2026-08-19: `src/whatever_curry/`
+now owns closure construction, invoked from a single `Expr::WhateverCurry` compiler arm;
+the parser's ~50 `wrap_whatevercode` call sites construct that marker instead of building
+the closure eagerly, verified zero-behaviour-change against the full `t/` + targeted
+roast suites. `Q[* + 1].AST` still errors and the thunky-operator priming bug is still
+live — those are Phases 2-4, not started. See the ADR's own Outcome section for the full
+list of latent-bug fixes this deferral surfaced along the way.
 
 The remaining items on both lists above are still undesigned.
 

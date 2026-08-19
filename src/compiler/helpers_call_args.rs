@@ -142,6 +142,12 @@ impl Compiler {
                 | Expr::AnonSub { .. }
                 | Expr::AnonSubParams { .. }
                 | Expr::Lambda { .. }
+                // ADR-0033: a Whatever-curried argument (`.grep(* > $x)`) is a
+                // closure literal written at the call site exactly like a
+                // hand-written one — it just hasn't been expanded into its
+                // `Lambda`/`AnonSubParams` form yet (that happens when this
+                // argument itself gets compiled).
+                | Expr::WhateverCurry(_)
         )
     }
 

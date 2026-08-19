@@ -4,7 +4,6 @@ mod postfix;
 pub(crate) mod precedence;
 mod precedence_meta_ops;
 mod whatever;
-mod whatever_replace;
 mod whatever_wrap;
 
 #[cfg(test)]
@@ -32,18 +31,18 @@ pub(in crate::parser) use postfix::without_pending_prefix;
 pub(in crate::parser) use postfix::{QuotedMethodName, parse_quoted_method_name};
 use precedence::ternary;
 
-// Re-exports for WhateverCode detection (`whatever.rs`).
+// Re-exports for WhateverCode priming-scope detection (`whatever.rs`). These
+// stay `pub(crate)`, not just `pub(in crate::parser)`, because
+// `crate::whatever_curry::build_closure` (the closure construction that moved
+// out of the parser per ADR-0033) also calls them.
 use whatever::fat_arrow_curries;
-pub(in crate::parser) use whatever::should_wrap_whatevercode;
-pub(super) use whatever::{contains_whatever, is_whatever};
-pub(crate) use whatever::{count_whatever, expr_contains_topic, exprs_structurally_eq};
+pub(crate) use whatever::{contains_whatever, is_whatever, should_wrap_whatevercode};
 
-// Re-exports for WhateverCode wrapping (`whatever_wrap.rs`).
-pub(in crate::parser) use whatever_wrap::wrap_whatevercode;
+// Re-exports for WhateverCode-adjacent AST shaping that stays in the parser
+// (`whatever_wrap.rs`): composing `o`/`∘` operands and threading a curried
+// CallOn target through a trailing method-call chain. Both now construct
+// `Expr::WhateverCurry` markers instead of eagerly building closures.
 use whatever_wrap::{try_wrap_whatevercode_call_chain, wrap_composition_operands};
-
-// Re-exports for WhateverCode body construction (`whatever_replace.rs`).
-pub(crate) use whatever_replace::{replace_whatever_numbered, replace_whatever_single};
 
 thread_local! {
     static EXPR_MEMO_TLS: RefCell<HashMap<MemoKey, MemoEntry<Expr>>> = RefCell::new(HashMap::new());
@@ -124,14 +123,14 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
                     if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
                 {
                     Expr::CallOn {
-                        target: Box::new(wrap_whatevercode(&target)),
+                        target: Box::new(Expr::WhateverCurry(target)),
                         args,
                     }
                 }
                 ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                     try_wrap_whatevercode_call_chain(&expr).unwrap()
                 }
-                other => wrap_whatevercode(&other),
+                other => Expr::WhateverCurry(Box::new(other)),
             };
         }
         Ok((rest, expr))
@@ -183,14 +182,14 @@ pub(in crate::parser) fn expression_no_assign(input: &str) -> PResult<'_, Expr> 
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(wrap_whatevercode(&target)),
+                    target: Box::new(Expr::WhateverCurry(target)),
                     args,
                 }
             }
             ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                 try_wrap_whatevercode_call_chain(&expr).unwrap()
             }
-            other => wrap_whatevercode(&other),
+            other => Expr::WhateverCurry(Box::new(other)),
         };
     }
     Ok((rest, expr))
@@ -244,14 +243,14 @@ pub(in crate::parser) fn expression_no_word_logical(input: &str) -> PResult<'_, 
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(wrap_whatevercode(&target)),
+                    target: Box::new(Expr::WhateverCurry(target)),
                     args,
                 }
             }
             ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
                 try_wrap_whatevercode_call_chain(&expr).unwrap()
             }
-            other => wrap_whatevercode(&other),
+            other => Expr::WhateverCurry(Box::new(other)),
         };
     }
     Ok((rest, expr))
@@ -299,11 +298,11 @@ pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(wrap_whatevercode(&target)),
+                    target: Box::new(Expr::WhateverCurry(target)),
                     args,
                 }
             }
-            other => wrap_whatevercode(&other),
+            other => Expr::WhateverCurry(Box::new(other)),
         };
     }
     Ok((rest, expr))
@@ -324,14 +323,14 @@ fn wrap_finished_expr(expr: Expr) -> Expr {
             if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
         {
             Expr::CallOn {
-                target: Box::new(wrap_whatevercode(&target)),
+                target: Box::new(Expr::WhateverCurry(target)),
                 args,
             }
         }
         ref e if try_wrap_whatevercode_call_chain(e).is_some() => {
             try_wrap_whatevercode_call_chain(&expr).unwrap()
         }
-        other => wrap_whatevercode(&other),
+        other => Expr::WhateverCurry(Box::new(other)),
     }
 }
 
@@ -446,11 +445,11 @@ pub(in crate::parser) fn call_arg_expr(input: &str) -> PResult<'_, Expr> {
                 if should_wrap_whatevercode(&target) && !args.iter().any(contains_whatever) =>
             {
                 Expr::CallOn {
-                    target: Box::new(wrap_whatevercode(&target)),
+                    target: Box::new(Expr::WhateverCurry(target)),
                     args,
                 }
             }
-            other => wrap_whatevercode(&other),
+            other => Expr::WhateverCurry(Box::new(other)),
         };
     }
     Ok((rest, expr))
@@ -469,7 +468,7 @@ fn fat_arrow_result(is_bareword: bool, pair: Expr) -> Expr {
     if let Expr::Binary { left, right, .. } = &pair
         && fat_arrow_curries(left, right)
     {
-        return wrap_whatevercode(&pair);
+        return Expr::WhateverCurry(Box::new(pair));
     }
     Expr::PositionalPair(Box::new(pair))
 }

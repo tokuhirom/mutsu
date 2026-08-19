@@ -360,7 +360,10 @@ fn check_bare_var_expr(expr: &Expr, var_name: &str, found: &mut bool) {
         }
         // A WhateverCode owns only its `*`-derived params, not `$^name`
         // placeholders — descend through it (mirrors
-        // `collect_ph_expr_shallow`).
+        // `collect_ph_expr_shallow`). ADR-0033: at this (pre-compile) stage a
+        // curry is still an un-expanded `WhateverCurry` marker, not a built
+        // `AnonSubParams`/`Lambda`, so descend into its body directly.
+        Expr::WhateverCurry(body) => check_bare_var_expr(body, var_name, found),
         Expr::AnonSubParams {
             body,
             is_whatever_code: true,
@@ -657,6 +660,10 @@ fn order_check_expr(expr: &Expr, state: &mut OrderState) {
                 order_check_expr(e, state);
             }
         }
+        // ADR-0033: descend into an un-expanded WhateverCurry body the same
+        // way as an already-built WhateverCode (see `check_bare_var_expr`
+        // above for the matching rationale).
+        Expr::WhateverCurry(body) => order_check_expr(body, state),
         Expr::AnonSubParams {
             body,
             is_whatever_code: true,

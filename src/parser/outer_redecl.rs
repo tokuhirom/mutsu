@@ -396,6 +396,13 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
         Expr::Lambda { param, body, .. } => {
             walk_scoped_body_with_params(body, std::slice::from_ref(param), &[], ctx)
         }
+        // ADR-0033 Phase 1: an un-expanded WhateverCurry marker introduces no
+        // named bindings of its own yet (its body still has literal `*`
+        // placeholders, not the synthetic `__wc_N` params `build_closure`
+        // assigns later) — so unlike `Lambda`/`AnonSubParams` it opens no new
+        // scope here; walk its body transparently in the current scope so any
+        // *other* variable reference inside it still gets shadow-checked.
+        Expr::WhateverCurry(inner) => walk_expr(inner, ctx),
         Expr::Try { body, catch } => {
             walk_scoped_body(body, ctx);
             if let Some(c) = catch {

@@ -1,8 +1,11 @@
 //! WhateverCode detection and inspection helpers.
 //!
 //! Pure, read-only predicates over the `Expr` tree used to decide whether an
-//! expression should be wrapped into a `WhateverCode` closure and, if so, how
-//! many `*` placeholders it contains.
+//! expression should be wrapped into an `Expr::WhateverCurry` priming-scope
+//! marker (ADR-0033) and, once decided, whether an operand already carries
+//! one. This module owns the priming-*scope* decision — deciding whether the
+//! actual closure gets built is `crate::whatever_curry::build_closure`,
+//! invoked later by the compiler.
 
 use crate::ast::Expr;
 use crate::token_kind::TokenKind;
@@ -81,7 +84,7 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
 /// on `is_bareword` first.
 pub(crate) fn fat_arrow_curries(left: &Expr, right: &Expr) -> bool {
     fn operand_curries(e: &Expr) -> bool {
-        // A bare `*` or an already-wrapped `(* …)` closure does not wrap when it
+        // A bare `*` or an already-planted `(* …)` curry does not wrap when it
         // stands alone (that is why `should_wrap_whatevercode` excludes them),
         // but as a `=>` operand it does make the pair curry. Everything else
         // defers to the shared `should_wrap_whatevercode` opt-out logic (so `xx`,
@@ -136,25 +139,17 @@ pub(crate) fn is_whatever(expr: &Expr) -> bool {
     matches!(expr, Expr::Whatever)
 }
 
-/// True when `expr` is an already-wrapped WhateverCode closure (produced by a
-/// parenthesized curry such as `(* - 1)`). Such a closure is opaque as a *value*
-/// (e.g. when passed as an argument or stored in a variable), but when it appears
-/// as an *operand* of a further operator/method in the same expression, Raku
-/// composes it into a new, larger WhateverCode (`(* - 1) - 1`, `(^*).roll`,
-/// `1 +< (* - 1)`). The currying machinery (`count_whatever` /
-/// `replace_whatever_*`) already knows how to inline such a closure; this helper
-/// lets the composing operand positions detect it.
+/// True when `expr` is an already-planted WhateverCurry marker (produced by a
+/// parenthesized curry such as `(* - 1)`). Such a marker is opaque as a
+/// *value* (e.g. when passed as an argument or stored in a variable), but when
+/// it appears as an *operand* of a further operator/method in the same
+/// expression, Raku composes it into a new, larger WhateverCode (`(* - 1) -
+/// 1`, `(^*).roll`, `1 +< (* - 1)`). The currying machinery (`count_whatever` /
+/// `replace_whatever_*` in `crate::whatever_curry`) already knows how to
+/// inline such a marker; this helper lets the composing operand positions
+/// detect it.
 fn is_wrapped_whatevercode(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Lambda {
-            is_whatever_code: true,
-            ..
-        } | Expr::AnonSubParams {
-            is_whatever_code: true,
-            ..
-        }
-    )
+    matches!(expr, Expr::WhateverCurry(_))
 }
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
@@ -286,150 +281,6 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
-        _ => false,
-    }
-}
-
-/// Count the number of distinct Whatever (`*`) placeholders in an expression.
-pub(crate) fn count_whatever(expr: &Expr) -> usize {
-    match expr {
-        e if is_whatever(e) => 1,
-        // A nested, already-wrapped WhateverCode operand (e.g. `(* - 1)` inside
-        // `(* - 1) - 1`) contributes its own placeholder count: a single-param
-        // `_`/`__wc_0` lambda counts as 1, a multi-param one as its arity.
-        Expr::Lambda {
-            is_whatever_code: true,
-            ..
-        } => 1,
-        Expr::AnonSubParams {
-            is_whatever_code: true,
-            params,
-            ..
-        } => params.len(),
-        Expr::Binary {
-            left,
-            op: TokenKind::AndAnd,
-            right,
-        } => {
-            if let (
-                Expr::Binary {
-                    left: ll,
-                    right: lr,
-                    ..
-                },
-                Expr::Binary {
-                    left: rl,
-                    right: rr,
-                    ..
-                },
-            ) = (left.as_ref(), right.as_ref())
-                && exprs_structurally_eq(lr, rl)
-                && count_whatever(lr) > 0
-            {
-                // Chained comparison `a OP m OP b` is expanded to
-                // `(a OP m) && (m OP b)` with the middle `m` duplicated. Count the
-                // shared middle's placeholders once so the WhateverCode arity is
-                // the number of distinct operands, not double the middle.
-                return count_whatever(ll) + count_whatever(lr) + count_whatever(rr);
-            }
-            count_whatever(left) + count_whatever(right)
-        }
-        // For range operators: count Whatever in endpoints only when
-        // the endpoint contains compound Whatever (not bare *).
-        Expr::Binary {
-            op:
-                TokenKind::DotDot
-                | TokenKind::DotDotCaret
-                | TokenKind::CaretDotDot
-                | TokenKind::CaretDotDotCaret,
-            left,
-            right,
-        } => {
-            let lc = if contains_whatever(left) && !is_whatever(left) {
-                count_whatever(left)
-            } else {
-                0
-            };
-            let rc = if contains_whatever(right) && !is_whatever(right) {
-                count_whatever(right)
-            } else {
-                0
-            };
-            lc + rc
-        }
-        Expr::Binary {
-            op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
-            ..
-        } => 0,
-        // SmartMatch/BangTilde: Whatever on RHS is handled at runtime; only count LHS.
-        Expr::Binary {
-            op: TokenKind::SmartMatch | TokenKind::BangTilde,
-            left,
-            ..
-        } => count_whatever(left),
-        Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
-        Expr::MethodCall { target, .. }
-        | Expr::DynamicMethodCall { target, .. }
-        | Expr::HyperMethodCall { target, .. }
-        | Expr::HyperMethodCallDynamic { target, .. } => count_whatever(target),
-        Expr::CallOn { target, .. } => {
-            // Only the *target* of an invocation curries. A Whatever passed as a
-            // call *argument* (`$sub(*)`, `&infix:<+>(*, 42)`) is a Whatever value
-            // handed to the callee, NOT a placeholder of the enclosing
-            // WhateverCode — so it must not add to the arity. This mirrors
-            // `contains_whatever`, which already only inspects the target.
-            count_whatever(target)
-        }
-        // Only check target, not index (subscript handles its own WhateverCode)
-        Expr::Index { target, .. } => count_whatever(target),
-        // User-defined infix operators
-        Expr::InfixFunc { left, right, .. } => {
-            count_whatever(left) + right.iter().map(count_whatever).sum::<usize>()
-        }
-        // R/X/Z meta-operators. R always curries on a Whatever operand; X/Z
-        // currying is decided at parse time in `container.rs` (a standalone `*`
-        // operand curries, a trailing `*` in a comma-list operand extends), but
-        // once the decision to wrap is made we must count placeholders here so
-        // the WhateverCode gets the right arity.
-        Expr::MetaOp {
-            meta, left, right, ..
-        } if matches!(meta.as_str(), "R" | "X" | "Z") => {
-            count_whatever(left) + count_whatever(right)
-        }
-        _ => 0,
-    }
-}
-
-/// Structural equality of two expressions, used to detect the shared middle
-/// term of an expanded chained comparison (`a OP m OP b` => `(a OP m) && (m OP
-/// b)`). `Expr` cannot derive `PartialEq` (it embeds `Value`), and this only runs
-/// while wrapping a WhateverCode, so a `Debug`-string comparison is sufficient.
-pub(crate) fn exprs_structurally_eq(a: &Expr, b: &Expr) -> bool {
-    format!("{a:?}") == format!("{b:?}")
-}
-
-/// Check if an expression contains a reference to $_ (the topic variable).
-/// Used to determine whether a WhateverCode lambda should avoid using $_ as its param.
-pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
-    match expr {
-        Expr::Var(name) if name == "_" => true,
-        Expr::Whatever => false,
-        Expr::Binary { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
-        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_topic(expr),
-        Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
-            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
-        }
-        Expr::CallOn { target, args } => {
-            expr_contains_topic(target) || args.iter().any(expr_contains_topic)
-        }
-        Expr::Index { target, index, .. } => {
-            expr_contains_topic(target) || expr_contains_topic(index)
-        }
-        Expr::InfixFunc { left, right, .. } => {
-            expr_contains_topic(left) || right.iter().any(expr_contains_topic)
-        }
-        Expr::MetaOp { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
         _ => false,
     }
 }

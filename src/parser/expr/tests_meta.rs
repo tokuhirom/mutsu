@@ -250,14 +250,20 @@ fn parse_unicode_set_union_infix() {
 
 #[test]
 fn parse_whatever_with_unicode_set_union_infix() {
+    // ADR-0033 Phase 1: the parser defers WhateverCode closure construction to
+    // the compiler, so a currying expression now parses to a `WhateverCurry`
+    // marker wrapping the un-curried body (still literal `*` operands), not
+    // the built `AnonSubParams` closure directly.
     let (rest, expr) = expression("* ∪ *").unwrap();
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::AnonSubParams { body, .. }
+        Expr::WhateverCurry(body)
             if matches!(
-                body.as_slice(),
-                [Stmt::Expr(Expr::Binary { op: TokenKind::SetUnion, .. })]
+                body.as_ref(),
+                Expr::Binary { op: TokenKind::SetUnion, left, right }
+                    if matches!(left.as_ref(), Expr::Whatever)
+                        && matches!(right.as_ref(), Expr::Whatever)
             )
     ));
 }

@@ -143,15 +143,26 @@ fn stmt_leads_with_whatever(stmt: &Stmt) -> bool {
 fn expr_leads_with_whatever(expr: &Expr) -> bool {
     match expr {
         Expr::Whatever | Expr::HyperWhatever => true,
-        // A curried whatever placeholder reached as the leftmost leaf.
+        // A curried whatever placeholder reached as the leftmost leaf. Only
+        // reachable pre-ADR-0033 (a build_closure-substituted body); kept as a
+        // belt-and-suspenders match since it is harmless.
         Expr::Var(name) if name.starts_with("__wc_") => true,
+        // ADR-0033 Phase 1: the parser no longer builds the closure eagerly —
+        // `{ * > 2 }` / `{ * > 2 && * < 9 }` parse to `WhateverCurry` wrapping
+        // the un-curried body, still with literal `Expr::Whatever` leaves.
+        // Recursing into the body walks the same left spine `build_closure`
+        // would have produced a `__wc_N`/`Whatever` leaf from, so this gives
+        // the identical answer without needing the closure to be built.
+        Expr::WhateverCurry(inner) => expr_leads_with_whatever(inner),
         // Topic-param WhateverCode: only produced by a standalone leading `*`.
+        // Only reachable pre-ADR-0033; see the `WhateverCurry` arm above.
         Expr::Lambda {
             is_whatever_code: true,
             ..
         } => true,
         // `__wc_`-param WhateverCode: descend to its body's leftmost leaf, which
-        // is a `__wc_N` placeholder iff the block actually led with `*`.
+        // is a `__wc_N` placeholder iff the block actually led with `*`. Only
+        // reachable pre-ADR-0033; see the `WhateverCurry` arm above.
         Expr::AnonSubParams {
             is_whatever_code: true,
             body,

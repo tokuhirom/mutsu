@@ -968,9 +968,18 @@ impl Interpreter {
                     let body = [Stmt::Expr(pred.clone())];
                     let compiled = self.compile_subset_predicate(constraint, &body);
                     // Check if the predicate is a block/lambda (AnonSub, AnonSubParams, etc.)
+                    // ADR-0033 Phase 1: a Whatever-curried predicate (`where *
+                    // < 1000`) is still an un-expanded `WhateverCurry` marker
+                    // at this point, not yet the `Lambda` the fast inline
+                    // path above matches — it must still be recognized as
+                    // callable here so it is invoked, not compared as a
+                    // literal value.
                     let is_callable_expr = matches!(
                         pred,
-                        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Block(_)
+                        Expr::AnonSub { .. }
+                            | Expr::AnonSubParams { .. }
+                            | Expr::Block(_)
+                            | Expr::WhateverCurry(_)
                     );
                     if is_callable_expr {
                         // Evaluate to get a callable, then call with the value

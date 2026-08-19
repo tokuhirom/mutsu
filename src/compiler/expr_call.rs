@@ -762,6 +762,36 @@ impl Compiler {
             && (args.len() == 2 || args.len() == 3)
             && let Some(var_name) = Self::atomic_target_name(&args[0])
         {
+            // ADR-0033 Phase 1: `cas($var, * + delta)` is still an un-expanded
+            // `WhateverCurry` at this point rather than the built `Lambda`
+            // the parser used to produce eagerly — its single placeholder
+            // `Expr::Whatever` leaf plays the role `param` played below,
+            // without needing a name to match against.
+            if args.len() == 2
+                && let Expr::WhateverCurry(body) = &args[1]
+                && let Expr::Binary { left, op, right } = body.as_ref()
+                && *op == TokenKind::Plus
+                && let delta = match (left.as_ref(), right.as_ref()) {
+                    (Expr::Whatever, rhs) => Some(rhs.clone()),
+                    (lhs, Expr::Whatever) => Some(lhs.clone()),
+                    _ => None,
+                }
+                && let Some(delta) = delta
+            {
+                let call_name_idx = self
+                    .code
+                    .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                self.note_atomic_env_sync_target(&var_name, true);
+                let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                self.code.emit(OpCode::LoadConst(name_idx));
+                self.compile_expr(&delta);
+                self.code.emit(OpCode::CallFunc {
+                    name_idx: call_name_idx,
+                    arity: 2,
+                    arg_sources_idx: None,
+                });
+                return;
+            }
             if args.len() == 2
                 && let Expr::Lambda { param, body, .. } = &args[1]
                 && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
@@ -1279,6 +1309,26 @@ impl Compiler {
         else if name == "cas" && args.len() == 2 {
             let var_name = Self::atomic_target_name(&args[0]);
             if let Some(vname) = var_name {
+                // ADR-0033 Phase 1: see the sibling fast path above — a
+                // `cas($var, * + delta)` argument is still an un-expanded
+                // `WhateverCurry` here.
+                if let Expr::WhateverCurry(body) = &args[1]
+                    && let Expr::Binary { left, op, right } = body.as_ref()
+                    && *op == TokenKind::Plus
+                    && let delta = match (left.as_ref(), right.as_ref()) {
+                        (Expr::Whatever, rhs) => Some(rhs.clone()),
+                        (lhs, Expr::Whatever) => Some(lhs.clone()),
+                        _ => None,
+                    }
+                    && let Some(delta) = delta
+                {
+                    let atomic_add = Expr::Call {
+                        name: Symbol::intern("__mutsu_atomic_add_var"),
+                        args: vec![Expr::Literal(Value::str(vname.clone())), delta],
+                    };
+                    self.compile_expr(&atomic_add);
+                    return;
+                }
                 if let Expr::Lambda { param, body, .. } = &args[1]
                     && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
                     && *op == TokenKind::Plus

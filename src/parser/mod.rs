@@ -1,4 +1,9 @@
 mod expr;
+// ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
+// construction that moved out of the parser) needs these priming-scope
+// predicates, so re-export them at crate visibility without making the whole
+// `expr` module (and its many `pub(in crate::parser)`-typed internals) public.
+pub(crate) use expr::{contains_whatever, is_whatever, should_wrap_whatevercode};
 pub(crate) mod helpers;
 mod memo;
 mod outer_redecl;

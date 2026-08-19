@@ -544,7 +544,13 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
             return Ok(None);
         }
         let loop_stmt = match stmt {
-            Stmt::Expr(expr @ Expr::AnonSubParams { .. })
+            // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
+            // @a`) is now `WhateverCurry` rather than a built `Lambda`/
+            // `AnonSubParams`, but still needs the same "call it with $_"
+            // treatment as those, to keep `* + 1 for @a` meaning `($_ + 1)
+            // for @a` rather than discarding an uncalled closure value.
+            Stmt::Expr(expr @ Expr::WhateverCurry(_))
+            | Stmt::Expr(expr @ Expr::AnonSubParams { .. })
             | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
                 let target = Expr::CallOn {
                     target: Box::new(expr),

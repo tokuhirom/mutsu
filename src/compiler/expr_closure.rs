@@ -551,10 +551,17 @@ impl Compiler {
             Expr::Call { name, .. } if *name == "__mutsu_bind_index_value"
         ) && matches!(
             index,
-            Expr::Lambda {
-                is_whatever_code: true,
-                ..
-            }
+            // ADR-0033 Phase 1: the index is still an un-expanded
+            // `WhateverCurry` marker here (this runs before the compiler's
+            // `Expr::WhateverCurry` arm would expand it) — check that
+            // directly rather than the built closure the parser used to
+            // produce eagerly. (The `Lambda` arm is kept as a
+            // belt-and-suspenders match; only reachable pre-ADR-0033.)
+            Expr::WhateverCurry(_)
+                | Expr::Lambda {
+                    is_whatever_code: true,
+                    ..
+                }
         ) {
             // A Whatever index is always positional, so the sliced container is
             // an Array. `type` and `message` mirror what rakudo's exception

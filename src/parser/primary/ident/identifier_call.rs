@@ -1,7 +1,6 @@
 use crate::ast::{Expr, Stmt, make_anon_sub};
 use crate::parser::expr::{
     expression, expression_no_sequence, parse_fat_arrow_value, should_wrap_whatevercode, term_expr,
-    wrap_whatevercode,
 };
 use crate::parser::helpers::{
     consume_unspace, is_loop_label_name, is_raku_identifier_start, normalize_raku_identifier, ws,
@@ -280,7 +279,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // Wrap WhateverCode in the pair value (e.g. `foo => |*` should have
             // a WhateverCode as the value, not slip(Whatever)).
             if should_wrap_whatevercode(&value) {
-                value = wrap_whatevercode(&value);
+                value = Expr::WhateverCurry(Box::new(value));
             }
             // A qualified name (`Bool::True`, `Foo::Bar`) is NOT autoquoted — it
             // is evaluated to its value, so `Bool::True => "a"` has the Bool

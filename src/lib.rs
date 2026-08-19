@@ -24,6 +24,7 @@ mod trace;
 pub(crate) mod type_id;
 mod value;
 mod vm;
+pub(crate) mod whatever_curry;
 
 pub use interpreter::Interpreter;
 pub use value::{RuntimeError, RuntimeErrorCode, Value};

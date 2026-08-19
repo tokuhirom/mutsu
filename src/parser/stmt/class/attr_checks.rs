@@ -64,6 +64,9 @@ pub(crate) fn expr_uses_attr_twigil(expr: &Expr) -> bool {
         | Expr::AnonSub { body, .. }
         | Expr::AnonSubParams { body, .. }
         | Expr::Lambda { body, .. } => body.iter().any(stmt_uses_attr_twigil),
+        // ADR-0033: an un-expanded WhateverCurry body can still reference
+        // `$!attr` (e.g. `$!x + *`, `*.=foo` mutating an attribute).
+        Expr::WhateverCurry(inner) => expr_uses_attr_twigil(inner),
         Expr::Try { body, catch } => {
             body.iter().any(stmt_uses_attr_twigil)
                 || catch

@@ -1,8 +1,12 @@
-//! WhateverCode construction: wrapping expressions containing `*` placeholders
-//! into the appropriate `Lambda` / `AnonSubParams` closures, and composing
-//! `o`-operator operands.
+//! WhateverCode-adjacent AST shaping that stays parser-side (ADR-0033):
+//! composing `o`/`\u{2218}` operands, and threading a curried `CallOn` target
+//! through a trailing method-call chain. These decide *shape*, not closure
+//! construction — the un-curried operands are wrapped in `Expr::WhateverCurry`
+//! markers; `crate::whatever_curry::build_closure` expands those at compile
+//! time.
 
 use super::*;
+use crate::whatever_curry::make_wc_param;
 
 pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
     match expr {
@@ -26,7 +30,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         param_defs.push(make_wc_param(name.clone()));
                         Expr::Var(name)
                     } else if should_wrap_whatevercode(&left) {
-                        wrap_whatevercode(&left)
+                        Expr::WhateverCurry(Box::new(left))
                     } else {
                         left
                     };
@@ -36,7 +40,7 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                         param_defs.push(make_wc_param(name.clone()));
                         Expr::Var(name)
                     } else if should_wrap_whatevercode(&right) {
-                        wrap_whatevercode(&right)
+                        Expr::WhateverCurry(Box::new(right))
                     } else {
                         right
                     };
@@ -63,12 +67,12 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
                     };
                 }
                 let left_wrapped = if should_wrap_whatevercode(&left) {
-                    wrap_whatevercode(&left)
+                    Expr::WhateverCurry(Box::new(left))
                 } else {
                     left
                 };
                 let right_wrapped = if should_wrap_whatevercode(&right) {
-                    wrap_whatevercode(&right)
+                    Expr::WhateverCurry(Box::new(right))
                 } else {
                     right
                 };
@@ -120,34 +124,9 @@ pub(crate) fn wrap_composition_operands(expr: Expr) -> Expr {
     }
 }
 
-fn make_wc_param(name: String) -> crate::ast::ParamDef {
-    crate::ast::ParamDef {
-        name,
-        default: None,
-        multi_invocant: true,
-        required: false,
-        named: false,
-        slurpy: false,
-        double_slurpy: false,
-        onearg: false,
-        sigilless: false,
-        type_constraint: None,
-        literal_value: None,
-        sub_signature: None,
-        where_constraint: None,
-        traits: Vec::new(),
-        optional_marker: false,
-        outer_sub_signature: None,
-        code_signature: None,
-        is_invocant: false,
-        shape_constraints: None,
-        block_param: false,
-    }
-}
-
 /// Try to detect and fix a chain of MethodCalls leading to a CallOn whose target
-/// contains Whatever. If found, wrap only the CallOn target as WhateverCode,
-/// leaving the outer method calls outside the lambda.
+/// contains Whatever. If found, wrap only the CallOn target as a WhateverCurry
+/// marker, leaving the outer method calls outside the curried scope.
 ///
 /// Handles patterns like: *.foo().(args).bar().baz()
 /// where only *.foo() should be wrapped as WhateverCode.
@@ -171,7 +150,9 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
                 {
                     Some(Expr::MethodCall {
                         target: Box::new(Expr::CallOn {
-                            target: Box::new(wrap_whatevercode(inner_target)),
+                            target: Box::new(Expr::WhateverCurry(Box::new(
+                                (**inner_target).clone(),
+                            ))),
                             args: call_args.clone(),
                         }),
                         name: *name,
@@ -195,110 +176,5 @@ pub(crate) fn try_wrap_whatevercode_call_chain(expr: &Expr) -> Option<Expr> {
             }
         }
         _ => None,
-    }
-}
-
-/// Build a WhateverCode lambda from an expression containing Whatever placeholders.
-pub(crate) fn wrap_whatevercode(expr: &Expr) -> Expr {
-    if let Expr::CallOn { target, args } = expr
-        && should_wrap_whatevercode(target)
-        && !args.iter().any(contains_whatever)
-    {
-        return Expr::CallOn {
-            target: Box::new(wrap_whatevercode(target)),
-            args: args.clone(),
-        };
-    }
-
-    let wc_count = count_whatever(expr);
-
-    if wc_count <= 1 && !expr_contains_topic(expr) {
-        // Single-arg: use Lambda with param "_" for backward compat (this keeps the
-        // `deepmap`/hyper container-passing path working, which binds each leaf to
-        // the topic `_`). `compile_expr_lambda` marks `_` `is raw` when the body
-        // mutates the placeholder (`*++`, `* =:= $x`), so mutation/identity work.
-        // Use a special single-arg replacer that maps * and nested single-arg WC to $_
-        let body_expr = replace_whatever_single(expr);
-        Expr::Lambda {
-            param: "_".to_string(),
-            body: vec![Stmt::Expr(body_expr)],
-            is_whatever_code: true,
-            param_sigilless: false,
-        }
-    } else if wc_count <= 1 {
-        // Single-arg, but expression already contains $_ — use a numbered param
-        // to avoid shadowing the outer $_.
-        let mut counter = 0;
-        let body_expr = replace_whatever_numbered(expr, &mut counter);
-        let param_name = "__wc_0".to_string();
-        Expr::AnonSubParams {
-            params: vec![param_name.clone()],
-            param_defs: vec![crate::ast::ParamDef {
-                name: param_name,
-                default: None,
-                multi_invocant: true,
-                required: false,
-                named: false,
-                slurpy: false,
-                sigilless: false,
-                type_constraint: None,
-                literal_value: None,
-                sub_signature: None,
-                where_constraint: None,
-                // WhateverCode parameters are `is raw`, so `*++`/`*.=foo` can
-                // mutate the argument's container and write back to the caller.
-                traits: vec!["raw".to_string()],
-                double_slurpy: false,
-                onearg: false,
-                optional_marker: false,
-                outer_sub_signature: None,
-                code_signature: None,
-                is_invocant: false,
-                shape_constraints: None,
-                block_param: false,
-            }],
-            return_type: None,
-            body: vec![Stmt::Expr(body_expr)],
-            is_rw: false,
-            is_whatever_code: true,
-        }
-    } else {
-        // Multi-arg: use AnonSubParams with numbered params
-        let mut counter = 0;
-        let body_expr = replace_whatever_numbered(expr, &mut counter);
-        let params: Vec<String> = (0..counter).map(|i| format!("__wc_{}", i)).collect();
-        Expr::AnonSubParams {
-            params: params.clone(),
-            param_defs: params
-                .iter()
-                .map(|name| crate::ast::ParamDef {
-                    name: name.clone(),
-                    default: None,
-                    multi_invocant: true,
-                    required: false,
-                    named: false,
-                    slurpy: false,
-                    sigilless: false,
-                    type_constraint: None,
-                    literal_value: None,
-                    sub_signature: None,
-                    where_constraint: None,
-                    // WhateverCode parameters are `is raw` (mutable, write back).
-                    traits: vec!["raw".to_string()],
-                    double_slurpy: false,
-                    onearg: false,
-                    optional_marker: false,
-                    outer_sub_signature: None,
-                    code_signature: None,
-                    is_invocant: false,
-                    shape_constraints: None,
-                    block_param: false,
-                })
-                .collect(),
-            return_type: None,
-            body: vec![Stmt::Expr(body_expr)],
-            is_rw: false,
-            is_whatever_code: true,
-        }
     }
 }
