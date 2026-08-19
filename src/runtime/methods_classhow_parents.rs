@@ -185,10 +185,18 @@ impl Interpreter {
         non_transitive: bool,
         is_instance: bool,
     ) -> Vec<String> {
-        // If the target is a role (not a class), return its role_parents.
+        // If the target is a role, return its role_parents. Role identity
+        // takes priority over a same-named `ClassDef` shadow (mirrors the
+        // `.HOW.^name` precedence in `methods_introspect.rs`): the only
+        // dual-registered names today are the ADR-0029 `X::` marker roles
+        // (`X::Comp`, `X::Syntax`), whose `ClassDef` exists purely so
+        // `register_x`'s parent-walk MRO synthesis can resolve them as a
+        // `parent` (see todo/deep/exception-class-hierarchy-is-mostly-unregistered.md
+        // R4) -- in real rakudo neither is a class, so `.^roles` called on
+        // the name itself must use role semantics
+        // (`X::Syntax.^roles` -> `(X::Comp)`, not `()`).
         // For instances (punned roles), include the role itself in the list.
-        let is_role = self.registry().roles.contains_key(class_name)
-            && !self.registry().classes.contains_key(class_name);
+        let is_role = self.registry().roles.contains_key(class_name);
         if is_role {
             let mut result = Vec::new();
             // For instances of punned roles, include the role itself first

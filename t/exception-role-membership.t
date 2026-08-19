@@ -49,4 +49,39 @@ is X::Coerce::Impossible.^mro.map(*.^name).join(' '), 'X::Coerce::Impossible X::
 throws-like 'given 42 { when SomeUndeclaredType { 1 }; default { 0 } }',
     X::Comp::Group, 'X::Undeclared::Symbols (does X::Comp, does not inherit it) still matches X::Comp::Group in throws-like';
 
+# ADR-0029 residue R1: role-to-role composition among the 16 marker roles
+# themselves, cross-checked against real raku (2026-08-19) -- exactly three
+# edges exist (X::Syntax does X::Comp, X::IO does X::OS, X::Role::Attribute
+# does X::RoleApplier); the other thirteen compose nothing. Slice 3 grew the
+# marker-role list from 14 to 16 without re-running this measurement, which is
+# how the third edge was missed.
+is X::Syntax.^roles.map(*.^name).join(' '), 'X::Comp', 'X::Syntax does X::Comp (role-to-role edge)';
+is X::IO.^roles.map(*.^name).join(' '), 'X::OS', 'X::IO does X::OS (role-to-role edge)';
+is X::Role::Attribute.^roles.map(*.^name).join(' '), 'X::RoleApplier',
+    'X::Role::Attribute does X::RoleApplier (role-to-role edge)';
+is X::Comp.^roles.map(*.^name).join(' '), '', 'X::Comp composes no further roles (leaf marker)';
+
+# The observable consequence: classes that compose X::Role::Attribute
+# transitively also compose X::RoleApplier, so `~~ X::RoleApplier` must
+# answer True, not False.
+ok X::Role::Attribute::Conflicts ~~ X::RoleApplier,
+    'X::Role::Attribute::Conflicts ~~ X::RoleApplier (transitive through X::Role::Attribute)';
+ok X::Role::Attribute::Exists ~~ X::RoleApplier,
+    'X::Role::Attribute::Exists ~~ X::RoleApplier (transitive through X::Role::Attribute)';
+ok X::Role::Attribute::Conflicts.^does(X::RoleApplier), '.^does(X::RoleApplier) agrees with ~~';
+
+# ADR-0029 residue R2: `X::TooLateForREPR` is rakudo's one "role-as-superclass
+# pun" -- `X::Comp` is simultaneously a real MRO entry AND a composed role for
+# this single class (the sole documented exception to "a marker role name
+# never appears in a class's `.^mro`"; cross-checked against real raku
+# 2026-08-19). It used to be the last unconstructible `X::` class
+# (`X::Method::NotFound ... new on X::TooLateForREPR`).
+is X::TooLateForREPR.new.^name, 'X::TooLateForREPR', 'X::TooLateForREPR.new succeeds';
+is X::TooLateForREPR.^mro.map(*.^name).join(' '), 'X::TooLateForREPR X::Comp Exception Any Mu',
+    'X::TooLateForREPR.^mro includes X::Comp as a real ancestor (the pun)';
+is X::TooLateForREPR.^roles.map(*.^name).join(' '), 'X::Comp',
+    'X::TooLateForREPR.^roles also reports X::Comp (the same pun, as a role)';
+ok X::TooLateForREPR ~~ X::Comp, 'bare type object ~~ X::Comp';
+ok X::TooLateForREPR.new ~~ X::Comp, 'instance ~~ X::Comp';
+
 done-testing;
