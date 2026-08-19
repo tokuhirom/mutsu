@@ -165,19 +165,38 @@ impl Interpreter {
     /// A statement-level call discards its value, so that value is *sunk* —
     /// and sinking an unhandled `Failure` throws, exactly as `OpCode::SinkPop`
     /// does for the call shapes that leave their result on the stack.
-    /// `OpCode::ExecCall` leaves nothing on the stack, so it never reached
-    /// `SinkPop` and swallowed the Failure instead: `EVAL 'use fatal;
-    /// "foo"[2]';` ran on to the next statement where raku throws.
+    /// `OpCode::ExecCall`/`ExecCallPairs` leave nothing on the stack, so they
+    /// never reached `SinkPop` and swallowed the Failure instead: `EVAL 'use
+    /// fatal; "foo"[2]';` ran on to the next statement where raku throws.
+    ///
+    /// A deferred `LazyList`/`LazyIoLines` (e.g. a bare `gather { ... }` as an
+    /// `EVAL`'d snippet's tail statement) must also be *forced* here, exactly
+    /// as `SinkPop` forces one — otherwise `EVAL 'gather { return 1 }';`
+    /// never runs the body at all, so `throws-like`'s own `EVAL $code, context
+    /// => $ctx;` call (a statement-level call with named args, routed through
+    /// `ExecCallPairs`) never sees the escaping `return`.
     fn sink_discarded_call_value(&mut self, value: &Value) -> Result<(), RuntimeError> {
-        if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {
-            return Err(err);
-        }
-        // Under `use fatal`, a sunk list/Seq holding an unhandled Failure throws
-        // too; without the pragma such a list stays soft. Same rule as SinkPop.
-        if self.fatal_mode
-            && let Some(err) = self.unhandled_failure_in_list_for_fatal(value)
-        {
-            return Err(err);
+        match value.view() {
+            ValueView::LazyList(list) if list.is_cached_no_sink() => {}
+            ValueView::LazyList(list) => {
+                self.force_lazy_list_vm(&list)?;
+            }
+            ValueView::LazyIoLines { handle, words, .. } => {
+                loan_env!(self, force_lazy_io_lines(handle, words))?;
+            }
+            _ => {
+                if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {
+                    return Err(err);
+                }
+                // Under `use fatal`, a sunk list/Seq holding an unhandled Failure
+                // throws too; without the pragma such a list stays soft. Same
+                // rule as SinkPop.
+                if self.fatal_mode
+                    && let Some(err) = self.unhandled_failure_in_list_for_fatal(value)
+                {
+                    return Err(err);
+                }
+            }
         }
         Ok(())
     }
