@@ -370,6 +370,11 @@ jobs:
       # 2026-08-02: 47 pass, 5 ignored, ~19s of interpretation (the wall clock is
       # dominated by compiling the crate to MIR).
       #
+      # `gc::` does NOT match `value::native_cache_shapes::` (no "gc::"
+      # substring in that path) — ADR-0030's `SyncUnsafeCell` probes for the
+      # native `array[T]` decode cache need a second, explicit invocation
+      # below, or this gate goes green having run none of them.
+      #
       # It runs in TWO steps because only the second half can be leak-checked;
       # see the step comments below.
       #
@@ -407,6 +412,8 @@ jobs:
         run: |
           cargo miri test --no-default-features --features native \
             --lib gc:: -- --test-threads=1 --skip gc::soundness_smoke
+          cargo miri test --no-default-features --features native \
+            --lib value::native_cache_shapes -- --test-threads=1
 
       # Step 2 — the VM-level half (`gc::soundness_smoke`): a real `Interpreter`
       # running a Raku program, so Miri watches the actual `gc_contents_mut` call
