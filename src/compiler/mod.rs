@@ -1742,7 +1742,48 @@ impl Compiler {
             .iter()
             .map(|sym| sym.with_str(|s| self.local_map.get(s).copied()))
             .collect();
+        // ADR-0032 D2: bubble this closure's container-capture edges (D1-
+        // recorded during its own compile) to whichever ancestor frame owns
+        // each name, as a decl-site boxing request. This is the same
+        // attachment-time bubbling `compile_named_sub_body` and
+        // `compile_method_body` perform for their own nested-code kind.
+        if !compiled.container_ref_capture_syms.is_empty() {
+            let syms = compiled.container_ref_capture_syms.clone();
+            self.bubble_container_ref_capture_syms(&syms);
+        }
         self.code.add_closure_code(compiled, esc)
+    }
+
+    /// ADR-0032 D2: propagate a nested compiled code's container-capture
+    /// edges (`container_ref_capture_syms`, populated by D1 in
+    /// [`Self::emit_wrap_var_ref`]) to the frame that actually owns each
+    /// name. If `self` (the frame the nested code was just attached to)
+    /// declares the name as a local, record its slot as a decl-site boxing
+    /// request in `needs_cell_ref_capture_slots` — `exec_set_local_op` boxes
+    /// that slot into a shared `ContainerRef` cell at its declaration
+    /// (`box_decl_local_cell`). Otherwise the name is free in `self` too, so
+    /// republish it into `self`'s own `container_ref_capture_syms`: the
+    /// request keeps bubbling to whichever ancestor frame is two or more
+    /// levels up (probe `L`/`Z4` in ADR-0032 §1.4) — the same transitive
+    /// shape `named_sub_captures` / `needs_cell_named_sub_free` bubbling
+    /// already uses. Slot-addressed on the Half-A side (never name-addressed)
+    /// so a same-named sibling-block `my` is never mistakenly boxed
+    /// (`t/list-alias-shadowed-name.t`).
+    pub(super) fn bubble_container_ref_capture_syms(&mut self, child_syms: &[Symbol]) {
+        for sym in child_syms {
+            let owner_slot = sym.with_str(|s| self.local_map.get(s).copied());
+            if let Some(parent_slot) = owner_slot {
+                if !self
+                    .code
+                    .needs_cell_ref_capture_slots
+                    .contains(&parent_slot)
+                {
+                    self.code.needs_cell_ref_capture_slots.push(parent_slot);
+                }
+            } else if !self.code.container_ref_capture_syms.contains(sym) {
+                self.code.container_ref_capture_syms.push(*sym);
+            }
+        }
     }
 
     /// The full lexical scope chain visible right here, outermost first: the

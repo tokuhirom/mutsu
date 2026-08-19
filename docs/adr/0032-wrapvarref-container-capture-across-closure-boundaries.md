@@ -1,6 +1,12 @@
 # ADR-0032: `WrapVarRef` container capture is a property of the capture edge, not of the named-sub declaration form
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Partially implemented — Slice 1 (D1+D2+D3b) AND Slice 2 (retire the
+  peephole) shipped together 2026-08-19, with one deliberate deviation from
+  the design (the rw-arg/`:=` call-arg helper is EXCLUDED from D1, not
+  included as designed) and one probe (`X`, `.VAR.WHICH` identity) found to
+  be a separate, pre-existing bug outside this mechanism's reach. Slice 3
+  (probe `O`, `is raw`/`is rw` parameter identity) is not started — still
+  explicitly out of scope per §2.1. See "Outcome" below.
 - Date: 2026-08-19
 - Related: ADR-0018 (slot-addressed lexical capture), ADR-0023 (binding
   provenance), ADR-0024 (mainline lexicals for named subs), ADR-0025 (captured
@@ -454,3 +460,137 @@ and `src/vm/vm_misc_assign.rs`. When slice 1 lands, add a section on the
 container-capture edge to `docs/captured-outer-cell-sharing.md` so the next
 person looking for "how does a captured outer keep its container" finds it
 where the rest of the cell-sharing campaign is written down.
+
+## Outcome
+
+### Slice 1 + Slice 2, shipped 2026-08-19
+
+D1, D2, D3b were implemented as one change, and slice 2 (retiring the
+peephole) was folded into the same PR rather than landed separately, because
+keeping both mechanisms running in parallel added complexity for no
+measurable benefit — D2's generalized bubbling subsumes the peephole's
+named-sub case exactly, confirmed by `t/captured-outer-pair-container-alias.t`
+staying green.
+
+- **D1** landed in `Compiler::emit_wrap_var_ref` exactly as designed: it
+  populates `container_ref_capture_syms` whenever `local_map` does not own
+  the name, gated through the existing `is_plain_lexical_name` filter (which
+  already excludes `@`/`%`/`&`-sigiled names, satisfying the "`$`-sigil
+  only" restriction with no extra code).
+- **D2** landed as a shared `Compiler::bubble_container_ref_capture_syms`
+  helper, called from all three nested-code attachment sites:
+  `add_closure_code_baked` (pointy blocks, anon subs, bare blocks,
+  `start`/`supply` bodies — they all route through this one function),
+  `compile_named_sub_body` (replacing the old peephole scan there), and
+  `compile_method_body` (a new call, since a class/role method's
+  `method_compiler` is a fresh `Compiler::new()` with no access to the
+  declaring frame's `local_map` — the bubbling call is the only place Half A
+  can be requested for a method reader). `needs_cell_named_sub_ref_slots`
+  was renamed to `needs_cell_ref_capture_slots` to match its generalized
+  contributors.
+- **D3a** needed no code change, as designed.
+- **D3b** landed in `CompiledCode::compute_upvalues` as an added filter
+  alongside `written`/`runtime_bound`.
+- The `ContainerizePair` pop-back hack in `expr_method.rs` was deleted, as D1
+  predicted: `emit_wrap_var_ref` no longer depends on op adjacency.
+
+**Every probe in §1.4 now matches raku except `O` (explicitly out of scope)
+and `X`**, which turned out to be unrelated to this mechanism (see below).
+
+### Two false-positive sources found during implementation, not anticipated by the design
+
+The design's core claim — "the name is not a local of the emitting frame" is
+a sound proxy for "this is a captured outer variable" — is false for two
+categories of `WrapVarRef` site the design did not examine, both found via
+`roast/S02-types/pair.t` regressing after the initial implementation
+(bisected with a `git worktree` baseline build, since the failure required
+specific surrounding file context to reproduce):
+
+1. **A bareword call argument is not a variable read.** The general-purpose
+   rw-arg/`:=`-bind-source tagging in `helpers_call_args.rs` calls
+   `emit_wrap_var_ref` for EVERY call argument's shape tag, including
+   `Expr::BareWord` (a type/package/constant name passed positionally, e.g.
+   the `Pair` in `isa-ok($pair, Pair)`) and `Expr::AssignExpr` (an
+   anonymous-scalar-assignment temp). Neither is a local of the emitting
+   frame, so D1's original unconditional rule treated `"Pair"` as though it
+   were a captured outer lexical, bubbling a bogus decl-site boxing request
+   for any LATER, unrelated `my $pair` sharing that spelling.
+2. **A for-loop parameter is this frame's own binding but has no local
+   slot, by design** (see `for_loop_param_syms`'s existing doc comment,
+   which already documents an identical false-free-variable hazard for
+   `compute_free_vars`). `local_map.get("pair")` returns `None` for a read
+   of `for %h.pairs -> $pair { ... }`'s OWN loop variable, which D1
+   misread as "captured from an ancestor frame."
+
+**The fix, and where it landed:**
+
+- (1) is fixed by NOT registering D1 at all for the rw-arg/`:=` call-arg
+  helper — not by narrowing it to `Expr::Var` only. A narrower attempt
+  (register for `Expr::Var`/`Expr::DoStmt` VarDecl, skip bareword/
+  AssignExpr) still broke `t/hash-attr-map-default-element-assign.t`: that
+  call site fires for every plain positional argument (not only an actual
+  `is rw` one), so a genuine free-variable argument passed to an ORDINARY
+  function inside a closure (`lives-ok { $c.h{3} = Str }` passes `$c` to an
+  internal hash-element-assign helper) was ALSO wrongly boxed. Probes `V`/`W`
+  (`is rw` argument / `:=` bind performed inside a closure) do not need D1 to
+  pass — per §1.4 they already matched raku on unmodified `main`, through the
+  pre-existing `free_var_writes` write-tracking machinery, which is
+  independent of `container_ref_capture_syms`. **This is a deliberate
+  deviation from the design's claim that D1 "covers... the rw-arg and `:=`
+  paths": it does not, and should not.** A new `emit_wrap_var_ref_arg_tag`
+  emits the bare op with no D1 registration; the rw-arg helper always calls
+  it now, for every argument shape.
+- (2) is fixed post-compile in `CompiledCode::compute_free_vars`
+  (`opcode.rs`), retaining `container_ref_capture_syms` against
+  `for_loop_param_syms` and `my_declared_enum_sym` — mirroring, verbatim,
+  the two existing `free`-set exclusions immediately above it in the same
+  function. Applied post-compile (not at `emit_wrap_var_ref` call time)
+  because `compute_free_vars` already runs, for every nested-code kind,
+  before that code's `container_ref_capture_syms` is read by the bubbling
+  call at its attachment site — so the ordering the design's D3b note
+  worried about ("the capture set must be complete before `compute_upvalues`
+  runs") holds here for free.
+
+Regression coverage: `t/closure-container-capture-alias.t` probe "shadow
+safety" pins D1's shadow-safety invariant; the bareword/for-loop-param false
+positives are pinned by `roast/S02-types/pair.t` and
+`t/hash-attr-map-default-element-assign.t` staying green (no new dedicated
+unit test was added for these two, since the roast/local-suite regression
+they caused IS the regression test — reintroducing either bug fails an
+existing file deterministically).
+
+### Probe `X` (`.VAR.WHICH` cross-closure identity) is NOT fixed by this ADR
+
+Root-caused to be unrelated to `WrapVarRef`: `.VAR` on a scalar variable
+compiles via `compile_expr_method_on_var` to `CallMethodMut`, whose target
+value is read via a plain `GetGlobal`/`GetLocal` (already dereferenced even
+when the variable is boxed) — `.VAR`'s reflection-object identity comes
+entirely from a separate, name-keyed `var_meta_value` env cache
+(`src/runtime/runtime_var_meta.rs`) that has no cross-frame writeback
+mechanism of its own. Confirmed independent of this ADR's mechanism by
+control: the OLDER named-sub capture mechanism this ADR generalizes (which
+predates it and already worked for `key => $v`) fails the identical
+`.VAR.WHICH` shape (`{ my $v = 1; sub f() { $v.VAR.WHICH }; say f() eq
+$v.VAR.WHICH }` — mutsu: `False`, raku: `True`, on unmodified `main`).
+Filed as `todo/tickets/var-which-identity-across-closure-boundary.md`; pinned
+(as an expected `todo`-marked failure, not a silent skip) in
+`t/closure-container-capture-alias.t` probe `X`.
+
+### Validation
+
+`make test`-equivalent (full `t/` sweep, `cargo test --lib`, targeted roast:
+`S02-types/pair.t`+siblings, `S05-capture/*`, `S06-signature/*`,
+`S12-attributes/*`, `S12-methods/*`) all green locally. Perf gate (§4,
+`roast/S32-num/int.t` on a release build): 0.058s wall clock — no trace of
+the ADR-0025 `#2749` blowup this gate exists to catch. `make roast` itself is
+delegated to CI per the project's standing policy, not run locally.
+
+### Remaining
+
+- **Slice 3** (probe `O`) is unstarted, per its own explicit out-of-scope
+  note in §2.1 — re-measure and file or close its own ticket separately.
+- **Probe `X`** needs its own design (see the ticket above); it is not a
+  small extension of D1-D3.
+- The §8 note (add a `docs/captured-outer-cell-sharing.md` section on the
+  generalized container-capture edge) is still open — left for a follow-up
+  docs-only pass rather than expanding this already-large PR further.

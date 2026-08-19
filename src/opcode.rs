@@ -3788,13 +3788,24 @@ pub(crate) struct CompiledCode {
     /// at their declaration site (`box_decl_local_cell`). Distinct from
     /// `needs_cell_locals` (closure-driven) — see `named_sub_captures`.
     pub(crate) needs_cell_named_sub: Vec<Symbol>,
-    /// Exact owner slots whose containers are captured by `WrapVarRef` in a
-    /// directly nested named sub. Kept slot-addressed so a same-named lexical in
-    /// another block is not boxed at its declaration site.
-    pub(crate) needs_cell_named_sub_ref_slots: Vec<u32>,
+    /// Exact owner slots whose containers are captured by `WrapVarRef` in ANY
+    /// nested compiled code (a directly nested named sub, a pointy block, an
+    /// anon `sub {}`, a bare block, a class/role method, `start`/`supply` —
+    /// ADR-0032 D2). Kept slot-addressed so a same-named lexical in another
+    /// block is not boxed at its declaration site. Named `_ref_capture_` (not
+    /// `_named_sub_`) because this is populated by [`Compiler::emit_wrap_var_ref`]
+    /// (D1) at every WrapVarRef emit site and bubbled to the owning frame by
+    /// [`Compiler::bubble_container_ref_capture_syms`] (D2), not by a
+    /// named-sub-specific peephole.
+    pub(crate) needs_cell_ref_capture_slots: Vec<u32>,
     /// Free variables whose raw container is consumed by `WrapVarRef`. Runtime
     /// reference wrapping may read a captured env cell only for this explicit
     /// set; ordinary same-named env cells must not override a shadow value.
+    /// Populated at emission time by [`Compiler::emit_wrap_var_ref`] (ADR-0032
+    /// D1) whenever the name is not a local of the emitting frame, and
+    /// bubbled transitively across nested-code boundaries by
+    /// [`Compiler::bubble_container_ref_capture_syms`] until it reaches the
+    /// frame that owns the name (see `needs_cell_ref_capture_slots`).
     pub(crate) container_ref_capture_syms: Vec<Symbol>,
     /// Named-sub writes of a NON-own (ancestor) lexical, bubbled up so the ancestor
     /// that declares the local folds it into its own `needs_cell_named_sub`
@@ -4330,7 +4341,7 @@ impl CompiledCode {
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
             needs_cell_named_sub: Vec::new(),
-            needs_cell_named_sub_ref_slots: Vec::new(),
+            needs_cell_ref_capture_slots: Vec::new(),
             container_ref_capture_syms: Vec::new(),
             needs_cell_named_sub_free: Vec::new(),
             escaping_our_sub_captures: Vec::new(),
@@ -5913,6 +5924,30 @@ impl CompiledCode {
         if !self.for_loop_param_syms.is_empty() {
             free.retain(|sym| !self.for_loop_param_syms.contains(sym));
         }
+        // ADR-0032 D1 populates `container_ref_capture_syms` at EMISSION time
+        // inside `Compiler::emit_wrap_var_ref`, purely from "does `local_map`
+        // (slot-addressed) own this name" -- which is also `false` for a
+        // for-loop parameter or a `my enum`'s bareword bindings, since BOTH
+        // are this code's own binding but deliberately never get a local
+        // slot (see the two `free`-filtering blocks just above, whose
+        // rationale applies identically here). Left unfiltered, a plain
+        // `isa-ok($pair, Pair)` read of a for-loop's OWN `-> $pair {...}`
+        // parameter was misclassified as an outer capture and bubbled a
+        // bogus decl-site boxing request up to a same-named ANCESTOR `my`
+        // that has nothing to do with the loop (`roast/S02-types/pair.t`:
+        // `sub test2(%h) { for %h.pairs -> $pair { isa-ok($pair,Pair); ... } }`
+        // corrupted a later, unrelated file-scope `my $pair`). Apply the same
+        // two exclusions post-compile, mirroring `free_var_syms` exactly.
+        if !self.container_ref_capture_syms.is_empty() {
+            if !self.my_declared_enum_sym.is_empty() {
+                self.container_ref_capture_syms
+                    .retain(|sym| !self.my_declared_enum_sym.contains(sym));
+            }
+            if !self.for_loop_param_syms.is_empty() {
+                self.container_ref_capture_syms
+                    .retain(|sym| !self.for_loop_param_syms.contains(sym));
+            }
+        }
         self.free_var_syms = free.into_iter().collect();
         self.outer_ref_names = outer_ref_names;
         self.free_var_writes = free_writes.into_iter().collect();
@@ -6076,6 +6111,15 @@ impl CompiledCode {
             .copied()
             .filter(|sym| !written.contains(sym))
             .filter(|sym| !runtime_bound.contains(sym))
+            // ADR-0032 D3b: a name whose raw container is captured by
+            // `WrapVarRef` anywhere in this code (`container_ref_capture_syms`,
+            // populated by D1 during THIS code's own compile, which precedes
+            // this post-compile pass) must keep reading through `GetGlobal`
+            // so `exec_wrap_var_ref_op`'s by-name env-cell recovery (D3a)
+            // still applies. `GetUpvalue` reads `val.into_deref()` — an
+            // unconditional strip that would defeat D1/D2 for the exact
+            // shape they exist to fix.
+            .filter(|sym| !self.container_ref_capture_syms.contains(sym))
             .filter(|sym| {
                 sym.with_str(|s| {
                     crate::env::is_plain_user_lexical(s)

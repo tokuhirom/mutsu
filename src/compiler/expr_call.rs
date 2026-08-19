@@ -30,6 +30,50 @@ impl Compiler {
     pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
+        // ADR-0032 D1: record the container-capture edge where it is emitted,
+        // not by a fragile after-the-fact peephole scan. When `name` is not a
+        // local of THIS emitting frame (slot == u32::MAX), the value being
+        // wrapped is a captured/outer scalar read through the closure env —
+        // exactly the shape `exec_wrap_var_ref_op` needs to recover the raw
+        // cell for instead of the already-dereferenced stack value. This one
+        // rule covers every WrapVarRef consumer (MakePair, MakeNamedArg,
+        // MakeCapture, MakeArray, Pair.new, rw-arg / `:=` paths) because they
+        // all funnel through this emitter, and it generalizes from "reader is
+        // a directly nested named sub" (the old mechanism) to "any nested
+        // compiled code" (pointy block, anon sub, bare block, class method).
+        // Restricted to plain `$`-sigil lexical names (`is_plain_lexical_name`
+        // excludes `@`/`%`/`&`/twigil/dynamic/attribute names) — broader
+        // `@`/`%` decl-site boxing regressed ~12 files through decont leaks
+        // (docs/captured-outer-cell-sharing.md §7.1d).
+        if slot == u32::MAX && Self::is_plain_lexical_name(name) {
+            let sym = Symbol::intern(name);
+            if !self.code.container_ref_capture_syms.contains(&sym) {
+                self.code.container_ref_capture_syms.push(sym);
+            }
+        }
+        self.code.emit(OpCode::WrapVarRef { name_idx, slot });
+    }
+
+    /// [`Self::emit_wrap_var_ref`] WITHOUT ADR-0032 D1's container-capture-
+    /// edge registration. Used for a `WrapVarRef` site that exists purely to
+    /// tag a call argument's SHAPE for `is rw`/`:=` signature matching (a
+    /// bareword type/package/constant name passed positionally, e.g. the
+    /// `Pair` in `isa-ok($pair, Pair)`, or an anonymous-scalar-assignment
+    /// temp, `$ = value`) — it is not a read of a genuine declared lexical,
+    /// so it must NOT be treated as a container-capture edge. Registering it
+    /// anyway created a false decl-site boxing request for any LATER,
+    /// unrelated `my` sharing that bareword's spelling as a variable name
+    /// (`roast/S02-types/pair.t`: `isa-ok($pair, Pair)` inside a nested named
+    /// sub bubbled a bogus request keyed on the string "Pair" — harmless
+    /// there, but a bareword can coincide with a real variable name like
+    /// "pair" was coincidentally close to — the general risk this guards
+    /// against is any non-variable bareword masquerading as a capture).
+    /// `@`/`%`/`&`-sigiled sources are separately excluded by
+    /// `is_plain_lexical_name` already; this covers the sigil-less cases
+    /// `is_plain_lexical_name` cannot distinguish from a real scalar name.
+    pub(super) fn emit_wrap_var_ref_arg_tag(&mut self, name: &str) {
+        let name_idx = self.code.add_constant(Value::str(name.to_string()));
+        let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
         self.code.emit(OpCode::WrapVarRef { name_idx, slot });
     }
 

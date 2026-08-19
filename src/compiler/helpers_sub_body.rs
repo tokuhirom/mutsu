@@ -560,36 +560,20 @@ impl Compiler {
         // (e.g. a user `trait_mod:<is>` pushing to an outer `@names`) is boxed too.
         let mut nf_writes = cf.code.free_var_writes.clone();
         nf_writes.extend(cf.code.free_var_container_writes.iter().copied());
-        for pair in cf.code.ops.windows(2) {
-            let (
-                OpCode::GetGlobal(name_idx),
-                OpCode::WrapVarRef {
-                    name_idx: wrapped_idx,
-                    ..
-                },
-            ) = (&pair[0], &pair[1])
-            else {
-                continue;
-            };
-            if name_idx != wrapped_idx {
-                continue;
-            }
-            if let Some(crate::value::ValueView::Str(name)) =
-                cf.code.constants.get(*name_idx as usize).map(Value::view)
-            {
-                let sym = crate::symbol::Symbol::intern(&name);
-                if !cf.code.container_ref_capture_syms.contains(&sym) {
-                    cf.code.container_ref_capture_syms.push(sym);
-                }
-                if let Some(parent_slot) = self.local_map.get(name.as_str()).copied()
-                    && !self
-                        .code
-                        .needs_cell_named_sub_ref_slots
-                        .contains(&parent_slot)
-                {
-                    self.code.needs_cell_named_sub_ref_slots.push(parent_slot);
-                }
-            }
+        // ADR-0032 D2 (slice 1+2): bubble this sub's container-capture edges
+        // — already recorded in `cf.code.container_ref_capture_syms` by D1
+        // during `sub_compiler`'s own compile above — to the enclosing
+        // scope, exactly like `add_closure_code_baked` does for a closure
+        // and `compile_method_body` does for a method. This replaces the
+        // former `GetGlobal`-immediately-followed-by-`WrapVarRef` adjacency
+        // peephole scan, which only ever saw the emitting frame's OWN
+        // pattern (never bubbled past a frame that didn't own the name —
+        // the exact gap probes `L`/`Z4` measured) and which forced the
+        // `ContainerizePair` pop-back hack in `expr_method.rs` to keep the
+        // adjacency intact.
+        if !cf.code.container_ref_capture_syms.is_empty() {
+            let syms = cf.code.container_ref_capture_syms.clone();
+            self.bubble_container_ref_capture_syms(&syms);
         }
         self.code
             .named_sub_captures
