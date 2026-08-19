@@ -840,10 +840,16 @@ impl Interpreter {
                 self.clear_match_state();
                 false
             }
-            (
-                ValueView::Seq(items) | ValueView::Slip(items),
-                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_),
-            ) => {
+            (ValueView::Seq(items), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
+                for item in items.iter() {
+                    if self.smart_match(item, right) {
+                        return true;
+                    }
+                }
+                self.clear_match_state();
+                false
+            }
+            (ValueView::Slip(items), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)) => {
                 for item in items.iter() {
                     if self.smart_match(item, right) {
                         return true;
@@ -1116,7 +1122,11 @@ impl Interpreter {
                         .iter()
                         .map(|v| crate::runtime::utils::quanthash_elem_entry(v).0)
                         .collect(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items
+                    ValueView::Seq(items) => items
+                        .iter()
+                        .map(|v| crate::runtime::utils::quanthash_elem_entry(v).0)
+                        .collect(),
+                    ValueView::Slip(items) => items
                         .iter()
                         .map(|v| crate::runtime::utils::quanthash_elem_entry(v).0)
                         .collect(),

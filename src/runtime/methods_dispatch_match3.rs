@@ -618,17 +618,12 @@ impl Interpreter {
         {
             return self.dispatch_supply_skip(&(attributes).as_map(), &args);
         }
-        // A Seq is consumed by .skip: subsequent iteration of the original Seq
-        // must throw X::Seq::Consumed (unless it was cached).
-        if let ValueView::Seq(seq_items) = target.view() {
-            if crate::value::seq_is_consumed(&seq_items) && !crate::value::seq_is_cached(&seq_items)
-            {
-                return Err(crate::value::seq_consumed_error());
-            }
-            if !crate::value::seq_is_cached(&seq_items) {
-                crate::value::seq_consume(&seq_items).ok();
-            }
-        }
+        // Consumption is handled centrally, before dispatch reaches here
+        // (ADR-0034 §2.3: `.skip` is a consuming method AND one of the two
+        // that burns a single read even on a body built already-`Reified` —
+        // the `call_method_with_values` guard's `reify_or_consume_seq_target`
+        // already claimed that and would have thrown `X::Seq::Consumed` if
+        // it was already spent).
         let items = crate::runtime::utils::value_to_list(&target);
         let n = if args.is_empty() {
             1usize
@@ -1072,7 +1067,15 @@ impl Interpreter {
                         }
                     }
                 }
-                ValueView::Seq(elems) | ValueView::Slip(elems) => {
+                ValueView::Seq(elems) => {
+                    for elem in elems.iter() {
+                        let i = elem.to_f64() as i64;
+                        if i >= 0 {
+                            indices.push(i as usize);
+                        }
+                    }
+                }
+                ValueView::Slip(elems) => {
                     for elem in elems.iter() {
                         let i = elem.to_f64() as i64;
                         if i >= 0 {

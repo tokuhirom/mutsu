@@ -68,9 +68,8 @@ impl Interpreter {
         match value.view() {
             ValueView::Proxy { .. } => true,
             ValueView::Array(items, _) => items.iter().any(Self::value_has_proxy),
-            ValueView::Seq(items) | ValueView::Slip(items) => {
-                items.iter().any(Self::value_has_proxy)
-            }
+            ValueView::Seq(items) => items.iter().any(Self::value_has_proxy),
+            ValueView::Slip(items) => items.iter().any(Self::value_has_proxy),
             ValueView::Hash(map) => map.values().any(Self::value_has_proxy),
             ValueView::Pair(_, v) => Self::value_has_proxy(v),
             ValueView::ValuePair(k, v) => Self::value_has_proxy(k) || Self::value_has_proxy(v),
@@ -113,7 +112,7 @@ impl Interpreter {
                     .iter()
                     .map(|v| self.resolve_proxies_in_value(v))
                     .collect();
-                Ok(Value::seq_arc(std::sync::Arc::new(resolved?)))
+                Ok(Value::seq(resolved?))
             }
             ValueView::Slip(items) => {
                 let resolved: Result<Vec<Value>, RuntimeError> = items

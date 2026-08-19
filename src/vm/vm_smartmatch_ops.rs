@@ -330,10 +330,10 @@ impl Interpreter {
         let scalarized = match value.view() {
             ValueView::Nil => Value::int(0),
             ValueView::Array(items, _) => Value::int(items.len() as i64),
-            ValueView::Seq(items)
-            | ValueView::HyperSeq(items)
-            | ValueView::RaceSeq(items)
-            | ValueView::Slip(items) => Value::int(items.len() as i64),
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+                Value::int(items.len() as i64)
+            }
+            ValueView::Slip(items) => Value::int(items.len() as i64),
             ValueView::Capture { positional, .. } => Value::int(positional.len() as i64),
             ValueView::Instance { class_name, .. } if class_name == "Match" => {
                 let list_v = value.match_list();

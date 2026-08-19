@@ -375,8 +375,8 @@ pub(crate) fn native_method_0arg(
         if method == "cache" {
             // .cache marks as cached; handled fully here (the actual cache impl is
             // in the per-method handler below, this just marks state).
-            crate::value::seq_mark_cached(&items);
-        } else if method == "is-lazy" && crate::value::seq_is_consumed(&items) {
+            items.mark_cache_requested();
+        } else if method == "is-lazy" && items.is_consumed() {
             // Read-only check: throws on consumed Seq but does NOT consume.
             return Some(Err(crate::value::seq_consumed_error()));
         }
@@ -961,7 +961,7 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
     matches!(value.view(), ValueView::LazyList(ll) if !ll.is_cat_pull())
         || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
-        || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(&items))
+        || matches!(value.view(), ValueView::Seq(items) if items.is_lazy())
 }
 
 /// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.

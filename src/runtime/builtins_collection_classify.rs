@@ -9,9 +9,8 @@ impl Interpreter {
         fn as_items(value: &Value) -> Option<Vec<Value>> {
             match value.view() {
                 ValueView::Array(items, ..) => Some(items.iter().cloned().collect()),
-                ValueView::Seq(items) | ValueView::Slip(items) => {
-                    Some(items.iter().cloned().collect())
-                }
+                ValueView::Seq(items) => Some(items.iter().cloned().collect()),
+                ValueView::Slip(items) => Some(items.iter().cloned().collect()),
                 _ => None,
             }
         }
@@ -206,9 +205,8 @@ impl Interpreter {
         for arg in &positional {
             match arg.view() {
                 ValueView::Array(values, ..) => items.extend(values.iter().cloned()),
-                ValueView::Seq(values) | ValueView::Slip(values) => {
-                    items.extend(values.iter().cloned())
-                }
+                ValueView::Seq(values) => items.extend(values.iter().cloned()),
+                ValueView::Slip(values) => items.extend(values.iter().cloned()),
                 ValueView::LazyList(ll) => items.extend(self.force_lazy_list_bridge(&ll)?),
                 // Hash/Set/Bag/Mix classify their pairs (elem => True for Set,
                 // elem => count/weight for Bag/Mix), same as for-iteration.

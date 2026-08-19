@@ -178,28 +178,4 @@ impl Interpreter {
         }
         Ok(Value::array(items))
     }
-
-    /// Force a `LazyIoLines` value into an eager array by reading at most `n`
-    /// records from the file handle, leaving the rest available for subsequent
-    /// reads. When `words` is true the records are words; otherwise lines.
-    pub(crate) fn force_lazy_io_lines_n(
-        &mut self,
-        handle: &Value,
-        n: usize,
-        words: bool,
-    ) -> Result<Value, RuntimeError> {
-        let mut items = Vec::new();
-        while items.len() < n {
-            let next = if words {
-                self.read_word_from_handle_value(handle)?
-            } else {
-                self.read_line_from_handle_value(handle)?
-            };
-            match next {
-                Some(rec) => items.push(Value::str(rec)),
-                None => break,
-            }
-        }
-        Ok(Value::array(items))
-    }
 }

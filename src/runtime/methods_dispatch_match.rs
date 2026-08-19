@@ -334,12 +334,12 @@ impl Interpreter {
         if let Some(lim) = limit
             && lim <= 0
         {
-            return Some(Ok(Value::seq_arc(std::sync::Arc::new(Vec::new()))));
+            return Some(Ok(Value::seq(Vec::new())));
         }
 
         let matcher = positional.first().copied();
 
-        let make_seq = |items: Vec<Value>| Value::seq_arc(std::sync::Arc::new(items));
+        let make_seq = |items: Vec<Value>| Value::seq(items);
 
         match matcher.map(Value::view) {
             // Pure Int-chunk / Str-fixed split: single shared impl in

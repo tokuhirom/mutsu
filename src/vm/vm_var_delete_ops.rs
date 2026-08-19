@@ -312,7 +312,10 @@ impl Interpreter {
                     ValueView::Array(items, _) if items.len() != 1 => {
                         Some(items.iter().cloned().collect())
                     }
-                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() != 1 => {
+                    ValueView::Seq(items) if items.len() != 1 => {
+                        Some(items.iter().cloned().collect())
+                    }
+                    ValueView::Slip(items) if items.len() != 1 => {
                         Some(items.iter().cloned().collect())
                     }
                     _ => None,
@@ -330,9 +333,8 @@ impl Interpreter {
                 }
                 let idx_arg = match idx.view() {
                     ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
-                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
-                        items[0].clone()
-                    }
+                    ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                    ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
                     _ => idx.clone(),
                 };
                 let out = self.call_method_with_values(target, m, vec![idx_arg])?;
@@ -563,7 +565,14 @@ impl Interpreter {
                         kind,
                     )
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    let replaced: Vec<Value> = items
+                        .iter()
+                        .map(|v| if is_hole(v) { def.clone() } else { v.clone() })
+                        .collect();
+                    Value::seq(replaced)
+                }
+                ValueView::Slip(items) => {
                     let replaced: Vec<Value> = items
                         .iter()
                         .map(|v| if is_hole(v) { def.clone() } else { v.clone() })

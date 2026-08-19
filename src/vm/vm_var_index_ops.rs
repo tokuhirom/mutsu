@@ -460,55 +460,28 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        if let ValueView::LazyIoLines {
-            handle, kv, words, ..
-        } = target.view()
+        // A not-yet-read `IO::Handle.lines`/`.words` Seq (ADR-0034's
+        // `SeqSource::IoLines`, formerly the separate `LazyIoLines`) must be
+        // reified before indexing can read its elements. When the subscript's
+        // needed count can be determined statically (an Int/Range/slice-of-
+        // those), reify only that bounded prefix — `words($fh, :close)[1,
+        // 2]` must leave the handle open (`:close` only auto-closes on a read
+        // that actually hits EOF), which a full reify would defeat. Every
+        // other shape (a plain `Seq.new($iterator)`, or a subscript this
+        // helper can't bound) falls back to reifying the whole source, same
+        // as any other consumer.
+        if let ValueView::Seq(body) = target.view()
+            && body.needs_touch()
         {
-            // Determine the maximum index requested so we only read the
-            // minimum number of lines from the handle, leaving the rest
-            // available for subsequent reads.
-            let needed = match index.view() {
-                ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
-                // Array index like [1,2] — find max element
-                ValueView::Array(items, _) => {
-                    let mut max_idx: Option<usize> = None;
-                    let mut has_negative = false;
-                    for item in items.iter() {
-                        match item.view() {
-                            ValueView::Int(i) if i >= 0 => {
-                                let u = i as usize;
-                                max_idx = Some(max_idx.map_or(u, |m: usize| m.max(u)));
-                            }
-                            _ => {
-                                has_negative = true;
-                            }
-                        }
-                    }
-                    if has_negative {
-                        None // negative/whatever index — must read all
-                    } else {
-                        max_idx.map(|m| m.saturating_add(1))
-                    }
+            let body = std::sync::Arc::clone(&body);
+            match Self::seq_subscript_needed_count(&index) {
+                Some(needed) => self.reify_seq_body_prefix(&body, needed)?,
+                None => {
+                    self.reify_seq_body(&body)?;
                 }
-                _ => None, // Whatever (*-1) or unknown — read all
-            };
-            target = match needed {
-                Some(n) => {
-                    let forced = self.force_lazy_io_lines_n(handle, n, words)?;
-                    if kv {
-                        let items = crate::runtime::utils::value_to_list(&forced);
-                        let mut kv_items = Vec::with_capacity(items.len() * 2);
-                        for (i, v) in items.iter().enumerate() {
-                            kv_items.push(Value::int(i as i64));
-                            kv_items.push(v.clone());
-                        }
-                        Value::array(kv_items)
-                    } else {
-                        forced
-                    }
-                }
-                None => self.force_if_lazy_io_lines(target)?,
-            };
+            }
+            // `body` is shared by `target` (both alias the same
+            // `Arc<SeqBody>`); the reify above already filled it in place.
         }
         if let ValueView::LazyList(ll) = target.view() {
             let forced = if ll.scan_spec.is_some() {
@@ -574,10 +547,10 @@ impl Interpreter {
         if let ValueView::Seq(items) = target.view() {
             // Subscript on a consumed Seq throws X::Seq::Consumed.
             // Subscript on any Seq marks it as cached (can be used again).
-            if crate::value::seq_is_consumed(&items) {
+            if items.is_consumed() {
                 return Err(crate::value::seq_consumed_error());
             }
-            crate::value::seq_mark_cached(&items);
+            items.mark_cache_requested();
             target = Value::array_with_kind(
                 crate::value::Value::array_arc(items.to_vec()),
                 crate::value::ArrayKind::List,
@@ -2376,6 +2349,36 @@ impl Interpreter {
         };
         self.stack.push(result);
         Ok(())
+    }
+
+    /// How many leading elements a subscript into a not-yet-reified `Seq`
+    /// needs, when that can be determined without reading the source itself
+    /// (an Int index, a bounded Range, or a slice — `@a[6, 8..11]` — built
+    /// from those). `None` means "can't bound it statically" (an unbounded
+    /// Range, a Whatever, an object subscript, ...), so the caller must fall
+    /// back to a full reify. Used only by the `IoLines`-source bounded-read
+    /// special case (`reify_seq_body_prefix`) — see the call site.
+    fn seq_subscript_needed_count(index: &Value) -> Option<usize> {
+        match index.view() {
+            ValueView::Int(i) if i >= 0 => Some((i as usize).saturating_add(1)),
+            ValueView::Range(_, end) if end >= 0 => Some((end as usize).saturating_add(1)),
+            ValueView::RangeExcl(_, end) if end > 0 => Some(end as usize),
+            ValueView::Array(items, _) => {
+                let mut max = 0usize;
+                for item in items.iter() {
+                    max = max.max(Self::seq_subscript_needed_count(item)?);
+                }
+                Some(max)
+            }
+            ValueView::Slip(items) => {
+                let mut max = 0usize;
+                for item in items.iter() {
+                    max = max.max(Self::seq_subscript_needed_count(item)?);
+                }
+                Some(max)
+            }
+            _ => None,
+        }
     }
 }
 

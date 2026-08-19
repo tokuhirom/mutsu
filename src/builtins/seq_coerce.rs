@@ -20,7 +20,7 @@ pub(crate) fn to_seq_structural(target: &Value) -> Option<Value> {
     match target.view() {
         ValueView::Seq(_) => Some(target.clone()),
         ValueView::Array(items, ..) => Some(Value::seq(items.to_vec())),
-        ValueView::Slip(items) => Some(Value::seq_arc(items.clone())),
+        ValueView::Slip(items) => Some(Value::seq(items.to_vec())),
         ValueView::Range(..)
         | ValueView::RangeExcl(..)
         | ValueView::RangeExclStart(..)

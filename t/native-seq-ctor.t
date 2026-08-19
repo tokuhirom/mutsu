@@ -8,7 +8,10 @@ use Test;
 plan 11;
 
 # Seq.new(iterator) over a materialized list — eager copy of items.
+# `.cache` keeps $s1 re-readable below (a bare Seq's iterator is single-use
+# by default — see docs/adr/0034 — and this Seq is read again on line 19).
 my $s1 = Seq.new((1, 2, 3).iterator);
+$s1.cache;
 is $s1.List, (1, 2, 3), 'Seq.new(list iterator) yields the items';
 
 # A second, independent Seq.new is not aliased to the first.

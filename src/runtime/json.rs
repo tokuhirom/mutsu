@@ -167,10 +167,10 @@ fn jsonify(val: &Value, opts: &ToJsonOpts, level: usize, out: &mut String) {
             }
         }
         ValueView::Array(arr, _) => jsonify_seq(arr.items(), opts, level, out),
-        ValueView::Seq(items)
-        | ValueView::Slip(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items) => jsonify_seq(&items, opts, level, out),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            jsonify_seq(&items, opts, level, out)
+        }
+        ValueView::Slip(items) => jsonify_seq(&items, opts, level, out),
         ValueView::Hash(h) => {
             let entries: Vec<(&String, &Value)> = h.map.iter().collect();
             jsonify_object(entries, opts, level, out);

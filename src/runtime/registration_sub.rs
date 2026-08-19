@@ -1772,7 +1772,8 @@ impl Interpreter {
                 let v = self.eval_block_value(&[Stmt::Expr(expr.clone())])?;
                 let raw_items: Vec<Value> = match v.view() {
                     ValueView::Array(items, _) => items.as_ref().clone().into_items(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    ValueView::Slip(items) => items.as_ref().clone(),
                     ValueView::Hash(map) => map
                         .iter()
                         .map(|(k, v)| Value::pair(k.clone(), v.clone()))

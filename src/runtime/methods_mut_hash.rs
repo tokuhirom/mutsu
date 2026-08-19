@@ -19,7 +19,13 @@ impl Interpreter {
                     let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
                     pairs.extend(inner_pairs);
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    // A Seq/Slip of pairs (e.g. from `%h.push: %x.invert`) is
+                    // flattened like an array, not stringified as one key.
+                    let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
+                    pairs.extend(inner_pairs);
+                }
+                ValueView::Slip(items) => {
                     // A Seq/Slip of pairs (e.g. from `%h.push: %x.invert`) is
                     // flattened like an array, not stringified as one key.
                     let inner_pairs = Self::hash_push_collect_pairs(items.to_vec());
@@ -59,7 +65,10 @@ impl Interpreter {
                 ValueView::Array(items, ..) => {
                     pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
+                }
+                ValueView::Slip(items) => {
                     pairs.extend(Self::hash_push_collect_pairs_kv(items.to_vec()));
                 }
                 ValueView::Hash(h) => {

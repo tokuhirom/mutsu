@@ -13,7 +13,7 @@ impl Interpreter {
         Ok(match target.view() {
             ValueView::Seq(_) => target.clone(),
             ValueView::Array(items, ..) => Value::seq(items.to_vec()),
-            ValueView::Slip(items) => Value::seq_arc(items.clone()),
+            ValueView::Slip(items) => Value::seq(items.to_vec()),
             ValueView::Instance {
                 class_name,
                 attributes,

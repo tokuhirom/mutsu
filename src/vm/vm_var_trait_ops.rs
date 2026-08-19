@@ -224,7 +224,8 @@ impl Interpreter {
                     Some(ValueView::Array(a, _)) => !a.is_empty(),
                     // A Seq/Slip initializer (e.g. `is SetHash = %h.map: {...}`)
                     // must be coerced, not treated as "no initializer".
-                    Some(ValueView::Seq(s) | ValueView::Slip(s)) => !s.is_empty(),
+                    Some(ValueView::Seq(s)) => !s.is_empty(),
+                    Some(ValueView::Slip(s)) => !s.is_empty(),
                     Some(ValueView::LazyList(_)) => true,
                     // Already converted to a QuantHash by type constraint coercion
                     Some(ValueView::Set(_, _) | ValueView::Bag(_, _) | ValueView::Mix(_, _)) => {
@@ -458,9 +459,8 @@ impl Interpreter {
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
                 Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
-                Some(ValueView::Seq(s) | ValueView::Slip(s)) if !s.is_empty() => {
-                    s.iter().cloned().collect()
-                }
+                Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
+                Some(ValueView::Slip(s)) if !s.is_empty() => s.iter().cloned().collect(),
                 _ => Vec::new(),
             };
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));
@@ -510,9 +510,8 @@ impl Interpreter {
                     .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                     .collect(),
                 Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
-                Some(ValueView::Seq(s) | ValueView::Slip(s)) if !s.is_empty() => {
-                    s.iter().cloned().collect()
-                }
+                Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
+                Some(ValueView::Slip(s)) if !s.is_empty() => s.iter().cloned().collect(),
                 _ => Vec::new(),
             };
             let type_obj = Value::package(crate::symbol::Symbol::intern(&trait_name));

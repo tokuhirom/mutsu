@@ -286,7 +286,13 @@ impl Interpreter {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
                                     })
                                     .collect(),
-                                ValueView::Seq(items) | ValueView::Slip(items) => items
+                                ValueView::Seq(items) => items
+                                    .iter()
+                                    .map(|v| {
+                                        Self::escape_regex_scalar_literal(&v.to_string_value())
+                                    })
+                                    .collect(),
+                                ValueView::Slip(items) => items
                                     .iter()
                                     .map(|v| {
                                         Self::escape_regex_scalar_literal(&v.to_string_value())
@@ -579,7 +585,8 @@ impl Interpreter {
                         let value = value.into_deref();
                         let elements = match value.view() {
                             ValueView::Array(arr, _) => arr.as_ref().clone(),
-                            ValueView::Seq(items) | ValueView::Slip(items) => {
+                            ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
+                            ValueView::Slip(items) => {
                                 crate::value::ArrayData::new((**items).clone())
                             }
                             _ => crate::value::ArrayData::new(vec![value]),
@@ -628,9 +635,8 @@ impl Interpreter {
                     let value = value.into_deref();
                     let elements = match value.view() {
                         ValueView::Array(arr, _) => arr.as_ref().clone(),
-                        ValueView::Seq(items) | ValueView::Slip(items) => {
-                            crate::value::ArrayData::new((**items).clone())
-                        }
+                        ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
+                        ValueView::Slip(items) => crate::value::ArrayData::new((**items).clone()),
                         _ => crate::value::ArrayData::new(vec![value]),
                     };
                     // A Regex-valued element: reroute the whole alternation
@@ -681,9 +687,8 @@ impl Interpreter {
                     let val = self.eval_string_as_source(&expr_str);
                     let elements = match val.view() {
                         ValueView::Array(arr, _) => arr.as_ref().clone(),
-                        ValueView::Seq(items) | ValueView::Slip(items) => {
-                            crate::value::ArrayData::new((**items).clone())
-                        }
+                        ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
+                        ValueView::Slip(items) => crate::value::ArrayData::new((**items).clone()),
                         _ => crate::value::ArrayData::new(vec![val]),
                     };
                     let mut alts = Vec::new();

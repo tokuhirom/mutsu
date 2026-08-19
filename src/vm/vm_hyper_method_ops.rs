@@ -520,9 +520,11 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
-        // Mark Seq as consumed (single-use semantics).
-        if let ValueView::Seq(arc) = target.view() {
-            crate::value::seq_consume(&arc)?;
+        // Mark Seq as consumed (single-use semantics), reifying a deferred
+        // source first if needed.
+        if let ValueView::Seq(body) = target.view() {
+            let body = std::sync::Arc::clone(&body);
+            self.take_seq_body(&body)?;
         }
         // `$b>>++` / `$b>>--` on a Bag/Mix/Set applies the postfix op to each
         // *weight* (treating the QuantHash like a Hash of weights): it returns
@@ -1092,7 +1094,27 @@ impl Interpreter {
                     ),
                 ))
             }
-            ValueView::Seq(elems) | ValueView::Slip(elems) => {
+            ValueView::Seq(elems) => {
+                let mut results = Vec::with_capacity(elems.len());
+                let mut mutated = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let (r, m) =
+                        self.hyper_method_apply_recursive(sub, method, args, skip_native)?;
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
+                    mutated.push(m);
+                }
+                Ok((
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                        ArrayKind::List,
+                    ),
+                    Value::array_with_kind(
+                        crate::gc::Gc::new(crate::value::ArrayData::new(mutated)),
+                        ArrayKind::List,
+                    ),
+                ))
+            }
+            ValueView::Slip(elems) => {
                 let mut results = Vec::with_capacity(elems.len());
                 let mut mutated = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
@@ -1177,7 +1199,18 @@ impl Interpreter {
                     kind,
                 ))
             }
-            ValueView::Seq(elems) | ValueView::Slip(elems) => {
+            ValueView::Seq(elems) => {
+                let mut results = Vec::with_capacity(elems.len());
+                for sub in elems.iter() {
+                    let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;
+                    push_hyper_result(&mut results, itemize_if_descended(sub, r));
+                }
+                Ok(Value::array_with_kind(
+                    crate::gc::Gc::new(crate::value::ArrayData::new(results)),
+                    ArrayKind::List,
+                ))
+            }
+            ValueView::Slip(elems) => {
                 let mut results = Vec::with_capacity(elems.len());
                 for sub in elems.iter() {
                     let r = self.hyper_sub_apply_recursive(callable, sub, extra_args, modifier)?;

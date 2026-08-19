@@ -62,9 +62,8 @@ fn gist_needs_method_dispatch(v: &Value) -> bool {
         | ValueView::CustomTypeInstance(_)
         | ValueView::Package(..) => true,
         ValueView::Array(items, _) => items.iter().any(gist_needs_method_dispatch),
-        ValueView::Seq(items) | ValueView::Slip(items) => {
-            items.iter().any(gist_needs_method_dispatch)
-        }
+        ValueView::Seq(items) => items.iter().any(gist_needs_method_dispatch),
+        ValueView::Slip(items) => items.iter().any(gist_needs_method_dispatch),
         ValueView::Hash(map) => map.values().any(gist_needs_method_dispatch),
         ValueView::Pair(_, val) => gist_needs_method_dispatch(val),
         ValueView::ValuePair(k, val) => {
@@ -492,7 +491,11 @@ pub(super) fn dispatch(
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, kind)
                     }
-                    ValueView::Seq(inner) | ValueView::Slip(inner) => {
+                    ValueView::Seq(inner) => {
+                        let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                        format!("({})", elems)
+                    }
+                    ValueView::Slip(inner) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         format!("({})", elems)
                     }
@@ -611,7 +614,13 @@ pub(super) fn dispatch(
             };
             Some(Ok(Value::str(gist_array_wrap(&inner, kind))))
         }
-        ValueView::Seq(items) | ValueView::Slip(items) if method == "gist" => {
+        ValueView::Seq(_) | ValueView::Slip(_) if method == "gist" => {
+            let items: Vec<Value> = match target.view() {
+                ValueView::Seq(i) => i.to_vec(),
+                ValueView::Slip(i) => i.to_vec(),
+                _ => unreachable!("matched Seq or Slip above"),
+            };
+            let items = &items[..];
             fn gist_item(v: &Value) -> String {
                 match v.view() {
                     ValueView::Nil => "Nil".to_string(),
@@ -627,7 +636,11 @@ pub(super) fn dispatch(
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         gist_array_wrap(&elems, kind)
                     }
-                    ValueView::Seq(inner) | ValueView::Slip(inner) => {
+                    ValueView::Seq(inner) => {
+                        let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
+                        format!("({})", elems)
+                    }
+                    ValueView::Slip(inner) => {
                         let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
                         format!("({})", elems)
                     }

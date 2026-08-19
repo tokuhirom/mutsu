@@ -993,7 +993,8 @@ pub(super) fn dispatch(
                 ValueView::Bool(b) => Value::num(if b { 1.0 } else { 0.0 }),
                 ValueView::Complex(_, _) => return Some(None), // fall through to runtime for $*TOLERANCE check
                 ValueView::Array(items, ..) => Value::num(items.len() as f64),
-                ValueView::Seq(items) | ValueView::Slip(items) => Value::num(items.len() as f64),
+                ValueView::Seq(items) => Value::num(items.len() as f64),
+                ValueView::Slip(items) => Value::num(items.len() as f64),
                 _ => return Some(None),
             };
             Some(Some(Ok(result)))

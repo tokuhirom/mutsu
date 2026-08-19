@@ -233,12 +233,12 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
         "Capture" => Some(value_to_capture(target)),
         "Slip" => match target.view() {
             ValueView::Seq(items) => {
-                if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
+                if items.is_consumed() && !items.is_cached() {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
                 // Mark as cached so the Seq remains reusable
-                crate::value::seq_mark_cached(&items);
-                Some(Ok(Value::slip_arc(items.clone())))
+                items.mark_cache_requested();
+                Some(Ok(Value::slip(items.to_vec())))
             }
             ValueView::Array(items, ..) => {
                 // `.Slip` materializes array holes with the container's
@@ -322,11 +322,11 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
             }
             ValueView::Seq(items) => {
-                if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
+                if items.is_consumed() && !items.is_cached() {
                     return Some(Err(crate::value::seq_consumed_error()));
                 }
                 // Mark as cached so the Seq remains reusable
-                crate::value::seq_mark_cached(&items);
+                items.mark_cache_requested();
                 Some(Ok(Value::array(items.to_vec())))
             }
             // `.List` on a Slip flattens its elements into a List (`slip(1,2,3).List`
@@ -587,8 +587,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 }
                 ValueView::Seq(items) if method == "list" || method == "Array" => {
                     // Consumed Seq check: throw X::Seq::Consumed if not cached
-                    if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items)
-                    {
+                    if items.is_consumed() && !items.is_cached() {
                         return Some(Err(crate::value::seq_consumed_error()));
                     }
                     // Mark as cached so the Seq remains reusable (e.g. when the Seq is
@@ -596,7 +595,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     // TODO: implement proper @-sigil parameter caching separately, and
                     // change this back to seq_consume for strict Raku semantics where
                     // .List on an uncached Seq consumes it.
-                    crate::value::seq_mark_cached(&items);
+                    items.mark_cache_requested();
                     if method == "Array" {
                         Some(Ok(Value::real_array(items.to_vec())))
                     } else {
@@ -819,6 +818,27 @@ pub(crate) fn value_is_prime(target: &Value) -> Result<Value, RuntimeError> {
     }
 }
 
+/// Build a Capture from a Seq/Slip element slice: `Pair`/`ValuePair` elements
+/// become named args, everything else positional. Shared by the `ValueView::Seq`
+/// and `ValueView::Slip` arms of `value_to_capture` (their payload types
+/// diverged under ADR-0034: `Seq`'s is `SeqBody`, `Slip`'s stays `Vec<Value>`).
+fn items_to_capture_value(items: &[Value]) -> Value {
+    let mut positional = vec![];
+    let mut named = HashMap::new();
+    for item in items.iter() {
+        match item.view() {
+            ValueView::Pair(k, v) => {
+                named.insert(k.clone(), v.clone());
+            }
+            ValueView::ValuePair(k, v) => {
+                named.insert(k.to_string_value(), v.clone());
+            }
+            _ => positional.push(item.clone()),
+        }
+    }
+    Value::capture(positional, named)
+}
+
 /// Convert a value to a Capture.
 fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
     match target.view() {
@@ -963,22 +983,8 @@ fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
             }
             Ok(Value::capture(positional, named))
         }
-        ValueView::Seq(items) | ValueView::Slip(items) => {
-            let mut positional = vec![];
-            let mut named = HashMap::new();
-            for item in items.iter() {
-                match item.view() {
-                    ValueView::Pair(k, v) => {
-                        named.insert(k.clone(), v.clone());
-                    }
-                    ValueView::ValuePair(k, v) => {
-                        named.insert(k.to_string_value(), v.clone());
-                    }
-                    _ => positional.push(item.clone()),
-                }
-            }
-            Ok(Value::capture(positional, named))
-        }
+        ValueView::Seq(items) => Ok(items_to_capture_value(&items)),
+        ValueView::Slip(items) => Ok(items_to_capture_value(&items)),
         ValueView::LazyList(ll) => {
             // A LazyList is considered lazy if it has a body or compiled code
             // (i.e., it's a gather/take or similar lazy generator)

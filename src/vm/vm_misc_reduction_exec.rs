@@ -128,7 +128,7 @@ impl Interpreter {
                     prefix.push(item);
                     out.push(Value::array(prefix.clone()));
                 }
-                self.stack.push(Value::seq_arc(std::sync::Arc::new(out)));
+                self.stack.push(Value::seq(out));
             } else {
                 self.stack.push(Value::array(list));
             }
@@ -150,8 +150,7 @@ impl Interpreter {
 
         if scan {
             if list.is_empty() {
-                self.stack
-                    .push(Value::seq_arc(std::sync::Arc::new(Vec::new())));
+                self.stack.push(Value::seq(Vec::new()));
                 return Ok(());
             }
             if list.len() == 1 {
@@ -161,8 +160,7 @@ impl Interpreter {
                 } else {
                     list[0].clone()
                 };
-                self.stack
-                    .push(Value::seq_arc(std::sync::Arc::new(vec![val])));
+                self.stack.push(Value::seq(vec![val]));
                 return Ok(());
             }
             let out = match assoc {
@@ -251,7 +249,7 @@ impl Interpreter {
                                     let inner_op = &base_op[1..];
                                     let items = runtime::value_to_list(&list[0]);
                                     if items.is_empty() {
-                                        Value::seq_arc(std::sync::Arc::new(vec![]))
+                                        Value::seq(vec![])
                                     } else {
                                         let mut acc0 = items[0].clone();
                                         for item in items.iter().skip(1) {
@@ -259,7 +257,7 @@ impl Interpreter {
                                                 inner_op, &acc0, item,
                                             )?;
                                         }
-                                        Value::seq_arc(std::sync::Arc::new(vec![acc0]))
+                                        Value::seq(vec![acc0])
                                     }
                                 } else {
                                     // Apply the Z/X op to all prefix elements
@@ -285,7 +283,7 @@ impl Interpreter {
                                 let zx_prefix = (base_op.starts_with('Z') && base_op.len() > 1)
                                     || (base_op.starts_with('X') && base_op.len() > 1);
                                 if zx_prefix {
-                                    acc = Value::seq_arc(std::sync::Arc::new(vec![acc]));
+                                    acc = Value::seq(vec![acc]);
                                 } else if base_op == "minmax" {
                                     // [minmax](x) = x..x for scalars,
                                     // or min(x)..max(x) for array/list x.
@@ -317,7 +315,7 @@ impl Interpreter {
                     out
                 }
             };
-            self.stack.push(Value::seq_arc(std::sync::Arc::new(out)));
+            self.stack.push(Value::seq(out));
             return Ok(());
         }
         // [^^] and [xor] are list-associative: they check that exactly one element

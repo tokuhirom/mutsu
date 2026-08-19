@@ -811,14 +811,18 @@ impl Interpreter {
             "," => {
                 let mut items = match left.view() {
                     ValueView::Array(values, kind) if !kind.is_itemized() => values.to_vec(),
-                    ValueView::Seq(values) | ValueView::Slip(values) => values.to_vec(),
+                    ValueView::Seq(values) => values.to_vec(),
+                    ValueView::Slip(values) => values.to_vec(),
                     _ => vec![left.clone()],
                 };
                 match right.view() {
                     ValueView::Array(values, kind) if !kind.is_itemized() => {
                         items.extend(values.iter().cloned());
                     }
-                    ValueView::Seq(values) | ValueView::Slip(values) => {
+                    ValueView::Seq(values) => {
+                        items.extend(values.iter().cloned());
+                    }
+                    ValueView::Slip(values) => {
                         items.extend(values.iter().cloned());
                     }
                     _ => items.push(right.clone()),

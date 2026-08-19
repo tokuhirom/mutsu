@@ -78,7 +78,11 @@ impl Interpreter {
                 let items = arr.items().clone();
                 items.iter().any(|i| self.json_subject_needs_prepare(i))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                let items = items.to_vec();
+                items.iter().any(|i| self.json_subject_needs_prepare(i))
+            }
+            ValueView::Slip(items) => {
                 let items = items.to_vec();
                 items.iter().any(|i| self.json_subject_needs_prepare(i))
             }
@@ -109,7 +113,8 @@ impl Interpreter {
                 };
                 let items: Vec<Value> = match listed.view() {
                     ValueView::Array(arr, _) => arr.items().clone(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    ValueView::Slip(items) => items.to_vec(),
                     _ => return val.clone(),
                 };
                 if assoc {

@@ -87,7 +87,6 @@ impl Interpreter {
         let is_positional = match decontained_popped.view() {
             ValueView::Array(..)
             | ValueView::LazyList(_)
-            | ValueView::LazyIoLines { .. }
             | ValueView::Seq(_)
             | ValueView::Slip(_)
             | ValueView::Range(..)
@@ -183,9 +182,10 @@ impl Interpreter {
                 Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
             }
             ValueView::LazyList(list) => Value::real_array(self.force_lazy_list_vm(&list)?),
-            ValueView::LazyIoLines { .. } => {
-                let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
-                Value::real_array(runtime::value_to_list(&forced))
+            ValueView::Seq(body) if body.is_io_lines_source() => {
+                let body = std::sync::Arc::clone(&body);
+                let pulled = self.reify_seq_body(&body)?;
+                Value::real_array(pulled)
             }
             // `@a := $x` strips the Scalar container: the @-var binds the
             // Array itself (same backing data, plain kind), not the item.
@@ -376,13 +376,16 @@ impl Interpreter {
         // excluded.
         if !is_bind
             && !is_rebind
-            && let ValueView::Seq(arc) = raw_popped.view()
-            && crate::value::seq_has_deferred_iter(&arc)
+            && let ValueView::Seq(body) = raw_popped.view()
+            && body.needs_touch()
         {
             let name = &code.locals[idx];
             if name.starts_with('@') || name.starts_with('%') {
-                let pulled = self.materialize_deferred_seq(&arc);
-                raw_popped = Value::seq_arc(std::sync::Arc::new(pulled));
+                let body = std::sync::Arc::clone(&body);
+                self.reify_seq_body(&body)?;
+                // `body` is shared by `raw_popped` (both alias the same
+                // `Arc<SeqBody>`), so the in-place reify above already
+                // updated it — no rebuild needed.
             }
         }
         // Slice 2a/2b: `$scalar = @arr` / `$scalar = %hash` / chained `$r = $q`
@@ -748,7 +751,8 @@ impl Interpreter {
             {
                 let is_lazy_value = match raw_popped.view() {
                     ValueView::Array(_, kind) => kind.is_lazy(),
-                    ValueView::LazyList(_) | ValueView::LazyIoLines { .. } => true,
+                    ValueView::LazyList(_) => true,
+                    ValueView::Seq(body) => body.is_io_lines_source(),
                     _ => false,
                 };
                 if is_lazy_value {
@@ -808,6 +812,14 @@ impl Interpreter {
                     ValueView::Array(items, _) => {
                         Value::array_with_kind(items.clone(), crate::value::ArrayKind::List)
                     }
+                    ValueView::Seq(body) if body.is_io_lines_source() => {
+                        let body = std::sync::Arc::clone(&body);
+                        let items = self.reify_seq_body(&body)?;
+                        Value::array_with_kind(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                            crate::value::ArrayKind::List,
+                        )
+                    }
                     ValueView::Seq(items) => Value::array_with_kind(
                         crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
                         crate::value::ArrayKind::List,
@@ -818,14 +830,6 @@ impl Interpreter {
                     // `constant @primes = grep *.is-prime, 2 .. *` is infinite).
                     // Re-wrapping it here made `@primes[^8]` read `([...] Nil Nil …)`.
                     ValueView::LazyList(_) => raw_popped.clone(),
-                    ValueView::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
-                        let items = runtime::value_to_list(&forced);
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                            crate::value::ArrayKind::List,
-                        )
-                    }
                     ValueView::Instance { class_name, .. } => {
                         // Check if Instance does Positional — if so, keep as-is.
                         let cn = class_name.resolve();
@@ -864,7 +868,6 @@ impl Interpreter {
                                     | ValueView::Seq(_)
                                     | ValueView::Slip(_)
                                     | ValueView::LazyList(_)
-                                    | ValueView::LazyIoLines { .. }
                             );
                             if !is_pos {
                                 let got_type = crate::runtime::utils::value_type_name(&cached_val);
@@ -945,10 +948,13 @@ impl Interpreter {
                             ))
                         }
                     }
-                    ValueView::LazyIoLines { .. } => {
-                        let forced = self.force_if_lazy_io_lines(raw_popped.clone())?;
-                        runtime::coerce_to_array(forced)
-                    }
+                    // An `IO::Handle.lines`/`.words` Seq (ADR-0034's
+                    // `SeqSource::IoLines`, formerly the separate
+                    // `LazyIoLines` value) was already reified in place by
+                    // the `@`/`%`-target reify above (this whole match is
+                    // reached only via that same `!is_bind && !is_rebind`
+                    // path), so it needs no special case here — it falls to
+                    // the generic `_` arm below like any other Seq.
                     // An infinite integer range (`1..*`) stays a reify LazyList
                     // instead of being capped to a 100k `ArrayKind::Lazy` Array. (L2)
                     _ if runtime::utils::infinite_int_range_to_lazy_array(&raw_popped)

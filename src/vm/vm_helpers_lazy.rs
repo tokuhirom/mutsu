@@ -1,35 +1,250 @@
 use super::*;
+use crate::value::{SeqBody, SeqSource, SeqTaken};
+use std::sync::Arc;
 
 impl Interpreter {
-    /// If the value is a `LazyIoLines`, consume it into a reified `Seq` by
-    /// reading all remaining records. Otherwise return the value as-is.
-    pub(super) fn force_if_lazy_io_lines(&mut self, val: Value) -> Result<Value, RuntimeError> {
-        if let ValueView::LazyIoLines {
-            handle,
-            kv,
-            words,
-            consumed,
-        } = val.view()
-        {
-            if consumed.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                return Err(crate::value::seq_consumed_error());
+    /// Pull every element from a not-yet-reified `SeqSource` — the closure
+    /// [`SeqBody::reify`]/`take`/`sink` need to actually produce elements
+    /// (ADR-0034). Folds together the two flavours of "a Seq that has not
+    /// read its elements yet": a user/native `Iterator` (`Seq.new($iter)`,
+    /// `Seq.from-loop`) and an `IO::Handle.lines`/`.words` read (formerly the
+    /// separate `ValueRepr::LazyIoLines`).
+    pub(crate) fn pull_seq_source(
+        &mut self,
+        source: &SeqSource,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        match source {
+            // `reify`/`take`/`sink` only invoke `pull` for a source that
+            // still needs pulling; these two arms exist only so the match is
+            // exhaustive and never panics if that invariant ever slips.
+            SeqSource::Reified => Ok(Vec::new()),
+            SeqSource::Taken => Err(crate::value::seq_consumed_error()),
+            SeqSource::Iterator(iterator) => self.pull_iterator_to_vec(iterator.clone()),
+            SeqSource::IoLines { handle, words, kv } => {
+                self.pull_io_lines_to_vec(handle.clone(), *words, *kv)
             }
-            let forced = loan_env!(self, force_lazy_io_lines(handle, words))?;
-            if kv {
-                // Apply .kv transformation on the forced array
-                let items = crate::runtime::utils::value_to_list(&forced);
-                let mut kv_items = Vec::with_capacity(items.len() * 2);
-                for (i, v) in items.iter().enumerate() {
-                    kv_items.push(Value::int(i as i64));
-                    kv_items.push(v.clone());
-                }
-                Ok(Value::seq(kv_items))
-            } else {
-                Ok(Value::seq(crate::runtime::utils::value_to_list(&forced)))
-            }
-        } else {
-            Ok(val)
         }
+    }
+
+    /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
+    fn pull_iterator_to_vec(&mut self, iterator: Value) -> Result<Vec<Value>, RuntimeError> {
+        let mut pulled = Vec::new();
+        loop {
+            let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
+            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
+                || matches!(val.view(), ValueView::Package(name) if name == crate::symbol::Symbol::intern("IterationEnd"))
+            {
+                break;
+            }
+            pulled.push(val);
+        }
+        Ok(pulled)
+    }
+
+    /// Read every remaining line/word from a file handle (formerly
+    /// `force_if_lazy_io_lines`'s body).
+    fn pull_io_lines_to_vec(
+        &mut self,
+        handle: Value,
+        words: bool,
+        kv: bool,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let forced = loan_env!(self, force_lazy_io_lines(&handle, words))?;
+        let items = crate::runtime::utils::value_to_list(&forced);
+        if kv {
+            let mut kv_items = Vec::with_capacity(items.len() * 2);
+            for (i, v) in items.iter().enumerate() {
+                kv_items.push(Value::int(i as i64));
+                kv_items.push(v.clone());
+            }
+            Ok(kv_items)
+        } else {
+            Ok(items)
+        }
+    }
+
+    /// Pull up to `count` additional words/lines from `handle`, reporting
+    /// whether EOF was actually reached (see
+    /// [`crate::value::SeqBody::pull_io_lines_prefix`]) — the bounded
+    /// counterpart of `pull_io_lines_to_vec`'s full drain, used by an indexed
+    /// read on a not-yet-reified `IO::Handle.lines`/`.words` Seq
+    /// (`vm_var_index_ops.rs`) so a partial slice (`words($fh, :close)[1,
+    /// 2]`) does not trigger `:close`'s close-on-exhaust.
+    fn pull_io_lines_prefix_to_vec(
+        &mut self,
+        handle: &Value,
+        words: bool,
+        count: usize,
+    ) -> Result<(Vec<Value>, bool), RuntimeError> {
+        let mut pulled = Vec::with_capacity(count);
+        let mut exhausted = false;
+        for _ in 0..count {
+            let next = if words {
+                self.read_word_from_handle_value(handle)?
+            } else {
+                loan_env!(self, read_line_from_handle_value(handle))?
+            };
+            match next {
+                Some(s) => pulled.push(Value::str(s)),
+                None => {
+                    exhausted = true;
+                    break;
+                }
+            }
+        }
+        Ok((pulled, exhausted))
+    }
+
+    /// Indexed-read special case (ADR-0034, `vm_var_index_ops.rs`): reify
+    /// only enough of `body` to serve a subscript up to `needed` — a full
+    /// [`Self::reify_seq_body`] for every source EXCEPT a not-yet-exhausted
+    /// `IoLines` one, which reads just the missing prefix so `:close`'s
+    /// close-on-exhaust only fires when the read genuinely reaches EOF.
+    pub(crate) fn reify_seq_body_prefix(
+        &mut self,
+        body: &Arc<SeqBody>,
+        needed: usize,
+    ) -> Result<(), RuntimeError> {
+        if !body.is_io_lines_source() {
+            self.reify_seq_body(body)?;
+            return Ok(());
+        }
+        body.pull_io_lines_prefix(needed, |handle, words, count| {
+            self.pull_io_lines_prefix_to_vec(handle, words, count)
+        })?;
+        // A partial pull that DID hit EOF (exhausted) already left `body` in
+        // `SeqSource::Reified`, matching what a full `reify` would produce —
+        // no further action needed either way.
+        Ok(())
+    }
+
+    /// rakudo's `.cache`, and every other non-consuming touch: pull `body`'s
+    /// source exactly once (idempotent — a no-op if already reified) and
+    /// return the (now-retained) elements.
+    pub(crate) fn reify_seq_body(
+        &mut self,
+        body: &Arc<SeqBody>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        Ok(body.reify(|source| self.pull_seq_source(source))?.clone())
+    }
+
+    /// rakudo's `.iterator`/`.list`/...: produce the elements, consuming the
+    /// source UNLESS the body is already reified or `.cache` was requested.
+    pub(crate) fn take_seq_body(
+        &mut self,
+        body: &Arc<SeqBody>,
+    ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
+        body.take(|source| self.pull_seq_source(source))
+    }
+
+    /// rakudo's `sink`: run the source for side effects and discard.
+    pub(crate) fn sink_seq_body(&mut self, body: &Arc<SeqBody>) -> Result<(), RuntimeError> {
+        body.sink(|source| self.pull_seq_source(source))
+    }
+
+    /// Pre-dispatch guard (ADR-0034 §2.3): if `target` is a `Seq` whose body
+    /// needs touching before `method` can run — a deferred source
+    /// (`Seq.new($iterator)`, `IO::Handle.lines` — formerly the separate
+    /// `force_if_lazy_io_lines`/`LazyIoLines` special case) or a body already
+    /// taken by an earlier consuming method — reify or consume it as
+    /// `method` requires, and return the value dispatch should actually
+    /// operate on. Reification fills the SAME body in place, so the common
+    /// non-consuming case returns `target` unchanged; a genuinely consuming
+    /// method returns a fresh, already-reified `Seq` built from what it just
+    /// pulled (the original `target` is left `Taken`). Passes every non-Seq
+    /// value, and an already-reified Seq, straight through (`needs_touch` is
+    /// a cheap state check, no clone).
+    pub(crate) fn reify_or_consume_seq_target(
+        &mut self,
+        target: Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Seq(body) = target.view() else {
+            return Ok(target);
+        };
+        if !body.needs_touch() || crate::value::seq_method_never_touches(method) {
+            return Ok(target);
+        }
+        let body = Arc::clone(&body);
+        // `Seq.new($predictiveIterator)` (`try_native_seq_construct`) builds
+        // an EMPTY already-`Reified` body and tracks its iterator out of
+        // band, in `self.predictive_seq_iters` keyed by this body's own
+        // `Arc` address — so `.tail`/`.Numeric` can use the count-only path
+        // instead of eagerly draining. A `seq_method_consumes` touch (e.g.
+        // `.tail` is one) must NOT steal this placeholder: `take` returning
+        // `SeqTaken::Taken` would rebuild the result as a FRESH `Value::seq`
+        // with a NEW `Arc` address, permanently orphaning the
+        // `predictive_seq_iters` association (the lookup key no longer
+        // matches anything). Leave it completely untouched here; the
+        // specific dispatch handlers (`dispatch_tail`, `.Numeric`) do their
+        // own `predictive_seq_iter_for` lookup against the UNCHANGED body.
+        if body.is_empty()
+            && self
+                .predictive_seq_iter_for(Arc::as_ptr(&body) as usize)
+                .is_some()
+        {
+            return Ok(target);
+        }
+        if method == "sink" {
+            self.sink_seq_body(&body)?;
+            return Ok(target);
+        }
+        if method == "cache" {
+            return Ok(target);
+        }
+        if matches!(method, "raku" | "perl") {
+            // Pulls if the source is still available (needed to render real
+            // elements); an already-`Taken` source must NOT throw here — the
+            // renderer shows the `Seq.new()` placeholder instead (verified
+            // against raku: `.raku` on an already-consumed Seq does not
+            // throw, unlike `.Str`/`.gist`).
+            let _ = self.reify_seq_body(&body);
+            return Ok(target);
+        }
+        if method == "list" {
+            // `"list"` is a genuine ambiguity, not covered by the
+            // `seq_method_consumes` table: mutsu's parser desugars the
+            // sigil array-context deref `@$s` to the SAME method-name
+            // string as an explicit `.list()` call
+            // (`src/parser/primary/var/sigil_vars.rs`), but raku treats
+            // them differently — `@$s; @$s;` never throws (even over a
+            // genuinely deferred `IO::Handle.lines` source), while
+            // `$s.list; $s.list;` throws `X::Seq::Consumed` on the second
+            // call (both measured directly against raku). Two pinned local
+            // tests independently exercise each side and cannot both be
+            // satisfied by one policy without the parser telling the calls
+            // apart: `t/seq-array-context-reiterate.t` (`@$s` on `.map`/
+            // `.grep` results — born `Reified` — must stay re-readable) and
+            // `t/io-handle-lines-words-seq.t` (explicit `.list` on
+            // `IO::Handle.lines`/`.words` — a genuinely deferred source —
+            // must consume). Compromise until the parser can distinguish
+            // them: steal a genuinely deferred source (satisfies the
+            // `IO::Handle.lines` test, which never touches an already-
+            // `Reified` body) but never steal a body already `Reified` at
+            // this touch (satisfies the `@$s`-on-`.map`/`.grep` test). A
+            // bare `@$s` on a deferred source is thus the one case left
+            // over-strict relative to raku (not pinned by any local test).
+            if body.has_deferred_source() {
+                let (items, outcome) = self.take_seq_body(&body)?;
+                return Ok(if matches!(outcome, SeqTaken::Taken) {
+                    Value::seq(items)
+                } else {
+                    target
+                });
+            }
+            self.reify_seq_body(&body)?;
+            return Ok(target);
+        }
+        if crate::value::seq_method_consumes(method) {
+            let (items, outcome) = self.take_seq_body(&body)?;
+            return Ok(if matches!(outcome, SeqTaken::Taken) {
+                Value::seq(items)
+            } else {
+                target
+            });
+        }
+        self.reify_seq_body(&body)?;
+        Ok(target)
     }
 
     pub(super) fn thread_right_first(

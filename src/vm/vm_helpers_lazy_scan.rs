@@ -117,7 +117,8 @@ impl Interpreter {
                 }
                 Ok(Some(Value::num(s)))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => Ok(items.get(idx).cloned()),
+            ValueView::Seq(items) => Ok(items.get(idx).cloned()),
+            ValueView::Slip(items) => Ok(items.get(idx).cloned()),
             ValueView::Array(items, _) => Ok(items.get(idx).cloned()),
             ValueView::LazyList(ll) => {
                 let items = self.force_lazy_list_vm_n(&ll, idx + 1)?;

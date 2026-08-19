@@ -47,10 +47,10 @@ enum TokenReplacement {
 /// Any other value is returned unchanged (Arc-cheap clone).
 fn normalize_trans_operand(v: &Value) -> Value {
     match v.view() {
-        ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items)
-        | ValueView::Slip(items) => Value::array(items.to_vec()),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            Value::array(items.to_vec())
+        }
+        ValueView::Slip(items) => Value::array(items.to_vec()),
         _ => v.clone(),
     }
 }

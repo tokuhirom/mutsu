@@ -29,10 +29,14 @@ impl Interpreter {
                 elems.push(self.capture_var_cell_inner(code, &source_name, inner, true, slot_hint));
                 continue;
             }
-            // Force lazy IO lines into eager arrays
-            let val = if matches!(val.view(), ValueView::LazyIoLines { .. }) {
-                match self.force_if_lazy_io_lines(val) {
-                    Ok(v) => v,
+            // Reify a not-yet-read Seq source (deferred Iterator or
+            // IO::Handle.lines — ADR-0034) into an eager array element.
+            let val = if let ValueView::Seq(body) = val.view()
+                && body.needs_touch()
+            {
+                let body = std::sync::Arc::clone(&body);
+                match self.reify_seq_body(&body) {
+                    Ok(_) => val.clone(),
                     Err(_) => continue,
                 }
             } else if let ValueView::LazyList(ll) = val.view()

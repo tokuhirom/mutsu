@@ -645,7 +645,12 @@ impl Interpreter {
                     out.push(Value::int(i));
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    Self::flatten_value_for_slurpy(item, out);
+                }
+            }
+            ValueView::Slip(items) => {
                 for item in items.iter() {
                     Self::flatten_value_for_slurpy(item, out);
                 }

@@ -612,8 +612,11 @@ pub fn raku_value(v: &Value) -> String {
         }
         ValueView::Seq(items) => {
             // A consumed Seq is represented as Seq.new() so that EVALing it
-            // produces a pre-consumed Seq (matching Raku's behavior).
-            if crate::value::seq_is_consumed(&items) {
+            // produces a pre-consumed Seq (matching Raku's behavior). Verified
+            // against raku: `.raku` on an already-taken Seq shows this
+            // placeholder rather than throwing `X::Seq::Consumed` — unlike
+            // `.Str`/`.gist`, which do throw (docs/adr/0034).
+            if items.is_consumed() {
                 return "Seq.new()".to_string();
             }
             let inner = items.iter().map(raku_value).collect::<Vec<_>>().join(", ");

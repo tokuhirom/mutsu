@@ -1045,7 +1045,8 @@ pub(in crate::runtime) fn supplier_emit_callbacks(
                     ValueView::Array(arr, kind) if !kind.is_itemized() => {
                         arr.iter().cloned().collect()
                     }
-                    ValueView::Slip(arr) | ValueView::Seq(arr) => arr.iter().cloned().collect(),
+                    ValueView::Seq(arr) => arr.iter().cloned().collect(),
+                    ValueView::Slip(arr) => arr.iter().cloned().collect(),
                     _ => vec![emitted_value.clone()],
                 };
                 actions.push(SupplierEmitAction::FlatEmit {

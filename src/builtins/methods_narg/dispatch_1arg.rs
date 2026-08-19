@@ -910,25 +910,21 @@ pub(crate) fn native_method_1arg(
                 .map(|items| items.to_vec())
                 .unwrap_or_else(|| runtime::value_to_list(target));
             match arg.view() {
-                ValueView::Range(a, b) => Some(Ok(Value::seq_arc(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b)
-                        .into(),
+                ValueView::Range(a, b) => Some(Ok(Value::seq(
+                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b),
                 ))),
-                ValueView::RangeExcl(a, b) => Some(Ok(Value::seq_arc(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b - 1)
-                        .into(),
+                ValueView::RangeExcl(a, b) => Some(Ok(Value::seq(
+                    crate::builtins::methods_0arg::collection::combinations_range(&items, a, b - 1),
                 ))),
-                ValueView::RangeExclStart(a, b) => Some(Ok(Value::seq_arc(
-                    crate::builtins::methods_0arg::collection::combinations_range(&items, a + 1, b)
-                        .into(),
+                ValueView::RangeExclStart(a, b) => Some(Ok(Value::seq(
+                    crate::builtins::methods_0arg::collection::combinations_range(&items, a + 1, b),
                 ))),
-                ValueView::RangeExclBoth(a, b) => Some(Ok(Value::seq_arc(
+                ValueView::RangeExclBoth(a, b) => Some(Ok(Value::seq(
                     crate::builtins::methods_0arg::collection::combinations_range(
                         &items,
                         a + 1,
                         b - 1,
-                    )
-                    .into(),
+                    ),
                 ))),
                 ValueView::GenericRange {
                     start,
@@ -944,23 +940,21 @@ pub(crate) fn native_method_1arg(
                     if excl_end {
                         hi -= 1;
                     }
-                    Some(Ok(Value::seq_arc(
+                    Some(Ok(Value::seq(
                         crate::builtins::methods_0arg::collection::combinations_range(
                             &items, lo, hi,
-                        )
-                        .into(),
+                        ),
                     )))
                 }
                 _ => {
                     let k = runtime::to_int(arg);
                     if k < 0 {
-                        Some(Ok(Value::seq_arc(Vec::new().into())))
+                        Some(Ok(Value::seq(Vec::new())))
                     } else {
-                        Some(Ok(Value::seq_arc(
+                        Some(Ok(Value::seq(
                             crate::builtins::methods_0arg::collection::combinations_k(
                                 &items, k as usize,
-                            )
-                            .into(),
+                            ),
                         )))
                     }
                 }

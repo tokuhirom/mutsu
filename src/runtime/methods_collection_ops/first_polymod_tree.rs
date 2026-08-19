@@ -189,7 +189,8 @@ impl Interpreter {
         fn flatten_to_list(v: &Value) -> Vec<Value> {
             match v.view() {
                 ValueView::Array(items, ..) => items.as_ref().clone().into_items(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.as_ref().clone(),
+                ValueView::Seq(items) => items.to_vec(),
+                ValueView::Slip(items) => items.as_ref().clone(),
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone().unwrap_or_default(),
                 _ => vec![v.clone()],
             }
@@ -218,7 +219,10 @@ impl Interpreter {
                         divisors.extend(cached);
                     }
                 }
-                ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+                ValueView::Array(..) | ValueView::Seq(_) => {
+                    divisors.extend(flatten_to_list(arg));
+                }
+                ValueView::Slip(_) => {
                     divisors.extend(flatten_to_list(arg));
                 }
                 _ => divisors.push(arg.clone()),

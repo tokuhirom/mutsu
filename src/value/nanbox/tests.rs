@@ -464,9 +464,9 @@ fn every_variant_roundtrips_losslessly() {
             kind: JunctionKind::None,
             values: Arc::new(vec![]),
         },
-        ValueRepr::Seq(Arc::new(vec![Value::int(1)])),
-        ValueRepr::HyperSeq(Arc::new(vec![Value::int(2)])),
-        ValueRepr::RaceSeq(Arc::new(vec![Value::int(3)])),
+        ValueRepr::Seq(crate::value::SeqBody::reified(vec![Value::int(1)])),
+        ValueRepr::HyperSeq(crate::value::SeqBody::reified(vec![Value::int(2)])),
+        ValueRepr::RaceSeq(crate::value::SeqBody::reified(vec![Value::int(3)])),
         ValueRepr::Slip(Arc::new(vec![Value::int(4)])),
         ValueRepr::Version {
             parts: vec![
@@ -533,12 +533,6 @@ fn every_variant_roundtrips_losslessly() {
             thunk: Value::NIL,
             cache: Mutex::new(Some(Value::int(5))),
         })),
-        ValueRepr::LazyIoLines {
-            handle: Box::new(Value::NIL),
-            kv: true,
-            words: false,
-            consumed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        },
         ValueRepr::HashEntryRef {
             hash: Gc::new(HashData::default()),
             path: vec!["a".to_string(), "b".to_string()],

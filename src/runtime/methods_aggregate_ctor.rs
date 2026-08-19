@@ -77,7 +77,8 @@ impl Interpreter {
                 // Populate the shaped array with data
                 let data_items = match data_val.view() {
                     ValueView::Array(items, ..) => items.to_vec(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    ValueView::Slip(items) => items.to_vec(),
                     ValueView::Range(..)
                     | ValueView::RangeExcl(..)
                     | ValueView::RangeExclStart(..)
@@ -94,7 +95,10 @@ impl Interpreter {
                             ValueView::Array(inner, ..) => {
                                 flat.extend(inner.iter().cloned());
                             }
-                            ValueView::Seq(inner) | ValueView::Slip(inner) => {
+                            ValueView::Seq(inner) => {
+                                flat.extend(inner.iter().cloned());
+                            }
+                            ValueView::Slip(inner) => {
                                 flat.extend(inner.iter().cloned());
                             }
                             ValueView::Range(..)

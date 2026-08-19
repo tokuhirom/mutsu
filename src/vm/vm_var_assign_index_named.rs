@@ -65,7 +65,14 @@ impl Interpreter {
                     .collect::<Result<Vec<_>, _>>()?;
                 Ok(SliceKeyTree::Nested(children, false))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                let children = items
+                    .iter()
+                    .map(|item| self.build_slice_key_tree(item))
+                    .collect::<Result<Vec<_>, _>>()?;
+                Ok(SliceKeyTree::Nested(children, false))
+            }
+            ValueView::Slip(items) => {
                 let children = items
                     .iter()
                     .map(|item| self.build_slice_key_tree(item))
@@ -399,9 +406,8 @@ impl Interpreter {
                 // one-element list) to the bare key/index.
                 let idx_arg = match idx.view() {
                     ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
-                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
-                        items[0].clone()
-                    }
+                    ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                    ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
                     _ => idx.clone(),
                 };
                 // A Pair VALUE must arrive as a positional argument, not be
@@ -511,7 +517,8 @@ impl Interpreter {
             ValueView::Array(items, kind) => {
                 matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => items.len() == 1,
+            ValueView::Seq(items) => items.len() == 1,
+            ValueView::Slip(items) => items.len() == 1,
             ValueView::Scalar(inner) => {
                 !inner.is_range() && !matches!(inner.view(), ValueView::Array(..))
             }
@@ -2830,7 +2837,8 @@ impl Interpreter {
                 let idx_u = crate::runtime::to_int(&outer_idx) as usize;
                 let elem = match inner.view() {
                     ValueView::Array(items, _) => items.get(idx_u).cloned(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.get(idx_u).cloned(),
+                    ValueView::Seq(items) => items.get(idx_u).cloned(),
+                    ValueView::Slip(items) => items.get(idx_u).cloned(),
                     _ => None,
                 };
                 if let Some(elem) = elem
@@ -3497,7 +3505,8 @@ impl Interpreter {
             ValueView::Array(items, kind) => {
                 matches!(kind, crate::value::ArrayKind::ItemList) || items.len() == 1
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => items.len() == 1,
+            ValueView::Seq(items) => items.len() == 1,
+            ValueView::Slip(items) => items.len() == 1,
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)

@@ -1256,7 +1256,30 @@ impl Interpreter {
                         &mut generator_closure_env,
                         suppress_generator_error,
                     ) {
-                        Ok(Some(v)) => v,
+                        Ok(Some(v)) => {
+                            // A closure generator step's result becomes BOTH
+                            // the publicly exposed `$seq[N]` element AND
+                            // (aliasing the same `Arc<SeqBody>`) the
+                            // `history` input fed to compute a LATER step —
+                            // e.g. `*.reverse ... *` calls `.reverse` on the
+                            // previous element to derive the next one.
+                            // `.reverse` (and most other methods) are
+                            // single-use consumers under ADR-0034
+                            // (`seq_method_consumes`): letting the
+                            // generator's OWN internal use silently steal
+                            // the same Seq the user already holds would
+                            // corrupt it (`$seq[1]` would read back as the
+                            // `Seq.new()` placeholder once `$seq[2]` is
+                            // generated from it). Reifying here, before
+                            // `next` is stored, marks the body `retained` so
+                            // a later internal consuming touch serves it
+                            // instead of stealing it.
+                            if let ValueView::Seq(body) = v.view() {
+                                let body = std::sync::Arc::clone(&body);
+                                self.reify_seq_body(&body)?;
+                            }
+                            v
+                        }
                         Ok(None) => {
                             closure_generation_finished = true;
                             break 'seq_gen;

@@ -691,12 +691,10 @@ impl Interpreter {
                     // read repeatedly. If the Seq's iterator was already taken
                     // (e.g. by `.skip`/`.iterator`) and not cached, throw.
                     ValueView::Seq(items) => {
-                        if crate::value::seq_is_consumed(&items)
-                            && !crate::value::seq_is_cached(&items)
-                        {
+                        if items.is_consumed() && !items.is_cached() {
                             return Err(crate::value::seq_consumed_error());
                         }
-                        crate::value::seq_mark_cached(&items);
+                        items.mark_cache_requested();
                         val
                     }
                     _ => val,
@@ -2715,7 +2713,6 @@ impl Interpreter {
                                     | ValueView::Seq(_)
                                     | ValueView::Slip(_)
                                     | ValueView::LazyList(_)
-                                    | ValueView::LazyIoLines { .. }
                             );
                             if !is_pos {
                                 let got_type = crate::runtime::utils::value_type_name(&cached_val);
@@ -2862,8 +2859,9 @@ impl Interpreter {
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }
-                        ValueView::LazyIoLines { handle, words, .. } => {
-                            loan_env!(self, force_lazy_io_lines(handle, words))?;
+                        ValueView::Seq(body) if body.needs_touch() => {
+                            let body = std::sync::Arc::clone(&body);
+                            self.sink_seq_body(&body)?;
                         }
                         _ => {
                             // An assignment statement is wanted, not sunk: the
@@ -2976,11 +2974,12 @@ impl Interpreter {
                         ValueView::LazyList(list) => {
                             self.force_lazy_list_vm(&list)?;
                         }
-                        ValueView::LazyIoLines { handle, words, .. } => {
-                            // Sinking a lazy IO lines iterator must drain the
-                            // underlying handle so that side effects (read
-                            // position, .eof) are observable.
-                            loan_env!(self, force_lazy_io_lines(handle, words))?;
+                        ValueView::Seq(body) if body.needs_touch() => {
+                            // Sinking a not-yet-read Seq source must drain it
+                            // so that side effects (read position, .eof for
+                            // an IO::Handle.lines source) are observable.
+                            let body = std::sync::Arc::clone(&body);
+                            self.sink_seq_body(&body)?;
                         }
                         _ => {
                             // Sinking an unhandled Failure throws (Raku behavior) —
@@ -4653,10 +4652,12 @@ impl Interpreter {
                         }
                         Value::array(items)
                     }
-                    ValueView::Seq(items) => {
-                        // Consuming the Seq via eager marks it as consumed.
-                        crate::value::seq_sink(&items);
-                        Value::array(items.to_vec())
+                    ValueView::Seq(body) => {
+                        // `.eager` consumes the source (ADR-0034; verified
+                        // against raku), unless already reified/cache-requested.
+                        let body = std::sync::Arc::clone(&body);
+                        let (items, _) = self.take_seq_body(&body)?;
+                        Value::array(items)
                     }
                     _ if val.is_range() => Value::array(crate::runtime::utils::value_to_list(&val)),
                     _ => val,

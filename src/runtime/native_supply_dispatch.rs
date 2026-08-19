@@ -761,7 +761,11 @@ impl Interpreter {
                             flattened.extend(items.iter().cloned());
                             true
                         }
-                        ValueView::Slip(items) | ValueView::Seq(items) => {
+                        ValueView::Seq(items) => {
+                            flattened.extend(items.iter().cloned());
+                            true
+                        }
+                        ValueView::Slip(items) => {
                             flattened.extend(items.iter().cloned());
                             true
                         }

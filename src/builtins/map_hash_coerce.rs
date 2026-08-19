@@ -148,7 +148,8 @@ pub(crate) fn to_hash(target: Value, check_odd: bool) -> Result<Value, RuntimeEr
             }
         }
         ValueView::Array(items, ..) => items_to_hash(items.as_ref(), check_odd),
-        ValueView::Seq(items) | ValueView::Slip(items) => items_to_hash(items.as_ref(), check_odd),
+        ValueView::Seq(items) => items_to_hash(&items, check_odd),
+        ValueView::Slip(items) => items_to_hash(items.as_ref(), check_odd),
         ValueView::Set(s, _) => Ok(quanthash_to_hash(
             s.iter().map(|k| (k.clone(), Value::TRUE, s.typed_key(k))),
             |_| Value::TRUE,

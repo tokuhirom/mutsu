@@ -306,7 +306,8 @@ impl Interpreter {
         let values = if args.len() == 1 {
             match args[0].view() {
                 ValueView::Array(items, ..) => items.to_vec(),
-                ValueView::Slip(items) | ValueView::Seq(items) => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                ValueView::Slip(items) => items.to_vec(),
                 ValueView::Range(..)
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)

@@ -696,8 +696,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
         // the interpreter (e.g. gather-sourced lazy lists), which fall through.
         "elems" => crate::builtins::methods_0arg::native_method_0arg(arg, Symbol::intern("elems")),
         "reverse" => {
-            // LazyIoLines needs the interpreter to materialize — fall through
-            if matches!(arg.view(), ValueView::LazyIoLines { .. }) {
+            // A not-yet-read Seq source (deferred Iterator or IO::Handle.lines
+            // — ADR-0034) needs the interpreter to reify — fall through.
+            if let ValueView::Seq(body) = arg.view()
+                && body.needs_touch()
+            {
                 return None;
             }
             if let Some(shape) = crate::runtime::utils::shaped_array_shape(arg) {
@@ -717,7 +720,12 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     reversed.reverse();
                     Value::seq(reversed.into_items())
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    let mut reversed = items.to_vec();
+                    reversed.reverse();
+                    Value::seq(reversed)
+                }
+                ValueView::Slip(items) => {
                     let mut reversed = (**items).clone();
                     reversed.reverse();
                     Value::seq(reversed)
@@ -747,7 +755,12 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                     Value::seq(sorted.into_items())
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    let mut sorted = items.to_vec();
+                    sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
+                    Value::seq(sorted)
+                }
+                ValueView::Slip(items) => {
                     let mut sorted = (**items).clone();
                     sorted.sort_by(|a, b| crate::runtime::compare_values(a, b).cmp(&0));
                     Value::seq(sorted)
@@ -786,7 +799,8 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
             // rotate with no count defaults to 1; returns a Seq (raku semantics).
             let items: Option<Vec<Value>> = match arg.view() {
                 ValueView::Array(items, ..) => Some(items.iter().cloned().collect()),
-                ValueView::Seq(items) | ValueView::Slip(items) => Some((**items).clone()),
+                ValueView::Seq(items) => Some(items.to_vec()),
+                ValueView::Slip(items) => Some((**items).clone()),
                 ValueView::Range(..)
                 | ValueView::RangeExcl(..)
                 | ValueView::RangeExclStart(..)

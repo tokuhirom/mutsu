@@ -291,8 +291,8 @@ pub(super) fn dispatch(
                 return Some(None); // fall through to runtime to force
             }
             if let ValueView::Seq(items) = target.view()
-                && crate::value::seq_is_consumed(&items)
-                && !crate::value::seq_is_cached(&items)
+                && items.is_consumed()
+                && !items.is_cached()
             {
                 return Some(Some(Err(crate::value::seq_consumed_error())));
             }

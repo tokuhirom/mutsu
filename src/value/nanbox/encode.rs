@@ -224,20 +224,6 @@ impl NanBox {
                 pack_gc(Kind::ContainerRef, cell)
             }
             ValueRepr::LazyThunk(t) => pack_arc(Kind::LazyThunk, t),
-            ValueRepr::LazyIoLines {
-                handle,
-                kv,
-                words,
-                consumed,
-            } => pack_arc(
-                Kind::LazyIoLines,
-                Arc::new(LazyIoLinesBox {
-                    handle,
-                    kv,
-                    words,
-                    consumed,
-                }),
-            ),
             ValueRepr::HashEntryRef { hash, path, eager } => pack_arc(
                 Kind::HashEntryRef,
                 Arc::new(HashEntryRefBox { hash, path, eager }),

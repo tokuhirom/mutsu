@@ -35,7 +35,10 @@ impl Interpreter {
                             ValueView::Array(items, _) => {
                                 values = items.as_ref().clone().into_items();
                             }
-                            ValueView::Seq(items) | ValueView::Slip(items) => {
+                            ValueView::Seq(items) => {
+                                values = items.to_vec();
+                            }
+                            ValueView::Slip(items) => {
                                 values = items.as_ref().clone();
                             }
                             _ => {}
@@ -105,7 +108,8 @@ impl Interpreter {
             match args[0].view() {
                 ValueView::Array(_items, kind) if kind.is_itemized() => args.to_vec(),
                 ValueView::Array(items, _) => items.iter().cloned().collect(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                ValueView::Seq(items) => items.iter().cloned().collect(),
+                ValueView::Slip(items) => items.iter().cloned().collect(),
                 _ => args.to_vec(),
             }
         } else {
@@ -126,7 +130,8 @@ impl Interpreter {
                 }
                 ValueView::Array(_items, kind) if kind.is_itemized() => vec![arg.clone()],
                 ValueView::Array(items, _) => items.iter().cloned().collect(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                ValueView::Seq(items) => items.iter().cloned().collect(),
+                ValueView::Slip(items) => items.iter().cloned().collect(),
                 ValueView::Range(a, b) => (a..=b).map(Value::int).collect(),
                 ValueView::RangeExcl(a, b) => (a..b).map(Value::int).collect(),
                 _ if arg.is_range() => crate::runtime::utils::value_to_list(arg),

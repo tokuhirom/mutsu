@@ -179,14 +179,15 @@ impl Interpreter {
             items.reverse();
             return Ok(Value::seq(items));
         }
-        // LazyIoLines must be materialized by the interpreter (native bails).
-        if let ValueView::LazyIoLines { handle, .. } = args[0].view() {
-            let mut lines = Vec::new();
-            while let Some(line) = self.read_line_from_handle_value(handle)? {
-                lines.push(Value::str(line));
-            }
-            lines.reverse();
-            return Ok(Value::seq(lines));
+        // A not-yet-read Seq source (deferred Iterator or IO::Handle.lines —
+        // ADR-0034) must be reified by the interpreter (native bails).
+        if let ValueView::Seq(body) = args[0].view()
+            && body.needs_touch()
+        {
+            let body = std::sync::Arc::clone(&body);
+            let mut items = self.reify_seq_body(&body)?;
+            items.reverse();
+            return Ok(Value::seq(items));
         }
         // Single arg: delegate to the single shared native `reverse` (Array / Seq
         // / Slip / Range / 1-D shaped / Str), instead of a drifting second copy

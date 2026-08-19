@@ -213,7 +213,6 @@ impl Interpreter {
                 }
                 "Scalar"
             }
-            ValueView::LazyIoLines { .. } => "Seq",
             ValueView::HashEntryRef { .. } => {
                 return self.dispatch_what(&target.hash_entry_read(), args);
             }

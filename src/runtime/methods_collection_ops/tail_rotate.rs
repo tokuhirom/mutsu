@@ -21,7 +21,11 @@ impl Interpreter {
     /// Look up the PredictiveIterator backing a `Seq.new(iterator)` by seq_id.
     /// Prefers the non-scoped `predictive_seq_iters` map (survives scope), then
     /// falls back to the legacy env key for any in-scope registrations.
-    pub(in crate::runtime) fn predictive_seq_iter_for(&self, seq_id: usize) -> Option<Value> {
+    /// `pub(crate)` (not `pub(in crate::runtime)`): also read by
+    /// `vm::vm_helpers_lazy`'s ADR-0034 dispatch guard, which must recognize
+    /// and skip this placeholder body BEFORE `dispatch_tail`/`.Numeric` get a
+    /// chance to resolve it (see that call site's comment).
+    pub(crate) fn predictive_seq_iter_for(&self, seq_id: usize) -> Option<Value> {
         if let Some(iter) = self.predictive_seq_iters.get(&seq_id) {
             return Some(iter.clone());
         }
@@ -142,7 +146,7 @@ impl Interpreter {
                 if args.is_empty() {
                     return Ok(pulled.pop().unwrap_or(Value::NIL));
                 }
-                return Ok(Value::seq_arc(std::sync::Arc::new(pulled)));
+                return Ok(Value::seq(pulled));
             }
         }
 
@@ -153,7 +157,7 @@ impl Interpreter {
 
         let tail_count = self.resolve_supply_tail_count(args.first(), items.len())?;
         let start = items.len().saturating_sub(tail_count);
-        Ok(Value::seq_arc(std::sync::Arc::new(items[start..].to_vec())))
+        Ok(Value::seq(items[start..].to_vec()))
     }
 
     /// Handle `.head(&callable)` / `.head(*)` where the argument is a
@@ -185,7 +189,7 @@ impl Interpreter {
             _ => len,
         };
         let count = count.clamp(0, len) as usize;
-        Ok(Value::seq_arc(std::sync::Arc::new(items[..count].to_vec())))
+        Ok(Value::seq(items[..count].to_vec()))
     }
 
     pub(in crate::runtime) fn split_host_port_literal(input: &str) -> (String, Option<u16>) {
@@ -246,7 +250,7 @@ impl Interpreter {
             }
         };
         if items.is_empty() {
-            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         }
         let len = items.len() as i64;
         let by = match args.first() {
@@ -268,6 +272,6 @@ impl Interpreter {
             let dst = ((i as i64 + len - shift) % len) as usize;
             out[dst] = item;
         }
-        Ok(Value::seq_arc(std::sync::Arc::new(out)))
+        Ok(Value::seq(out))
     }
 }

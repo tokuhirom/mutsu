@@ -79,7 +79,7 @@ impl Interpreter {
             }
             // Like the plain `Z` infix, the reduction yields a Seq (raku:
             // `([Z] ...).WHAT` is `(Seq)`, `.raku` shows the `.Seq` suffix).
-            return Ok(Value::seq_arc(std::sync::Arc::new(results)));
+            return Ok(Value::seq(results));
         }
         // Z-prefixed meta-operator: zip two lists element-wise with the inner op.
         if let Some(inner_op) = op.strip_prefix('Z')
@@ -96,7 +96,7 @@ impl Interpreter {
                     &right_list[i],
                 )?);
             }
-            return Ok(Value::seq_arc(std::sync::Arc::new(results)));
+            return Ok(Value::seq(results));
         }
         // Hyper operator forms: >>op<<, >>op>>, <<op<<, <<op>>
         // Apply inner op element-wise to two lists.

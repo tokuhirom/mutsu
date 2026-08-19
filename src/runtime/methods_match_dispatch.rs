@@ -332,7 +332,9 @@ impl Interpreter {
                     Self::collect_nth_list_indices(&items, total_matches, &mut indices)?;
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(_) | ValueView::Slip(_) => {
+                let items = crate::runtime::utils::value_to_list(val);
+                let items = &items[..];
                 // Check if any item is a LazyList (indicates partially-evaluated sequence)
                 let has_lazy = items
                     .iter()
@@ -399,7 +401,7 @@ impl Interpreter {
                         }
                     }
                 } else {
-                    Self::collect_nth_list_indices(&items, total_matches, &mut indices)?;
+                    Self::collect_nth_list_indices(items, total_matches, &mut indices)?;
                 }
             }
             ValueView::Range(start, end) => {

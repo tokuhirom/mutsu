@@ -389,7 +389,12 @@ impl Interpreter {
                     self.collect_nth_indices_from_value(item, total, out)?;
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    self.collect_nth_indices_from_value(item, total, out)?;
+                }
+            }
+            ValueView::Slip(items) => {
                 for item in items.iter() {
                     self.collect_nth_indices_from_value(item, total, out)?;
                 }

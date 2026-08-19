@@ -475,7 +475,6 @@ impl Value {
                         })
                 }
             }
-            ValueView::LazyIoLines { .. } => "(...)".to_string(),
             ValueView::Uni(u) => u.text.clone(),
             ValueView::Hash(items) => {
                 // Cycle detection for recursive hash structures
@@ -947,10 +946,18 @@ impl Value {
                     s
                 }
             }
-            ValueView::Seq(items)
-            | ValueView::HyperSeq(items)
-            | ValueView::RaceSeq(items)
-            | ValueView::Slip(items) => items
+            // A not-yet-read `IO::Handle.lines`/`.words` source (formerly the
+            // separate `LazyIoLines`, always shown as this opaque marker
+            // here) reached this bypass path (raw interpolation, `~$x`, ...)
+            // without going through the method-dispatch reify guard first —
+            // show the same placeholder rather than an empty join.
+            ValueView::Seq(items) if items.is_io_lines_source() => "(...)".to_string(),
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items
+                .iter()
+                .map(|v| v.to_str_context())
+                .collect::<Vec<_>>()
+                .join(" "),
+            ValueView::Slip(items) => items
                 .iter()
                 .map(|v| v.to_str_context())
                 .collect::<Vec<_>>()

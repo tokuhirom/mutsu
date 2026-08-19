@@ -181,8 +181,9 @@ impl Interpreter {
             ValueView::LazyList(list) => {
                 self.force_lazy_list_vm(&list)?;
             }
-            ValueView::LazyIoLines { handle, words, .. } => {
-                loan_env!(self, force_lazy_io_lines(handle, words))?;
+            ValueView::Seq(body) if body.needs_touch() => {
+                let body = std::sync::Arc::clone(&body);
+                self.sink_seq_body(&body)?;
             }
             _ => {
                 if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {

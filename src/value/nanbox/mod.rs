@@ -141,7 +141,6 @@ pub(in crate::value) enum Kind {
     Proxy,
     ParametricRole,
     Routine,
-    LazyIoLines,
     HashEntryRef,
     VarRef,
     // -- Gc-backed pointer kinds (payload = GcBox<T> raw address) --
@@ -401,10 +400,8 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Str | Kind::Regex => arc_op::<String>(bits, op),
             Kind::BigInt => arc_op::<NumBigInt>(bits, op),
             Kind::IntBoxed => arc_op::<i64>(bits, op),
-            Kind::Seq
-            | Kind::HyperSeq
-            | Kind::RaceSeq
-            | Kind::Slip
+            Kind::Seq | Kind::HyperSeq | Kind::RaceSeq => arc_op::<crate::value::SeqBody>(bits, op),
+            Kind::Slip
             | Kind::JunctionAny
             | Kind::JunctionAll
             | Kind::JunctionOne
@@ -435,7 +432,6 @@ unsafe fn payload_op(kind: Kind, bits: u64, op: PayloadOp) {
             Kind::Proxy => arc_op::<ProxyBox>(bits, op),
             Kind::ParametricRole => arc_op::<ParametricRoleBox>(bits, op),
             Kind::Routine => arc_op::<RoutineBox>(bits, op),
-            Kind::LazyIoLines => arc_op::<LazyIoLinesBox>(bits, op),
             Kind::HashEntryRef => arc_op::<HashEntryRefBox>(bits, op),
             Kind::VarRef => arc_op::<VarRefBox>(bits, op),
             Kind::Sub => gc_op::<SubData>(bits, op),

@@ -952,7 +952,8 @@ impl Interpreter {
                 .map(|(k, v)| Value::pair(k.clone(), v.clone()))
                 .collect(),
             ValueView::Array(a, _) => a.iter().cloned().collect(),
-            ValueView::Seq(s) | ValueView::Slip(s) => s.iter().cloned().collect(),
+            ValueView::Seq(s) => s.iter().cloned().collect(),
+            ValueView::Slip(s) => s.iter().cloned().collect(),
             _ => vec![rhs.clone()],
         }
     }

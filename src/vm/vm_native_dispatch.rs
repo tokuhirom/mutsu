@@ -95,19 +95,21 @@ impl Interpreter {
                 return None;
             }
         }
-        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
-        // The native impls below read that empty vec directly and would yield
-        // nothing (`.List`/`.elems`/`.Array`/...). Defer such a Seq to the
-        // interpreter, whose `call_method_with_values` pulls every element from
-        // the iterator (`materialize_deferred_seq`) before dispatching. `cache`/
-        // `raku`/`perl` intentionally keep the Seq lazy (they must NOT pull), so
-        // they proceed with the native path.
-        // (The Seq / LazyList probes below are tag-gated: `view()` on a lazy
-        // Match target would materialize it per dispatched method call.)
+        // A `Seq.new($iterator)`/`IO::Handle.lines` body whose source has not
+        // been pulled yet (ADR-0034 §2.3) reads as an empty `Vec` through the
+        // native impls below (`.List`/`.elems`/`.Array`/...). Defer such a
+        // Seq to the interpreter, whose `call_method_with_values` reifies or
+        // consumes it (via `reify_seq_body`/`take_seq_body`) before
+        // dispatching. `cache`/`raku`/`perl`/`sink`, and every method that
+        // answers from type/identity alone (`seq_method_never_touches`),
+        // intentionally must NOT pull, so they proceed with the native path.
+        // (The Seq probe below is tag-gated: `view()` on a lazy Match target
+        // would materialize it per dispatched method call.)
         if target.is_seq_value()
-            && let ValueView::Seq(items) = target.view()
-            && crate::value::seq_has_deferred_iter(&items)
-            && !crate::value::seq_deferred_method_keeps_lazy(method_name.as_str())
+            && let ValueView::Seq(body) = target.view()
+            && body.needs_touch()
+            && !matches!(method_name.as_str(), "cache" | "raku" | "perl" | "sink")
+            && !crate::value::seq_method_never_touches(method_name.as_str())
         {
             return None;
         }

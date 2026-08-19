@@ -46,9 +46,8 @@ impl Interpreter {
         // the reified array. Mirrors the `LazyList` reify just above.
         if var_name.is_some_and(|name| name.starts_with('@')) {
             let reified = match value.view() {
-                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) | ValueView::Slip(items) => {
-                    Some(items.to_vec())
-                }
+                ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => Some(items.to_vec()),
+                ValueView::Slip(items) => Some(items.to_vec()),
                 _ => None,
             };
             if let Some(items) = reified {

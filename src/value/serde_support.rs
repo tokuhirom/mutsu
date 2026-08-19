@@ -340,7 +340,6 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         | ValueView::CustomType { .. }
         | ValueView::CustomTypeInstance(_)
         | ValueView::LazyThunk(_)
-        | ValueView::LazyIoLines { .. }
         | ValueView::HashEntryRef { .. }
         | ValueView::ContainerRef(_) => Err(format!(
             "cannot serialize Value variant: {}",
@@ -473,7 +472,9 @@ fn ser_to_value(sv: SerValue) -> Value {
                 values: Arc::new(values.into_iter().map(ser_to_value).collect()),
             })
         }
-        SerValue::Seq(items) => Value::Seq(Arc::new(items.into_iter().map(ser_to_value).collect())),
+        SerValue::Seq(items) => Value::Seq(crate::value::SeqBody::reified(
+            items.into_iter().map(ser_to_value).collect(),
+        )),
         SerValue::Slip(items) => {
             Value::Slip(Arc::new(items.into_iter().map(ser_to_value).collect()))
         }

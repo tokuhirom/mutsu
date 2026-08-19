@@ -216,9 +216,9 @@ impl Interpreter {
             ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
                 let items = self.expand_list_items(value, active, depth);
                 match value.view() {
-                    ValueView::HyperSeq(_) => Value::hyper_seq_arc(std::sync::Arc::new(items)),
-                    ValueView::RaceSeq(_) => Value::race_seq_arc(std::sync::Arc::new(items)),
-                    _ => Value::seq_arc(std::sync::Arc::new(items)),
+                    ValueView::HyperSeq(_) => Value::hyper_seq(items),
+                    ValueView::RaceSeq(_) => Value::race_seq(items),
+                    _ => Value::seq(items),
                 }
             }
             ValueView::Capture { positional, named } => {

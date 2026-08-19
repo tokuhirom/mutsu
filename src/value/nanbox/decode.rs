@@ -31,9 +31,9 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::Regex => ValueRepr::Regex(unsafe { take_arc::<String>(bits) }),
         Kind::BigInt => ValueRepr::BigInt(unsafe { take_arc::<NumBigInt>(bits) }),
         Kind::IntBoxed => ValueRepr::Int(*unsafe { take_arc::<i64>(bits) }),
-        Kind::Seq => ValueRepr::Seq(unsafe { take_arc::<Vec<Value>>(bits) }),
-        Kind::HyperSeq => ValueRepr::HyperSeq(unsafe { take_arc::<Vec<Value>>(bits) }),
-        Kind::RaceSeq => ValueRepr::RaceSeq(unsafe { take_arc::<Vec<Value>>(bits) }),
+        Kind::Seq => ValueRepr::Seq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
+        Kind::HyperSeq => ValueRepr::HyperSeq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
+        Kind::RaceSeq => ValueRepr::RaceSeq(unsafe { take_arc::<crate::value::SeqBody>(bits) }),
         Kind::Slip => ValueRepr::Slip(unsafe { take_arc::<Vec<Value>>(bits) }),
         Kind::JunctionAny | Kind::JunctionAll | Kind::JunctionOne | Kind::JunctionNone => {
             ValueRepr::Junction {
@@ -175,15 +175,6 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
                 package: r.package,
                 name: r.name,
                 is_regex: r.is_regex,
-            }
-        }
-        Kind::LazyIoLines => {
-            let l = Arc::unwrap_or_clone(unsafe { take_arc::<LazyIoLinesBox>(bits) });
-            ValueRepr::LazyIoLines {
-                handle: l.handle,
-                kv: l.kv,
-                words: l.words,
-                consumed: l.consumed,
             }
         }
         Kind::HashEntryRef => {

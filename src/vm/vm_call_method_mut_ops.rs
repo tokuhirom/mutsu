@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::sync::Arc;
 
 impl Interpreter {
     /// The invocant of a `.&sub(...)` call is always bound positionally to the
@@ -66,18 +65,11 @@ impl Interpreter {
             }
             return Ok(());
         }
-        // Force lazy IO lines for non-lazy-preserving methods
+        // Reify/consume a deferred Seq (ADR-0034 §2.3) for non-lazy-preserving
+        // methods before dispatch.
         let method_name_str = Self::dynamic_method_name(&name_val);
         let method = Self::rewrite_method_name(&method_name_str, modifier);
-        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(
-                method.as_str(),
-                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
-            ) {
-            self.force_if_lazy_io_lines(target)?
-        } else {
-            target
-        };
+        let target = self.reify_or_consume_seq_target(target, &method)?;
         // Handle .* and .+ modifiers
         match modifier {
             Some("+") => {
@@ -180,14 +172,14 @@ impl Interpreter {
                 }
                 // Create HyperSeq/RaceSeq
                 let items = crate::runtime::value_to_list(&target);
-                let arc = std::sync::Arc::new(items);
+                let body = crate::value::SeqBody::reified(items);
                 // Remember the requested batch/degree so `.configuration` can
                 // report them (the HyperSeq/RaceSeq does not carry the config).
-                crate::value::hyper_config_set(&arc, batch, degree);
+                body.set_hyper_config(batch, degree);
                 let result = if method == "hyper" {
-                    Value::hyper_seq_arc(arc)
+                    Value::hyper_seq_body(body)
                 } else {
-                    Value::race_seq_arc(arc)
+                    Value::race_seq_body(body)
                 };
                 self.stack.push(result);
                 return Ok(());
@@ -208,7 +200,7 @@ impl Interpreter {
                             "callmethoddynamic",
                             "hyperseq-hyper",
                         );
-                        self.stack.push(Value::hyper_seq_arc(items_arc));
+                        self.stack.push(Value::hyper_seq_body(items_arc));
                         return Ok(());
                     }
                     "race" => {
@@ -216,7 +208,7 @@ impl Interpreter {
                             "callmethoddynamic",
                             "hyperseq-race",
                         );
-                        self.stack.push(Value::race_seq_arc(items_arc));
+                        self.stack.push(Value::race_seq_body(items_arc));
                         return Ok(());
                     }
                     "is-lazy" => {
@@ -235,8 +227,7 @@ impl Interpreter {
                             "callmethoddynamic",
                             "hyperseq-configuration",
                         );
-                        let (batch, degree) =
-                            crate::value::hyper_config_get(&items_arc).unwrap_or((None, None));
+                        let (batch, degree) = items_arc.hyper_config().unwrap_or((None, None));
                         self.stack
                             .push(Interpreter::make_hyper_configuration(batch, degree));
                         return Ok(());
@@ -290,9 +281,9 @@ impl Interpreter {
                         let result_val = call_result?;
                         let result_items = crate::runtime::value_to_list(&result_val);
                         let wrapped = if is_hyper {
-                            Value::hyper_seq_arc(Arc::new(result_items))
+                            Value::hyper_seq(result_items)
                         } else {
-                            Value::race_seq_arc(Arc::new(result_items))
+                            Value::race_seq(result_items)
                         };
                         self.stack.push(wrapped);
                         return Ok(());
@@ -647,31 +638,15 @@ impl Interpreter {
             );
             return Err(err);
         }
-        // Force lazy IO lines for non-lazy-preserving methods
-        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(
-                method.as_str(),
-                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
-            ) {
-            let forced = self.force_if_lazy_io_lines(target)?;
-            // `.cache` is what makes a Seq *repeatable* in rakudo — after it the
-            // Seq serves its cached elements instead of throwing "already in use
-            // /consumed". (Measured: `.list`/`.List` do NOT; they consume like
-            // any other method.) mutsu's lazy IO-lines value only records
-            // "consumed", so forcing it here and dropping the result on the
-            // floor left the receiver variable holding a spent value, and the
-            // very next method call on it died. Store the reified Seq back over
-            // the receiver so the caching contract holds. Every other method
-            // deliberately does NOT write back: a Seq consumed by `.map` really
-            // is spent.
-            if method == "cache" && !target_name.is_empty() {
-                self.env_mut().insert(target_name.clone(), forced.clone());
-                self.record_caller_var_writeback(&target_name);
-            }
-            forced
-        } else {
-            target
-        };
+        // Reify/consume a deferred Seq (ADR-0034 §2.3) — including an
+        // `IO::Handle.lines`/`.words` source (formerly the separate
+        // `LazyIoLines` special case, forced here with a name-keyed env
+        // writeback band-aid for `.cache` — ADR-0034 §1.3/§2.4). Reification
+        // now fills the SAME `Arc<SeqBody>` every alias of the receiver
+        // shares, so no writeback is needed: every alias (this frame's
+        // variable, a second alias, a value passed to a sub one call frame
+        // away) observes it for free.
+        let target = self.reify_or_consume_seq_target(target, method.as_str())?;
         // An `is native(...)` method: the call belongs to NativeCall, not to the
         // `{ * }` stub the declaration gives it. Both method-call opcodes need
         // this — a class's methods are compiled to bytecode and dispatched
@@ -685,20 +660,6 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
-        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
-        // Mut-path list methods (`.sort`, comparator `.map`/`.grep`, ...) read that
-        // empty vec directly, so pull every element from the iterator first. The
-        // non-mut path reifies via `try_native_method`'s deferred-Seq bail; this is
-        // the mut-path twin. `cache`/`raku`/`perl` keep the Seq lazy.
-        let target = if let ValueView::Seq(arc) = target.view()
-            && crate::value::seq_has_deferred_iter(&arc)
-            && !crate::value::seq_deferred_method_keeps_lazy(method.as_str())
-        {
-            let pulled = self.materialize_deferred_seq(&arc);
-            Value::seq_arc(std::sync::Arc::new(pulled))
-        } else {
-            target
-        };
         // Mutating a lazy `@`-array (infinite source). raku rejects operations
         // that touch the (non-existent) end — push/pop/append — with
         // `X::Cannot::Lazy`, but allows front operations (unshift/prepend/shift/
@@ -1438,14 +1399,14 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
             let items = crate::runtime::value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let body = crate::value::SeqBody::reified(items);
             // Remember the requested batch/degree so `.configuration` can report
             // them (the HyperSeq/RaceSeq does not carry the config).
-            crate::value::hyper_config_set(&arc, batch, degree);
+            body.set_hyper_config(batch, degree);
             let result = if method == "hyper" {
-                Value::hyper_seq_arc(arc)
+                Value::hyper_seq_body(body)
             } else {
-                Value::race_seq_arc(arc)
+                Value::race_seq_body(body)
             };
             self.stack.push(result);
             return Ok(());
@@ -1463,8 +1424,8 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
                     let result = match method.as_str() {
-                        "hyper" => Value::hyper_seq_arc(items_arc),
-                        "race" => Value::race_seq_arc(items_arc),
+                        "hyper" => Value::hyper_seq_body(items_arc),
+                        "race" => Value::race_seq_body(items_arc),
                         "is-lazy" => Value::FALSE,
                         "defined" => Value::TRUE,
                         "^name" => {
@@ -1515,9 +1476,9 @@ impl Interpreter {
                     let result_val = call_result?;
                     let result_items = crate::runtime::value_to_list(&result_val);
                     let wrapped = if is_hyper {
-                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
+                        Value::hyper_seq(result_items)
                     } else {
-                        Value::race_seq_arc(std::sync::Arc::new(result_items))
+                        Value::race_seq(result_items)
                     };
                     crate::vm::vm_stats::record_dispatch_entry_intercept(
                         "callmethodmut",
@@ -1539,10 +1500,11 @@ impl Interpreter {
                         _ => unreachable!(),
                     };
                     let type_name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
-                    // `seq_consume` atomically checks-and-marks under one lock, so
-                    // concurrent workers racing for the single iterator resolve to
-                    // exactly one winner (rakudo #4413 concurrency contract).
-                    if crate::value::seq_consume(&items_arc).is_err() {
+                    // Atomic check-and-mark under one lock, so concurrent workers
+                    // racing for the single iterator resolve to exactly one winner
+                    // (rakudo #4413 concurrency contract). Orthogonal to
+                    // ADR-0034's reify/consume split — see `claim_hyper_iterator_once`.
+                    if items_arc.claim_hyper_iterator_once().is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
                     let array_target = Value::array_with_kind(

@@ -50,7 +50,14 @@ impl ValueIterator {
                     idx: 0,
                 })
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => Some(ValueIterator::Slice {
+            // A Seq's `Arc<SeqBody>` (ADR-0034) is not the plain
+            // `Arc<Vec<Value>>` this iterator shares by reference, so it
+            // takes one copy of the (already-reified) elements instead.
+            ValueView::Seq(items) => Some(ValueIterator::Slice {
+                items: Arc::new(items.to_vec()),
+                idx: 0,
+            }),
+            ValueView::Slip(items) => Some(ValueIterator::Slice {
                 items: items.clone(),
                 idx: 0,
             }),
