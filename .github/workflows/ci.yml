@@ -489,6 +489,17 @@ jobs:
       - name: Run WASM concurrency tests
         run: node site/concurrency.test.mjs
 
+      # `playwright install --with-deps` shells out to apt-get internally, so
+      # it hits the same azure.archive.ubuntu.com mirror hang as the native
+      # jobs' explicit apt-get steps (see the "Use canonical apt mirror" step
+      # there) even though this job has no apt-get line of its own.
+      - name: Use canonical apt mirror
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'http://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
+
       - name: Install Playwright
         run: |
           npm install playwright
