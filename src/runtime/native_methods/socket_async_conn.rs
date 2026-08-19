@@ -182,7 +182,7 @@ impl Interpreter {
                 // Registered spawn: emits freshly built `Gc` values (Buf
                 // instances) whose drops on a failed send must not race a
                 // cycle scan; the blocking read is a quiescent safe region.
-                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                crate::runtime::builtins_system::spawn_gc_helper_thread("sock-conn", move || {
                     use std::io::Read;
                     let mut buf = [0u8; 4096];
                     // Text mode carries decoding state across reads: TCP splits

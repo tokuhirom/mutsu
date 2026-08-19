@@ -398,7 +398,7 @@ impl Interpreter {
         // the VM -- HTTP::Server::Tiny). See `USER_THREAD_STACK_SIZE`.
         // Deliberately NOT pooled (ADR-0020 §3.6): a `Thread.start` thread has
         // user-visible identity (`$*THREAD.id`) stable for its whole lifetime.
-        let handle = crate::runtime::builtins_system::spawn_user_thread(move || {
+        let handle = crate::runtime::builtins_system::spawn_user_thread("raku-thread", move || {
             // Set the mutsu thread ID for $*THREAD.id consistency
             super::set_current_mutsu_thread_id(mutsu_tid);
             match thread_interp.call_sub_value(block, vec![], false) {

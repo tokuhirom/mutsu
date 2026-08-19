@@ -240,34 +240,49 @@ the single most valuable missing bit.
 
 Four slices, in priority order. All are small and none needs an ADR.
 
-1. **Name every thread** (`src/runtime/thread_compat.rs`). Give `spawn_thread` a `&'static str` and
-   pass it through `spawn_registered_thread` / `spawn_gc_helper_thread` / `spawn_user_thread`. Linux
-   truncates the comm to 15 bytes, so use short names: `mutsu-main`, `proc-wait`, `proc-out`,
-   `proc-err`, `proc-in`, `signal-rd`, `timer`, `react`, `pool`, `sock-async`, `sock-conn`,
-   `io-path`. Roughly a dozen call sites (`git grep -n 'spawn_gc_helper_thread(\|spawn_user_thread('`).
-   After this, the next occurrence's `thread:` line alone says whether the fault is in the reaper,
-   a reader, the timer, the react driver, or the pool.
-2. **Stop retrying a signal death** (`scripts/flaky-retry.sh`). After `rc=$?`, treat `rc -ge 128` as
-   fatal: log it, print the attempt's output, exit `$rc` immediately with a
-   `# flaky-retry: <file> died of signal N -- NOT retried (see docs/flaky-test-policy.md)` comment.
-   This is not a new policy, it is the enforcement of the one `flaky-tests.txt` already states.
-   Record it in `docs/flaky-test-policy.md` too. Note that this alone would have turned §2's abort
-   into a red CI on the day it happened.
-3. **Surface crash reports on green runs** (`.github/workflows/ci.yml`). Flip the three "Crash
-   reports" steps from `if: failure()` to `if: always()` so the report reaches the job log (retained
-   far longer than the 7-day artifact), and have `scripts/report-crash-reports.sh` **fail the job**
-   when a report's `argv:` is not on a small allowlist. The allowlist needs exactly one entry today:
-   the deliberate `strdup(0)` NativeCall probe (105 of the 106 reports in the window). Without that
-   filter the signal is 99% noise and nobody will ever read it — which is exactly what happened.
-4. **Re-measure the `advent2014-day05.t` quarantine.** Its `flaky-tests.txt` reason attributes the
-   failures to CPU-contention timing; §2 is hard evidence that at least one of them was heap
-   corruption. Per the ledger's own bar the entry should be pulled (or at minimum re-justified) once
-   slice 2 lands and the crash stops being invisible.
+1. **DONE (2026-08-19).** **Name every thread** (`src/runtime/thread_compat.rs`). Gave `spawn_thread`
+   a `name: &str` parameter, threaded through `spawn_registered_thread` / `spawn_gc_helper_thread` /
+   `spawn_user_thread` and every call site: `mutsu-main`, `proc-wait`, `proc-out`, `proc-err`,
+   `proc-in`, `signal-rd`, `timer`, `react`, `pool`, `sock-async`, `sock-conn`, `io-path`,
+   `promise-wait`, `promise-comb`, `raku-thread`. Verified live: `ps -eLo pid,tid,comm` on a running
+   `Proc::Async` react loop shows `mutsu-main`, `proc-wait`, `proc-out`, `proc-err`, `promise-wait` as
+   distinct threads instead of all reading `mutsu`. The next occurrence's `thread:` line alone now
+   says whether the fault is in the reaper, a reader, the timer, the react driver, or the pool.
+2. **DONE (2026-08-19).** **Stop retrying a signal death** (`scripts/flaky-retry.sh`). After `rc=$?`,
+   `rc -ge 128` now exits immediately with a
+   `# flaky-retry: <file> died of signal N -- NOT retried (see docs/flaky-test-policy.md)` comment,
+   no retry. Enforced by `tests/flaky_retry.rs::quarantined_test_that_crashes_is_not_retried`
+   (a fake SIGABRT-killing test proves it fails on the first attempt, not the third). Documented in
+   `docs/flaky-test-policy.md` §4. This is exactly what would have turned §2's abort into a red CI on
+   the day it happened.
+3. **DONE (2026-08-19).** **Surface crash reports on green runs** (`.github/workflows/ci.yml`). The
+   three "Crash reports" steps are now `if: always()`, and `scripts/report-crash-reports.sh` fails the
+   job (`exit 1`) when a report's `argv:` is not on `ALLOWLISTED_ARGV_SUBSTRINGS`, which today holds
+   exactly the deliberate `strdup(0)` NativeCall probe (`roast/S29-os/system.t`). Manually verified
+   against a fabricated allowlisted report (exit 0) and a fabricated `advent2014-day05.t`-shaped
+   report (exit 1, `::error::` annotation).
+4. **Still open.** **Re-measure the `advent2014-day05.t` quarantine.** Its `flaky-tests.txt` reason
+   attributes the failures to CPU-contention timing; §2 is hard evidence that at least one of them was
+   heap corruption. Per the ledger's own bar the entry should be pulled (or at minimum re-justified)
+   now that slices 2-3 have landed and a recurrence can no longer hide. This needs the crash to
+   actually recur (or a deliberate repro) under the new, named-thread reporting before it can be
+   root-caused — nothing here reproduces it yet.
 
 ### 6. Recommended next action
 
-Land slices 1-3 as one small PR. Then **stop chasing this file directly**: it is a ~1-in-several-dozen
-CI event that survived ~96 targeted local runs across four configurations. The productive move is to
-make the next crash — in *any* file — self-diagnosing, and to un-mute the two mechanisms that are
-currently hiding crashes that already happen. A sanitizer job or core dumps are only worth building
-if a named-thread report still leaves the subsystem ambiguous.
+~~Land slices 1-3 as one small PR.~~ **Done 2026-08-19** — see §5. What remains, in order:
+
+1. **Slice 4** (§5.4): re-measure `roast/integration/advent2014-day05.t`'s `flaky-tests.txt` entry now
+   that a signal death there can no longer be silently retried away. Either it stops needing
+   quarantine at all (if the "CPU-contention timing" flake was actually always this crash), or its
+   reason needs to be rewritten to acknowledge the crash risk explicitly — the ledger's evidence
+   standard (`docs/flaky-test-policy.md` §2) does not currently cover "sometimes aborts with heap
+   corruption" as a quarantine-eligible cause, and §3 explicitly says a crash must never be
+   quarantined. This may mean the entry needs to come OFF the ledger and the underlying heap
+   corruption root-caused instead, once it recurs with the new diagnostics.
+2. **Stop chasing `roast/S17-procasync/stress.t` directly.** It is a ~1-in-several-dozen CI event that
+   survived ~96 targeted local runs across four configurations, and the productive move was always to
+   make the next crash — in *any* file — self-diagnosing rather than burn more cycles on a repro loop
+   that has not worked. That diagnostics work (named threads, non-launderable signal deaths, an
+   un-muted crash-report step) is now in place. A sanitizer job or core dumps are only worth building
+   if a future named-thread report still leaves the subsystem ambiguous.

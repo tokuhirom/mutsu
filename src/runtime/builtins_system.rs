@@ -9,13 +9,18 @@ use std::sync::OnceLock;
 pub(crate) const USER_THREAD_STACK_SIZE: usize = 256 * 1024 * 1024;
 
 /// Spawn a worker thread with a large stack for running user code, so deep VM
-/// recursion does not overflow the default thread stack.
-pub(crate) fn spawn_user_thread<F, T>(f: F) -> crate::runtime::thread_compat::JoinHandle<T>
+/// recursion does not overflow the default thread stack. `name` becomes the
+/// OS thread name (see `thread_compat::spawn_thread`), so pick something that
+/// identifies the call site in a crash report's `thread:` field.
+pub(crate) fn spawn_user_thread<F, T>(
+    name: &str,
+    f: F,
+) -> crate::runtime::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    spawn_registered_thread(Some(USER_THREAD_STACK_SIZE), f)
+    spawn_registered_thread(name, Some(USER_THREAD_STACK_SIZE), f)
 }
 
 /// Spawn a runtime service thread (timer, promise combinator, socket
@@ -32,15 +37,19 @@ where
 /// collect). Long blocking waits inside the closure (sleeps, blocking reads)
 /// must be wrapped in `gc::block_quiescent` so the thread does not starve the
 /// stop-the-world rendezvous.
-pub(crate) fn spawn_gc_helper_thread<F, T>(f: F) -> crate::runtime::thread_compat::JoinHandle<T>
+pub(crate) fn spawn_gc_helper_thread<F, T>(
+    name: &str,
+    f: F,
+) -> crate::runtime::thread_compat::JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    spawn_registered_thread(None, f)
+    spawn_registered_thread(name, None, f)
 }
 
 fn spawn_registered_thread<F, T>(
+    name: &str,
     stack_size: Option<usize>,
     f: F,
 ) -> crate::runtime::thread_compat::JoinHandle<T>
@@ -59,7 +68,7 @@ where
     // without this a spawn burst starves every stop-the-world attempt — see
     // `gc::stw::preregister_worker_quiescent`.
     crate::gc::preregister_worker_quiescent();
-    crate::runtime::thread_compat::spawn_thread(stack_size, move || {
+    crate::runtime::thread_compat::spawn_thread(name, stack_size, move || {
         struct WorkerGuard;
         impl Drop for WorkerGuard {
             fn drop(&mut self) {

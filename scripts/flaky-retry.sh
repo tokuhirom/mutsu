@@ -56,6 +56,22 @@ while :; do
     printf '%s\n' "$output"
     exit 0
   fi
+  # A process killed by a signal (SIGSEGV, SIGABRT, ...) exits with
+  # rc = 128 + signum, so rc >= 128 means the interpreter crashed rather
+  # than merely failing an assertion. flaky-tests.txt's own preamble says
+  # "Crashes ... are never quarantined; they are bugs to fix" -- retrying
+  # a crash would silently launder memory-unsafety into a green run (see
+  # todo/deep/procasync-stress-segv.md). Fail immediately, never retry.
+  if [ $rc -ge 128 ]; then
+    mkdir -p "$(dirname "$FLAKY_RETRY_LOG")" 2>/dev/null
+    printf '%s attempt %d/%d died of signal %d (rc=%d) -- NOT retried\n' \
+      "$test_file" "$attempt" "$FLAKY_MAX_ATTEMPTS" "$((rc - 128))" "$rc" \
+      >> "$FLAKY_RETRY_LOG"
+    printf '# flaky-retry: %s died of signal %d -- NOT retried (see docs/flaky-test-policy.md)\n' \
+      "$test_file" "$((rc - 128))"
+    printf '%s\n' "$output"
+    exit $rc
+  fi
   mkdir -p "$(dirname "$FLAKY_RETRY_LOG")" 2>/dev/null
   printf '%s attempt %d/%d failed (rc=%d)\n' \
     "$test_file" "$attempt" "$FLAKY_MAX_ATTEMPTS" "$rc" >> "$FLAKY_RETRY_LOG"

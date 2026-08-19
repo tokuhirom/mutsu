@@ -266,7 +266,15 @@ jobs:
         # some temp directory this step never looks at. Verified: with the
         # relative default, a `run(..., :cwd(...))` child's report lands under
         # that cwd instead.
-        if: failure()
+        #
+        # `always()` (not `failure()`): a report can exist on an otherwise
+        # green job -- a deliberately-provoked subprocess crash a test
+        # asserts on (see the allowlist in report-crash-reports.sh), or,
+        # before this existed, a genuine crash whose job still passed. The
+        # script itself now fails the job when a report is NOT on that
+        # allowlist, so this step is where an unexpected crash actually
+        # surfaces (todo/deep/procasync-stress-segv.md).
+        if: always()
         run: scripts/report-crash-reports.sh
 
       - name: Upload roast log
@@ -658,7 +666,9 @@ jobs:
           echo "No GC verify violations across the suite."
 
       - name: Crash reports (fatal signals, GC on)
-        if: failure()
+        # `always()`, not `failure()` -- see the "Crash reports (fatal
+        # signals)" step above for why (todo/deep/procasync-stress-segv.md).
+        if: always()
         run: scripts/report-crash-reports.sh
 
       - name: Upload GC stress crash reports
@@ -773,7 +783,9 @@ jobs:
         run: scripts/report-flaky-retries.sh
 
       - name: Crash reports (fatal signals, JIT on)
-        if: failure()
+        # `always()`, not `failure()` -- see the "Crash reports (fatal
+        # signals)" step above for why (todo/deep/procasync-stress-segv.md).
+        if: always()
         run: scripts/report-crash-reports.sh
 
       - name: Upload JIT stress crash reports

@@ -125,6 +125,26 @@ Three properties worth stating explicitly:
    `tmp/flaky-retries.log`, and CI turns that into a `::warning::` annotation
    and a job-summary table. A quarantined test whose retry count climbs is
    getting worse, and that has to be visible.
+4. **A signal death is never retried, even inside a quarantined file.**
+   `flaky-retry.sh` checks the exit code of every attempt: a process killed by
+   a signal (SIGSEGV, SIGABRT, ...) exits with `rc = 128 + signum`, so `rc >=
+   128` fails the run immediately, with a `died of signal N -- NOT retried`
+   comment, instead of re-rolling. This enforces §3's "never quarantine a
+   crash" mechanically rather than relying on nobody ever listing a crashing
+   file. Before this check existed, `roast/integration/advent2014-day05.t`
+   (already quarantined for an unrelated timing reason) aborted with SIGABRT
+   from heap corruption, was silently retried, and the retry happened to pass
+   — a genuine memory-safety bug reached a green CI run undetected
+   (`todo/deep/procasync-stress-segv.md`). A companion allowlist in
+   `scripts/report-crash-reports.sh` catches the same class of bug even
+   *outside* a quarantined file's own process: that script now fails the job
+   whenever a crash report's `argv:` is not on a short list of known,
+   deliberately-provoked crashes (e.g. `roast/S29-os/system.t`'s
+   `NativeCall`/`strdup(0)` probe), and it now runs on every job (`if:
+   always()` in `ci.yml`) rather than only on an already-failing one — a
+   deliberately-crashed *subprocess* a test asserts on can otherwise leave the
+   overall job green while an unrelated genuine crash goes unnoticed the same
+   way.
 
 ## 5. Keeping the ledger honest
 

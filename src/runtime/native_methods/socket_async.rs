@@ -384,7 +384,7 @@ impl Interpreter {
                 // Registered spawn: it builds `Gc` values (the connection
                 // Instance) whose drop on a failed send must not race a cycle
                 // scan; the poll sleep is a quiescent safe region.
-                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                crate::runtime::builtins_system::spawn_gc_helper_thread("sock-async", move || {
                     // Use a short timeout on accept so we can check the closed flag
                     // TcpListener doesn't have set_timeout, so we use non-blocking + sleep
                     let _ = tcp_listener.set_nonblocking(true);
