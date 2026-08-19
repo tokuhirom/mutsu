@@ -3578,6 +3578,27 @@ pub(crate) struct CompiledCode {
     /// names into `free_var_writes` / `self_mutated` is what earns the binding a
     /// cell. Pin: `t/atomic-scalar-follows-its-binding.t`.
     pub(crate) atomic_target_syms: rustc_hash::FxHashSet<Symbol>,
+    /// Every variable NAME that reaches an rw-arg-sink builtin (`cas` and
+    /// siblings) as its target, at ANY nesting depth — a dedicated side
+    /// channel into `needs_env_sync`, kept separate from `free`/`free_writes`
+    /// on purpose.
+    ///
+    /// `cas $x, -> $v { ... }` passes `$x`'s name to the callee as a string
+    /// constant, so the op scan never sees a read OR a write of `$x` — it is
+    /// invisible to `free_var_syms`/`atomic_target_syms` alike. If a nested
+    /// `start`/closure body RMWs a captured scalar this way, the outer
+    /// frame's own per-store write to that scalar (after the closure was
+    /// spawned) can wrongly skip its env/cross-thread-name-lane mirror,
+    /// because nothing marked the slot `needs_env_sync`. Folding the name
+    /// into `free` instead (as `atomic_target_syms` does for the write-path)
+    /// would also change `block_captured_scalars`'s capture/cell-promotion
+    /// classification for it — `cas` is deliberately kept off the
+    /// cell-promoting lane (commit 85a43994e) and relies on its own
+    /// name-keyed cross-thread reconciliation, so this field only affects
+    /// `needs_env_sync`, never capture/ownership decisions. Bubbled
+    /// transitively through nested closures in `compute_free_vars` up to
+    /// (not past) the owning frame. Pin: `t/start-block-inline-arg-locals-clobber.t`.
+    pub(crate) rw_arg_env_sync_syms: rustc_hash::FxHashSet<Symbol>,
     /// Out-of-band named-argument specs for `CallFuncNamed` sites (indexed by
     /// the op's `spec_idx`): which of the call's stack values are named-arg
     /// VALUES and under which keys. Lets a literal `:key(val)` call site skip
@@ -4278,6 +4299,7 @@ impl CompiledCode {
             compiled_fns: None,
             atomic_env_sync_locals: Vec::new(),
             atomic_target_syms: rustc_hash::FxHashSet::default(),
+            rw_arg_env_sync_syms: rustc_hash::FxHashSet::default(),
             named_arg_specs: Vec::new(),
             closure_escapes: Vec::new(),
             is_routine: false,
@@ -4770,6 +4792,20 @@ impl CompiledCode {
             // first, so folding it here is harmless.)
             for &slot in &self.atomic_env_sync_locals {
                 if let Some(b) = self.needs_env_sync.get_mut(slot as usize) {
+                    *b = true;
+                }
+            }
+            // A local that reaches an rw-arg-sink builtin (`cas` et al.) inside
+            // a nested closure at ANY depth — `rw_arg_env_sync_syms`, already
+            // bubbled transitively up to the owning frame by
+            // `compute_free_vars` — needs the same treatment: the builtin
+            // resolves and reconciles it by NAME, so its env/cross-thread
+            // mirror must stay live even though it is otherwise unread by
+            // name in this frame.
+            for sym in &self.rw_arg_env_sync_syms {
+                if let Some(&slot) = sym.with_str(|s| locals_map.get(s))
+                    && let Some(b) = self.needs_env_sync.get_mut(slot)
+                {
                     *b = true;
                 }
             }
@@ -5706,6 +5742,19 @@ impl CompiledCode {
                     own_container_writes.insert(*sym);
                 } else {
                     free_container_writes.insert(*sym);
+                }
+            }
+            // Bubble rw-arg-sink targets (`cas` et al.) up as a DEDICATED side
+            // channel — deliberately NOT folded into `free`/`free_writes`
+            // above, since that would change this closure's own
+            // capture/cell-promotion classification for the name (see
+            // `rw_arg_env_sync_syms`'s doc comment). A name that is one of
+            // the nested closure's own locals stops here (it does not belong
+            // to an outer frame); everything else continues bubbling until it
+            // reaches the frame that owns the local.
+            for sym in &nested.rw_arg_env_sync_syms {
+                if !sym.with_str(|s| nested.locals.iter().any(|l| l == s)) {
+                    self.rw_arg_env_sync_syms.insert(*sym);
                 }
             }
         }
