@@ -52,7 +52,8 @@ impl Interpreter {
                 }
                 Value::hash(updated)
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(_) | ValueView::Slip(_) => {
+                let items = crate::runtime::utils::value_to_list(&normalized_value);
                 let mut updated = existing_hash;
                 let mut iter = items.iter().cloned();
                 if let Some(first) = iter.next()
@@ -63,7 +64,7 @@ impl Interpreter {
                 for item in iter {
                     if !Self::apply_hash_assignment_entry(&mut updated, item) {
                         return Value::array_with_kind(
-                            crate::value::Value::array_arc(items.clone().to_vec()),
+                            crate::value::Value::array_arc(items.clone()),
                             ArrayKind::List,
                         );
                     }

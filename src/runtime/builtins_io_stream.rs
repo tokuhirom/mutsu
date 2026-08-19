@@ -291,7 +291,7 @@ impl Interpreter {
             if close_after {
                 self.close_handle_value(&handle)?;
             }
-            return Ok(Value::seq_arc(std::sync::Arc::new(words)));
+            return Ok(Value::seq(words));
         }
         // Non-handle argument: delegate to string-splitting words (native function)
         if !args.is_empty()

@@ -12,6 +12,10 @@ is-deeply pair-signatures($hash-invert), ("1\ta", "2\tb"), 'Hash.invert swaps ke
 
 my $expanded = {a => (1, 2), b => 3..4}.invert;
 is $expanded.^name, 'Seq', 'Hash.invert with iterable values returns a Seq';
+# `.cache` reifies $expanded IN PLACE so it stays re-readable below (a bare
+# Seq's iterator is single-use — see docs/adr/0034 — and this Seq is read
+# again on line 20).
+$expanded.cache;
 is-deeply pair-signatures($expanded), ("1\ta", "2\ta", "3\tb", "4\tb"),
     'Hash.invert expands iterable values into separate pairs';
 is-deeply $expanded.sort.map({ .key.Str ~ "\t" ~ .value.Str }).List,

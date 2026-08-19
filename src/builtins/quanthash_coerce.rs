@@ -74,7 +74,12 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     add_item(elems, original_keys, inner_item, true);
                 }
             }
-            ValueView::Seq(inner) | ValueView::Slip(inner) if flatten => {
+            ValueView::Seq(inner) if flatten => {
+                for inner_item in inner.iter() {
+                    add_item(elems, original_keys, inner_item, true);
+                }
+            }
+            ValueView::Slip(inner) if flatten => {
                 for inner_item in inner.iter() {
                     add_item(elems, original_keys, inner_item, true);
                 }
@@ -99,7 +104,12 @@ pub(crate) fn to_set(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 add_item(&mut elems, &mut original_keys, item, false);
             }
         }
-        ValueView::Seq(items) | ValueView::Slip(items) => {
+        ValueView::Seq(items) => {
+            for item in items.iter() {
+                add_item(&mut elems, &mut original_keys, item, true);
+            }
+        }
+        ValueView::Slip(items) => {
             for item in items.iter() {
                 add_item(&mut elems, &mut original_keys, item, true);
             }
@@ -257,7 +267,12 @@ pub(crate) fn to_bag(target: Value, what: &str) -> Result<Value, RuntimeError> {
                     flatten_into(counts, original_keys, item, true)?;
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
+            ValueView::Seq(items) if flatten => {
+                for item in items.iter() {
+                    flatten_into(counts, original_keys, item, true)?;
+                }
+            }
+            ValueView::Slip(items) if flatten => {
                 for item in items.iter() {
                     flatten_into(counts, original_keys, item, true)?;
                 }
@@ -552,7 +567,12 @@ fn mix_add_item_with_keys(
                 mix_add_item_with_keys(weights, original_keys, sub_item, true)?;
             }
         }
-        ValueView::Seq(items) | ValueView::Slip(items) if flatten => {
+        ValueView::Seq(items) if flatten => {
+            for sub_item in items.iter() {
+                mix_add_item_with_keys(weights, original_keys, sub_item, true)?;
+            }
+        }
+        ValueView::Slip(items) if flatten => {
             for sub_item in items.iter() {
                 mix_add_item_with_keys(weights, original_keys, sub_item, true)?;
             }
@@ -614,7 +634,12 @@ pub(crate) fn to_mix(target: Value, what: &str) -> Result<Value, RuntimeError> {
                 mix_add_item_with_keys(&mut weights, &mut original_keys, item, true)?;
             }
         }
-        ValueView::Seq(items) | ValueView::Slip(items) => {
+        ValueView::Seq(items) => {
+            for item in items.iter() {
+                mix_add_item_with_keys(&mut weights, &mut original_keys, item, true)?;
+            }
+        }
+        ValueView::Slip(items) => {
             for item in items.iter() {
                 mix_add_item_with_keys(&mut weights, &mut original_keys, item, true)?;
             }

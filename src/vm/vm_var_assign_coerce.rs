@@ -275,9 +275,8 @@ impl Interpreter {
                 // "Odd number") — matching Raku.
                 build_items(self, items.iter().cloned().collect())?
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
-                build_items(self, items.iter().cloned().collect())?
-            }
+            ValueView::Seq(items) => build_items(self, items.iter().cloned().collect())?,
+            ValueView::Slip(items) => build_items(self, items.iter().cloned().collect())?,
             // A single bare scalar assigned to a hash is a one-element (odd)
             // initializer: `my %h = 1` is X::Hash::Store::OddNumber. Hashes,
             // pairs, sets, instances, Nil, etc. keep their existing coercion.
@@ -406,7 +405,16 @@ impl Interpreter {
                 };
                 Ok(self.tag_container_metadata(hash, info))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                let hash = self.build_hash_from_items_warning(items.iter().cloned().collect())?;
+                let info = crate::runtime::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                };
+                Ok(self.tag_container_metadata(hash, info))
+            }
+            ValueView::Slip(items) => {
                 let hash = self.build_hash_from_items_warning(items.iter().cloned().collect())?;
                 let info = crate::runtime::ContainerTypeInfo {
                     value_type: String::new(),
@@ -500,7 +508,8 @@ impl Interpreter {
     ) -> Result<Vec<Value>, RuntimeError> {
         Ok(match val.view() {
             ValueView::Array(v, ..) => v.as_ref().clone().into_items(),
-            ValueView::Seq(v) | ValueView::Slip(v) => v.iter().cloned().collect(),
+            ValueView::Seq(v) => v.iter().cloned().collect(),
+            ValueView::Slip(v) => v.iter().cloned().collect(),
             ValueView::Range(a, b) => {
                 let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
                 if end < a {

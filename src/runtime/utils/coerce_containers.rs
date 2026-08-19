@@ -72,10 +72,9 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             }
             set_hash_original_keys(Value::hash(map), original_keys)
         }
-        ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items)
-        | ValueView::Slip(items) => {
+        ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) | ValueView::Slip(_) => {
+            let items = crate::runtime::utils::value_to_list(&value);
+            let items = &items[..];
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
             let mut i = 0;
@@ -499,10 +498,9 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
                 Value::real_array(value_to_list(&value))
             }
         }
-        ValueView::Slip(items)
-        | ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items) => {
+        ValueView::Slip(_) | ValueView::Seq(_) | ValueView::HyperSeq(_) | ValueView::RaceSeq(_) => {
+            let items = value_to_list(&value);
+            let items = &items[..];
             // Like the `Array` arm: assigning to an `@` variable snapshots
             // element VALUES, so decontainerize any shared `ContainerRef` cells the
             // Seq carries (e.g. `my @g = @a.grep(...)`, whose Seq references @a's

@@ -21,7 +21,9 @@ pub(crate) fn build_junction(name: &str, args: Vec<Value>) -> Value {
         let arg = args.into_iter().next().unwrap();
         if let ValueView::Array(items, ..) = arg.view() {
             items.to_vec()
-        } else if let ValueView::Seq(items) | ValueView::Slip(items) = arg.view() {
+        } else if let ValueView::Seq(items) = arg.view() {
+            items.to_vec()
+        } else if let ValueView::Slip(items) = arg.view() {
             items.to_vec()
         } else if matches!(
             arg.view(),

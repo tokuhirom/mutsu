@@ -93,7 +93,8 @@ impl Interpreter {
             .flat_map(|a| match a.view() {
                 ValueView::Int(i) => vec![Value::int(i)],
                 ValueView::Array(items, ..) => items.to_vec(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                ValueView::Seq(items) => items.to_vec(),
+                ValueView::Slip(items) => items.to_vec(),
                 ValueView::Range(start, end) => (start..=end).map(Value::int).collect(),
                 ValueView::RangeExcl(start, end) => (start..end).map(Value::int).collect(),
                 ValueView::Instance {
@@ -119,7 +120,10 @@ impl Interpreter {
         for a in args {
             match a.view() {
                 ValueView::Array(items, ..) => flat_args.extend(items.iter().cloned()),
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    flat_args.extend(items.iter().cloned());
+                }
+                ValueView::Slip(items) => {
                     flat_args.extend(items.iter().cloned());
                 }
                 ValueView::Range(start, end) => {
@@ -308,7 +312,8 @@ impl Interpreter {
         for arg in args {
             match arg.view() {
                 ValueView::Array(vals, ..) => items.extend(vals.iter().cloned()),
-                ValueView::Seq(vals) | ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
+                ValueView::Seq(vals) => items.extend(vals.iter().cloned()),
+                ValueView::Slip(vals) => items.extend(vals.iter().cloned()),
                 ValueView::Instance {
                     class_name,
                     attributes,
@@ -320,9 +325,8 @@ impl Interpreter {
                         .map(Value::view)
                     {
                         Some(ValueView::Array(vals, ..)) => items.extend(vals.iter().cloned()),
-                        Some(ValueView::Seq(vals)) | Some(ValueView::Slip(vals)) => {
-                            items.extend(vals.iter().cloned())
-                        }
+                        Some(ValueView::Seq(vals)) => items.extend(vals.iter().cloned()),
+                        Some(ValueView::Slip(vals)) => items.extend(vals.iter().cloned()),
                         _ => {}
                     }
                 }

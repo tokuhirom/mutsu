@@ -149,7 +149,15 @@ pub(super) fn dispatch(
             | ValueView::Complex(..)
             | ValueView::Pair(..)
             | ValueView::ValuePair(..) => Some(Ok(Value::seq(vec![target.clone()]))),
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
+                // Seqs are deferred-materialized by the slow path before reaching
+                // here, so `items` already holds the pulled values.)
+                let mut reversed = items.to_vec();
+                reversed.reverse();
+                Some(Ok(Value::seq(reversed)))
+            }
+            ValueView::Slip(items) => {
                 // A non-lazy Seq/Slip reverses its materialized elements. (Lazy
                 // Seqs are deferred-materialized by the slow path before reaching
                 // here, so `items` already holds the pulled values.)
@@ -183,7 +191,21 @@ pub(super) fn dispatch(
                 }
                 Some(Ok(Value::seq(result)))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if !seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        seen.push(item.clone());
+                        result.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::seq(result)))
+            }
+            ValueView::Slip(items) => {
                 let mut seen: Vec<Value> = Vec::new();
                 let mut result = Vec::new();
                 for item in items.iter() {
@@ -218,7 +240,22 @@ pub(super) fn dispatch(
                 }
                 Some(Ok(Value::seq(result)))
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                let mut seen: Vec<Value> = Vec::new();
+                let mut result = Vec::new();
+                for item in items.iter() {
+                    if seen
+                        .iter()
+                        .any(|existing| crate::runtime::values_identical(existing, item))
+                    {
+                        result.push(item.clone());
+                    } else {
+                        seen.push(item.clone());
+                    }
+                }
+                Some(Ok(Value::seq(result)))
+            }
+            ValueView::Slip(items) => {
                 let mut seen: Vec<Value> = Vec::new();
                 let mut result = Vec::new();
                 for item in items.iter() {

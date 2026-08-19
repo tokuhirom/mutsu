@@ -42,10 +42,12 @@ impl Interpreter {
                 // A Seq/Slip (e.g. from `run (|@cmd).grep(...)`) is an iterable and
                 // flattens into the argument list just like an Array, matching Raku's
                 // slurpy `*@args` behavior for `run`.
-                ValueView::Seq(elems)
-                | ValueView::HyperSeq(elems)
-                | ValueView::RaceSeq(elems)
-                | ValueView::Slip(elems) => {
+                ValueView::Seq(elems) | ValueView::HyperSeq(elems) | ValueView::RaceSeq(elems) => {
+                    for elem in elems.iter() {
+                        positional.push(Value::to_string_value(elem));
+                    }
+                }
+                ValueView::Slip(elems) => {
                     for elem in elems.iter() {
                         positional.push(Value::to_string_value(elem));
                     }

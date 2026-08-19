@@ -350,7 +350,8 @@ impl Interpreter {
             for arg in &args {
                 let keys: Vec<Value> = match arg.view() {
                     ValueView::Array(items, _) => items.to_vec(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                    ValueView::Seq(items) => items.to_vec(),
+                    ValueView::Slip(items) => items.to_vec(),
                     _ => vec![arg.clone()],
                 };
                 for key in keys {
@@ -1853,7 +1854,7 @@ impl Interpreter {
             // `.map` returns a Seq (same contract as `dispatch_map_method` and the
             // native fast path); only the rw writeback below is special here.
             let result = match result.view() {
-                ValueView::Array(items, _) => Value::seq_arc(std::sync::Arc::new(items.to_vec())),
+                ValueView::Array(items, _) => Value::seq(items.to_vec()),
                 _ => result.clone(),
             };
             // Write mutated elements back to the source array. `.map(* *= 2)`

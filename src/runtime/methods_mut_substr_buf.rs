@@ -211,7 +211,12 @@ impl Interpreter {
                     result.extend(Self::flatten_buf_args(items.to_vec()));
                     true
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    // Recursively flatten
+                    result.extend(Self::flatten_buf_args(items.to_vec()));
+                    true
+                }
+                ValueView::Slip(items) => {
                     // Recursively flatten
                     result.extend(Self::flatten_buf_args(items.to_vec()));
                     true

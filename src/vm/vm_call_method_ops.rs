@@ -1,6 +1,5 @@
 use super::*;
 use crate::symbol::Symbol;
-use std::sync::Arc;
 
 /// True when a method call on `Nil` is absorbed by Raku's `Nil.FALLBACK` — i.e.
 /// `Nil` does not actually define it, so the call yields `Nil` instead of a
@@ -567,18 +566,11 @@ impl Interpreter {
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;
-        // Force LazyIoLines for methods that need its elements. Introspection
-        // must not consume the underlying handle: IO::Handle.lines/words return
-        // a lazy Seq, so asking for its type is side-effect free.
-        let target = if matches!(target.view(), ValueView::LazyIoLines { .. })
-            && !matches!(
-                method,
-                "kv" | "iterator" | "lazy" | "WHAT" | "^name" | "does" | "isa"
-            ) {
-            self.force_if_lazy_io_lines(target)?
-        } else {
-            target
-        };
+        // Reify/consume a deferred Seq (ADR-0034 §2.3) — including an
+        // `IO::Handle.lines`/`.words` source (formerly the separate
+        // `LazyIoLines` special case). Introspection must not consume the
+        // underlying handle: asking for its type is side-effect free.
+        let target = self.reify_or_consume_seq_target(target, method)?;
         // A method invocant that is a first-class element container
         // (`ContainerRef`, e.g. a `.grep` rw alias / `:=`-bound slot extracted via
         // `.head`/`.first`) is transparent to method dispatch — decontainerize it
@@ -632,7 +624,8 @@ impl Interpreter {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "hash-on-list");
             let items: Vec<Value> = match target.view() {
                 ValueView::Array(items, _) => items.iter().cloned().collect(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                ValueView::Seq(items) => items.iter().cloned().collect(),
+                ValueView::Slip(items) => items.iter().cloned().collect(),
                 _ => unreachable!(),
             };
             let result = self.build_hash_from_items_warning(items)?;
@@ -1260,14 +1253,14 @@ impl Interpreter {
             }
             // Materialize and wrap
             let items = crate::runtime::value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let body = crate::value::SeqBody::reified(items);
             // Remember the requested batch/degree so `.configuration` can report
             // them (the HyperSeq/RaceSeq does not carry the config).
-            crate::value::hyper_config_set(&arc, batch, degree);
+            body.set_hyper_config(batch, degree);
             let result = if method == "hyper" {
-                Value::hyper_seq_arc(arc)
+                Value::hyper_seq_body(body)
             } else {
-                Value::race_seq_arc(arc)
+                Value::race_seq_body(body)
             };
             self.stack.push(result);
             // Pure value wrap (no env write): no env_dirty mark needed.
@@ -1288,7 +1281,7 @@ impl Interpreter {
                         "callmethod",
                         "hyperseq-hyper",
                     );
-                    self.stack.push(Value::hyper_seq_arc(items_arc));
+                    self.stack.push(Value::hyper_seq_body(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
@@ -1301,7 +1294,7 @@ impl Interpreter {
                         "callmethod",
                         "hyperseq-race",
                     );
-                    self.stack.push(Value::race_seq_arc(items_arc));
+                    self.stack.push(Value::race_seq_body(items_arc));
                     // Pure rewrap (no env write): no env_dirty mark needed.
                     return Ok(());
                 }
@@ -1326,8 +1319,7 @@ impl Interpreter {
                         ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items.clone(),
                         _ => unreachable!(),
                     };
-                    let (batch, degree) =
-                        crate::value::hyper_config_get(&items_arc).unwrap_or((None, None));
+                    let (batch, degree) = items_arc.hyper_config().unwrap_or((None, None));
                     self.stack
                         .push(Interpreter::make_hyper_configuration(batch, degree));
                     // Pure value (no env write): no env_dirty mark needed.
@@ -1410,9 +1402,9 @@ impl Interpreter {
                         let result =
                             self.exec_hyper_race_map_grep(&items_arc, block, is_map, is_hyper)?;
                         let wrapped = if is_hyper {
-                            Value::hyper_seq_arc(Arc::new(result))
+                            Value::hyper_seq(result)
                         } else {
-                            Value::race_seq_arc(Arc::new(result))
+                            Value::race_seq(result)
                         };
                         crate::vm::vm_stats::record_dispatch_entry_intercept(
                             "callmethod",
@@ -1441,10 +1433,11 @@ impl Interpreter {
                     } else {
                         "RaceSeq"
                     };
-                    // `seq_consume` atomically checks-and-marks under one lock, so
-                    // concurrent workers racing for the single iterator resolve to
-                    // exactly one winner (rakudo #4413 concurrency contract).
-                    if crate::value::seq_consume(&items_arc).is_err() {
+                    // Atomic check-and-mark under one lock, so concurrent workers
+                    // racing for the single iterator resolve to exactly one winner
+                    // (rakudo #4413 concurrency contract). Orthogonal to
+                    // ADR-0034's reify/consume split — see `claim_hyper_iterator_once`.
+                    if items_arc.claim_hyper_iterator_once().is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
                     let list = Value::array_with_kind(
@@ -1693,7 +1686,10 @@ impl Interpreter {
                                             ValueView::Array(items, _) => {
                                                 flat.extend(items.iter().cloned());
                                             }
-                                            ValueView::Seq(items) | ValueView::Slip(items) => {
+                                            ValueView::Seq(items) => {
+                                                flat.extend(items.iter().cloned());
+                                            }
+                                            ValueView::Slip(items) => {
                                                 flat.extend(items.iter().cloned());
                                             }
                                             _ => flat.push(arg.clone()),
@@ -1764,7 +1760,10 @@ impl Interpreter {
                                     ValueView::Array(items, _) => {
                                         flat.extend(items.iter().cloned());
                                     }
-                                    ValueView::Seq(items) | ValueView::Slip(items) => {
+                                    ValueView::Seq(items) => {
+                                        flat.extend(items.iter().cloned());
+                                    }
+                                    ValueView::Slip(items) => {
                                         flat.extend(items.iter().cloned());
                                     }
                                     _ => flat.push(arg.clone()),
@@ -2005,9 +2004,9 @@ impl Interpreter {
                 {
                     let result_items = crate::runtime::value_to_list(&result);
                     let wrapped = if is_hyper {
-                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
+                        Value::hyper_seq(result_items)
                     } else {
-                        Value::race_seq_arc(std::sync::Arc::new(result_items))
+                        Value::race_seq(result_items)
                     };
                     self.stack.push(wrapped);
                 }

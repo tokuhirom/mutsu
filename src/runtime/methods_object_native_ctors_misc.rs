@@ -171,7 +171,7 @@ impl Interpreter {
             if matches!(iterator.view(), ValueView::Instance { .. })
                 && self.type_matches_value("PredictiveIterator", iterator)
             {
-                let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
+                let seq = Value::seq(Vec::new());
                 if let ValueView::Seq(items) = seq.view() {
                     let seq_id = std::sync::Arc::as_ptr(&items) as usize;
                     // Store off the scoped env so the association
@@ -204,27 +204,19 @@ impl Interpreter {
                     .or_else(|| map.get("stuff"))
                     .map(Value::view)
                 {
-                    return Value::seq_arc(std::sync::Arc::new(items.to_vec()));
+                    return Value::seq(items.to_vec());
                 }
             }
-            // Register deferred iterator: don't pull eagerly.
-            // Raku's Seq.new(iterator) creates a lazy Seq; pulling
-            // happens only when the Seq is actually consumed/iterated.
-            let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
-            if let ValueView::Seq(items) = seq.view() {
-                crate::value::seq_register_deferred_iter(&items, iterator.clone());
-            }
-            return seq;
+            // Store the iterator without pulling eagerly. Raku's
+            // Seq.new(iterator) creates a lazy Seq; pulling happens only
+            // when the Seq is actually consumed/iterated (ADR-0034).
+            return Value::seq_deferred(crate::value::SeqSource::Iterator(iterator.clone()));
         }
         // Seq.new() with no args creates a pre-consumed Seq.
         // This matches Raku: Seq.new() has no iterator, so it's
         // immediately consumed. This is what .raku returns for
         // consumed Seqs ("Seq.new()") so the EVAL roundtrip works.
-        let seq = Value::seq_arc(std::sync::Arc::new(Vec::new()));
-        if let ValueView::Seq(items) = seq.view() {
-            let _ = crate::value::seq_consume(&items);
-        }
-        seq
+        Value::seq_deferred(crate::value::SeqSource::Taken)
     }
 
     pub(crate) fn build_native_failure_value(&self, args: &[Value]) -> Value {

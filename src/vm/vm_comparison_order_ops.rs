@@ -4,6 +4,8 @@ use super::vm_comparison_ops::{
     is_range_value, is_rationalish, range_cmp, value_to_f64,
 };
 use super::*;
+use crate::value::SeqTaken;
+use std::sync::Arc;
 
 impl Interpreter {
     /// Coerce both operands of a string comparator (`eq`/`ne`/`lt`/`gt`/`le`/
@@ -562,6 +564,37 @@ impl Interpreter {
         }
     }
 
+    /// `Value::eqv` is a pure, interpreter-free comparison (see the
+    /// `resolve_proxies_in_value` comment below for the general shape of
+    /// this problem): it reads a `ValueView::Seq` body's elements directly
+    /// via `Deref`, which sees an EMPTY vec for a not-yet-touched deferred
+    /// body (`IO::Handle.lines`/`.words`, `Seq.new($iterator)`) — even one
+    /// `.cache`d moments earlier, since `.cache` itself is lazy and does not
+    /// pull (`SeqBody::mark_cache_requested`'s doc comment). Without this,
+    /// `$deferred_seq eqv $other` silently compares against zero elements
+    /// instead of throwing OR comparing correctly (surfaced by
+    /// `roast/S16-io/words.t`'s `is-eqv words(), <...>.Seq` after
+    /// `Test::Util`'s `is-eqv` explicitly `.cache`s both sides first). `eqv`
+    /// consumes a Seq operand in raku (measured: `$s eqv $s2; $s.List`
+    /// throws `X::Seq::Consumed`), so route through `take_seq_body` — which
+    /// correctly SERVES instead of stealing when `.cache` was requested or
+    /// the body was already `retained`.
+    fn reify_or_consume_eqv_operand(&mut self, value: Value) -> Result<Value, RuntimeError> {
+        let ValueView::Seq(body) = value.view() else {
+            return Ok(value);
+        };
+        if !body.needs_touch() {
+            return Ok(value);
+        }
+        let body = Arc::clone(&body);
+        let (items, outcome) = self.take_seq_body(&body)?;
+        Ok(if matches!(outcome, SeqTaken::Taken) {
+            Value::seq(items)
+        } else {
+            value
+        })
+    }
+
     pub(super) fn exec_eqv_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
@@ -585,6 +618,22 @@ impl Interpreter {
         // 2).map({ Proxy.new(...) }).List eqv (1, 2)` reads each element).
         let left = self.resolve_proxies_in_value(&left)?;
         let right = self.resolve_proxies_in_value(&right)?;
+        // `$a eqv $a` (the SAME Seq value, e.g. `my $b = $a; $a eqv $b`) is
+        // trivially True without touching the iterator at all — measured
+        // directly against raku: it neither throws NOR leaves `$a`
+        // consumed afterward (`roast/S03-operators/eqv.t`'s "Seq eqv Seq"
+        // subtest pins both). Comparing two DIFFERENT Seq values still
+        // consumes each independently below (measured: `$s eqv $s2; $s.List`
+        // throws) — this is narrowly an identity fast path, not a general
+        // eqv-skips-consumption rule.
+        if let (ValueView::Seq(lb), ValueView::Seq(rb)) = (left.view(), right.view())
+            && Arc::ptr_eq(&lb, &rb)
+        {
+            self.stack.push(Value::TRUE);
+            return Ok(());
+        }
+        let left = self.reify_or_consume_eqv_operand(left)?;
+        let right = self.reify_or_consume_eqv_operand(right)?;
         let result =
             self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))?;
         self.stack.push(result);

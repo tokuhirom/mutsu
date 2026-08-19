@@ -840,10 +840,11 @@ impl Interpreter {
                     items
                 };
                 positional_idx = args.len(); // consume all remaining args
-                let slurpy_value = if let Some(seq_arc) = &single_seq {
+                let slurpy_value = if let Some(seq_body) = &single_seq {
                     if pd.sigilless {
-                        // `+a` binding a lone Seq: keep it a Seq.
-                        Value::seq_arc(seq_arc.clone())
+                        // `+a` binding a lone Seq: keep it a Seq (same body —
+                        // preserves reification/consumption identity).
+                        Value::seq_body(seq_body.clone())
                     } else {
                         // `+@a` binding a lone Seq: a re-iterable List.
                         Value::array(items)

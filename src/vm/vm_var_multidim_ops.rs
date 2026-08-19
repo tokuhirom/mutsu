@@ -457,7 +457,7 @@ impl Interpreter {
         if let ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) =
             target.view()
         {
-            let arr = Value::array(items.as_ref().clone());
+            let arr = Value::array(items.to_vec());
             return self.multi_dim_index_read(&arr, dims);
         }
         // A non-positional value behaves as a single-element list when
@@ -739,7 +739,7 @@ impl Interpreter {
             | ValueView::RangeExclBoth(..)
             | ValueView::GenericRange { .. } => Value::array(expand_range_to_list(dim)),
             ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                Value::array(items.as_ref().clone())
+                Value::array(items.to_vec())
             }
             _ => dim.clone(),
         }

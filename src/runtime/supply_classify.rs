@@ -314,7 +314,10 @@ impl Interpreter {
     fn flatten_categorize_keys(mapped: Value) -> Vec<Value> {
         match mapped.view() {
             ValueView::Array(items, ..) => return items.iter().cloned().collect(),
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                return items.iter().cloned().collect();
+            }
+            ValueView::Slip(items) => {
                 return items.iter().cloned().collect();
             }
             // An empty/undefined mapper result contributes no keys.

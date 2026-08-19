@@ -198,10 +198,10 @@ impl Interpreter {
         value: &Value,
     ) -> Option<RuntimeError> {
         match value.view() {
-            ValueView::Seq(items)
-            | ValueView::Slip(items)
-            | ValueView::HyperSeq(items)
-            | ValueView::RaceSeq(items) => items
+            ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => items
+                .iter()
+                .find_map(|it| self.failure_to_runtime_error_if_unhandled(it)),
+            ValueView::Slip(items) => items
                 .iter()
                 .find_map(|it| self.failure_to_runtime_error_if_unhandled(it)),
             _ => None,

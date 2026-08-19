@@ -599,8 +599,8 @@ pub(crate) fn sort_value_generic(
                 }
             }
         }
-        ValueView::Seq(items) | ValueView::Slip(items) => {
-            let mut sorted = items.as_ref().clone();
+        ValueView::Seq(_) | ValueView::Slip(_) => {
+            let mut sorted = Interpreter::value_to_list(&target);
             if return_indices {
                 Ok(Value::array(sort_indices_generic(
                     caller,

@@ -114,10 +114,17 @@ impl Interpreter {
                 .map(|v| v.to_string_value())
                 .collect::<Vec<_>>()
                 .join(" ")),
-            // A lazy IO lines iterator (e.g. `$fh.lines`) must be forced before
-            // comparison so it stringifies as its contents rather than "(...)".
-            ValueView::LazyIoLines { handle, words, .. } => {
-                Ok(self.force_lazy_io_lines(handle, words)?.to_string_value())
+            // A deferred Seq (e.g. `$fh.lines`, `Seq.new($iter)`) must be
+            // reified before comparison so it stringifies as its contents
+            // rather than the empty seed (ADR-0034).
+            ValueView::Seq(body) if body.needs_touch() => {
+                let body = std::sync::Arc::clone(&body);
+                let items = self.reify_seq_body(&body)?;
+                Ok(items
+                    .iter()
+                    .map(|v| v.to_string_value())
+                    .collect::<Vec<_>>()
+                    .join(" "))
             }
             // `is $got, $expected` compares via Raku's `eq` (Str coercion), so an
             // object whose class defines a user `Stringy`/`Str` must be compared

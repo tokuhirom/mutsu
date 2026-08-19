@@ -20,8 +20,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if thunks.is_empty() {
             if scan {
-                self.stack
-                    .push(Value::seq_arc(std::sync::Arc::new(Vec::new())));
+                self.stack.push(Value::seq(Vec::new()));
             } else {
                 // Identity values
                 let identity = match op {
@@ -91,8 +90,7 @@ impl Interpreter {
                 last_val
             };
             if scan {
-                self.stack
-                    .push(Value::seq_arc(std::sync::Arc::new(results)));
+                self.stack.push(Value::seq(results));
             } else {
                 self.stack.push(final_result);
             }
@@ -157,8 +155,7 @@ impl Interpreter {
             }
         }
         if scan {
-            self.stack
-                .push(Value::seq_arc(std::sync::Arc::new(results)));
+            self.stack.push(Value::seq(results));
         } else {
             self.stack.push(acc);
         }

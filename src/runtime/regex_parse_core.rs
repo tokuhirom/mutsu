@@ -352,9 +352,8 @@ impl Interpreter {
         let value = self.env.get(env_key).cloned().unwrap_or(Value::NIL);
         let elements = match value.view() {
             ValueView::Array(arr, _) => arr.as_ref().clone(),
-            ValueView::Seq(items) | ValueView::Slip(items) => {
-                crate::value::ArrayData::new((**items).clone())
-            }
+            ValueView::Seq(items) => crate::value::ArrayData::new(items.to_vec()),
+            ValueView::Slip(items) => crate::value::ArrayData::new((**items).clone()),
             _ => crate::value::ArrayData::new(vec![value.clone()]),
         };
         let mut alt_patterns = Vec::new();

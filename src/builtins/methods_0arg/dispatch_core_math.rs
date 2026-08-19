@@ -98,7 +98,8 @@ pub(crate) fn tree_to_depth(v: &Value, depth: usize) -> Value {
     }
     let children = match v.view() {
         ValueView::Array(inner, ..) => inner.to_vec(),
-        ValueView::Seq(inner) | ValueView::Slip(inner) => inner.to_vec(),
+        ValueView::Seq(inner) => inner.to_vec(),
+        ValueView::Slip(inner) => inner.to_vec(),
         ValueView::Hash(_)
         | ValueView::Range(..)
         | ValueView::RangeExcl(..)
@@ -629,17 +630,17 @@ pub(super) fn dispatch(
                     Some(Ok(Value::NIL))
                 }
             }
-            ValueView::Seq(items) => {
-                // If there's a deferred iterator and the Seq is not cached, fall through
-                // to the runtime which will pull from the iterator.
-                if crate::value::seq_has_deferred_iter(&items)
-                    && !crate::value::seq_is_cached(&items)
-                {
+            ValueView::Seq(body) => {
+                // If there's a deferred source and `.cache` was not requested,
+                // fall through to the runtime, which can actually pull it.
+                if body.has_deferred_source() && !body.is_cached() {
                     return Some(None); // fall through to runtime
                 }
-                // Sinking a Seq marks it as consumed (unless already cached).
-                // Re-sinking a consumed Seq is ok (lives-ok).
-                crate::value::seq_sink(&items);
+                // No pull to run here (already reified/cache-requested/taken):
+                // `sink`'s pull closure is unreachable on this branch.
+                let _ = body.sink(|_| {
+                    unreachable!("sink() only pulls a deferred, non-cached source, excluded above")
+                });
                 Some(Ok(Value::NIL))
             }
             ValueView::LazyList(ll) => {
@@ -673,11 +674,10 @@ pub(super) fn dispatch(
             }
             // Single-threaded: materialize and wrap in HyperSeq/RaceSeq
             let items = runtime::value_to_list(target);
-            let arc = std::sync::Arc::new(items);
             let result = if method == "hyper" {
-                Value::hyper_seq_arc(arc)
+                Value::hyper_seq(items)
             } else {
-                Value::race_seq_arc(arc)
+                Value::race_seq(items)
             };
             Some(Some(Ok(result)))
         }

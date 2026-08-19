@@ -175,9 +175,10 @@ impl NanBox {
             | Kind::ArrayItemArray
             | Kind::ArrayShaped
             | Kind::ArrayLazy => Some(&unsafe { peek_gc::<ArrayData>(bits) }.items[..]),
-            Kind::Seq | Kind::Slip => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
+            Kind::Slip => Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..]),
+            Kind::Seq => Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..]),
             Kind::HyperSeq | Kind::RaceSeq if with_hyper => {
-                Some(&unsafe { peek_arc::<Vec<Value>>(bits) }[..])
+                Some(&unsafe { peek_arc::<crate::value::SeqBody>(bits) }[..])
             }
             _ => None,
         }
@@ -217,7 +218,6 @@ impl NanBox {
                 Kind::VarRef => unique::<VarRefBox>(bits),
                 Kind::Proxy => unique::<ProxyBox>(bits),
                 Kind::GenericRange => unique::<GenericRangeBox>(bits),
-                Kind::LazyIoLines => unique::<LazyIoLinesBox>(bits),
                 Kind::Enum => unique::<EnumBox>(bits),
                 Kind::ParametricRole => unique::<ParametricRoleBox>(bits),
                 Kind::CustomType => unique::<CustomTypeData>(bits),
@@ -574,15 +574,6 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                     package: r.package,
                     name: r.name,
                     is_regex: r.is_regex,
-                }
-            }
-            Kind::LazyIoLines => {
-                let l = peek_arc::<LazyIoLinesBox>(bits);
-                ValueView::LazyIoLines {
-                    handle: &l.handle,
-                    kv: l.kv,
-                    words: l.words,
-                    consumed: &l.consumed,
                 }
             }
             Kind::HashEntryRef => {

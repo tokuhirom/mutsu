@@ -45,7 +45,7 @@ impl Interpreter {
         }
 
         let Some(body_callable) = positional.first().cloned() else {
-            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
+            return Ok(Value::seq(Vec::new()));
         };
         let cond_callable = positional.get(1).cloned();
         let step_callable = positional.get(2).cloned();
@@ -57,13 +57,27 @@ impl Interpreter {
             let mut attrs = std::collections::HashMap::new();
             attrs.insert("from_loop_body".to_string(), body_callable);
             attrs.insert("from_loop_done".to_string(), Value::FALSE);
+            // `:label(...)` must travel with the iterator too — a `last`/`next`/
+            // `redo` raised inside the body is only consumed here if its label
+            // matches (or it has none), exactly like the eager loop below.
+            // Read back by `pull_from_loop_iterator_to_vec`
+            // (`vm/vm_helpers_lazy.rs`), the ONLY place this iterator is
+            // actually driven (a deferred `Seq.from-loop` has no eager loop of
+            // its own to raise the signal into — that is the whole point of it
+            // staying lazy).
+            attrs.insert(
+                "from_loop_label".to_string(),
+                match &label {
+                    Some(l) => Value::str(l.clone()),
+                    None => Value::NIL,
+                },
+            );
             let iter =
                 Value::make_instance(crate::symbol::Symbol::intern("FromLoopIterator"), attrs);
             // Wrap in a deferred-iterator Seq
-            let arc = std::sync::Arc::new(Vec::<Value>::new());
-            crate::value::seq_register_deferred_iter(&arc, iter.clone());
-            crate::value::seq_mark_lazy(&arc);
-            return Ok(Value::seq_arc(arc));
+            let body = crate::value::SeqBody::deferred(crate::value::SeqSource::Iterator(iter));
+            body.mark_lazy();
+            return Ok(Value::seq_body(body));
         }
 
         let label_matches = |error_label: &Option<String>| {

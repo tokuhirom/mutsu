@@ -10,7 +10,10 @@ type ProtectBlockCapturedNames = std::sync::Arc<Vec<String>>;
 impl Interpreter {
     pub(crate) fn composed_result_to_args(value: Value, prefer_single: bool) -> Vec<Value> {
         if prefer_single {
-            if let ValueView::Seq(items) | ValueView::Slip(items) = value.view() {
+            if let ValueView::Seq(items) = value.view() {
+                return vec![Value::array(items.to_vec())];
+            }
+            if let ValueView::Slip(items) = value.view() {
                 return vec![Value::array(items.to_vec())];
             }
             return vec![value];

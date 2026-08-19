@@ -91,12 +91,12 @@ impl Interpreter {
                 "eqv" => {
                     // Check if either side is a consumed Seq (throws X::Seq::Consumed)
                     if let ValueView::Seq(items) = left.view()
-                        && crate::value::seq_is_consumed(&items)
+                        && items.is_consumed()
                     {
                         return Err(crate::value::seq_consumed_error());
                     }
                     if let ValueView::Seq(items) = right.view()
-                        && crate::value::seq_is_consumed(&items)
+                        && items.is_consumed()
                     {
                         return Err(crate::value::seq_consumed_error());
                     }
@@ -285,12 +285,19 @@ impl Interpreter {
 
     fn seq_to_list(&mut self, v: &Value) -> Value {
         match v.view() {
-            // A `Seq.new($iterator)` stores its iterator deferred (empty backing
-            // vec). Pull every element before comparing, else it compares as the
-            // empty list (`is-deeply Seq.new($user-iter), (...)`).
-            ValueView::Seq(items) if crate::value::seq_has_deferred_iter(&items) => {
-                let pulled = self.materialize_deferred_seq(&items);
-                Value::array_with_kind(crate::value::Value::array_arc(pulled), ArrayKind::List)
+            // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines` —
+            // ADR-0034 folds the latter into the same `SeqSource`) must be
+            // pulled before comparing, else it compares as the empty list
+            // (`is-deeply Seq.new($user-iter), (...)`) or the opaque "(...)".
+            ValueView::Seq(body) if body.needs_touch() => {
+                let body = std::sync::Arc::clone(&body);
+                match self.reify_seq_body(&body) {
+                    Ok(pulled) => Value::array_with_kind(
+                        crate::value::Value::array_arc(pulled),
+                        ArrayKind::List,
+                    ),
+                    Err(_) => v.clone(),
+                }
             }
             ValueView::Seq(items) => Value::array_with_kind(
                 crate::value::Value::array_arc(items.clone().to_vec()),
@@ -303,20 +310,6 @@ impl Interpreter {
                 ),
                 Err(_) => v.clone(),
             },
-            // A lazy IO words/lines iterator must be drained before comparison so
-            // it compares as its contents rather than the opaque "(...)".
-            ValueView::LazyIoLines { handle, words, .. } => {
-                match self.force_lazy_io_lines(handle, words) {
-                    Ok(forced) => {
-                        let items = crate::runtime::utils::value_to_list(&forced);
-                        Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
-                            ArrayKind::List,
-                        )
-                    }
-                    Err(_) => v.clone(),
-                }
-            }
             _ => v.clone(),
         }
     }

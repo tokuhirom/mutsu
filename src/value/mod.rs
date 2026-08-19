@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak};
+use std::sync::{Arc, Condvar, Mutex, OnceLock, RwLock};
 
 use crate::ast::{ParamDef, Stmt};
 use crate::env::Env;
@@ -12,160 +12,11 @@ use crate::symbol::Symbol;
 use num_bigint::BigInt as NumBigInt;
 use num_integer::Integer;
 use num_traits::{Signed, ToPrimitive, Zero};
-/// Global list tracking consumed Seq instances via Weak references.
-/// Uses Weak<Vec<Value>> so that when the Seq is dropped, the Weak expires
-/// and won't cause false positives from address reuse.
-static CONSUMED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
-
-fn consumed_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
-    CONSUMED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Records the `:batch`/`:degree` a `HyperSeq`/`RaceSeq` was created with, keyed
-/// by its inner element `Arc` (Weak, so entries expire with the sequence). Read
-/// back by `.configuration` (`HyperSeq.configuration.batch`/`.degree`). `None`
-/// means the value was not specified, so `.configuration` reports the default.
-#[allow(clippy::type_complexity)]
-static HYPER_CONFIGS: OnceLock<Mutex<Vec<(Weak<Vec<Value>>, Option<i64>, Option<i64>)>>> =
-    OnceLock::new();
-
-#[allow(clippy::type_complexity)]
-fn hyper_configs() -> &'static Mutex<Vec<(Weak<Vec<Value>>, Option<i64>, Option<i64>)>> {
-    HYPER_CONFIGS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Associate a `:batch`/`:degree` configuration with a hyper/race sequence's
-/// element `Arc`, so a later `.configuration` can report it.
-pub(crate) fn hyper_config_set(arc_ptr: &Arc<Vec<Value>>, batch: Option<i64>, degree: Option<i64>) {
-    let mut list = hyper_configs().lock().unwrap();
-    list.retain(|(w, ..)| w.strong_count() > 0);
-    list.push((Arc::downgrade(arc_ptr), batch, degree));
-}
-
-/// Look up the recorded `:batch`/`:degree` for a hyper/race sequence's element
-/// `Arc`. Returns `None` when no configuration was recorded (e.g. a default
-/// `Iterable.hyper` or a `.map`-derived sequence).
-pub(crate) fn hyper_config_get(arc_ptr: &Arc<Vec<Value>>) -> Option<(Option<i64>, Option<i64>)> {
-    let list = hyper_configs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    for (w, batch, degree) in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return Some((*batch, *degree));
-        }
-    }
-    None
-}
-
-/// Global set tracking "cached" Seq instances (have called .cache).
-static CACHED_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
-
-fn cached_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
-    CACHED_SEQS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Global map from Seq Arc ptr (as usize) to a deferred iterator Value.
-/// Used for `Seq.new(iterator)` to defer pulling until the Seq is consumed.
-static DEFERRED_SEQ_ITERS: OnceLock<Mutex<HashMap<usize, Value>>> = OnceLock::new();
-
-fn deferred_seq_iters() -> &'static Mutex<HashMap<usize, Value>> {
-    DEFERRED_SEQ_ITERS.get_or_init(|| Mutex::new(HashMap::new()))
-}
-
-/// Global set tracking lazy Seq instances (e.g. from Seq.from-loop without condition).
-static LAZY_SEQS: OnceLock<Mutex<Vec<Weak<Vec<Value>>>>> = OnceLock::new();
-
-fn lazy_seqs() -> &'static Mutex<Vec<Weak<Vec<Value>>>> {
-    LAZY_SEQS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Mark a Seq as lazy (infinite, from Seq.from-loop without condition).
-pub(crate) fn seq_mark_lazy(arc_ptr: &Arc<Vec<Value>>) {
-    let mut list = lazy_seqs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    list.retain(|w| w.strong_count() > 0);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return; // already tracked
-        }
-    }
-    list.push(std::sync::Arc::downgrade(arc_ptr));
-}
-
-/// Check if a Seq has been marked as lazy.
-pub(crate) fn seq_is_lazy(arc_ptr: &Arc<Vec<Value>>) -> bool {
-    let list = lazy_seqs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return true;
-        }
-    }
-    false
-}
-
 /// Global set tracking consumed LazyList instances (gather-based Seqs).
 static CONSUMED_LAZYLISTS: OnceLock<Mutex<Vec<crate::gc::WeakGc<LazyList>>>> = OnceLock::new();
 
 fn consumed_lazylists() -> &'static Mutex<Vec<crate::gc::WeakGc<LazyList>>> {
     CONSUMED_LAZYLISTS.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Register a deferred iterator for a Seq. Called by Seq.new(iterator).
-pub(crate) fn seq_register_deferred_iter(arc_ptr: &Arc<Vec<Value>>, iterator: Value) {
-    let key = Arc::as_ptr(arc_ptr) as usize;
-    let mut map = deferred_seq_iters().lock().unwrap();
-    map.insert(key, iterator);
-}
-
-/// Take the deferred iterator for a Seq (if any). Removes and returns it.
-pub(crate) fn seq_take_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> Option<Value> {
-    let key = Arc::as_ptr(arc_ptr) as usize;
-    let mut map = deferred_seq_iters().lock().unwrap();
-    map.remove(&key)
-}
-
-/// Check if a Seq has a deferred iterator.
-pub(crate) fn seq_has_deferred_iter(arc_ptr: &Arc<Vec<Value>>) -> bool {
-    let key = Arc::as_ptr(arc_ptr) as usize;
-    let map = deferred_seq_iters().lock().unwrap();
-    map.contains_key(&key)
-}
-
-/// Whether a method call on a `Seq.new($iterator)` (deferred-iterator) Seq must
-/// pull every element from the iterator FIRST (reify), or leave the Seq lazy.
-///
-/// The listed methods are non-consuming: introspection and laziness-preserving
-/// coercions that have a correct native impl reading no elements. `sink` is
-/// excluded because the interpreter's `call_method_with_values` has a dedicated
-/// deferred-`sink` handler (pull for an uncached Seq, no pull for a cached one)
-/// that the blanket reify would bypass. Everything else (`.List`/`.elems`/`.sort`
-/// /`.map`/`for`/...) reads the elements and so must reify first. This is the
-/// shared exemption used by the VM fast-path reify guards (native/mut/interpret).
-pub(crate) fn seq_deferred_method_keeps_lazy(method: &str) -> bool {
-    matches!(
-        method,
-        "cache"
-            | "raku"
-            | "perl"
-            | "is-lazy"
-            | "iterator"
-            | "sink"
-            | "lazy"
-            | "WHAT"
-            | "WHICH"
-            | "WHERE"
-            | "HOW"
-            | "WHY"
-            | "VAR"
-            | "DEFINITE"
-            | "defined"
-    )
 }
 
 /// Mark a LazyList (from gather) as consumed.
@@ -187,35 +38,6 @@ pub(crate) fn lazylist_is_consumed(gc_ptr: &crate::gc::Gc<LazyList>) -> bool {
     let list = consumed_lazylists().lock().unwrap();
     let target_ptr = crate::gc::Gc::as_ptr(gc_ptr);
     list.iter().any(|w| w.as_ptr() == target_ptr)
-}
-
-/// Mark a Seq as cached (called .cache on it). Cached Seqs do not get consumed.
-pub(crate) fn seq_mark_cached(arc_ptr: &Arc<Vec<Value>>) {
-    let mut list = cached_seqs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    list.retain(|w| w.strong_count() > 0);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return; // already tracked
-        }
-    }
-    list.push(std::sync::Arc::downgrade(arc_ptr));
-}
-
-/// Check if a Seq has been marked as cached.
-pub(crate) fn seq_is_cached(arc_ptr: &Arc<Vec<Value>>) -> bool {
-    let list = cached_seqs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return true;
-        }
-    }
-    false
 }
 
 /// Build a structured X::Seq::Consumed error.
@@ -241,52 +63,6 @@ pub(crate) fn seq_consumed_error_for(type_name: &str) -> RuntimeError {
     let mut err = RuntimeError::new(&msg);
     err.exception = Some(Box::new(ex));
     err
-}
-
-/// Mark a Seq (identified by its Arc) as consumed.
-/// Returns Err if the Seq was already consumed.
-pub(crate) fn seq_consume(arc_ptr: &Arc<Vec<Value>>) -> Result<(), RuntimeError> {
-    let mut list = consumed_seqs().lock().unwrap();
-    // Clean up expired Weak references and check for duplicates
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    list.retain(|w| w.strong_count() > 0);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return Err(seq_consumed_error());
-        }
-    }
-    list.push(std::sync::Arc::downgrade(arc_ptr));
-    Ok(())
-}
-
-/// Check if a Seq (identified by its Arc) has been consumed.
-pub(crate) fn seq_is_consumed(arc_ptr: &Arc<Vec<Value>>) -> bool {
-    let list = consumed_seqs().lock().unwrap();
-    let target_ptr = Arc::as_ptr(arc_ptr);
-    for w in list.iter() {
-        if let Some(existing) = w.upgrade()
-            && Arc::as_ptr(&existing) == target_ptr
-        {
-            return true;
-        }
-    }
-    false
-}
-
-/// For sink: if cached, do nothing; if consumed, do nothing (re-sink is ok);
-/// if not cached and not consumed, mark as consumed.
-pub(crate) fn seq_sink(arc_ptr: &Arc<Vec<Value>>) {
-    if seq_is_cached(arc_ptr) {
-        seq_take_deferred_iter(arc_ptr); // discard deferred iter if any
-        return;
-    }
-    if seq_is_consumed(arc_ptr) {
-        return;
-    }
-    let _ = seq_consume(arc_ptr);
-    // Caller is responsible for pulling from deferred iter if needed.
 }
 
 /// Shared mutable attribute storage for Proxy subclasses.
@@ -450,6 +226,7 @@ mod nanbox;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
 mod native_backing;
+pub(crate) mod seq_body;
 mod serde_support;
 pub(crate) mod signature;
 mod sync_cell;
@@ -483,6 +260,9 @@ pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
+pub(crate) use seq_body::{
+    SeqBody, SeqSource, SeqTaken, seq_method_consumes, seq_method_never_touches,
+};
 
 /// A `'static` Nil for call sites that keep a `&Value` beyond one expression:
 /// `&Value::NIL` stopped const-promoting once `Value` gained `Drop` (the
@@ -1414,12 +1194,17 @@ pub(in crate::value) enum ValueRepr {
         kind: JunctionKind,
         values: Arc<Vec<Value>>,
     },
-    Seq(Arc<Vec<Value>>),
+    /// `Arc<SeqBody>`, not a bare element `Arc<Vec<Value>>` — the reification
+    /// and consumption state (`SeqSource`) live in the body itself (ADR-0034),
+    /// so every alias of one `Seq` observes a `.cache` (or any other
+    /// non-consuming touch) that reifies it. `SeqBody: Deref<Target =
+    /// Vec<Value>>` keeps every existing element-read call site unchanged.
+    Seq(Arc<SeqBody>),
     /// HyperSeq: result of `.hyper` — order-preserving parallel map/grep
     /// (worker threads, see `vm_hyper_race_parallel.rs`).
-    HyperSeq(Arc<Vec<Value>>),
+    HyperSeq(Arc<SeqBody>),
     /// RaceSeq: result of `.race` — unordered parallel map/grep (worker threads).
-    RaceSeq(Arc<Vec<Value>>),
+    RaceSeq(Arc<SeqBody>),
     Slip(Arc<Vec<Value>>),
     LazyList(crate::gc::Gc<LazyList>),
     Version {
@@ -1517,19 +1302,6 @@ pub(in crate::value) enum ValueRepr {
     /// A lazy thunk: wraps a Sub that is evaluated on first access and cached.
     /// Used by `lazy { ... }` statement prefix.
     LazyThunk(Arc<LazyThunkData>),
-    /// Lazy IO lines iterator. Reads lines from a file handle on demand.
-    /// When `kv` is true, produces index-value pairs (for `.kv`).
-    LazyIoLines {
-        handle: Box<Value>,
-        kv: bool,
-        /// When true, the lazy iterator yields whitespace-delimited *words*
-        /// (via `read_word_from_handle_value`) rather than lines. Used by
-        /// `words($fh)` so a partial consumer leaves the handle open.
-        words: bool,
-        /// Shared one-shot guard. Clones and lazy-preserving views (such as
-        /// `.kv`) must compete for the same underlying iterator.
-        consumed: Arc<std::sync::atomic::AtomicBool>,
-    },
     /// A deferred write-through reference to a (possibly not-yet-existent) hash
     /// entry reached by `path` from `hash`. This is the sole survivor of the old
     /// slot-reference era — NOT a stale Arc+index back-reference, but a vivification
@@ -1734,16 +1506,16 @@ impl Value {
         Value::from_repr(ValueRepr::WeakSub(data))
     }
     #[inline]
-    pub(in crate::value) fn Seq(items: Arc<Vec<Value>>) -> Value {
-        Value::from_repr(ValueRepr::Seq(items))
+    pub(in crate::value) fn Seq(body: Arc<SeqBody>) -> Value {
+        Value::from_repr(ValueRepr::Seq(body))
     }
     #[inline]
-    pub(in crate::value) fn HyperSeq(items: Arc<Vec<Value>>) -> Value {
-        Value::from_repr(ValueRepr::HyperSeq(items))
+    pub(in crate::value) fn HyperSeq(body: Arc<SeqBody>) -> Value {
+        Value::from_repr(ValueRepr::HyperSeq(body))
     }
     #[inline]
-    pub(in crate::value) fn RaceSeq(items: Arc<Vec<Value>>) -> Value {
-        Value::from_repr(ValueRepr::RaceSeq(items))
+    pub(in crate::value) fn RaceSeq(body: Arc<SeqBody>) -> Value {
+        Value::from_repr(ValueRepr::RaceSeq(body))
     }
     #[inline]
     pub(in crate::value) fn Slip(items: Arc<Vec<Value>>) -> Value {

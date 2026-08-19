@@ -125,7 +125,13 @@ impl Value {
             },
             ValueView::Slip(items) => !items.is_empty(),
             ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
-                !items.is_empty()
+                // `truthy` cannot pull (`&self`, no Interpreter access), so a
+                // not-yet-read `IO::Handle.lines`/`.words` source (formerly
+                // the separate `LazyIoLines`, always-truthy special case)
+                // reports `true` without peeking. Every other Seq (reified,
+                // or a not-yet-touched `Iterator` source reading its still-
+                // empty seed) uses the element count.
+                items.is_io_lines_source() || !items.is_empty()
             }
             ValueView::LazyList(_) => true,
             ValueView::Promise(p) => p.is_resolved(),
@@ -158,7 +164,6 @@ impl Value {
                     true
                 }
             }
-            ValueView::LazyIoLines { .. } => true,
             // An unmaterialized deferred bind token is undefined (and hence
             // falsy) until written through — see `value_is_defined`.
             ValueView::HashEntryRef { .. } => false,

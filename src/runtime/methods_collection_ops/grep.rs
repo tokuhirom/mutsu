@@ -459,7 +459,10 @@ impl Interpreter {
                     GrepAdverb::V => Ok(Value::str_arc(s.clone())),
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
+            }
+            ValueView::Slip(items) => {
                 self.eval_grep_with_adverb(args.first().cloned(), items.to_vec(), &grep_adverb)
             }
             ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) | ValueView::Hash(..) => {

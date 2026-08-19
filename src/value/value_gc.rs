@@ -136,10 +136,16 @@ impl Value {
                 }
             }
             ValueView::VarRef { value, .. } => value.gc_trace(visit),
-            ValueView::Seq(items)
-            | ValueView::HyperSeq(items)
-            | ValueView::RaceSeq(items)
-            | ValueView::Slip(items) => trace_shared_slice(&items, visit),
+            ValueView::Slip(items) => trace_shared_slice(&items, visit),
+            // `SeqBody` holds its own `Value` edges (the retained decode
+            // generations AND `SeqSource`'s `Iterator`/`IoLines` handle
+            // value) — `trace_edges` walks both, never syncing/pulling
+            // (ADR-0034 §2.5, mirroring `NativeBacking::trace_edges`).
+            ValueView::Seq(body) | ValueView::HyperSeq(body) | ValueView::RaceSeq(body) => {
+                if uniquely_owned(&body) {
+                    body.trace_edges(visit);
+                }
+            }
             // The mixin's overrides map is a `Gc` node of its own, so yield the
             // node and let its `Trace` impl walk the override values — no
             // uniqueness gate needed (the shared-wrapper phantom-edge problem
@@ -161,9 +167,6 @@ impl Value {
                 fetcher.gc_trace(visit);
                 storer.gc_trace(visit);
             }
-            // Uniquely-owned `Box<Value>` wrappers: recurse (no sharing, so the
-            // recursion visits each edge exactly once).
-            ValueView::LazyIoLines { handle, .. } => handle.gc_trace(visit),
             // An enum value can carry an arbitrary `Value` payload.
             ValueView::Enum {
                 value: EnumValue::Generic(v),
@@ -641,6 +644,7 @@ impl SharedChannel {
 
 #[cfg(test)]
 mod tests {
+    use super::super::SeqBody;
     use super::*;
     use std::sync::Arc;
 
@@ -837,10 +841,10 @@ mod tests {
     #[test]
     fn shared_arc_wrapper_is_not_traced_only_unique_is() {
         // A uniquely-owned Seq yields its nested `Gc` node...
-        let seq = Value::Seq(Arc::new(vec![fresh_hash_node()]));
+        let seq = Value::Seq(SeqBody::reified(vec![fresh_hash_node()]));
         assert_eq!(gc_trace_node_count(&seq), 1);
 
-        // ...but once the backing `Arc<Vec>` is shared (strong_count > 1),
+        // ...but once the backing `Arc<SeqBody>` is shared (strong_count > 1),
         // gc_trace must NOT recurse: inlining a shared wrapper into every
         // holder's child list would report phantom edges that over-decrement
         // the nested node's strong count during trial deletion.

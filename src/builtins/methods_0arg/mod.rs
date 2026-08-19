@@ -375,10 +375,26 @@ pub(crate) fn native_method_0arg(
         if method == "cache" {
             // .cache marks as cached; handled fully here (the actual cache impl is
             // in the per-method handler below, this just marks state).
-            crate::value::seq_mark_cached(&items);
-        } else if method == "is-lazy" && crate::value::seq_is_consumed(&items) {
+            items.mark_cache_requested();
+        } else if method == "is-lazy" && items.is_consumed() {
             // Read-only check: throws on consumed Seq but does NOT consume.
             return Some(Err(crate::value::seq_consumed_error()));
+        } else if method == "kv"
+            && let Some((_, _, true)) = items.peek_io_lines_parts()
+        {
+            // `.kv` on a not-yet-touched `IO::Handle.lines`/`.words` Seq is
+            // itself terminal: `reify_or_consume_seq_target`'s own `"kv"`
+            // special case (`vm/vm_helpers_lazy.rs`) already built this
+            // exact value — a fresh deferred Seq over the same handle with
+            // `IoLines`'s `kv` flag flipped on, so a `for` loop can still
+            // stream it one line at a time (`claim_io_lines_for_streaming`).
+            // Reading its (still-empty) elements here via `items.to_vec()`
+            // and re-running `.kv`'s general positional-index transform
+            // would silently produce an EMPTY result instead — self-check
+            // and pass it through unchanged, exactly like
+            // `dispatch_iterator_method`'s "already an Iterator instance"
+            // short-circuit (`roast/S16-filehandles/io_in_for_loops.t`).
+            return Some(Ok(target.clone()));
         }
     }
 
@@ -961,7 +977,7 @@ pub(crate) fn is_value_lazy(value: &Value) -> bool {
     matches!(value.view(), ValueView::LazyList(ll) if !ll.is_cat_pull())
         || matches!(value.view(), ValueView::Array(_, kind) if kind.is_lazy())
         || is_infinite_range(value)
-        || matches!(value.view(), ValueView::Seq(items) if crate::value::seq_is_lazy(&items))
+        || matches!(value.view(), ValueView::Seq(items) if items.is_lazy())
 }
 
 /// Format a range endpoint for display, converting i64::MAX to Inf and i64::MIN to -Inf.

@@ -60,6 +60,34 @@ impl Interpreter {
                     let items: Vec<Value> = (start..end).map(Value::int).collect();
                     Value::real_array(items)
                 }
+                // A Seq assigned to an `@`-sigiled attribute (`has Pair
+                // @.parameters` populated via `Foo.bless(parameters =>
+                // <Seq>)`) must materialize into a real, freely-re-readable
+                // Array — exactly like `my @a = <Seq>` already does — NOT
+                // keep the raw Seq as the attribute's stored value. Without
+                // this, every later read of the attribute (`@!parameters`
+                // inside a method, `.parameters` from outside) touches the
+                // SAME single-use Seq body: the first read (ADR-0034's
+                // `seq_method_consumes`, e.g. `.List`) correctly steals it,
+                // and every later read throws `X::Seq::Consumed` on what
+                // looks like a perfectly ordinary attribute access
+                // (surfaced by Cro::Core's `mediatype.rakutest`: `.parameters`
+                // read via `.List` in one test, then read again inside
+                // `.Str`'s `@!parameters.map(...)`).
+                //
+                // This function has no `&mut Interpreter` to force a
+                // genuinely deferred source (`Seq.new($iterator)`,
+                // `IO::Handle.lines`) with, so it only materializes an
+                // ALREADY-available body (`Value::seq(vec)`-shaped, or one a
+                // prior touch already reified/took) — `.to_vec()` reads
+                // `SeqBody`'s current elements via `Deref`, correct for
+                // those. A body still deferred passes through unmaterialized
+                // (today's behavior, not made worse): the first read still
+                // consumes it correctly, only a repeat read stays wrong,
+                // same as before this fix.
+                ValueView::Seq(items) if !items.has_deferred_source() => {
+                    Value::real_array(items.to_vec())
+                }
                 _ => val.clone(),
             },
             '%' => match val.view() {

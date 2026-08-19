@@ -148,7 +148,6 @@ impl Value {
                 }
                 "Scalar" // unforced lazy thunk
             }
-            ValueView::LazyIoLines { .. } => "Seq",
             ValueView::HashEntryRef { .. } => {
                 return self.hash_entry_read().isa_check(type_name);
             }

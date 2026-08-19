@@ -1275,7 +1275,8 @@ impl Interpreter {
                     let elems: Vec<Value> = match values_arg {
                         Some(v) => match v.view() {
                             ValueView::Array(items, ..) => items.to_vec(),
-                            ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                            ValueView::Seq(items) => items.to_vec(),
+                            ValueView::Slip(items) => items.to_vec(),
                             _ => vec![v.clone()],
                         },
                         None => vec![],
@@ -1311,7 +1312,8 @@ impl Interpreter {
                         let mut result = if let Some(data_val) = data {
                             let data_items = match data_val.view() {
                                 ValueView::Array(items, ..) => items.to_vec(),
-                                ValueView::Seq(items) | ValueView::Slip(items) => items.to_vec(),
+                                ValueView::Seq(items) => items.to_vec(),
+                                ValueView::Slip(items) => items.to_vec(),
                                 _ => vec![data_val.clone()],
                             };
                             if let ValueView::Array(items, is_arr) = shaped.view() {
@@ -1866,12 +1868,18 @@ impl Interpreter {
                 // `.^name` is `Slip` and whose re-iteration differs from raku's `Array`.
                 for attr in &class_attrs_info {
                     let attr_name = &attr.name;
-                    if attr.sigil == '@'
-                        && let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
-                            attrs.get(attr_name).map(Value::view)
-                    {
+                    let flat_items = if attr.sigil == '@' {
+                        match attrs.get(attr_name).map(Value::view) {
+                            Some(ValueView::Slip(items)) => Some((**items).clone()),
+                            Some(ValueView::Seq(items)) => Some(items.to_vec()),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(items) = flat_items {
                         let flattened = Value::array_with_kind(
-                            crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
+                            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                             ArrayKind::Array,
                         );
                         attrs.insert(attr_name.clone(), flattened);

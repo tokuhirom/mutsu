@@ -107,7 +107,7 @@ impl Interpreter {
                     )))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::seq_arc(std::sync::Arc::new(results))
+                    Value::seq(results)
                 }
             }
             "Z" => {
@@ -134,7 +134,10 @@ impl Interpreter {
                     let nested_left = if left_iter.len() == 2 {
                         let second = left_iter.nth(1);
                         match second.view() {
-                            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+                            ValueView::Array(..) | ValueView::Seq(_) => {
+                                Some((left_iter.nth(0), runtime::value_to_list(&second)))
+                            }
+                            ValueView::Slip(_) => {
                                 Some((left_iter.nth(0), runtime::value_to_list(&second)))
                             }
                             _ => None,
@@ -168,7 +171,7 @@ impl Interpreter {
                     )))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::seq_arc(std::sync::Arc::new(results))
+                    Value::seq(results)
                 }
             }
             "!" => {
@@ -246,7 +249,7 @@ impl Interpreter {
             }
         }
 
-        let result_seq = Value::seq_arc(std::sync::Arc::new(results));
+        let result_seq = Value::seq(results);
         let mutated_left = if left_is_listy {
             Value::real_array(left_cells)
         } else {
@@ -338,7 +341,7 @@ impl Interpreter {
                     )))
                 } else {
                     // `X` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::seq_arc(std::sync::Arc::new(results))
+                    Value::seq(results)
                 }
             }
             "Z" => {
@@ -361,7 +364,7 @@ impl Interpreter {
                     )))
                 } else {
                     // `Z` is a Seq (so `.^name` is Seq, `.raku` shows `.Seq`).
-                    Value::seq_arc(std::sync::Arc::new(results))
+                    Value::seq(results)
                 }
             }
             _ => {

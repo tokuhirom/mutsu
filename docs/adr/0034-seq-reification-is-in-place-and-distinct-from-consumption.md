@@ -1,6 +1,6 @@
 # ADR-0034: Reifying a `Seq` fills the Seq itself — reification and consumption are two operations, not one
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Accepted — implemented (2026-08-19/20, all 5 phases; see §7.1 Outcome)
 - **Date**: 2026-08-19
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0030](0030-native-array-decode-cache-interior-mutability.md) (the `SyncUnsafeCell` primitive and the generation-graveyard technique this ADR reuses verbatim), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (the *other* interior-mutability primitive, and why it does not apply here), [ADR-0015](0015-native-backed-container-storage-and-repr-bodies.md) (the precedent for giving a container a real body instead of a bare payload), [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (the collector that currently cannot see a deferred Seq's iterator)
@@ -479,6 +479,64 @@ roast sweep. `t/try-sink-semantics.t` pins the cells that already match.
 
 ---
 
+## 7.1 Outcome (2026-08-19/20)
+
+Implemented in one PR: phases 1-4 landed together (phase 5, the Miri probe module, was **not**
+done — see below), matching open question 1's recommendation. `SeqBody`/`SeqSource`/`SeqState`
+behind a `Mutex` (open question 2's recommendation, unchanged — no bench pressure surfaced).
+
+The headline repro (§1.1) is fixed and verified against the ADR's own reproduction script
+line-for-line: `$b.defined; $b.Str` on a fresh `IO::Handle.lines` Seq now matches raku exactly. The
+§1.3 alias-preservation rows (1-3, 5) and the §1.4 consumption matrix are pinned by
+`t/seq-reify-preserves-aliases.t` and `t/seq-consumption-matrix.t` respectively — both written
+*after* the mechanism (not before, as phase 1 of the plan suggested) and cross-checked against a
+real `raku` run of the same files, not just against the design's predictions.
+
+**Open question 3 was answered differently than recommended, because the recommendation was wrong.**
+Measuring `raku` directly (not just the `.iterator`-vs-Reified corner the ADR's own §1.4 oracle
+sampled) showed rakudo's `Seq` is single-use by default *even when built from a fully-known literal
+list* — `my $s = (1,2,3).Seq; $s.List; $s.List` throws `X::Seq::Consumed` on the second call in real
+raku. "`.iterator` on an already-reified Seq should serve" turned out to generalize to "every
+`seq_method_consumes` entry steals a body's first touch unless an earlier NON-consuming touch or an
+explicit `.cache` already made it durable" — a `retained` flag on `SeqState`, set only by
+`SeqBody::reify` (never by construction). This is *stricter* than the ADR's §2.5 claim that
+`Value::seq` keeps unchanged, always-servable behavior; that claim was the accidental result of the
+old side-table design, not a deliberate rakudo-matching choice, and roast (`roast/S32-list/seq.t`'s
+"methods still throw when Seq is NOT cached" subtest) confirmed the stricter reading is the correct
+one. See `SeqBody::take`'s doc comment for the full reasoning and measurements.
+
+**One residual, explicitly-accepted gap: mutsu's parser cannot distinguish `@$s` (sigil
+array-context deref of a Scalar — never consumes in raku, even over a deferred source) from an
+explicit `.list()` method call (consumes) — both desugar to the identical method-name string
+`"list"`.** Two pinned local tests exercise opposite sides of this
+(`t/seq-array-context-reiterate.t` for `@$s`, `t/io-handle-lines-words-seq.t` for explicit
+`.list`), so `reify_or_consume_seq_target`'s `"list"` branch (`src/vm/vm_helpers_lazy.rs`) carries a
+documented compromise: steal a genuinely deferred source, but never steal an already-`Reified` body.
+The one case this leaves wrong relative to raku — explicit `.list()` on an already-`Reified` body
+staying reusable — is pinned as a KNOWN GAP subtest in `t/seq-consumption-matrix.t`. A real fix
+needs the parser to emit a distinct method name for the two call shapes; out of scope here.
+
+**Phase 5 (the Miri probe module, `src/value/seq_body_shapes.rs`) was not done** — deferred to
+`todo/tickets/adr0034-phase5-seq-body-miri-probes.md` rather than extending the session further.
+Functional correctness is covered extensively by `t/` and roast; phase 5 is soundness-probe
+infrastructure, not a functional gap.
+
+Two bugs surfaced only by end-to-end testing, neither anticipated by the design (§1.5's site list
+was, as risk §5 predicted, incomplete):
+
+- The `...` sequence operator's own generator step can feed a just-produced `Seq` element (e.g.
+  `*.reverse`'s result) back into itself to compute the *next* element — an internal consuming touch
+  on a value the user's `$seq[N]` read also aliases. Fixed by reifying (not consuming) each
+  generator step's result before storing it (`src/runtime/sequence.rs`).
+- `Value::eqv`'s `(Seq, Seq)` arm is a pure, interpreter-free comparison that reads a body's elements
+  via `Deref` directly — correct for the old "Seq is always already-materialized" invariant, wrong
+  now that a `ValueView::Seq` can be a genuinely deferred, not-yet-pulled body (even one already
+  `.cache`d, since `.cache` itself is lazy). Fixed by reifying/consuming both `eqv` operands in the
+  `exec_eqv_op` VM handler, which has the `&mut Interpreter` access `Value::eqv` structurally cannot
+  (`src/vm/vm_comparison_order_ops.rs`). Surfaced by `roast/S16-io/words.t`'s
+  `is-eqv words(), <...>.Seq` (`Test::Util`'s `is-eqv` explicitly `.cache`s both sides before
+  comparing).
+
 ## 8. Open questions for the deciders
 
 1. **Should phase 4 (folding `LazyIoLines`) be in the same PR as phase 3?** They are separable, but
@@ -496,5 +554,6 @@ roast sweep. `t/try-sink-semantics.t` pins the cells that already match.
 
 ---
 
-*This ADR is `Proposed`. If the mechanism judgment changes after implementation begins, supersede
-it rather than rewriting it.*
+*This ADR is `Accepted` and implemented — see §7.1 for the outcome, including where implementation
+diverged from the design (open question 3). If the mechanism judgment changes again, supersede this
+ADR rather than rewriting it.*

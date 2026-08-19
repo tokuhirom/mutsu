@@ -54,9 +54,8 @@ impl Interpreter {
             if let Some(m) = m {
                 let idx_arg = match index.view() {
                     ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
-                    ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
-                        items[0].clone()
-                    }
+                    ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                    ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
                     _ => index.clone(),
                 };
                 // A Pair VALUE must arrive as a positional argument, not be
@@ -79,9 +78,8 @@ impl Interpreter {
         if matches!(current.view(), ValueView::Mixin(..)) {
             let idx_arg = match index.view() {
                 ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
-                ValueView::Seq(items) | ValueView::Slip(items) if items.len() == 1 => {
-                    items[0].clone()
-                }
+                ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
                 _ => index.clone(),
             };
             if self
@@ -452,7 +450,8 @@ impl Interpreter {
                 let idx_u = crate::runtime::to_int(&_outer_index) as usize;
                 let elem = match inner.view() {
                     ValueView::Array(items, _) => items.get(idx_u).cloned(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => items.get(idx_u).cloned(),
+                    ValueView::Seq(items) => items.get(idx_u).cloned(),
+                    ValueView::Slip(items) => items.get(idx_u).cloned(),
                     _ => None,
                 };
                 if let Some(elem) = elem

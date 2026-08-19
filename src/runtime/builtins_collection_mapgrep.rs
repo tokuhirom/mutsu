@@ -264,7 +264,8 @@ impl Interpreter {
         // use them in sequence; otherwise treat as a single matcher.
         let matchers: Vec<Value> = match matcher.view() {
             ValueView::Array(elems, ..) => elems.iter().cloned().collect(),
-            ValueView::Seq(elems) | ValueView::Slip(elems) => elems.iter().cloned().collect(),
+            ValueView::Seq(elems) => elems.iter().cloned().collect(),
+            ValueView::Slip(elems) => elems.iter().cloned().collect(),
             _ => vec![matcher.clone()],
         };
 

@@ -201,7 +201,14 @@ fn invert_value(target: &Value) -> Option<Value> {
                 }
             }
         }
-        ValueView::Seq(_) | ValueView::Slip(_) => {
+        ValueView::Seq(_) => {
+            for item in crate::runtime::utils::value_to_list(target) {
+                if !extend_inverted_pairs_from_element(&mut result, &item) {
+                    return None;
+                }
+            }
+        }
+        ValueView::Slip(_) => {
             for item in crate::runtime::utils::value_to_list(target) {
                 if !extend_inverted_pairs_from_element(&mut result, &item) {
                     return None;
@@ -408,9 +415,8 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                 // the `my %h = $list` assignment path.
                 let items = match target.view() {
                     ValueView::Array(items, _) => items.iter().cloned().collect(),
-                    ValueView::Seq(items) | ValueView::Slip(items) => {
-                        items.iter().cloned().collect()
-                    }
+                    ValueView::Seq(items) => items.iter().cloned().collect(),
+                    ValueView::Slip(items) => items.iter().cloned().collect(),
                     _ => crate::runtime::utils::value_to_list(target),
                 };
                 Some(crate::runtime::utils::build_hash_from_items(items))
@@ -581,21 +587,6 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     value.to_value(),
                 ]))),
                 ValueView::Package(_) => None, // let runtime handle (may be enum type)
-                ValueView::LazyIoLines {
-                    handle,
-                    words,
-                    consumed,
-                    ..
-                } => {
-                    // Wrap the lazy IO lines with kv flag so the for-loop can
-                    // iterate lazily producing index-value pairs.
-                    Some(Ok(Value::lazy_io_lines_view(
-                        handle.clone(),
-                        true,
-                        words,
-                        consumed.clone(),
-                    )))
-                }
                 _ if target.is_range() => Some(Ok(Value::seq(positional_kv(
                     &crate::runtime::utils::value_to_list(target),
                 )))),
@@ -1213,6 +1204,21 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     items.clone(),
                     kind.decontainerize(),
                 )));
+            }
+            // ADR-0034: `.cache` on a `Seq` whose source has not been pulled
+            // yet (a deferred `Iterator`/`IO::Handle.lines`, or one already
+            // taken by an earlier consuming method) must NOT force it here —
+            // rakudo's `.cache` is itself lazy (verified: `$s.cache` alone
+            // does not run the source; only a later real read does), and an
+            // eager pull would hang a genuinely infinite Seq. Flag the body
+            // so the NEXT touch (of this alias or any other) reifies-and-
+            // keeps instead of consuming, and return the same (still lazy)
+            // Seq value.
+            if let ValueView::Seq(body) = target.view() {
+                body.mark_cache_requested();
+                if body.needs_touch() {
+                    return Some(Ok(target.clone()));
+                }
             }
             let items = target
                 .as_list_items()

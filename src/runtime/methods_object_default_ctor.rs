@@ -299,11 +299,14 @@ impl Interpreter {
             if attr.sigil != '@' {
                 continue;
             }
-            if let Some(ValueView::Slip(items) | ValueView::Seq(items)) =
-                attrs.get(attr_name).map(Value::view)
-            {
+            let flat_items = match attrs.get(attr_name).map(Value::view) {
+                Some(ValueView::Slip(items)) => Some((**items).clone()),
+                Some(ValueView::Seq(items)) => Some(items.to_vec()),
+                _ => None,
+            };
+            if let Some(items) = flat_items {
                 let flattened = Value::array_with_kind(
-                    crate::gc::Gc::new(crate::value::ArrayData::new((**items).clone())),
+                    crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::Array,
                 );
                 attrs.insert(attr_sym, flattened);

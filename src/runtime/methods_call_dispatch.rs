@@ -237,7 +237,8 @@ impl Interpreter {
         {
             let items: Vec<Value> = match target.view() {
                 ValueView::Array(items, _) => items.iter().cloned().collect(),
-                ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+                ValueView::Seq(items) => items.iter().cloned().collect(),
+                ValueView::Slip(items) => items.iter().cloned().collect(),
                 _ => unreachable!(),
             };
             return self.build_hash_from_items_warning(items);
@@ -419,7 +420,7 @@ impl Interpreter {
             };
             return Ok(match container.as_str() {
                 "Slip" => Value::slip_arc(std::sync::Arc::new(items)),
-                "Seq" => Value::seq_arc(std::sync::Arc::new(items)),
+                "Seq" => Value::seq(items),
                 "Array" => Value::array_with_kind(
                     crate::gc::Gc::new(crate::value::ArrayData::new(items)),
                     crate::value::ArrayKind::Array,
@@ -500,67 +501,31 @@ impl Interpreter {
         if let Some(err) = Self::lazy_guard_error(method, &target) {
             return Err(err);
         }
-        // Seq deferred iterator handling: Seq.new(iterator) stores the iterator
-        // without pulling. When a method is called on such a Seq, materialize the
-        // items first by pulling from the iterator.
-        if let ValueView::Seq(items) = target.view()
-            && crate::value::seq_has_deferred_iter(&items)
-        {
-            if method == "sink" && args.is_empty() && !crate::value::seq_is_cached(&items) {
-                // .sink on uncached deferred Seq: pull from iterator, mark consumed.
-                let items_arc = items.clone();
-                let iterator = crate::value::seq_take_deferred_iter(&items_arc).unwrap();
-                crate::value::seq_consume(&items_arc).ok();
-                let iter_val = iterator;
-                loop {
-                    let val = self.call_method_with_values(iter_val.clone(), "pull-one", vec![])?;
-                    if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                        || matches!(val.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
-                    {
-                        break;
-                    }
-                }
-                return Ok(Value::NIL);
-            }
-            // For methods other than .cache, .sink, .raku, .perl: materialize the
-            // deferred iterator by pulling all items, then re-dispatch on the new Seq.
-            if !matches!(method, "cache" | "sink" | "raku" | "perl") {
-                let items_arc = items.clone();
-                if let Some(iterator) = crate::value::seq_take_deferred_iter(&items_arc) {
-                    let mut pulled_items = Vec::new();
-                    loop {
-                        let val =
-                            self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
-                        if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                            || matches!(val.view(), ValueView::Package(name) if name == Symbol::intern("IterationEnd"))
-                        {
-                            break;
-                        }
-                        pulled_items.push(val);
-                    }
-                    let new_seq = Value::seq_arc(std::sync::Arc::new(pulled_items));
-                    // Transfer cached state from old Seq to new Seq
-                    if crate::value::seq_is_cached(&items_arc)
-                        && let ValueView::Seq(new_items) = new_seq.view()
-                    {
-                        crate::value::seq_mark_cached(&new_items);
-                    }
-                    return self.call_method_with_values(new_seq, method, args);
-                }
-            }
-        }
-        // Consumed Seq guard: throw X::Seq::Consumed for iteration/coercion methods
-        // when the Seq has been consumed and is not cached.
-        if let ValueView::Seq(items) = target.view() {
-            let consumed_methods = [
-                "iterator", "list", "List", "eager", "Array", "flat", "Slip", "join", "is-lazy",
-            ];
-            if consumed_methods.contains(&method)
-                && crate::value::seq_is_consumed(&items)
-                && !crate::value::seq_is_cached(&items)
-            {
-                return Err(crate::value::seq_consumed_error());
-            }
+        // Seq reification/consumption (ADR-0034 §2.3): reify (in place) or
+        // consume a deferred/already-taken Seq body as `method` requires.
+        // `take` (inside `reify_or_consume_seq_target`, for every
+        // `seq_method_consumes` entry including `.iterator`/`.skip`) steals
+        // the body's single read even when it was already `Reified` at birth
+        // (`Value::seq(vec)`) — rakudo's `Seq` wraps a single-use iterator by
+        // default regardless of how eagerly its data was known, and only an
+        // earlier NON-consuming touch or an explicit `.cache` earns it
+        // durable behavior (see `SeqBody::take`'s doc comment for the
+        // measured raku evidence). `sink` with args is left alone (not a
+        // real Seq `.sink` call).
+        let is_seq_sink =
+            method == "sink" && args.is_empty() && matches!(target.view(), ValueView::Seq(_));
+        let target = if method != "sink" || args.is_empty() {
+            // `_authoritative`, not the plain guard: this function is the
+            // one call site every dispatch chain funnels through exactly
+            // once (see `reify_or_consume_seq_target_authoritative`'s doc
+            // comment) — the only place `.iterator` may actually be
+            // consumed.
+            self.reify_or_consume_seq_target_authoritative(target, method)?
+        } else {
+            target
+        };
+        if is_seq_sink {
+            return Ok(Value::NIL);
         }
         // A non-lazy Seq is a materialized list; numeric aggregation/coercion
         // methods (`.sum`/`.min`/`.max`/`.Int`) are only wired up for `Array`
@@ -1282,9 +1247,8 @@ impl Interpreter {
                 for arg in args.iter().skip(2) {
                     match arg.view() {
                         ValueView::Array(items, ..) => replacement.extend(items.iter().cloned()),
-                        ValueView::Seq(items) | ValueView::Slip(items) => {
-                            replacement.extend(items.iter().cloned())
-                        }
+                        ValueView::Seq(items) => replacement.extend(items.iter().cloned()),
+                        ValueView::Slip(items) => replacement.extend(items.iter().cloned()),
                         _ => replacement.push(arg.clone()),
                     }
                 }
@@ -1532,13 +1496,11 @@ impl Interpreter {
                     }
                     "path" => {
                         if is_win32 {
-                            return Ok(Value::seq_arc(std::sync::Arc::new(
-                                Self::win32_path_from_env(),
-                            )));
+                            return Ok(Value::seq(Self::win32_path_from_env()));
                         }
                         let path_env = std::env::var("PATH").unwrap_or_default();
                         if path_env.is_empty() {
-                            return Ok(Value::seq_arc(std::sync::Arc::new(Vec::new())));
+                            return Ok(Value::seq(Vec::new()));
                         }
                         let parts: Vec<Value> = path_env
                             .split(':')
@@ -1550,7 +1512,7 @@ impl Interpreter {
                                 }
                             })
                             .collect();
-                        return Ok(Value::seq_arc(std::sync::Arc::new(parts)));
+                        return Ok(Value::seq(parts));
                     }
                     "splitpath" => {
                         let mut positional: Vec<&Value> = Vec::new();
@@ -3192,9 +3154,8 @@ impl Interpreter {
             for arg in &args {
                 match arg.view() {
                     ValueView::Array(elems, _) => items.extend(elems.iter().cloned()),
-                    ValueView::Seq(elems) | ValueView::Slip(elems) => {
-                        items.extend(elems.iter().cloned())
-                    }
+                    ValueView::Seq(elems) => items.extend(elems.iter().cloned()),
+                    ValueView::Slip(elems) => items.extend(elems.iter().cloned()),
                     _ => items.push(arg.clone()),
                 }
             }
@@ -3481,14 +3442,14 @@ impl Interpreter {
                 return Err(RuntimeError::typed("X::Invalid::Value", attrs));
             }
             let items = value_to_list(&target);
-            let arc = std::sync::Arc::new(items);
+            let body = crate::value::SeqBody::reified(items);
             // Remember the requested batch/degree so `.configuration` can report
             // them (the HyperSeq/RaceSeq value itself does not carry the config).
-            crate::value::hyper_config_set(&arc, batch_val, degree_val);
+            body.set_hyper_config(batch_val, degree_val);
             return Ok(if method == "hyper" {
-                Value::hyper_seq_arc(arc)
+                Value::hyper_seq_body(body)
             } else {
-                Value::race_seq_arc(arc)
+                Value::race_seq_body(body)
             });
         }
 
@@ -3503,26 +3464,27 @@ impl Interpreter {
                 _ => unreachable!(),
             };
             match method {
-                "hyper" => return Ok(Value::hyper_seq_arc(items)),
-                "race" => return Ok(Value::race_seq_arc(items)),
+                "hyper" => return Ok(Value::hyper_seq_body(items)),
+                "race" => return Ok(Value::race_seq_body(items)),
                 "configuration" if args.is_empty() => {
                     // `HyperSeq.configuration` — a HyperConfiguration exposing the
                     // `.batch`/`.degree` the sequence was hyperized with (or the
                     // core defaults when unspecified). Used by the `hyperize` dist.
-                    let (batch, degree) =
-                        crate::value::hyper_config_get(&items).unwrap_or((None, None));
+                    let (batch, degree) = items.hyper_config().unwrap_or((None, None));
                     return Ok(Self::make_hyper_configuration(batch, degree));
                 }
                 "is-lazy" => return Ok(Value::FALSE),
                 "iterator" if args.is_empty() => {
                     // A HyperSeq/RaceSeq allows only a single iterator (rakudo #4413):
-                    // a second `.iterator` throws X::Seq::Consumed. The consumed-state
-                    // is tracked on the inner Arc via the shared Seq registry.
+                    // a second `.iterator` throws X::Seq::Consumed, EVEN THOUGH the
+                    // body is fully reified from birth — this is a business rule
+                    // orthogonal to ADR-0034's reify/consume split, not a "consumed"
+                    // state a later non-iterator method also observes.
                     let type_name = if is_hyper { "HyperSeq" } else { "RaceSeq" };
-                    // `seq_consume` atomically checks-and-marks under one lock, so
-                    // concurrent workers racing for the single iterator resolve to
-                    // exactly one winner (rakudo #4413 concurrency contract).
-                    if crate::value::seq_consume(&items).is_err() {
+                    // Atomic check-and-mark under one lock, so concurrent workers
+                    // racing for the single iterator resolve to exactly one winner
+                    // (rakudo #4413 concurrency contract).
+                    if items.claim_hyper_iterator_once().is_err() {
                         return Err(crate::value::seq_consumed_error_for(type_name));
                     }
                     let array_target = Value::array_with_kind(
@@ -3539,9 +3501,9 @@ impl Interpreter {
                     let result = self.call_method_with_values(array_target, method, args)?;
                     let result_items = value_to_list(&result);
                     return Ok(if is_hyper {
-                        Value::hyper_seq_arc(std::sync::Arc::new(result_items))
+                        Value::hyper_seq(result_items)
                     } else {
-                        Value::race_seq_arc(std::sync::Arc::new(result_items))
+                        Value::race_seq(result_items)
                     });
                 }
                 _ => {
@@ -3620,7 +3582,7 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") {
                 self.env = saved_env;
             }
-            let seq = Value::seq_arc(std::sync::Arc::new(items));
+            let seq = Value::seq(items);
             return self.call_method_with_values(seq, method, args);
         }
 
@@ -4053,7 +4015,13 @@ impl Interpreter {
                 self.call_method_with_values(target.clone(), "Seq", vec![])
                     .and_then(|seq| self.list_to_capture(&seq)),
             ),
-            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => {
+            ValueView::Array(..) | ValueView::Seq(_) => {
+                let needs_str_key = Self::value_to_list(target).iter().any(
+                    |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
+                );
+                needs_str_key.then(|| self.list_to_capture(target))
+            }
+            ValueView::Slip(_) => {
                 let needs_str_key = Self::value_to_list(target).iter().any(
                     |i| matches!(i.view(), ValueView::ValuePair(k, _) if !matches!(k.view(), ValueView::Str(_))),
                 );

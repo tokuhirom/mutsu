@@ -22,7 +22,8 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
         // rule. `value_to_list` would otherwise return an itemized list as a
         // single opaque element, which fails the destructuring arity check.
         ValueView::Array(data, _) => data.items().clone(),
-        ValueView::Seq(items) | ValueView::Slip(items) => (**items).clone(),
+        ValueView::Seq(items) => items.to_vec(),
+        ValueView::Slip(items) => (**items).clone(),
         _ => crate::runtime::value_to_list(value),
     }
 }
@@ -155,7 +156,10 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
             ValueView::Array(arr, _kind) => {
                 flatten_into_slurpy(&arr, out);
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                flatten_into_slurpy(&items, out);
+            }
+            ValueView::Slip(items) => {
                 flatten_into_slurpy(&items, out);
             }
             ValueView::Range(a, b) => {
@@ -333,7 +337,8 @@ pub(in crate::runtime) fn named_values_from_unpack_target(
         // A list of Pairs (e.g. `(a => 1, b => 2)`) destructured by named
         // params `(:$a, :$b)` binds each pair's key to its value.
         ValueView::Array(data, _) => pairs_in_list_to_named(data.items()),
-        ValueView::Seq(items) | ValueView::Slip(items) => pairs_in_list_to_named(&items),
+        ValueView::Seq(items) => pairs_in_list_to_named(&items),
+        ValueView::Slip(items) => pairs_in_list_to_named(&items),
         ValueView::Instance { attributes, .. } => HashMap::from(&*attributes.as_map()),
         _ => std::collections::HashMap::new(),
     }
@@ -881,7 +886,7 @@ pub(in crate::runtime) fn bind_sub_signature_from_value(
             if sub_pd.name.starts_with('@')
                 && let ValueView::Seq(items) = candidate.view()
             {
-                candidate = Value::array(items.as_ref().clone());
+                candidate = Value::array(items.to_vec());
             }
             if sub_pd.name.starts_with('%')
                 && !matches!(candidate.view(), ValueView::Hash(..) | ValueView::Nil)

@@ -51,14 +51,14 @@ impl PartialEq for Value {
             // are: a `Blob[int8]` and a `Blob[uint8]` over the same bytes read
             // back as different elements, so they are not the same value.
             (ValueView::BufStorage(a), ValueView::BufStorage(b)) => *a == *b,
-            (ValueView::Seq(a), ValueView::Seq(b)) => *a == *b,
+            (ValueView::Seq(a), ValueView::Seq(b)) => a[..] == b[..],
             (ValueView::Slip(a), ValueView::Slip(b)) => *a == *b,
             (ValueView::Array(a, ..), ValueView::Seq(b))
-            | (ValueView::Seq(b), ValueView::Array(a, ..))
-            | (ValueView::Array(a, ..), ValueView::Slip(b))
+            | (ValueView::Seq(b), ValueView::Array(a, ..)) => a.items[..] == b[..],
+            (ValueView::Array(a, ..), ValueView::Slip(b))
             | (ValueView::Slip(b), ValueView::Array(a, ..)) => a.items == **b,
             (ValueView::Seq(a), ValueView::Slip(b)) | (ValueView::Slip(b), ValueView::Seq(a)) => {
-                a.as_ref() == b.as_ref()
+                &a[..] == b.as_ref().as_slice()
             }
             (ValueView::Hash(a), ValueView::Hash(b)) => *a == *b,
             (ValueView::Rat(a1, b1), ValueView::Rat(a2, b2)) => {

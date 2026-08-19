@@ -78,9 +78,9 @@ pub enum ValueView<'a> {
         kind: JunctionKind,
         values: ArcRef<'a, Vec<Value>>,
     },
-    Seq(ArcRef<'a, Vec<Value>>),
-    HyperSeq(ArcRef<'a, Vec<Value>>),
-    RaceSeq(ArcRef<'a, Vec<Value>>),
+    Seq(ArcRef<'a, SeqBody>),
+    HyperSeq(ArcRef<'a, SeqBody>),
+    RaceSeq(ArcRef<'a, SeqBody>),
     Slip(ArcRef<'a, Vec<Value>>),
     LazyList(GcRef<'a, LazyList>),
     Version {
@@ -127,12 +127,6 @@ pub enum ValueView<'a> {
     Scalar(&'a Value),
     ContainerRef(GcRef<'a, Mutex<Value>>),
     LazyThunk(ArcRef<'a, LazyThunkData>),
-    LazyIoLines {
-        handle: &'a Value,
-        kv: bool,
-        words: bool,
-        consumed: &'a Arc<std::sync::atomic::AtomicBool>,
-    },
     HashEntryRef {
         hash: &'a Gc<HashData>,
         path: &'a Vec<String>,
@@ -184,10 +178,30 @@ impl Value {
     }
 
     /// Construct a `Seq` value from an element vector (the `Seq` sibling of
-    /// the existing `Value::slip` constructor).
+    /// the existing `Value::slip` constructor). Already reified.
     #[inline]
     pub fn seq(items: Vec<Value>) -> Self {
-        Value::Seq(Arc::new(items))
+        Value::Seq(SeqBody::reified(items))
+    }
+
+    /// Construct a `Seq` value from a not-yet-reified source (`Seq.new($iter)`,
+    /// `IO::Handle.lines`, or a pre-consumed `Seq.new()` when `source` is
+    /// [`SeqSource::Taken`]).
+    #[inline]
+    pub(crate) fn seq_deferred(source: SeqSource) -> Self {
+        Value::Seq(SeqBody::deferred(source))
+    }
+
+    /// Construct a `HyperSeq` value from an element vector. Already reified.
+    #[inline]
+    pub fn hyper_seq(items: Vec<Value>) -> Self {
+        Value::HyperSeq(SeqBody::reified(items))
+    }
+
+    /// Construct a `RaceSeq` value from an element vector. Already reified.
+    #[inline]
+    pub fn race_seq(items: Vec<Value>) -> Self {
+        Value::RaceSeq(SeqBody::reified(items))
     }
 
     /// Whatever (`*`) constant (post-box: a tag constant).
@@ -358,22 +372,24 @@ impl Value {
         Value::Complex(re, im)
     }
 
-    /// Construct a `Seq` from an existing shared element vector.
+    /// Construct a `Seq` from an existing `SeqBody` (preserves reification /
+    /// consumption identity — every `Value` built from the same `Arc<SeqBody>`
+    /// observes the same `.cache`/consume state).
     #[inline]
-    pub fn seq_arc(items: Arc<Vec<Value>>) -> Self {
-        Value::Seq(items)
+    pub(crate) fn seq_body(body: Arc<SeqBody>) -> Self {
+        Value::Seq(body)
     }
 
-    /// Construct a `HyperSeq` from an existing shared element vector.
+    /// Construct a `HyperSeq` from an existing `SeqBody`.
     #[inline]
-    pub fn hyper_seq_arc(items: Arc<Vec<Value>>) -> Self {
-        Value::HyperSeq(items)
+    pub(crate) fn hyper_seq_body(body: Arc<SeqBody>) -> Self {
+        Value::HyperSeq(body)
     }
 
-    /// Construct a `RaceSeq` from an existing shared element vector.
+    /// Construct a `RaceSeq` from an existing `SeqBody`.
     #[inline]
-    pub fn race_seq_arc(items: Arc<Vec<Value>>) -> Self {
-        Value::RaceSeq(items)
+    pub(crate) fn race_seq_body(body: Arc<SeqBody>) -> Self {
+        Value::RaceSeq(body)
     }
 
     /// Construct a `Slip` from an existing shared element vector.
@@ -457,30 +473,11 @@ impl Value {
         })
     }
 
-    /// Construct a `LazyIoLines` iterator over a file handle (boxing the
-    /// handle internally, mirroring `Value::pair`/`Value::scalar`).
+    /// Construct a `Seq` over a not-yet-read file handle (`IO::Handle.lines`
+    /// / `.words`) — the `SeqSource::IoLines` sibling of `Value::seq_deferred`.
     #[inline]
     pub(crate) fn lazy_io_lines(handle: Value, kv: bool, words: bool) -> Self {
-        Value::from_repr(ValueRepr::LazyIoLines {
-            handle: Box::new(handle),
-            kv,
-            words,
-            consumed: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        })
-    }
-
-    pub(crate) fn lazy_io_lines_view(
-        handle: Value,
-        kv: bool,
-        words: bool,
-        consumed: Arc<std::sync::atomic::AtomicBool>,
-    ) -> Self {
-        Value::from_repr(ValueRepr::LazyIoLines {
-            handle: Box::new(handle),
-            kv,
-            words,
-            consumed,
-        })
+        Value::seq_deferred(SeqSource::IoLines { handle, kv, words })
     }
 
     /// Construct a `LazyThunk` from an existing shared thunk payload

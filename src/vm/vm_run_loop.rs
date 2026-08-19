@@ -925,7 +925,7 @@ impl Interpreter {
                 Value::array_with_kind(items.clone(), kind.itemize())
             }
             ValueView::Hash(_) => val.with_hash_itemized(true),
-            ValueView::Seq(items) => Value::scalar(Value::seq_arc(items.clone())),
+            ValueView::Seq(body) => Value::scalar(Value::seq_body(body.clone())),
             // `{ ... } but R` is a Mixin wrapping the container, and the
             // itemization the `$` confers belongs to the container inside it:
             // `my $h = { a => 1 } but R; $h.raku` is `${:a(1)}`, exactly as it

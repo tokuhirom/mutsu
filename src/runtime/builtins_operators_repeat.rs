@@ -160,7 +160,7 @@ impl Interpreter {
                 result
             }
             // Seq → List when used as xx LHS (Raku caches/listifies Seq on repeat)
-            ValueView::Seq(items) => Ok(Value::array(items.as_ref().clone())),
+            ValueView::Seq(items) => Ok(Value::array(items.to_vec())),
             // xx thunks the LHS: each repetition must be an independent copy
             ValueView::Array(items, kind) => Ok(Value::array_with_kind(
                 crate::gc::Gc::new(items.as_ref().clone()),

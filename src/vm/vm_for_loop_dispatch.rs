@@ -135,24 +135,18 @@ impl Interpreter {
 
         let mut iterable = self.stack.pop().unwrap();
 
-        // Handle lazy IO lines: iterate by pulling one line at a time
-        // so that $fh.tell reflects the current read position.
-        if let ValueView::LazyIoLines {
-            handle,
-            kv,
-            words,
-            consumed,
-        } = iterable.view()
+        // Handle lazy IO lines (ADR-0034: a Seq whose `SeqSource` is
+        // `IoLines`): iterate by pulling one line at a time so that
+        // `$fh.tell` reflects the current read position.
+        if let ValueView::Seq(body) = iterable.view()
+            && let Some((handle, words, kv)) = body.claim_io_lines_for_streaming()?
         {
-            if consumed.swap(true, std::sync::atomic::Ordering::AcqRel) {
-                return Err(crate::value::seq_consumed_error());
-            }
             let body_start = *ip + 1;
             let loop_end = spec.body_end as usize;
             self.exec_for_loop_lazy_io_lines(
                 code,
                 spec,
-                handle,
+                &handle,
                 kv,
                 words,
                 body_start,
@@ -217,27 +211,23 @@ impl Interpreter {
             return Ok(());
         }
 
-        // A bare `Seq` is single-shot: a `for` loop consumes its iterator, so a
-        // second iteration of the SAME Seq throws X::Seq::Consumed (Rakudo). A Seq
-        // that was array-contextualized (`@$s`, which marks it cached) stays
-        // re-iterable, so a `for @$s` loop must NOT consume it — otherwise a
-        // second `for @$s` would spuriously throw (surfaced by Zef::Pluggable
-        // iterating `@$backend` across two calls).
-        // A `Seq.new($iterator)` (including user-defined `Iterator` classes) stores
-        // its iterator deferred (empty backing vec). Pull every element from the
-        // iterator before the loop reads the items, else `for Seq.new($iter)`
-        // iterates nothing. Mirrors the slip/`.eager` reification path.
-        if let ValueView::Seq(arc) = iterable.view()
-            && crate::value::seq_has_deferred_iter(&arc)
-        {
-            let pulled = self.materialize_deferred_seq(&arc);
-            iterable = Value::seq_arc(std::sync::Arc::new(pulled));
+        // `for` reifies-in-place like a non-consuming touch (ADR-0034 §2.3) —
+        // measured against raku, `for $s {}` leaves `$s` fully re-readable
+        // afterward (`$s.List` still answers) — but ALSO claims a one-shot
+        // "for has iterated this Seq" gate independent of that reify (and
+        // independent of `needs_touch`'s born-reified fast path): a SECOND
+        // `for` over the same Seq throws `X::Seq::Consumed` even though
+        // `.List`/`.Str`/... stay servable (`claim_single_use_once`'s doc
+        // comment has the measured evidence). A `Seq.new($iterator)`
+        // (including user-defined `Iterator` classes) stores its iterator
+        // deferred; reify pulls it first, else `for Seq.new($iter)` iterates
+        // nothing. An already-taken body still throws `X::Seq::Consumed`
+        // (via `reify`), matching a `for` over a Seq some OTHER method
+        // already stole the iterator from.
+        if let ValueView::Seq(body) = iterable.view() {
+            body.claim_single_use_once()?;
         }
-        if let ValueView::Seq(arc) = iterable.view()
-            && !crate::value::seq_is_cached(&arc)
-        {
-            crate::value::seq_consume(&arc)?;
-        }
+        iterable = self.reify_or_consume_seq_target(iterable, "for")?;
         let raw_items = if let ValueView::LazyList(ll) = iterable.view() {
             self.force_lazy_list_vm(&ll)?
         } else if let ValueView::Channel(ch) = iterable.view() {

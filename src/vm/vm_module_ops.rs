@@ -172,7 +172,8 @@ impl Interpreter {
         // so never stringify the list as a whole.
         let specs: Vec<Value> = match value.view() {
             ValueView::Array(items, ..) => items.iter().cloned().collect(),
-            ValueView::Seq(items) | ValueView::Slip(items) => items.iter().cloned().collect(),
+            ValueView::Seq(items) => items.iter().cloned().collect(),
+            ValueView::Slip(items) => items.iter().cloned().collect(),
             _ => vec![value.clone()],
         };
         for spec in specs {

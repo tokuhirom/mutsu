@@ -176,7 +176,12 @@ impl Interpreter {
                     Self::quotewords_value_into(item, out, allomorphic);
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(items) => {
+                for item in items.iter() {
+                    Self::quotewords_value_into(item, out, allomorphic);
+                }
+            }
+            ValueView::Slip(items) => {
                 for item in items.iter() {
                     Self::quotewords_value_into(item, out, allomorphic);
                 }
@@ -216,7 +221,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::seq_arc(std::sync::Arc::new(result)))
+        Ok(Value::seq(result))
     }
 
     /// Handle split() function with full support for regex splitters.
@@ -242,7 +247,7 @@ impl Interpreter {
         let text = target.to_string_value();
         let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
         let result = apply_split_opts(parts, &opts);
-        Ok(Value::seq_arc(std::sync::Arc::new(result)))
+        Ok(Value::seq(result))
     }
 
     /// Core split implementation that handles string, regex, and list splitters.

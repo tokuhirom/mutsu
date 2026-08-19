@@ -959,7 +959,10 @@ impl Interpreter {
                         ValueView::Array(items, ..) => {
                             values.extend(items.iter().cloned());
                         }
-                        ValueView::Seq(items) | ValueView::Slip(items) => {
+                        ValueView::Seq(items) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        ValueView::Slip(items) => {
                             values.extend(items.iter().cloned());
                         }
                         ValueView::Range(..)
@@ -997,7 +1000,10 @@ impl Interpreter {
                         ValueView::Array(items, ..) => {
                             values.extend(items.iter().cloned());
                         }
-                        ValueView::Seq(items) | ValueView::Slip(items) => {
+                        ValueView::Seq(items) => {
+                            values.extend(items.iter().cloned());
+                        }
+                        ValueView::Slip(items) => {
                             values.extend(items.iter().cloned());
                         }
                         ValueView::Range(..)
@@ -1312,7 +1318,10 @@ impl Interpreter {
                 ValueView::Array(items, ..) => {
                     values.extend(items.iter().cloned());
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    values.extend(items.iter().cloned());
+                }
+                ValueView::Slip(items) => {
                     values.extend(items.iter().cloned());
                 }
                 ValueView::Range(..)

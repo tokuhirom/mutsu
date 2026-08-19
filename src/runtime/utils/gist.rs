@@ -240,10 +240,13 @@ pub(crate) fn gist_value(value: &Value) -> String {
             };
             format!("{} => {}", key_gist, gist_value(v))
         }
-        ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items)
-        | ValueView::Slip(items) => {
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            format!(
+                "({})",
+                items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
+            )
+        }
+        ValueView::Slip(items) => {
             format!(
                 "({})",
                 items.iter().map(gist_value).collect::<Vec<_>>().join(" ")
@@ -387,7 +390,8 @@ pub(crate) fn match_gist(attributes: &AttrMap, depth: usize) -> String {
                     }
                 }
             }
-            ValueView::Seq(items) | ValueView::Slip(items) => {
+            ValueView::Seq(_) | ValueView::Slip(_) => {
+                let items = crate::runtime::utils::value_to_list(value);
                 for item in items.iter() {
                     if let ValueView::Instance {
                         class_name,

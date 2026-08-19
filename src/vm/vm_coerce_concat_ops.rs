@@ -29,40 +29,21 @@ impl Interpreter {
         self.stack.push(Value::real_array(items));
     }
 
-    /// Pull every element from a deferred-iterator `Seq` (as stored by
-    /// `Seq.new($iterator)`), driving the iterator's `pull-one` until
-    /// `IterationEnd`. Works for both built-in and user-defined `Iterator`
-    /// classes. The deferred iterator is removed and the Seq is marked consumed.
-    pub(crate) fn materialize_deferred_seq(&mut self, items_arc: &Arc<Vec<Value>>) -> Vec<Value> {
-        let Some(iterator) = crate::value::seq_take_deferred_iter(items_arc) else {
-            return (**items_arc).clone();
-        };
-        crate::value::seq_consume(items_arc).ok();
-        let mut pulled = Vec::new();
-        while let Ok(val) = self.call_method_with_values(iterator.clone(), "pull-one", vec![]) {
-            if matches!(val.view(), ValueView::Str(s) if s.as_str() == "IterationEnd")
-                || matches!(val.view(), ValueView::Package(name) if name == crate::symbol::Symbol::intern("IterationEnd"))
-            {
-                break;
-            }
-            pulled.push(val);
-        }
-        pulled
-    }
-
     pub(super) fn exec_make_slip_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Slipping (`|EXPR`) always flattens through containers/itemization, e.g.
         // `|$_` where the topic is an itemized Seq element must expand the Seq's
         // values (`($seq,).map(|*)`), not wrap the Seq as a single slip item.
         let val = val.into_deref().into_descalarized();
-        // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
-        // Slipping such a Seq must first pull all elements from the iterator
-        // (including user-defined `Iterator` classes), else `|$seq` yields nothing.
-        if let ValueView::Seq(items_arc) = val.view()
-            && crate::value::seq_has_deferred_iter(&items_arc)
+        // A deferred Seq (`Seq.new($iterator)`, `IO::Handle.lines`) must first
+        // pull all elements from its source (ADR-0034), else `|$seq` yields
+        // nothing. `|EXPR` steals the source like `.iterator`/`.list` (a
+        // second `|$seq` on the same Seq must not silently re-slip nothing).
+        if let ValueView::Seq(body) = val.view()
+            && body.needs_touch()
         {
-            let pulled = self.materialize_deferred_seq(&items_arc);
+            let body = Arc::clone(&body);
+            let (pulled, _) = self.take_seq_body(&body)?;
             self.stack.push(Value::slip(pulled));
             return Ok(());
         }
@@ -144,10 +125,6 @@ impl Interpreter {
                     .map(Self::containerize_pair_item)
                     .collect()
             }
-            ValueView::LazyIoLines { .. } => match self.force_if_lazy_io_lines(val) {
-                Ok(forced) => crate::runtime::utils::value_to_list(&forced),
-                Err(_) => vec![],
-            },
             ValueView::Range(..)
             | ValueView::RangeExcl(..)
             | ValueView::RangeExclStart(..)

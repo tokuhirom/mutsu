@@ -178,12 +178,12 @@ impl Interpreter {
                 // Seq.slice(@indices) — return elements at the given indices as a Seq.
                 // Seq.slice() with no args returns an empty Seq.
                 let items = if let ValueView::Seq(arc) = target.view() {
-                    arc.as_ref().clone()
+                    arc.to_vec()
                 } else {
                     crate::runtime::utils::value_to_list(&target)
                 };
                 if args.is_empty() {
-                    Some(Ok(Value::seq_arc(std::sync::Arc::new(Vec::new()))))
+                    Some(Ok(Value::seq(Vec::new())))
                 } else {
                     let mut result = Vec::with_capacity(args.len());
                     for arg in &args {
@@ -209,7 +209,7 @@ impl Interpreter {
                             }
                         }
                     }
-                    Some(Ok(Value::seq_arc(std::sync::Arc::new(result))))
+                    Some(Ok(Value::seq(result)))
                 }
             }
             "iterator" if args.is_empty() => Some(self.dispatch_iterator_method(target)),
@@ -233,7 +233,7 @@ impl Interpreter {
                             _ => flat_items.push(item.clone()),
                         }
                     }
-                    Value::seq_arc(std::sync::Arc::new(flat_items))
+                    Value::seq(flat_items)
                 }))
             }
             "duckmap" => {
@@ -316,21 +316,30 @@ impl Interpreter {
     }
 
     /// Dispatch the "iterator" method.
-    fn dispatch_iterator_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
+    ///
+    /// `pub(crate)` (not private): also called directly from
+    /// `vm::vm_helpers_lazy::reify_or_consume_seq_target`'s `"iterator"`
+    /// handling, which must build the FINAL iterator result in place of a
+    /// still-`ValueView::Seq` target — see that call site's comment for why
+    /// (the VM's own dispatch chain calls `reify_or_consume_seq_target`
+    /// through more than one fallback layer for a single logical `.iterator`
+    /// call; returning a still-Seq value lets the redundant layer re-run
+    /// `take` on an already-`Taken` body and throw `X::Seq::Consumed` on the
+    /// FIRST real call — surfaced by `roast/S32-list/squish.t`).
+    pub(crate) fn dispatch_iterator_method(
+        &mut self,
+        target: Value,
+    ) -> Result<Value, RuntimeError> {
         if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Iterator")
         {
             return Ok(target);
         }
-        // Check consumed state for Seq: throw X::Seq::Consumed if not cached
-        if let ValueView::Seq(items) = target.view() {
-            if crate::value::seq_is_consumed(&items) && !crate::value::seq_is_cached(&items) {
-                return Err(crate::value::seq_consumed_error());
-            }
-            // Mark as consumed only if not cached (cached Seqs allow multiple iterations)
-            if !crate::value::seq_is_cached(&items) {
-                crate::value::seq_consume(&items).ok();
-            }
-        }
+        // Consumption is handled centrally, before dispatch reaches here
+        // (ADR-0034 §2.3: `.iterator` is a consuming method AND one of the
+        // two that burns a single read even on a body built already-
+        // `Reified` — the `call_method_with_values` guard's
+        // `reify_or_consume_seq_target` already claimed that and would have
+        // thrown `X::Seq::Consumed` if it was already spent).
         if let ValueView::Seq(items) = target.view() {
             let seq_id = std::sync::Arc::as_ptr(&items) as usize;
             if let Some(meta) = self.squish_iterator_meta.remove(&seq_id) {
@@ -439,7 +448,7 @@ impl Interpreter {
         }
         // .elems on a Seq caches it (makes it available for multiple calls)
         if let ValueView::Seq(items) = target.view() {
-            crate::value::seq_mark_cached(&items);
+            items.mark_cache_requested();
         }
         Some(self.call_function("elems", vec![target]))
     }
@@ -572,7 +581,7 @@ impl Interpreter {
         let result = self.eval_map_over_items(args.first().cloned(), items)?;
         // .map() returns a Seq per Raku spec
         Ok(match result.view() {
-            ValueView::Array(items, _) => Value::seq_arc(std::sync::Arc::new(items.to_vec())),
+            ValueView::Array(items, _) => Value::seq(items.to_vec()),
             _ => result.clone(),
         })
     }
@@ -736,7 +745,7 @@ impl Interpreter {
         if let ValueView::Package(name) = target.view()
             && name == "Supply"
         {
-            return Ok(Value::seq_arc(std::sync::Arc::new(vec![target])));
+            return Ok(Value::seq(vec![target]));
         }
         let mut caller = crate::runtime::methods_collection_ops::sort::InterpCaller(self);
         crate::runtime::methods_collection_ops::sort::sort_value_generic(&mut caller, target, &args)

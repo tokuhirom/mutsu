@@ -163,7 +163,8 @@ impl LazyList {
 
     fn value_source_is_finite(source: &Value) -> bool {
         match source.view() {
-            ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_) => true,
+            ValueView::Array(..) | ValueView::Seq(_) => true,
+            ValueView::Slip(_) => true,
             // A finite integer range has a concrete end (`i64::MAX` is the
             // sentinel for `..*`/`..Inf`, i.e. infinite).
             ValueView::Range(_, b)

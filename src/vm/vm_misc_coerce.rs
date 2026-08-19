@@ -85,10 +85,15 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        // Force a lazy IO words/lines iterator so numeric coercion counts its
+        // Reify a not-yet-read Seq source so numeric coercion counts its
         // elements (e.g. `+$fh.words` / `+$fh.lines`) rather than yielding 0.
-        let val = if matches!(val.view(), ValueView::LazyIoLines { .. }) {
-            self.force_if_lazy_io_lines(val)?
+        // Non-consuming (verified against raku): `+$s` leaves `$s` re-readable.
+        let val = if let ValueView::Seq(body) = val.view()
+            && body.needs_touch()
+        {
+            let body = std::sync::Arc::clone(&body);
+            self.reify_seq_body(&body)?;
+            val
         } else {
             val
         };

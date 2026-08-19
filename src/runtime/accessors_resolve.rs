@@ -148,7 +148,7 @@ impl Interpreter {
         // The `...` operator returns a Seq in Raku, not a List/Array.
         // Convert finite Array results to Seq; LazyList results stay as-is.
         if let ValueView::Array(items, _) = result.view() {
-            Ok(Value::seq_arc(std::sync::Arc::new(items.to_vec())))
+            Ok(Value::seq(items.to_vec()))
         } else {
             Ok(result)
         }

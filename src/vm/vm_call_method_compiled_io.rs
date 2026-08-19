@@ -357,7 +357,7 @@ impl Interpreter {
                             Err(e) => return Some(Err(e)),
                         }
                     }
-                    return Some(Ok(Value::seq_arc(std::sync::Arc::new(out))));
+                    return Some(Ok(Value::seq(out)));
                 }
                 // words/split/comb operate on the fully-read, decoded text by
                 // delegating to the corresponding Str method (which already

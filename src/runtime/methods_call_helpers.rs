@@ -330,9 +330,8 @@ impl Interpreter {
         for arg in args.iter().skip(2) {
             match arg.view() {
                 ValueView::Array(arr, ..) => replacement.extend(arr.iter().cloned()),
-                ValueView::Seq(arr) | ValueView::Slip(arr) => {
-                    replacement.extend(arr.iter().cloned())
-                }
+                ValueView::Seq(arr) => replacement.extend(arr.iter().cloned()),
+                ValueView::Slip(arr) => replacement.extend(arr.iter().cloned()),
                 _ => replacement.push(arg.clone()),
             }
         }
@@ -393,7 +392,17 @@ impl Interpreter {
                             .collect()
                     }
                 }
-                ValueView::Seq(items) | ValueView::Slip(items) => {
+                ValueView::Seq(items) => {
+                    let pattern: Vec<Value> = items.to_vec();
+                    if pattern.is_empty() {
+                        vec![Value::int(0); size]
+                    } else {
+                        (0..size)
+                            .map(|i| pattern[i % pattern.len()].clone())
+                            .collect()
+                    }
+                }
+                ValueView::Slip(items) => {
                     let pattern: Vec<Value> = items.to_vec();
                     if pattern.is_empty() {
                         vec![Value::int(0); size]

@@ -30,10 +30,10 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.
         ValueView::Array(items, _) => items.iter().any(element_needs_method_dispatch),
-        ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items)
-        | ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            items.iter().any(element_needs_method_dispatch)
+        }
+        ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
         ValueView::Hash(map) => map.values().any(element_needs_method_dispatch),
         ValueView::Pair(_, val) => element_needs_method_dispatch(val),
         ValueView::ValuePair(k, val) => {
@@ -54,10 +54,10 @@ fn element_needs_method_dispatch(v: &Value) -> bool {
         | ValueView::CustomTypeInstance(_)
         | ValueView::Package(..) => true,
         ValueView::Array(items, _) => items.iter().any(element_needs_method_dispatch),
-        ValueView::Seq(items)
-        | ValueView::HyperSeq(items)
-        | ValueView::RaceSeq(items)
-        | ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
+        ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
+            items.iter().any(element_needs_method_dispatch)
+        }
+        ValueView::Slip(items) => items.iter().any(element_needs_method_dispatch),
         ValueView::Hash(map) => map.values().any(element_needs_method_dispatch),
         ValueView::Pair(_, val) => element_needs_method_dispatch(val),
         ValueView::ValuePair(k, val) => {

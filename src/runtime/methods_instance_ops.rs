@@ -371,7 +371,8 @@ impl Interpreter {
                     .map(Value::view)
                 {
                     Some(ValueView::Array(values, ..)) => values.to_vec(),
-                    Some(ValueView::Seq(values)) | Some(ValueView::Slip(values)) => values.to_vec(),
+                    Some(ValueView::Seq(values)) => values.to_vec(),
+                    Some(ValueView::Slip(values)) => values.to_vec(),
                     _ => Vec::new(),
                 };
                 let iterationbuffer_values = |value: &Value| -> Vec<Value> {
@@ -387,9 +388,8 @@ impl Interpreter {
                                 .map(Value::view)
                             {
                                 Some(ValueView::Array(values, ..)) => values.to_vec(),
-                                Some(ValueView::Seq(values)) | Some(ValueView::Slip(values)) => {
-                                    values.to_vec()
-                                }
+                                Some(ValueView::Seq(values)) => values.to_vec(),
+                                Some(ValueView::Slip(values)) => values.to_vec(),
                                 _ => Vec::new(),
                             }
                         }
