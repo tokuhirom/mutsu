@@ -838,28 +838,49 @@ impl Compiler {
             }
             if args.len() == 2
                 && let Expr::Lambda { param, body, .. } = &args[1]
-                && let [Stmt::Expr(Expr::Binary { left, op, right })] = body.as_slice()
-                && *op == TokenKind::Plus
             {
-                let delta = match (left.as_ref(), right.as_ref()) {
-                    (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
-                    (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
-                    _ => None,
-                };
-                if let Some(delta) = delta {
-                    let call_name_idx = self
-                        .code
-                        .add_constant(Value::str_from("__mutsu_atomic_add_var"));
-                    self.note_atomic_env_sync_target(&var_name, true);
-                    let name_idx = self.code.add_constant(Value::str(var_name.clone()));
-                    self.code.emit(OpCode::LoadConst(name_idx));
-                    self.compile_expr(&delta);
-                    self.code.emit(OpCode::CallFunc {
-                        name_idx: call_name_idx,
-                        arity: 2,
-                        arg_sources_idx: None,
-                    });
-                    return;
+                // Skip leading `Stmt::SetLine` statements (inserted by pointy
+                // block parsing before the real body statement) so the
+                // single-statement delta-shape match below actually fires —
+                // mirroring the runtime-side detection in
+                // `builtin_cas_var` (src/runtime/builtins_atomic_cas.rs).
+                let effective_body: Vec<&Stmt> = body
+                    .iter()
+                    .filter(|s| !matches!(s, Stmt::SetLine(_)))
+                    .collect();
+                if effective_body.len() == 1
+                    && let Stmt::Expr(Expr::Binary { left, op, right }) = effective_body[0]
+                    && *op == TokenKind::Plus
+                {
+                    let delta = match (left.as_ref(), right.as_ref()) {
+                        (Expr::Var(lhs), rhs) if lhs == param => Some(rhs.clone()),
+                        (lhs, Expr::Var(rhs)) if rhs == param => Some(lhs.clone()),
+                        _ => None,
+                    };
+                    if let Some(delta) = delta {
+                        let call_name_idx = self
+                            .code
+                            .add_constant(Value::str_from("__mutsu_atomic_add_var"));
+                        // Keep counts_as_write = false here (matching the
+                        // general `cas` path below), NOT true: this delta
+                        // shape and the general lambda-invoking `cas` path
+                        // both target the SAME variable depending only on
+                        // incidental lambda-body shape, so diverging the
+                        // write-fold classification between them would let
+                        // one call site's `cas` get cell-promoted and
+                        // another's not for the same variable (see
+                        // todo/tickets/cas-delta-lambda-rewrite-is-dead-code.md).
+                        self.note_atomic_env_sync_target(&var_name, false);
+                        let name_idx = self.code.add_constant(Value::str(var_name.clone()));
+                        self.code.emit(OpCode::LoadConst(name_idx));
+                        self.compile_expr(&delta);
+                        self.code.emit(OpCode::CallFunc {
+                            name_idx: call_name_idx,
+                            arity: 2,
+                            arg_sources_idx: None,
+                        });
+                        return;
+                    }
                 }
             }
             // For attribute variables (!attr), sync the local to env before
