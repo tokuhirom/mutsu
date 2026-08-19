@@ -578,6 +578,13 @@ impl Interpreter {
             }
             _ => {}
         }
+        // `Value::eqv` is a pure, interpreter-free comparison, so it cannot call
+        // a `Proxy` element's FETCH callback itself. `eval_binary_with_junctions`
+        // already auto-FETCHes a top-level Proxy; resolve any Proxy elements
+        // nested inside an Array/List/Hash/... here too, matching raku (`(1,
+        // 2).map({ Proxy.new(...) }).List eqv (1, 2)` reads each element).
+        let left = self.resolve_proxies_in_value(&left)?;
+        let right = self.resolve_proxies_in_value(&right)?;
         let result =
             self.eval_binary_with_junctions(left, right, |_, l, r| Ok(Value::truth(l.eqv(&r))))?;
         self.stack.push(result);

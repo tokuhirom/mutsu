@@ -2387,3 +2387,51 @@ re-measure above, minus this file): `exception-role-membership.t`,
 `scripts/test-module-sweep.sh` run next session to confirm and re-measure the
 roast side (`S03-metaops/infix.t` and the other roast regressions named in
 the 2026-08-18 sections above were not re-swept this session).
+
+## Re-measured 2026-08-19: residue down to 6 after main picked up `has-attr-binding.t`'s fix; `proxy-list-transparency.t` closed
+
+`main` had already picked up the SetGlobal bind-source fix
+(`news/2026-08/attr-bind-source-write-tracked-through-nested-call-chain.md`,
+PR #6675) and the loop-body keep/undo fix since the last measurement in this
+file; pulling it and re-running `scripts/test-module-sweep.sh` (debug, 8-way)
+dropped the residue to **6 / 3225** with no code change:
+`exception-role-membership.t`, `is-lazy-io-lines.t` (×2 assertions),
+`proxy-list-transparency.t`, `subscript-adverbs.t` (×2),
+`throws-like-gather-sink.t`, `undeclared-when-type.t`.
+`malformed-syntax-classes.t` and `has-attr-binding.t` are gone from the list
+without further work here.
+
+`proxy-list-transparency.t` is now closed too. Root cause: `Value::eqv` is a
+pure, interpreter-free comparison (no `&mut Interpreter`), so it cannot call
+a `Proxy` element's FETCH callback. `eval_binary_with_junctions` already
+auto-FETCHes a *top-level* Proxy operand before calling `eqv`
+(`vm_helpers_junction.rs`), but a Proxy nested one level down — inside an
+Array/List/Hash/Pair, e.g. `(1, 2).map({ Proxy.new(...) }).List` — was passed
+through untouched, so `$got eqv $expected` (what the real `Test.rakumod`'s
+`is-deeply` reduces to, `_is_deeply` at line 713-715) compared the raw
+`Proxy` objects instead of their fetched values and always returned `False`.
+Fixed in `exec_eqv_op` (`vm_comparison_order_ops.rs`) by calling the existing
+`resolve_proxies_in_value` (added for `t/`'s native-provider test-argument
+path, `builtins_lvalue.rs`) on both operands before comparing — a cheap
+no-allocation scan in the common Proxy-free case, deep-FETCHing every nested
+Proxy otherwise. `undeclared-when-type.t`'s failing assertion turned out to
+be the same underlying `throws-like` case duplicated in
+`exception-role-membership.t` (`when SomeUndeclaredType { ... }` should be a
+compile-time `X::Comp::Group`/"needs parens to avoid gobbling block" parse
+ambiguity, which mutsu's parser does not currently diagnose at all — a
+genuine parser feature gap, not a `Test`-shape issue; left open, tracked by
+those two files' own `not ok` lines rather than a fresh ticket since neither
+new investigation happened this session).
+
+Pin: `t/eqv-fetches-nested-proxy-elements.t` (top-level Proxy still FETCHes,
+nested inside Array/List/Hash/Pair now FETCHes too, and a genuinely-different
+nested-Proxy list correctly stays not-`eqv`) — verified byte-for-byte against
+`raku`. Full local `t/` suite and `cargo clippy -- -D warnings` clean;
+`t/autoviv-index-guard.t` timed out under `-j` load during the same `make
+test` run but reproduces identically on `main` with the fix `git stash`-ed
+out (confirmed directly, not this change) — pre-existing, unrelated to
+`eqv`/`Proxy`.
+
+Residue is now **5**: `exception-role-membership.t`, `is-lazy-io-lines.t`
+(×2), `subscript-adverbs.t` (×2), `throws-like-gather-sink.t`,
+`undeclared-when-type.t`.
