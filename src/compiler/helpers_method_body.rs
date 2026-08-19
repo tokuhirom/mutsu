@@ -86,6 +86,24 @@ impl Compiler {
         );
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();
+        // ADR-0032 D2: bubble this method body's container-capture edges
+        // (recorded in `cc.container_ref_capture_syms` by D1, during
+        // `method_compiler`'s own independent compile above) to `self` — the
+        // enclosing frame at the class/role declaration site — exactly like
+        // a nested named sub or closure literal. `method_compiler` is a
+        // fresh `Compiler::new()` with no access to `self.local_map`
+        // (design decision 2), so this bubbling is the only place a
+        // captured outer scalar's owning frame can be told to box it at its
+        // declaration. This mutates `self.code` regardless of whether `cc`
+        // itself becomes the method body actually invoked at runtime (a
+        // registration-time throwaway compile may independently recompile
+        // the same source and get its own `container_ref_capture_syms` via
+        // the same D1 rule) — Half A only needs to know WHICH names are
+        // captured, not which CompiledCode object executes.
+        if !cc.container_ref_capture_syms.is_empty() {
+            let syms = cc.container_ref_capture_syms.clone();
+            self.bubble_container_ref_capture_syms(&syms);
+        }
 
         // Key shape follows C2 (design decision 5): a `!m` marker keeps
         // method keys disjoint from sub keys, and the fingerprint —

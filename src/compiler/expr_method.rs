@@ -166,16 +166,13 @@ impl Compiler {
                 // `compile_method_arg_with_escape`, since a bare `$v` is not
                 // a syntactically-named arg) is semantically inert here —
                 // `Pair.new`'s value parameter is bound raw, not classified
-                // by named-ness — but its presence between the variable read
-                // and this `WrapVarRef` breaks the GetGlobal-immediately-
-                // followed-by-WrapVarRef adjacency that named-sub capture
-                // analysis (`helpers_sub_body.rs`) requires to box `$v`'s
-                // outer container. Pop it back off so the compiled sequence
-                // matches what it was before boundary erasure existed.
-                if matches!(self.code.ops.last(), Some(OpCode::ContainerizePair)) {
-                    self.code.ops.pop();
-                    self.code.op_lines.pop();
-                }
+                // by named-ness. It used to have to be popped back off to
+                // preserve a GetGlobal-immediately-followed-by-WrapVarRef
+                // adjacency a peephole scan required; ADR-0032 D1 replaced
+                // that scan with an unconditional check inside
+                // `emit_wrap_var_ref` itself (does `n` resolve to a local of
+                // THIS frame?), which does not care what op precedes it, so
+                // the op is simply left in place now.
                 self.emit_wrap_var_ref(n);
             }
         }

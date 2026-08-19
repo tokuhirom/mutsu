@@ -366,7 +366,27 @@ impl Compiler {
                 slot: u32::MAX,
             });
         } else if let Some(name) = source_name {
-            self.emit_wrap_var_ref(&name);
+            // Deliberately the non-ADR-0032-D1 emitter here, for EVERY arg
+            // shape (including a genuine `Expr::Var`/`Expr::DoStmt` VarDecl
+            // read). This call site fires for every plain call argument in
+            // the language (not only an `is rw`/`:=`-bound one) purely to
+            // tag its shape for LATER is-rw dispatch matching — unlike the
+            // narrow, deliberate WrapVarRef sites (fat-arrow value, Pair.new
+            // value-arg, Capture item, list-literal element, meta-identity
+            // operand), it is not itself a container-capture-semantics site.
+            // Registering it anyway is not just imprecise for a bareword
+            // (`emit_wrap_var_ref_arg_tag`'s doc comment) — it also over-
+            // boxes a genuine free-variable argument passed to an ordinary
+            // (non-`is rw`) function: `t/hash-attr-map-default-element-
+            // assign.t` broke because `lives-ok { $c.h{3} = Str }` compiles
+            // `$c` as an rw-tagged argument to an internal hash-element-
+            // assign helper, and boxing `$c`'s OWN declaration into a
+            // `ContainerRef` cell (Half A) corrupted class-instance
+            // attribute-hash access through it. Probes `V`/`W` (an `is rw`
+            // argument / `:=` bind performed inside a closure) do not need
+            // D1 to pass — they already work through the pre-existing
+            // `free_var_writes` write-tracking machinery (ADR-0032 §1.4).
+            self.emit_wrap_var_ref_arg_tag(&name);
         } else if is_bind_target && matches!(arg, Expr::MethodCall { .. }) {
             // `:=` bind to a method-call RHS (`my $ref := $obj.attr`): flag the
             // dispatch so a public attribute accessor returns the attribute
