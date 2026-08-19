@@ -246,6 +246,27 @@ impl Interpreter {
         if inner.is_container_ref() {
             return inner;
         }
+        // An `is raw`/`is rw` PARAMETER's own local slot may already hold the
+        // caller's real shared cell: `bind_function_args_values`'s
+        // `rw_shared_cell_key` mechanism boxes it there at call time so the
+        // param, the caller's variable, and any relayed alias observe one
+        // container (todo/tickets/is-raw-param-container-identity.md). That
+        // bind ALSO registers a `__mutsu_sigilless_alias::` entry (for a
+        // possible later `:=` through the param) pointing at the CALLER's
+        // source name -- which is never a local of THIS frame. Consulting the
+        // alias root below before checking the untouched slot would discard
+        // `slot_hint` (belonging to the param's own name) and search for the
+        // caller's name instead, find no local, and fall through to boxing a
+        // brand-new, disconnected cell. Check the original name's own slot
+        // first: if it is already a container ref, it unambiguously IS the
+        // right cell to reuse, regardless of what any alias entry says.
+        if let Some(hint) = slot_hint
+            && hint != u32::MAX
+            && code.locals.get(hint as usize).map(String::as_str) == Some(name)
+            && self.locals[hint as usize].is_container_ref()
+        {
+            return self.locals[hint as usize].clone();
+        }
         // A `:=`-bound scalar shares its binding root's container, so it must box
         // into the SAME cell (`$c := $b; $a, $b X=:= $c, $d` has exactly one True
         // pair — `$b =:= $c`). The bind is tracked by name
