@@ -119,3 +119,97 @@ in Raku (the callback return isn't normally assigned-to), so a real-world
 trigger may not exist — worth reconsidering whether this is a live gap at
 all versus dead code on an unreachable combination, before sinking further
 gdb time into it.
+
+## Update (2026-08-19): fork IS reachable (via `Promise.then(&named-sub)`), but no caller ever turns the result into a live rw/lazy repro — recommend closing
+
+Built `target/debug/mutsu` fresh and tried nine more call shapes beyond the
+two 2026-08-18 sessions, confirming each with an unconditional
+`rust-gdb -batch` breakpoint at `src/runtime/resolution_call_sub.rs:163`
+(function entry) and `:439` (the fork itself), not just black-box
+raku-vs-mutsu output comparison:
+
+- `&f.wrap(-> { callsame })` then bare `f() = 42` (named `is rw` sub with an
+  active wrap chain) — correct in both, breakpoint at :163 **never hit**
+  (wrap-chain named calls resolve through `vm_call_sub_value` /
+  `vm_call_on_value`, not this `call_sub_value` entry, for this shape).
+- `(1,2,3).map(&f)` with `@r[0] = 99` (named non-`is rw` routine callback,
+  array-element reassignment) — correct in both (raku itself prints `1`, not
+  `99`: `.map`'s result elements are not rw-forwarded to the source sub call
+  at all), breakpoint never hit (native `.map` routes through
+  `vm_call_map_block`, which calls `call_compiled_closure_with_topic`
+  directly).
+- `&f.assuming()` bound to `&g`, then `g() = 42` (named `is rw` sub via a
+  curried/composed value) — correct in both, breakpoint at :163 never hit
+  (the composed-value call goes through `vm_call_on_value`'s own dispatch,
+  not `call_sub_value`).
+- `%dispatch<a>()` where `%dispatch<a> = &f` (named `is rw` sub invoked via a
+  hash-value call) — correct in both, breakpoint never hit (routes through
+  the `CallOnValue` VM opcode, whose handler in `vm_call_func_ops.rs`
+  applies its own `maybe_fetch_rw_proxy(result, sub_is_rw)` right after
+  `vm_call_on_value` returns — reading `is_rw` straight off the *target*
+  `Sub` value before dispatch, independent of which internal function
+  actually executed the call).
+- `(3,1,2).sort(&cmp_named)` (named comparator sub) — breakpoint never hit
+  even at function entry (`:163`); native `.sort` doesn't call
+  `call_sub_value` for this shape either.
+- Two `lazy`-list variants (`lazy (1..*)` — genuinely infinite via
+  `sequence_spec` — and `lazy (3,4,5)` — finite, lazy only via the
+  `__mutsu_preserve_lazy_on_array_assign` marker) returned from a named sub,
+  read through `f()`, `g()` (`my &g = &f`), and `(&g)()` — `.is-lazy` was
+  `True` in all three call shapes, matching raku. This confirms the marker
+  survives independent of whether `call_sub_value`'s tail re-inserts it: the
+  `lazy` prefix sets the marker once on the `LazyList`'s own `env` at
+  construction time (`dispatch_core_str.rs`), and that `env` travels with
+  the `Value` through every dispatch path (VM-compiled or tree-walk) simply
+  by being part of the cloned struct — the tail's unconditional re-insertion
+  turned out to be redundant, not load-bearing.
+
+**The one shape that DID hit the fork:** `Promise.new; $p.then(&f)` where
+`&f` is a named routine (`sub f($p) is rw { $x }`). Backtrace confirmed the
+call originates from `methods_promise.rs:104`
+(`promise_chain_method`'s `on_resolve` callback), landing at
+`resolution_call_sub.rs:439` with `data.compiled_routine.is_some()` true.
+This proves the fork is not unreachable dead code in general.
+
+But extending the repro to actually observe the gap
+(`$p2 = $p.then(&f); ...; $p2.result = 42; say $x;`) shows **raku itself**
+rejects the assignment (`Cannot modify an immutable Int (1)`) — `.then()`'s
+resolved value is never rw-forwarded from the callback to `.result` in
+Raku's own semantics, so there is no correct behavior for
+`maybe_fetch_rw_proxy` to have produced here even if the tail ran. mutsu
+also rejects it today (different message: `X::Assignment::RO: cannot assign
+through .result on non-instance`), which is an unrelated, pre-existing
+message-text mismatch, not the rw/LazyList gap this ticket is about.
+`resolve_promise_callback` stores `cb_result` into the new `Promise`'s
+internal result slot — Raku's `Promise` type simply does not expose a
+mutable view onto that slot, so no caller of `call_sub_value` in this
+family (Promise `.then`/`.on_resolve`, `subtest.rs`'s Supply-tap callbacks,
+`methods_promise.rs:394`'s tap) has a way to turn the missing rw-proxy tail
+into an observable difference: they all consume the callback's return value
+internally (as an opaque `Promise`/tap result), never as something Raku code
+assigns through.
+
+**Recommendation: close this ticket.** Across two sessions (2026-08-18,
+2026-08-18, 2026-08-19) and roughly 15 distinct call shapes, the "gap" holds
+up only as a code-inspection observation, not a live bug:
+
+- Every shape reachable from ordinary Raku call syntax (`&f()`, `(&g)()`,
+  `.()`,  hash/array-element calls, `.wrap`, `.assuming`) never even reaches
+  `call_sub_value` — it resolves through VM opcodes (`CallOnValue`,
+  `CallOnCodeVar`) or `vm_call_on_value`'s own dispatch, both of which apply
+  the rw-proxy check themselves, independently of `call_sub_value`'s tail.
+- The one confirmed-reachable path (`Promise.then`) has no caller that
+  exposes the callback's return value as an rw-assignable target, in either
+  raku or mutsu — so `maybe_fetch_rw_proxy`'s absence there is unobservable
+  by design, not a bug.
+- The `LazyList` half of the tail also turned out to be redundant: the
+  `__mutsu_preserve_lazy_on_array_assign` marker lives in the `LazyList`'s
+  own `env`, set once where `lazy` is evaluated, and survives every call
+  path because it's part of the cloned value, not something that needs
+  re-applying per call.
+
+If a future caller of `call_sub_value` is added that DOES expose a named
+`is rw` routine's return value as a user-assignable lvalue (or a returned
+`LazyList` needs the marker fresh rather than inherited), the fix direction
+in this file is still the right one to reach for. Until then, sinking more
+gdb time into this specific fork is not worthwhile.
