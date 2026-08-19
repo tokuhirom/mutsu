@@ -244,6 +244,18 @@ impl Interpreter {
             self.unmark_readonly("_");
         }
 
+        // ADR-0035 slice 2: a body that reads `CALLER::`/`callframe()` needs a
+        // caller-env frame pushed, mirroring `call_compiled_function_named_inner`
+        // on the sub side. Gated on `cc.uses_callframe` (already computed
+        // correctly for methods by the shared compiler) so the overwhelming
+        // majority of method calls, which never observe their caller, pay only
+        // this one boolean test. Pushed BEFORE the scoped-overlay install below
+        // so the pushed entry captures the caller's (unoverlaid) env.
+        let pushed_caller = cc.uses_callframe;
+        if pushed_caller {
+            self.push_caller_env();
+        }
+
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller (gated on no inner closures) so the
         // method's `self`/`?CLASS`/param/attr/local env setup writes land in a
@@ -452,6 +464,9 @@ impl Interpreter {
                             self.pop_method_class();
                             self.set_current_package(saved_package.clone());
                             self.stack.truncate(saved_stack_depth);
+                            if pushed_caller {
+                                self.pop_caller_env();
+                            }
                             let frame = self.pop_call_frame();
                             *self.env_mut() = frame.saved_env;
                             // :D/:U smiley mismatch → X::Parameter::InvalidConcreteness
@@ -599,6 +614,9 @@ impl Interpreter {
                 self.pop_method_class();
                 self.set_current_package(saved_package.clone());
                 self.stack.truncate(saved_stack_depth);
+                if pushed_caller {
+                    self.pop_caller_env();
+                }
                 let frame = self.pop_call_frame();
                 *self.env_mut() = frame.saved_env;
                 return Err(e);
@@ -865,6 +883,9 @@ impl Interpreter {
             // Take sole ownership of caller + callee envs (pop the frame for the
             // saved caller env, take the live callee env) so merge_method_env can
             // mutate the caller env in place without a deep copy.
+            if pushed_caller {
+                self.pop_caller_env();
+            }
             let frame = self.pop_call_frame();
             let current_env = self.take_env();
             let (mut merged_env, wrote_caller, changed_caller_locals) =
@@ -954,6 +975,9 @@ impl Interpreter {
             // No env writes possible -> the caller's slots stay coherent (pure).
             self.method_dispatch_pure = true;
             self.set_current_package(saved_package);
+            if pushed_caller {
+                self.pop_caller_env();
+            }
             let frame = self.pop_call_frame();
             *self.env_mut() = frame.saved_env;
         }
@@ -1301,6 +1325,13 @@ impl Interpreter {
         if !self.no_readonly_vars() {
             self.unmark_readonly("_");
         }
+        // ADR-0035 slice 2: see the matching comment in `call_compiled_method`.
+        // Pushed before the scoped-overlay install below so the pushed entry
+        // captures the caller's (unoverlaid) env.
+        let pushed_caller = cc.uses_callframe;
+        if pushed_caller {
+            self.push_caller_env();
+        }
         // Scoped-overlay (docs/vm-dual-store.md Slice 6): install an empty
         // born-owned overlay over the caller so the `self`/`?CLASS`/param/attr
         // env writes below land in a fresh map (strong_count 1) instead of
@@ -1398,6 +1429,9 @@ impl Interpreter {
                         self.set_current_package(pkg);
                     }
                     self.stack.truncate(saved_stack_depth);
+                    if pushed_caller {
+                        self.pop_caller_env();
+                    }
                     let frame = self.pop_call_frame();
                     self.set_env(frame.saved_env);
                     return Err(RuntimeError::typecheck_binding_parameter(
@@ -1795,6 +1829,13 @@ impl Interpreter {
         self.pop_method_class();
         if let Some(pkg) = saved_package {
             self.set_current_package(pkg);
+        }
+
+        // ADR-0035 slice 2: both branches below unconditionally pop the call
+        // frame, so pop the caller-env entry once here (mirrors the paired push
+        // above) rather than duplicating the gate in each branch.
+        if pushed_caller {
+            self.pop_caller_env();
         }
 
         if can_skip_merge {
