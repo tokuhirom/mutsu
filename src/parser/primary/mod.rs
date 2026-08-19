@@ -250,6 +250,26 @@ pub(super) fn primary(input: &str) -> PResult<'_, Expr> {
     let result = (|| {
         let input_len = input.len();
         let mut best_error: Option<(usize, PError)> = None;
+        // A term can never begin with `=>` (the fat-comma infix) — no
+        // alternative below could ever consume it. Seed the best-error
+        // candidate with rakudo's `X::Syntax::InfixInTermPosition` up front so
+        // it wins (over the generic "expected primary expression" fallback)
+        // once every alternative below has failed too. Stays SOFT (not an
+        // early `return Err`): `primary()` is itself called from speculative
+        // hypotheses elsewhere (e.g. `keyword_literal`'s `END`/`BEGIN`/…
+        // phaser-prefix reading tries `=> expr` as the phaser's operand before
+        // falling back to reading `END` as a plain bareword), and those must
+        // still be free to abandon this hypothesis and try the next one.
+        // `==>` (the feed operator) is a 3-character prefix and does not
+        // match this 2-character check.
+        // See `news/2026-08/infix-in-term-position-diagnosis.md`.
+        if input.starts_with("=>") {
+            update_best_error(
+                &mut best_error,
+                PError::infix_in_term_position("=>", input),
+                input_len,
+            );
+        }
         macro_rules! try_primary {
             ($expr:expr) => {
                 match $expr {

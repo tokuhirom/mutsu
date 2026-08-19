@@ -88,6 +88,43 @@ impl PError {
         }
     }
 
+    /// Build the SOFT `X::Syntax::InfixInTermPosition` error rakudo raises
+    /// when a recognized infix operator token appears where a term was
+    /// expected (`my @a = 1, => 2` — `infix` is the operator's literal
+    /// spelling, e.g. `"=>"`).
+    ///
+    /// Deliberately SOFT (unlike [`Self::malformed`]), because term parsing
+    /// runs inside many speculative alternatives that must still be free to
+    /// abandon a wrong hypothesis. Concretely: `keyword_literal`'s
+    /// `BEGIN`/`END`/… phaser-prefix hypothesis calls the term parser on
+    /// whatever follows the keyword, so `END => 1` first tries "the `END`
+    /// phaser applied to the term `=> 1`" — a hypothesis this function's
+    /// caller must be able to reject softly, so the *next* alternative
+    /// (`identifier_or_call`, reading plain `END` as a bareword) still gets a
+    /// chance to build the correct `BareWord("END") => 1` Pair. A fatal error
+    /// here would abort that fallback outright
+    /// (`news/2026-08/infix-in-term-position-diagnosis.md`).
+    ///
+    /// The message follows the `"X::Type: text"` convention so
+    /// [`Self::typed_convention_message`] still promotes this diagnosis over
+    /// the generic "Confused." fallback once every alternative — including
+    /// the correct one — has actually failed.
+    pub fn infix_in_term_position(op: &str, input: &str) -> Self {
+        let text = format!("Preceding context expects a term, but found infix {op} instead.");
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("infix".to_string(), crate::value::Value::str_from(op));
+        attrs.insert("message".to_string(), crate::value::Value::str_from(&text));
+        let exception = crate::value::Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::InfixInTermPosition"),
+            attrs,
+        );
+        PError {
+            messages: vec![format!("X::Syntax::InfixInTermPosition: {text}")],
+            remaining_len: Some(input.len()),
+            exception: Some(Box::new(exception)),
+        }
+    }
+
     /// Build a fatal (non-recoverable) parse error.
     /// Fatal errors are not swallowed by the statement dispatcher.
     pub fn fatal(message: String) -> Self {
