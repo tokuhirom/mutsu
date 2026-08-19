@@ -1,5 +1,10 @@
 # Method calls never push a caller-env frame, breaking CALLER::/callframe()/PROCESS::/DYNAMIC:: reads from inside any method body
 
+**Design complete: see [ADR-0035](../../docs/adr/0035-method-calls-observe-caller-frames.md)**
+(chain-aware dynamics enumeration + `uses_callframe`-gated frame pushing at the
+two compiled-method chokepoints; implementation slices listed there). The ADR
+also root-causes two latent sub-side `PROCESS::` gaps beyond the repros below.
+
 Reclassified from `todo/tickets/log-timeline-task-event-recording-empty.md`
 (originally filed as a narrow `Log::Timeline`/`given`/role-composed-method
 gap) after bisecting the real trigger. The original ticket's framing was
