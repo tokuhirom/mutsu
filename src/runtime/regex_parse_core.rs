@@ -77,27 +77,45 @@ fn scan_angle_assertion_body(rest: &[char], honor_quotes: bool) -> AngleBodyScan
                 quote = Some(ch);
                 name.push(ch);
             }
-            '(' => {
+            // `(`/`)`/`{`/`}` only nest outside an enumerated char class
+            // (`<[...]>`): inside one they are ordinary literals (`<-[{]>`,
+            // `<-[(]>`), so they must not affect the depth used to find this
+            // assertion's closing `>`.
+            '(' if bracket_depth == 0 => {
                 paren_depth += 1;
                 name.push(ch);
             }
-            ')' => {
+            ')' if bracket_depth == 0 => {
                 paren_depth = paren_depth.saturating_sub(1);
                 name.push(ch);
             }
             '[' => {
-                bracket_depth += 1;
+                // A `[` normally opens/nests the enumerated class. But once
+                // already inside one (bracket_depth >= 1), a `[` is only
+                // *structural* nesting when it is the bracketed argument of
+                // a `\c`/`\C`/`\x`/`\X` escape (`\c[LATIN SMALL LETTER A]`,
+                // `\x[263A]`) — otherwise it is a literal char-class member
+                // (`<-[[]>`) and must not bump the depth, or the matching
+                // closing `]` prematurely closes the class scan.
+                if bracket_depth == 0
+                    || name.ends_with("\\c")
+                    || name.ends_with("\\C")
+                    || name.ends_with("\\x")
+                    || name.ends_with("\\X")
+                {
+                    bracket_depth += 1;
+                }
                 name.push(ch);
             }
             ']' => {
                 bracket_depth = bracket_depth.saturating_sub(1);
                 name.push(ch);
             }
-            '{' => {
+            '{' if bracket_depth == 0 => {
                 brace_depth += 1;
                 name.push(ch);
             }
-            '}' => {
+            '}' if bracket_depth == 0 => {
                 brace_depth = brace_depth.saturating_sub(1);
                 name.push(ch);
             }

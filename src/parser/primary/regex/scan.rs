@@ -217,12 +217,27 @@ fn skip_char_class(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
                 None => return None,
             }
         }
-        // After ']', check for compound class or closing '>'
+        // After ']', check for compound class or closing '>'.
+        // Whitespace may separate the ']' from a compound continuation
+        // (`+[`, `-[`) or the closing '>' — Raku permits `<[x] + [y]>`.
         let saved = chars.clone();
-        match chars.next() {
-            Some((_, '>')) => break, // done
+        let mut probe = chars.clone();
+        while matches!(probe.clone().next(), Some((_, c)) if c.is_whitespace()) {
+            probe.next();
+        }
+        match probe.next() {
+            Some((_, '>')) => {
+                *chars = probe;
+                break; // done
+            }
             Some((_, '+' | '-')) => {
-                if let Some((_, '[')) = chars.next() {
+                // Whitespace may also separate the `+`/`-` from its `[`
+                // (`<[x] + [y]>`).
+                while matches!(probe.clone().next(), Some((_, c)) if c.is_whitespace()) {
+                    probe.next();
+                }
+                if let Some((_, '[')) = probe.next() {
+                    *chars = probe;
                     continue 'char_class;
                 }
                 // Not a compound group; try consuming '>'
@@ -232,7 +247,10 @@ fn skip_char_class(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
                 }
                 break;
             }
-            Some((_, '[')) => continue 'char_class,
+            Some((_, '[')) => {
+                *chars = probe;
+                continue 'char_class;
+            }
             _ => {
                 *chars = saved;
                 if let Some((_, '>')) = chars.next() {
