@@ -1,9 +1,13 @@
-# A cold `supply` used as a `whenever` source is replayed synchronously, so its promise subscriptions leak as values
+# A cold `supply` used as a `whenever` source: the surviving gaps are quit propagation, plus `supply_get_values`'s replay
 
 Found 2026-07-25 in Test::Scheduler (`TODO_dist` T-037). Narrowed 2026-07-25
-after the *nested* half of it was fixed (a `whenever <Promise>` registered from
-inside another whenever's body — pin `t/supply-nested-whenever-promise.t`); this
-file now tracks what is left.
+after the *nested* half of it was fixed (pin `t/supply-nested-whenever-promise.t`).
+**Re-measured 2026-08-19 against `530ccf7dd`: half of the original analysis has
+evaporated, and the surviving half is a different bug than the title suggested.**
+The design that replaces this file's original root-cause section is
+[ADR-0031](../../docs/adr/0031-supply-quit-ownership-and-cold-source-tapping.md);
+read that before starting work. This file is kept only as the open-finding
+marker and the measurement log.
 
 ## Repro
 
@@ -29,61 +33,67 @@ my @received;
 my $died = False;
 $timed-out.tap: { @received.push($_) }, quit => { $died = True }
 sleep 0.5;
-say @received.raku;   # raku: ["badger", "badger"]   mutsu: six 4-element marker arrays
+say @received.raku;   # raku: ["badger", "badger"]   mutsu: ["badger", "badger", "badger"]
 say "died=$died";     # raku: True                   mutsu: False
 ```
 
 No virtual scheduler needed — this is plain real time. (Test::Scheduler is just
 the dist that surfaced it.)
 
-## Root cause
+## What changed since the original filing
 
-`$timed-out`'s only `whenever` source is `$test-source`, which is itself an
-*on-demand* (cold, supplier-less) supply. mutsu does not tap a cold source: it
-**replays it synchronously** and treats whatever the replay collects as emitted
-values (`replay_cold_whenever_capture` / `supply_get_values`). Running
-`$test-source`'s body registers three `whenever <Promise>` subscriptions, whose
-markers land in the replay's emit-buffer frame and are handed to the outer body
-— and out to the tap — as ordinary values.
+- **The marker leak is gone.** The originally-recorded symptom ("six 4-element
+  marker arrays" instead of values) does not reproduce. `.list` on the same
+  shape also returns `("badger", "badger")`, matching raku. The value half was
+  fixed by `normalize_promise_whenever_markers` plus the chained-real-tap branch
+  at `src/runtime/native_supply_mut_methods.rs:739`.
+- **What is left in this repro is quit propagation**, not value delivery: the
+  `die "Timed out"` never reaches the tap's `quit =>` handler, so the supply is
+  never torn down and a third `'badger'` arrives.
 
-Two things are wrong, and the second is the real one:
+## Surviving root causes (both detailed in ADR-0031)
 
-1. **`supply_get_values` still recognises a subscription marker only when its
-   source is a `Supply`** (`src/runtime/supply_promise.rs`, the `arr[0]` check
-   in the marker-expansion loop). #5409 fixed the two consumers that matter for
-   a directly-tapped supply — the `.tap` path and the `await` path — but not
-   this one. Making it skip a Promise-sourced marker the way it already skips a
-   live source would stop the leak, but would then deliver nothing at all.
-2. **A cold on-demand supply used as a `whenever` source should be tapped, not
-   replayed.** Synchronous replay can only ever see what the body emits during
-   its own run; a body whose emissions arrive later (from a promise, a timer, a
-   thread) has nothing to replay. That is why the repro's badgers never reach
-   `$timed-out` even once the marker leak is plugged.
+1. **Quit ownership is attached to the wrong object.** The tap's `quit =>`
+   handler is registered per *upstream source* (b1 at
+   `native_supply_mut_methods.rs:575`, b2 at `:679`), not once on the supply
+   block's own emitter — and the chained on-demand branch (b3, `:739`) registers
+   it nowhere at all. Separately, `run_whenever_with_value`'s `ValueView::Promise`
+   arm (`src/runtime/subtest.rs:596-611`) discards the body's `Result`, so a
+   `die` in a nested `whenever <Promise>` body vanishes. Minimal probes:
+   `tmp/probe3.raku` cases B and C in the ADR (both `died=False` in mutsu,
+   `died=True` in raku).
+2. **`supply_get_values` still replays a cold source instead of tapping it**
+   (`src/runtime/supply_promise.rs:239`, with `replay_cold_whenever_capture`
+   `:676` and `replay_static_whenever_promise` `:789`). It drops any live inner
+   subscription (`if is_live { continue; }`, `:328-330`), so
+   `supply { whenever <cold supply whose own whenever is on a live Supplier> }`
+   `.list`s to `()` where raku gives the values. This affects only the
+   `supply_get_values` family (~20 combinator/`.list`/`.wait` call sites); the
+   `.tap`/`.act` and react/`.Promise` paths already chain real taps.
 
 ## Affected files
 
-- `src/runtime/supply_promise.rs` — `supply_get_values`,
-  `replay_cold_whenever_capture`, `normalize_promise_whenever_markers`.
-- `src/runtime/native_supply_mut_methods.rs` — the `.tap` consumer, which has
-  the working supplier-backed branch to model this on
-  (`register_supplier_tap(supplier_id, body_cb, …)` plus the serialize-group and
-  done-group wiring).
-- `src/runtime/subtest.rs` — `run_whenever_with_value`, which builds the marker.
+- `src/runtime/supply_promise.rs` — `call_supply_tap`, `supply_get_values`,
+  `replay_cold_whenever_capture`, `replay_static_whenever_promise`.
+- `src/runtime/native_supply_mut_methods.rs` — the `"tap" | "act"` arm's four
+  whenever-source branches and their quit registrations.
+- `src/runtime/subtest.rs` — `run_whenever_with_value` (marker construction and
+  the Promise arm).
+- `src/runtime/native_supplier_methods.rs` — the emit-dispatch error routing
+  (`:107-151`) and the canonical `Supplier."quit"` (`:488`).
 
 ## Why it is large
 
-Giving a cold on-demand source a supplier and tapping it changes when its body
-runs (at subscription time, into a live sink) instead of at replay time into a
-captured vector. Every existing consumer of the replay path — `.list`, `.wait`,
-the combinators, `await` on a supply — currently depends on getting values back
-synchronously, and the done/quit completion accounting (`whenever_supplier_count`,
-the done-group marker, `on_close_callbacks`) is written around the two existing
-shapes. It also has the ordering hazard #5409 documents: a supplier keeps no
-backlog, so nothing may emit into the stand-in before its taps are registered.
+Quit ownership touches every whenever-source branch plus the emit-dispatch
+error path, and it must not disturb the `QUIT`-phaser protocol
+(`take_supplier_whenever_quit_callbacks` / `QuitOutcome`). Replacing the replay
+family changes ~20 call sites from a synchronous pull to a bounded drain, with a
+real hang risk when the producer runs on the calling thread. ADR-0031 slices
+both.
 
 ## Impact
 
 `Test::Scheduler` (`TODO_dist` T-037), the last known blocker for that dist:
-`t/synopsis.rakutest` passes 3 of 9 (the other 6 receive marker arrays instead of
-`'badger'`), and `t/virtualized-time.rakutest` reaches test 28 of 83 and then
-hangs. `t/not-time-based.rakutest` is 3/3.
+`t/synopsis.rakutest` and `t/virtualized-time.rakutest` both depend on a
+`whenever` body's `die` quitting the enclosing supply. Cro's error paths and
+body coercions ride on the same two mechanisms.
