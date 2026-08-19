@@ -1564,6 +1564,25 @@ pub(in crate::runtime) fn register_supplier_quit_callback(supplier_id: u64, quit
     }
 }
 
+/// ADR-0031 Decision A: a `whenever` source's own `Supplier."quit"` (an
+/// *external* quit — e.g. the source itself failing, not a `whenever` body
+/// dying) has no way to reach the tap `quit =>` handler registered on the
+/// enclosing supply block's emitter, since Decision A moved that
+/// registration off the source's own `supplier_id` and onto
+/// `emitter_supplier_id`. Reuse the serialize-group link the b1 whenever
+/// branch already records (`set_supplier_serialize_group`, originally for
+/// the "one whenever handler at a time" lock) to find that emitter and
+/// drain its quit callbacks too. A direct `.tap(quit => ...)` on a Supplier
+/// (not reached through a `whenever`) has no serialize group and keeps
+/// working exactly as before, via the direct `supplier_id` drain.
+pub(in crate::runtime) fn take_supplier_quit_callbacks_via_group(supplier_id: u64) -> Vec<Value> {
+    let mut cbs = take_supplier_quit_callbacks(supplier_id);
+    if let Some(group) = supplier_serialize_group(supplier_id) {
+        cbs.extend(take_supplier_quit_callbacks(group));
+    }
+    cbs
+}
+
 pub(in crate::runtime) fn take_supplier_whenever_quit_callbacks(supplier_id: u64) -> Vec<Value> {
     if let Ok(mut map) = supplier_subscriptions_map().lock() {
         if let Some(subs) = map.get_mut(&supplier_id) {
