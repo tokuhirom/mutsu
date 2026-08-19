@@ -2414,24 +2414,55 @@ Fixed in `exec_eqv_op` (`vm_comparison_order_ops.rs`) by calling the existing
 `resolve_proxies_in_value` (added for `t/`'s native-provider test-argument
 path, `builtins_lvalue.rs`) on both operands before comparing — a cheap
 no-allocation scan in the common Proxy-free case, deep-FETCHing every nested
-Proxy otherwise. `undeclared-when-type.t`'s failing assertion turned out to
-be the same underlying `throws-like` case duplicated in
-`exception-role-membership.t` (`when SomeUndeclaredType { ... }` should be a
+Proxy otherwise. Pin: `t/eqv-fetches-nested-proxy-elements.t` (top-level
+Proxy still FETCHes, nested inside Array/List/Hash/Pair now FETCHes too, and
+a genuinely-different nested-Proxy list correctly stays not-`eqv`) — verified
+byte-for-byte against `raku`. Full local `t/` suite and `cargo clippy -- -D
+warnings` clean; `t/autoviv-index-guard.t` timed out under `-j` load during
+the same `make test` run but reproduces identically on `main` with the fix
+`git stash`-ed out (confirmed directly, not this change) — pre-existing,
+unrelated to `eqv`/`Proxy`.
+
+## `throws-like-gather-sink.t` partly closed (1 of 4 subtests), same 2026-08-19 session
+
+Its first
+subtest — `throws-like 'gather { return 1 }', X::ControlFlow::Return` —
+turned out not to need the frame-depth mechanism this ticket's own
+`eval-context-frame-owns-the-return-target.md` describes at all. The real,
+narrower bug: a bare `EVAL '...';` statement never *forces* a deferred
+`gather`/lazy-IO-lines result at all, regardless of `context`. `SinkPop`
+(the bytecode a bare non-`EVAL` statement's discarded value goes through)
+already forces a `LazyList`/`LazyIoLines`, but `EVAL` compiles to a
+different, "statement-level call, no return value kept" form
+(`OpCode::ExecCall`/`ExecCallPairs`) that never reaches `SinkPop` at all —
+confirmed with `rust-gdb -batch` breakpoints: a `SinkPop` breakpoint fires
+for a bare top-level `gather {...};` statement but never fires for `EVAL
+'gather {...}';`. So `EVAL 'gather { return 1 }';` silently never ran the
+gather body, and `throws-like`'s own `EVAL $code, context => $ctx;` (a bare,
+named-arg, mid-body statement — exactly this shape) never saw the `return`
+at all. Fixed by adding the same `LazyList`/`LazyIoLines`-forcing arms
+`SinkPop` has to `sink_discarded_call_value`
+(`vm_call_exec_ops.rs`), the shared helper both `ExecCall` and
+`ExecCallPairs` already used for the Failure-exploding half of sink
+semantics. Pin: `t/eval-statement-sinks-lazy-result.t`, verified against
+`raku`. `news/2026-08/eval-statement-sink-forces-lazy-result.md`.
+
+The other 3 subtests of `t/throws-like-gather-sink.t` (`return;`/`for ^5 {
+return; }` at mainline, both wrapped in `throws-like`'s `context =>
+$caller-context`) still need the actual frame-depth mechanism —
+`todo/deep/eval-context-frame-owns-the-return-target.md` is unchanged and
+still the right next step there; do not assume the sink-forcing fix above
+covers it (it only fixed the "body never even ran" half of the file's first
+subtest).
+
+Residue after this session: **5 files, 5 assertions**:
+`exception-role-membership.t`, `is-lazy-io-lines.t` (×2), `subscript-adverbs.t`
+(×2), `throws-like-gather-sink.t` (3 remaining subtests, needs
+`eval-context-frame-owns-the-return-target.md`), `undeclared-when-type.t`.
+`exception-role-membership.t` and `undeclared-when-type.t` share the exact
+same underlying gap: `when SomeUndeclaredType { ... }` should be a
 compile-time `X::Comp::Group`/"needs parens to avoid gobbling block" parse
-ambiguity, which mutsu's parser does not currently diagnose at all — a
-genuine parser feature gap, not a `Test`-shape issue; left open, tracked by
-those two files' own `not ok` lines rather than a fresh ticket since neither
-new investigation happened this session).
-
-Pin: `t/eqv-fetches-nested-proxy-elements.t` (top-level Proxy still FETCHes,
-nested inside Array/List/Hash/Pair now FETCHes too, and a genuinely-different
-nested-Proxy list correctly stays not-`eqv`) — verified byte-for-byte against
-`raku`. Full local `t/` suite and `cargo clippy -- -D warnings` clean;
-`t/autoviv-index-guard.t` timed out under `-j` load during the same `make
-test` run but reproduces identically on `main` with the fix `git stash`-ed
-out (confirmed directly, not this change) — pre-existing, unrelated to
-`eqv`/`Proxy`.
-
-Residue is now **5**: `exception-role-membership.t`, `is-lazy-io-lines.t`
-(×2), `subscript-adverbs.t` (×2), `throws-like-gather-sink.t`,
-`undeclared-when-type.t`.
+ambiguity (raku's parser cannot tell whether an undeclared bareword followed
+by `{` is a type smart-match or a routine call taking the block as its sole
+argument), which mutsu's parser does not diagnose at all today — a genuine
+parser feature gap, not investigated further this session.

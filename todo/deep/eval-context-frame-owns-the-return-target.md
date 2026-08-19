@@ -73,7 +73,11 @@ never runs. raku sinks it inside the EVAL and raises `X::ControlFlow::Return`.
 
 ## What it blocks
 
-`t/throws-like-gather-sink.t` (all three `return` subtests) and part of
+`t/throws-like-gather-sink.t`'s three `return;`/`for ^5 { return; }` subtests
+(the fourth subtest, `throws-like 'gather { return 1 }', ...`, is now fixed —
+that one needed only a separate, narrower "EVAL as a bare statement never
+forces a deferred gather" bug, not this frame-depth mechanism; see
+`news/2026-08/eval-statement-sink-forces-lazy-result.md`) and part of
 `t/emit-done-controlflow.t` under `MUTSU_REAL_TEST=1` — the real
 `Test.rakumod`'s `throws-like` is exactly this shape:
 
