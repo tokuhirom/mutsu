@@ -623,18 +623,24 @@ impl Compiler {
                 is_statement_modifier: false,
             });
         }
-        // LEAVE runs before KEEP/UNDO (in reverse declaration order)
+        // KEEP/UNDO runs before LEAVE on normal (uninterrupted) completion,
+        // verified against real `raku` (`todo/tickets/loop-body-leave-runs-before-keep-undo-instead-of-after.md`).
+        // This matches the `last`/`next`-interrupted path handled by
+        // `rewrite_next_targets_in_stmt` above, which also runs UNDO (the
+        // only queue reachable there) before LEAVE.
+        if let Some(result_var) = result_var.clone()
+            && (!keep_ph.is_empty() || !undo_ph.is_empty())
+        {
+            loop_body.push(Stmt::If {
+                cond: Expr::Var(result_var.clone()),
+                then_branch: keep_ph,
+                else_branch: undo_ph,
+                binding_var: None,
+                is_statement_modifier: false,
+            });
+        }
         loop_body.extend(leave_ph);
         if let Some(result_var) = result_var.clone() {
-            if !keep_ph.is_empty() || !undo_ph.is_empty() {
-                loop_body.push(Stmt::If {
-                    cond: Expr::Var(result_var.clone()),
-                    then_branch: keep_ph,
-                    else_branch: undo_ph,
-                    binding_var: None,
-                    is_statement_modifier: false,
-                });
-            }
             // Preserve loop-body value for expression contexts that collect
             // iteration results. Not needed (and harmful — sinking a taken
             // Failure would throw) when the body's value was already `take`n
