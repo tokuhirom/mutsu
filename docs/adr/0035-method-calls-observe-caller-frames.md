@@ -1,6 +1,6 @@
 # ADR-0035: Caller-frame observation from method bodies — chain-aware dynamics enumeration, plus `uses_callframe`-gated frame pushing at the two compiled-method chokepoints
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (Slices 1-3 implemented; see "Implementation status" below)
 - Date: 2026-08-19
 - Origin: `todo/deep/method-calls-never-push-caller-frame.md` (reclassified from
   `todo/tickets/log-timeline-task-event-recording-empty.md`)
@@ -352,3 +352,58 @@ sub/block contexts. A sufficient sweep before calling any slice done:
   comprehensive net — Mechanism 2 touches the hottest dispatch functions, so
   the jit-stress job is the one most likely to surface an ordering mistake
   (push before overlay, pop before env restore).
+
+## 7. Implementation status (2026-08-20)
+
+All three slices landed:
+
+- **Slice 1** (chain-aware dynamics enumeration): PR #6703. The existing
+  `Env::filtered_flat` chain-aware tier-walk primitive already implemented
+  exactly what §2.1 specified — no new primitive was needed, only wiring
+  `dynamic_pseudo_stash_entries` to use it instead of `Env::iter()`. Fixes
+  `PROCESS::`/`DYNAMIC::` reads from methods and both latent sub-side gaps
+  (§1.2). Regression test: `t/adr0035-dynamics-chain-aware-enumeration.t`.
+- **Slice 2** (`uses_callframe`-gated push at the method chokepoints): PR
+  #6704. Implemented as specified in §2.2, with two corrections found during
+  implementation: (a) the fast path (`call_compiled_method_fast`) has two
+  distinct normal-exit sites, not one as the ADR's line-derived description
+  implied — handled with a single `pop_caller_env()` hoisted immediately
+  before the branch that splits between them; (b) the detection-parity audit
+  (§2.2's last paragraph) turned out to be a non-issue — `--dump-bytecode`
+  confirms bareword `callframe`/`callframes` always compile as
+  `CallFuncNamed`, already covered by existing `uses_callframe` detection, so
+  no `emit()` change was needed. Fixes `CALLER::`/`callframe()` reads from
+  methods. Regression test: `t/method-caller-frame-push.t`.
+- **Slice 3** (tree-walk residue + Log::Timeline end-to-end acceptance): the
+  "tree-walk residue" concern in §1.3 turned out to already be moot, resolved
+  by an earlier, unrelated refactor (#3658) that predates this ADR:
+  `run_resolved_method_celled` (`src/runtime/class_dispatch.rs`) compiles any
+  candidate with no `compiled_code` on demand (`compile_method_def_in_place`)
+  *before* reaching its own dispatch, then unconditionally calls
+  `call_compiled_method` — the same chokepoint Slice 2 already patched. The
+  only executor that does NOT go through the two chokepoints is
+  `forward_resolved_delegation`, which handles `handles`-delegation
+  forwarders (plumbing that redirects to another method call, not a
+  caller-observing user body) — confirmed by reading the function's own
+  doc comment, which states the former tree-walk method-execution arm "has
+  been deleted." No code change was needed for this slice.
+
+  The Log::Timeline end-to-end acceptance gate (`t/logging.rakutest` tests
+  10-30) does NOT fully pass, but not because of anything this ADR's
+  mechanism owns: mechanism-wise, tests 1-8 now pass (previously silently
+  no-op'd via the `PROCESS::<$LOG-TIMELINE-OUTPUT>` visibility bug this ADR
+  fixes). Test 9 onward hits a distinct, unrelated bug — a class-level `my
+  atomicint` counter read via `⚛++` inside an attribute's default-value
+  expression is wrong for the first-ever instance of the class (and
+  off-by-one after) — filed separately as
+  `todo/tickets/class-level-atomicint-attribute-default-first-instance-wrong.md`.
+  This is the `Log::Timeline::Ongoing::Logged` task-ID counter, unrelated to
+  caller-frame observation; it surfaced only because Slices 1-2 let execution
+  reach that far for the first time. The caller-frame mechanism itself is
+  considered fully verified by the smaller, targeted regression tests listed
+  under Slices 1-2 above, plus the roast/`t/` pin sweep (all pins green,
+  `roast/S06-advanced/callframe.t` whitelisted and green).
+
+The inherited, unchanged approximation flagged in §5 Slice 3 stands: deep
+`CALLER::CALLER::` / `callframes()` chains through *frameless* intermediate
+subs remain gappy, exactly as on the sub side before this ADR.
