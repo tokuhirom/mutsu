@@ -5,17 +5,33 @@
 two compiled-method chokepoints; implementation slices listed there). The ADR
 also root-causes two latent sub-side `PROCESS::` gaps beyond the repros below.
 
-**Slice 1 (chain-aware dynamics enumeration) is implemented** — `Env::filtered_flat`
-(the existing chain-aware tier-walk primitive, `src/env.rs`) now backs
-`dynamic_pseudo_stash_entries` (`src/runtime/runtime_caller_env.rs`) in place of
-`Env::iter()` (which only saw the top overlay tier). This fixes `PROCESS::`/
-`DYNAMIC::` reads from a flat method body, a closure-bearing method body, a sub
-with a positional parameter, and a frameless overlay intermediate between
-writer and reader — all four repros verified fixed against raku's `42` output.
-Regression test: `t/adr0035-dynamics-chain-aware-enumeration.t`. `CALLER::` and
-`callframe()` from inside methods are still broken (Slice 2, frame-stack
-mechanism — unaffected by this slice, since Mechanism 1 only fixes env
-visibility, not frame observation).
+**Slice 1 (chain-aware dynamics enumeration) is implemented, PR #6703.** —
+`Env::filtered_flat` (the existing chain-aware tier-walk primitive,
+`src/env.rs`) now backs `dynamic_pseudo_stash_entries`
+(`src/runtime/runtime_caller_env.rs`) in place of `Env::iter()` (which only
+saw the top overlay tier). This fixes `PROCESS::`/`DYNAMIC::` reads from a
+flat method body, a closure-bearing method body, a sub with a positional
+parameter, and a frameless overlay intermediate between writer and reader —
+all four repros verified fixed against raku's `42` output. Regression test:
+`t/adr0035-dynamics-chain-aware-enumeration.t`.
+
+**Slice 2 (uses_callframe-gated push at the method chokepoints) is
+implemented, PR #6704.** `call_compiled_method` and
+`call_compiled_method_fast` (`src/vm/vm_method_dispatch.rs`) now push a
+caller-env frame in their prologue, gated on `cc.uses_callframe`, and pop it
+paired with every existing `pop_call_frame` exit site. This fixes the
+`CALLER::<$*y>` and `callframe(N).line` method repros above (both verified
+against `raku` as oracle; regression test `t/method-caller-frame-push.t`).
+The `emit()` detection-parity audit the ADR flagged (bareword
+`callframe`/`callframes` possibly compiling as `GetBareWord`) turned out to
+be a non-issue — `--dump-bytecode` confirms the parser always compiles those
+two names as `CallFuncNamed`, already covered by the existing detection; no
+detection change was needed.
+
+Both slices land together: `CALLER::`/`callframe()`/`PROCESS::`/`DYNAMIC::`
+are all now correctly observable from inside method bodies. Slice 3
+(tree-walk residue + `Log::Timeline` end-to-end acceptance) remains open —
+this file stays until it lands.
 
 Reclassified from `todo/tickets/log-timeline-task-event-recording-empty.md`
 (originally filed as a narrow `Log::Timeline`/`given`/role-composed-method
