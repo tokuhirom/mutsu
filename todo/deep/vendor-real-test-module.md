@@ -2465,4 +2465,26 @@ compile-time `X::Comp::Group`/"needs parens to avoid gobbling block" parse
 ambiguity (raku's parser cannot tell whether an undeclared bareword followed
 by `{` is a type smart-match or a routine call taking the block as its sole
 argument), which mutsu's parser does not diagnose at all today — a genuine
-parser feature gap, not investigated further this session.
+parser feature gap.
+
+**Investigated 2026-08-19, not fixed — the obvious extension is unsafe.**
+`when_stmt` (`src/parser/stmt/control/given_when.rs`) already has exactly
+this "gobbled block" diagnosis, but deliberately scoped to bareword names
+under the `X::`/`CX::` reserved namespaces only (checked against
+`is_known_type_constraint`/`is_known_compound_type`/`is_user_declared_type`
+before erroring). The tempting fix is to drop the namespace restriction and
+run the same three checks for *any* bareword. This is unsafe: a survey of
+`modules/` (the vendored batteries) finds real `when SimpleTypeName { ... }`
+usages — e.g. `Cro::HTTP::ResponseParser`'s `when Header { ... }` — where the
+type is declared in a *different* file of the same distribution, loaded via
+`use` at runtime. `is_user_declared_type` only tracks types the *current*
+file declares with `class`/`role`/`enum`/`grammar` during parsing
+(mutsu registers imported/cross-file types at run time, not parse time — see
+the existing comment in `when_stmt` for the identical reasoning already
+applied to compound `X::`-adjacent names like `Day::Mon`). Broadening the
+check as-is would misdiagnose every one of those as a genuine
+parse-time "gobbled block" error, a real regression across the batteries
+corpus. A correct fix needs either a cross-file/cross-compunit type-name
+index available at parse time (a real architectural addition, not a small
+change) or some other way to distinguish "declared nowhere reachable" from
+"declared in a sibling file not yet parsed" — not attempted this session.
