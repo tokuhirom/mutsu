@@ -57,7 +57,7 @@ synthesised on demand.
 
 | REPR | body | mutsu's answer |
 | --- | --- | --- |
-| `VMArray` | `{u64 elems; u64 start; u64 ssize; void* any}` | a `Buf`/`Blob` with element storage |
+| `VMArray` | `{u64 elems; u64 start; u64 ssize; void* any}` | a `Buf`/`Blob`, and a native-typed `array[T]`, with element storage |
 | `CArray` | `{void* storage; void** child; i32 managed; i32 allocated; i32 elems}` | a `nativecast`ed `CArray` handle, and a native-backed `CArray[T]` |
 | `CStruct` | `{void* cstruct; void** child_objs}` | a `nativecast`ed CStruct/CUnion handle |
 
@@ -140,7 +140,6 @@ each honest answer is a promise that a body exists behind it, and that is not a
 promise to make idly. In particular:
 
 - a **CStruct constructed in Raku** (`Rec.new`) has no C storage yet;
-- a Raku-side **`array[T]`** — ADR-0015's P3b;
 - a **`CArray[T]` whose element type is a reference**: `CArray[Str]`,
   `CArray[Pointer]`, a nested `CArray[CArray[…]]`, a CStruct element. Their
   elements are addresses of other objects, so reading one back means materialising
