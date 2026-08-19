@@ -1082,13 +1082,24 @@ impl Interpreter {
             };
             if let ValueView::ContainerRef(cell) = captured.view() {
                 let cell = cell.clone();
-                if !matches!(updated.view(), ValueView::ContainerRef(ref incoming) if crate::gc::Gc::ptr_eq(&cell, incoming))
-                {
-                    let updated = updated.into_deref();
-                    Value::store_through_cell(&cell, &updated);
+                // A DIFFERENT cell in the live env means a nested callee
+                // legitimately REBOUND the name (`$alias := $var` promotes /
+                // rebinds it to the source's shared cell). The new binding
+                // wins: re-installing the capture-time cell here severed the
+                // fresh `:=` bind from every later source write (the
+                // `lives-ok { bindit() }` chain in
+                // t/bind-source-tracks-through-call-chain.t). Only a plain
+                // (deref'd) overlay value is rejoined to the captured cell.
+                match updated.view() {
+                    // Same cell: nothing to rejoin. Different cell: the new
+                    // binding stays.
+                    ValueView::ContainerRef(_) => {}
+                    _ => {
+                        Value::store_through_cell(&cell, &updated);
+                        self.env_mut()
+                            .insert_sym(source, Value::container_ref(cell));
+                    }
                 }
-                self.env_mut()
-                    .insert_sym(source, Value::container_ref(cell));
             } else {
                 self.set_closure_captured_state(data.id, source, updated);
             }
@@ -1342,15 +1353,24 @@ impl Interpreter {
                     // closure (Text::CSV `$io-in`, t/closure-captured-name-leak.t).
                     // A nested call that genuinely rebinds the name in this frame
                     // leaves a value differing from the capture and is still
-                    // written back. Identity comparison (`values_identical`), not
-                    // deep `==`: "unchanged" means the env entry is still the very
-                    // value installed at entry, and a deep eq diverges on cyclic
-                    // instances (a captured `Text::CSV.new` object).
+                    // written back. Identity comparison, not deep `==`:
+                    // "unchanged" means the env entry is still the very value
+                    // installed at entry, and a deep eq diverges on cyclic
+                    // instances (a captured `Text::CSV.new` object). The
+                    // container-identity variant (NOT `values_identical`, whose
+                    // fallthrough `eqv` derefs cells): a nested `:=` bind that
+                    // PROMOTED the caller's plain lexical to a shared
+                    // `ContainerRef` cell leaves the cell's inner value equal to
+                    // the capture-time snapshot, but the promotion itself is a
+                    // caller-visible binding change — dropping it here severed
+                    // `$alias := $var` bound through a `lives-ok { ... }`-style
+                    // nested chain from every later `$var = ...` write (see
+                    // news/2026-08/attr-bind-source-write-tracked-through-nested-call-chain.md).
                     if captured_names.contains(k)
                         && !cc.free_var_syms.contains(k)
                         && !inline_control_written.contains(k)
                         && data.env.get_sym(*k).is_some_and(|captured| {
-                            crate::runtime::utils::values_identical(captured, v)
+                            crate::runtime::utils::container_identity_identical(captured, v)
                         })
                     {
                         continue;

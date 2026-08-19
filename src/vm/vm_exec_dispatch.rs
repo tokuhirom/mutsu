@@ -1353,10 +1353,39 @@ impl Interpreter {
                         && !name.starts_with('&')
                         && !source_readonly
                     {
-                        let container = if let ValueView::ContainerRef(arc) = val.view() {
-                            Value::container_ref(arc.clone())
-                        } else {
-                            val.clone().into_container_ref()
+                        // Reuse the source's existing cell when it already has
+                        // one, so the bind joins the LIVE cell instead of
+                        // minting a disconnected snapshot: the source read that
+                        // produced `val` derefs its cell, so `val` is the plain
+                        // value and the `ContainerRef` arm below cannot catch
+                        // this. Without the reuse, `sub bindit { $alias := $var }`
+                        // (a free-var `:=` inside a named sub, routed through
+                        // SetGlobal) bound `$alias` to a fresh cell holding the
+                        // bind-time value, while every later `$var = ...` write
+                        // went through `$var`'s own authoritative cell (its env
+                        // entry or its ADR-0024 mainline capture cell) — so
+                        // `$alias` never tracked the source again. Mirrors the
+                        // cell-reuse the SetLocal `bind_source` twin already
+                        // does (`vm_var_assign_set_local.rs`, both the
+                        // whole-container and the scalar branch).
+                        let container = match val.view() {
+                            ValueView::ContainerRef(arc) => Value::container_ref(arc.clone()),
+                            _ => {
+                                let existing =
+                                    match self.env().get(&resolved_source).map(Value::view) {
+                                        Some(ValueView::ContainerRef(arc)) => Some(arc.clone()),
+                                        _ => None,
+                                    }
+                                    // ADR-0024: an intervening frame can shadow the
+                                    // source in the plain env chain; fall back to the
+                                    // mainline capture store before minting a
+                                    // disconnected cell (see `mainline_lexical_cell`).
+                                    .or_else(|| self.mainline_lexical_cell(&resolved_source));
+                                match existing {
+                                    Some(arc) => Value::container_ref(arc),
+                                    None => val.clone().into_container_ref(),
+                                }
+                            }
                         };
                         // Store ContainerRef in target and source env
                         self.set_env_with_main_alias(&name, container.clone());

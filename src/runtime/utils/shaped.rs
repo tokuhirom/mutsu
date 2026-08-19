@@ -312,22 +312,26 @@ pub(crate) fn values_identical(left: &Value, right: &Value) -> bool {
                 && ap
                     .iter()
                     .zip(bp.iter())
-                    .all(|(x, y)| capture_elem_identical(x, y))
-                && an
-                    .iter()
-                    .all(|(k, v)| bn.get(k).is_some_and(|bv| capture_elem_identical(v, bv)))
+                    .all(|(x, y)| container_identity_identical(x, y))
+                && an.iter().all(|(k, v)| {
+                    bn.get(k)
+                        .is_some_and(|bv| container_identity_identical(v, bv))
+                })
         }
         _ => left.eqv(right),
     }
 }
 
-/// Identity comparison for a single Capture element. Unlike a top-level
-/// `===` (which deconts a bound scalar to its value), a Capture retains the
-/// container identity of each element: two `ContainerRef` cells are identical
-/// only when they are the same `Arc` (i.e. bound to the same container), and a
-/// container can never be identical to a plain value. Non-container elements
-/// fall back to the normal value identity rules.
-fn capture_elem_identical(a: &Value, b: &Value) -> bool {
+/// Identity comparison that retains the container identity of each side.
+/// Unlike a top-level `===` (which deconts a bound scalar to its value), two
+/// `ContainerRef` cells are identical only when they are the same `Arc` (i.e.
+/// bound to the same container), and a container can never be identical to a
+/// plain value. Non-container values fall back to the normal value identity
+/// rules. Used for Capture elements, and by the closure-return caller-env
+/// writeback to detect a *binding* change (a `:=` promotion of a captured
+/// name to a shared cell) even when the cell's inner value still compares
+/// equal to the plain capture-time snapshot.
+pub(crate) fn container_identity_identical(a: &Value, b: &Value) -> bool {
     match (a.view(), b.view()) {
         (ValueView::ContainerRef(x), ValueView::ContainerRef(y)) => crate::gc::Gc::ptr_eq(&x, &y),
         (ValueView::ContainerRef(_), _) | (_, ValueView::ContainerRef(_)) => false,
