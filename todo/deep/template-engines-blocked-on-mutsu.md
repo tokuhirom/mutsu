@@ -10,7 +10,7 @@ and broken under mutsu**, so the battery decision is blocked on interpreter work
 | --- | --- | --- | --- |
 | `Template::Mustache` 1.2.6 | 11/13 | ~~1/13~~ → **11/13** | **FIXED** — hyper `».method` did not flatten a `Slip` result; pin `t/hyper-method-slip-result.t`. Two files remain: `06-logging` (2/3), `92-specs-file` (1/10) |
 | `Template6` 0.16.0 | 12/12 | **0/12** | `Use of Nil in string context` from `Parser.compile`: a `q:to/RAKU/` heredoc whose `\qq[$safe-delimiter]` / `\qq[$segment]` come out empty |
-| `Template::Jinja2` 0.2.0 | 22/23 | **0/23 files**, but no longer dies at load | **Load blocker FIXED 2026-07-26** (#5466, `news/2026-07/private-method-in-closure.md`): a closure created in a method lost its class, so `Renderer.rakumod`'s `sub (*@args) { self!cycle(|@args) }` was rejected and every file died before its first assertion. The suite now RUNS (re-measured 2026-07-26 with the dist from the REA archive) and fails on assertions instead — e.g. `01-lexer` reaches subtest 1 and fails "Correct value". A new reduction is needed for that next layer |
+| `Template::Jinja2` 0.2.0 | 22/23 | **0/23 files** | **REDUCED 2026-08-19 — two interpreter bugs, both filed as tickets.** (1) `todo/tickets/regex-brace-paren-inside-char-class-swallows-rest-of-pattern.md` — a literal `{` inside `<-[{]>` makes the assertion scanner miss its closing `>`, so the `+` and every following atom is swallowed; the lexer chunks plain text one character per token. Escaping that single brace by hand takes `01-lexer` from **0/15 to 15/15**. (2) `todo/tickets/qualified-private-method-call-uses-short-owner-name.md` — `$renderer!Renderer::…` inside `module Template::Jinja2::Renderer` is rejected because the owner is compared as written (`Renderer`) against the fully-qualified caller (`Template::Jinja2::Renderer::Renderer`); this kills the other 22 files at load |
 | `Template::Mojo` 0.2.2 | 5/5 | ~~0/5~~ → **4 of 5 files run** | **FIXED 2026-07-26** (#5468, `news/2026-07/regex-assertion-quoted-angle-brackets.md`): a quoted `<`/`>` inside a regex lookaround broke the parse — not a named-capture bug. Now 00-basic 15/17, 01-template 3/3, 02-complex 1/1, 04-native-named 1/1; residue in `todo/tickets/template-mojo-residual-failures.md` |
 | `Template::Nest::Fast` 0.3.0 | 10/10 | **0/10** | `Use of Nil in string context` |
 | `Template::HAML` 0.9.5 | 82/83 | 14/83 | many; also **2–3× slower to load than raku** (release) → `todo/tickets/grammar-heavy-module-load-slower-than-raku.md` |
@@ -19,6 +19,16 @@ and broken under mutsu**, so the battery decision is blocked on interpreter work
 
 Reproduce with `tmp/tmpl-survey.sh` (fetches each dist from the REA archive at a
 pinned version and runs its own suite; swap `MUTSU_BIN=raku` for the baseline).
+`tmp/` is gitignored, so that script does not survive a fresh checkout — rebuild
+it from the two steps it automates:
+
+1. Look the dist's `source-url` up in the local REA index, the same data `mzef`
+   uses: `~/.zef/store/rea/rea.json` is a JSON array of entries with `name`,
+   `version` and `source-url` (a `https://raw.githubusercontent.com/raku/REA/…`
+   tarball, URL-escaped `Name:ver<X>:auth<Y>.tar.gz`).
+2. `curl -sSL` it, untar into `tmp/`, and run each `t/*.rakutest` with
+   `-I lib` under `target/debug/mutsu` and under `raku`, counting whole files
+   that exit 0.
 
 ## Why this is a deep item, not a ticket
 
@@ -37,9 +47,13 @@ needs its own reduction before it can be scheduled. What *is* known:
   method call. Fixed in #5468. **Lesson for the remaining rows: the first error
   message is a symptom; reduce the real module by deleting constructs until a
   two-line repro falls out, rather than theorising from the message.**
-- `Template::Jinja2` was the cheapest lever by file count and its load-time
-  error is now fixed (#5466); the suite runs but fails on assertions, so it
-  needs a fresh reduction rather than a re-run.
+- `Template::Jinja2` was the cheapest lever by file count. Its 2026-07-26
+  "load blocker FIXED (#5466)" note was **too optimistic**: #5466 did fix the
+  `sub (*@args) { self!cycle(|@args) }` closure form, but the dist still dies at
+  `use Template::Jinja2::Renderer` on a *different* private-method path (the
+  qualified `$renderer!Renderer::…` form). Re-measured 2026-08-19 on the current
+  build: **0/23 files**. Both remaining causes are now reduced to one-function
+  bugs — see the two tickets in the row above.
 
 ## Already reduced and split out
 
@@ -55,11 +69,22 @@ needs its own reduction before it can be scheduled. What *is* known:
 1. ~~`Template::Mustache`~~ — **done 2026-07-25**, and it is the chosen engine for
    the slot. One general fix (hyper Slip flattening) took it 1/13 → 11/13. The
    last two files are tracked with the battery itself, not here.
-2. ~~`Template::Jinja2`'s private-method error~~ — **done 2026-07-26** (#5466);
-   the suite now runs. Its next layer (assertion failures, starting with
-   `01-lexer`'s "Correct value") is unreduced and is the natural follow-up.
+2. `Template::Jinja2` — **reduced 2026-08-19, ready to implement.** Both
+   remaining blockers are one-function interpreter bugs with pins specified:
+   `todo/tickets/regex-brace-paren-inside-char-class-swallows-rest-of-pattern.md`
+   (fixes `01-lexer` outright, and is a general grammar-slang bug that any
+   template/config grammar will hit) and
+   `todo/tickets/qualified-private-method-call-uses-short-owner-name.md` (which
+   makes the dist loadable at all). Do them in that order — the char-class one is
+   independently valuable and has the smaller diff.
 3. `Template6` — the runner-up candidate; worth fixing so the survey has a real
-   second option rather than a single viable choice.
+   second option rather than a single viable choice. Still **unreduced**:
+   re-checked 2026-08-19, `t/01-simple.rakutest` emits `Use of Nil in string
+   context` from `Parser.compile` at `lib/Template6/Parser.rakumod` lines
+   227/230/231 and yields empty output. Per the lesson above, that warning is a
+   pointer, not the diagnosis — reduce `Parser.compile` by deletion rather than
+   theorising about the heredoc. Confirmed **not** the char-class bug: Template6
+   uses no `{`/`(` inside a `<[...]>` class.
 4. The rest (`Mojo`, `Nest::Fast`, `HAML`, `SP6`, `Classic`) as ordinary
    compatibility work; each is also a data point that mutsu's grammar/list
    semantics still diverge in ways ordinary modules hit.
