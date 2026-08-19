@@ -1,5 +1,63 @@
 # `CBOR::Simple`'s own upstream suite fails broadly outside the narrow slice Cro::HTTP/Log::Timeline exercise
 
+> **Update (2026-08-20): test 68's nested-array decode aliasing bug reduced to a 4-line,
+> CBOR::Simple-scoped repro (previously thought to need the full file's accumulated state) —
+> root cause still open, filed as a lead for a follow-up `todo/deep`.** Bisecting the file
+> (binary-search over which earlier subtests are prerequisites, see method below) found the
+> trigger has nothing to do with "68 subtests of accumulated state": it needs exactly one prior
+> `cbor-encode()` call on an inline, expression-position `my @ = ...` array, of ANY length
+> (including a single element), followed by decoding an indefinite-length array whose two
+> elements are themselves definite-length nested arrays:
+>
+> ```raku
+> use CBOR::Simple;
+> sub hex-decode(Str:D $hex, $buf-type = buf8) { $buf-type.new($hex.comb(2).map(*.parse-base(16))) }
+> say cbor-encode((my @ = 1,2,3));                       # warm-up; ANY length reproduces, even 1
+> say cbor-decode(hex-decode('9f01820203820405ff'));     # expect [1, [2, 3], [4, 5]]
+> # mutsu: [1 [4 5] [4 5]]  -- second nested array clobbers the first
+> ```
+>
+> Isolating variables (each tested independently, release-independent — `MUTSU_JIT=off` still
+> reproduces, so this is a base-interpreter bug, not a JIT artifact):
+>
+> - The warm-up call must be `cbor-encode((my @ = ...))` — an **inline, expression-position**
+>   `my @ = LIST` used directly as a call argument. `my @a = 1,2,3; cbor-encode(@a)` (declared as
+>   its own statement first, then passed by name) does **not** trigger it.
+> - The warm-up must be an `encode` call specifically; decoding the same values first (without
+>   ever encoding) does not trigger it, even decoding both the nested array AND a 25-element
+>   array beforehand.
+> - Array length of the warm-up value is irrelevant — `1` element already triggers it, `[1]`
+>   literal (not `my @ = ...`) does not.
+> - The corruption itself: `CBOR::Simple`'s `decode-array` (`Simple.rakumod:690-701`) has
+>   `!! my @ = (^read-uint).map(&decode)` — the exact same **inline `my @ = EXPR` as an
+>   expression-position ternary branch** shape as the warm-up. This closure is freshly declared
+>   (`my &decode-array = { ... }`) inside `multi cbor-decode(...)`, which is called recursively
+>   once per indefinite-array element — so the `[2, 3]` and `[4, 5]` sub-arrays are each decoded
+>   in **separate, sibling recursive `cbor-decode()` invocations**, yet the returned array
+>   containers end up **aliased to the same object** (the second overwrites the first, visible in
+>   the first's still-held reference).
+>
+> **Not yet root-caused**: two attempts to reproduce with a CBOR-independent script (a hand-rolled
+> recursive decoder with the same "closure declared fresh per recursive call, returns an inline
+> `my @ = ...` from a ternary branch, results collected into an outer array" shape) both decoded
+> correctly — so the trigger needs something more specific to `CBOR::Simple`'s actual code
+> (candidates not yet tested: the `.map(&decode)` where `&decode` is itself a `my &decode = {...}`
+> dispatching through the `@decoders` table at `Simple.rakumod:1191`/`1201`, or some interaction
+> specific to how `read-uint` advances `$pos` across the recursive calls). This is a **silent data
+> corruption** bug (no crash, no warning — just a wrong value), so it is a good candidate for its
+> own `todo/deep` ticket once someone reduces the CBOR-independent repro; the natural next step is
+> `rust-gdb` on `my @ = (^read-uint).map(&decode)`'s container-allocation site (CLAUDE.md's
+> "Debugging guidelines" — break where an anonymous/expression-position array `VarDecl` allocates
+> its container, compare pointer identity between the two decode-array invocations) rather than
+> more guess-driven raku-level probing.
+>
+> **Bisection method used** (reusable for other "needs full accumulated state" style bugs): start
+> from the failing full file, binary-search by commenting out/keeping line ranges (front half vs
+> back half of the file, re-test, recurse into whichever half still reproduces) rather than
+> removing tests one at a time from the front. Converged in ~6 rounds from "needs all 68 prior
+> subtests" to "needs exactly 2 specific lines" (`t/01-basic.rakutest:113` + `:114`), then further
+> reduced those two lines' *shape* (not their literal content) by substitution.
+
 > **Update (2026-08-19): the `01-basic.rakutest` "No matching candidates for proto sub: matches"
 > failure (test 12) is NOT a CBOR::Simple bug at all — root-caused and reduced to a 6-line,
 > CBOR-independent repro.** The vendored test file's own `use lib $*PROGRAM.sibling('lib');`
