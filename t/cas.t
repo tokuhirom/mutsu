@@ -1,6 +1,6 @@
 use Test;
 
-plan 9;
+plan 10;
 
 # 3-arg form: cas($var, $expected, $new)
 {
@@ -47,4 +47,21 @@ plan 9;
         cas($value, 1, 2);
     };
     is $value, 2, 'cas updates from start thread are visible to main thread';
+}
+
+# Regression pin: the `cas($var, -> $v { $v + delta })` compile-time
+# rewrite to `__mutsu_atomic_add_var` must fire regardless of whether the
+# lambda body is a bare `Stmt::Expr` or, as pointy-block parsing normally
+# produces, prefixed with a `Stmt::SetLine`. Two call sites on the SAME
+# variable use different lambda shapes here (one hits the delta fast path,
+# one falls through to the general `cas` path) to pin that both are kept
+# at counts_as_write=false, so neither gets a different cell-promotion
+# classification than the other for the same variable.
+{
+    my atomicint $mixed = 0;
+    await Promise.allof(
+        start { for 1..25 { cas $mixed, -> $v { $v + 1 } } },
+        start { for 1..25 { my $x = 1; cas $mixed, -> $v { $v + $x } } },
+    );
+    is $mixed, 50, 'delta-shape and general-shape cas calls on the same var interleave correctly';
 }
