@@ -413,7 +413,18 @@ impl Interpreter {
         // Guard the allocation: `str::repeat` aborts the process via
         // `handle_alloc_error` on an absurd count (e.g. `"x" x 1e15`), which
         // `try {}` cannot recover from. Reserve fallibly first so the same
-        // input yields a catchable `X::` instead. (raku aborts here too.)
+        // input yields a catchable `X::` instead.
+        //
+        // Best-effort only, and weaker than raku here: `try_reserve` fails only
+        // if the kernel refuses the mapping (request over the ~128 TiB address
+        // space, or a non-overcommitting `vm.overcommit_memory`). Under
+        // `vm.overcommit_memory=1` a 91 TiB reservation succeeds and the fill
+        // loop below then eats the machine. raku instead caps the *request*
+        // deterministically -- "Repeat count (N) cannot be greater than max
+        // allowed number of graphemes 4294967295", plus the same bound on
+        // `graphemes * count` -- which is allocator-independent. mutsu should
+        // adopt that cap; see the note in `Interpreter::autoviv_resize`.
+        // TODO: enforce raku's 4294967295-grapheme cap before reserving.
         let total = src
             .len()
             .checked_mul(n)
