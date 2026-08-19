@@ -1096,9 +1096,12 @@ impl Compiler {
                 }
                 _ => {
                     // sink expr -- evaluate, discard, push Nil
-                    // SinkPop throws unhandled Failures
+                    // SinkPop throws unhandled Failures. The explicit `sink`
+                    // statement-prefix always forces its argument (`true`),
+                    // even a bare variable -- unlike an ordinary bare
+                    // statement, `sink $f;` is an explicit sink request.
                     self.compile_expr(&args[0]);
-                    self.code.emit(OpCode::SinkPop(false));
+                    self.code.emit(OpCode::SinkPop(false, true));
                     self.code.emit(OpCode::LoadNil);
                 }
             }

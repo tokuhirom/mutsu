@@ -2850,9 +2850,10 @@ impl Interpreter {
                 }
                 *ip += 1;
             }
-            OpCode::SinkPop(user_sink) => {
+            OpCode::SinkPop(user_sink, may_explode_failure) => {
                 self.sync_source_line(code, *ip);
                 let user_sink = *user_sink;
+                let may_explode_failure = *may_explode_failure;
                 if let Some(val) = self.stack.pop() {
                     // A bare statement value whose class defines its own `sink`
                     // method invokes it in sink context (Raku semantics:
@@ -2959,7 +2960,16 @@ impl Interpreter {
                             // stored Failure there stays soft (only a DESTROY-time
                             // warning), e.g. Cro's generated route matcher relies
                             // on the Failure reaching the signature-bind check.
+                            // Also except a bare container read (`may_explode_failure
+                            // == false`): Raku's optimizer never actually sinks a
+                            // pure variable mention (the "Useless use of ... in sink
+                            // context" case), so reaching it here must not
+                            // retroactively explode a Failure that was created
+                            // without `use fatal` in effect (`t/failure-fatal-mode-
+                            // creation-time.t`) — Raku decides a Failure's fate at
+                            // *construction* time, not at every later mention.
                             if !self.in_regex_code_block
+                                && may_explode_failure
                                 && let Some(err) = self.failure_to_runtime_error_if_unhandled(&val)
                             {
                                 return Err(err);

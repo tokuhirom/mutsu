@@ -678,6 +678,35 @@ impl Compiler {
         }
     }
 
+    /// Whether a bare statement expression is a pure container read — a bare
+    /// variable mention (`$f;`, `@a;`, `%h;`) — rather than a freshly computed
+    /// value. Raku's optimizer recognizes a bare variable mention as "Useless
+    /// use of ... in sink context" (`parser::sink_warn::describe_useless`) and
+    /// never actually forces/sinks it, so a stored unhandled `Failure` must
+    /// not explode merely because the bare mention was reached: Raku decides
+    /// a Failure's fate at *construction* time (throwing immediately there
+    /// under `use fatal` — matched by the various `self.fatal_mode`
+    /// assignment-time checks in the VM), not by re-examining it at every
+    /// later mention. `my $f = "a".Int; { use fatal; $f; }` must not throw —
+    /// `$f` was made without fatal, so it stays soft forever; the same is
+    /// true even with no `use fatal` anywhere at all (`my $f = "a".Int; $f;`
+    /// lives too).
+    ///
+    /// Deliberately narrower than `sink_warn::describe_useless` (which also
+    /// covers literals and pure operators): those can never evaluate to a
+    /// *stored* Failure, so only the bare-variable shapes matter here. A
+    /// sigil-prefixed `Var` name is a synthetic bind-desugaring artifact (see
+    /// `describe_useless`'s identical exclusion), not a user-written bare
+    /// scalar — treated conservatively as forcing.
+    pub(super) fn stmt_value_is_bare_container_read(expr: &Expr) -> bool {
+        match expr {
+            Expr::Grouped(inner) => Self::stmt_value_is_bare_container_read(inner),
+            Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => false,
+            Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => true,
+            _ => false,
+        }
+    }
+
     /// Whether a statement-expression's value can only be the value of an
     /// element assignment — directly (`%h{$k} = ...;`) or behind an
     /// `if`/`unless` statement modifier. Deliberately does NOT descend into a
@@ -760,8 +789,10 @@ impl Compiler {
                 if Self::stmt_value_is_assignment(expr) {
                     self.code.emit(OpCode::SinkPopAssign);
                 } else {
-                    self.code
-                        .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(expr)));
+                    self.code.emit(OpCode::SinkPop(
+                        Self::stmt_value_may_user_sink(expr),
+                        !Self::stmt_value_is_bare_container_read(expr),
+                    ));
                 }
             }
             // Feed split for an assignment to an already-declared variable:
@@ -786,8 +817,10 @@ impl Compiler {
                     };
                 }
                 self.compile_condition_expr(&feed);
-                self.code
-                    .emit(OpCode::SinkPop(Self::stmt_value_may_user_sink(&feed)));
+                self.code.emit(OpCode::SinkPop(
+                    Self::stmt_value_may_user_sink(&feed),
+                    !Self::stmt_value_is_bare_container_read(&feed),
+                ));
             }
             Stmt::Block(stmts) => {
                 // Check for placeholder conflicts in blocks. Use the *shallow*
@@ -1049,7 +1082,7 @@ impl Compiler {
                     {
                         // Emit a Nil instead of the Var to avoid forcing.
                         self.code.emit(OpCode::LoadNil);
-                        self.code.emit(OpCode::SinkPop(false));
+                        self.code.emit(OpCode::SinkPop(false, true));
                         continue;
                     }
                     self.compile_stmt(s);
@@ -2657,7 +2690,7 @@ impl Compiler {
                     // i.e. `$obj.foo();`) sinks its value, and sinking an
                     // unhandled Failure throws. `true` = the value is a fresh
                     // rvalue that may run a user-defined `sink` method.
-                    self.code.emit(OpCode::SinkPop(true));
+                    self.code.emit(OpCode::SinkPop(true, true));
                     return;
                 }
 
@@ -2685,9 +2718,9 @@ impl Compiler {
                     };
                     self.compile_expr(&call_expr);
                     // Sink context: a bare call statement sinks its value (see
-                    // the identical `SinkPop(false)` below for the normalized
-                    // mutating-call path).
-                    self.code.emit(OpCode::SinkPop(false));
+                    // the identical `SinkPop(false, true)` below for the
+                    // normalized mutating-call path).
+                    self.code.emit(OpCode::SinkPop(false, true));
                     return;
                 }
 
@@ -2717,7 +2750,7 @@ impl Compiler {
                     // `false` = a function-call return is not auto-`sink`ed
                     // (Raku keeps it container-wrapped); only Failure/lazy
                     // handling applies. Matches the method form `@a.pop;`.
-                    self.code.emit(OpCode::SinkPop(false));
+                    self.code.emit(OpCode::SinkPop(false, true));
                     return;
                 }
 
