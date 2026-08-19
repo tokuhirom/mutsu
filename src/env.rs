@@ -1120,6 +1120,49 @@ mod tests {
     }
 
     #[test]
+    fn filtered_flat_chain_walk_respects_tombstones_and_shadowing() {
+        // `filtered_flat` is the chain-aware enumeration primitive ADR-0035
+        // Mechanism 1 relies on: a whole-env walk must see exactly the same
+        // entries `Env::get()` would for every key -- outermost tier first,
+        // nearer tiers overwriting, tombstoned keys suppressed. This is what
+        // `dynamic_pseudo_stash_entries` uses (instead of `iter()`, which is
+        // top-overlay-only) to enumerate `PROCESS::`/`DYNAMIC::` dynamics
+        // through the whole overlay-parent chain of every stacked caller env.
+        let mut root = Env::new();
+        root.insert("a".into(), Value::int(1));
+        root.insert("shadowed".into(), Value::int(100));
+        let mut mid = Env::scoped_child(root);
+        mid.insert("shadowed".into(), Value::int(2)); // shadows root's entry
+        mid.insert("b".into(), Value::int(3));
+        let mut leaf = Env::scoped_child(mid);
+        leaf.remove("a"); // tombstoned: must not survive into the merged view
+        leaf.insert("c".into(), Value::int(4));
+
+        let merged = leaf.filtered_flat(&|_, _| true);
+        assert!(!merged.is_scoped());
+        assert!(
+            merged.get_sym(s("a")).is_none(),
+            "tombstoned key must be suppressed"
+        );
+        assert_eq!(
+            merged.get_sym(s("shadowed")),
+            Some(&Value::int(2)),
+            "nearer tier must shadow the outer one"
+        );
+        assert_eq!(merged.get_sym(s("b")), Some(&Value::int(3)));
+        assert_eq!(merged.get_sym(s("c")), Some(&Value::int(4)));
+        // The merged view agrees with per-key `get_sym` on the source chain
+        // for every key -- the coherence property the helper exists for.
+        for key in ["a", "b", "c", "shadowed", "missing"] {
+            assert_eq!(
+                merged.get_sym(s(key)),
+                leaf.get_sym(s(key)),
+                "filtered_flat must agree with get_sym for {key:?}"
+            );
+        }
+    }
+
+    #[test]
     fn depth_is_bounded_under_deep_nesting() {
         // Chaining far past MAX_OVERLAY_DEPTH must keep the chain length bounded
         // (scoped_child flattens the parent at the limit) while still reading the
