@@ -9,11 +9,19 @@
   P3b's `ArrayData::items` chokepoint was subsequently repaired by
   [ADR-0030](0030-native-array-decode-cache-interior-mutability.md). `Buf`, `CArray[T]` and
   `array[T]` are now uniformly native-backed with honest `.REPR`/`.WHERE`, and `array-shapes.t`
-  is whitelisted. **Two items remain: P3c (reference-element `CArray[Str]`/`CArray[Pointer]`,
-  parity polish with no bundled consumer) is open; and §6's other P3b acceptance clause,
-  `pointer-to(array:D)`, still fails — not for want of storage but because mutsu's *bare* `array`
-  type constraint matches no value at all, so the module's `multi` never selects. Root-caused and
-  designed in [todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md).**
+  is whitelisted. §6's `pointer-to(array:D)` acceptance clause is now also met: the bare `array`
+  type constraint matched no value at all (unlike bare `CArray`, which already special-cased
+  this), so the module's `multi` never selected it — fixed by giving the bare constraint the same
+  `container_type_metadata` lookup the parameterized `array[T]` arm already had
+  (`src/runtime/types/type_matching.rs`, pinned by `t/bare-array-type-match.t`). **P0–P3b are now
+  fully landed. Only P3c (reference-element `CArray[Str]`/`CArray[Pointer]`, parity polish with no
+  bundled consumer, documented as intentional in `docs/nativecall-repr-bodies.md`) remains open.**
+  Two smaller, unrelated parity gaps found alongside the P3b fix are tracked separately:
+  [todo/tickets/lowercase-native-type-smiley-term-position.md](../../todo/tickets/lowercase-native-type-smiley-term-position.md)
+  (a `:D`/`:U` smiley on a lowercase native type name in *term* position, e.g. `array:D`, `int:D`)
+  and
+  [todo/tickets/native-array-smartmatch-array-parity.md](../../todo/tickets/native-array-smartmatch-array-parity.md)
+  (`array[T] ~~ Array` over-reports `True`; deferred until a consumer needs it).**
 - **Date**: 2026-07-27
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (non-moving GC — what makes a stable address possible at all; the container type filter this ADR extends), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (interior mutability — the write path into a shared container node), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing — a new container kind must fit the existing tag scheme), [todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md) (the finding this ADR answers), [todo/tickets/dbiish-blockers.md](../../todo/tickets/dbiish-blockers.md) ⑨, PLAN.md §1 B1 (database battery) / §1 B4 (NativeCall remainder)
@@ -358,9 +366,10 @@ P0 is unblocked and self-contained; P1 follows it; P2 is the campaign. Concretel
   pins that a C write through a *retained* pointer is visible in Raku with no
   intervening call; `NativeHelpers::Blob`'s `01-basic.t` (24/24) and `03-pointer.t`
   (10/10) joined the battery gate.
-- **P3b** the same node for `array[T]`, behind the `ArrayData::items` accessor
-  chokepoint. Acceptance: `pointer-to(array:D)` works and `array-shapes.t` T36-38
-  pass at native speed.
+- **P3b** (landed) the same node for `array[T]`, behind the `ArrayData::items`
+  accessor chokepoint. Acceptance, all met: `pointer-to(array:D)` works
+  (2026-08-19, via the bare-`array` type-constraint fix above) and
+  `array-shapes.t` T36-38 pass at native speed.
 
 *Status is `Accepted`. If the judgment changes later, supersede this ADR rather
 than rewriting it.*

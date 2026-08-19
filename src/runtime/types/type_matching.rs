@@ -590,6 +590,26 @@ impl Interpreter {
                 });
             }
         }
+        // A *bare* `array` constraint accepts any native `array[T]` value, the
+        // same way the bare `CArray` case above accepts any `CArray[T]`: the
+        // parameterization only narrows, and `NativeHelpers::Blob`'s
+        // `pointer-to` overload spells its native-array candidate exactly this
+        // way (`(array:D \arr, $typed)`). A plain (non-native) `Array` must
+        // keep answering `False` here — raku parity, since `array` and `Array`
+        // are distinct types (see `todo/deep/nativehelpers-blob-moarvm-guts.md`
+        // Gap C) — so this only matches when container metadata confirms a
+        // native-typed array; it never falls back to a bare `ValueView::Array`
+        // check the way the parameterized "array" arm below does not either.
+        if constraint == "array"
+            && matches!(value.view(), ValueView::Array(..))
+            && self.container_type_metadata(value).is_some_and(|m| {
+                m.declared_type
+                    .as_deref()
+                    .is_some_and(|d| d == "array" || d.starts_with("array["))
+            })
+        {
+            return true;
+        }
         if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
             match base {
                 "array" => {
