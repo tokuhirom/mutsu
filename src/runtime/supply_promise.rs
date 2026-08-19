@@ -89,7 +89,50 @@ impl Interpreter {
                 self.call_method_with_values(e, "done", vec![])?;
                 Ok(Value::NIL)
             }
+            // ADR-0031 Decision A: the dual of the `done` absorption above. A
+            // `die` (or any other non-control error) raised in a *stamped*
+            // `whenever` body belongs to the enclosing `supply` block, not to
+            // whichever upstream source happened to dispatch this callback —
+            // convert it to `$emitter.quit($reason)` via the canonical
+            // `Supplier."quit"` so the block's own quit-handling protocol
+            // (`QuitOutcome`, downstream `quit =>`) runs exactly once, on the
+            // right object. The control-signal exclusion list is copied
+            // verbatim from the emit-dispatch fallback this replaces
+            // (`native_supplier_methods.rs`) so `next`/`last`/`return`/`done`
+            // keep unwinding as control flow instead of tearing the supply
+            // down. When the stamped emitter carries no `supplier_id` (the
+            // replay path's `run_on_demand_body(cb, None)` shape) there is
+            // nothing to quit — fall through and return the error as-is.
+            (Err(err), true, Some(e))
+                if !(err.is_return()
+                    || err.return_value.is_some()
+                    || err.is_react_done()
+                    || err.is_last()
+                    || err.is_supply_body_done()
+                    || err.is_next()
+                    || err.is_redo())
+                    && Self::emitter_supplier_id_of(&e).is_some() =>
+            {
+                let reason = err
+                    .exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(err.message));
+                self.call_method_with_values(e, "quit", vec![reason])?;
+                Ok(Value::NIL)
+            }
             (res, ..) => res,
+        }
+    }
+
+    /// `Some(supplier_id)` when `emitter` is a `Supplier` instance carrying a
+    /// `supplier_id` attribute (i.e. it stands for a live `supply` block's
+    /// emitter, as opposed to the id-less emitter `run_on_demand_body` mints
+    /// for the replay path, which has nothing registered against it to quit).
+    pub(crate) fn emitter_supplier_id_of(emitter: &Value) -> Option<u64> {
+        match emitter.view() {
+            ValueView::Instance { attributes, .. } => supplier_id_from_attrs(&attributes.as_map()),
+            _ => None,
         }
     }
 

@@ -366,6 +366,19 @@ impl Interpreter {
                     // are found, to avoid double-delivery for plain `emit` calls.
                     let emitter_supplier_id = next_supplier_id();
                     close_supplier_id = Some(emitter_supplier_id);
+                    // ADR-0031 Decision A: this supply block's own emitter is
+                    // what "quit" means for this block — register the tap's
+                    // `quit =>` handler once, here, instead of per upstream
+                    // source (the old b1/b2 registrations below are removed).
+                    // `call_supply_tap` converts a stamped `whenever` body's
+                    // `die` into `$emitter.quit($reason)` regardless of which
+                    // of the four whenever-source branches below produced it,
+                    // so one registration on `emitter_supplier_id` covers all
+                    // of them — including the chained on-demand branch (b3),
+                    // which previously registered nowhere at all.
+                    if let Some(ref qf) = quit_cb {
+                        register_supplier_quit_callback(emitter_supplier_id, qf.clone());
+                    }
                     // When tapped by a nested `whenever` during a running react,
                     // register a done-signal promise BEFORE running the body so an
                     // async `start { emit; done }` body's later `done` (on a worker
@@ -572,9 +585,11 @@ impl Interpreter {
                                         self.call_sub_value(body_cb.clone(), vec![v], true)?;
                                     }
                                 }
-                                if let Some(ref qf) = quit_cb {
-                                    register_supplier_quit_callback(supplier_id, qf.clone());
-                                }
+                                // ADR-0031: the tap's `quit =>` is registered
+                                // once on `emitter_supplier_id` above, not
+                                // per-source here — this supplier_id is the
+                                // whenever's own QUIT phaser home (below), a
+                                // different concern.
                                 // Register the whenever's own LAST phaser
                                 // callbacks (arr[2]) as done callbacks on the
                                 // inner supplier, BEFORE the group marker, so
@@ -676,12 +691,9 @@ impl Interpreter {
                                         ]));
                                     }
                                 }
-                                if let Some(ref qf) = quit_cb {
-                                    register_supplier_quit_callback(
-                                        emitter_supplier_id,
-                                        qf.clone(),
-                                    );
-                                }
+                                // ADR-0031: `quit =>` is already registered
+                                // once on `emitter_supplier_id` above; no
+                                // per-branch registration needed here.
                                 // Point the outer Tap at the OS listener so
                                 // `$tap.close` stops listening (Raku closes the
                                 // upstream source when the downstream tap closes).

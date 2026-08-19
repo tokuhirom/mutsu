@@ -1,6 +1,8 @@
 # ADR-0031: A supply block's quit belongs to its own emitter, and a cold `whenever` source is tapped rather than replayed
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Partially implemented — Slice 1 (Decision A, quit ownership) shipped
+  2026-08-19; Slice 2 (Decision B, `supply_get_values` tap-and-drain) and
+  Slice 3 (retire the ticket) are not started. See "Outcome" below.
 - Date: 2026-08-19
 - Related: [ADR-0008](0008-push-based-supply-event-delivery.md) (the sink/waker
   primitives the drain in Decision B rides on), [ADR-0028](0028-supply-schedule-on-deferred-tap-delivery.md)
@@ -349,3 +351,65 @@ news/YYYY-MM/…` and rewrite as an accomplishment, per `todo/README.md`. Re-che
   `Cro::HTTP`'s error paths and `.list`/`.wait` feed its body coercions. Run the
   vendored Cro suites (`modules/`, `scripts/battery-testsuite.sh`) as part of
   Slice 1 and Slice 2 step 1, not only at the end.
+
+## Outcome
+
+### Slice 1 (Decision A), shipped 2026-08-19
+
+Implemented as designed, with one addition the design did not anticipate:
+
+1. `call_supply_tap` (`src/runtime/supply_promise.rs`) gained the non-control
+   `Err` → `$emitter.quit($reason)` arm, gated on the callback being stamped
+   and its emitter carrying a `supplier_id` — using the control-signal
+   exclusion list from `native_supplier_methods.rs` verbatim, as the ADR
+   specified.
+2. `run_whenever_with_value`'s `ValueView::Promise` arm (`src/runtime/subtest.rs`)
+   now calls the body through `call_supply_tap` instead of raw
+   `call_sub_value`. Preventing the whenever's own LAST phaser from *also*
+   firing after a converted die (both `ran.is_ok()` after the conversion)
+   needed an explicit post-call termination check — `emitter_supplier_id_of`
+   plus `supplier_snapshot(sid).2.is_some()` — that the ADR's text did not
+   spell out.
+3. `native_supply_mut_methods.rs`'s on-demand `"tap"|"act"` branch now
+   registers the tap's `quit =>` handler once on `emitter_supplier_id`,
+   before the marker walk; the old per-source registrations in b1 and b2 are
+   removed, exactly as designed.
+
+**Gap the ADR did not anticipate, found by testing probe6 case G (a source's
+own `.quit()` call, not a body die) and fixed in the same PR:** removing the
+b1/b2 per-source `quit =>` registrations broke every path that reaches the
+tap's `quit =>` handler *without* going through `call_supply_tap` — i.e. a
+`Supplier`'s own `"quit"` method (both the immutable and mutable native
+handlers in `native_supplier_methods.rs`) and `invoke_done_callback_or_quit`
+(the existing LAST-phaser-die-to-quit conversion in
+`native_supply_methods.rs`, pinned by
+`t/whenever-last-phaser-die-converts-to-quit.t` and
+`t/promise-supply-nested-quit-breaks.t`). Both used to find the downstream
+handler because the old b1 registration happened to live on the *source's*
+own `supplier_id` — the same id these two call sites already had in hand.
+Fixed with a new helper, `take_supplier_quit_callbacks_via_group`
+(`src/runtime/native_methods/state_supplier.rs`): drain the source's own
+`supplier_id` first (still correct for a direct `.tap(quit => ...)` with no
+`whenever` involved), then also drain via `supplier_serialize_group(sid)` —
+the source→emitter link `b1` already records for a different reason (the
+"only one whenever handler at a time" lock, ADR-0028). All four call sites
+that used to read `take_supplier_quit_callbacks(sid)` for a *whenever
+source's own* unhandled quit now go through this helper instead; the two
+plain-tap emit-dispatch fallbacks (which have no serialize group and were
+already correct) are untouched.
+
+Tests: `t/supply-whenever-body-die-quits-block.t` (new — the ticket's repro,
+probe3 B/C, probe6 F/G, all cross-checked against `raku` first) plus the full
+existing `t/supply-*.t` / `t/whenever-*.t` / `t/react-*.t` / `t/promise-supply-*.t`
+suites (113 files, 522 tests, all green) and every whitelisted `roast/S17-*`
+file on a release build (Files=58+15+..., all green). `cargo test` (852 unit
+tests) and `cargo clippy -- -D warnings` are clean.
+
+### Slice 2 (Decision B) and Slice 3 (retire the ticket): not started
+
+`supply_get_values` still replays; `replay_cold_whenever_capture` and
+`replay_static_whenever_promise` are unchanged. Defect B in the ticket
+(`todo/deep/cold-supply-whenever-source-replayed-not-tapped.md`) is therefore
+still open, and the ticket is not retired. A future session can pick up Slice
+2 directly from the "Mechanism" section above — nothing in Slice 1 changed
+its shape.

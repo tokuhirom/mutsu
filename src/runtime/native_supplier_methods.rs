@@ -539,7 +539,15 @@ impl Interpreter {
                                 }
                             }
                         } else {
-                            for quit_cb in take_supplier_quit_callbacks(supplier_id) {
+                            // ADR-0031: the tap's `quit =>` handler for a
+                            // whenever-subscribed source lives on the
+                            // enclosing supply block's emitter, not on this
+                            // source's own `supplier_id` — reach it via the
+                            // serialize-group link the b1 whenever branch
+                            // records. A direct `.tap(quit => ...)` (no
+                            // `whenever` involved) has no group and is
+                            // covered by the direct drain as before.
+                            for quit_cb in take_supplier_quit_callbacks_via_group(supplier_id) {
                                 self.call_supply_quit_handler(quit_cb, reason.clone())?;
                             }
                             let _ = take_supplier_done_callbacks(supplier_id);
@@ -1077,7 +1085,11 @@ impl Interpreter {
                             }
                         }
                     } else {
-                        for quit_cb in take_supplier_quit_callbacks(sid) {
+                        // ADR-0031: see the matching comment in the immutable
+                        // "quit" arm above — reach a whenever-subscribed
+                        // source's enclosing supply block via the
+                        // serialize-group link.
+                        for quit_cb in take_supplier_quit_callbacks_via_group(sid) {
                             self.call_supply_quit_handler(quit_cb, reason.clone())?;
                         }
                         let _ = take_supplier_done_callbacks(sid);

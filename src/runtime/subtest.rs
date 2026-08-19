@@ -593,10 +593,28 @@ impl Interpreter {
             let last_cb = last_callbacks.first().cloned();
             let quit_cb = quit_callbacks.first().cloned();
             let marker = group_marker;
+            // ADR-0031 Decision A #3: run the body through `call_supply_tap`
+            // (not the raw `call_sub_value`) so a `die` in this nested
+            // `whenever <Promise>` body converts to `$emitter.quit($reason)`
+            // exactly like every other whenever-source shape — `callback` is
+            // already stamped with `own_emitter` above. When the conversion
+            // fires, the enclosing supply is now terminated, so this
+            // whenever's own LAST phaser must NOT also run — check that
+            // explicitly rather than trusting `ran.is_ok()`, since a
+            // converted die returns `Ok` too (the conversion absorbs it).
+            let emitter_supplier_id = own_emitter.as_ref().and_then(Self::emitter_supplier_id_of);
             shared.on_resolve(Box::new(move |status, result, _output, _stderr| {
                 if status == "Kept" {
-                    let ran = thread_interp.call_sub_value(callback, vec![result], true);
+                    let ran = thread_interp.call_supply_tap(callback, vec![result], true);
+                    let quit_fired = emitter_supplier_id
+                        .map(|sid| {
+                            crate::runtime::native_methods::supplier_snapshot(sid)
+                                .2
+                                .is_some()
+                        })
+                        .unwrap_or(false);
                     if ran.is_ok()
+                        && !quit_fired
                         && let Some(last_cb) = last_cb
                     {
                         let _ = thread_interp.call_sub_value(last_cb, Vec::new(), true);

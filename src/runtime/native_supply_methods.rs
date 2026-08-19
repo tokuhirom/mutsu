@@ -160,7 +160,12 @@ impl Interpreter {
                 .as_deref()
                 .cloned()
                 .unwrap_or_else(|| Value::str(err.message.clone()));
-            for qcb in take_supplier_quit_callbacks(supplier_id) {
+            // ADR-0031: the downstream tap's quit => handler for a
+            // whenever-subscribed source lives on the enclosing supply
+            // block's emitter (Decision A), not on this source's own
+            // `supplier_id` — reach it via the serialize-group link, same
+            // as the `Supplier."quit"` unhandled-QUIT-phaser arm.
+            for qcb in take_supplier_quit_callbacks_via_group(supplier_id) {
                 self.call_supply_quit_handler(qcb, reason.clone())?;
             }
             return Ok(true);
