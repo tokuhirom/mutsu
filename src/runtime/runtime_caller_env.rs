@@ -219,7 +219,18 @@ impl Interpreter {
             .iter()
             .chain(std::iter::once(&self.env));
         for env in frames {
-            for (k, v) in env.iter() {
+            // Chain-aware: walk this frame's WHOLE overlay-parent chain
+            // (outermost tier first, nearer tiers overwriting, tombstoned
+            // keys suppressed) instead of `env.iter()`, which sees only the
+            // top overlay tier. Any frame that runs under a scoped overlay
+            // without pushing its own caller-env entry (every compiled
+            // method body, and two latent sub-side shapes -- a sub with a
+            // positional param, and a frameless overlay intermediate between
+            // writer and reader) otherwise hides dynamics living in its
+            // parent tiers from this walk even though `Env::get()` would
+            // find them. See ADR-0035 Mechanism 1 (docs/adr/0035-method-calls-observe-caller-frames.md).
+            let merged = env.filtered_flat(&|_, _| true);
+            for (k, v) in merged.iter() {
                 let key = k.resolve();
                 let spelled = if let Some(n) = key.strip_prefix("@*") {
                     format!("@*{n}")

@@ -5,6 +5,18 @@
 two compiled-method chokepoints; implementation slices listed there). The ADR
 also root-causes two latent sub-side `PROCESS::` gaps beyond the repros below.
 
+**Slice 1 (chain-aware dynamics enumeration) is implemented** — `Env::filtered_flat`
+(the existing chain-aware tier-walk primitive, `src/env.rs`) now backs
+`dynamic_pseudo_stash_entries` (`src/runtime/runtime_caller_env.rs`) in place of
+`Env::iter()` (which only saw the top overlay tier). This fixes `PROCESS::`/
+`DYNAMIC::` reads from a flat method body, a closure-bearing method body, a sub
+with a positional parameter, and a frameless overlay intermediate between
+writer and reader — all four repros verified fixed against raku's `42` output.
+Regression test: `t/adr0035-dynamics-chain-aware-enumeration.t`. `CALLER::` and
+`callframe()` from inside methods are still broken (Slice 2, frame-stack
+mechanism — unaffected by this slice, since Mechanism 1 only fixes env
+visibility, not frame observation).
+
 Reclassified from `todo/tickets/log-timeline-task-event-recording-empty.md`
 (originally filed as a narrow `Log::Timeline`/`given`/role-composed-method
 gap) after bisecting the real trigger. The original ticket's framing was
