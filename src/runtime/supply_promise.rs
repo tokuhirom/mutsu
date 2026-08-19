@@ -540,11 +540,15 @@ impl Interpreter {
                     let (tx, rx) =
                         crate::runtime::native_methods::supply_channel::supply_event_channel();
                     let shared_clone = shared.clone();
-                    crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                        let (result, _, _) = shared_clone.wait();
-                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
-                        let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
-                    });
+                    crate::runtime::builtins_system::spawn_gc_helper_thread(
+                        "promise-wait",
+                        move || {
+                            let (result, _, _) = shared_clone.wait();
+                            let _ =
+                                tx.send(crate::runtime::native_methods::SupplyEvent::Emit(result));
+                            let _ = tx.send(crate::runtime::native_methods::SupplyEvent::Done);
+                        },
+                    );
                     react_subs.push(crate::runtime::subtest::ReactSubscription {
                         receiver: Some(rx),
                         promise: Some(shared.clone()),
@@ -734,7 +738,7 @@ impl Interpreter {
             self.supply_stream_consumers
                 .split_off(stream_consumers_base),
         );
-        crate::runtime::builtins_system::spawn_user_thread(move || {
+        crate::runtime::builtins_system::spawn_user_thread("react", move || {
             // The drive loop keeps/breaks `promise` directly as it runs (see
             // `drive_react_subscriptions_inner`'s `SupplyDrivePolicy::Promise`
             // handling); its `Result` here only carries Rust-level plumbing

@@ -29,13 +29,18 @@ impl<T> JoinHandle<T> {
     }
 }
 
+/// Spawn a native OS thread named `name` (truncated to 15 bytes on Linux —
+/// the `pthread_setname_np` / comm limit), so a crash report's `thread:`
+/// field can actually identify which subsystem died instead of reading the
+/// unhelpful process name for every thread. See
+/// `todo/deep/procasync-stress-segv.md` §5.
 #[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn spawn_thread<F, T>(stack_size: Option<usize>, f: F) -> JoinHandle<T>
+pub(crate) fn spawn_thread<F, T>(name: &str, stack_size: Option<usize>, f: F) -> JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,
 {
-    let mut builder = std::thread::Builder::new();
+    let mut builder = std::thread::Builder::new().name(name.to_string());
     if let Some(size) = stack_size {
         builder = builder.stack_size(size);
     }
@@ -45,9 +50,9 @@ where
 }
 
 /// Queue `f` on the single browser thread. The stack size is meaningless here
-/// (there is one stack) and is ignored.
+/// (there is one stack) and is ignored. There is no OS thread to name.
 #[cfg(target_arch = "wasm32")]
-pub(crate) fn spawn_thread<F, T>(_stack_size: Option<usize>, f: F) -> JoinHandle<T>
+pub(crate) fn spawn_thread<F, T>(_name: &str, _stack_size: Option<usize>, f: F) -> JoinHandle<T>
 where
     F: FnOnce() -> T + Send + 'static,
     T: Send + 'static,

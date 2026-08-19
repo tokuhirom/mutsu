@@ -144,7 +144,9 @@ fn main() {
     // recursion (each Raku-level call consumes a sizeable native frame, so
     // realistic recursive code — e.g. File::Directory::Tree's rmtree over a
     // 120-deep directory tree — needs far more than the default 8MB).
-    let builder = std::thread::Builder::new().stack_size(256 * 1024 * 1024);
+    let builder = std::thread::Builder::new()
+        .name("mutsu-main".to_string())
+        .stack_size(256 * 1024 * 1024);
     let handler = builder
         .spawn(run_main)
         .expect("failed to spawn main thread");

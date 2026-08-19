@@ -74,7 +74,7 @@ mod native {
         // `enter_mutator_worker`/`preregister_worker_quiescent` on the parent,
         // `worker_started` + `WorkerGuard` (drain -> unregister -> exit) in the
         // worker. The pool adds only the per-task boundary inside `worker_loop`.
-        crate::runtime::builtins_system::spawn_user_thread(worker_loop);
+        crate::runtime::builtins_system::spawn_user_thread("pool", worker_loop);
     }
 
     fn worker_loop() {
@@ -136,7 +136,7 @@ mod native {
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
     if !native::pool_enabled() {
-        crate::runtime::builtins_system::spawn_user_thread(task);
+        crate::runtime::builtins_system::spawn_user_thread("pool", task);
         return;
     }
     crate::vm::vm_stats::record_pool_task();
@@ -161,7 +161,7 @@ pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
 /// wasm32: the cooperative scheduler is already a pool of one — queue the task.
 #[cfg(target_arch = "wasm32")]
 pub(crate) fn submit(task: impl FnOnce() + Send + 'static) {
-    crate::runtime::builtins_system::spawn_user_thread(task);
+    crate::runtime::builtins_system::spawn_user_thread("pool", task);
 }
 
 /// Handle on a pooled task whose completion (and result) the spawner waits
@@ -217,6 +217,6 @@ pub(crate) fn submit_joinable<T: Send + 'static>(
     task: impl FnOnce() -> T + Send + 'static,
 ) -> TaskHandle<T> {
     TaskHandle {
-        inner: crate::runtime::builtins_system::spawn_user_thread(task),
+        inner: crate::runtime::builtins_system::spawn_user_thread("pool", task),
     }
 }

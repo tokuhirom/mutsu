@@ -248,7 +248,7 @@ impl Interpreter {
             // Registered spawn: `p.wait()` clones arbitrary result `Value`s
             // and the thread drops its promise handles at exit (the waits
             // themselves are already STW-aware / quiescent).
-            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+            crate::runtime::builtins_system::spawn_gc_helper_thread("promise-comb", move || {
                 for p in &promises {
                     p.wait();
                 }

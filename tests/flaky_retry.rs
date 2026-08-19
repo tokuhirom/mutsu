@@ -52,6 +52,61 @@ fn attempts(dir: &Path) -> u32 {
         .unwrap_or(0)
 }
 
+/// A fake test command that dies of SIGABRT on every invocation, counting
+/// invocations in `counter` before it does. Used to prove a signal death is
+/// never retried, even for a quarantined file (see
+/// `todo/deep/procasync-stress-segv.md`).
+fn write_fake_crashing_test(dir: &Path) -> PathBuf {
+    let counter = dir.join("count");
+    let script = dir.join("fake-crash.sh");
+    fs::write(
+        &script,
+        format!(
+            "#!/bin/bash\n\
+             n=$(cat '{c}' 2>/dev/null || echo 0)\n\
+             n=$((n+1)); echo $n > '{c}'\n\
+             echo '1..1'\n\
+             echo \"ok 1 - attempt $n before the crash\"\n\
+             kill -ABRT $$\n\
+             exit 1\n",
+            c = counter.display(),
+        ),
+    )
+    .expect("write fake crashing test");
+    let mut perms = fs::metadata(&script).unwrap().permissions();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        perms.set_mode(0o755);
+    }
+    fs::set_permissions(&script, perms).unwrap();
+    script
+}
+
+/// Like `run_retry`, but spawning `write_fake_crashing_test` instead of a
+/// script parameterized by `fail_first`.
+fn run_retry_crash(dir: &Path, test_path: &str, list_body: &str) -> (String, bool, u32, i32) {
+    let script = write_fake_crashing_test(dir);
+    let list = dir.join("flaky-tests.txt");
+    fs::write(&list, list_body).expect("write ledger");
+
+    let out = Command::new(repo_root().join("scripts/flaky-retry.sh"))
+        .current_dir(repo_root())
+        .arg(test_path)
+        .arg(&script)
+        .env("FLAKY_LIST", &list)
+        .env("FLAKY_RETRY_LOG", dir.join("retries.log"))
+        .output()
+        .expect("failed to spawn flaky-retry.sh");
+
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        out.status.success(),
+        attempts(dir),
+        out.status.code().unwrap_or(-1),
+    )
+}
+
 /// Run flaky-retry.sh for `test_path`, with `list_body` as the ledger.
 fn run_retry(dir: &Path, test_path: &str, list_body: &str, fail_first: u32) -> (String, bool, u32) {
     let script = write_fake_test(dir, fail_first);
@@ -151,6 +206,42 @@ fn quarantined_test_that_always_fails_still_fails() {
     assert!(
         stdout.contains("not ok 1"),
         "the last attempt's diagnostic output must survive, got: {stdout}"
+    );
+}
+
+/// A crash (signal death, rc >= 128) must NEVER be retried, even for a
+/// quarantined file: retrying would launder a real memory-safety bug into a
+/// green run. This is the exact bug the crash-report investigation in
+/// `todo/deep/procasync-stress-segv.md` found: `advent2014-day05.t` aborted
+/// with SIGABRT and the retry silently passed, hiding heap corruption.
+#[test]
+fn quarantined_test_that_crashes_is_not_retried() {
+    let dir = scratch("crash-not-retried");
+    let (stdout, ok, attempts, code) = run_retry_crash(
+        &dir,
+        "t/known-flaky.t",
+        "t/known-flaky.t 2026-07-24 2026-10-22 synthetic entry for the test suite\n",
+    );
+    assert!(!ok, "a signal death must fail the run, not be retried away");
+    assert_eq!(
+        attempts, 1,
+        "a crash must fail on the FIRST attempt -- no retry"
+    );
+    assert_eq!(code, 134, "SIGABRT (6) => rc = 128 + 6 = 134");
+    assert!(
+        stdout.contains("died of signal 6") && stdout.contains("NOT retried"),
+        "the crash must be called out explicitly, got: {stdout}"
+    );
+
+    let log = fs::read_to_string(dir.join("retries.log")).expect("retry log");
+    assert_eq!(
+        log.lines().count(),
+        1,
+        "exactly one log line for the single (non-retried) attempt, got: {log}"
+    );
+    assert!(
+        log.contains("died of signal 6"),
+        "the retry log must record the signal death, got: {log}"
     );
 }
 

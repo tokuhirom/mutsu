@@ -45,7 +45,7 @@ mod unix_impl {
             // quiescent safe region so the daemon never stalls a
             // stop-the-world.
             let read_fd = fds[0];
-            crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+            crate::runtime::builtins_system::spawn_gc_helper_thread("signal-rd", move || {
                 signal_reader_thread(read_fd)
             });
             (fds[0], fds[1])

@@ -70,7 +70,7 @@ fn timer_state() -> &'static TimerState {
         // clone/drop `Gc` values (a kept promise handle), so the driver is a
         // registered GC mutator; it parks quiescent while waiting.
         #[cfg(not(target_arch = "wasm32"))]
-        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+        crate::runtime::builtins_system::spawn_gc_helper_thread("timer", move || {
             let (heap, cvar) = state;
             let mut guard = heap.lock().unwrap();
             loop {

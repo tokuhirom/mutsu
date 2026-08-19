@@ -399,44 +399,48 @@ impl Interpreter {
                         // must be a registered GC mutator, with the blocking
                         // recv as a quiescent safe region. Runs no user VM
                         // code, so the default stack suffices.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                            if let Some(rx) = take_supply_channel(source_supply_id) {
-                                while let Ok(event) = crate::gc::block_quiescent(|| rx.recv()) {
-                                    match event {
-                                        SupplyEvent::Emit(value) => {
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(
+                            "proc-in",
+                            move || {
+                                if let Some(rx) = take_supply_channel(source_supply_id) {
+                                    while let Ok(event) = crate::gc::block_quiescent(|| rx.recv()) {
+                                        match event {
+                                            SupplyEvent::Emit(value) => {
+                                                if let Ok(mut guard) = stdin_arc.lock()
+                                                    && let Some(ref mut stdin) = *guard
+                                                {
+                                                    let _ = stdin.write_all(
+                                                        value.to_string_value().as_bytes(),
+                                                    );
+                                                    let _ = stdin.flush();
+                                                }
+                                            }
+                                            SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                                        }
+                                    }
+                                } else {
+                                    loop {
+                                        if let Some(collected) =
+                                            get_supply_collected_output(source_supply_id)
+                                        {
                                             if let Ok(mut guard) = stdin_arc.lock()
                                                 && let Some(ref mut stdin) = *guard
                                             {
-                                                let _ = stdin
-                                                    .write_all(value.to_string_value().as_bytes());
+                                                let _ = stdin.write_all(collected.as_bytes());
                                                 let _ = stdin.flush();
                                             }
+                                            break;
                                         }
-                                        SupplyEvent::Done | SupplyEvent::Quit(_) => break,
+                                        crate::gc::block_quiescent(|| {
+                                            std::thread::sleep(std::time::Duration::from_millis(10))
+                                        });
                                     }
                                 }
-                            } else {
-                                loop {
-                                    if let Some(collected) =
-                                        get_supply_collected_output(source_supply_id)
-                                    {
-                                        if let Ok(mut guard) = stdin_arc.lock()
-                                            && let Some(ref mut stdin) = *guard
-                                        {
-                                            let _ = stdin.write_all(collected.as_bytes());
-                                            let _ = stdin.flush();
-                                        }
-                                        break;
-                                    }
-                                    crate::gc::block_quiescent(|| {
-                                        std::thread::sleep(std::time::Duration::from_millis(10))
-                                    });
+                                if let Ok(mut guard) = stdin_arc.lock() {
+                                    *guard = None;
                                 }
-                            }
-                            if let Ok(mut guard) = stdin_arc.lock() {
-                                *guard = None;
-                            }
-                        });
+                            },
+                        );
                     }
                 }
 
@@ -555,7 +559,7 @@ impl Interpreter {
                 // registered GC mutator; its child-wait / joins are quiescent.
                 // Runs no user VM code (`keep` dispatches waiters to a fresh
                 // user thread), so the default stack suffices.
-                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                crate::runtime::builtins_system::spawn_gc_helper_thread("proc-wait", move || {
                     // Spawn stdout reader thread — streams raw chunks through channel
                     let stdout_handle = child_stdout.map(|stdout| {
                         let tx = stdout_channel;
@@ -564,60 +568,63 @@ impl Interpreter {
                         // Emits Buf `Value`s (Gc nodes): registered mutator,
                         // pipe reads quiescent. No user VM code — default
                         // stack.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                            use std::io::Read;
-                            let mut stdout = stdout;
-                            let mut collected = String::new();
-                            let mut raw: Vec<u8> = Vec::new();
-                            let mut buf = [0u8; 4096];
-                            let mut pending: Vec<u8> = Vec::new();
-                            let mut held_cr = false;
-                            let mut quit = false;
-                            loop {
-                                match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
-                                    Ok(0) => break,
-                                    Ok(n) => {
-                                        raw.extend_from_slice(&buf[..n]);
-                                        if bin_mode {
-                                            if let Some(ref tx) = tx {
-                                                let buf_val = make_buf_value(&buf[..n]);
-                                                let _ = tx.send(SupplyEvent::Emit(buf_val));
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(
+                            "proc-out",
+                            move || {
+                                use std::io::Read;
+                                let mut stdout = stdout;
+                                let mut collected = String::new();
+                                let mut raw: Vec<u8> = Vec::new();
+                                let mut buf = [0u8; 4096];
+                                let mut pending: Vec<u8> = Vec::new();
+                                let mut held_cr = false;
+                                let mut quit = false;
+                                loop {
+                                    match crate::gc::block_quiescent(|| stdout.read(&mut buf)) {
+                                        Ok(0) => break,
+                                        Ok(n) => {
+                                            raw.extend_from_slice(&buf[..n]);
+                                            if bin_mode {
+                                                if let Some(ref tx) = tx {
+                                                    let buf_val = make_buf_value(&buf[..n]);
+                                                    let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                                }
+                                            } else if feed_utf8_incremental(
+                                                &mut pending,
+                                                &buf[..n],
+                                                &tx,
+                                                &mut collected,
+                                                true,
+                                                &mut held_cr,
+                                            ) {
+                                                if let Some(ref tx) = tx {
+                                                    let _ = tx.send(SupplyEvent::Quit(
+                                                        malformed_utf8_quit_value(),
+                                                    ));
+                                                }
+                                                quit = true;
+                                                break;
                                             }
-                                        } else if feed_utf8_incremental(
-                                            &mut pending,
-                                            &buf[..n],
-                                            &tx,
-                                            &mut collected,
-                                            true,
-                                            &mut held_cr,
-                                        ) {
-                                            if let Some(ref tx) = tx {
-                                                let _ = tx.send(SupplyEvent::Quit(
-                                                    malformed_utf8_quit_value(),
-                                                ));
-                                            }
-                                            quit = true;
-                                            break;
                                         }
+                                        Err(_) => break,
                                     }
-                                    Err(_) => break,
                                 }
-                            }
-                            if !quit {
-                                flush_held_cr(held_cr, &tx, &mut collected);
-                                if let Some(ref tx) = tx {
-                                    let _ = tx.send(SupplyEvent::Done);
+                                if !quit {
+                                    flush_held_cr(held_cr, &tx, &mut collected);
+                                    if let Some(ref tx) = tx {
+                                        let _ = tx.send(SupplyEvent::Done);
+                                    }
                                 }
-                            }
-                            // Retain the raw bytes so the await-time replay can
-                            // decode them with the stream's effective encoding
-                            // (the channel/`collected` path above only handles the
-                            // default UTF-8 case).
-                            if let Some(sid) = sid {
-                                set_supply_collected_bytes(sid, raw);
-                            }
-                            collected
-                        })
+                                // Retain the raw bytes so the await-time replay can
+                                // decode them with the stream's effective encoding
+                                // (the channel/`collected` path above only handles the
+                                // default UTF-8 case).
+                                if let Some(sid) = sid {
+                                    set_supply_collected_bytes(sid, raw);
+                                }
+                                collected
+                            },
+                        )
                     });
 
                     // Spawn stderr reader thread — streams raw chunks through channel
@@ -627,53 +634,56 @@ impl Interpreter {
                         let sid = stderr_supply_id;
                         // Same as the stdout reader: registered + quiescent
                         // reads, no user VM code — default stack.
-                        crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
-                            use std::io::Read;
-                            let mut stderr = stderr;
-                            let mut collected = String::new();
-                            let mut raw: Vec<u8> = Vec::new();
-                            let mut buf = [0u8; 4096];
-                            let mut pending: Vec<u8> = Vec::new();
-                            let mut held_cr = false;
-                            let mut quit = false;
-                            loop {
-                                match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
-                                    Ok(0) => break,
-                                    Ok(n) => {
-                                        raw.extend_from_slice(&buf[..n]);
-                                        if bin_mode {
-                                            if let Some(ref tx) = tx {
-                                                let buf_val = make_buf_value(&buf[..n]);
-                                                let _ = tx.send(SupplyEvent::Emit(buf_val));
+                        crate::runtime::builtins_system::spawn_gc_helper_thread(
+                            "proc-err",
+                            move || {
+                                use std::io::Read;
+                                let mut stderr = stderr;
+                                let mut collected = String::new();
+                                let mut raw: Vec<u8> = Vec::new();
+                                let mut buf = [0u8; 4096];
+                                let mut pending: Vec<u8> = Vec::new();
+                                let mut held_cr = false;
+                                let mut quit = false;
+                                loop {
+                                    match crate::gc::block_quiescent(|| stderr.read(&mut buf)) {
+                                        Ok(0) => break,
+                                        Ok(n) => {
+                                            raw.extend_from_slice(&buf[..n]);
+                                            if bin_mode {
+                                                if let Some(ref tx) = tx {
+                                                    let buf_val = make_buf_value(&buf[..n]);
+                                                    let _ = tx.send(SupplyEvent::Emit(buf_val));
+                                                }
+                                            } else if feed_utf8_incremental(
+                                                &mut pending,
+                                                &buf[..n],
+                                                &tx,
+                                                &mut collected,
+                                                false,
+                                                &mut held_cr,
+                                            ) {
+                                                if let Some(ref tx) = tx {
+                                                    let _ = tx.send(SupplyEvent::Quit(
+                                                        malformed_utf8_quit_value(),
+                                                    ));
+                                                }
+                                                quit = true;
+                                                break;
                                             }
-                                        } else if feed_utf8_incremental(
-                                            &mut pending,
-                                            &buf[..n],
-                                            &tx,
-                                            &mut collected,
-                                            false,
-                                            &mut held_cr,
-                                        ) {
-                                            if let Some(ref tx) = tx {
-                                                let _ = tx.send(SupplyEvent::Quit(
-                                                    malformed_utf8_quit_value(),
-                                                ));
-                                            }
-                                            quit = true;
-                                            break;
                                         }
+                                        Err(_) => break,
                                     }
-                                    Err(_) => break,
                                 }
-                            }
-                            if !quit && let Some(ref tx) = tx {
-                                let _ = tx.send(SupplyEvent::Done);
-                            }
-                            if let Some(sid) = sid {
-                                set_supply_collected_bytes(sid, raw);
-                            }
-                            collected
-                        })
+                                if !quit && let Some(ref tx) = tx {
+                                    let _ = tx.send(SupplyEvent::Done);
+                                }
+                                if let Some(sid) = sid {
+                                    set_supply_collected_bytes(sid, raw);
+                                }
+                                collected
+                            },
+                        )
                     });
 
                     // Wait for child to exit (quiescent for the GC's STW)

@@ -295,7 +295,7 @@ impl Interpreter {
                 // Registered spawn (emits `Value`s into a supply channel);
                 // the poll sleep is a quiescent safe region — see
                 // `spawn_gc_helper_thread`.
-                crate::runtime::builtins_system::spawn_gc_helper_thread(move || {
+                crate::runtime::builtins_system::spawn_gc_helper_thread("io-path", move || {
                     let poll_interval = std::time::Duration::from_millis(10);
                     let mut last_state = fs::metadata(&watched_path).ok().map(|meta| {
                         let modified = meta
