@@ -1,6 +1,7 @@
 # ADR-0029: Built-in `X::` exception ancestry is role membership, not a single parent — register it through the existing composed-role path
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Proposed (Slices 1-3 implemented 2026-08-17/18; Slice 4 deferred
+  — see "Implementation status" at the end)
 - **Date**: 2026-08-17
 - **Context ticket**:
   [`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`](../../todo/deep/exception-class-hierarchy-is-mostly-unregistered.md)
@@ -493,3 +494,74 @@ Only after Slice 3, and framed as measurement rather than payoff:
   mis-*registrations*. Fixing them by adding a convenient ancestor would bake
   in inheritance rakudo does not have — the exact failure mode this ADR exists
   to prevent. Read the failure; do not pattern-match the name.
+
+## Implementation status
+
+Recorded here per `docs/adr/README.md` ("record implementation progress inside
+the ADR that owns the decision"). Verified on `main` @ `829745e5c`
+(2026-08-19) by re-running this ADR's own Slice-2 capture script, so the
+numbers below are regenerable rather than transcribed.
+
+| Slice | State |
+| --- | --- |
+| 1 — mechanism (`register_x` gains `does`; 14 marker roles seeded; `X::Comp::AdHoc` splice deleted) | **Landed** 2026-08-17, #6590 |
+| 2 — mechanical raku capture script | **Landed** 2026-08-17, #6591 |
+| 3 — land the corrected + missing data | **Landed** 2026-08-18, #6595 |
+| 4 — probe what it unblocks, measured honestly | **Deferred** — blocked on `todo/deep/vendor-real-test-module.md` |
+
+Where it lives: `register_x(name, parent, does)` at
+`src/runtime/runtime_init.rs:1630` (367 call sites, up from the 107 measured in
+§1); the marker roles seeded as `RoleDef`s at `runtime_init.rs:2570-2605`;
+role-to-role edges in `registry.role_parents` at `runtime_init.rs:2716-2724`;
+the flatten-and-write into `class_composed_roles` /
+`class_direct_composed_roles` / `class_does_only_roles` at
+`runtime_init.rs:2734-2757`; capture tooling in
+`scripts/adr0029-capture-x-exception-data.py` +
+`scripts/probe-x-exception-shape.raku`, data in
+`TODO_roast/x-exception-role-membership.tsv` (+ `-diff.tsv`); pins in
+`t/exception-role-membership.t`.
+
+Measured outcome against the ADR's own §1 baseline:
+
+| | at ADR time | 2026-08-19 |
+| --- | --- | --- |
+| wrong `.^mro` (of which false superclass) | 43 (36) | **0** |
+| wrong `.^roles` | 52 (all empty) | 15 (13 cosmetic, 2 real — see below) |
+| classes matching raku byte-for-byte | 47 of 105 | **357 of 373** |
+| `.new` fails (`X::Method::NotFound`) | 123 | **1** (`X::TooLateForREPR`) |
+
+Acceptance criteria 1, 2 and 5 are met; criterion 4 is met for 372 of 373
+names. Criteria 3 and 6 are not yet met, and the reasons are tracked as a
+five-item residue list — **not** as a re-opened design question — in
+[`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`](../../todo/deep/exception-class-hierarchy-is-mostly-unregistered.md),
+which is the ticket to pick up next. In brief:
+
+- **R1** — Slice 3 grew the marker-role list from 14 to 16 without re-running
+  the role-to-role edge measurement, so `X::Role::Attribute does X::RoleApplier`
+  is unseeded and two classes answer `~~ X::RoleApplier` False where rakudo
+  says True. The prose comment at `runtime_init.rs:2716-2718` asserting "exactly
+  two edges exist" is a hand-maintained claim about data, which Decision item 5
+  forbids everywhere else; it should be derived.
+- **R2** — `X::TooLateForREPR` is the one unregistered class. Its rakudo shape
+  is a role-as-superclass pun (`X::Comp` is both an MRO entry *and* a composed
+  role), which contradicts **acceptance criterion 1** as globally worded. The
+  criterion needs amending to "no role name in any MRO except where the captured
+  raku data says otherwise", driven off the Slice-2 TSV rather than a hardcoded
+  rule.
+- **R3** — criterion 3 ("the diff is empty") is unreachable as written: 13 rows
+  differ only because rakudo's `.^roles` emits a role twice when reached both
+  directly and through a superclass, while mutsu dedups. The composed-role
+  *set* matches in all 13. The script's verdict should compare sets (keeping
+  raw raku output in the data TSV); mutsu must **not** learn to replicate the
+  duplicate emission.
+- **R4** — the 16 marker names are still dual-registered as both `ClassDef`
+  (`runtime_init.rs:1676-1679`) and `RoleDef`. Load-bearing today (it is what
+  makes R2 expressible), but undocumented, so the next reader will read it as
+  pre-ADR-0029 residue and delete it.
+- **R5** — Slice 4's designated *role-only* probe has expired:
+  `roast/S02-literals/quoting-unicode.t` is now whitelisted and passes 101/101,
+  and `X::Comp::FailGoal ~~ X::Comp` is True for both instance and type object.
+  Slice 4's remaining content is exclusively the vendored-real-`Test` sweep.
+
+Status moves to `Accepted` — with an `Outcome` section replacing this one —
+once R1-R4 land and Slice 4 is run or formally re-scoped.

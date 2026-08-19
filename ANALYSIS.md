@@ -468,14 +468,23 @@ a `does` parameter writing role composition into the existing `class_composed_ro
 never folded into single-inheritance `parents`/`mro`) and its data (regenerated from a
 mechanical raku capture, `TODO_roast/x-exception-role-membership.tsv`) both landed 2026-08-17/18
 (#6590/#6591/#6595). Of 373 real rakudo `Exception` subtypes measured, 357 now match byte-for-byte
-(up from 43 wrong `.^mro` / 52 wrong `.^roles` at the ADR's own measurement time); the 16
-remaining are a raku `.^roles` transitive-dedup quirk (15, cosmetic — the composed-role *set*
-matches, only a duplicate-entry count differs) and one class whose real rakudo shape
-(`is X::Comp`, a role-as-superclass pun) `register_x` cannot express. What is **not** done is
-ADR-0029's own Slice 4 (re-running the honest measurement sweep under the vendored real `Test`
-module) — that is blocked on the separate, still-open `todo/deep/vendor-real-test-module.md`,
-so the ADR's Status stays `Proposed` and its owning todo/deep ticket stays open until that sweep
-is actually runnable.
+(up from 43 wrong `.^mro` / 52 wrong `.^roles` at the ADR's own measurement time), and `.new`
+succeeds for 372 of the 373. *(Corrected 2026-08-19 by re-running the capture script: this
+paragraph previously read "the 16 remaining are a raku `.^roles` transitive-dedup quirk (15,
+cosmetic) and one class `register_x` cannot express". Only **13** are the cosmetic dedup quirk;
+in the other two — `X::Role::Attribute::Conflicts`/`::Exists` — the composed-role set genuinely
+does **not** match, because Slice 3 grew the marker-role list from 14 to 16 without re-running
+the role-to-role edge measurement, leaving `X::Role::Attribute does X::RoleApplier` unseeded.
+And the pun class, `X::TooLateForREPR`, **is** expressible as
+`register_x("X::TooLateForREPR", "X::Comp", &["X::Comp"])`; what actually blocks it is that
+doing so contradicts the ADR's own acceptance criterion 1 as globally worded.)* Both, plus the
+unreachable-as-written acceptance criterion 3, are itemised as R1-R4 in the owning ticket. What
+is **not** done is ADR-0029's own Slice 4 (re-running the honest measurement sweep under the
+vendored real `Test` module) — that is blocked on the separate, still-open
+`todo/deep/vendor-real-test-module.md`, so the ADR's Status stays `Proposed` and its owning
+todo/deep ticket stays open until that sweep is actually runnable. Note that Slice 4's designated
+*role-only* probe has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and
+passes 101/101, so the sweep is all that remains of it.
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
