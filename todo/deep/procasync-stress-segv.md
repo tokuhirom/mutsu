@@ -240,7 +240,7 @@ the single most valuable missing bit.
 
 Four slices, in priority order. All are small and none needs an ADR.
 
-1. **DONE (2026-08-19).** **Name every thread** (`src/runtime/thread_compat.rs`). Gave `spawn_thread`
+1. **DONE (2026-08-19, #6695).** **Name every thread** (`src/runtime/thread_compat.rs`). Gave `spawn_thread`
    a `name: &str` parameter, threaded through `spawn_registered_thread` / `spawn_gc_helper_thread` /
    `spawn_user_thread` and every call site: `mutsu-main`, `proc-wait`, `proc-out`, `proc-err`,
    `proc-in`, `signal-rd`, `timer`, `react`, `pool`, `sock-async`, `sock-conn`, `io-path`,
@@ -248,14 +248,14 @@ Four slices, in priority order. All are small and none needs an ADR.
    `Proc::Async` react loop shows `mutsu-main`, `proc-wait`, `proc-out`, `proc-err`, `promise-wait` as
    distinct threads instead of all reading `mutsu`. The next occurrence's `thread:` line alone now
    says whether the fault is in the reaper, a reader, the timer, the react driver, or the pool.
-2. **DONE (2026-08-19).** **Stop retrying a signal death** (`scripts/flaky-retry.sh`). After `rc=$?`,
+2. **DONE (2026-08-19, #6695).** **Stop retrying a signal death** (`scripts/flaky-retry.sh`). After `rc=$?`,
    `rc -ge 128` now exits immediately with a
    `# flaky-retry: <file> died of signal N -- NOT retried (see docs/flaky-test-policy.md)` comment,
    no retry. Enforced by `tests/flaky_retry.rs::quarantined_test_that_crashes_is_not_retried`
    (a fake SIGABRT-killing test proves it fails on the first attempt, not the third). Documented in
    `docs/flaky-test-policy.md` §4. This is exactly what would have turned §2's abort into a red CI on
    the day it happened.
-3. **DONE (2026-08-19).** **Surface crash reports on green runs** (`.github/workflows/ci.yml`). The
+3. **DONE (2026-08-19, #6695).** **Surface crash reports on green runs** (`.github/workflows/ci.yml`). The
    three "Crash reports" steps are now `if: always()`, and `scripts/report-crash-reports.sh` fails the
    job (`exit 1`) when a report's `argv:` is not on `ALLOWLISTED_ARGV_SUBSTRINGS`, which today holds
    exactly the deliberate `strdup(0)` NativeCall probe (`roast/S29-os/system.t`). Manually verified
@@ -270,7 +270,7 @@ Four slices, in priority order. All are small and none needs an ADR.
 
 ### 6. Recommended next action
 
-~~Land slices 1-3 as one small PR.~~ **Done 2026-08-19** — see §5. What remains, in order:
+~~Land slices 1-3 as one small PR.~~ **Done 2026-08-19, #6695** — see §5. What remains, in order:
 
 1. **Slice 4** (§5.4): re-measure `roast/integration/advent2014-day05.t`'s `flaky-tests.txt` entry now
    that a signal death there can no longer be silently retried away. Either it stops needing
