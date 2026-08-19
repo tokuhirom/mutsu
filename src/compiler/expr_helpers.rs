@@ -77,6 +77,14 @@ impl Compiler {
                 .atomic_target_syms
                 .insert(crate::symbol::Symbol::intern(var_name));
         }
+        // Recorded unconditionally (even for a non-write rw-arg sink like the
+        // general `cas` path): a nested closure that RMWs this name through
+        // `cas` still needs it kept env/name-lane-visible, without being
+        // folded into `free`/`free_writes` (that would change capture/cell
+        // classification — see `CompiledCode::rw_arg_env_sync_syms`).
+        self.code
+            .rw_arg_env_sync_syms
+            .insert(crate::symbol::Symbol::intern(var_name));
         if let Some(&slot) = self.local_map.get(var_name)
             && !self.code.atomic_env_sync_locals.contains(&slot)
         {

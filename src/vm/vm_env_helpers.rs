@@ -1411,6 +1411,43 @@ impl Interpreter {
         }
     }
 
+    /// Like [`Self::sync_env_from_locals`], but suppresses the cross-thread
+    /// `shared_vars` publish for a slot `code.needs_env_sync` marks as having
+    /// no by-name reader (`compute_needs_env_sync`) — the env write itself
+    /// stays unconditional (identical to `sync_env_from_locals`), because a
+    /// gated env write reopens a separate hole: a slot-only name's own
+    /// declaration-time env placeholder is never corrected once its ordinary
+    /// per-store mirror is skipped, and this is the only remaining publish
+    /// point that would otherwise refresh it (see the `start`-block spawn
+    /// call sites below).
+    ///
+    /// Gating only the `shared_vars` half prevents a slot no code can reach
+    /// by name — most commonly a variable whose real assignment has not run
+    /// yet at the point a `start { ... }` block sitting earlier in the same
+    /// call's argument list spawns (`my $p = f(start { ... }, start { ... })`)
+    /// — from publishing its current (stale/placeholder) value into the
+    /// cross-thread store, where it would sit dirty and later clobber the
+    /// real value once any `await` pulls dirty keys back into env (see
+    /// `sync_shared_vars_to_env`). A name that a nested closure genuinely
+    /// needs by name (an ordinary free-var read, a container-mutate form, or
+    /// an rw-arg-sink target such as `cas` — `needs_env_sync` covers all
+    /// three) keeps publishing exactly as before.
+    pub(super) fn sync_env_from_locals_needed(&mut self, code: &CompiledCode) {
+        for (i, name) in code.locals.iter().enumerate() {
+            if code.dup_named_locals.get(i).copied().unwrap_or(false) {
+                continue;
+            }
+            if self.locals[i].is_nil() && !self.env().contains_key(name) {
+                continue;
+            }
+            let publish = code.needs_env_sync.get(i).copied().unwrap_or(true);
+            let saved_suppress = self.suppress_shared_publish;
+            self.suppress_shared_publish = saved_suppress || !publish;
+            self.set_env_with_main_alias(name, self.locals[i].clone());
+            self.suppress_shared_publish = saved_suppress;
+        }
+    }
+
     /// Like [`Self::sync_env_from_locals`], but skips slots whose name was
     /// never introduced into env — a compile-time-allocated local whose
     /// declaration has not run yet (e.g. a `state $b` later in the same loop

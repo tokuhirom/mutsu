@@ -1123,7 +1123,7 @@ impl Interpreter {
         } else {
             // Sync Interpreter locals to env before spawning threads so closures capture them
             if name == "start" {
-                self.sync_env_from_locals(code);
+                self.sync_env_from_locals_needed(code);
             }
             self.set_pending_call_arg_sources(arg_sources);
             let result = self.call_function_compiled_first(&name, args, compiled_fns);
@@ -1508,7 +1508,7 @@ impl Interpreter {
                 } else {
                     // Sync Interpreter locals to env before spawning threads so closures capture them
                     if name == "start" {
-                        self.sync_env_from_locals(code);
+                        self.sync_env_from_locals_needed(code);
                     }
                     // EVAL/EVALFILE compile to bytecode and run on a sub-Interpreter, and
                     // pseudo-package reads are reflective env lookups: the
