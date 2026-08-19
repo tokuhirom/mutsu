@@ -587,8 +587,12 @@ delegated to CI per the project's standing policy, not run locally.
 
 ### Remaining
 
-- **Slice 3** (probe `O`) is unstarted, per its own explicit out-of-scope
-  note in §2.1 — re-measure and file or close its own ticket separately.
+- **Slice 3** (probe `O`) is fixed, separately from this ADR, per its own
+  explicit out-of-scope note in §2.1: `capture_var_cell_inner`
+  (`src/vm/vm_data_ops.rs`) now checks the parameter's own `slot_hint` for an
+  already-installed cell *before* following the `:=`-alias-root redirection
+  a `is raw`/`is rw` bind also installs — see
+  `news/2026-08/is-raw-param-container-identity.md`.
 - **Probe `X`** needs its own design (see the ticket above); it is not a
   small extension of D1-D3.
 - The §8 note (add a `docs/captured-outer-cell-sharing.md` section on the
