@@ -311,9 +311,7 @@ impl Value {
             items,
             // `items` is a rebuilt authoritative vector; an old payload may
             // describe the previous vector and must not be carried across.
-            native_storage: None,
-            native_dirty: false,
-            native_snapshot: None,
+            native: None,
             value_type: like.value_type.clone(),
             key_type: like.key_type.clone(),
             declared_type: like.declared_type.clone(),

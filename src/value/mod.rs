@@ -449,8 +449,10 @@ pub(crate) use match_lazy::MatchNode;
 mod nanbox;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;
+mod native_backing;
 mod serde_support;
 pub(crate) mod signature;
+mod sync_cell;
 pub(crate) mod types;
 pub(crate) mod types_eqv;
 pub(crate) mod types_isa;
@@ -472,11 +474,15 @@ mod value_methods_c;
 mod value_setbagmix;
 mod view;
 pub(crate) mod waker;
+
+mod native_cache_shapes;
+
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
+use native_backing::NativeBacking;
 
 /// A `'static` Nil for call sites that keep a `&Value` beyond one expression:
 /// `&Value::NIL` stopped const-promoting once `Value` gained `Drop` (the
@@ -1198,11 +1204,11 @@ pub struct HashData {
 pub struct ArrayData {
     items: Vec<Value>,
     /// Native numeric `array[T]` payload, when this array has been promoted
-    /// to ADR-0015 P3b storage. The boxed vector remains a derived cache for
-    /// the legacy collection API and is refreshed by the accessor chokepoint.
-    native_storage: Option<crate::gc::Gc<BufData>>,
-    native_dirty: bool,
-    native_snapshot: Option<Vec<u8>>,
+    /// to ADR-0015 P3b storage. `items` is then only the seed — the payload
+    /// node and its lazily-filled decode cache live behind
+    /// [`native_backing::NativeBacking`] (docs/adr/0030), refreshed by the
+    /// accessor chokepoint.
+    native: Option<Box<NativeBacking>>,
     /// Element value-type constraint (e.g. `Int` for `my Int @a`), if any.
     pub value_type: Option<String>,
     /// Key-type constraint — unused for arrays, present so the shared

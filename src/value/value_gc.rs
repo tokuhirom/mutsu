@@ -438,6 +438,12 @@ impl Trace for ArrayData {
         for v in &self.items {
             v.gc_trace(visit);
         }
+        // A native-backed array's superseded decode generations (docs/adr/0030
+        // §2.2) still hold `Value` edges the refcount accounting has counted —
+        // visiting only the live one would under-report edges.
+        if let Some(nb) = &self.native {
+            nb.trace_edges(visit);
+        }
         if let Some(d) = &self.default {
             d.gc_trace(visit);
         }
@@ -446,9 +452,9 @@ impl Trace for ArrayData {
     fn drop_gc_edges(&mut self) {
         // Clearing the elements drops every outgoing edge. `&mut self` is
         // supplied by the collector via the backing `Arc` (gc::gc_drop_edges).
+        // Dropping `native` cascades through every retained generation.
         self.items.clear();
-        self.native_storage = None;
-        self.native_dirty = false;
+        self.native = None;
         self.default = None;
     }
 }

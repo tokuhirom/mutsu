@@ -1,9 +1,26 @@
 # ADR-0030: The native `array[T]` decode cache is a read-path cache, and needs field-level interior mutability — not `gc_contents_mut`
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Accepted — implemented in full (§4 steps 1-5 all landed; outcome below)
 - **Date**: 2026-08-19
 - **Deciders**: tokuhirom, Claude
-- **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) (the `gc_contents_mut` chokepoint this decision deliberately does *not* reuse — see §3.1), [ADR-0015](0015-native-backed-container-storage-and-repr-bodies.md) (P3b introduced the cache this ADR repairs), [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c owns the residual cross-thread race), [todo/deep/native-array-storage-sync-unsound-interior-mutation.md](../../todo/deep/native-array-storage-sync-unsound-interior-mutation.md) (the root-cause analysis and repro)
+- **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) (the `gc_contents_mut` chokepoint this decision deliberately does *not* reuse — see §3.1), [ADR-0015](0015-native-backed-container-storage-and-repr-bodies.md) (P3b introduced the cache this ADR repairs), [ADR-0001](0001-gc-strategy-and-phasing.md) §7 (layer 3c owns the residual cross-thread race)
+
+## Outcome (2026-08-19)
+
+All five migration steps (§4) landed. Step 1 (the two plain logic bugs) shipped
+separately in PR #6666. Steps 2-5 (the `SyncUnsafeCell` primitive, the
+`NativeBacking`/`DecodeCache` representation change, the `native_cache_shapes`
+Miri probe module, and the widened CI filter) shipped together. `t/native-array-storage.t`
+now passes 8/8 on **both** debug and release (previously subtest 6 failed
+release-only); the §1.1 second repro (`@a[0] = 7` after an unread native write
+to a different index) now prints `7 99` on release, matching debug. All five
+Miri probes in `value::native_cache_shapes` pass under
+`cargo +nightly-2026-08-01 miri test --lib value::native_cache_shapes`. Open
+question #1 (generation graveyard) and #2 (`Clone` sharing the node) were
+resolved per their stated recommendations — graveyard, and preserve-and-defer,
+respectively; #2 remains open as a separate semantics question, not a
+soundness one. The `todo/deep` ticket this ADR repairs was closed and moved to
+`news/2026-08/`.
 
 > This ADR records why mutsu needs a **second** interior-mutability mechanism alongside ADR-0013's,
 > which mechanism, and where it lives. It does not supersede ADR-0013 — it covers the one borrow

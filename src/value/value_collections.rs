@@ -154,9 +154,7 @@ impl ArrayData {
     pub fn new(items: Vec<Value>) -> Self {
         ArrayData {
             items,
-            native_storage: None,
-            native_dirty: false,
-            native_snapshot: None,
+            native: None,
             value_type: None,
             key_type: None,
             declared_type: None,
@@ -174,8 +172,10 @@ impl ArrayData {
 
     /// Borrow the element vector through the representation chokepoint.
     pub(crate) fn items(&self) -> &Vec<Value> {
-        self.sync_native_items();
-        &self.items
+        match &self.native {
+            None => &self.items,
+            Some(nb) => nb.sync_and_borrow(&self.items),
+        }
     }
 
     /// Mutably borrow the element vector through the representation chokepoint.
@@ -184,8 +184,9 @@ impl ArrayData {
         // read, `items` is stale. Marking dirty without syncing would make
         // the next sync encode that stale cache back over the native bytes,
         // silently discarding the native write.
-        self.sync_native_items();
-        self.native_dirty = self.native_storage.is_some();
+        if let Some(nb) = &mut self.native {
+            nb.sync_into_seed_mut(&mut self.items);
+        }
         &mut self.items
     }
 
@@ -201,23 +202,30 @@ impl ArrayData {
         {
             return;
         }
-        if self.native_storage.is_none()
+        if self.native.is_none()
             && let Some(node) =
                 crate::value::value_buf::make_native_array_storage(elem_type, &self.items)
         {
-            self.native_storage = Some(node);
-            self.native_snapshot = self.native_storage.as_ref().map(|n| n.bytes.clone());
+            let snapshot = node.bytes.clone();
+            self.native = Some(super::NativeBacking::new(node, snapshot));
         }
     }
 
     pub(crate) fn native_storage_address(&self) -> Option<usize> {
-        self.native_storage
+        self.native
             .as_ref()
-            .map(|node| node.bytes.as_ptr() as usize)
+            .map(|nb| nb.node().bytes.as_ptr() as usize)
     }
 
     pub(crate) fn native_storage_node(&self) -> Option<crate::gc::Gc<BufData>> {
-        self.native_storage.clone()
+        self.native.as_ref().map(|nb| nb.node().clone())
+    }
+
+    /// Test-only: the decode-cache generation count, for the pruning probe
+    /// in `native_cache_shapes`.
+    #[cfg(test)]
+    pub(crate) fn native_generation_count(&self) -> Option<usize> {
+        self.native.as_ref().map(|nb| nb.generation_count())
     }
 
     /// Detach the native payload when a caller is about to replace or reshape
@@ -225,58 +233,30 @@ impl ArrayData {
     /// reconstruction; retaining the old payload would let the next accessor
     /// decode stale values back over the new elements.
     pub(crate) fn clear_native_storage(&mut self) {
-        self.native_storage = None;
-        self.native_dirty = false;
-        self.native_snapshot = None;
+        self.native = None;
     }
 
     pub(crate) fn native_repr_body_address(&self) -> Option<usize> {
-        self.native_storage
-            .as_ref()
-            .map(|node| node.body.address(node))
+        self.native.as_ref().map(|nb| {
+            let node = nb.node();
+            node.body.address(node)
+        })
     }
 
     /// Move all elements out through the representation chokepoint.
     pub(crate) fn take_items(&mut self) -> Vec<Value> {
-        self.sync_native_items();
+        if let Some(nb) = &mut self.native {
+            nb.sync_into_seed_readonly(&mut self.items);
+        }
         std::mem::take(&mut self.items)
     }
 
     /// Consume the array data and return its elements.
-    pub(crate) fn into_items(self) -> Vec<Value> {
-        self.sync_native_items();
+    pub(crate) fn into_items(mut self) -> Vec<Value> {
+        if let Some(nb) = &mut self.native {
+            nb.sync_into_seed_readonly(&mut self.items);
+        }
         self.items
-    }
-
-    fn sync_native_items(&self) {
-        let Some(node) = &self.native_storage else {
-            return;
-        };
-        if !self.native_dirty && self.native_snapshot.as_deref() == Some(node.bytes.as_slice()) {
-            return;
-        }
-        let (bytes, decoded) = if self.native_dirty {
-            (
-                crate::value::value_buf::encode_storage(node, &self.items),
-                self.items.clone(),
-            )
-        } else {
-            (
-                node.bytes.clone(),
-                crate::value::value_buf::decode_storage(node),
-            )
-        };
-        unsafe {
-            let data = crate::gc::gc_contents_mut(node);
-            data.bytes.clear();
-            data.bytes.extend_from_slice(&bytes);
-        }
-        unsafe {
-            let this = self as *const Self as *mut Self;
-            std::ptr::addr_of_mut!((*this).items).write(decoded);
-            std::ptr::addr_of_mut!((*this).native_dirty).write(false);
-            std::ptr::addr_of_mut!((*this).native_snapshot).write(Some(bytes));
-        }
     }
 
     /// Whether index `i` is a hole (a deleted slot or an autovivification
