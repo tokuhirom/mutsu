@@ -1,8 +1,8 @@
 # ADR-0031: A supply block's quit belongs to its own emitter, and a cold `whenever` source is tapped rather than replayed
 
-- Status: Partially implemented — Slice 1 (Decision A, quit ownership) shipped
-  2026-08-19; Slice 2 (Decision B, `supply_get_values` tap-and-drain) and
-  Slice 3 (retire the ticket) are not started. See "Outcome" below.
+- Status: Implemented — Slice 1 (Decision A, quit ownership) and Slice 2
+  (Decision B, `supply_get_values` tap-and-drain) shipped 2026-08-19; Slice 3
+  (retire the ticket) done in the same session. See "Outcome" below.
 - Date: 2026-08-19
 - Related: [ADR-0008](0008-push-based-supply-event-delivery.md) (the sink/waker
   primitives the drain in Decision B rides on), [ADR-0028](0028-supply-schedule-on-deferred-tap-delivery.md)
@@ -405,11 +405,91 @@ suites (113 files, 522 tests, all green) and every whitelisted `roast/S17-*`
 file on a release build (Files=58+15+..., all green). `cargo test` (852 unit
 tests) and `cargo clippy -- -D warnings` are clean.
 
-### Slice 2 (Decision B) and Slice 3 (retire the ticket): not started
+### Slice 2 (Decision B), shipped 2026-08-19
 
-`supply_get_values` still replays; `replay_cold_whenever_capture` and
-`replay_static_whenever_promise` are unchanged. Defect B in the ticket
-(`todo/deep/cold-supply-whenever-source-replayed-not-tapped.md`) is therefore
-still open, and the ticket is not retired. A future session can pick up Slice
-2 directly from the "Mechanism" section above — nothing in Slice 1 changed
-its shape.
+Implemented largely as designed, with one deliberate narrowing the design
+did not anticipate:
+
+1. `Interpreter::supply_collect_values(&mut self, supply: &Value,
+   wait_until_done: bool)` (`src/runtime/supply_promise.rs`) taps `supply`
+   with a synthesized emit/done/quit shim and drains the resulting events
+   into a `Vec<Value>`, blocking (bounded by the same 30s deadline
+   `supply_promise_on_demand` uses) only when `wait_until_done`. The shim is
+   the `__SupplyCollector` internal class
+   (`src/runtime/native_methods/supply_collector.rs` +
+   `state_supply_collector.rs`): an empty-env synthesized callable whose
+   body is one `MethodCall` on a literal instance carrying a `collector_id`,
+   exactly the `__ScheduledTapPump` idiom ADR-0028 §2 established. Draining
+   uses a [`crate::value::waker::ReactWaker`] (`waker.drain()` +
+   `waker.wait_activity(bounded step)`) — the same ADR-0008 primitive
+   `supply_list_values`'s pre-existing direct-supplier fast path already
+   used, so no new cross-platform (wasm) blocking-wait code was needed.
+2. **Narrowing not in the original design**: `supply_get_values` routes
+   through `supply_collect_values` **only when the attributes carry
+   `on_demand_callback`** — i.e. only for an on-demand `supply { ... }`
+   block, the *only* shape that can ever contain a nested `whenever` marker
+   in the first place (a plain values-array or live Supplier-/channel-backed
+   Supply never can, since only `run_on_demand_body` registers one). A
+   non-on-demand Supply keeps the pre-Slice-2 direct `attrs.get("values")`
+   read. Two failures during development forced this narrowing, both
+   cross-checked against `raku` before being pinned:
+   - **`roast/S17-supply/flat.t` "On demand publish with flat"**: a value
+     delivered through *any* `.tap()` callback-parameter bind is itemized
+     — confirmed as genuine Raku semantics (`-> $v { ... }` containerizes an
+     Array argument in `raku` too, not a mutsu quirk) — which silently broke
+     `.flat`'s `!kind.is_itemized()` check once every combinator's
+     `supply_get_values` call started running values through the tap
+     dispatch instead of a direct attribute read.
+   - **`t/supply-head-channel-backed.t`**: an unconditional
+     `supply_collect_values` call would tap-and-block (up to the 30s
+     deadline) on a genuinely infinite live source (e.g.
+     `Supply.interval(...).head(3)`) even in the `.head` arm's branches that
+     never read the materialized values at all.
+
+   Both failure modes only occur for a non-on-demand source, so the
+   narrowing above closes both without weakening Decision B where it
+   matters: probe5 case E (a nested whenever's live inner subscription) is
+   still fully fixed, because the *outer* supply in that shape is always
+   on-demand.
+3. `replay_cold_whenever_capture` and `replay_static_whenever_promise` are
+   retired (deleted, not merely unused): their "materialize the source
+   synchronously" halves are gone (superseded by `supply_get_values`'s new
+   dispatch), and their "drive the whenever body over the values, honouring
+   next/redo/LAST/QUIT" halves survive as
+   `drive_whenever_body_over_values`/`drive_whenever_promise_over_values`,
+   now taking pre-materialized `values` instead of a `source` to pull from
+   themselves. Both remaining callers — the `"tap"|"act"` dispatch's b4
+   branch (a nested cold whenever source inside an on-demand body, which
+   cannot go through `.tap()` recursively without restructuring Slice 1's
+   dispatch) and `supply_promise_on_demand`'s static-source fallback — now
+   call `supply_get_values` to materialize first, so they too gain the
+   narrowing above for free.
+
+**A newly-discovered gap, deliberately left open, not a Slice 2 regression**:
+while writing regression coverage, a source quit through **two or more
+levels** of chained on-demand `whenever` sources was found not to propagate
+— reproducible via plain `.tap()` alone, present before this PR, and
+unrelated to `supply_get_values`. See
+`todo/deep/nested-on-demand-whenever-quit-propagation-gap.md`. Slice 2 makes
+its *symptom* worse for `.list`/`.wait` specifically (a fast-but-silently-wrong
+answer becomes a bounded 30s wait), which is exactly why that ticket exists
+now instead of being deferred quietly.
+
+Tests: `t/supply-cold-whenever-live-inner-drain.t` (new — probe5 case E via
+`.list`/`.wait`/`.sort`, a static-source regression pin, and the `.head`
+channel-backed pin), plus the full existing `t/supply-*.t` / `t/whenever-*.t`
+/ `t/react-*.t` / `t/promise-supply-*.t` suites (106 files, 485 tests, all
+green), the full `t/` TAP suite (3252 files; the only failure,
+`t/autoviv-index-guard.t`, is the pre-existing unrelated hang tracked in
+`todo/tickets/autoviv-index-guard-hangs-locally.md`), and every whitelisted
+`roast/S17-supply/*` file on a release build (58 files, 902 tests, all
+green). `cargo clippy -- -D warnings` and `cargo fmt --check` are clean.
+
+### Slice 3 (retire the ticket), done 2026-08-19
+
+`todo/deep/cold-supply-whenever-source-replayed-not-tapped.md` is retired to
+`news/2026-08/supply-get-values-taps-and-drains.md` — both defects it
+tracked (quit ownership, Slice 1; the replay-drops-a-live-inner-subscription
+Defect B, Slice 2) are now fixed. The multi-level quit-propagation gap found
+while verifying Slice 2 is tracked separately (see above), since it is a
+distinct root cause outside this ADR's original scope.

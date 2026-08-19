@@ -860,9 +860,39 @@ impl Interpreter {
                                 // captured copies are discarded.
                                 let last_cbs = Self::value_array_items(&arr[2]).unwrap_or_default();
                                 let quit_cbs = Self::value_array_items(&arr[3]).unwrap_or_default();
+                                // ADR-0031 Decision B (Slice 2): materialize
+                                // this cold, static inner source via
+                                // `supply_get_values` instead of the retired
+                                // `replay_cold_whenever_capture`'s own pull.
+                                // `inner_supply` is known non-on-demand here
+                                // (the preceding branches already claimed a
+                                // channel/supplier-backed/on-demand source),
+                                // so `supply_get_values` takes its
+                                // plain-values fast path — no tap-and-drain
+                                // call, matching the old cost.
+                                let (values, initial_quit) = match inner_supply.view() {
+                                    ValueView::Instance { attributes, .. } => {
+                                        match self.supply_get_values(&attributes.as_map()) {
+                                            Ok(items) => (items, None),
+                                            Err(err) => (
+                                                Vec::new(),
+                                                Some(
+                                                    err.exception
+                                                        .as_deref()
+                                                        .cloned()
+                                                        .unwrap_or_else(|| {
+                                                            Value::str(err.message.clone())
+                                                        }),
+                                                ),
+                                            ),
+                                        }
+                                    }
+                                    _ => (Vec::new(), None),
+                                };
                                 let (mut captured, unhandled_quit) = self
-                                    .replay_cold_whenever_capture(
-                                        inner_supply,
+                                    .drive_whenever_body_over_values(
+                                        values,
+                                        initial_quit,
                                         &body_cb,
                                         &last_cbs,
                                         &quit_cbs,
