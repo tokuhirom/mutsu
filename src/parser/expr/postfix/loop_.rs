@@ -479,7 +479,7 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             if crate::parser::expr::contains_whatever(&expr)
                 || crate::parser::expr::is_whatever(&expr)
             {
-                node = crate::parser::expr::wrap_whatevercode(&node);
+                node = Expr::WhateverCurry(Box::new(node));
             }
             return postfix_expr_continue(rest, node);
         }

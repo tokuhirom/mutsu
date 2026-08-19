@@ -1,7 +1,5 @@
 use crate::ast::{Expr, Stmt};
-use crate::parser::expr::{
-    contains_whatever, expression, expression_no_sequence, wrap_whatevercode,
-};
+use crate::parser::expr::{contains_whatever, expression, expression_no_sequence};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::keyword;
@@ -70,7 +68,7 @@ pub(crate) fn maybe_curry_xz_metaop(expr: Expr) -> Expr {
     if matches!(&expr, Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z")
         && xz_metaop_curries(&expr)
     {
-        crate::parser::expr::wrap_whatevercode(&expr)
+        Expr::WhateverCurry(Box::new(expr))
     } else {
         expr
     }
@@ -98,19 +96,7 @@ fn operand_curries(e: &Expr) -> bool {
     match e {
         Expr::ArrayLiteral(_) => false,
         Expr::MetaOp { meta, .. } if meta == "X" || meta == "Z" => xz_metaop_curries(e),
-        _ => {
-            contains_whatever(e)
-                || matches!(
-                    e,
-                    Expr::Lambda {
-                        is_whatever_code: true,
-                        ..
-                    } | Expr::AnonSubParams {
-                        is_whatever_code: true,
-                        ..
-                    }
-                )
-        }
+        _ => contains_whatever(e) || matches!(e, Expr::WhateverCurry(_)),
     }
 }
 
@@ -514,7 +500,7 @@ pub(crate) fn starts_with_sequence_op(input: &str) -> bool {
 
 fn maybe_wrap_whatever(expr: Expr) -> Expr {
     if contains_whatever(&expr) && !matches!(expr, Expr::Whatever) {
-        wrap_whatevercode(&expr)
+        Expr::WhateverCurry(Box::new(expr))
     } else {
         expr
     }

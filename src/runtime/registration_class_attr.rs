@@ -203,6 +203,9 @@ impl Interpreter {
             | Expr::Lambda { body, .. } => {
                 Self::validate_attr_declared_in_class(ctx, body)?;
             }
+            // ADR-0033: an un-expanded WhateverCurry body can still reference
+            // an attribute (`$!x + *`).
+            Expr::WhateverCurry(inner) => Self::validate_attr_in_expr(ctx, inner)?,
             Expr::Try { body: _, catch } => {
                 // Skip attribute validation inside try blocks — accessing an
                 // undeclared attribute will produce a runtime error that the

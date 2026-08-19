@@ -902,6 +902,12 @@ impl Interpreter {
             Expr::Lambda { body, .. } => body
                 .iter()
                 .find_map(|s| self.find_undeclared_name_in_stmt(s, local_classes, declared)),
+            // ADR-0033 Phase 1: the parser now defers building that lambda —
+            // at this point it is still an un-expanded `WhateverCurry` marker
+            // wrapping the un-curried body, so descend into it directly.
+            Expr::WhateverCurry(inner) => {
+                self.find_undeclared_name_in_expr(inner, local_classes, declared)
+            }
             _ => None,
         }
     }

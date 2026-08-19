@@ -1,6 +1,6 @@
 # ADR-0033: Whatever-priming is a leaf property plus a derived scope — defer `WhateverCode` construction out of the parser
 
-- **Status**: Proposed (2026-08-19). Design complete; implementation not started.
+- **Status**: Phase 1 shipped (2026-08-19). Phases 2-4 not started — see "Outcome" below.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -388,6 +388,80 @@ family as `unless` → `if !`.
   `src/whatever_curry.rs` itself will be roughly the size of today's `whatever_wrap.rs` +
   `whatever_replace.rs` (~730 lines), so it should be created as a directory module
   (`src/whatever_curry/{mod,build,replace,plant}.rs`) from the start.
+
+## Outcome
+
+**Phase 1 shipped (2026-08-19).** `Expr::WhateverArg` and `Expr::WhateverCurry` were added
+to the AST; `src/whatever_curry/` (`mod.rs`, `build.rs`, `replace.rs`) now owns closure
+construction (`build_closure`, formerly `wrap_whatevercode`), placeholder replacement, and
+arity counting, invoked from exactly one place — the new `Expr::WhateverCurry` arm in
+`Compiler::compile_expr`. Every parser-side `wrap_whatevercode(&e)` call site now
+constructs `Expr::WhateverCurry(Box::new(e))` instead; `should_wrap_whatevercode` /
+`contains_whatever` (the scope decision) are byte-for-byte unchanged, so — as designed —
+this is a pure deferral with no behaviour change. `Expr::WhateverArg` is defined but not
+yet produced anywhere (that is Phase 2's leaf-splitting work); it compiles identically to
+`Expr::Whatever` so the arm is reachable-but-inert until then.
+
+`whatever_curry/{mod,build,replace}.rs` is a directory module as the Risks section
+anticipated; `plant.rs` is deferred to Phase 4, which is what actually needs a
+single-authority scope function (Phase 1 keeps the scope decision distributed across the
+existing ~50 call sites on purpose, per the "behaviour-preserving by construction"
+mandate).
+
+The mechanical site-by-site rewrite surfaced substantially more than the ~50 originally
+counted `wrap_whatevercode` call sites: every other parser/compiler/runtime pass that
+pattern-matched the *eagerly built* `Lambda { is_whatever_code: true, .. }` /
+`AnonSubParams { is_whatever_code: true, .. }` shape to detect "this subtree is already a
+WhateverCode" needed an `Expr::WhateverCurry` arm added too, since that shape no longer
+exists at parse time. Two of these were genuine correctness regressions caught before
+merge (both fixed in this same PR, not deferred):
+
+- `crate::ast::collect_ph_expr_shallow` (the placeholder-order collector that decides a
+  block's own implicit signature) didn't hoist a `$^name` placeholder out of a nested
+  WhateverCurry into the enclosing block's signature, undercounting its arity by one.
+  Reproduced via the YAMLish battery's `flatten-tags` helper
+  (`{ |$^value.kv.map($^namespace ~ * => *) }`), which silently mis-bound values before the
+  fix (see `t/placeholder-in-nested-whatevercode.t`, already pinning a simpler shape of the
+  same bug).
+- The expression-context `:=` bind fast path (`parser/expr/precedence/logic.rs`) and its
+  compiler-side `X::Bind::Slice` throw (`compiler/expr_closure.rs`) both matched only the
+  built `Lambda`/`AnonSubParams` shape to detect a Whatever-index bind (`@a[*-1] := 42`),
+  so it silently took the *valid*-bind fast path instead of throwing. Pinned by the
+  pre-existing `t/bind-to-whatever-index.t` / `t/indexed-bind-in-expression.t`.
+
+Roughly a dozen more sites (`outer_redecl.rs`, `sink_warn.rs`, `whenever_scope.rs`,
+`stmt/modifier.rs`, `stmt/class/attr_checks.rs`, `stmt/sub/param_validate.rs`,
+`primary/container/paren.rs`, `runtime/{undeclared_routines,system_eval_names,phasers,
+registration,registration_class_attr}.rs`, `runtime/types/type_matching.rs`'s `subset
+... where <WhateverCode>` predicate-callable check, and `compiler/{expr_call,
+helpers_call_args}.rs`'s `cas($var, * + delta)` atomic-add fast path and closure-escape
+detection) got the same treatment as a precaution — each recurses into the un-expanded
+`WhateverCurry` body the same way it already recursed into a real closure body, so a
+diagnostic, validation, or fast-path check that used to see the built closure still sees
+the (structurally equivalent, pre-substitution) un-curried one. None of these changed
+observable behaviour relative to `main`; they close latent gaps the deferral would
+otherwise have opened. A few sites were deliberately left alone: `stmt/assign/
+compound_expr.rs` and `precedence/{assign,comparison}.rs`'s hand-rolled `* op= value` /
+`* ~~ Type` / `Type ~~ *` autoprime constructions never called `wrap_whatevercode` (they
+build a closure directly), so leaving them eager is consistent with "keep the existing
+scope sites" and does not block Phase 2 (that already-eager path is no worse than
+`main`'s); `runtime/registration_class_augment.rs`'s `does *~~Role`-style helper is the
+same.
+
+Validated locally: `cargo test --workspace` (all binaries, including `gc_stress` and
+`lazy_match_no_eager_materialization`) green; the full `t/` TAP suite (3255 files) green
+except the pre-existing, already-ticketed `t/autoviv-index-guard.t` local hang
+(`todo/tickets/autoviv-index-guard-hangs-locally.md`, confirmed unrelated); `t/*whatever*.t`
+(35 files), `roast/S02-types/{whatever,hyperwhatever}.t`, `roast/S03-operators/
+composition.t`, and `roast/S12-subset/{multi-dispatch,subtypes,type-subset}.t` all green.
+
+**Phases 2-4 are not implemented by this PR** — deliberately scoped out per the ADR's own
+phasing ("Each phase is independently shippable and CI-gated"): Phase 1's mandate is a
+zero-behaviour-change deferral, verified above; Phase 4 (the thunk-barrier correctness fix
+that actually changes `&&`/`||`/`//`/ternary priming results) is a separate, higher-risk
+change that deserves its own PR and its own `t/whatever-thunky-operators.t`. Phases 2/3
+(RakuAST read/write for `* + 1`) remain open items in
+[`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md).
 
 ## References
 

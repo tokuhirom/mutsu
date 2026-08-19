@@ -233,6 +233,9 @@ fn scan_gathers_expr(expr: &Expr) {
             }
         }
         Expr::DoStmt(stmt) => scan_gathers_stmt(stmt),
+        // ADR-0033: descend into an un-expanded WhateverCurry body the same
+        // way as the closure kinds above.
+        Expr::WhateverCurry(inner) => scan_gathers_expr(inner),
         _ => {}
     }
 }

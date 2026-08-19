@@ -321,7 +321,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             // SmartMatch suppresses top-level WhateverCode wrapping, but the LHS
             // should still be curried when it contains Whatever.
             if crate::parser::expr::should_wrap_whatevercode(&left) {
-                left = crate::parser::expr::wrap_whatevercode(&left);
+                left = Expr::WhateverCurry(Box::new(left));
             }
             // Bare `* ~~ Type` curries to WhateverCode `{ $_ ~~ Type }`.
             // This is only done here (not in should_curry_whatever) because at the

@@ -96,6 +96,9 @@ fn lift_begin_from_eval_expr(expr: &mut Expr, begin: &mut Vec<Stmt>) {
         Expr::Lambda { body, .. } => {
             extract_begin_from_stmts(body, begin);
         }
+        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
+        // same as the closure kinds above.
+        Expr::WhateverCurry(inner) => lift_begin_from_eval_expr(inner, begin),
         _ => {}
     }
 }
@@ -569,6 +572,9 @@ fn lift_phasers_from_expr_inner(
         Expr::Lambda { body, .. } => {
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
+        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
+        // same as the closure kinds above.
+        Expr::WhateverCurry(inner) => lift_phasers_from_expr(inner, begin, check, init),
         Expr::Try { body, catch } => {
             lift_phasers_from_closure_stmts(body, begin, check, init);
             if let Some(c) = catch {
@@ -1126,6 +1132,9 @@ fn recurse_into_expr(expr: &mut Expr) {
         Expr::Lambda { body, .. } => {
             reorder_recursive(body, false);
         }
+        // ADR-0033: an un-expanded WhateverCurry body is transparent here,
+        // same as the closure kinds above.
+        Expr::WhateverCurry(inner) => recurse_into_expr(inner),
         Expr::Try { body, catch } => {
             reorder_recursive(body, false);
             if let Some(c) = catch {

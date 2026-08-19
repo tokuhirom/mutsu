@@ -603,6 +603,10 @@ fn walk_expr(expr: &Expr, scan: &mut Scan) {
             scan.declare(param);
             walk_stmts(body, scan);
         }
+        // ADR-0033: an un-expanded WhateverCurry body has no named params of
+        // its own yet (still literal `*` placeholders), so just descend into
+        // it to still catch an undeclared routine call inside it.
+        Expr::WhateverCurry(inner) => walk_expr(inner, scan),
         Expr::Try { body, catch } => {
             walk_stmts(body, scan);
             if let Some(c) = catch {

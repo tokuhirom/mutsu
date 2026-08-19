@@ -13,13 +13,13 @@ use crate::value::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use super::contains_whatever;
 use super::operators::*;
 use super::precedence_meta_ops::{
     BracketInfix, additive_expr, cannot_meta_ternary_error, concat_expr, multiplicative_expr,
     op_str_to_token_kind, parse_bracket_infix_op, parse_infix_func_op, parse_meta_op, power_expr,
     strip_sequence_op, structural_expr,
 };
-use super::{contains_whatever, wrap_whatevercode};
 
 static CHAIN_CMP_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 

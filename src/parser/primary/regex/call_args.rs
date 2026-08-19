@@ -99,7 +99,7 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             };
             // Apply WhateverCode wrapping (e.g., `* *= 2` -> WhateverCode lambda)
             if crate::parser::expr::should_wrap_whatevercode(&compound_expr) {
-                compound_expr = crate::parser::expr::wrap_whatevercode(&compound_expr);
+                compound_expr = Expr::WhateverCurry(Box::new(compound_expr));
             }
             return Ok((r, compound_expr));
         }

@@ -116,7 +116,11 @@ pub(crate) fn static_default_type(expr: &Expr) -> Option<String> {
         };
     }
     match expr {
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } => Some("Callable".to_string()),
+        // ADR-0033: a Whatever-curried default (`$x = * + 1`) compiles to a
+        // Callable closure just like a hand-written one.
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::WhateverCurry(_) => {
+            Some("Callable".to_string())
+        }
         _ => None,
     }
 }

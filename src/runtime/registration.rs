@@ -683,6 +683,11 @@ impl Interpreter {
             | Expr::Lambda { body, .. } => {
                 self.validate_private_access_in_stmts(caller_class, body)?
             }
+            // ADR-0033: an un-expanded WhateverCurry body can still contain a
+            // private-method access (`* !private-method`).
+            Expr::WhateverCurry(inner) => {
+                self.validate_private_access_in_expr(caller_class, inner)?
+            }
             Expr::Try { body: _, catch } => {
                 // Skip private access validation inside try blocks — unauthorized
                 // private access will produce a runtime error that try can catch.
@@ -910,6 +915,11 @@ impl Interpreter {
             }
             Expr::DoBlock { body, .. } => {
                 self.check_private_calls_exist(class_name, class_def, body)?;
+            }
+            // ADR-0033: an un-expanded WhateverCurry body can still contain a
+            // private-method call (`* !method`).
+            Expr::WhateverCurry(inner) => {
+                self.check_private_calls_exist_expr(class_name, class_def, inner)?
             }
             Expr::DoStmt(stmt) => {
                 self.check_private_calls_exist_stmt(class_name, class_def, stmt)?;

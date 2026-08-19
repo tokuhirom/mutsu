@@ -52,9 +52,25 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));
             }
+            // Not yet produced by the parser (ADR-0033 Phase 1 defers only the
+            // closure-building step; leaf-splitting into a real `WhateverArg`
+            // producer is Phase 2/4). Compile identically to a bare `Whatever`
+            // so the arm is reachable-but-harmless until then.
+            Expr::WhateverArg => {
+                let idx = self.code.add_constant(Value::WHATEVER);
+                self.code.emit(OpCode::LoadConst(idx));
+            }
             Expr::HyperWhatever => {
                 let idx = self.code.add_constant(Value::HYPER_WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));
+            }
+            // ADR-0033: expand the marker into the same WhateverCode closure
+            // `wrap_whatevercode` used to build eagerly in the parser, then
+            // compile that closure exactly as before. No new OpCode, no new
+            // runtime path.
+            Expr::WhateverCurry(body) => {
+                let closure = crate::whatever_curry::build_closure(body);
+                self.compile_expr(&closure);
             }
             // A source-preserving literal compiles exactly like its inner value;
             // the recorded source text only matters to the sink-warning pass.

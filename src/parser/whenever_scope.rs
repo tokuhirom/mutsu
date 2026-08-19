@@ -134,6 +134,12 @@ fn walk_expr(expr: &Expr, in_scope: bool, line: &mut i64, found: &mut Option<i64
         }
         Expr::AnonSubParams { body, .. } => walk_stmts(body, in_scope, line, found),
 
+        // ADR-0033 Phase 1: an un-expanded WhateverCurry marker is, like the
+        // `Lambda`/`AnonSubParams` cases above, a purely lexical boundary —
+        // preserve the current scope and descend into its (still un-curried)
+        // body.
+        Expr::WhateverCurry(inner) => walk_expr(inner, in_scope, line, found),
+
         // Inline block-valued expressions preserve scope.
         Expr::Block(body) | Expr::Gather(body) => walk_stmts(body, in_scope, line, found),
         Expr::DoBlock { body, .. } => walk_stmts(body, in_scope, line, found),

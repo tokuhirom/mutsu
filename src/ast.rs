@@ -381,6 +381,14 @@ pub(crate) enum Expr {
     /// boundaries to prevent incorrect junction flattening.
     Grouped(Box<Expr>),
     Whatever,
+    /// A `*` that participates in Whatever-priming (an "argument" `*`, in
+    /// Rakudo's `WhateverCode::Argument` terminology), as opposed to a bare
+    /// `Expr::Whatever` *value*. Not yet produced by the parser (ADR-0033
+    /// Phase 1 is a behaviour-preserving deferral only); `should_wrap_whatevercode`
+    /// /`contains_whatever` still decide priming the same way they always have.
+    /// Phase 2/4 will start emitting this from the leaf-splitting rule in
+    /// ADR-0033 §1 and give it real RakuAST/compiler semantics.
+    WhateverArg,
     HyperWhatever,
     BareWord(String),
     /// A function call that the parser resolved to a user-declared or imported
@@ -534,6 +542,17 @@ pub(crate) enum Expr {
         /// imaginary unit `i`), so the body binder marks it accordingly.
         param_sigilless: bool,
     },
+    /// Marks a maximal Whatever-priming scope (ADR-0033). Carries the
+    /// un-curried body — `Expr::Whatever`/`Expr::WhateverArg` leaves are still
+    /// in place. This is a marker only: it is not a closure and never reaches
+    /// the VM as itself. The compiler expands it into the same `Lambda` /
+    /// `AnonSubParams { is_whatever_code: true, .. }` that the parser used to
+    /// build eagerly (`whatever_curry::build_closure`), so emitted bytecode is
+    /// unchanged. `whatever_curry::plant` is the single authority for where
+    /// these markers get inserted; in ADR-0033 Phase 1 that authority is still
+    /// distributed across the parser's existing `wrap_whatevercode` call sites
+    /// (now constructing this marker instead of the closure directly).
+    WhateverCurry(Box<Expr>),
     ArrayLiteral(Vec<Expr>),
     /// A pair expression that was parenthesized, e.g. `(:a(3))`.
     /// At runtime this becomes a ValuePair so it is treated as a positional argument.
@@ -2175,7 +2194,11 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
         | Expr::Eager(expr)
         | Expr::Itemize(expr)
         | Expr::Grouped(expr)
-        | Expr::DeitemizeForBind(expr) => collect_ph_expr(expr, out),
+        | Expr::DeitemizeForBind(expr)
+        // ADR-0033: a not-yet-expanded WhateverCurry marker is transparent to
+        // the deep collector, same as every other closure kind it recurses
+        // into unconditionally above.
+        | Expr::WhateverCurry(expr) => collect_ph_expr(expr, out),
         Expr::HyperOp { left, right, .. }
         | Expr::HyperFuncOp { left, right, .. }
         | Expr::MetaOp { left, right, .. } => {
@@ -2519,6 +2542,11 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         // which belong to the nearest enclosing *explicit* block. So descend
         // through it to attribute e.g. `$^namespace` in
         // `{ ... $^namespace ~ * => * }` to the outer block, matching Rakudo.
+        //
+        // ADR-0033 Phase 1: the parser no longer builds this closure eagerly —
+        // at this (pre-compile) stage a curry is still an un-expanded
+        // `WhateverCurry` marker, so descend into its body directly instead.
+        Expr::WhateverCurry(inner) => collect_ph_expr_shallow(inner, out),
         Expr::AnonSubParams {
             body,
             is_whatever_code: true,

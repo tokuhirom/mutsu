@@ -25,19 +25,13 @@ use super::meta_ops::{
     try_parse_sequence_in_paren,
 };
 
-/// True when `expr` is an already-built WhateverCode closure (e.g. from `*.so`
-/// or `* + 1`), which is the value an extra paren layer should freeze.
+/// True when `expr` is an already-planted WhateverCode priming scope (e.g.
+/// from `*.so` or `* + 1`), which is the value an extra paren layer should
+/// freeze. ADR-0033 Phase 1: the parser defers closure construction to the
+/// compiler, so this is now `Expr::WhateverCurry` rather than a built
+/// `Lambda`/`AnonSubParams`.
 fn is_whatevercode_closure(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Lambda {
-            is_whatever_code: true,
-            ..
-        } | Expr::AnonSubParams {
-            is_whatever_code: true,
-            ..
-        }
-    )
+    matches!(expr, Expr::WhateverCurry(_))
 }
 
 /// True when `s` is exactly one balanced parenthesis group spanning the whole
@@ -257,7 +251,12 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
         // a WhateverCode wrapping the nested meta-op, not a (non-curryable) `zip`
         // call. A non-currying meta-op still normalizes as before.
         let result = match maybe_curry_xz_metaop(first) {
-            curried @ (Expr::Lambda { .. } | Expr::AnonSubParams { .. }) => curried,
+            // ADR-0033 Phase 1: a curried result is now a `WhateverCurry`
+            // marker rather than a built `Lambda`/`AnonSubParams` closure;
+            // keep it out of `normalize_chained_zip_meta` just the same.
+            curried @ (Expr::WhateverCurry(_)
+            | Expr::Lambda { .. }
+            | Expr::AnonSubParams { .. }) => curried,
             other => normalize_chained_zip_meta(other),
         };
         // Wrap in Grouped so the compiler's chain-flattener can

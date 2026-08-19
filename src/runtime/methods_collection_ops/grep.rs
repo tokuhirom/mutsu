@@ -171,6 +171,10 @@ impl Interpreter {
                 }
                 Expr::AssignExpr { expr, .. } => expr_contains_last(expr),
                 Expr::Lambda { body, .. } => body.iter().any(stmt_contains_last),
+                // A `last` cannot syntactically appear inside a Whatever-curry
+                // body (it is a pure expression, not a statement list), but
+                // descend for consistency with the other closure arms above.
+                Expr::WhateverCurry(inner) => expr_contains_last(inner),
                 Expr::Subst { .. }
                 | Expr::NonDestructiveSubst { .. }
                 | Expr::Transliterate { .. }

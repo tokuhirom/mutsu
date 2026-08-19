@@ -361,6 +361,12 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     index.as_ref(),
                     Expr::ArrayLiteral(_)
                         | Expr::Whatever
+                        // ADR-0033 Phase 1: a Whatever-index (`@a[*-1] := ...`) is
+                        // still an un-expanded `WhateverCurry` marker at this
+                        // (pre-compile) parse-time point, not yet the built
+                        // `Lambda`/`AnonSubParams` closure below (kept as a
+                        // belt-and-suspenders match; only reachable pre-ADR-0033).
+                        | Expr::WhateverCurry(_)
                         | Expr::Lambda {
                             is_whatever_code: true,
                             ..

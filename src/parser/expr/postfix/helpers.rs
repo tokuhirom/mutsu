@@ -118,6 +118,15 @@ pub(crate) fn is_angle_key_char(c: char) -> bool {
 /// instead of trying to numify the closure itself.
 pub(crate) fn compose_prefix_into_whatevercode(op: TokenKind, expr: Expr) -> Expr {
     match expr {
+        // ADR-0033 Phase 1: a currying operand is still an un-expanded
+        // `WhateverCurry` marker at this point (the closure isn't built until
+        // compile time), so compose the prefix into its un-curried body and
+        // re-wrap. Equivalent to composing into the built closure's last
+        // statement, since `build_closure` doesn't care whether the leaf is a
+        // literal `Expr::Whatever` or the already-substituted `$_`/`__wc_N`.
+        Expr::WhateverCurry(inner) => {
+            Expr::WhateverCurry(Box::new(Expr::Unary { op, expr: inner }))
+        }
         Expr::Lambda {
             param,
             mut body,

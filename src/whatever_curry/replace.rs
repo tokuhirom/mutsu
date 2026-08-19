@@ -1,18 +1,29 @@
 //! WhateverCode body construction: replacing `*` placeholders with parameter
-//! variables (numbered or single `$_`) and renaming variables when inlining
-//! nested WhateverCode closures.
+//! variables (numbered or single `$_`).
+//!
+//! A nested, already-planted `Expr::WhateverCurry` operand (e.g. `(* - 1)`
+//! inside `(* - 1) - 1`) is inlined by recursing straight into its un-curried
+//! body — since that body still has literal `Expr::Whatever` placeholders (not
+//! yet turned into `$_`/`__wc_N` variables), no renaming pass is needed. This
+//! is simpler than the pre-ADR-0033 code, which had to unwrap an
+//! already-built `Lambda`/`AnonSubParams` closure and rename its parameter(s)
+//! to fit the enclosing numbering scheme.
 
-use super::*;
+use super::build::{count_whatever, exprs_structurally_eq};
+use crate::ast::Expr;
+use crate::parser::is_whatever;
+use crate::token_kind::TokenKind;
 
 /// Replace Whatever expressions with numbered parameter variables.
 /// `counter` tracks the next parameter index to assign.
 pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Expr {
     match expr {
         e if is_whatever(e) => {
-            let var_name = format!("__wc_{}", counter);
+            let var_name = format!("__wc_{counter}");
             *counter += 1;
             Expr::Var(var_name)
         }
+        Expr::WhateverCurry(inner) => replace_whatever_numbered(inner, counter),
         Expr::Binary {
             left,
             op: TokenKind::AndAnd,
@@ -59,37 +70,6 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
                 op: TokenKind::AndAnd,
                 right: Box::new(replace_whatever_numbered(right, counter)),
             }
-        }
-        // Unwrap a nested WhateverCode lambda: reuse its body with renumbered params
-        Expr::Lambda { param, body, .. } if param == "_" => {
-            // Single-param WhateverCode: rename $_ to the next numbered param
-            let var_name = format!("__wc_{}", counter);
-            *counter += 1;
-            if let Some(Stmt::Expr(e)) = body.first() {
-                rename_var(e, "_", &var_name)
-            } else {
-                Expr::Var(var_name)
-            }
-        }
-        Expr::AnonSubParams { params, body, .. }
-            if params.iter().all(|p| p.starts_with("__wc_")) =>
-        {
-            // Multi-param WhateverCode: renumber all params
-            let mut renames = Vec::new();
-            for old_name in params {
-                let new_name = format!("__wc_{}", counter);
-                *counter += 1;
-                renames.push((old_name.clone(), new_name));
-            }
-            let mut body_expr = if let Some(Stmt::Expr(e)) = body.first() {
-                e.clone()
-            } else {
-                return expr.clone();
-            };
-            for (old, new) in &renames {
-                body_expr = rename_var(&body_expr, old, new);
-            }
-            body_expr
         }
         // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
         Expr::Binary {
@@ -211,103 +191,11 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
     }
 }
 
-/// Rename a variable in an expression tree.
-fn rename_var(expr: &Expr, old_name: &str, new_name: &str) -> Expr {
-    match expr {
-        Expr::Var(name) if name == old_name => Expr::Var(new_name.to_string()),
-        Expr::Binary { left, op, right } => Expr::Binary {
-            left: Box::new(rename_var(left, old_name, new_name)),
-            op: op.clone(),
-            right: Box::new(rename_var(right, old_name, new_name)),
-        },
-        Expr::Unary { op, expr } => Expr::Unary {
-            op: op.clone(),
-            expr: Box::new(rename_var(expr, old_name, new_name)),
-        },
-        Expr::PostfixOp { op, expr } => Expr::PostfixOp {
-            op: op.clone(),
-            expr: Box::new(rename_var(expr, old_name, new_name)),
-        },
-        Expr::MethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            quoted,
-        } => Expr::MethodCall {
-            target: Box::new(rename_var(target, old_name, new_name)),
-            name: *name,
-            args: args
-                .iter()
-                .map(|a| rename_var(a, old_name, new_name))
-                .collect(),
-            modifier: *modifier,
-            quoted: *quoted,
-        },
-        Expr::HyperMethodCall {
-            target,
-            name,
-            args,
-            modifier,
-            quoted,
-        } => Expr::HyperMethodCall {
-            target: Box::new(rename_var(target, old_name, new_name)),
-            name: *name,
-            args: args
-                .iter()
-                .map(|a| rename_var(a, old_name, new_name))
-                .collect(),
-            modifier: *modifier,
-            quoted: *quoted,
-        },
-        Expr::CallOn { target, args } => Expr::CallOn {
-            target: Box::new(rename_var(target, old_name, new_name)),
-            args: args
-                .iter()
-                .map(|a| rename_var(a, old_name, new_name))
-                .collect(),
-        },
-        Expr::Index {
-            target,
-            index,
-            is_positional,
-            ..
-        } => Expr::Index {
-            target: Box::new(rename_var(target, old_name, new_name)),
-            index: Box::new(rename_var(index, old_name, new_name)),
-            is_positional: *is_positional,
-        },
-        _ => expr.clone(),
-    }
-}
-
 /// Replace Whatever and nested single-arg WhateverCode with $_ (for single-arg wrapping).
 pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
         e if is_whatever(e) => Expr::Var("_".to_string()),
-        // A nested single-arg WhateverCode: unwrap and reuse body (already uses $_)
-        Expr::Lambda { param, body, .. } if param == "_" => {
-            if let Some(Stmt::Expr(e)) = body.first() {
-                e.clone()
-            } else {
-                Expr::Var("_".to_string())
-            }
-        }
-        // A nested single-param WhateverCode built as AnonSubParams (its body
-        // referenced $_, so it uses a numbered param): rename that param to $_
-        // so it shares the composed closure's single topic.
-        Expr::AnonSubParams {
-            params,
-            body,
-            is_whatever_code: true,
-            ..
-        } if params.len() == 1 => {
-            if let Some(Stmt::Expr(e)) = body.first() {
-                rename_var(e, &params[0], "_")
-            } else {
-                Expr::Var("_".to_string())
-            }
-        }
+        Expr::WhateverCurry(inner) => replace_whatever_single(inner),
         // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
         Expr::Binary {
             left,
