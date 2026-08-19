@@ -52,13 +52,33 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1`
+- WhateverCode such as `* + 1` — **designed, see
+  [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
 
 Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
+
+### Designed: WhateverCode (ADR-0033)
+
+`* + 1` was picked first because it is the highest-frequency construct on the list
+(`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
+second, independent defect that shares the same root cause: mutsu primes straight
+through the thunky operators, so `(* > 3 && * < 8).arity` is `2` where raku says `1`,
+`(1..10).grep(* > 3 && * < 8)` returns `5 6` where raku returns `1..7`, and a ternary
+primes nothing at all. Both follow from mutsu building the `WhateverCode` closure
+eagerly in the parser at ~50 call sites, which destroys the pre-curry expression before
+the RakuAST converter can see it and leaves no single owner for the priming-scope rule.
+
+[ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md) proposes
+Rakudo's model — a leaf split (`Expr::Whatever` value vs `Expr::WhateverArg` argument),
+an `Expr::WhateverCurry` scope marker, closure construction moved to the compiler, and a
+single `whatever_curry::plant` shared by the parser and `rakuast::lower` — in four
+phases, the first of which is behaviour-preserving.
+
+The remaining items on both lists above are still undesigned.
 
 ## Macros
 
