@@ -475,6 +475,32 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__SupplyCollector".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // ADR-0031 Decision B (Slice 2): the emit/done/quit shim
+                // `Interpreter::supply_collect_values` taps a Supply with,
+                // instead of the old synchronous-replay helpers — see
+                // `native_methods::supply_collector`.
+                native_methods: [
+                    "__mutsu_collector_emit",
+                    "__mutsu_collector_done",
+                    "__mutsu_collector_quit",
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                mro: sym_mro(&["__SupplyCollector"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),

@@ -279,116 +279,146 @@ impl Interpreter {
     }
 
     /// Extract source values from a Supply's attributes.
+    ///
+    /// ADR-0031 Decision B (Slice 2): for an on-demand `supply { ... }`
+    /// block, this is a thin wrapper around [`Self::supply_collect_values`]
+    /// — rebuild the `Supply` value from its attributes and tap-and-drain
+    /// it, instead of the synchronous replay this function used to do
+    /// inline (walking `run_on_demand_body`'s raw emitted markers by hand,
+    /// recursing into `replay_cold_whenever_capture` for a cold nested
+    /// `whenever` source and silently dropping a live one). Tapping the
+    /// *outer* supply directly routes every nested `whenever` through the
+    /// same `"tap"|"act"` dispatch that already drives all four
+    /// whenever-source branches correctly (including a live one, since
+    /// Slice 1), so the manual marker-walk this used to need is gone
+    /// entirely: by the time a value reaches the collector shim, any nested
+    /// whenever it came through has already been fully driven.
+    ///
+    /// A plain, non-on-demand Supply (a static `values` array, or a live
+    /// Supplier-/channel-backed one — neither of which can ever contain a
+    /// *nested* `whenever` marker, since only an on-demand body's own
+    /// `run_on_demand_body` call can register one) keeps the old direct
+    /// attribute read instead of also going through `.tap()`. Two reasons,
+    /// not just one: (1) Defect B never applied to this shape — there is no
+    /// marker to lose — so tap-and-drain would only add the drain's cost for
+    /// no correctness gain, and could even *block* on a genuinely infinite
+    /// live source a caller never meant to materialize (e.g.
+    /// `Supply.interval(...).head(3)` reading `source_values` only for its
+    /// static branch); (2) a value delivered through `.tap()`'s
+    /// callback-parameter binding is itemized (Raku's own "binding a List
+    /// value to a `$`-sigil parameter containerizes it" rule — confirmed
+    /// against `raku` directly, not a mutsu quirk), which would silently
+    /// break a combinator like `.flat` that specifically needs the source's
+    /// *un-itemized* stored shape (`roast/S17-supply/flat.t` "On demand
+    /// publish with flat" pinned this during Slice 2 development).
     pub(super) fn supply_get_values(
         &mut self,
         attributes: &AttrMap,
     ) -> Result<Vec<Value>, RuntimeError> {
-        // This construct handles `next`/`last`/`redo`, so a loop-control
-        // statement raised anywhere in its dynamic extent has somewhere to go
-        // (`runtime/loop_handler_depth.rs`). Without the guard the raise site
-        // would convert the signal into a thrown `X::ControlFlow` and silently
-        // break this loop.
-        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        if let Some(on_demand_cb) = attributes.get("on_demand_callback") {
-            let (_, emitted, _) = self.run_on_demand_body(on_demand_cb.clone(), None);
-            // Expand `whenever` subscription markers: a cold (supplier-less)
-            // source is replayed synchronously so the body's emissions appear
-            // in source order. A live (supplier-backed) source cannot be
-            // driven synchronously here and is dropped (previously the raw
-            // 4-element marker array leaked through as a value). Replayed
-            // emissions are processed through the same worklist: a body that
-            // registers a NESTED whenever emits a fresh marker, and a
-            // `whenever <Promise>` source (e.g. a composite connector's
-            // `whenever self!connect(...)`) blocks on the promise and runs
-            // the body with its result — both used to leak the raw marker.
-            let mut out = Vec::with_capacity(emitted.len());
-            let mut queue: std::collections::VecDeque<Value> = emitted.into();
-            while let Some(item) = queue.pop_front() {
-                if Self::is_promise_whenever_marker(&item) {
-                    let ValueView::Array(arr, ..) = item.view() else {
-                        continue;
-                    };
-                    let ValueView::Promise(shared) = arr[0].view() else {
-                        continue;
-                    };
-                    let (result, _, _) = shared.wait();
-                    let broken = shared.status() == "Broken";
-                    let cbs = if broken {
-                        Self::value_array_items(&arr[3]).unwrap_or_default()
-                    } else {
-                        let mut v = vec![arr[1].clone()];
-                        v.extend(Self::value_array_items(&arr[2]).unwrap_or_default());
-                        v
-                    };
-                    if broken && cbs.is_empty() {
-                        return Err(Self::runtime_error_from_supply_reason(result));
+        if attributes.contains_key("on_demand_callback") {
+            let attrs_map: HashMap<String, Value> = attributes.into();
+            let supply = Value::make_instance(Symbol::intern("Supply"), attrs_map);
+            return self.supply_collect_values(&supply, true);
+        }
+        Ok(match attributes.get("values").map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.to_vec(),
+            _ => Vec::new(),
+        })
+    }
+
+    /// ADR-0031 Decision B (Slice 2): tap `supply` and drain the resulting
+    /// event stream into a plain `Vec<Value>`, instead of the old
+    /// synchronous replay (`replay_cold_whenever_capture` /
+    /// `replay_static_whenever_promise`, both retired). `.tap()` already
+    /// drives every whenever-source flavour correctly (ADR-0028's four
+    /// branches, and — since Slice 1 — quit ownership too), so tapping the
+    /// caller's own supply and collecting through the same `"tap"|"act"`
+    /// chokepoint observes a value emitted *after* the synchronous portion
+    /// of the tap call returns (a live inner subscription), which the old
+    /// pull-based replay silently dropped
+    /// (`todo/deep/cold-supply-whenever-source-replayed-not-tapped.md`,
+    /// probe5 case E).
+    ///
+    /// The `__SupplyCollector` shim (`native_methods::supply_collector`) is
+    /// an empty-env synthesized callable whose body is one `MethodCall` on a
+    /// literal internal instance — the same idiom ADR-0028 §2's
+    /// `__ScheduledTapPump` established — so it is trivially safe for the
+    /// supply's own emitting thread(s) to invoke cross-thread; invoking it
+    /// just pushes the event into the [`crate::value::waker::ReactWaker`]
+    /// this function drains (the same ADR-0008 waker primitive
+    /// `supply_list_values`'s direct-supplier fast path already uses).
+    ///
+    /// `wait_until_done`: `true` blocks (bounded by a 30s deadline, the same
+    /// budget `supply_promise_on_demand` uses) until the tapped supply
+    /// signals done/quit or the deadline elapses — hitting the deadline is a
+    /// mutsu defect to observe, not a silent hang, so whatever was collected
+    /// so far is returned rather than blocking forever. `false` only drains
+    /// whatever the synchronous portion of the `.tap()` call already
+    /// delivered. Either way, a source that completed synchronously (the
+    /// common case: a finite/static source, or a cold whenever chain that
+    /// fully replays inside the `.tap()` call itself) is already queued
+    /// before the first drain, so this returns immediately without ever
+    /// touching the waker's blocking wait.
+    pub(crate) fn supply_collect_values(
+        &mut self,
+        supply: &Value,
+        wait_until_done: bool,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        use crate::value::waker::{ReactWaker, SinkEvent};
+        use std::time::Duration;
+
+        let waker = ReactWaker::new();
+        let collector_id = crate::runtime::native_methods::register_supply_collector(waker.clone());
+        let emit_shim = Self::build_supply_collector_shim(collector_id, "emit");
+        let done_shim = Self::build_supply_collector_shim(collector_id, "done");
+        let quit_shim = Self::build_supply_collector_shim(collector_id, "quit");
+
+        let tap_handle = match self.call_method_with_values(
+            supply.clone(),
+            "tap",
+            vec![
+                emit_shim,
+                Value::pair("done".to_string(), done_shim),
+                Value::pair("quit".to_string(), quit_shim),
+            ],
+        ) {
+            Ok(tap) => tap,
+            Err(err) => {
+                crate::runtime::native_methods::unregister_supply_collector(collector_id);
+                return Err(err);
+            }
+        };
+
+        let mut out = Vec::new();
+        let mut quit_reason: Option<Value> = None;
+        let deadline = crate::runtime::thread_compat::Instant::now() + Duration::from_secs(30);
+        'drain: loop {
+            for (_, event) in waker.drain() {
+                match event {
+                    SinkEvent::Emit(v) => out.push(v),
+                    SinkEvent::Done => break 'drain,
+                    SinkEvent::Quit(reason) => {
+                        quit_reason = Some(reason);
+                        break 'drain;
                     }
-                    for (i, cb) in cbs.into_iter().enumerate() {
-                        let args = if i == 0 { vec![result.clone()] } else { vec![] };
-                        self.supply_emit_buffer.push(Vec::new());
-                        // The check below handles `is_react_done()`/`is_last()`
-                        // from this body's dynamic extent — see
-                        // `runtime::react_done_handler_depth`.
-                        let _react_done_handler =
-                            crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
-                        let res = self.call_sub_value(cb, args, true);
-                        drop(_react_done_handler);
-                        let captured = self.supply_emit_buffer.pop().unwrap_or_default();
-                        for c in captured.into_iter().rev() {
-                            queue.push_front(c);
-                        }
-                        if let Err(err) = res
-                            && !err.is_react_done()
-                            && !err.is_last()
-                        {
-                            return Err(err);
-                        }
-                    }
-                    continue;
-                }
-                let marker = if let ValueView::Array(arr, ..) = item.view()
-                    && arr.len() == 4
-                    && matches!(arr[0].view(), ValueView::Instance { class_name, .. } if class_name == "Supply")
-                {
-                    Some((
-                        arr[0].clone(),
-                        arr[1].clone(),
-                        arr[2].clone(),
-                        arr[3].clone(),
-                    ))
-                } else {
-                    None
-                };
-                let Some((source, body_cb, last_arr, quit_arr)) = marker else {
-                    out.push(item);
-                    continue;
-                };
-                let is_live = matches!(
-                    source.view(),
-                    ValueView::Instance { attributes: a, .. }
-                        if a.as_map().contains_key("supplier_id")
-                );
-                if is_live {
-                    continue;
-                }
-                let last_cbs = Self::value_array_items(&last_arr).unwrap_or_default();
-                let quit_cbs = Self::value_array_items(&quit_arr).unwrap_or_default();
-                let (captured, unhandled_quit) =
-                    self.replay_cold_whenever_capture(&source, &body_cb, &last_cbs, &quit_cbs);
-                for c in captured.into_iter().rev() {
-                    queue.push_front(c);
-                }
-                if let Some(reason) = unhandled_quit {
-                    return Err(Self::runtime_error_from_supply_reason(reason));
                 }
             }
-            Ok(out)
-        } else {
-            Ok(match attributes.get("values").map(Value::view) {
-                Some(ValueView::Array(items, ..)) => items.to_vec(),
-                _ => Vec::new(),
-            })
+            if !wait_until_done {
+                break;
+            }
+            let now = crate::runtime::thread_compat::Instant::now();
+            if now >= deadline {
+                break;
+            }
+            waker.wait_activity((deadline - now).min(Duration::from_millis(100)));
         }
+        crate::runtime::native_methods::unregister_supply_collector(collector_id);
+        let _ = self.call_method_with_values(tap_handle, "close", vec![]);
+
+        if let Some(reason) = quit_reason {
+            return Err(Self::runtime_error_from_supply_reason(reason));
+        }
+        Ok(out)
     }
 
     /// Implement Supply.Promise for on-demand supplies (supply { ... } blocks).
@@ -600,10 +630,37 @@ impl Interpreter {
                         }
                         continue;
                     }
-                    // No live channel: a static/finite source. Replay it now.
+                    // No live channel: a static/finite source. ADR-0031
+                    // Decision B (Slice 2): materialize it via
+                    // `supply_get_values` (fixing `await` on a supply whose
+                    // `whenever` source is a cold on-demand supply, which
+                    // used to return `Nil` — probe4) instead of the retired
+                    // `replay_static_whenever_promise`'s own pull. This
+                    // branch's `source` never itself carries
+                    // `on_demand_callback` (that shape is claimed above by
+                    // `register_nested_on_demand_source`), so
+                    // `supply_get_values` takes its plain-values fast path
+                    // here — same cost as before, no new tap-and-drain call.
                     let mut lv = static_last_value.take().unwrap_or(Value::NIL);
-                    self.replay_static_whenever_promise(
-                        &source, &callback, &last_cbs, &quit_cbs, &mut lv,
+                    let (values, initial_quit) = match self.supply_get_values(&inner_map) {
+                        Ok(items) => (items, None),
+                        Err(err) => (
+                            Vec::new(),
+                            Some(
+                                err.exception
+                                    .as_deref()
+                                    .cloned()
+                                    .unwrap_or_else(|| Value::str(err.message.clone())),
+                            ),
+                        ),
+                    };
+                    self.drive_whenever_promise_over_values(
+                        values,
+                        initial_quit,
+                        &callback,
+                        &last_cbs,
+                        &quit_cbs,
+                        &mut lv,
                     )?;
                     static_last_value = Some(lv);
                     if promise.is_resolved() {
@@ -706,19 +763,26 @@ impl Interpreter {
         self.with_nested_registers(|vm| vm.drive_react_subscriptions_nested(react_subs, policy))
     }
 
-    /// Replay a cold (supplier-less, channel-less) `whenever` subscription
-    /// marker synchronously, capturing every value the body and its phasers
-    /// emit, in order. Used by the `tap`/`act` path and `supply_get_values`
-    /// (`.list`/`.wait`/combinators) to deliver a `supply { whenever
-    /// Supply.from-list(...) { emit ... } }` block's emissions outside a react
-    /// loop. Lazy source elements are forced; a `done`/`last` from the body
-    /// stops the replay; `next`/`redo` skip to the next value; a `die` runs
-    /// the whenever's QUIT phasers if any are registered, otherwise its reason
-    /// is returned as the second tuple element for the caller to deliver
-    /// (quit callback or hard error). LAST phasers run on normal completion.
-    pub(crate) fn replay_cold_whenever_capture(
+    /// Drive a `whenever` body over an already-materialized list of source
+    /// values, capturing every value the body and its phasers emit, in
+    /// order. This is the tail of the old `replay_cold_whenever_capture`
+    /// (ADR-0031 Decision B / Slice 2 retired the pull-based replay itself —
+    /// see [`Self::supply_collect_values`] — but the "run this whenever's
+    /// body over each already-known value" logic is still needed by the one
+    /// caller left that cannot go through `.tap()` directly: a nested cold
+    /// whenever source inside the `"tap"|"act"` dispatch's own on-demand
+    /// branch, which has already established the value list is static
+    /// before reaching here). Lazy source elements are forced; a `done`/
+    /// `last` from the body stops the drive; `next`/`redo` skip to the next
+    /// value; a `die` (or the caller's own `initial_quit`, e.g. an error
+    /// materializing `values` in the first place) runs the whenever's QUIT
+    /// phasers if any are registered, otherwise its reason is returned as
+    /// the second tuple element for the caller to deliver (quit callback or
+    /// hard error). LAST phasers run on normal completion.
+    pub(crate) fn drive_whenever_body_over_values(
         &mut self,
-        source: &Value,
+        values: Vec<Value>,
+        initial_quit: Option<Value>,
         callback: &Value,
         last_cbs: &[Value],
         quit_cbs: &[Value],
@@ -729,26 +793,7 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        // Materialize the source through `supply_get_values` so a nested
-        // on-demand source (`whenever (supply { ... }) { ... }`) is itself
-        // replayed rather than read as an (empty) values snapshot.
-        let (values, mut quit_reason) = match source.view() {
-            ValueView::Instance { attributes, .. } => {
-                match self.supply_get_values(&attributes.as_map()) {
-                    Ok(items) => (items, None),
-                    Err(err) => (
-                        Vec::new(),
-                        Some(
-                            err.exception
-                                .as_deref()
-                                .cloned()
-                                .unwrap_or_else(|| Value::str(err.message.clone())),
-                        ),
-                    ),
-                }
-            }
-            _ => (Vec::new(), None),
-        };
+        let mut quit_reason = initial_quit;
 
         fn run_capture(
             this: &mut Interpreter,
@@ -822,16 +867,23 @@ impl Interpreter {
         (captured, None)
     }
 
-    /// On the `await`/`.Promise` path, replay a finite/static `whenever` source
-    /// (e.g. `Supply.from-list(...)`) synchronously: run the body callback for
-    /// each value, then the LAST phaser callbacks. A lazy source element (e.g.
-    /// `gather { ... }`) is forced here; if forcing or the body dies, the QUIT
-    /// phaser callbacks run instead (with the exception bound to `$_`). Any
-    /// value emitted by the body or the phasers is captured into `last_value`,
+    /// Drive a `whenever` body over an already-materialized list of source
+    /// values, on the `await`/`.Promise` path: run the body callback for each
+    /// value, then the LAST phaser callbacks. This is the tail of the old
+    /// `replay_static_whenever_promise` (ADR-0031 Decision B / Slice 2
+    /// retired the pull-based replay itself — the caller now materializes
+    /// `values` via [`Self::supply_get_values`], which tap-and-drains an
+    /// on-demand source instead of reading a static snapshot, fixing `await
+    /// (supply { whenever <cold on-demand supply source> { ... } })`
+    /// returning `Nil` — probe4). A lazy source element (e.g. `gather { ...
+    /// }`) is forced here; if forcing or the body dies, the QUIT phaser
+    /// callbacks run instead (with the exception bound to `$_`). Any value
+    /// emitted by the body or the phasers is captured into `last_value`,
     /// which becomes the awaited supply's result.
-    pub(super) fn replay_static_whenever_promise(
+    pub(super) fn drive_whenever_promise_over_values(
         &mut self,
-        source: &Value,
+        values: Vec<Value>,
+        initial_quit: Option<Value>,
         callback: &Value,
         last_cbs: &[Value],
         quit_cbs: &[Value],
@@ -843,29 +895,6 @@ impl Interpreter {
         // would convert the signal into a thrown `X::ControlFlow` and silently
         // break this loop.
         let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
-        // Materialize the source through `supply_get_values` (same as
-        // `replay_cold_whenever_capture`): an on-demand source (`whenever $src`
-        // where $src is a stored `supply { emit ... }`) keeps its values behind
-        // `on_demand_callback`, not in a static `values` attribute — reading
-        // only the attribute replayed ZERO values and jumped straight to the
-        // LAST phaser (Cro::MessageWithBody.body-blob awaited an empty Buf).
-        let (values, mut initial_quit): (Vec<Value>, Option<Value>) = match source.view() {
-            ValueView::Instance { attributes, .. } => {
-                match self.supply_get_values(&attributes.as_map()) {
-                    Ok(items) => (items, None),
-                    Err(err) => (
-                        Vec::new(),
-                        Some(
-                            err.exception
-                                .as_deref()
-                                .cloned()
-                                .unwrap_or_else(|| Value::str(err.message.clone())),
-                        ),
-                    ),
-                }
-            }
-            _ => (Vec::new(), None),
-        };
 
         // Capture whatever the given callback `emit`s into `last_value`.
         fn run_capture(
@@ -897,7 +926,7 @@ impl Interpreter {
 
         // Run the body for each source value; force lazy elements so a dying
         // gather surfaces as a quit.
-        let mut quit_reason: Option<Value> = initial_quit.take();
+        let mut quit_reason: Option<Value> = initial_quit;
         'replay: for v in values {
             let lazy = if let ValueView::LazyList(ll) = v.view() {
                 Some(ll.clone())

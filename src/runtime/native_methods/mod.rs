@@ -15,7 +15,9 @@ pub(crate) mod state_scheduled_pump;
 pub(crate) mod state_scheduler;
 pub(crate) mod state_supplier;
 pub(crate) mod state_supplier_merge;
+mod state_supply_collector;
 pub(crate) mod supply_channel;
+mod supply_collector;
 mod system;
 
 // Re-export public items from state submodules so that
@@ -79,6 +81,9 @@ pub(in crate::runtime) use state_supplier::{
 };
 pub(in crate::runtime) use state_supplier_merge::{
     get_supplier_merge_state_ids, merge_source_done, register_merge_source, register_merge_state,
+};
+pub(in crate::runtime) use state_supply_collector::{
+    register_supply_collector, unregister_supply_collector,
 };
 
 use super::*;
@@ -369,6 +374,7 @@ impl Interpreter {
                 | "Supplier"
                 | "Tap"
                 | "__ScheduledTapPump"
+                | "__SupplyCollector"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -410,6 +416,7 @@ impl Interpreter {
                             | "Supplier"
                             | "Tap"
                             | "__ScheduledTapPump"
+                            | "__SupplyCollector"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -461,6 +468,7 @@ impl Interpreter {
             "Supplier" | "Supplier::Preserving" => self.native_supplier(attributes, method, args),
             "Tap" => self.native_tap(attributes, method),
             "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
+            "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),
