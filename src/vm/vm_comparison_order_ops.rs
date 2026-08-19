@@ -618,6 +618,20 @@ impl Interpreter {
         // 2).map({ Proxy.new(...) }).List eqv (1, 2)` reads each element).
         let left = self.resolve_proxies_in_value(&left)?;
         let right = self.resolve_proxies_in_value(&right)?;
+        // `$a eqv $a` (the SAME Seq value, e.g. `my $b = $a; $a eqv $b`) is
+        // trivially True without touching the iterator at all — measured
+        // directly against raku: it neither throws NOR leaves `$a`
+        // consumed afterward (`roast/S03-operators/eqv.t`'s "Seq eqv Seq"
+        // subtest pins both). Comparing two DIFFERENT Seq values still
+        // consumes each independently below (measured: `$s eqv $s2; $s.List`
+        // throws) — this is narrowly an identity fast path, not a general
+        // eqv-skips-consumption rule.
+        if let (ValueView::Seq(lb), ValueView::Seq(rb)) = (left.view(), right.view())
+            && Arc::ptr_eq(&lb, &rb)
+        {
+            self.stack.push(Value::TRUE);
+            return Ok(());
+        }
         let left = self.reify_or_consume_eqv_operand(left)?;
         let right = self.reify_or_consume_eqv_operand(right)?;
         let result =

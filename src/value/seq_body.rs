@@ -370,6 +370,27 @@ impl SeqBody {
         )
     }
 
+    /// Non-destructive peek at a not-yet-touched `IoLines` source's parts
+    /// (`None` for every other shape, including an already-taken/reified
+    /// one). Used ONLY as a read-only self-check — by
+    /// `builtins/methods_0arg/mod.rs`'s native `"kv"` dispatch, to recognize
+    /// "this Seq IS ALREADY the `kv`-transformed marker
+    /// `reify_or_consume_seq_target`'s `"kv"` special case built" and pass it
+    /// through unchanged instead of re-running `.kv`'s positional-index
+    /// transform on its (still-empty) elements. The actual `.kv` TRANSFORM
+    /// uses the destructive `claim_io_lines_for_streaming` instead (it must
+    /// also mark the ORIGINAL body `Taken`, matching `.kv`'s normal consuming
+    /// contract) — this accessor exists so that self-check can happen from a
+    /// context (`native_method_0arg`) with no `&mut Interpreter` to justify
+    /// a state-mutating call, and where mutating would be wrong anyway (the
+    /// native fast path may be probed more than once for the same call).
+    pub(crate) fn peek_io_lines_parts(&self) -> Option<(Value, bool, bool)> {
+        match &self.state.lock().unwrap().source {
+            SeqSource::IoLines { handle, words, kv } => Some((handle.clone(), *words, *kv)),
+            _ => None,
+        }
+    }
+
     /// Whether this body's (not-yet-pulled) source is specifically an
     /// `IO::Handle.lines`/`.words` read — narrower than `has_deferred_source`,
     /// for the handful of call sites that historically special-cased only

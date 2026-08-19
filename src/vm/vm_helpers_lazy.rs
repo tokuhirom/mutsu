@@ -28,6 +28,23 @@ impl Interpreter {
 
     /// Drive a user/native `Iterator`'s `pull-one` until `IterationEnd`.
     fn pull_iterator_to_vec(&mut self, iterator: Value) -> Result<Vec<Value>, RuntimeError> {
+        // `Seq.from-loop(&body, :label(...))` with no condition/step
+        // (`dispatch_seq_from_loop`'s lazy-infinite branch,
+        // `runtime/methods_seq_dispatch.rs`) wraps its body callable in a
+        // synthetic `FromLoopIterator` instance instead of a real `Iterator`
+        // role — it has no `pull-one` method to call (there is no class body
+        // for it), so a genuine consuming touch (`.sink`, `.List`, ...) must
+        // drive it the same way the EAGER `Seq.from-loop` loop does, not via
+        // the generic `.pull-one` protocol (surfaced by
+        // `roast/S04-statements/label.t`'s "nested loop with labeled last
+        // (4)": sinking `L7: Seq.from-loop({ loop { last L7 } }, :label(L7))`
+        // threw "No such method 'pull-one'" instead of running the body once
+        // and stopping on the labeled `last`).
+        if let ValueView::Instance { class_name, .. } = iterator.view()
+            && class_name == "FromLoopIterator"
+        {
+            return self.pull_from_loop_iterator_to_vec(&iterator);
+        }
         let mut pulled = Vec::new();
         loop {
             let val = self.call_method_with_values(iterator.clone(), "pull-one", vec![])?;
@@ -39,6 +56,56 @@ impl Interpreter {
             pulled.push(val);
         }
         Ok(pulled)
+    }
+
+    /// Drive a `FromLoopIterator` instance (see `pull_iterator_to_vec`'s doc
+    /// comment) by repeatedly invoking its stored `from_loop_body` callable,
+    /// mirroring `dispatch_seq_from_loop`'s own eager loop (redo/next/last
+    /// with label matching) — this IS the deferred half of that same loop,
+    /// just run later, on first consumption, instead of at construction.
+    /// Genuinely unbounded if the body never raises a (label-matching)
+    /// `last` — same as raku: `.sink`ing an infinite `Seq.from-loop` that
+    /// never stops itself hangs there too.
+    fn pull_from_loop_iterator_to_vec(
+        &mut self,
+        iterator: &Value,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        let ValueView::Instance { attributes, .. } = iterator.view() else {
+            return Ok(Vec::new());
+        };
+        let attrs = attributes.as_map();
+        let Some(body_callable) = attrs.get("from_loop_body").cloned() else {
+            return Ok(Vec::new());
+        };
+        let label = match attrs.get("from_loop_label").map(Value::view) {
+            Some(ValueView::Str(s)) => Some(s.to_string()),
+            _ => None,
+        };
+        let label_matches = |error_label: &Option<String>| {
+            error_label.as_deref() == label.as_deref() || error_label.is_none()
+        };
+        // Same purpose as `dispatch_seq_from_loop`'s own guard: a loop-control
+        // signal raised inside `body_callable` needs somewhere to go instead
+        // of surfacing as a bare `X::ControlFlow`.
+        let _loop_handler = crate::runtime::loop_handler_depth::LoopHandlerGuard::new();
+        let mut items = Vec::new();
+        'from_loop: loop {
+            'body_redo: loop {
+                match self.call_sub_value(body_callable.clone(), vec![], true) {
+                    Ok(value) => {
+                        if !value.is_nil() {
+                            items.push(value);
+                        }
+                        break 'body_redo;
+                    }
+                    Err(e) if e.is_redo() && label_matches(&e.label) => continue 'body_redo,
+                    Err(e) if e.is_next() && label_matches(&e.label) => break 'body_redo,
+                    Err(e) if e.is_last() && label_matches(&e.label) => break 'from_loop,
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        Ok(items)
     }
 
     /// Read every remaining line/word from a file handle (formerly
@@ -154,10 +221,48 @@ impl Interpreter {
     /// pulled (the original `target` is left `Taken`). Passes every non-Seq
     /// value, and an already-reified Seq, straight through (`needs_touch` is
     /// a cheap state check, no clone).
+    ///
+    /// **`.iterator` is deliberately handled by this call, not by the
+    /// authoritative one below** — see
+    /// [`Self::reify_or_consume_seq_target_authoritative`]'s doc comment for
+    /// why `.iterator` needs its own, narrower entry point.
     pub(crate) fn reify_or_consume_seq_target(
         &mut self,
         target: Value,
         method: &str,
+    ) -> Result<Value, RuntimeError> {
+        self.reify_or_consume_seq_target_inner(target, method, false)
+    }
+
+    /// The ONE call site allowed to actually consume `.iterator` — see
+    /// [`Self::reify_or_consume_seq_target_inner`]'s `.iterator` arm for the
+    /// full reasoning. Only `methods_call_dispatch::call_method_with_values`
+    /// calls this; every other `reify_or_consume_seq_target` call site
+    /// (`vm_call_method_ops.rs`, `vm_call_method_mut_ops.rs` ×2,
+    /// `vm_call_method_compiled_interpret.rs`, `vm_for_loop_dispatch.rs`) is
+    /// an OUTER pre-check layer that the VM's own fallback chain may run
+    /// MORE THAN ONCE for a single logical method call before reaching the
+    /// true dispatch — verified with `rust-gdb` for both the non-mut and the
+    /// mut (named-variable-receiver) call chains. `call_method_with_values`
+    /// is the one layer every chain funnels through exactly once no matter
+    /// which of those outer layers it came from (it has no native `.iterator`
+    /// row of its own to short-circuit on — see
+    /// `builtins/methods_0arg/mod.rs`'s "Do NOT pre-check... iterator"
+    /// comment), so it is the correct place for the one-time,
+    /// side-effecting steal to live.
+    pub(crate) fn reify_or_consume_seq_target_authoritative(
+        &mut self,
+        target: Value,
+        method: &str,
+    ) -> Result<Value, RuntimeError> {
+        self.reify_or_consume_seq_target_inner(target, method, true)
+    }
+
+    fn reify_or_consume_seq_target_inner(
+        &mut self,
+        target: Value,
+        method: &str,
+        handle_iterator: bool,
     ) -> Result<Value, RuntimeError> {
         let ValueView::Seq(body) = target.view() else {
             return Ok(target);
@@ -191,6 +296,32 @@ impl Interpreter {
         }
         if method == "cache" {
             return Ok(target);
+        }
+        // `.kv` on a not-yet-touched `IO::Handle.lines`/`.words` Seq still
+        // CONSUMES the original (measured against raku: `$s.kv; $s.List`
+        // throws `X::Seq::Consumed`, matching every other `seq_method_consumes`
+        // entry — this is not an exemption), but must not eagerly PULL
+        // anything: the returned replacement is a NEW deferred Seq over the
+        // SAME handle with the `IoLines` source's own `kv` flag flipped on,
+        // so a following `for $fh.lines.kv -> \k, \v {}` still finds a
+        // claimable `IoLines` source on THAT value and streams one line at a
+        // time (`vm_for_loop_dispatch.rs`'s `claim_io_lines_for_streaming`,
+        // keyed on `$fh.tell` reflecting the current read position —
+        // `roast/S16-filehandles/io_in_for_loops.t`). `claim_io_lines_for_streaming`
+        // (not the non-destructive peek) is what marks the ORIGINAL body
+        // `Taken` here, so `$s.kv` outside a `for`-loop still consumes `$s`
+        // correctly (`t/seq-consumption-matrix.t`) even though the value it
+        // returns stays lazy. Every other shape (already reified, already
+        // taken, cache-requested, or a non-IoLines deferred source) falls
+        // through to the ordinary handling below.
+        if method == "kv"
+            && let Some((handle, words, _kv)) = body.claim_io_lines_for_streaming()?
+        {
+            return Ok(Value::seq_deferred(crate::value::SeqSource::IoLines {
+                handle,
+                words,
+                kv: true,
+            }));
         }
         if matches!(method, "raku" | "perl") {
             // Pulls if the source is still available (needed to render real
@@ -234,6 +365,65 @@ impl Interpreter {
             }
             self.reify_seq_body(&body)?;
             return Ok(target);
+        }
+        if method == "iterator" && !handle_iterator {
+            // An OUTER pre-check layer (see
+            // `reify_or_consume_seq_target_authoritative`'s doc comment):
+            // `.iterator` must NOT be consumed here. Pass `target` through
+            // completely untouched — not even a non-destructive peek — and
+            // let the call chain's single authoritative layer
+            // (`call_method_with_values`) do the real work exactly once.
+            // Touching it here too (even non-destructively) would race two
+            // different notions of "first touch" between this layer and the
+            // authoritative one for no benefit, since this layer's own
+            // result is discarded once the chain reaches the real one.
+            return Ok(target);
+        }
+        if method == "iterator" {
+            // `.iterator` builds its FINAL result (an `Iterator` instance)
+            // here, in place of returning a still-`ValueView::Seq` target
+            // for a LATER dispatch layer to call `.iterator` on again. Two
+            // reasons, both required together:
+            //
+            // 1. **Redundant dispatch layers.** The VM's own call chain
+            //    invokes `reify_or_consume_seq_target` through more than one
+            //    fallback layer for a SINGLE logical `.iterator()` call
+            //    (`vm_call_method_ops.rs`'s outer native-dispatch guard,
+            //    then `vm_call_method_compiled_interpret.rs`'s inner one,
+            //    when no native row exists — verified with `rust-gdb`).
+            //    Returning a still-`Seq` target from the outer call lets the
+            //    inner layer's OWN `reify_or_consume_seq_target` call see the
+            //    body already `Taken` by the FIRST call and throw
+            //    `X::Seq::Consumed` on what is, from the user's code, the
+            //    FIRST and only `.iterator()` call. Building the final
+            //    Instance here means the redundant inner call sees a
+            //    non-`Seq` `target` and no-ops (this function's very first
+            //    line), so it is naturally idempotent no matter how many
+            //    layers re-run it. This is why the outer layers must not
+            //    even PEEK at `.iterator` (the arm just above this one) —
+            //    only the ONE authoritative call
+            //    (`reify_or_consume_seq_target_authoritative`, `handle_iterator
+            //    == true`) reaches here.
+            // 2. **Arc identity for side-table lookups.** `take_seq_body`'s
+            //    `Taken` outcome would otherwise get wrapped in a FRESH
+            //    `Value::seq(items)` (a new Arc) by the generic branch
+            //    below. `dispatch_iterator_method` looks up
+            //    `squish_iterator_meta` (a lazy-replay `.squish(:as, :with)`
+            //    iterator) keyed by the body's ORIGINAL `Arc::as_ptr`
+            //    address — a fresh Arc orphans that lookup, and `.iterator`
+            //    silently falls back to a plain, already-fully-drained array
+            //    iterator (surfaced by `roast/S32-list/squish.t`'s
+            //    ":as + :with, iterator use" subtest: every callback fired
+            //    upfront instead of one per `.pull-one`).
+            //
+            // `take_seq_body` still runs first (unchanged): it fills `gens`
+            // for a genuinely deferred source, or marks an already-`Reified`
+            // body `Taken` in place — `dispatch_iterator_method` then reads
+            // the SAME body (identity preserved either way) to build the
+            // instance, so its `squish_iterator_meta`/`Deref`-based fallback
+            // both see the correct, final data.
+            self.take_seq_body(&body)?;
+            return self.dispatch_iterator_method(target);
         }
         if crate::value::seq_method_consumes(method) {
             let (items, outcome) = self.take_seq_body(&body)?;

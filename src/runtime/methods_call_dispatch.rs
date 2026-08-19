@@ -515,7 +515,12 @@ impl Interpreter {
         let is_seq_sink =
             method == "sink" && args.is_empty() && matches!(target.view(), ValueView::Seq(_));
         let target = if method != "sink" || args.is_empty() {
-            self.reify_or_consume_seq_target(target, method)?
+            // `_authoritative`, not the plain guard: this function is the
+            // one call site every dispatch chain funnels through exactly
+            // once (see `reify_or_consume_seq_target_authoritative`'s doc
+            // comment) — the only place `.iterator` may actually be
+            // consumed.
+            self.reify_or_consume_seq_target_authoritative(target, method)?
         } else {
             target
         };

@@ -316,7 +316,20 @@ impl Interpreter {
     }
 
     /// Dispatch the "iterator" method.
-    fn dispatch_iterator_method(&mut self, target: Value) -> Result<Value, RuntimeError> {
+    ///
+    /// `pub(crate)` (not private): also called directly from
+    /// `vm::vm_helpers_lazy::reify_or_consume_seq_target`'s `"iterator"`
+    /// handling, which must build the FINAL iterator result in place of a
+    /// still-`ValueView::Seq` target — see that call site's comment for why
+    /// (the VM's own dispatch chain calls `reify_or_consume_seq_target`
+    /// through more than one fallback layer for a single logical `.iterator`
+    /// call; returning a still-Seq value lets the redundant layer re-run
+    /// `take` on an already-`Taken` body and throw `X::Seq::Consumed` on the
+    /// FIRST real call — surfaced by `roast/S32-list/squish.t`).
+    pub(crate) fn dispatch_iterator_method(
+        &mut self,
+        target: Value,
+    ) -> Result<Value, RuntimeError> {
         if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Iterator")
         {
             return Ok(target);
