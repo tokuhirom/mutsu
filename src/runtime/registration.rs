@@ -1,3 +1,4 @@
+use super::methods_signature_errors::make_private_permission_error;
 use super::*;
 use crate::symbol::Symbol;
 
@@ -498,6 +499,76 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Resolve a (possibly short) class name written in source — the owner of
+    /// a qualified private call (`$o!Owner::meth`), or a `trusts` target — to
+    /// its canonical registered form. Walks `context_class`'s enclosing
+    /// package chain first (mirroring ordinary bareword type resolution: a
+    /// name written inside `module Outer::Inner { class Renderer {...} }`
+    /// resolves relative to `Outer::Inner`), then falls back to a direct
+    /// global lookup for an already-qualified or genuine top-level name.
+    /// Returns `short` unchanged when nothing resolves — an unresolvable
+    /// name should still fail the caller's check rather than be silently
+    /// accepted.
+    pub(super) fn resolve_private_class_name(&self, context_class: &str, short: &str) -> String {
+        let via_chain = self.resolve_type_name_for_owner(context_class, short.to_string());
+        if via_chain != short {
+            return via_chain;
+        }
+        if self.has_type_direct(short) {
+            return short.to_string();
+        }
+        via_chain
+    }
+
+    /// Whether `caller_class` may access a private method whose owner is
+    /// already the *canonical* registered class name `canonical_owner`
+    /// (e.g. the owner resolved from a matched method, or a name already run
+    /// through `resolve_private_class_name`): either they are the same
+    /// class, or `canonical_owner` declared `trusts` on `caller_class`. Each
+    /// `trusts` entry is itself canonicalized against `canonical_owner`'s
+    /// package chain before comparing, so `trusts B;` written inside a
+    /// `module` matches the module-qualified `B`, not just the literal
+    /// source text `"B"`.
+    pub(super) fn private_owner_trusts_caller(
+        &self,
+        caller_class: Option<&str>,
+        canonical_owner: &str,
+    ) -> bool {
+        let Some(caller_class) = caller_class else {
+            return false;
+        };
+        canonical_owner == caller_class
+            || self
+                .registry()
+                .class_trusts
+                .get(canonical_owner)
+                .is_some_and(|trusted| {
+                    trusted.contains(caller_class)
+                        || trusted.iter().any(|t| {
+                            self.resolve_private_class_name(canonical_owner, t) == caller_class
+                        })
+                })
+    }
+
+    /// Resolve a qualified private call's source-written owner
+    /// (`$o!Owner::meth`) to its canonical registered class relative to
+    /// `caller_class`'s package chain, then check whether that owner trusts
+    /// the caller. Returns `(canonical_owner, trusted)` — callers should
+    /// report the canonical name in a permission-denied error, not the raw
+    /// short name that was written in source.
+    pub(super) fn resolve_and_check_private_owner(
+        &self,
+        caller_class: Option<&str>,
+        owner_class: &str,
+    ) -> (String, bool) {
+        let canonical_owner = match caller_class {
+            Some(c) => self.resolve_private_class_name(c, owner_class),
+            None => owner_class.to_string(),
+        };
+        let trusted = self.private_owner_trusts_caller(caller_class, &canonical_owner);
+        (canonical_owner, trusted)
+    }
+
     fn validate_private_access_in_expr(
         &self,
         caller_class: &str,
@@ -519,18 +590,24 @@ impl Interpreter {
                     // Split at the LAST `::`: the owner class of a qualified private
                     // call may itself be a nested name (`$c!Cookie::Jar::Cookie::match`
                     // is owner `Cookie::Jar::Cookie`, not `Cookie::Jar`).
-                    && let Some((owner_class, _)) = name.resolve().rsplit_once("::")
-                    && owner_class != caller_class
-                    && !self
-                        .registry()
-                        .class_trusts
-                        .get(owner_class)
-                        .is_some_and(|trusted| trusted.contains(caller_class))
+                    && let Some((owner_class, method_name)) = name.resolve().rsplit_once("::")
                 {
-                    return Err(RuntimeError::typed_msg(
-                        "X::Method::Private::Permission",
-                        "Cannot call private method without permission",
-                    ));
+                    // `owner_class` is the short name as written in source
+                    // (`Renderer`), while `caller_class` is always the fully
+                    // qualified registered name (`Outer::Inner::Renderer`).
+                    // Canonicalize before comparing, the same way an ordinary
+                    // bareword type reference resolves against its enclosing
+                    // package chain — otherwise a perfectly legal self-call
+                    // written from inside a `module` false-positives here.
+                    let (canonical_owner, trusted) =
+                        self.resolve_and_check_private_owner(Some(caller_class), owner_class);
+                    if !trusted {
+                        return Err(make_private_permission_error(
+                            method_name,
+                            &canonical_owner,
+                            caller_class,
+                        ));
+                    }
                 }
             }
             Expr::HyperMethodCall { target, args, .. } => {

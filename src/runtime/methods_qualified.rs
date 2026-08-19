@@ -27,20 +27,12 @@ impl Interpreter {
                 .last()
                 .cloned()
                 .or_else(|| Some(self.current_package().to_string()));
-            let caller_allowed = caller_class.as_deref() == Some(owner_class)
-                || self
-                    .registry()
-                    .class_trusts
-                    .get(owner_class)
-                    .is_some_and(|trusted| {
-                        caller_class
-                            .as_ref()
-                            .is_some_and(|caller| trusted.contains(caller))
-                    });
+            let (canonical_owner, caller_allowed) =
+                self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
             if !caller_allowed {
                 return Some(Err(make_private_permission_error(
                     private_name,
-                    owner_class,
+                    &canonical_owner,
                     caller_class.as_deref().unwrap_or("GLOBAL"),
                 )));
             }

@@ -782,16 +782,11 @@ impl Interpreter {
                 } else {
                     (class_name.resolve(), private_rest.to_string())
                 };
-            let caller_allowed = caller_class.as_deref() == Some(owner_class.as_str())
-                || self
-                    .registry()
-                    .class_trusts
-                    .get(&owner_class)
-                    .is_some_and(|trusted| {
-                        caller_class
-                            .as_ref()
-                            .is_some_and(|caller| trusted.contains(caller))
-                    });
+            // `owner_class` may be the short name as written in source
+            // (`$a!A::foo = ...`); canonicalize it relative to the caller's
+            // package chain before comparing/looking up trusts.
+            let (owner_class, caller_allowed) =
+                self.resolve_and_check_private_owner(caller_class.as_deref(), &owner_class);
             if !caller_allowed {
                 return Err(RuntimeError::new(format!(
                     "X::Method::Private::Permission: Cannot call private method '{}' on {} because it does not trust {}",

@@ -199,11 +199,23 @@ impl Interpreter {
         } = target.view()
         {
             if let Some(private_rest) = method.strip_prefix('!') {
+                let caller_class = self
+                    .method_class_stack
+                    .last()
+                    .cloned()
+                    .or_else(|| Some(self.current_package().to_string()));
                 // Resolve: owner-qualified (!Owner::method) or unqualified (!method)
                 let resolved = if let Some((owner_class, pm_name)) = private_rest.split_once("::") {
+                    // Canonicalize the source-written owner name relative to
+                    // the caller's package chain — a short name never
+                    // matches a fully qualified MRO entry.
+                    let canonical_owner = match caller_class.as_deref() {
+                        Some(c) => self.resolve_private_class_name(c, owner_class),
+                        None => owner_class.to_string(),
+                    };
                     self.resolve_private_method_with_owner(
                         &class_name.resolve(),
-                        owner_class,
+                        &canonical_owner,
                         pm_name,
                         &args,
                     )
@@ -217,21 +229,8 @@ impl Interpreter {
                     .map(|r| (r, private_rest))
                 };
                 if let Some(((resolved_owner, method_def), pm_name)) = resolved {
-                    let caller_class = self
-                        .method_class_stack
-                        .last()
-                        .cloned()
-                        .or_else(|| Some(self.current_package().to_string()));
-                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
-                        || self
-                            .registry()
-                            .class_trusts
-                            .get(&resolved_owner)
-                            .is_some_and(|trusted| {
-                                caller_class
-                                    .as_ref()
-                                    .is_some_and(|caller| trusted.contains(caller))
-                            });
+                    let caller_allowed =
+                        self.private_owner_trusts_caller(caller_class.as_deref(), &resolved_owner);
                     if !caller_allowed {
                         return Err(make_private_permission_error(
                             pm_name,
