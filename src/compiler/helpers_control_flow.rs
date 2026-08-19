@@ -657,6 +657,14 @@ impl Compiler {
         });
         // Compile main body (last Stmt::Expr/Call leaves value on stack)
         let mut main_leaves_value = false;
+        // Whether the trailing value is a bare container read (`$f`, `@a`,
+        // `%h`) rather than a freshly computed value -- see
+        // `Compiler::stmt_value_is_bare_container_read`. Raku's optimizer
+        // never actually forces a pure variable mention, so a trailing bare
+        // variable holding an unhandled Failure must not retroactively
+        // explode it here either (`try { $f }` where `$f` was made without
+        // `use fatal` lives, even though `$f` is textually the try's tail).
+        let mut tail_is_bare_container_read = false;
         if Self::has_block_enter_leave_phasers(&main_stmts) {
             self.synthetic_block_body = true;
             self.compile_stmt(&Stmt::Block(main_stmts.clone()));
@@ -675,6 +683,7 @@ impl Compiler {
                     if let Stmt::Expr(expr) = stmt {
                         self.compile_expr(expr);
                         main_leaves_value = true;
+                        tail_is_bare_container_read = Self::stmt_value_is_bare_container_read(expr);
                         continue;
                     } else if let Stmt::Call { name, args } = stmt {
                         self.compile_tail_stmt_call_value(*name, args);
@@ -694,8 +703,13 @@ impl Compiler {
         // matches Raku for both blocks (`try { @a.elems; CATCH {...} }`) and
         // routines (`sub { s2(); CATCH {...} }` where `s2` returns a Failure).
         // A direct `fail` raises a control signal (not a stack value) handled by
-        // the routine boundary, so it is unaffected and still returned.
-        self.code.emit(OpCode::ThrowIfFailure);
+        // the routine boundary, so it is unaffected and still returned. Skipped
+        // entirely for a bare-container-read tail (see above) — there is
+        // nothing to force, so omitting the check is exactly equivalent to
+        // emitting it with the check disabled.
+        if !tail_is_bare_container_read {
+            self.code.emit(OpCode::ThrowIfFailure);
+        }
         // Jump over catch/control on success.
         let jump_end = self.code.emit(OpCode::Jump(0));
         // Patch catch_start.

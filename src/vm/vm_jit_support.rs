@@ -133,7 +133,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::MetaAssignIdentity(_)
             | OpCode::GetLocalMetaAssign { .. }
             // Sink context (forces lazies / throws unhandled Failures)
-            | OpCode::SinkPop(_)
+            | OpCode::SinkPop(_, _)
             // Topic / context markers
             | OpCode::MarkBindContext
             | OpCode::MarkVarDeclContext

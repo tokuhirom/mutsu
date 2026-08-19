@@ -1016,13 +1016,23 @@ pub(crate) enum OpCode {
     // -- Stack manipulation --
     Dup,
     Pop,
-    /// Pop with sink context — throws unhandled Failures when fatal_mode is active.
-    /// The bool is `true` when the sunk value is a syntactically fresh rvalue
-    /// (e.g. a method call / `Foo.new`) that may invoke a user-defined `sink`
-    /// method; `false` for bare variables / function-call returns whose values
-    /// are (or may be) container-wrapped and must not auto-sink (Raku does not
-    /// sink container-wrapped values).
-    SinkPop(bool),
+    /// Pop with sink context — throws unhandled Failures.
+    /// The first bool (`user_sink`) is `true` when the sunk value is a
+    /// syntactically fresh rvalue (e.g. a method call / `Foo.new`) that may
+    /// invoke a user-defined `sink` method; `false` for bare variables /
+    /// function-call returns whose values are (or may be) container-wrapped
+    /// and must not auto-sink (Raku does not sink container-wrapped values).
+    /// The second bool (`may_explode_failure`) is `false` only for a bare
+    /// container read (`$f;`, `@a;`, `%h;`): Raku's optimizer recognizes a
+    /// pure variable mention as "Useless use ... in sink context" and never
+    /// actually forces it, so a stored unhandled `Failure` must not explode
+    /// merely because the bare mention was reached — Raku decides a
+    /// Failure's fate at *construction* time (throwing immediately there
+    /// under `use fatal`, matched by the various `self.fatal_mode`
+    /// assignment-time checks), not by re-examining it at every later
+    /// mention. Every other sunk shape (fresh calls, method calls, `sink`
+    /// prefix, ...) keeps `true`, matching prior behavior.
+    SinkPop(bool, bool),
     /// Pop the value of an assignment used as a statement (`%h{$k} = ...;`,
     /// `@a[$i] = ...;`). Rakudo treats assignment statements as wanted, not
     /// sunk: an assigned unhandled Failure is stored, never thrown — except
