@@ -263,27 +263,27 @@ impl Interpreter {
                 // `secret`, NOT owner `Jar`, method `Cookie::secret`).
                 let (pm_name, owner_only, resolved) =
                     if let Some((owner_class, pm_name)) = private_rest.rsplit_once("::") {
-                        let caller_allowed = caller_class.as_deref() == Some(owner_class)
-                            || self.registry().class_trusts.get(owner_class).is_some_and(
-                                |trusted| {
-                                    caller_class
-                                        .as_ref()
-                                        .is_some_and(|caller| trusted.contains(caller))
-                                },
-                            );
+                        // `owner_class` is the short name as written in
+                        // source; canonicalize it relative to the caller's
+                        // package chain before using it both for the trust
+                        // check and for the actual MRO lookup below — an
+                        // uncanonicalized short name never matches a fully
+                        // qualified MRO entry (`"A" != "M::A"`).
+                        let (canonical_owner, caller_allowed) = self
+                            .resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
                         if !caller_allowed {
                             return Err(make_private_permission_error(
                                 pm_name,
-                                owner_class,
+                                &canonical_owner,
                                 caller_class.as_deref().unwrap_or("GLOBAL"),
                             ));
                         }
                         (
                             pm_name,
-                            Some(owner_class),
+                            Some(canonical_owner.clone()),
                             self.resolve_private_method_with_owner(
                                 &class_name.resolve(),
-                                owner_class,
+                                &canonical_owner,
                                 pm_name,
                                 &args,
                             ),
@@ -313,7 +313,7 @@ impl Interpreter {
                     None => {
                         let mut candidates = self.private_method_candidates_by_name(
                             &class_name.resolve(),
-                            owner_only,
+                            owner_only.as_deref(),
                             pm_name,
                         );
                         match candidates.len() {
@@ -324,16 +324,8 @@ impl Interpreter {
                     }
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
-                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
-                        || self
-                            .registry()
-                            .class_trusts
-                            .get(&resolved_owner)
-                            .is_some_and(|trusted| {
-                                caller_class
-                                    .as_ref()
-                                    .is_some_and(|caller| trusted.contains(caller))
-                            })
+                    let caller_allowed = self
+                        .private_owner_trusts_caller(caller_class.as_deref(), &resolved_owner)
                         || self.lexical_self_allows_private(&resolved_owner);
                     if !caller_allowed {
                         if was_qualified {
@@ -1610,19 +1602,16 @@ impl Interpreter {
                 let (pm_name, resolved) = if let Some((owner_class, pm_name)) =
                     private_rest.rsplit_once("::")
                 {
-                    let caller_allowed =
-                        caller_class.as_deref() == Some(owner_class)
-                            || self.registry().class_trusts.get(owner_class).is_some_and(
-                                |trusted| {
-                                    caller_class
-                                        .as_ref()
-                                        .is_some_and(|caller| trusted.contains(caller))
-                                },
-                            );
+                    // Canonicalize the source-written owner name relative to
+                    // the caller's package chain before using it both for
+                    // the trust check and the MRO lookup below — a short
+                    // name never matches a fully qualified MRO entry.
+                    let (canonical_owner, caller_allowed) =
+                        self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
                     if !caller_allowed {
                         return Err(make_private_permission_error(
                             pm_name,
-                            owner_class,
+                            &canonical_owner,
                             caller_class.as_deref().unwrap_or("GLOBAL"),
                         ));
                     }
@@ -1630,7 +1619,7 @@ impl Interpreter {
                         pm_name,
                         self.resolve_private_method_with_owner(
                             &name.resolve(),
-                            owner_class,
+                            &canonical_owner,
                             pm_name,
                             &args,
                         ),
@@ -1642,16 +1631,8 @@ impl Interpreter {
                     )
                 };
                 if let Some((resolved_owner, method_def)) = resolved {
-                    let caller_allowed = caller_class.as_deref() == Some(resolved_owner.as_str())
-                        || self
-                            .registry()
-                            .class_trusts
-                            .get(&resolved_owner)
-                            .is_some_and(|trusted| {
-                                caller_class
-                                    .as_ref()
-                                    .is_some_and(|caller| trusted.contains(caller))
-                            })
+                    let caller_allowed = self
+                        .private_owner_trusts_caller(caller_class.as_deref(), &resolved_owner)
                         || self.lexical_self_allows_private(&resolved_owner);
                     if !caller_allowed {
                         return Err(make_private_permission_error(
