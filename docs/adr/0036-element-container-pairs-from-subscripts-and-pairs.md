@@ -345,11 +345,16 @@ Each slice is independently landable and independently green.
 three separate places. This ADR takes the *pair-producer* surface only, deliberately; the other two
 are recorded here so a future reader can see the shape of the whole and not re-derive it.
 
-- **`todo/deep/element-itemization-lost-in-scalar-binding.md`** — the *read* surface. Because elements
+- **`todo/deep/element-itemization-lost-in-scalar-binding.md`** — the *read* surface, now designed as
+  **[ADR-0040](0040-array-hash-elements-are-itemized-at-the-store.md)** (2026-08-20; itemize at the
+  element store). Because elements
   are containers, a bare element read is itemized: raku prints `$["a", "b"]` for `@d[0].raku` where
   mutsu prints `["a", "b"]`. Its bind-side half shipped (`news/2026-08/param-bind-itemization.md`);
-  the store-side half is open and is survey-sized because it changes what is *in* every array. **This
-  ADR does not depend on it and does not advance it**: promoting a slot to a `ContainerRef` on demand
+  the store-side half is open. (ADR-0040 §1.4 retires this ADR's "survey-sized" sizing by
+  measurement, and §5.3 records the two places the two ADRs meet: `array_slot_ref`/`hash_slot_ref`
+  must not de-itemize what they wrap, and `hash_autovivify_cell`'s
+  return-the-element-as-is arm.) **This ADR does not depend on it and does not advance it**:
+  promoting a slot to a `ContainerRef` on demand
   is invisible to `.raku` (verified — `my $r := @a[0]; say @a.raku` is `["A", "B"]` in both), because
   the read chokepoint decontainerizes. Itemization is a separate question about what the
   decontainerized value *is*.
