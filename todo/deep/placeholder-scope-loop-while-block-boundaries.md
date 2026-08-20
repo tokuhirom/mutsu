@@ -1,5 +1,51 @@
 # `while`/`loop`/bare-`{}` placeholder scope: three different rules, not one boundary fix
 
+## Status (2026-08-20): designed — see ADR-0048; this file's central premise is WRONG
+
+Re-audited against `main` @ `227e38e4f` with ~45 `raku`-vs-mutsu probes covering
+every `{}`-bearing construct, not just the three below. The finding is real and
+still open, but **its framing is falsified and should not be used to plan the
+work.** Read
+[`docs/adr/0048-placeholder-scope-is-a-block-invocation-contract.md`](../../docs/adr/0048-placeholder-scope-is-a-block-invocation-contract.md)
+instead; it carries the full audit table and a five-phase plan.
+
+Corrections to what is written below:
+
+- **There are not "three genuinely different rules" — there is one rule with
+  two columns.** Every `{}` body is a Block; per construct ask (a) may it carry
+  a signature, and (b) what does the construct supply when invoking it. (a) =
+  "no" is uniformly the compile-time `X::Placeholder::Block` that
+  `compile_do_block_expr` already emits; (a) = "yes" with fewer arguments
+  supplied than placeholders declared is uniformly the runtime "Too few
+  positionals passed". The advice "do not batch-fix by pattern-matching the
+  existing arms" is therefore backwards: a single classification oracle plus one
+  shared bind emitter is exactly the right shape, and eleven independent patches
+  to three mirrored walks would re-create the drift that caused this bug.
+- **`loop {}` is not a special case.** `try {}`, `react {}`, `once {}`,
+  `default {}`, every phaser (`BEGIN`/`ENTER`/`LEAVE`/`CONTROL`/`CATCH`),
+  `race {}`, `module M {}`, and the statement prefixes `gather`/`supply`/
+  `start`/`sink`/`lazy`/`eager` all take the identical compile-time error in
+  raku, and mutsu accepts every one of them.
+- **`while`'s divergence is worse than "missing a boundary".** mutsu supplies
+  the *boolified* condition (`while 42 { $^c }` prints `True`, raku prints
+  `42`; `until False { $^c }` prints `True`, raku prints `False`) **and**
+  leaks the name into the enclosing block's signature
+  (`{ while 42 { $^c } }.arity` is 1; raku's is 0).
+- **The already-"correct" boundaries are only correct for one placeholder.**
+  `if 42 { "$^a $^b" }` and `given 5 { "$^a $^b" }` raise an arity error in
+  raku; mutsu prints `42 True` / `5 True`, because all four bind sites use
+  `.find(|n| n.starts_with('^'))` and take the first placeholder only.
+- **The bare-`{}` question (point 3) is settled and is *not* a separate
+  architectural gap.** raku's behaviour is fully reproducible without making
+  bare blocks real invoked closures: classify the body as signature-capable
+  with zero arguments supplied and the shared arity check yields raku's exact
+  "Too few positionals passed; expected 1 argument but got 0". See ADR-0048 D6.
+- **Two extra divergences not recorded below:** `when` blocks are supplied zero
+  arguments in raku (mutsu binds the topic), and `role R { $^c }` is *legal* in
+  raku (the body runs at composition with `Mu`) while mutsu over-rejects it.
+
+---
+
 Split from (and supersedes) `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`.
 That ticket's framing — "these constructs should be scope boundaries, just like
 `if`/`for`/`given` already are" — undersold the actual complexity. A
