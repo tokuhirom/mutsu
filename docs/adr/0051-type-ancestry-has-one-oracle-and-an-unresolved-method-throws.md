@@ -249,7 +249,7 @@ regressions instead of one data gap.
 
 Each phase is independently landable and independently valuable.
 
-- **P1 — Rakudo-verify and complete the catalog, and make `.^mro` read it. LANDED (PR TBD, 2026-08-20).**
+- **P1 — Rakudo-verify and complete the catalog, and make `.^mro` read it. LANDED (PR #6754, 2026-08-20).**
   Added `Cool`, `Instant`, `Duration`, `IO::Path`, and `IO::Handle` rows to `builtin_type_catalog`
   (`src/builtins/builtin_type_catalog.rs`), each Rakudo-verified (`.^mro`/`.^roles`) on 2026-08-20.
   Re-pointed `classhow_mro_names`'s unregistered-type branch (`src/runtime/methods_classhow_mro.rs`)
