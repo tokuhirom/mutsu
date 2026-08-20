@@ -340,17 +340,24 @@ impl Interpreter {
         if self.locals[idx].is_container_ref() {
             return;
         }
+        let cur = self.locals[idx].clone();
         // The Any type object (uninitialized-scalar seed, PLAN 8.5 step 3) is
         // boxed like the old Nil seed; other reference/identity-bearing values
-        // are skipped (mirrors `box_captured_lexicals`).
-        if !self.locals[idx].is_any_type_object()
+        // are skipped (mirrors `box_captured_lexicals`, including its
+        // Seq/HyperSeq/RaceSeq/Slip exclusion --
+        // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
+        if !cur.is_any_type_object()
             && matches!(
-                self.locals[idx].view(),
+                cur.view(),
                 ValueView::Package(_)
                     | ValueView::Array(..)
                     | ValueView::Hash(..)
                     | ValueView::Sub(..)
                     | ValueView::Proxy { .. }
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Slip(..)
             )
         {
             return;
@@ -360,7 +367,7 @@ impl Interpreter {
         {
             return;
         }
-        let container = self.locals[idx].clone().into_container_ref();
+        let container = cur.into_container_ref();
         self.locals[idx] = container.clone();
         let nm = code.locals[idx].clone();
         self.env_mut().insert(nm.clone(), container.clone());

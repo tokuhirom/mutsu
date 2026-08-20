@@ -759,6 +759,66 @@ impl Interpreter {
         self.shared_vars.get(&value_key)
     }
 
+    /// [`scalar_cell_target`] fallback: promote a plain atomic-scalar binding
+    /// to a shared `ContainerRef` cell on first use.
+    ///
+    /// **Seed-and-retire protocol.** A same-name entry in the legacy
+    /// `__mutsu_atomic_name::`/`__mutsu_atomic_value::` lane (written by an
+    /// earlier `cas`/`atomic-*` call in THIS SAME thread, while this frame's
+    /// own declared local held a refused shape) is newer than whatever the
+    /// local slot currently holds and must not be shadowed by a fresh cell
+    /// seeded from the stale slot: (1) peek at the legacy value with
+    /// [`Self::legacy_atomic_value`] *before* deciding whether to box — a
+    /// refused shape must leave the lane intact, not discard it; (2) box the
+    /// peeked value (not the slot's own) into the new cell; (3) retire the
+    /// lane with [`Self::reset_atomic_var_key`] only once boxing is
+    /// confirmed, so it is not lost to a refusal.
+    ///
+    /// This protocol is deliberately NOT shared with `box_captured_lexicals`
+    /// (`vm_register_ops.rs`) or `box_decl_local_cell`
+    /// (`vm_var_assign_local_get.rs`): those fire at closure-creation/
+    /// declaration time, which can race with an ALREADY-RUNNING sibling
+    /// thread that is actively using the SAME bare name's legacy-lane
+    /// mapping (e.g. `for 1..4 { my $head = ...; await start { loop { cas
+    /// $head, ... } } xx 4 }` spawns several racing closures under one bare
+    /// name). Seeding from the legacy lane there can promote a closure using
+    /// a value a *different* thread produced rather than this frame's own
+    /// current value, and retiring the mapping there can rip it out from
+    /// under that other thread's in-flight retry loop — this regressed
+    /// `roast/S17-lowlevel/cas.t` when tried (see
+    /// `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`). This function
+    /// is safe because it runs synchronously within the SAME thread whose own
+    /// atomic op is being performed on its OWN declared local ("Only a name
+    /// the RUNNING frame declares as its own local is boxed", below) — there
+    /// is no cross-thread race to seed from or retire out from under.
+    /// **Seed-and-retire protocol.** A same-name entry in the legacy
+    /// `__mutsu_atomic_name::`/`__mutsu_atomic_value::` lane (written by an
+    /// earlier `cas`/`atomic-*` call in THIS SAME thread, while this frame's
+    /// own declared local held a refused shape) is newer than whatever the
+    /// local slot currently holds and must not be shadowed by a fresh cell
+    /// seeded from the stale slot: (1) peek at the legacy value with
+    /// [`Self::legacy_atomic_value`] *before* deciding whether to box — a
+    /// refused shape must leave the lane intact, not discard it; (2) box the
+    /// peeked value (not the slot's own) into the new cell; (3) retire the
+    /// lane with [`Self::reset_atomic_var_key`] only once boxing is
+    /// confirmed, so it is not lost to a refusal.
+    ///
+    /// This protocol is deliberately NOT shared with `box_captured_lexicals`
+    /// (`vm_register_ops.rs`) or `box_decl_local_cell`
+    /// (`vm_var_assign_local_get.rs`): those fire at closure-creation/
+    /// declaration time, which can race with an ALREADY-RUNNING sibling
+    /// thread that is actively using the SAME bare name's legacy-lane
+    /// mapping (e.g. `for 1..4 { my $head = ...; await start { loop { cas
+    /// $head, ... } } xx 4 }` spawns several racing closures under one bare
+    /// name). Seeding from the legacy lane there can promote a closure using
+    /// a value a *different* thread produced rather than this frame's own
+    /// current value, and retiring the mapping there can rip it out from
+    /// under that other thread's in-flight retry loop — this regressed
+    /// `roast/S17-lowlevel/cas.t` when tried (see
+    /// `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`). This
+    /// function is safe because it runs synchronously within the SAME thread
+    /// whose own atomic op is being performed on its OWN declared local —
+    /// there is no cross-thread race to seed from or retire out from under.
     pub(super) fn atomic_scalar_cell(
         &mut self,
         name: &str,
@@ -775,24 +835,23 @@ impl Interpreter {
             // `CompiledCode`, kept alive for the whole frame by `vm_call_*`.
             let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
             if let Some(slot) = code.locals.iter().position(|n| n == bare) {
-                // Seed from the legacy lane when this name already has an entry
-                // there: an earlier `cas` may have written the authoritative
-                // value into the store while the frame's slot kept the
-                // pre-swap copy. The lane entry is then retired, so the cell
-                // is the single source of truth from here on.
+                // Peek at the legacy lane without retiring yet -- see the
+                // seed-and-retire protocol in the doc comment above.
+                // Retiring happens only after the shape check below
+                // confirms this value will actually be boxed, so a refused
+                // shape doesn't lose the legacy entry.
                 let legacy = self.legacy_atomic_value(name);
-                let cur = match legacy {
-                    Some(v) => {
-                        self.reset_atomic_var_key(name);
-                        v
-                    }
+                let cur = match &legacy {
+                    Some(v) => v.clone(),
                     None => self.locals.get(slot)?.clone(),
                 };
                 // Only plain scalar containers are boxed; reference types
                 // already share, and hiding a type object / Proxy behind a
                 // `ContainerRef` trips the paths that do not deref one. `Any`
                 // is the uninitialized-scalar seed and is boxed like a value
-                // (mirrors `box_captured_lexicals`).
+                // (mirrors `box_captured_lexicals`, including its
+                // Seq/HyperSeq/RaceSeq/Slip exclusion --
+                // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
                 if !cur.is_any_type_object()
                     && matches!(
                         cur.view(),
@@ -802,9 +861,19 @@ impl Interpreter {
                             | ValueView::Sub(..)
                             | ValueView::Instance { .. }
                             | ValueView::Proxy { .. }
+                            | ValueView::Seq(..)
+                            | ValueView::HyperSeq(..)
+                            | ValueView::RaceSeq(..)
+                            | ValueView::Slip(..)
                     )
                 {
                     return None;
+                }
+                // Retire the legacy lane now that its value is about to
+                // become the cell's initial contents: nothing may read it
+                // as authoritative again.
+                if legacy.is_some() {
+                    self.reset_atomic_var_key(name);
                 }
                 let container = cur.into_container_ref();
                 self.locals[slot] = container.clone();
@@ -854,6 +923,13 @@ impl Interpreter {
         if let ValueView::ContainerRef(c) = cur.view() {
             return Some(c.clone());
         }
+        // Only plain scalar containers are boxed; reference types already
+        // share, and hiding a type object / Proxy behind a `ContainerRef`
+        // trips the paths that do not deref one. `Any` is the
+        // uninitialized-scalar seed and is boxed like a value (mirrors
+        // `box_captured_lexicals`, including its Seq/HyperSeq/RaceSeq/Slip
+        // exclusion --
+        // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`).
         if !cur.is_any_type_object()
             && matches!(
                 cur.view(),
@@ -863,6 +939,10 @@ impl Interpreter {
                     | ValueView::Sub(..)
                     | ValueView::Instance { .. }
                     | ValueView::Proxy { .. }
+                    | ValueView::Seq(..)
+                    | ValueView::HyperSeq(..)
+                    | ValueView::RaceSeq(..)
+                    | ValueView::Slip(..)
             )
         {
             return None;
