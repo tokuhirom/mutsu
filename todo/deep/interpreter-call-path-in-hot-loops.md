@@ -145,8 +145,16 @@ and `jit: compiles=0 entries=0` — the JIT never even attempts this loop. **Thi
 named-function-call-path problem rows A/B/C track — it is a separate mechanism.** Root-caused and
 written up in detail, including a first fix attempt that was measured to *regress* this exact file
 2.4x and was reverted, in
-[eval-block-value-recompiles-every-call.md](eval-block-value-recompiles-every-call.md). That document,
-not this one, is where the state.t-class slowdown should be attacked next.
+[eval-block-value-recompiles-every-call.md](eval-block-value-recompiles-every-call.md).
+
+**Update 2026-08-20 — that ticket is retired.** The per-call recompile was fixed by the
+`carrier_compile_cache` (`f6a6eb780`), and the `jit: compiles=0` symptom with it; the `state.t`
+JIT bailout was a separate, since-fixed ticket. The close-out is
+`news/2026-08/eval-block-value-recompiles-every-call.md`. The residual — a `sub` declared inside a
+block is OTF-recompiled on every call when the block runs through `call_compiled_closure`, which is
+the real mechanism behind that 2.4x regression — is now
+[../tickets/nested-sub-in-block-otf-recompiles-per-call.md](../tickets/nested-sub-in-block-otf-recompiles-per-call.md).
+That ticket, not this document, is where the state.t-class slowdown should be attacked next.
 
 `S06-signature/named-parameters.t`'s `for ^1000000 { foo(:color($_)) }` shape was not re-isolated in
 this pass; row B's improvement plus the still-open named-args churn noted above make it worth a fresh

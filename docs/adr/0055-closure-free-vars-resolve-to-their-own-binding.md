@@ -12,8 +12,11 @@
   the fork this unblocks)
 - Addresses:
   `todo/deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md`;
-  unblocks the "larger fix" named in
-  `todo/deep/eval-block-value-recompiles-every-call.md`. It also inherits the
+  it also absorbs the "larger fix" that
+  `todo/deep/eval-block-value-recompiles-every-call.md` named, which is this
+  ADR's slice 4 — that ticket's own two costs were fixed by the
+  `carrier_compile_cache` and it was retired on 2026-08-20 to
+  `news/2026-08/eval-block-value-recompiles-every-call.md`. It also inherits the
   headline defect of the retired ticket
   `todo/deep/closure-read-only-capture-loses-to-caller-env-same-name.md` —
   the *original* statement of the §1.2(b) family, whose four tracked residuals
@@ -237,11 +240,17 @@ the existing `compiled_routine` fork. Gate the fork on the *closure instance*
 per-instance-stable gate is what keeps a given closure's calls on one path and
 one store. Retire `authoritative_free_vars`/`authoritative_captures` or demote
 them to a documented perf hint. This is the slice the `eval_block_value`
-recompile ticket wants; note its own warning that a naive fork regressed
-`roast/S04-declarations/state.t` 2.4x, and that the memory-recorded
-prerequisite (why `RoutineScope`-registered subs fall to
-`record_function_fallback` ~50% of the time) is a *separate*, still-open perf
-investigation that should land before the fork is measured.
+recompile ticket wanted; note its own warning that a naive fork regressed
+`roast/S04-declarations/state.t` 2.4x. That regression was root-caused on
+2026-08-20 and is a *separate*, still-open perf prerequisite that must land
+before the fork is measured:
+`todo/tickets/nested-sub-in-block-otf-recompiles-per-call.md` — a `sub`
+declared inside a block is absent from the `CompiledFns` the compiled-closure
+path consults, so every call OTF-recompiles it
+(`vm_call_func_ops.rs:1413`), and if it declares `state` it degrades further to
+full tree-walk dispatch. Reproducible on `main` today via `.()` with no patch;
+the cliff is invisible in `interpreter_fallbacks`, which is why the earlier
+`RoutineScope` / `mainline_lexical_subs` hypotheses did not find it.
 
 **Slice 5 — collapse the two state stores.** With the fork in place a closure
 instance no longer straddles both paths, and with slice 1 the unboxed residue
