@@ -1,5 +1,34 @@
 # Blind Slip-value flattening corrupts fixed-arity call argument lists
 
+## Status 2026-08-20: confirmed on `main`, superseded by ADR-0054 — read that first
+
+Re-verified reproducing on `main` @ `b1a9bb8a5`. The design lives in
+[ADR-0054](../../docs/adr/0054-argument-list-interpolation-is-a-call-site-property.md);
+this file is kept only as the origin record. Two things the ADR's investigation
+changed about the finding below:
+
+1. **The scope is much wider than the `andthen` repro.** The dominant real-world
+   shape is a routine whose tail is a conditional that does not fire: it returns
+   `Empty` (a `Slip`) in Raku too, so `sub maybe($x) { if $x { 42 } }` followed
+   by `show(maybe(0))` dies with `Too few positionals passed` on any fixed-arity
+   callee — function, method, or code-variable. Non-empty Slips corrupt arity in
+   the other direction (`g((1,2).Slip)` spreads to two arguments).
+2. **The passing cases pass by accident.** A Slip held in a plain variable
+   survives only because `WrapVarRef` hides it from the value-shape `match`, not
+   because any marker mechanism is consulted.
+
+Two facts that make the fix cheaper than the "Why this is deep" section below
+assumed: slurpy binding already flattens Slips on its own
+(`binding_signature.rs:803-841`), so nothing has to be pre-flattened on the
+binder's behalf; and the compiler already branches on `has_slip` at the
+`CallFunc` emission site (`src/compiler/expr_call.rs:1538`) — it just discards
+the positions instead of recording them. ADR-0054 §3.2 chooses to fold them into
+the existing per-argument `arg_sources` side table rather than growing the call
+opcodes.
+
+One independent defect found on the way was filed separately as
+`todo/tickets/fast-binder-skips-too-many-positionals-check.md`.
+
 ## Root cause
 
 mutsu has two independent mechanisms for handling Raku's Slip-flattening
