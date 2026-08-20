@@ -191,7 +191,13 @@ narrow, lane-governed".
    read-tax + deadlock this ADR avoids. Revisit only if gc-stress/S17 surfaces an actual race.
 3. **Element cells (2c / Track B proper): fold into this campaign or defer?** ✅ **RESOLVED: defer.**
    Land 2b first (it retires the UB), then pursue 2c incrementally where it measurably reduces
-   container-level structural sites.
+   container-level structural sites. *(Two increments have since been designed against this
+   resolution: [ADR-0036](0036-element-container-pairs-from-subscripts-and-pairs.md) takes the
+   aliasing surface — pair producers hand out element containers — and
+   [ADR-0040](0040-array-hash-elements-are-itemized-at-the-store.md) takes the representation
+   surface — elements are itemized at the store. ADR-0040 §1.4 also measured that the general 2c
+   migration is not needed for the representation half: mutsu's existing itemization flag is already
+   transparent to every consumer probed.)*
 4. **Scope: all 9 container kinds at once, or Array/Hash first?** ✅ **RESOLVED: Array/Hash first.**
    They cover the large majority of the 51 sites; a slice-by-kind rollout keeps each PR reviewable and
    each Miri run bisectable. The setbagmix/instance/sub tail follows.

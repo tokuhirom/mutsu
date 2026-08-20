@@ -2,67 +2,53 @@
 
 ## Status
 
-The **bind-side half of this ticket is fixed** (2026-08-11,
-`news/2026-08/param-bind-itemization.md`): a value bound to a plain
-`$`-sigiled parameter — for-loop params (single and multi), sub/closure
-positional and named params, map/grep block params, placeholders — is now
-itemized, matching raku's signature binder. That fixed the original symptom
-(`CSV::Table` `t/5-save.t`'s sprintf explosion; the suite is 10/10) and the
-`for @c -> $v { $v.raku }` divergence. Pinned by
-`t/param-bind-itemization.t`.
+**Designed. The mechanism decision now lives in
+[ADR-0040](../../docs/adr/0040-array-hash-elements-are-itemized-at-the-store.md)** (2026-08-20):
+itemize at the element *store* via the existing `Value::item()`, applied after each store site's own
+flattening decision, for real mutable `Array`/`Hash` only. Read ADR-0040 before starting — it carries
+the 25-row divergence matrix re-measured on `main` (52631889f), the store-site inventory, the
+phasing, and the open questions. This file stays open only as the tracking record; retire it to
+`news/2026-08/` when ADR-0040's slice 5 lands.
 
-What REMAINS is the store-side half: raku's model is that array/hash
-*elements are Scalar containers*, so an element read is itemized even with no
-parameter binding involved. mutsu stores elements bare:
+The **bind-side half was already fixed** (2026-08-11, `news/2026-08/param-bind-itemization.md`): a
+value bound to a plain `$`-sigiled parameter — for-loop pointy params, sub/closure positional and
+named params, map/grep block params, placeholders — is itemized, matching raku's signature binder.
+Pinned by `t/param-bind-itemization.t`.
+
+## What remains
+
+raku's model is that array/hash *elements are Scalar containers*, so an element read is itemized
+even with no parameter binding involved. mutsu stores elements bare:
 
 ```
-$ target/debug/mutsu -e 'my @c = [<a b>],[<c d>]; my @d = @c; say @d[0].raku; for @c { say .raku }'
-["a", "b"]        # raku: $["a", "b"]
-["a", "b"] ...    # raku: $["a", "b"] (implicit topic binds the element CONTAINER)
+$ target/debug/mutsu -e 'my @c = [<a b>],[<c d>]; say @c[0].raku'   # ["a", "b"]   raku: $["a", "b"]
+$ target/debug/mutsu -e 'my %h = a => [1,2]; say %h<a>.raku'        # [1, 2]       raku: $[1, 2]
+$ target/debug/mutsu -e 'my @c = [<a b>],; for @c { say .raku }'    # ["a", "b"]   raku: $["a", "b"]
 ```
 
-(`my $v = @c[0]` DOES itemize — scalar assignment goes through
-`itemize_scalar_store` — so the gap is direct element reads: `@d[0].raku`,
-slices `@c[0,1]`, implicit-topic iteration, `.head`/`.tail`/`.first`/
-`.sort`/`.reverse` results, hash-value reads `%h<a>`.)
+`my $v = @c[0]` DOES itemize (scalar assignment goes through `itemize_scalar_store`), which is why
+the gap looks narrower than it is. ADR-0040 §1.3 has the full matrix: 24 of 25 probes diverge,
+covering direct element reads, slices, `.head`/`.tail`/`.first`/`.sort`/`.reverse`/`.map`/`.pairs`/
+`.kv`/`.Slip`, implicit-topic iteration, hash-value reads, element assign, `push`, `append`, and
+autovivification.
 
-## Why this is deep, not a ticket
+## Two corrections to this file's original framing
 
-Fixing it read-side would mean touching every element-read site (indexing,
-slices, dozens of list methods, iterators) — each must know its source is a
-real Array/Hash, which `.kv`-through-Seq loses. Fixing it store-side (itemize
-at element *storage*: list-assign into `@`, push/unshift/splice, element
-assign, `[...]` construction) is the raku-faithful single model but changes
-what is IN every array — a survey-sized campaign with its own fallout class
-(the bind-side campaign hit two consumers: `.cache` identity-return and
-`&combinations`; store-side will hit more).
+- **The cost estimate was too high.** This file sized the store-side half as "a survey-sized campaign
+  with its own fallout class ... changes what is IN every array". Measured (ADR-0040 §1.4): writing
+  the post-fix state by hand — `my @i = $[1,2], $[3,4]` — and comparing it against today's bare
+  elements across 25 behavioural probes gives **25 identical results**, and ten renderer/equality
+  cross-checks match raku exactly. The itemization flag rides on the same shared `Gc<ArrayData>` and
+  every flattening decision point already consults `is_itemized()`. What is genuinely survey-sized is
+  only the enumeration of store sites, not the consequences of storing itemized values.
 
-Note on Track B: ADR-0001's "element `ContainerRef` cells fused with the GC
-campaign" framing is HISTORY, not a live constraint — the GC (layer 3a
-cycle collector), NaN-boxing (3b), and JIT (layer 4) all shipped and are
-default on (ADR-0001 §7, 2026-08-02), and the "do not start Track B
-standalone" rule was superseded by ADR-0013 §7 (the `GcBox`/`UnsafeCell`
-interior-mutability refinement made the `gc_contents_mut` sites sound
-without Value-layer element cells). So there is no pending campaign to fold
-this into: run the store-side itemization as its own measured campaign —
-just not as a drive-by.
-
-## Affected
-
-- `.raku`/`.gist` of arrays-of-arrays read back element-wise (`$[...]` vs
-  `[...]` — the `.raku` residues family, PLAN §8 QA).
-- Implicit-topic iteration over `@`-arrays whose body relies on the element
-  being ONE item in list context (the sprintf shape, now only reachable via
-  `for @c { ... $_ ... }` — the `-> $v` form is fixed).
-- List-destructuring bind write-through: `my (\a, \b) := my ($x, $y); a = 10;`
-  (or the sigilled `my ($a, $b) := ($x, $y);`) never propagates to `$x`,
-  because the destructuring desugar reads each target's RHS out of a temp
-  array by index (`Expr::Index { target: ArrayVar("__destructure_tmp__"),
-  index: i }`), which has no per-element container to alias. Found triaging
-  `Math::Interval`'s `TWEAK` (`todo/tickets/dist-test-suite-failures-batch.md`);
-  the single-variable case (`my \a := $x`) was fixed separately in
-  `news/2026-08/sigilless-bind-writable-alias.md`, but the list-bind form
-  needs this store-side fix.
+- **The "list-destructuring bind write-through" bullet is misfiled and is NOT part of this.**
+  `my (\a, \b) := ($x, $y); a = 10` does not propagate to `$x` because the desugar builds
+  `my @__destructure_tmp__ = [$x, $y].list` and reads `@__destructure_tmp__[i]` — the temp array
+  holds *copies*, so no element containerization anywhere could reach `$x`. The single-variable form
+  (`my \a := $x`) already works. The fix is in the desugar (emit N single binds); see ADR-0040 §1.7.
+  Its failure mode has also changed since this file was written: it now dies with
+  `Cannot assign to a readonly variable (a) or a value` rather than silently no-opping.
 
 ## Verification once fixed
 
@@ -70,4 +56,6 @@ just not as a drive-by.
 $ mutsu -e 'my @c = [<a b>],[<c d>]; my @d = @c; say @d[0].raku'   # $["a", "b"]
 $ mutsu -e 'my @c = [<a b>],; for @c { say .raku }'                # $["a", "b"]
 $ mutsu -e 'my %h = a => [1,2]; say %h<a>.raku'                    # $[1, 2]
+$ mutsu -e 'my @c = [<a b>],; sub t(*@a){@a.elems}; say t(@c[0])'  # 1
+$ mutsu -e 'my @c = [<a b>],[<c d>]; say @c.raku'                  # [["a", "b"], ["c", "d"]] (unchanged)
 ```
