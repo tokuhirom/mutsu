@@ -10,9 +10,9 @@ within reach — unlike `NativeCall`
 order, so most of them are historical. Read the LAST section first** — it
 carries the current measurement and the current blocker list. As of 2026-08-20:
 the module is vendored and driven by `MUTSU_REAL_TEST=1`, 76 of 1436 whitelisted
-roast files and 20 `t/` files still regress under it, and
-`scripts/test-module-sweep.sh`'s pass predicate needs fixing before any `t/`
-number in the middle of this file can be trusted.
+roast files and 18-20 `t/` files still regress under it.
+`scripts/test-module-sweep.sh`'s pass predicate has now been fixed (it
+classifies on exit status, not just a text grep) — see the last section.
 
 ## What was measured
 
@@ -2684,3 +2684,87 @@ cost) and is not worth it while 76 files are red; the cheap interim is to re-run
 the corrected `t/` sweep at the start of every session that touches this ticket,
 which costs a few minutes and would have caught the fifteen invisible `t/` files
 much earlier.
+
+## 2026-08-20 (later same day): `scripts/test-module-sweep.sh`'s predicate is fixed
+
+Item 1 of the priority list above, done. `run_one()` now captures each run's
+exit status to a sidecar `.st` file (`$name.native.st` / `$name.real.st`), and
+`passes()` requires exit status 0 *and* no failure marker in the text — the
+text predicate gained `# You planned` (the truncated-plan abort line the old
+version missed entirely) alongside the pre-existing `not ok` / `Runtime
+error` / `Parse error` / `===SORRY` set. The regression-detail block also now
+greps `# You planned` so a mid-file abort shows up in
+`regressions.txt` instead of leaving it blank for exactly the files this bug
+was hiding. Interface and output format are unchanged (same summary lines,
+same `regressions.txt` path).
+
+Re-ran the fixed script (release irrelevant here — debug build, `-j8`, from
+the repo root, on top of `e13d278ff` / `origin/main`):
+
+```
+pass under both:                   3159
+regressed under the real Test:     22
+passes only under the real Test:   0
+fail under both (pre-existing):    83
+```
+
+(3159 + 22 + 0 + 83 = 3264 = `ls t/*.t | wc -l`.)
+
+That is the fix working: 22, not the old predicate's 4 — roughly the same
+order of magnitude as the 24 raw / 20 confirmed the 2026-08-20 hand
+investigation above found. The small remaining gap from 24 was checked by
+hand, not guessed:
+
+- **4 of the 22 do not reproduce from the repo root** — same finding as
+  before, same four files (`any-type-object-int-coercion.t`,
+  `bound-nil-method-warn.t`, `type-object-numeric-coercion.t`,
+  `warns-like.t`): they only fail inside the sweep's
+  `tmp/test-module-sweep/` working copy (a cwd artifact of that harness, not
+  of the real module). Re-run standalone from the repo root, both runs exit 0
+  and every subtest passes. **18 of the 22 are genuine, reproduced
+  individually from the repo root** (native exit 0, real exit non-zero in
+  every case: 255 ×13, 1 ×3, 2 ×2, 134 ×1, one already-triaged 124/timeout for
+  `io-cathandle-lazy.t`'s stack overflow).
+- **A second, narrower gap the exit-status fix does not close**: two files
+  from the hand-investigated 20 (`exits-ok.t`, `failure-sink-handled.t`) are
+  *still* invisible to the script, for a different reason than the one this
+  ticket was fixing. Both have **legitimate `# TODO`-annotated `not ok` lines
+  in their own native-provider baseline** (`exits-ok.t` tests 10/12,
+  `failure-sink-handled.t` test 4) — ordinary, expected TAP `not ok` lines
+  that happen to carry a `# TODO` comment. `passes()`'s text grep does not
+  distinguish a TODO `not ok` from a real one, so it scores the *native* run
+  itself as "not passing" and the file falls into the "fail under both"
+  bucket instead of "regressed" — even though the real run fails a
+  *different, non-TODO* way (verified by hand:
+  `exits-ok.t` real: `# You planned 13 tests, but ran 0`, exit 4;
+  `failure-sink-handled.t` real: `# You planned 4 tests, but ran 3` then
+  `Unknown call: is-approx`, exit 255). This is a pre-existing quirk of the
+  original text predicate (it never understood TODO annotations, on either
+  side of the comparison) and out of scope for this fix — recorded here so
+  the next person does not re-discover it from scratch. A real fix would need
+  the predicate to parse the TAP `# TODO` suffix rather than grep raw `not
+  ok`, which is more than "capture exit status" and is follow-up work.
+
+So the honest current count is **20 confirmed regressions when checked by
+hand** (the 18 the script now surfaces, plus the 2 masked by the TODO-line
+quirk above) — unchanged from the 2026-08-20 hand count, and the script now
+gets within 2 of it automatically instead of undercounting by 4x.
+
+Newly-visible regressions this fix surfaces (i.e. present in
+`regressions.txt` for the first time, previously silently scored a pass):
+`bare-precedes-placeholder-nested-scope.t`, `exception-role-membership.t`,
+`exec-call-mixed-block.t`, `exec-call-pairs.t`, `io-cathandle-lazy.t`,
+`is-lazy-io-lines.t`, `malformed-syntax-classes.t`, `pair-improvements.t`,
+`parametric-role-of-type.t`, `signature-introspection-gaps.t`,
+`skip-list-vs-test.t`, `skip-user-multi-shadows-test.t`,
+`subscript-adverbs.t`, `throws-like-gather-sink.t`,
+`two-terms-in-a-row-initializer-listop.t`, `undeclared-when-type.t`,
+`vm-panic-boundary.t`, `whenever-out-of-scope.t` (18 files — the same set the
+2026-08-20 hand investigation already named individually above; this just
+confirms the script now finds them on its own). `exits-ok.t` and
+`failure-sink-handled.t` still require the TAP-TODO-aware follow-up described
+above to surface automatically.
+
+No interpreter code was touched in this pass — this was a test-harness fix
+only. **The 20-file `t/` residue and the 76-file roast residue are unchanged
+and are the next work**, per the priority list above (items 2-5).
