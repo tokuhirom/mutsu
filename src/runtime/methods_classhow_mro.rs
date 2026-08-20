@@ -15,16 +15,15 @@ impl Interpreter {
                 .map(|s| s.resolve())
                 .collect()
         } else {
-            // Built-in type hierarchies for types that are not user-defined classes.
-            // Any/Mu are appended unconditionally below, so the table lists the
-            // chain up to (but not including) Any. The parent chains live in the
-            // single source of truth `builtins::builtin_type_methods`.
-            let builtin =
-                crate::builtins::builtin_type_methods::builtin_type_parents(class_name.as_str());
-            if builtin.is_empty() {
-                vec![class_name.clone()]
-            } else {
-                builtin.iter().map(|s| s.to_string()).collect()
+            // Built-in type hierarchies for types that are not user-defined
+            // classes. `builtin_type_catalog` (ADR-0051 P1) is the single source
+            // of truth for built-in type ancestry; its rows already include the
+            // full chain up to and including `Any`/`Mu` (the unconditional
+            // append below is a no-op for a catalog hit -- it only fires for a
+            // name the catalog does not model).
+            match crate::builtins::builtin_type_catalog::builtin_type_info(class_name.as_str()) {
+                Some(info) => info.mro.iter().map(|s| s.to_string()).collect(),
+                None => vec![class_name.clone()],
             }
         };
         // A grammar's MRO threads through Grammar -> Match -> Capture -> Cool.

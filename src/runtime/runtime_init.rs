@@ -678,7 +678,17 @@ impl Interpreter {
         classes.insert(
             "IO::Path".to_string(),
             ClassDef {
-                parents: Vec::new(),
+                // ADR-0051 P1: `IO::Path` genuinely IS `Cool` in raku
+                // (`IO::Path.^mro` is `IO::Path, Cool, Any, Mu`) -- the previous
+                // `parents: vec![]` / `mro: sym_mro(&["IO::Path"])` made `.^mro`
+                // dead-end at itself (worse, `class_mro_readonly` returns the
+                // cached `mro` field directly for a registered class, so leaving
+                // it non-empty here permanently short-circuited recomputation).
+                // Declaring the real parent and leaving `mro` empty lets
+                // `Registry::compute_class_mro`'s ordinary linearization compute
+                // and cache the correct `[IO::Path, Cool, Any, Mu]` chain the
+                // same way every other class gets its MRO.
+                parents: vec!["Cool".to_string()],
                 attributes: Vec::new(),
                 native_methods: [
                     "Str",
@@ -748,7 +758,10 @@ impl Interpreter {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-                mro: sym_mro(&["IO::Path"]),
+                // Left empty deliberately (ADR-0051 P1) -- see the `parents`
+                // comment above. `Registry::compute_class_mro` computes and
+                // caches `[IO::Path, Cool, Any, Mu]` here on first use.
+                mro: [].into(),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),

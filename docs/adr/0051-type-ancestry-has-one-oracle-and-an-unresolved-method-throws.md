@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (P1 landed; P2/P4/P5 not started)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -249,26 +249,39 @@ regressions instead of one data gap.
 
 Each phase is independently landable and independently valuable.
 
-- **P1 — Rakudo-verify and complete the catalog, and make `.^mro` read it.** Add `Instant`,
-  `Duration`, `IO::Path`, `IO::Handle`, and `Cool` rows to `builtin_type_catalog`; correct any other
-  divergence a full sweep finds. Re-point `classhow_mro_names`
-  (`src/runtime/methods_classhow_mro.rs:12-23`) at the catalog, deleting `builtin_type_parents`
-  (source 3) — its only non-test caller. `IO::Path` additionally needs its bootstrap `ClassDef`
-  (`src/runtime/runtime_init.rs:678`) to stop declaring `parents: vec![]` / `mro: ["IO::Path"]`;
-  `compute_class_mro`'s existing `parent == "Cool"` arm (`registry.rs:750`) already linearizes it.
-  Pin with a test that asserts, for every catalog type, that `.^mro` equals the Rakudo chain
-  (extend `tmp/mro_sweep.p6`'s comparison into a `t/` test with the raku answers baked in).
-  *Alone this fixes the `Match`/`Instant`/`Duration`/`IO::Path` `.^mro` and `~~ Cool` divergences —
-  user-visible on its own, no gate involved.*
+- **P1 — Rakudo-verify and complete the catalog, and make `.^mro` read it. LANDED (PR #6754, 2026-08-20).**
+  Added `Cool`, `Instant`, `Duration`, `IO::Path`, and `IO::Handle` rows to `builtin_type_catalog`
+  (`src/builtins/builtin_type_catalog.rs`), each Rakudo-verified (`.^mro`/`.^roles`) on 2026-08-20.
+  Re-pointed `classhow_mro_names`'s unregistered-type branch (`src/runtime/methods_classhow_mro.rs`)
+  at the catalog and deleted `builtin_type_parents` (source 3) — confirmed it had no non-test caller
+  left. `IO::Path`'s bootstrap `ClassDef` (`src/runtime/runtime_init.rs`) now declares
+  `parents: vec!["Cool".to_string()]` with `mro` left empty (the standard "not yet computed"
+  convention); `Registry::compute_class_mro`'s existing `parent == "Cool"` arm linearizes the rest,
+  matching the pattern already used for every ordinary registered class. `IO::Handle` needed no
+  `ClassDef` change — Rakudo's own `IO::Handle.^mro` does NOT include `Cool` (verified
+  2026-08-20: `(IO::Handle Any Mu)`), only `IO::Path` does among the two.
+  Pinned by `t/adr0051-builtin-type-cool-ancestry.t` (`.^mro`, `~~ Cool`, and a representative
+  Cool-method call for each of the five types, plus `Match`/`Pair`/a plain class as
+  unaffected/negative controls, all dual-oracle verified against a real `raku`) and by new unit
+  tests in `builtin_type_catalog.rs`'s own test module.
+  *This alone fixes the `Match`/`Instant`/`Duration`/`IO::Path` `.^mro` and `~~ Cool` divergences —
+  user-visible on its own, no gate involved.* Verified: `Instant.^mro`/`Duration.^mro`/`IO::Path.^mro`
+  now match raku exactly (previously all three dead-ended at `[Type, Any, Mu]`, no `Cool`).
 
-  **Expect introspection counts to move, and check them deliberately.** Giving `IO::Path` a `Cool`
-  ancestor makes all ~90 `("Cool", …)` rows in `native_method_row_table.rs` visible to
-  `IO::Path.^can`/`.^methods` (Rakudo-correct — raku's `IO::Path.^can("chars")` is 1 where mutsu's
-  is 0), and enables `Cool::`-qualified coercion, which `methods_qualified.rs:87` gates on
-  `class_mro` containing `Cool`. `is_builtin_type_method` (`methods_classhow_lookup.rs:412-440`)
-  carries a comment recording a *past regression of exactly this shape* — a `Pair.^can(<cool
-  coercion>)` false positive caused by an unconditional `[type_name, "Cool", "Any", "Mu"]` ancestor
-  list. Re-read that comment before touching source 12.
+  **Introspection counts moved, and were checked deliberately.** Giving `IO::Path` a `Cool`
+  ancestor now makes the `("Cool", …)` rows in `native_method_row_table.rs` visible to
+  `IO::Path.^can`/`.^methods` (Rakudo-correct — `IO::Path.^can("chars")` is now 1 in mutsu, matching
+  raku, where it was 0 before). `is_builtin_type_method` (`methods_classhow_lookup.rs:412-440`)'s
+  comment records the past regression this could repeat: an unconditional
+  `[type_name, "Cool", "Any", "Mu"]` ancestor guess once made `Pair.^can(<cool coercion>)` a false
+  positive, because `Pair` genuinely does NOT inherit `Cool` in Rakudo. That function reads real
+  ancestors via `class_mro_readonly` first and only falls back to the unconditional guess when the
+  registry has no MRO at all for the type — P1 does not touch that fallback or `Pair`'s (unchanged,
+  `Cool`-free) catalog row, and `t/native-int-coerce-methods-are-cool-only.t` plus the new
+  regression test's `Pair` assertions both still pass, confirming the false-positive shape did not
+  reappear.
+
+- P2/P4/P5 below are unchanged from the original design and remain not started.
 
 - **P2 — Collapse the remaining sources onto the catalog.** Delete `Registry::builtin_mro_table`
   and the three hardcoded narrowness chains (sources 7-9); re-point `class_mro_readonly`,
