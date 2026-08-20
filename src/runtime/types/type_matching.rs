@@ -1135,6 +1135,21 @@ impl Interpreter {
             if Self::type_matches(constraint, &package_name.resolve()) {
                 return true;
             }
+            // ADR-0047: `package_name` may be the BARE type name as written in
+            // source (e.g. from `Parameter.type`/`subset X of Y` reflection,
+            // which never goes through env) while the actual registry key for
+            // a lexically-scoped `my class`/`my grammar` carries a mangled
+            // `\u{0}<decl-id>` suffix. Every registry-structure lookup below
+            // (MRO, composed roles, role candidates) must key on the REAL
+            // identity or it silently finds nothing for a lexical class
+            // reached this way — e.g. `subset LoggedIn of MySession where
+            // ...` then `LoggedIn ~~ Cro::HTTP::Auth` from a different file
+            // that never bound `MySession` in its own env. The plain string
+            // bridge just above stays keyed on the bare name (a caller that
+            // already passes a mangled constraint must still match unchanged).
+            let registry_key = self
+                .resolve_lexical_type_key(&package_name.resolve())
+                .unwrap_or_else(|| package_name.resolve().to_string());
             if let Some((actual_base, actual_args)) =
                 Self::parse_parametric_type_name(&package_name.resolve())
                 && let Some((constraint_base, constraint_args)) =
@@ -1166,18 +1181,26 @@ impl Interpreter {
             let subset_base = self
                 .registry()
                 .subsets
-                .get(&package_name.resolve())
+                .get(&registry_key)
                 .map(|subset| subset.base.clone());
-            if let Some(subset_base) = subset_base
-                && (constraint == package_name.resolve()
+            if let Some(subset_base) = subset_base {
+                // `subset_base` is likewise the bare name as written in the
+                // `subset X of Y` declaration; resolve it the same way before
+                // the recursive `type_matches_value` call, which is what
+                // actually walks `Y`'s MRO/composed roles.
+                let resolved_base = self
+                    .resolve_lexical_type_key(&subset_base)
+                    .unwrap_or(subset_base);
+                if constraint == package_name.resolve()
                     || self.type_matches_value(
                         constraint,
-                        &Value::package(Symbol::intern(&subset_base)),
-                    ))
-            {
-                return true;
+                        &Value::package(Symbol::intern(&resolved_base)),
+                    )
+                {
+                    return true;
+                }
             }
-            let mro = self.class_mro(&package_name.resolve());
+            let mro = self.class_mro(&registry_key);
             if mro
                 .iter()
                 .any(|parent| Self::type_matches(effective_constraint, parent.as_str()))
@@ -1260,7 +1283,7 @@ impl Interpreter {
             {
                 return true;
             }
-            let pkg_resolved = package_name.resolve();
+            let pkg_resolved = registry_key.clone();
             let pkg_base = pkg_resolved
                 .split_once('[')
                 .map(|(b, _)| b)

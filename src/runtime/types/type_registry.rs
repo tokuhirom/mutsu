@@ -498,8 +498,21 @@ impl Interpreter {
                 return None;
             }
             let qualified = format!("{pkg}::{name}");
-            if self.has_type_direct(&qualified) {
-                return Some(qualified);
+            // ADR-0047: a lexically-scoped `my class`/`my grammar` reachable
+            // through this package chain is registered under a mangled
+            // storage name (`{qualified}\u{0}<decl-id>`), never the bare
+            // `qualified` this loop just built. `has_type_direct(&qualified)`
+            // alone therefore misses it, and this is exactly the scenario a
+            // qualified sub call's OWN body hits: `resolve_type_in_current_package`
+            // runs with `current_package()` set to the sub's declaring package
+            // (not the caller's), so a bareword type reference INSIDE that sub
+            // body (e.g. `X::Encode::Unknown.new(...)` inside `Encode::decode`)
+            // needs the mangled key, not just the bare concatenation.
+            // `resolve_lexical_type_key` tries the bare form FIRST (so a
+            // `decl_id == 0` / non-lexical declaration is unaffected) and only
+            // then scans for the mangled variant.
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
             match pkg.rsplit_once("::") {
                 Some((parent, _)) => pkg = parent,

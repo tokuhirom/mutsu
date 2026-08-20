@@ -44,8 +44,22 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         | ValueView::RangeExclBoth(_, _)
         | ValueView::GenericRange { .. } => "Range".to_string(),
         ValueView::Nil => "Nil".to_string(),
-        ValueView::Instance { class_name, .. } => class_name.resolve(),
-        ValueView::Package(name) => name.resolve(),
+        // ADR-0047: a lexically-scoped `my class`/`my grammar` (including a
+        // nested one, e.g. `my monitor Store { my class Session {...} }`)
+        // registers its instances/type object under a mangled storage name
+        // (`Foo\u{0}<decl-id>`, possibly with more than one `\u{0}` segment
+        // for a nested declaration). `what_type_name` is used to build
+        // user-facing text (error messages, `.^name`-style displays), so it
+        // must report the demangled, user-facing name here rather than the
+        // raw storage key leaking a literal NUL byte and decl-id number into
+        // messages like "Type check failed in assignment ... but got
+        // Store\u{0}12::Session\u{0}13".
+        ValueView::Instance { class_name, .. } => {
+            crate::value::user_facing_type_name(&class_name.resolve()).into_owned()
+        }
+        ValueView::Package(name) => {
+            crate::value::user_facing_type_name(&name.resolve()).into_owned()
+        }
         ValueView::Enum { enum_type, .. } => enum_type.resolve(),
         ValueView::Sub(_) | ValueView::WeakSub(_) => "Sub".to_string(),
         ValueView::Routine { .. } => "Sub".to_string(),
