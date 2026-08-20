@@ -1484,11 +1484,31 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
+                // A genuinely fresh binding (an expression-position `my`, e.g.
+                // `if (my $a = 0) {...}`) whose bare name happens to collide
+                // with an outer captured lexical's shared `ContainerRef` cell
+                // must NOT write through that cell — it is a new variable, not
+                // a write to the outer one. `expr_declared_syms` is the
+                // compile-time discriminator recorded for exactly this case
+                // (deliberately excluding the synthesized `WhateverCode`
+                // "promoted" declaration, which DOES belong to the enclosing
+                // block and must keep writing through — see
+                // `roast/S02-types/whatever.t` #45 /
+                // `t/expression-position-my-scope.t` #8). Method bodies are the
+                // main beneficiary: a class/role method's `CompiledCode` is
+                // registered separately from its enclosing frame, so it never
+                // appears in that frame's `closure_compiled_codes` and none of
+                // the OTHER `expr_declared_syms`-based protections (capture
+                // filter, free-var-write drain) ever run for it — this check is
+                // the one that does.
+                let fresh_binding_decl = self.vardecl_context
+                    && code.expr_declared_syms.contains(&Symbol::intern(&name));
                 // Write through ContainerRef: update inner value for env-based variables.
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
                 if !is_rebind && !raw_mode {
                     // Check env directly (not through alias resolution to avoid circular lookups)
-                    if let Some(cell_val) = self.env().get(&name).cloned()
+                    if !fresh_binding_decl
+                        && let Some(cell_val) = self.env().get(&name).cloned()
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
                         self.check_container_cell_constraint(&arc, &val)?;
@@ -1665,6 +1685,14 @@ impl Interpreter {
                     // For `constant @x`, bypass set_shared_var's List→Array
                     // normalization so the container type (List) is preserved.
                     self.env_mut().insert(name.clone(), val.clone());
+                } else if fresh_binding_decl {
+                    // See the `fresh_binding_decl` comment above: this store
+                    // must not write through a same-named outer captured
+                    // lexical's `ContainerRef` cell either — this helper is
+                    // reached (unlike the write-through checks above, which
+                    // `vardecl_context` has already been cleared past by the
+                    // time this line runs, hence capturing the flag earlier).
+                    self.set_env_with_main_alias_fresh_binding(&name, val.clone());
                 } else {
                     self.set_env_with_main_alias(&name, val.clone());
                 }

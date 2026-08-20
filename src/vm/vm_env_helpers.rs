@@ -912,7 +912,22 @@ impl Interpreter {
     }
 
     pub(super) fn set_env_with_main_alias(&mut self, name: &str, value: Value) {
-        self.set_env_with_main_alias_sym(name, None, value);
+        self.set_env_with_main_alias_inner(name, None, value, false);
+    }
+
+    /// Like [`set_env_with_main_alias`] but for a genuinely FRESH binding — an
+    /// expression-position `my` declaration (`if (my $a = 0) {...}`) whose name
+    /// happens to collide, by bare env key, with an outer captured lexical's
+    /// shared `ContainerRef` cell (see `CompiledCode::expr_declared_syms`). Such
+    /// a declaration must NOT write through that cell: it is not a write to the
+    /// outer variable at all, just an unrelated new binding that shadows it by
+    /// name for the rest of this expression. Skips only the write-through
+    /// check that `set_env_with_main_alias_sym` performs first; every other
+    /// alias-maintenance branch of that function is unreachable for a fresh
+    /// declaration's plain lexical name, so sharing the general helper (guarded
+    /// by `fresh_binding`) is simpler than duplicating them here.
+    pub(super) fn set_env_with_main_alias_fresh_binding(&mut self, name: &str, value: Value) {
+        self.set_env_with_main_alias_inner(name, None, value, true);
     }
 
     /// The by-name env write for a *plain lexical* (see
@@ -950,6 +965,20 @@ impl Interpreter {
         name_sym: Option<Symbol>,
         value: Value,
     ) {
+        self.set_env_with_main_alias_inner(name, name_sym, value, false);
+    }
+
+    /// Shared body of [`set_env_with_main_alias`] / [`set_env_with_main_alias_sym`]
+    /// / [`set_env_with_main_alias_fresh_binding`]. `fresh_binding` distinguishes
+    /// a genuinely new declaration (which must NOT write through a same-named
+    /// outer cell) from every other by-name write (which must).
+    fn set_env_with_main_alias_inner(
+        &mut self,
+        name: &str,
+        name_sym: Option<Symbol>,
+        value: Value,
+        fresh_binding: bool,
+    ) {
         // Write companion of the redirect in `get_env_with_main_alias`: the
         // compunit's own cell is this name's only home while one of its routines
         // is running, so the write must not land on the loading scope's env key.
@@ -970,8 +999,12 @@ impl Interpreter {
         // entry IS this same cell) permanently stale. Skipped for a value
         // that is itself a fresh `ContainerRef` bind target — a `:=` bind
         // replacing the whole binding must not be redirected into the OLD
-        // cell's contents.
-        if !matches!(value.view(), ValueView::ContainerRef(_))
+        // cell's contents. Also skipped for a `fresh_binding`: an
+        // expression-position `my` declaration is a new variable, not a write
+        // to whatever cell an outer scope happens to have registered under
+        // this bare name (see `set_env_with_main_alias_fresh_binding`).
+        if !fresh_binding
+            && !matches!(value.view(), ValueView::ContainerRef(_))
             && let Some(cell_val) = self.env().get(name).cloned()
             && let ValueView::ContainerRef(arc) = cell_val.view()
         {
