@@ -573,7 +573,11 @@ impl Interpreter {
         match idx.view() {
             ValueView::Range(a, b) => {
                 let start = a.max(0);
-                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end < start {
                     return Some(Vec::new());
                 }
@@ -585,9 +589,12 @@ impl Interpreter {
             }
             ValueView::RangeExcl(a, b) => {
                 let start = a.max(0);
-                let end_excl = b
-                    .max(0)
-                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end_excl = if b == i64::MAX {
+                    b.max(0)
+                        .min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b.max(0)
+                };
                 if start >= end_excl {
                     return Some(Vec::new());
                 }
@@ -599,7 +606,11 @@ impl Interpreter {
             }
             ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1).max(0);
-                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end < start {
                     return Some(Vec::new());
                 }
@@ -611,9 +622,12 @@ impl Interpreter {
             }
             ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1).max(0);
-                let end_excl = b
-                    .max(0)
-                    .min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end_excl = if b == i64::MAX {
+                    b.max(0)
+                        .min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b.max(0)
+                };
                 if start >= end_excl {
                     return Some(Vec::new());
                 }

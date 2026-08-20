@@ -504,8 +504,6 @@ impl Interpreter {
         }
     }
 
-    pub(crate) const MAX_ASSIGN_SLICE_EXPAND: i64 = 100_000;
-
     pub(crate) fn assignment_rhs_values(
         &mut self,
         val: &Value,
@@ -515,7 +513,11 @@ impl Interpreter {
             ValueView::Seq(v) => v.iter().cloned().collect(),
             ValueView::Slip(v) => v.iter().cloned().collect(),
             ValueView::Range(a, b) => {
-                let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end < a {
                     Vec::new()
                 } else {
@@ -523,7 +525,11 @@ impl Interpreter {
                 }
             }
             ValueView::RangeExcl(a, b) => {
-                let end = b.min(a.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end <= a {
                     Vec::new()
                 } else {
@@ -532,7 +538,11 @@ impl Interpreter {
             }
             ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end < start {
                     Vec::new()
                 } else {
@@ -541,7 +551,11 @@ impl Interpreter {
             }
             ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                let end = b.min(start.saturating_add(Self::MAX_ASSIGN_SLICE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end <= start {
                     Vec::new()
                 } else {
@@ -560,7 +574,10 @@ impl Interpreter {
             // machinery handles it).
             ValueView::LazyList(list) => {
                 if list.coroutine.is_some() && list.cache.lock().unwrap().is_none() {
-                    self.force_lazy_list_vm_n(&list, Self::MAX_ASSIGN_SLICE_EXPAND as usize)?
+                    self.force_lazy_list_vm_n(
+                        &list,
+                        crate::runtime::utils::MAX_LAZY_RANGE_PREFIX as usize,
+                    )?
                 } else {
                     self.force_lazy_list_vm(&list)?
                 }
