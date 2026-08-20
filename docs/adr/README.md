@@ -82,3 +82,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0054](0054-argument-list-interpolation-is-a-call-site-property.md) | Argument-list interpolation is a call-site property — retire blind Slip flattening | Proposed (design complete; implementation not started) |
 | [0055](0055-closure-free-vars-resolve-to-their-own-binding.md) | A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores | Proposed (design complete; implementation not started) |
 | [0056](0056-nativecall-types-display-only-qualification.md) | NativeCall's `Pointer`/`CArray`/`long`/... display under `NativeCall::Types::*` — display-only, registry key stays bare | Accepted (implemented) |
+| [0057](0057-var-reflection-identity-cell-address.md) | `.VAR` reflection identity is the shared cell's address, not a per-frame cache — reusing ADR-0032's container-capture edge as the boxing trigger | Accepted (implemented) |

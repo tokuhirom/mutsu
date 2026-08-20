@@ -30,28 +30,40 @@ impl Compiler {
     pub(super) fn emit_wrap_var_ref(&mut self, name: &str) {
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
-        // ADR-0032 D1: record the container-capture edge where it is emitted,
-        // not by a fragile after-the-fact peephole scan. When `name` is not a
-        // local of THIS emitting frame (slot == u32::MAX), the value being
-        // wrapped is a captured/outer scalar read through the closure env —
-        // exactly the shape `exec_wrap_var_ref_op` needs to recover the raw
-        // cell for instead of the already-dereferenced stack value. This one
-        // rule covers every WrapVarRef consumer (MakePair, MakeNamedArg,
-        // MakeCapture, MakeArray, Pair.new, rw-arg / `:=` paths) because they
-        // all funnel through this emitter, and it generalizes from "reader is
-        // a directly nested named sub" (the old mechanism) to "any nested
-        // compiled code" (pointy block, anon sub, bare block, class method).
-        // Restricted to plain `$`-sigil lexical names (`is_plain_lexical_name`
-        // excludes `@`/`%`/`&`/twigil/dynamic/attribute names) — broader
-        // `@`/`%` decl-site boxing regressed ~12 files through decont leaks
-        // (docs/captured-outer-cell-sharing.md §7.1d).
+        self.register_container_ref_capture_if_free(name);
+        self.code.emit(OpCode::WrapVarRef { name_idx, slot });
+    }
+
+    /// ADR-0032 D1's container-capture-edge registration, factored out of
+    /// [`Self::emit_wrap_var_ref`] so a consumer that reads its target through
+    /// a *different* op (not `WrapVarRef`) can still opt into the same
+    /// decl-site boxing guarantee. `.VAR`'s target (`compile_expr_method_on_var`)
+    /// is the motivating case: it reads via a plain `compile_expr`, but its
+    /// reflection identity (ADR-0057) needs the SAME "this name, if free, gets
+    /// a shared cell at its declaration" guarantee `WrapVarRef` sites get.
+    ///
+    /// Record the container-capture edge where it is emitted, not by a
+    /// fragile after-the-fact peephole scan. When `name` is not a local of
+    /// THIS emitting frame, the value is a captured/outer scalar read through
+    /// the closure env — exactly the shape `exec_wrap_var_ref_op` needs to
+    /// recover the raw cell for instead of the already-dereferenced stack
+    /// value. This one rule covers every WrapVarRef consumer (MakePair,
+    /// MakeNamedArg, MakeCapture, MakeArray, Pair.new, rw-arg / `:=` paths)
+    /// because they all funnel through this emitter, and it generalizes from
+    /// "reader is a directly nested named sub" (the old mechanism) to "any
+    /// nested compiled code" (pointy block, anon sub, bare block, class
+    /// method). Restricted to plain `$`-sigil lexical names
+    /// (`is_plain_lexical_name` excludes `@`/`%`/`&`/twigil/dynamic/attribute
+    /// names) — broader `@`/`%` decl-site boxing regressed ~12 files through
+    /// decont leaks (docs/captured-outer-cell-sharing.md §7.1d).
+    pub(super) fn register_container_ref_capture_if_free(&mut self, name: &str) {
+        let slot = self.local_map.get(name).copied().unwrap_or(u32::MAX);
         if slot == u32::MAX && Self::is_plain_lexical_name(name) {
             let sym = Symbol::intern(name);
             if !self.code.container_ref_capture_syms.contains(&sym) {
                 self.code.container_ref_capture_syms.push(sym);
             }
         }
-        self.code.emit(OpCode::WrapVarRef { name_idx, slot });
     }
 
     /// [`Self::emit_wrap_var_ref`] WITHOUT ADR-0032 D1's container-capture-
