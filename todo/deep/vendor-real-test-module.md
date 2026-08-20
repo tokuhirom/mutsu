@@ -2621,9 +2621,15 @@ fatal runtime error: stack overflow, aborting
 
 (exit 134), and so does `t/io-cathandle-lazy.t` on the other side. Four files,
 one mechanism, and a Rust-level abort is the highest-priority class the project
-recognises. This is almost certainly the already-filed
-`todo/deep/cathandle-real-test-is-deeply-infinite-recursion.md`; it is now worth
-more than that ticket's original single-file framing.
+recognises. **Root-caused 2026-08-20** in
+`todo/deep/seq-cache-does-not-narrow-to-list-stack-overflow.md` (renamed from
+`cathandle-real-test-is-deeply-infinite-recursion.md`, whose single-file framing
+was indeed too narrow — and whose CatHandle framing was wrong: two of the four
+files involve no CatHandle at all). It is one mechanism: `Seq.cache` must return
+a `List`, and mutsu returns something that still binds `Seq:D`, so the real
+`Test.rakumod`'s `is-deeply` Seq-narrowing candidates re-select themselves
+forever. Design in
+[ADR-0038](../../docs/adr/0038-seq-cache-returns-a-list-and-the-seq-list-view-is-a-property-of-the-value.md).
 
 ### A category this campaign had not named: files that pass only because the native provider is *wider* than upstream `Test`
 
@@ -2666,7 +2672,10 @@ What still blocks step 3 (flipping `runtime_module.rs`), in priority order:
 1. **Fix `scripts/test-module-sweep.sh`'s pass predicate** (above). Everything
    else in this list is measured through it.
 2. **The four stack-overflow aborts** — one mechanism, a Rust-level abort,
-   `todo/deep/cathandle-real-test-is-deeply-infinite-recursion.md`.
+   now root-caused and designed:
+   `todo/deep/seq-cache-does-not-narrow-to-list-stack-overflow.md` /
+   [ADR-0038](../../docs/adr/0038-seq-cache-returns-a-list-and-the-seq-list-view-is-a-property-of-the-value.md).
+   Ready for implementation; its phase 2 is ~2 lines and clears two of the four.
 3. The 20 `t/` files and 76 roast files, most of them one general interpreter
    gap each — the same long tail this file has been grinding down since
    2026-08-01, at an observed rate of roughly one file per fix and occasionally
