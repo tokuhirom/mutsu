@@ -13,34 +13,63 @@ checked ahead of their native fallback. Candidate specificity (`Int:D` beating
 name-existence gate, same one `prefix:&lt;~&gt;` already relies on) both work
 as in real `raku` — pinned in `t/user-postcircumfix-index-instance.t`.
 
-**Still open** (do not re-close this ticket on the strength of the above):
+## Status update 2 (2026-08-20): assignment path fixed; callable-term gap turned out to be a deep, separate ADR
 
-1. **The *assignment* path is untouched.** `@obj[i] = v` / `%obj{k} = v` still
-   lowers straight to `IndexAssign`/`ASSIGN-POS`/`ASSIGN-KEY`
-   (`vm_var_assign_index_named.rs`, `builtins_multidim_assign.rs`) without ever
-   consulting a user `postcircumfix:&lt;[ ]&gt;` candidate. In real Raku this
-   normally isn't a *separate* mechanism — assignment targets whatever
-   container the read side handed back — but mutsu's element storage is not
-   uniformly container/Proxy-based (ADR-0013), so "read via the multi
-   candidate, then STORE into what it returns" needs its own design pass
-   rather than a copy of the read-side fix above.
-2. **`&postcircumfix:&lt;[ ]&gt;` does not exist as a callable term at all.**
-   The `Array::Rounded`-style idiom this ticket was filed for depends on
-   `my constant &old-same = &postcircumfix:&lt;[ ]&gt;;` capturing the
-   *pre-augmentation* native dispatcher so the module's own candidates can
-   delegate back to native indexing (`old-same SELF, $index`) without infinite
-   recursion into their own just-added candidates. mutsu has no native Sub
-   value registered under this name at all — bareword resolution of
-   `&postcircumfix:&lt;[ ]&gt;` currently fails outright. This is a distinct,
-   still-unstarted gap: it needs a native callable wrapping the same
-   AT-POS/AT-KEY dispatch logic the read-path fix above added inline, exposed
-   as a term *before* any user candidates exist, frozen at the point captured
-   (not a live re-lookup of the growing multi table).
+Re-triaged against current `main`. Item 1 below is now fixed. Item 2 was
+re-investigated and found to be bigger and different than originally
+described — see ADR-0041 (new). Item 3 remains untouched and unrelated.
+
+1. **FIXED.** The *assignment* path (`@obj[i] = v` / `%obj{k} = v`) now
+   consults a user 3-argument `multi sub postcircumfix:<[ ]>(SELF, index,
+   value)` / `postcircumfix:<{ }>` candidate before the built-in
+   `BIND-POS`/`BIND-KEY`/`ASSIGN-POS`/`ASSIGN-KEY` dispatch, mirroring the
+   read-side fix above — confirmed against real `raku` that assignment
+   dispatches through a genuinely separate 3-arg multi-sub form (not "read
+   via the 2-arg candidate, then STORE into what it returns" as originally
+   guessed here; a 2-arg-only candidate makes `raku` itself refuse `@obj[i] =
+   v` at compile time with "Calling postcircumfix:<[ ]>(..., Int, Int) will
+   never work"). Implemented in
+   `exec_index_assign_expr_named_op_inner`
+   (`src/vm/vm_var_assign_index_named.rs`), gated on `!is_bind` (a `:=` bind
+   is a separate operator, not consulted here). Pinned in
+   `t/user-postcircumfix-index-instance.t`. **Not consulted** by the chained
+   (`$q<foo>[0] = v`) or generic (`exec_index_assign_generic_op`) assignment
+   sites — only the single-level named-variable path — a narrower follow-up
+   if a real-world dist needs it.
+   - Along the way, found (and filed separately, NOT fixed here) a genuine,
+     narrow, pre-existing bug: a *direct* `.ASSIGN-POS(...)` method call on
+     an `is Array` subclass **Instance** silently fails to mutate the backing
+     storage (plain-array `.ASSIGN-POS` and subscript-syntax `@a[i]=v` on the
+     same instance both already work correctly) — see
+     `todo/tickets/assign-pos-direct-call-not-mutating-array-subclass-instance.md`.
+     This matters because a real assignment-form postcircumfix candidate
+     that delegates to `SELF.ASSIGN-POS(...)` (the natural analog of the
+     read-side `SELF.AT-POS(...)` idiom) will hit it.
+2. **Still open — bigger than originally scoped; see ADR-0041.** Confirmed
+   `&postcircumfix:<[ ]>` still cannot be captured as a pre-augmentation
+   term, but the actual failure mode is a **stack overflow**, not "fails
+   outright": `my constant &old-same = &postcircumfix:<[ ]>;` resolves to the
+   module's OWN not-yet-textually-reached `multi sub postcircumfix:<[ ]>`
+   (registered early by mutsu's sub-hoist pass), so `old-same` recurses into
+   itself forever. Root-caused to a general mismatch between "a sub is
+   callable from anywhere in its enclosing scope" (must stay true — this is
+   why the hoist pass exists) and "a `&name` bareword reference captured
+   inside a `constant`/`BEGIN` must see only what is textually declared
+   before it" (currently false — mutsu's hoist pre-registers everything
+   before the first statement runs). **This is not specific to postcircumfix
+   or even to operators** — the identical bug reproduces with a plain named
+   sub shadowed in an inner block, though it fails a different way there
+   (`Redeclaration of routine`, since operator names are apparently exempted
+   from the redeclaration check that catches the plain-sub case). Full
+   analysis, root cause trace, and rejected/considered fix options are in
+   **[ADR-0041](../../docs/adr/0041-sub-hoisting-vs-compile-time-name-visibility.md)**
+   (Proposed, investigation only — no implementation attempted). A future
+   session should read that ADR first, not restart this investigation.
 3. The constant-alias `is` trait gap in "What's still broken" below is
    unrelated and still fully open.
 
 Do not close `Array::Rounded`'s row in `dist-test-suite-failures-batch.md`
-until items 1-3 above are resolved, in addition to everything already listed
+until items 2-3 above are resolved, in addition to everything already listed
 under "What's still broken".
 
 Found while investigating `Array::Rounded` (`todo/tickets/dist-test-suite-failures-batch.md`'s
