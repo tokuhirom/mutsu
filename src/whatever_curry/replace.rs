@@ -71,15 +71,22 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
                 right: Box::new(replace_whatever_numbered(right, counter)),
             }
         }
-        // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
+        // SmartMatch/BangTilde: a compound RHS Whatever is left untouched (it's
+        // handled at runtime, not curried), but the RHS-autoprime forms `X ~~ *`
+        // / `X !~~ *` (ADR-0033 Phase 2 section 2.5) have a bare placeholder on
+        // the right that must be replaced too.
         Expr::Binary {
             left,
-            op: op @ TokenKind::SmartMatch,
+            op: op @ (TokenKind::SmartMatch | TokenKind::BangTilde),
             right,
         } => Expr::Binary {
             left: Box::new(replace_whatever_numbered(left, counter)),
             op: op.clone(),
-            right: right.clone(),
+            right: if is_whatever(right) {
+                Box::new(replace_whatever_numbered(right, counter))
+            } else {
+                right.clone()
+            },
         },
         Expr::Binary { left, op, right } => Expr::Binary {
             left: Box::new(replace_whatever_numbered(left, counter)),
@@ -196,15 +203,20 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
         e if is_whatever(e) => Expr::Var("_".to_string()),
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
-        // SmartMatch: only replace Whatever on LHS; RHS is handled at runtime.
+        // SmartMatch/BangTilde: see the matching arm in
+        // `replace_whatever_numbered` above.
         Expr::Binary {
             left,
-            op: op @ TokenKind::SmartMatch,
+            op: op @ (TokenKind::SmartMatch | TokenKind::BangTilde),
             right,
         } => Expr::Binary {
             left: Box::new(replace_whatever_single(left)),
             op: op.clone(),
-            right: right.clone(),
+            right: if is_whatever(right) {
+                Box::new(replace_whatever_single(right))
+            } else {
+                right.clone()
+            },
         },
         Expr::Binary { left, op, right } => Expr::Binary {
             left: Box::new(replace_whatever_single(left)),

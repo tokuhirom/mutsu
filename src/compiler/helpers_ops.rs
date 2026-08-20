@@ -27,7 +27,15 @@ pub(crate) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::OrOr => "||".to_string(),
         TokenKind::XorXor => "^^".to_string(),
         TokenKind::SmartMatch => "~~".to_string(),
-        TokenKind::BangTilde => "!~".to_string(),
+        // `!~~` compiles via the dedicated `OpCode::SmartMatchExpr` path
+        // (`compiler/expr_binary.rs`'s `SmartMatch | BangTilde` arm, which
+        // always returns before reaching the generic `InfixFunc` fallback
+        // that calls this function), so this string is read only by
+        // `RakuAST::Infix` rendering (ADR-0033 Phase 2 section 2.5) and by
+        // any other operator-name display -- it must be the real raku
+        // operator spelling, not mutsu's old (wrong) two-tilde name.
+        TokenKind::BangTilde => "!~~".to_string(),
+        TokenKind::FatArrow => "=>".to_string(),
         TokenKind::LtEqGt => "<=>".to_string(),
         TokenKind::EqEqEq => "===".to_string(),
         TokenKind::BangEqEqEq => "!===".to_string(),
@@ -109,9 +117,8 @@ pub(crate) fn op_name_to_token_kind(name: &str) -> Option<TokenKind> {
         "!" => TokenKind::Bang,
         "?" => TokenKind::Question,
         "~~" => TokenKind::SmartMatch,
-        // `x => 5` — the pair constructor renders with its Debug name (there is
-        // no `=>` spelling in `token_kind_to_op_name`).
-        "FatArrow" => TokenKind::FatArrow,
+        "!~~" => TokenKind::BangTilde,
+        "=>" => TokenKind::FatArrow,
         // Any remaining operator name is a named infix (`x`, `xx`, `eq`, `ne`,
         // `lt`/`gt`/`le`/`ge`, `cmp`, `leg`, `div`, `mod`, ...), which mutsu
         // represents with a generic `Ident` token (the inverse of

@@ -333,20 +333,18 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             if matches!(&left, Expr::Whatever) {
                 let lhs_text = input[..input.len() - rest.len()].trim_start();
                 if !lhs_text.starts_with('(') {
+                    // ADR-0033 Phase 2 section 2.5: plant a `WhateverCurry`
+                    // marker over the un-curried `* ~~ Type` body instead of
+                    // eagerly building the closure, so `.AST` can render the
+                    // leaf as `RakuAST::WhateverCode::Argument`. `build_closure`
+                    // reproduces the same `Lambda { param: "_", .. }` closure
+                    // this used to construct by hand.
                     let sm_expr = Expr::Binary {
-                        left: Box::new(Expr::Var("_".to_string())),
+                        left: Box::new(left),
                         op: op.token_kind(),
                         right: Box::new(right),
                     };
-                    return Ok((
-                        r,
-                        Expr::Lambda {
-                            param: "_".to_string(),
-                            body: vec![crate::ast::Stmt::Expr(sm_expr)],
-                            is_whatever_code: true,
-                            param_sigilless: false,
-                        },
-                    ));
+                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
                 }
             }
             // Bare `X ~~ *` autoprimes to a WhateverCode `-> $a { X ~~ $a }`.
@@ -359,20 +357,14 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
             if matches!(&right, Expr::Whatever) {
                 let rhs_text = rhs_start[..rhs_start.len() - r.len()].trim_start();
                 if !rhs_text.starts_with('(') {
+                    // ADR-0033 Phase 2 section 2.5: same deferral as the LHS
+                    // case above, for `X ~~ *`.
                     let sm_expr = Expr::Binary {
                         left: Box::new(left),
                         op: op.token_kind(),
-                        right: Box::new(Expr::Var("_".to_string())),
+                        right: Box::new(right),
                     };
-                    return Ok((
-                        r,
-                        Expr::Lambda {
-                            param: "_".to_string(),
-                            body: vec![crate::ast::Stmt::Expr(sm_expr)],
-                            is_whatever_code: true,
-                            param_sigilless: false,
-                        },
-                    ));
+                    return Ok((r, Expr::WhateverCurry(Box::new(sm_expr))));
                 }
             }
         }

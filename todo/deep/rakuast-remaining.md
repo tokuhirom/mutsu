@@ -52,9 +52,10 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1` — **Phase 1 (deferral) shipped; Phase 2 (RakuAST read /
-  the leaf split) designed in implementable detail and ready to pick up; Phases 3-4
-  (RakuAST write, thunk-barrier correctness fix) not started — see
+- WhateverCode such as `* + 1` — **Phase 1 (deferral) and Phase 2 (RakuAST read / the
+  leaf split) shipped: `Q[* + 1].AST` works now. Phase 4 (the thunk-barrier priming
+  correctness fix — the highest-payoff remaining slice, see below) is next; Phase 3
+  (RakuAST write / `EVAL`) not started — see
   [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
@@ -63,7 +64,7 @@ Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
 
-### Designed, Phase 1 shipped, Phase 2 ready to implement: WhateverCode (ADR-0033)
+### Phases 1-2 shipped, Phase 4 is the next highest-payoff slice: WhateverCode (ADR-0033)
 
 `* + 1` was picked first because it is the highest-frequency construct on the list
 (`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
@@ -88,15 +89,28 @@ roast suites. See the ADR's own Outcome section for the full list of latent-bug 
 this deferral surfaced along the way.
 
 Phase 2 — the *leaf* half (`Expr::WhateverArg` → `RakuAST::WhateverCode::Argument`) —
-was designed in implementable detail on 2026-08-20 and is the next unit of work; see
-the ADR's "Phase 2 detailed design" section. It carries a raku-measured leaf
-classification table, a behaviour-preserving-by-construction invariant (in Phase 2 the
-new leaf variant is a pure annotation: every consumer outside `src/rakuast/` treats it
-identically to `Expr::Whatever`), the converter/metadata edits, the conversion of the
-three remaining eager autoprime sites, and a dual-oracle test plan. `Q[* + 1].AST` still
-errors until it lands. Phase 3 (RakuAST write / `EVAL`) and Phase 4 (the thunky-operator
-priming correctness fix, which is still live and still produces silently wrong results
-for `(1..10).grep(* > 3 && * < 8)`) remain designed only at the ADR's outline level.
+shipped 2026-08-20 (same day as its design): `src/whatever_curry/mark.rs` classifies
+every `*` leaf post-parse per the ADR's raku-measured table, `Q[* + 1].AST` now renders
+correctly, and the change was verified behaviour-preserving by construction (`is_whatever`
+treats both leaf variants identically everywhere outside `src/rakuast/`) plus a new
+dual-oracle `t/rakuast-whatever-code.t` (68 assertions, passes verbatim under mutsu and
+the system raku). See the ADR's "Phase 2 outcome" section for the full change list,
+including two adjacent RakuAST operator-name rendering bugs (`!~~`, `=>`) it fixed along
+the way and one latent runtime bug it fixed as a side effect (`$_ ~~ *` previously
+shadowed the caller's topic instead of reading it dynamically).
+
+**Phase 4 (the thunk-barrier priming correctness fix) is now the highest-payoff remaining
+slice** — it is a genuine, user-visible correctness bug independent of RakuAST
+(`(1..10).grep(* > 3 && * < 8)` silently returns the wrong list, `5 6` instead of raku's
+`1 2 3 4 5 6 7`), not merely a `.AST` gap, and Phase 2's leaf split is its prerequisite
+(the ADR's `plant()` scope authority needs to read the classified leaves). See the ADR's
+"Phasing" section for the exact scope (thunk barriers: `&&`/`||`/`//`/`and`/`or`/
+`andthen`/`orelse`/`notandthen`/ternary) and its "Phase-4 prerequisite" section (the
+chained-comparison `&&`-duplication trap that must be resolved first, e.g. via a new
+`Expr::ChainedCompare` node). Phase 3 (RakuAST write / `EVAL` of a hand-constructed
+`WhateverCode::Argument` tree) remains designed only at the ADR's outline level and has
+no roast/correctness payoff of its own (RakuAST has zero roast dependents, ADR-0011
+ANALYSIS §7-9) — pick it up after Phase 4, not before.
 
 The remaining items on both lists above are still undesigned.
 

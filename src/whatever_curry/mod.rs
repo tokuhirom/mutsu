@@ -25,6 +25,7 @@
 //! No runtime behaviour changes.
 
 mod build;
+pub(crate) mod mark;
 mod replace;
 
 pub(crate) use build::{build_closure, make_wc_param};

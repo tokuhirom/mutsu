@@ -52,10 +52,13 @@ impl Compiler {
                 let idx = self.code.add_constant(Value::WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));
             }
-            // Not yet produced by the parser (ADR-0033 Phase 1 defers only the
-            // closure-building step; leaf-splitting into a real `WhateverArg`
-            // producer is Phase 2/4). Compile identically to a bare `Whatever`
-            // so the arm is reachable-but-harmless until then.
+            // A `*` marked as a priming argument by the post-parse classifier
+            // (`src/whatever_curry/mark.rs`, ADR-0033 Phase 2). This is a pure
+            // read-direction annotation for RakuAST (`.AST` renders it as
+            // `RakuAST::WhateverCode::Argument`) — it must keep compiling
+            // identically to a bare `Whatever` so runtime behaviour is
+            // unchanged (`(1 x *).WHAT` still autoprimes at runtime even
+            // though the classifier marks that `*` `WhateverArg`).
             Expr::WhateverArg => {
                 let idx = self.code.add_constant(Value::WHATEVER);
                 self.code.emit(OpCode::LoadConst(idx));

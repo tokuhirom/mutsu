@@ -824,11 +824,26 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 ],
             })
         }
-        // The `*` whatever term.
+        // The `*` whatever term (a *value*, not a priming argument).
         Expr::Whatever => Ok(RakuAstNode {
             class: RakuAstClass::TermWhatever,
             fields: Vec::new(),
         }),
+        // A `*` that participates in Whatever-priming (ADR-0033 Phase 2): the
+        // left operand of `* + 1` is `WhateverCode::Argument`, not `Term::Whatever`.
+        Expr::WhateverArg => Ok(RakuAstNode {
+            class: RakuAstClass::WhateverCodeArgument,
+            fields: Vec::new(),
+        }),
+        // `**` — read direction only; priming for `**` is out of scope (ADR-0033 §1).
+        Expr::HyperWhatever => Ok(RakuAstNode {
+            class: RakuAstClass::TermHyperWhatever,
+            fields: Vec::new(),
+        }),
+        // A `WhateverCurry` marker carries no RakuAST node of its own — Rakudo's
+        // tree has no priming-scope wrapper (ADR-0033 §5); the scope is derived
+        // structurally at lowering. Convert straight through to the body.
+        Expr::WhateverCurry(body) => convert_expr(body),
         // `do { … }` -> `StatementPrefix::Do(Block)`. A labelled do stays the boundary.
         Expr::DoBlock { body, label } => {
             if label.is_some() {
@@ -1104,7 +1119,11 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             ..
         } => {
             if *is_whatever_code {
-                return Err(unsupported("Whatever-code closure"));
+                // ADR-0033 Phase 2 §2.5: reachable only from the still-eager
+                // `* += 1` / `* -= 2` compound-assignment autoprime path (it
+                // needs a `MetaInfix::Assign` class mutsu lacks; a separate,
+                // operator-cluster-wide slice, not Whatever-specific).
+                return Err(unsupported("Whatever-code closure (compound assignment)"));
             }
             pointy_block_from_lambda(param, body)
         }
@@ -1116,8 +1135,11 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             return_type,
             ..
         } => {
-            if *is_rw || *is_whatever_code || return_type.is_some() {
-                return Err(unsupported("`is rw` / Whatever / typed pointy block"));
+            if *is_whatever_code {
+                return Err(unsupported("Whatever-code closure (compound assignment)"));
+            }
+            if *is_rw || return_type.is_some() {
+                return Err(unsupported("`is rw` / typed pointy block"));
             }
             pointy_block(param_defs, body)
         }
