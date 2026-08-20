@@ -609,7 +609,12 @@ impl Interpreter {
                                 )),
                             }
                         }
-                        Self::push_regex_interpolated_alternation(&mut out, &alts);
+                        // ADR-0046 Slice 1 / ADR §2.1 probe R: `@$var` array
+                        // deref interpolation terminates the declarative LTM
+                        // prefix unconditionally, same as bare `@name` below --
+                        // no `constant` exemption exists for the `@` sigil
+                        // (probe J), unlike the `$`-scalar case.
+                        Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
                         i = j;
                         continue;
                     }
@@ -665,7 +670,12 @@ impl Interpreter {
                             }
                         }
                     }
-                    Self::push_regex_interpolated_alternation(&mut out, &alts);
+                    // ADR-0046 Slice 1 / ADR §2.1 probe I/J: bare `@name`
+                    // interpolation terminates the declarative LTM prefix
+                    // unconditionally -- unlike the `$`-scalar case, there is
+                    // no `constant` exemption for `@` (probe J: `constant
+                    // @copts` terminates exactly like `my @opts`).
+                    Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
                     i = j;
                     continue;
                 } else if j < chars.len() && chars[j] == '(' {
@@ -701,7 +711,10 @@ impl Interpreter {
                             }
                         }
                     }
-                    Self::push_regex_interpolated_alternation(&mut out, &alts);
+                    // ADR-0046 Slice 1 / ADR §2.1 probe Q: `@(...)`
+                    // contextualizer interpolation terminates the declarative
+                    // LTM prefix unconditionally, same as bare `@name` above.
+                    Self::push_regex_interpolated_alternation_marked(&mut out, &alts);
                     i = j;
                     continue;
                 }

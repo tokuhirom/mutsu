@@ -1,6 +1,20 @@
 # ADR-0046: Proto-token dispatch shares the one LTM ranking mechanism, and interpolation provenance covers arrays and token bodies
 
-- **Status**: Proposed (design complete; implementation not started).
+- **Status**: Partially implemented. **Slice 1 (array/regex-object
+  interpolation provenance, §4 item 1) landed 2026-08-20**: the three
+  `push_regex_interpolated_alternation` call sites (`@name`, `@$var`,
+  `@(...)`) and `array_var_alternation_atom` (`<@var>` / `<?@var>` /
+  `<!@var>`) now set `RegexToken::from_runtime_interpolation`, and the
+  `<$var>` regex-value reroute was found to need (and got) the same
+  unconditional marking (§2.1 probe S). Pin: `t/regex-ltm-interpolation-provenance.t`
+  (all 8 probes I/J/K/L/M/Q/R/S, dual-oracle verified against `raku`). A
+  latent bug this fix unmasked (fixing `array`'s own quantifier-separator
+  interpolation, and a pre-existing, unrelated named-subrule-call LTM
+  over-crediting gap) was fixed/documented in the same slice — see
+  `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`
+  for the latter, left for Slices 3/4. **Slices 2-5 (bound/token-body scalar
+  provenance, mechanism unification, ledger) are next**, in the order §4
+  specifies.
 - **Context**: `todo/deep/proto-token-ltm-and-interpolation-provenance.md` (renamed from
   `ltm-inline-unbounded-quantifier-vs-array-tie.md`, whose recorded root cause this ADR
   corrects). Builds directly on [ADR-0009](0009-regex-code-assertion-execution-model.md)
@@ -231,12 +245,30 @@ to unify onto.
 
 ## 4. Implementation slices
 
-1. **Slice 1 — array interpolation provenance** (Decision 2 items 1 and 3). Pin: a new
-   `t/regex-ltm-interpolation-provenance.t` carrying §2.1's probes I/J/K/L/M/Q/R/S.
-   Expected flips: the `array` row of §2.2 mechanism 1 turns green; mechanism 3 stays red.
-   Watch: `roast/S05-metasyntax/longest-alternative.t` (whitelisted, 62/62) and the
-   `<@var>`-using batteries (YAMLish's grammar) — an array interpolation that now
-   terminates the prefix can reorder a branch choice that previously happened to be right.
+1. **Slice 1 — array interpolation provenance (landed 2026-08-20)** (Decision 2 items 1
+   and 3). Pin: `t/regex-ltm-interpolation-provenance.t` carrying §2.1's probes
+   I/J/K/L/M/Q/R/S. Expected flips: the `array` row of §2.2 mechanism 1 turns green;
+   mechanism 3 stays red. Watch: `roast/S05-metasyntax/longest-alternative.t`
+   (whitelisted, 62/62 — still green) and the `<@var>`-using batteries (YAMLish's
+   grammar, `t/yaml-battery.t` — still green) — an array interpolation that now
+   terminates the prefix can reorder a branch choice that previously happened to be
+   right.
+   - **Implementation notes beyond the plan:** (a) wrapping the spliced alternation in
+     `NON_DECLARATIVE_INTERP_MARK` *before* calling `push_regex_interpolated_alternation`
+     hides the preceding `||`/`|` from that function's own separator sniffing — the mark
+     must be inserted after the separator lookup runs (see
+     `push_regex_interpolated_alternation_marked` in `regex_parse_ltm.rs`), or
+     `roast/S05-metasyntax/sequential-alternation.t` and `litvar.t` regress. (b) the
+     interpolation-span quantifier-wrap arm (the `NON_DECLARATIVE_INTERP_MARK` closing
+     handler in `regex_parse_core.rs`) never consumed a trailing `%`/`%%` separator on a
+     quantified interpolated array (`@arr ** 4 % sep`); factored the separator-consuming
+     logic out of the main per-atom loop into `consume_repeat_separator` so both sites
+     share it. (c) also found and documented (not fixed — out of Slice 1's scope, folded
+     into future Slice 3/4 work) a pre-existing, unrelated LTM gap where a bare
+     named-subrule call with an unbounded quantifier and no internal stopper wrongly gets
+     full/greedy ranking credit — see
+     `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`;
+     `t/grammar-body-my-lexical-scope.t` test 5 was reshaped to stop depending on it.
 2. **Slice 2 — bound/token-body scalar provenance** (Decision 2 item 2). Pin: the `scalar`
    row of §2.2 as a grammar test. Watch: `roast/S05-grammar/*`, `roast/S05-modifier/my.t`
    (ADR-0022 Slice 5 already had to fix a `:our` fallback that depended on the measurement
