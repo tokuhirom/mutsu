@@ -553,7 +553,15 @@ impl Interpreter {
                 }
             }
             ValueView::Package(type_name) => actual_val.is_some_and(|actual| {
-                crate::value::types::what_type_name(actual) == type_name.resolve()
+                // ADR-0047 P1: a lexically-scoped class's type object carries
+                // its mangled storage name (`Foo\u{0}<decl-id>`), while
+                // `what_type_name` on the actual value reports the demangled,
+                // user-facing name. Demangle the matcher side too, or a
+                // `got => TestSink` matcher against a `my class TestSink`
+                // never matches (Cro::Core composer/connection-conditional).
+                let matcher_name = type_name.resolve();
+                crate::value::types::what_type_name(actual)
+                    == crate::value::user_facing_type_name(&matcher_name).as_ref()
             }),
             ValueView::Junction { kind, values } => {
                 let mut matches = values
