@@ -328,6 +328,7 @@ impl Interpreter {
                 if let Some(v) = e.return_value {
                     last = v;
                 }
+                self.stack.truncate(stack_base);
                 loan_env!(self, set_when_matched(true));
             }
             Err(e) => {
