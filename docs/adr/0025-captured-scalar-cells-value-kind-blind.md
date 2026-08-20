@@ -301,7 +301,14 @@ this slice.
 - **Merge-order / authoritative widening**: cannot satisfy hijack
   protection and liveness simultaneously (deep ticket; the
   `my $s = 0; @cb.push({ $s }); $s = 42` regression example pins the
-  liveness direction).
+  liveness direction). **Superseded on this point by ADR-0054 (2026-08-20):**
+  the counterexample is a *mutated* capture, hence boxed under the post-slice-1
+  cell population, hence satisfied by the cell even under an unconditional
+  closure-wins merge. ADR-0054 argues closure-wins + cells satisfies both
+  directions and proposes retiring `merge_all` and the vouch sets accordingly;
+  it also records a residue slice 2's close-out could not see (a *read-only*
+  capture of a lexical handed to a call gets neither a vouch nor a cell — see
+  ADR-0054 §1.2). Nothing else in this ADR is superseded.
 - **Lazy collision-triggered boxing**: shadow introduction has no single
   chokepoint; an incomplete detector yields flaky, load-order-dependent
   wrong answers (ADR-0024 rejected the same idea with precedent
