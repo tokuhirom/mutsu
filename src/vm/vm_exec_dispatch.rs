@@ -4797,7 +4797,7 @@ impl Interpreter {
             }
             OpCode::WheneverScope {
                 body_idx,
-                analysis_cc_idx: _,
+                analysis_cc_idx,
                 param_idx,
                 target_var_idx,
                 param_type_idx,
@@ -4806,6 +4806,7 @@ impl Interpreter {
                 self.exec_whenever_scope_op(
                     code,
                     *body_idx,
+                    *analysis_cc_idx,
                     param_idx,
                     target_var_idx,
                     param_type_idx,
