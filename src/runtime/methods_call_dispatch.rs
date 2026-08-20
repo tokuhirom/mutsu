@@ -2888,9 +2888,13 @@ impl Interpreter {
         // *before* user-method resolution; that dispatch consults the flag to
         // fall through to the user method and clears it there (see the
         // `skip_pseudo_method_native` read at the top of that function).
+        // WHICH/WHY are excluded here: unlike the other six MOP pseudo-methods,
+        // raku treats them as ordinary, overridable methods in every call form
+        // (not just a compile-time-literal quoted call), so a user-defined
+        // override must be able to shadow the native/macro default below.
         let is_pseudo_method = matches!(
             method,
-            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+            "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
         );
         let bypass_native_fastpath = self.should_bypass_native_fastpath(
             &target,
@@ -3815,7 +3819,10 @@ impl Interpreter {
         // `.WHAT` and friends are *macros*, not builtin methods: `$o.WHAT` is the
         // type object even when the class declares `method WHAT`, and only the
         // quoted `$o."WHAT"()` reaches it (roast/S12-methods/what.t). They keep
-        // their existing `skip_pseudo_method_native` handling.
+        // their existing `skip_pseudo_method_native` handling. `WHICH`/`WHY`
+        // are excluded from `is_pseudo_method` (see above), so they fall into
+        // this ordinary `class_has_user_method` shadowing check like any other
+        // method name, in every call form.
         let shadows_builtin = !is_pseudo_method
             && match target.view() {
                 ValueView::Instance { class_name, .. } => {

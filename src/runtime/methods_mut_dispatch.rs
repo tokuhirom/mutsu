@@ -2757,9 +2757,13 @@ impl Interpreter {
             if skip_pseudo {
                 self.skip_pseudo_method_native = None;
             }
+            // WHICH/WHY are excluded here: unlike the other six MOP
+            // pseudo-methods, raku treats them as ordinary, overridable
+            // methods in every call form (not just a compile-time-literal
+            // quoted call), so a user-defined override must win below.
             let is_pseudo_method = matches!(
                 method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
             );
             if self.has_user_method(&class_name.resolve(), method)
                 && (!is_pseudo_method || skip_pseudo)
