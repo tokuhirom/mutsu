@@ -125,6 +125,26 @@ impl Interpreter {
         {
             return Some(Ok(v));
         }
+        // `.WHICH`/`.WHY` are ordinary, overridable methods in raku — unlike the
+        // other six MOP pseudo-methods (DEFINITE/WHAT/WHO/HOW/WHERE/VAR), which
+        // are compile-time macros that raku never lets a same-named user method
+        // override, regardless of call syntax. This is the single shared guard
+        // for every call form that reaches `try_native_method` (bareword,
+        // `.$m`/`."$m"()` dynamic, hyper `».WHICH`): when the receiver's class
+        // defines its own WHICH/WHY, defer to the interpreter so the override
+        // wins over the native identity hash / default Pod-doc answer.
+        if matches!(method_name.as_str(), "WHICH" | "WHY") {
+            let class_name = match target.view() {
+                ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                ValueView::Package(name) => Some(name.resolve()),
+                _ => None,
+            };
+            if let Some(cn) = class_name
+                && self.has_user_method(&cn, &method_name)
+            {
+                return None;
+            }
+        }
         // `.Capture` that must call user methods / drain a live source (Channel/
         // Supply, or a non-Str Pair key needing `.Str`) is interpreter-aware; other
         // targets fall through to the pure native `value_to_capture` below.

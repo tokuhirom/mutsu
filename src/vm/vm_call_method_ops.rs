@@ -975,10 +975,13 @@ impl Interpreter {
         }
         // Also skip native if the target has a user-defined method with this name,
         // but NOT for pseudo-methods like DEFINITE, WHAT, etc. which are macros.
+        // WHICH/WHY are exceptions: unlike the other six, raku treats them as
+        // ordinary, overridable methods in every call form (not just quoted),
+        // so a user override must win here too.
         if !skip_native
             && !matches!(
                 method,
-                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHY" | "WHICH" | "WHERE" | "VAR"
+                "DEFINITE" | "WHAT" | "WHO" | "HOW" | "WHERE" | "VAR"
             )
         {
             let class_name = match target.view() {
