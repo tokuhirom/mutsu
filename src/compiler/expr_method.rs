@@ -127,6 +127,24 @@ impl Compiler {
             });
             return;
         }
+        // ADR-0057: `.VAR` on a captured/free scalar needs the SAME decl-site
+        // boxing guarantee `WrapVarRef` sites get, so a reflection Instance
+        // built from the shared cell's own address (see the VAR dispatch in
+        // `methods_mut_dispatch.rs`) is identical no matter which frame calls
+        // `.VAR` — the target's container must actually exist as a shared
+        // cell by the time a nested closure/named-sub/method reads it, not
+        // just when the SAME frame that declared it reads it back. Restricted
+        // to a bare `$`-sigil variable target (matching ADR-0032 D1's own
+        // `$`-only restriction) so `@`/`%` and non-variable targets (`$!`,
+        // sigilless attrs) are unaffected.
+        if name.resolve() == "VAR"
+            && args.is_empty()
+            && modifier.is_none()
+            && !quoted
+            && matches!(target, Expr::Var(_))
+        {
+            self.register_container_ref_capture_if_free(&target_name);
+        }
         self.compile_expr(target);
         let arity = args.len() as u32;
         let arg_sources_idx = self.add_arg_sources_constant(args);

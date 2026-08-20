@@ -96,16 +96,18 @@ plan 19;
 
 # Probe X: `.VAR.WHICH` identity across a closure boundary. NOT fixed by
 # this ADR -- `.VAR` never goes through WrapVarRef (it reads the target via
-# a plain GetGlobal/GetLocal, already dereferenced, and its reflection
-# object's identity comes from a separate name-keyed `var_meta_value` env
-# cache that has no cross-frame writeback of its own). Confirmed a
-# pre-existing, unrelated bug: even the named-sub mechanism this ADR
-# generalizes (which predates it) fails the same shape. See
-# todo/tickets/var-which-identity-across-closure-boundary.md.
+# a plain GetGlobal/GetLocal, already dereferenced). Fixed separately by
+# ADR-0057 (docs/adr/0057-var-reflection-identity-cell-address.md): a `.VAR`
+# call on a free/captured `$`-sigil variable now registers the SAME
+# container-capture edge a `WrapVarRef` site would (forcing the variable to
+# be a shared cell by declaration), and the VAR dispatch derives the
+# reflection Instance's id from that cell's own stable address instead of
+# the per-frame `var_meta_value` cache's monotonic counter -- so every frame
+# holding the same cell computes the same `.WHICH`, with no cross-frame
+# cache writeback needed at all.
 {
     my $v = 1;
     my $mk = -> { $v.VAR.WHICH };
-    todo 'X: .VAR.WHICH cross-closure identity is a separate, pre-existing bug (see todo/tickets/var-which-identity-across-closure-boundary.md)';
     is $mk(), $v.VAR.WHICH, 'X: .VAR.WHICH identity matches across a closure boundary';
 }
 

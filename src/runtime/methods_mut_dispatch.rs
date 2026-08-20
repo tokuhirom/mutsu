@@ -280,7 +280,34 @@ impl Interpreter {
                 Value::package(Symbol::intern("Mu"))
             };
             attributes.insert("of".to_string(), of_val);
-            let meta = Value::make_instance(Symbol::intern(class_name), attributes);
+            // ADR-0057: when `target_var` is CURRENTLY a shared `ContainerRef`
+            // cell (the compiler forces this for a captured/free `.VAR`
+            // target — see `register_container_ref_capture_if_free`'s call
+            // site in `compile_expr_method_on_var`), derive the reflection
+            // Instance's identity from the cell's own stable address instead
+            // of the next value from the process-global monotonic counter.
+            // `.WHICH` is purely `"{class_name}|{id}"` (see the `WHICH`
+            // dispatch), so any two frames holding the SAME cell — the
+            // declaring frame and every closure/named-sub/method that
+            // captured it — independently derive the SAME id and therefore
+            // an identical `.WHICH`, with no cross-frame cache write-back of
+            // any kind: identity falls out of already-shared structure
+            // rather than a synthetic, frame-local cache entry. `target` at
+            // this point is always the already-dereferenced value (`GetGlobal`
+            // /`GetUpvalue` never leave a cell on the stack), so the raw env
+            // entry is peeked directly. A plain (never-captured-by-`.VAR`)
+            // variable never gets boxed and keeps the existing same-frame
+            // `var_meta_value` cache identity, unchanged.
+            let cell_id = self.env.get(target_var).and_then(|v| match v.view() {
+                ValueView::ContainerRef(cell) => Some(crate::gc::Gc::as_ptr(&cell) as usize as u64),
+                _ => None,
+            });
+            let meta = match cell_id {
+                Some(id) => {
+                    Value::make_instance_with_id(Symbol::intern(class_name), attributes, id)
+                }
+                None => Value::make_instance(Symbol::intern(class_name), attributes),
+            };
             self.set_var_meta_value(target_var, meta.clone());
             return Ok(meta);
         }
