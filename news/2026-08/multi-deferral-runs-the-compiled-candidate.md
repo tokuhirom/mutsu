@@ -12,7 +12,7 @@ candidate when the plan attached none.
 Measured effect: `t/multi-where-otf-dispatch.t` went from 103 recompiles at
 `calls.rs`'s `run_block(&def.body)` to 0. Those 103 were the single largest
 contributor to that site across the whole `t/` suite (144 hits total — see
-`todo/deep/c6d-interpreter-body-sites-are-mostly-token-bodies.md` for the survey
+`news/2026-08/c6d-interpreter-body-sites-are-mostly-token-bodies.md` for the survey
 this slice came out of).
 
 ## The entry point this must *not* use
