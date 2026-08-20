@@ -768,9 +768,12 @@ architectural outcome.
   matching raku's own walk — an invocant-aware probe was stricter than its own target) and
   documented, without fixing, a pre-existing gap: `resolve_sequence`'s per-level lookup silently
   misses an un-punned role's own methods, since the canonical `method_entries` table is only ever
-  populated from classes. Filed as `todo/deep/method-entries-never-covers-unpunned-roles.md`
+  populated from classes. Filed as `method-entries-never-covers-unpunned-roles.md`
   (also feeds several real production dispatch paths, so fixing it is out of this shadow-only
-  box's scope).
+  box's scope). **Closed 2026-08-20** by F4a's read policy plus F4c design note (1)'s storage
+  decision — see `news/2026-08/method-entries-never-covers-unpunned-roles.md`. The shadow-side
+  residual (this box's own comparison sequence is still role-blind while E9a's real walker is
+  not) is `todo/tickets/e8a-deferral-shadow-sequence-is-role-blind.md`.
   **E8b (2026-08-12):** `Registry::proto_methods` folded into `MethodEntry.proto`, shadow mode.
   Found and fixed a real bug in the *existing* sync logic (not the new probe): a row holding only
   a freshly-written `.proto` (no builtin/user_candidates/accessor) failed
@@ -794,8 +797,9 @@ architectural outcome.
   follow-up slices the same week (role-shadowed method wrongly in the defer chain, `is Array`
   native-push fallback not pushing/not carrying args, an explicit child proto wrongly assuming
   parent candidates — each raku-verified and pinned); `method-entries-never-covers-unpunned-roles.md`
-  (a separate production-dispatch gap, not caused by this box) and
-  `proto-method-body-skipped-for-type-object-invocant.md` remain open.
+  (a separate production-dispatch gap, not caused by this box) has since been closed too
+  (`news/2026-08/method-entries-never-covers-unpunned-roles.md`), and
+  `proto-method-body-skipped-for-type-object-invocant.md` remains open.
   **E9a (2026-08-12):** `resolve_deferral_expansion` replaced `resolve_all_methods_with_owner` as
   the ordering source at both "remaining"-building call sites, exact-hit verified against raku.
   The `DispatchCursor{seq, next, invocant, args}` index-based rewrite from the original design
@@ -1079,7 +1083,8 @@ architectural outcome.
   - [x] **F4a — Decide and implement the role-owner read policy.** `Registry::method_entries` has
     no row at all for a role that is never `.new`-punned (the common case — a role only ever
     `does`-composed into a class, never instantiated directly): see
-    `todo/deep/method-entries-never-covers-unpunned-roles.md`. **Do NOT close this gap by
+    `news/2026-08/method-entries-never-covers-unpunned-roles.md` (the gap ticket, closed out
+    2026-08-20 once this box and F4c section (1) between them settled it). **Do NOT close this gap by
     populating role-owner rows into `Registry::method_entries` through the shared
     `sync_user_method_entries`/`get_method_overloads` write-and-read path** — tried exactly that
     on 2026-08-15 (mirror the class branch, populate on role-registration-finish) and it
@@ -1314,7 +1319,7 @@ architectural outcome.
     resulting class/role asymmetry is the point, not a defect: it makes it structurally
     impossible to feed a role-owned row to a dispatcher expecting a class-owned one, which is
     exactly the shape of the `resolve_methods_per_mro_level` `any_failed` regression (PR #6478,
-    `todo/deep/method-entries-never-covers-unpunned-roles.md`). If a role-side drift is ever
+    `news/2026-08/method-entries-never-covers-unpunned-roles.md`). If a role-side drift is ever
     *observed*, file it as a new box then; do not pre-build the table.
 
     **(2) The full-name-enumeration index.** Add one private field to `Registry`:

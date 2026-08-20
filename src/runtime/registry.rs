@@ -1040,7 +1040,7 @@ impl Registry {
     /// Fallback source for a role's own methods when `owner` is a role that was
     /// never `.new`-punned (ADR-0019 F4a): `Registry::method_entries` (and thus
     /// `get_method_overloads`/`user_method_overloads`) has no row at all for such
-    /// a role — see `todo/deep/method-entries-never-covers-unpunned-roles.md`.
+    /// a role — see `news/2026-08/method-entries-never-covers-unpunned-roles.md`.
     /// Reads `Registry::roles` directly, the raw composition-input storage that
     /// is always populated regardless of punning. Role method definitions are
     /// composition inputs, not dispatch entries: the dispatchable form is always

@@ -45,10 +45,23 @@
 //! candidate the real walker still finds (a role's un-flattened method the
 //! composing class overrides with its own, or a role-qualified call
 //! `self.R::name()`). Full root-cause and fix plan in
-//! `todo/deep/method-entries-never-covers-unpunned-roles.md` — not fixed here
+//! `news/2026-08/method-entries-never-covers-unpunned-roles.md` — not fixed here
 //! because `method_entries` also feeds several REAL dispatch paths (winner
 //! selection included), so populating it for roles is a real-behavior-change
 //! outside this shadow-only box's scope.
+//!
+//! **The paragraph above is kept for its history but is stale in its mechanics
+//! and its target** (2026-08-20 re-audit): `sync_user_method_entries` no longer
+//! exists (ADR-0019 F4c-9b) and role exclusion from `method_entries` is stated
+//! policy now, not a writer's early return (F4c design note (1)); and the real
+//! deferral walker is [`Interpreter::resolve_deferral_expansion`] (E9a), not
+//! `resolve_all_methods_with_owner`. The real walker consults
+//! `Registry::get_method_overloads_with_role_fallback` while
+//! [`Self::resolve_sequence`] here still does not, which is what keeps this
+//! divergence alive. Fixing it is a shadow-instrument change only (thread a
+//! role-fallback mode into `resolve_sequence` for the shadow caller alone —
+//! winner selection must keep the role-blind lookup, ADR-0019 F4a):
+//! `todo/tickets/e8a-deferral-shadow-sequence-is-role-blind.md`.
 
 use super::*;
 use crate::builtins::native_method_row::{NativeArityMask, native_row_servable};
