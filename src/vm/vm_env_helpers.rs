@@ -722,12 +722,24 @@ impl Interpreter {
     /// Writing `env` as well would put the module's value back under the key the
     /// loading scope's own `my` uses, which is the collision this store exists to
     /// end.
+    ///
+    /// ADR-0039 slice 1: a whole-container (`@`/`%`) reassignment must go
+    /// through [`Self::cell_store_preserving_container_identity`], which copies
+    /// the new contents INTO the cell's existing backing `Gc` node rather than
+    /// swapping the cell to point at a fresh one. A plain `clone_from` here
+    /// orphans every by-value holder of the old `Gc` (e.g. a raw-captured
+    /// argument evaluated before this write that still references the old
+    /// array/hash node directly) — exactly the aliasing hazard
+    /// `cell_store_preserving_container_identity`'s own doc comment describes.
+    /// This bit for scalars only by accident: a scalar has no secondary `Gc`
+    /// node for another holder to alias independently of the cell, so the
+    /// naive replace was invisible until `@`/`%` joined this store.
     pub(super) fn unit_scope_lexical_write(&mut self, name: &str, val: &Value) -> bool {
         let Some(slot) = self.unit_lexical_slot(name) else {
             return false;
         };
         if let ValueView::ContainerRef(cell) = slot.view() {
-            cell.lock().unwrap().clone_from(val);
+            Self::cell_store_preserving_container_identity(name, &cell, val);
             return true;
         }
         false

@@ -753,7 +753,20 @@ impl Interpreter {
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
                     let flat_values = nil_to_elem_default(self, flat_values);
-                    let result = if let Some(slot) = self.env.get_mut(&key)
+                    // ADR-0039 slice 1: `key` may be a compunit unit-lexical
+                    // `@`/`%` (module file-scope, or a mainline named sub's
+                    // captured free variable), whose authoritative storage is a
+                    // `ContainerRef` cell rather than a plain `env` entry. A raw
+                    // `self.env.get_mut(&key)` never matches `with_array_mut`
+                    // against that cell (it demands `ValueView::Array`
+                    // directly), so it silently fell to the `else` branch below,
+                    // which rebuilds a DETACHED array from the (possibly stale)
+                    // `target` snapshot and overwrites `env[key]` with it —
+                    // permanently severing the cell from `env`'s copy of the
+                    // name. `env_root_descended_mut` is the same
+                    // cell-preferring, cell-descending chokepoint the fast-path
+                    // array mutators (`try_native_array_mut`) already use.
+                    let result = if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
                             // Container identity (§3): append through a shared node.
@@ -783,7 +796,10 @@ impl Interpreter {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
                     let normalized_args = nil_to_elem_default(self, normalized_args);
-                    let result = if let Some(slot) = self.env.get_mut(&key)
+                    // ADR-0039 slice 1: see the twin comment on the `append`
+                    // arm above — `env_root_descended_mut` is required here for
+                    // the same reason.
+                    let result = if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
                             // Container identity (§3): insert through a shared node.
@@ -815,7 +831,9 @@ impl Interpreter {
                     );
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
-                    let result = if let Some(slot) = self.env.get_mut(&key)
+                    // ADR-0039 slice 1: see the twin comment on the `append`
+                    // arm above.
+                    let result = if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, kind| {
                             let kind = *kind;
                             // Container identity (§3): insert through a shared node.
@@ -851,26 +869,29 @@ impl Interpreter {
                             args.len() + 1
                         )));
                     }
-                    if let Some(v) = self.env.get(&key)
+                    // ADR-0039 slice 1: see the twin comment on the `append`
+                    // arm above — `env_root_descended_mut` (not a raw
+                    // `self.env.get`/`get_mut`) is required so a unit-lexical
+                    // `@`/`%`'s `ContainerRef` cell is found and descended.
+                    if let Some(v) = self.env_root_descended_mut(&key)
                         && let ValueView::Array(_, kind) = v.view()
                         && kind.is_lazy()
                     {
                         return Err(RuntimeError::cannot_lazy("pop"));
                     }
                     let slot_is_array = matches!(
-                        self.env.get(&key).map(Value::view),
+                        self.env_root_descended_mut(&key).map(|v| v.view()),
                         Some(ValueView::Array(..))
                     );
                     let out = if slot_is_array {
                         // Avoid `Arc::make_mut` on an empty array: it would clone a
                         // shared Arc and drop the native type metadata keyed by the
                         // old pointer, demoting `array[num]` to a plain Array.
-                        if matches!(self.env.get(&key).map(Value::view), Some(ValueView::Array(a, _)) if a.is_empty())
+                        if matches!(self.env_root_descended_mut(&key).map(|v| v.view()), Some(ValueView::Array(a, _)) if a.is_empty())
                         {
                             return Ok(make_empty_array_failure_what("pop", &empty_what));
                         }
-                        self.env
-                            .get_mut(&key)
+                        self.env_root_descended_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
                                 // Container identity (§3): pop through a shared node.
@@ -905,17 +926,18 @@ impl Interpreter {
                             args.len() + 1
                         )));
                     }
+                    // ADR-0039 slice 1: see the twin comment on the `append`
+                    // arm above.
                     let slot_is_array = matches!(
-                        self.env.get(&key).map(Value::view),
+                        self.env_root_descended_mut(&key).map(|v| v.view()),
                         Some(ValueView::Array(..))
                     );
                     let out = if slot_is_array {
-                        if matches!(self.env.get(&key).map(Value::view), Some(ValueView::Array(a, _)) if a.is_empty())
+                        if matches!(self.env_root_descended_mut(&key).map(|v| v.view()), Some(ValueView::Array(a, _)) if a.is_empty())
                         {
                             return Ok(make_empty_array_failure_what("shift", &empty_what));
                         }
-                        self.env
-                            .get_mut(&key)
+                        self.env_root_descended_mut(&key)
                             .unwrap()
                             .with_array_mut(|arc_items, _| {
                                 // Container identity (§3): shift through a shared node.
@@ -991,8 +1013,11 @@ impl Interpreter {
                         removed
                     }
                     // Pre-resolve callable arguments (WhateverCode like *-3)
-                    // before borrowing the array mutably.
-                    let arr_len = match self.env.get(&key).map(Value::view) {
+                    // before borrowing the array mutably. ADR-0039 slice 1: see
+                    // the twin comment on the `append` arm above —
+                    // `env_root_descended_mut` finds a unit-lexical `@`/`%`'s
+                    // `ContainerRef` cell that a raw `self.env.get` misses.
+                    let arr_len = match self.env_root_descended_mut(&key).map(|v| v.view()) {
                         Some(ValueView::Array(v, ..)) => v.len(),
                         _ => match target.view() {
                             ValueView::Array(v, ..) => v.len(),
@@ -1274,7 +1299,16 @@ impl Interpreter {
                             .collect(),
                         ));
                     }
-                    let removed = if let Some(slot) = self.env.get_mut(&key)
+                    // ADR-0039 slice 1: see the twin comment on the `append`
+                    // arm above — this is the site that regressed
+                    // `roast/S32-array/splice.t`'s self-referential splice
+                    // rows (`splice(@a, 10, 0, @a)` etc.) once `@`/`%` joined
+                    // `unit_lexicals`: a raw `self.env.get_mut(&key)` never
+                    // matched the cell, so the `else` branch below silently
+                    // detached `env[key]` from the cell with a fresh plain
+                    // array, and every later read/write through the cell (or
+                    // through `env`) diverged from then on.
+                    let removed = if let Some(slot) = self.env_root_descended_mut(&key)
                         && let Some(r) = slot.with_array_mut(|arc_items, _| {
                             // Container identity (§3): splice through a shared node.
                             let items = crate::value::gc_data_mut(arc_items);
