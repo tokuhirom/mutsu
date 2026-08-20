@@ -5803,9 +5803,16 @@ impl CompiledCode {
                 // earn OUR same-named local a shared cell — an unrelated later
                 // `my Pair $p` then found the cell instead of its own fresh
                 // binding (roast S02-types/pair.t #181). The name stays a free
-                // var: the store still writes through to us, which is the
-                // pre-existing scope leak roast S02-types/whatever.t #45 pins.
-                // See `expr_declared_syms`.
+                // var, but its store no longer writes through to any cell we
+                // hand it: the two `SetGlobal` write-through sites
+                // (`vm_exec_dispatch.rs`, `vm_env_helpers.rs`) consult this
+                // same `expr_declared_syms` set at runtime and skip the
+                // write-through for a fresh binding. The one deliberate
+                // exception is the synthesized `WhateverCode` "promoted"
+                // declaration, which is excluded from `expr_declared_syms` on
+                // purpose because it lexically belongs to the enclosing block
+                // and therefore MUST write through (roast
+                // S02-types/whatever.t #45). See `expr_declared_syms`.
                 if nested.expr_declared_syms.contains(sym) {
                     continue;
                 }

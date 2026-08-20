@@ -39,9 +39,10 @@ All four paths were general bugs, fixed independently:
    stays logged).
 
 Pin: `t/expr-decl-lexical-no-leak.t` (sub, method, and EVAL-carrier shapes,
-plus the callee's own view of the binding). One sibling shape remains open —
-when the caller's lexical is cell-boxed and the callee is a *method*, the
-declaration writes through the captured cell:
-`todo/tickets/expr-decl-writes-through-captured-cell.md`. (Originally recorded
-as also affecting subs whose caller lexical was declared BEFORE them; the
-2026-08-20 re-verification found that half already fixed.)
+plus the callee's own view of the binding). One sibling shape — when the
+caller's lexical is cell-boxed and the callee is a *method*, the declaration
+wrote through the captured cell — was closed separately on 2026-08-20:
+`news/2026-08/expr-decl-writes-through-captured-cell.md`. (Originally recorded
+as also affecting subs whose caller lexical was declared BEFORE them; that
+half turned out to already be fixed by the time the method shape was
+investigated.)

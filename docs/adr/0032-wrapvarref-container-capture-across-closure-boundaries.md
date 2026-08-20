@@ -342,15 +342,20 @@ introduced to kill (`t/list-alias-shadowed-name.t`).
   simply keeps today's snapshot behaviour. That is a known, documented residue
   (ADR-0025 slice 3), not a new one.
 - **A new cell can make an inner expression-declared `my` clobber the owner.**
-  `todo/tickets/expr-decl-writes-through-captured-cell.md` documents the live
-  instance: an expression-position `my $g` (inside an `if` condition) compiles to
-  env-only `MarkVarDeclContext; SetGlobal` with no local slot, finds the captured
-  cell under the bare env key, and writes *through* it into the caller's
-  variable. Every name D2 newly boxes is a new candidate for that leak. Pins to
-  watch: `t/expr-decl-lexical-no-leak.t`, `roast/S02-types/whatever.t` #45,
-  `roast/S02-types/pair.t` #181. If slice 1 trips them, the correct response is
-  that ticket's fix (a fresh-binding write must *replace the env entry* rather
-  than write through an inherited cell), not narrowing D2.
+  `news/2026-08/expr-decl-writes-through-captured-cell.md` documents the
+  instance that was fixed: an expression-position `my $g` (inside an `if`
+  condition) compiles to env-only `MarkVarDeclContext; SetGlobal` with no
+  local slot, finds the captured cell under the bare env key, and used to
+  write *through* it into the caller's variable — including for a
+  class/role/submethod/instance/multi/private method body, whose
+  `CompiledCode` is registered separately from the enclosing frame and so
+  never appeared in that frame's `closure_compiled_codes`. Both `SetGlobal`
+  write-through sites (`vm_exec_dispatch.rs`, `vm_env_helpers.rs`) now consult
+  `expr_declared_syms` at runtime and skip the write-through for any
+  genuinely fresh binding, regardless of which mechanism boxed the cell — so
+  this is now a general protection, not something D2 needs to re-derive.
+  Pins: `t/expr-decl-lexical-no-leak.t`, `roast/S02-types/whatever.t` #45,
+  `roast/S02-types/pair.t` #181.
 - **Saved-frame propagation.** `docs/captured-outer-cell-sharing.md` §3 records
   that a newly formed cell must reach every `call_frames.saved_env` /
   `saved_locals` as well, or a method return rolls the cell back to the

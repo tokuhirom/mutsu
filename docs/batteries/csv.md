@@ -70,9 +70,10 @@ inside a routine (`if (my $file = %args<file> :delete)`, `Text::CSV.rakumod`'s
 `method csv`) leaked back into a same-named CALLER lexical through four
 separate return paths (free-var writeback drain, two return-merge exclusion
 gaps, and the interpreter-carrier write log). Fixed with the bundling PR;
-pin: `t/expr-decl-lexical-no-leak.t`. One shape remains open —
-`todo/tickets/expr-decl-writes-through-captured-cell.md` (method bodies only, as
-of the 2026-08-20 re-verification).
+pin: `t/expr-decl-lexical-no-leak.t`. The one remaining shape (method bodies,
+whose `CompiledCode` never entered the caller frame's
+`closure_compiled_codes`) was closed 2026-08-20 —
+`news/2026-08/expr-decl-writes-through-captured-cell.md`.
 
 ---
 
