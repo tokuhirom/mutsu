@@ -1915,6 +1915,7 @@ impl Interpreter {
             if let Some(slot) = self.find_local_slot(code, &current_alias) {
                 aliased_slots.push(slot);
             }
+            self.check_sigilless_alias_target_constraint(&current_alias, &val)?;
             self.update_local_if_exists(code, &current_alias, &val);
             self.env_mut().insert(current_alias.clone(), val.clone());
             // Sigilless attribute write: mirror an attr-twigil alias (`!x`) into

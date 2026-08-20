@@ -91,6 +91,58 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Enforce a NAME-keyed scalar's registered `var_type_constraint` before a
+    /// write reaches it through the `__mutsu_sigilless_alias::` forward chain
+    /// (a sigilless `\x := $a` bind, a sigilless routine parameter aliasing a
+    /// caller variable, or a `for LIST -> \x, $value {}` loop-param bind).
+    ///
+    /// A DIRECT write to a typed scalar's own slot is already checked at its
+    /// `SetLocal`/expression-assignment chokepoint (which consults
+    /// `var_type_constraint(name)` for that variable's OWN name). But when the
+    /// write instead reaches the typed variable *through* a sigilless alias —
+    /// `x`'s own name carries no constraint, so that chokepoint sees nothing —
+    /// the forward chain walk mirrors the raw value into the alias target's
+    /// storage with no check at all
+    /// (see `todo/deep/sigilless-alias-assignment-skips-type-constraint.md`).
+    /// This closes that gap by re-running the SAME name-keyed constraint
+    /// lookup against the alias TARGET's name at the point the value is
+    /// mirrored into its storage, so it fires uniformly regardless of which of
+    /// mutsu's several alias-propagation call sites performs the write.
+    ///
+    /// Cheap on the untyped-variable common case: `var_type_constraint` is a
+    /// plain name-keyed map lookup, and every caller of this function is
+    /// already gated behind a "has any sigilless alias ever been created"
+    /// fast-path check, so a program with no sigilless binds pays nothing.
+    pub(super) fn check_sigilless_alias_target_constraint(
+        &mut self,
+        target_name: &str,
+        val: &Value,
+    ) -> Result<(), RuntimeError> {
+        if target_name.starts_with(['@', '%', '&']) {
+            return Ok(());
+        }
+        let Some(constraint) = loan_env!(self, var_type_constraint(target_name)) else {
+            return Ok(());
+        };
+        if matches!(constraint.as_str(), "Any" | "Mu") {
+            return Ok(());
+        }
+        // A bound alias may itself hold a `ContainerRef` cell (a further bind
+        // layered on top); the constraint applies to the CONTAINED value.
+        let check_val = val.deref_container();
+        if check_val.is_nil() {
+            return Ok(());
+        }
+        if !self.type_matches_value(&constraint, &check_val) {
+            return Err(crate::runtime::utils::type_check_assignment_typed_error(
+                target_name,
+                &constraint,
+                &check_val,
+            ));
+        }
+        Ok(())
+    }
+
     /// Slice 2a: clear the aggregate held inside a shared `ContainerRef` cell
     /// (`undefine @ary` where `my $r = @ary` promoted `@ary` to a cell). Uses
     /// `Arc::make_mut` so a copy taken out of the cell (`my @copy = @ary`) is
