@@ -79,6 +79,27 @@ impl Interpreter {
         out.push(']');
     }
 
+    /// ADR-0046 Slice 1: `push_regex_interpolated_alternation`, but wraps the
+    /// spliced span in `NON_DECLARATIVE_INTERP_MARK` so the tokenizer marks
+    /// every token it produces as non-declarative (ADR §2.1: array
+    /// interpolation terminates the LTM declarative prefix unconditionally).
+    ///
+    /// Must NOT simply push the opening mark before calling
+    /// `push_regex_interpolated_alternation`: that function's own
+    /// `regex_alternation_separator` peeks at the END of the text already in
+    /// `out` to detect a preceding `||@list` / `|@list` sequential-alternation
+    /// marker, and a mark character sitting there instead of the real `||`/`|`
+    /// would hide it (regressed `roast/S05-metasyntax/sequential-alternation.t`
+    /// during development). Instead, record the insertion point first, let
+    /// the separator lookup see the real preceding text, then splice the
+    /// opening mark in at that boundary afterward.
+    pub(super) fn push_regex_interpolated_alternation_marked(out: &mut String, alts: &[String]) {
+        let mark_start = out.len();
+        Self::push_regex_interpolated_alternation(out, alts);
+        out.insert(mark_start, Self::NON_DECLARATIVE_INTERP_MARK);
+        out.push(Self::NON_DECLARATIVE_INTERP_MARK);
+    }
+
     /// Split a regex pattern on top-level `|` or `||` alternation operators.
     /// Respects grouping: `(...)`, `[...]`, `{...}`, `<...>` and escapes.
     pub(super) fn split_top_level_alternation(pattern: &str) -> (Vec<String>, bool) {

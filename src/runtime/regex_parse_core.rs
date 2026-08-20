@@ -514,6 +514,101 @@ impl Interpreter {
         Some(())
     }
 
+    /// Consume a trailing `%` / `%%` separator quantifier modifier
+    /// (`<thing>+ % ','`, `<thing>**N %% '.'`) for an already-computed
+    /// repeating `quant`, building the real `RegexSeparatorSpec` to attach to
+    /// the token. `None` for a non-repeating quant or when no separator
+    /// follows.
+    ///
+    /// Factored out of the main per-atom loop so the interpolation-span
+    /// quantifier-wrap path (the `NON_DECLARATIVE_INTERP_MARK` closing arm,
+    /// ADR-0046 Slice 1) can share it: that path `continue`s straight back to
+    /// the top of the outer loop without reaching the main token-push code
+    /// below, so before this factoring it silently dropped any separator on
+    /// a quantified interpolated array (`@oct ** 4 % \.` mis-parsed the `%`
+    /// as a stray hash sigil instead of a separator — regression pinned by
+    /// `t/regex-anchored-separated-repeat.t`).
+    fn consume_repeat_separator(
+        &self,
+        chars: &mut std::iter::Peekable<std::str::Chars>,
+        quant: &RegexQuant,
+        mode: RegexParseMode,
+    ) -> Option<Box<RegexSeparatorSpec>> {
+        if matches!(quant, RegexQuant::One | RegexQuant::ZeroOrOne) {
+            return None;
+        }
+        // Skip whitespace before the `%`.
+        let mut lookahead = chars.clone();
+        while lookahead.peek().is_some_and(|c| c.is_whitespace()) {
+            lookahead.next();
+        }
+        // A `%` that begins a hash-alias capture for the FOLLOWING atom
+        // (`%<name>=...` or `%name=...`) is NOT a separator. Detect that
+        // shape and skip separator handling so the alias parses normally.
+        let is_hash_alias = {
+            let mut la = lookahead.clone();
+            if la.peek() == Some(&'%') {
+                la.next();
+                // Reject `%%` (always a separator marker, never an alias).
+                if la.peek() == Some(&'%') {
+                    false
+                } else if la.peek() == Some(&'<') {
+                    // `%<...>=` — scan to `>` then require `=`.
+                    la.next();
+                    while la.peek().is_some_and(|&c| c != '>') {
+                        la.next();
+                    }
+                    la.next(); // '>'
+                    la.peek() == Some(&'=')
+                } else if la.peek().is_some_and(|&c| c.is_alphabetic() || c == '_') {
+                    // `%name=` — scan identifier then require `=`.
+                    while la.peek().is_some_and(|&c| c.is_alphanumeric() || c == '_') {
+                        la.next();
+                    }
+                    la.peek() == Some(&'=')
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
+        };
+        if lookahead.peek() != Some(&'%') || is_hash_alias {
+            return None;
+        }
+        // Commit: consume up to and including the `%`/`%%`.
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        chars.next(); // first '%'
+        let allow_trailing = if chars.peek() == Some(&'%') {
+            chars.next();
+            true
+        } else {
+            false
+        };
+        // Skip whitespace before the separator atom.
+        while chars.peek().is_some_and(|c| c.is_whitespace()) {
+            chars.next();
+        }
+        // Collect the separator atom text (a single atom, which may carry a
+        // `$<name>=` / `%<name>=` / `@<name>=` alias prefix and/or a trailing
+        // quantifier).
+        let remaining: String = chars.clone().collect();
+        let sep_atom_str = Self::split_separator_atom(&remaining);
+        // Advance the main iterator past the separator atom.
+        for _ in 0..sep_atom_str.chars().count() {
+            chars.next();
+        }
+        self.parse_regex_with_mode(sep_atom_str.trim(), mode)
+            .map(|pattern| {
+                Box::new(RegexSeparatorSpec {
+                    pattern,
+                    allow_trailing,
+                })
+            })
+    }
+
     pub(super) fn parse_regex_uncached(
         &self,
         pattern: &str,
@@ -867,13 +962,26 @@ impl Interpreter {
                 } else if let Some(start) = interp_span_start.take()
                     && let Some((quant, frugal)) = try_consume_quantifier(&mut chars)
                 {
+                    // ADR-0046 Slice 1 fix: a trailing `%`/`%%` separator
+                    // (`@arr ** 4 % \.`) must be consumed and attached here
+                    // too, same as the main per-atom loop does for a
+                    // directly-written quantified atom — this arm
+                    // `continue`s straight back to the outer loop without
+                    // ever reaching that code, so before this call it
+                    // silently dropped the separator (mis-parsed as a stray
+                    // `%`). See `consume_repeat_separator`'s doc comment.
+                    let separator = self.consume_repeat_separator(&mut chars, &quant, mode);
                     let mut span_tokens: Vec<RegexToken> = tokens.split_off(start);
                     if span_tokens.len() == 1 {
                         // A single-char interpolated value: quantify that one
-                        // token directly instead of wrapping it in a Group.
+                        // token directly instead of wrapping it in a Group,
+                        // same as before -- a separator attaches directly to
+                        // the token too, mirroring the main per-atom loop's
+                        // ordinary (non-interpolated) `<atom>+ % sep` case.
                         let mut token = span_tokens.pop().unwrap();
                         token.quant = quant;
                         token.frugal = frugal;
+                        token.separator = separator;
                         tokens.push(token);
                     } else if !span_tokens.is_empty() {
                         tokens.push(RegexToken {
@@ -891,7 +999,7 @@ impl Interpreter {
                             force_list_capture: false,
                             ratchet,
                             frugal,
-                            separator: None,
+                            separator,
                             from_runtime_interpolation: true,
                         });
                     }
@@ -1559,6 +1667,15 @@ impl Interpreter {
                 PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = Some(err));
                 return None;
             }
+            // ADR-0046 Slice 1 (Decision 2 item 3): set when this atom came
+            // from `array_var_alternation_atom` (the `<@var>` / `<?@var>` /
+            // `<!@var>` forms) or the `<$var>` regex-value reroute below.
+            // Unlike `interpolate_regex_scalars`'s text-splice sites, there
+            // is no substituted span here to wrap in
+            // `NON_DECLARATIVE_INTERP_MARK` -- the atom is built directly --
+            // so this flag threads the same provenance to the eventual
+            // `RegexToken` push further down, mirroring `in_non_declarative_interp`.
+            let mut runtime_value_atom = false;
             let atom = match c {
                 '.' => RegexAtom::Any,
                 '\\' => {
@@ -2509,6 +2626,13 @@ impl Interpreter {
                                     else {
                                         continue;
                                     };
+                                    // ADR-0046 Slice 1: array interpolation
+                                    // terminates the declarative LTM prefix
+                                    // unconditionally (ADR §2.1) -- mark the
+                                    // inner token so a measurement of this
+                                    // lookahead's own pattern (`ltm_atom_mode`'s
+                                    // `TerminateAfter` inlining) sees it as
+                                    // non-declarative too.
                                     let inner_pattern = RegexPattern {
                                         tokens: vec![RegexToken {
                                             atom: inner_atom,
@@ -2520,7 +2644,7 @@ impl Interpreter {
                                             ratchet: false,
                                             frugal: false,
                                             separator: None,
-                                            from_runtime_interpolation: false,
+                                            from_runtime_interpolation: true,
                                         }],
                                         anchor_start: false,
                                         anchor_end: false,
@@ -2850,6 +2974,16 @@ impl Interpreter {
                                         // closed over are lost here too. Fixing that
                                         // needs installing the inner regex's own
                                         // closure scope around this Group's match.
+                                        // ADR-0046 Slice 1 / ADR §2.1 probe S:
+                                        // the `<$var>` regex-value reroute
+                                        // terminates the declarative LTM
+                                        // prefix unconditionally, same as the
+                                        // array forms below and regardless of
+                                        // `constant`-ness -- verified against
+                                        // `raku` for `constant $rx = rx/.../`
+                                        // too, unlike the plain `$`-scalar
+                                        // textual-splice case.
+                                        runtime_value_atom = true;
                                         RegexAtom::CaptureIsolatedGroup(parsed)
                                     } else {
                                         continue;
@@ -2861,9 +2995,17 @@ impl Interpreter {
                                     RegexAtom::Named(name.clone())
                                 } else if trimmed.starts_with('@') {
                                     // <@var> — look up array variable and compile
-                                    // each element as a regex pattern (alternation)
+                                    // each element as a regex pattern (alternation).
+                                    // ADR-0046 Slice 1 / ADR §2.1 probe K: array
+                                    // interpolation terminates the declarative LTM
+                                    // prefix unconditionally, so mark the resulting
+                                    // token as runtime-interpolated (propagated to
+                                    // the token push below via `runtime_value_atom`).
                                     match self.array_var_alternation_atom(trimmed, mode) {
-                                        Some(atom) => atom,
+                                        Some(atom) => {
+                                            runtime_value_atom = true;
+                                            atom
+                                        }
                                         None => continue,
                                     }
                                 } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
@@ -3753,82 +3895,7 @@ impl Interpreter {
             // separator is a single atom (the next atom in the stream); the rest
             // of the line is matched after the quantified group. `%%` permits an
             // optional trailing separator.
-            let token_separator: Option<Box<RegexSeparatorSpec>> =
-                if !matches!(quant, RegexQuant::One | RegexQuant::ZeroOrOne) {
-                    // Skip whitespace before the `%`.
-                    let mut lookahead = chars.clone();
-                    while lookahead.peek().is_some_and(|c| c.is_whitespace()) {
-                        lookahead.next();
-                    }
-                    // A `%` that begins a hash-alias capture for the FOLLOWING atom
-                    // (`%<name>=...` or `%name=...`) is NOT a separator. Detect that
-                    // shape and skip separator handling so the alias parses normally.
-                    let is_hash_alias = {
-                        let mut la = lookahead.clone();
-                        if la.peek() == Some(&'%') {
-                            la.next();
-                            // Reject `%%` (always a separator marker, never an alias).
-                            if la.peek() == Some(&'%') {
-                                false
-                            } else if la.peek() == Some(&'<') {
-                                // `%<...>=` — scan to `>` then require `=`.
-                                la.next();
-                                while la.peek().is_some_and(|&c| c != '>') {
-                                    la.next();
-                                }
-                                la.next(); // '>'
-                                la.peek() == Some(&'=')
-                            } else if la.peek().is_some_and(|&c| c.is_alphabetic() || c == '_') {
-                                // `%name=` — scan identifier then require `=`.
-                                while la.peek().is_some_and(|&c| c.is_alphanumeric() || c == '_') {
-                                    la.next();
-                                }
-                                la.peek() == Some(&'=')
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    };
-                    if lookahead.peek() == Some(&'%') && !is_hash_alias {
-                        // Commit: consume up to and including the `%`/`%%`.
-                        while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                            chars.next();
-                        }
-                        chars.next(); // first '%'
-                        let allow_trailing = if chars.peek() == Some(&'%') {
-                            chars.next();
-                            true
-                        } else {
-                            false
-                        };
-                        // Skip whitespace before the separator atom.
-                        while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                            chars.next();
-                        }
-                        // Collect the separator atom text (a single atom, which may
-                        // carry a `$<name>=` / `%<name>=` / `@<name>=` alias prefix
-                        // and/or a trailing quantifier).
-                        let remaining: String = chars.clone().collect();
-                        let sep_atom_str = Self::split_separator_atom(&remaining);
-                        // Advance the main iterator past the separator atom.
-                        for _ in 0..sep_atom_str.chars().count() {
-                            chars.next();
-                        }
-                        self.parse_regex_with_mode(sep_atom_str.trim(), mode)
-                            .map(|pattern| {
-                                Box::new(RegexSeparatorSpec {
-                                    pattern,
-                                    allow_trailing,
-                                })
-                            })
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                };
+            let token_separator = self.consume_repeat_separator(&mut chars, &quant, mode);
             // When both a user alias ($<name>=) and a builtin class name are pending,
             // the alias becomes the primary capture and the builtin name becomes secondary.
             let user_alias = pending_named_capture.take();
@@ -3904,7 +3971,13 @@ impl Interpreter {
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: None,
-                    from_runtime_interpolation: in_non_declarative_interp,
+                    // ADR-0046 Slice 1: `runtime_value_atom` marks an atom
+                    // built directly by `array_var_alternation_atom` (the
+                    // `<@var>` form) or the `<$var>` regex-value reroute --
+                    // neither has a text splice to wrap in
+                    // `NON_DECLARATIVE_INTERP_MARK`, so they set this flag
+                    // instead -- see the atom-building match above).
+                    from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
                 };
                 tokens.push(RegexToken {
                     atom: RegexAtom::Group(RegexPattern {
@@ -3946,7 +4019,13 @@ impl Interpreter {
                     ratchet: token_ratchet,
                     frugal: token_frugal,
                     separator: token_separator,
-                    from_runtime_interpolation: in_non_declarative_interp,
+                    // ADR-0046 Slice 1: `runtime_value_atom` marks an atom
+                    // built directly by `array_var_alternation_atom` (the
+                    // `<@var>` form) or the `<$var>` regex-value reroute --
+                    // neither has a text splice to wrap in
+                    // `NON_DECLARATIVE_INTERP_MARK`, so they set this flag
+                    // instead -- see the atom-building match above).
+                    from_runtime_interpolation: in_non_declarative_interp || runtime_value_atom,
                 });
             }
         }

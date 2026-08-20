@@ -1479,7 +1479,19 @@ mod tests {
             ]),
         );
         let interpolated = interp.interpolate_regex_scalars(" ||@list ").unwrap();
-        assert_eq!(interpolated, " ||x||xx||xxxx ");
+        // ADR-0046 Slice 1: the spliced alternation is wrapped in
+        // `NON_DECLARATIVE_INTERP_MARK` (`\u{1}`) so the tokenizer marks its
+        // tokens as non-declarative for LTM ranking (array interpolation
+        // terminates the declarative prefix unconditionally, ADR §2.1). The
+        // `||` sequential-alternation separator is still correctly detected
+        // from the real preceding text, not the mark.
+        assert_eq!(
+            interpolated,
+            format!(
+                " ||{mark}x||xx||xxxx{mark} ",
+                mark = Interpreter::NON_DECLARATIVE_INTERP_MARK
+            )
+        );
     }
 
     #[test]
