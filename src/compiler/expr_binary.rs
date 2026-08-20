@@ -331,14 +331,26 @@ impl Compiler {
             && !name.starts_with(char::is_uppercase)
         {
             // Compile the slip arg (the capture variable) into a Slip value;
-            // CallFunc flattens it into the argument list.
+            // CallFunc spreads it via `arg_sources_idx` (ADR-0054: argument-list
+            // interpolation is a call-site property, not inferred from the
+            // runtime Slip shape). This mirrors the `|EXPR` handling in
+            // `compile_expr_call_inner` -- build the same synthetic
+            // `Expr::Unary { op: Pipe, .. }` so `add_arg_sources_constant`
+            // marks position 0 with the `|` sentinel (`Value::TRUE`) instead of
+            // leaving `arg_sources_idx: None`, which would make the spread-only
+            // call op treat the whole Slip as a single argument.
+            let slip_marker = Expr::Unary {
+                op: TokenKind::Pipe,
+                expr: Box::new(right.clone()),
+            };
+            let arg_sources_idx = self.add_arg_sources_constant(std::slice::from_ref(&slip_marker));
             self.compile_expr(right);
             self.code.emit(OpCode::MakeSlip);
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             self.code.emit(OpCode::CallFunc {
                 name_idx,
                 arity: 1,
-                arg_sources_idx: None,
+                arg_sources_idx,
             });
             return;
         }

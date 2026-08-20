@@ -1526,21 +1526,17 @@ impl Compiler {
                 return;
             }
             // Check for capture slip args (|c)
-            let has_slip = args.iter().any(|arg| {
-                matches!(
-                    arg,
-                    Expr::Unary {
-                        op: TokenKind::Pipe,
-                        ..
-                    }
-                )
-            });
+            let has_slip = args.iter().any(Self::is_slip_interpolation_arg);
             if has_slip {
                 // `|EXPR` interpolates into the argument list: MakeSlip builds
                 // the Slip and CallFunc spreads it, so any number of `|` args mix
                 // freely with the other arguments.
-                // `arg_sources_idx` stays None: spreading changes the argument
-                // count, so a positional source list could not stay aligned.
+                // ADR-0054: `arg_sources_idx` records the `|` positions
+                // (alongside any other args' rw sources) instead of being
+                // forced to None -- CallFunc's dispatch
+                // (`spread_call_args_by_syntax`) spreads exactly these
+                // positions, not every Slip-shaped runtime value.
+                let arg_sources_idx = self.add_arg_sources_constant(args);
                 for arg in args {
                     if let Expr::Unary {
                         op: TokenKind::Pipe,
@@ -1557,7 +1553,7 @@ impl Compiler {
                 self.code.emit(OpCode::CallFunc {
                     name_idx,
                     arity: args.len() as u32,
-                    arg_sources_idx: None,
+                    arg_sources_idx,
                 });
             } else {
                 let arity = args.len() as u32;

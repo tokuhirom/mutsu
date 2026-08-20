@@ -28,6 +28,13 @@ impl Interpreter {
         // `Digest::RIPEMD`'s `map -> [&a,$b,@c,$d] {...}, (...), (...)` bind.
         let single_arg_rule = args.len() <= 2;
         for (idx, arg) in args.iter().skip(1).enumerate() {
+            // ADR-0054 S2: a `Slip` ALWAYS flattens into a slurpy list
+            // context, regardless of `single_arg_rule` -- see the identical
+            // note in `builtin_grep`.
+            if let ValueView::Slip(items) = arg.view() {
+                list_items.extend(items.iter().cloned());
+                continue;
+            }
             if !single_arg_rule {
                 list_items.push(arg.clone());
                 continue;
@@ -156,6 +163,17 @@ impl Interpreter {
         // as `map` above: two or more list arguments are two or more elements.
         let single_arg_rule = args.len() <= 2;
         for arg in args.iter().skip(1) {
+            // ADR-0054 S2: a `Slip` ALWAYS flattens into a slurpy list
+            // context (`+@list`), regardless of how many other list
+            // arguments were given -- unlike Array/Seq, this is not gated by
+            // `single_arg_rule`. Call-site `|EXPR` spreading no longer
+            // pre-flattens an ordinary (non-`|`) Slip-valued argument before
+            // grep ever sees it, so grep must flatten it here itself, same
+            // as slurpy signature binding already does for user subs (§2.3).
+            if let ValueView::Slip(items) = arg.view() {
+                list_items.extend(items.iter().cloned());
+                continue;
+            }
             if !single_arg_rule {
                 list_items.push(arg.clone());
                 continue;

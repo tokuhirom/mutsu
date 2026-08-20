@@ -2256,14 +2256,27 @@ impl Compiler {
     fn compile_slurpy_out_args(&mut self, exprs: &[Expr]) {
         for expr in exprs {
             self.compile_expr(expr);
-            let is_pipe = matches!(
-                expr,
-                Expr::Unary { op, .. } if *op == crate::token_kind::TokenKind::Pipe
-            );
-            if !is_pipe {
+            if !Self::is_slip_interpolation_arg(expr) {
                 self.code.emit(OpCode::DeSlip);
             }
         }
+    }
+
+    /// Whether `expr` is a `|EXPR` argument-list interpolation marker.
+    ///
+    /// ADR-0054: this is the ONLY thing that makes an argument spread into
+    /// the caller's argument list. A `Slip` VALUE an ordinary argument
+    /// merely evaluates to (`f(@a.Slip)`) is one argument, not a spread
+    /// request — the compiler is the only place that can tell the two
+    /// apart, since by the time the VM sees the value the `|` is gone.
+    pub(super) fn is_slip_interpolation_arg(expr: &Expr) -> bool {
+        matches!(
+            expr,
+            Expr::Unary {
+                op: TokenKind::Pipe,
+                ..
+            }
+        )
     }
 
     fn positional_arg_source_name(expr: &Expr) -> Option<String> {
@@ -2329,6 +2342,17 @@ impl Compiler {
     fn add_arg_sources_constant(&mut self, args: &[Expr]) -> Option<u32> {
         let mut entries = Vec::with_capacity(args.len());
         for arg in args {
+            if Self::is_slip_interpolation_arg(arg) {
+                // ADR-0054 S1/S2 (third entry shape): a `|EXPR` position
+                // spreads into zero or more runtime arguments, so it carries
+                // no single traceable rw source -- mark it with a sentinel
+                // distinct from "no source" (`NIL`), `Str(name)` and
+                // `Pair(name, Int(slot))`. `decode_arg_sources` returns these
+                // positions so a call op can spread by call-site syntax
+                // instead of the argument's runtime Slip-shape.
+                entries.push(Value::TRUE);
+                continue;
+            }
             if let Expr::DoStmt(stmt) = arg
                 && let Stmt::VarDecl {
                     name,
