@@ -180,6 +180,10 @@ impl Interpreter {
                 _ => elems.push(val),
             }
         }
+        // `use fatal`: a list/array literal must not silently embed an
+        // unhandled Failure produced by one of its elements -- explode here,
+        // before the composite becomes a stored value.
+        self.explode_if_fatal_failure_in_composite(&elems)?;
         let result = if is_real_array {
             Value::real_array(elems)
         } else {
@@ -197,7 +201,7 @@ impl Interpreter {
     /// Like `exec_make_array_op` with `is_real_array=true` but never flattens
     /// single elements. Used for bracket arrays with trailing comma (`[x,]`)
     /// and for `[$scalar]` / `[$%h]` to prevent hash/array flattening.
-    pub(super) fn exec_make_array_no_flatten_op(&mut self, n: u32) {
+    pub(super) fn exec_make_array_no_flatten_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let raw: Vec<Value> = self.stack.drain(start..).collect();
@@ -211,15 +215,22 @@ impl Interpreter {
                 _ => elems.push(val),
             }
         }
+        // `use fatal`: see the comment in `exec_make_array_op`.
+        self.explode_if_fatal_failure_in_composite(&elems)?;
         let result = Value::real_array(elems);
         let result = self.decay_nil_container_elements(result);
         self.stack.push(result);
+        Ok(())
     }
 
     pub(super) fn exec_make_hash_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n * 2;
         let items: Vec<Value> = self.stack.drain(start..).collect();
+        // `use fatal`: see the comment in `exec_make_array_op`. A hash
+        // literal's key/value pairs are pushed flat (key, val, key, val, ...),
+        // so scanning the whole `items` slice checks both sides.
+        self.explode_if_fatal_failure_in_composite(&items)?;
         let mut map = HashMap::new();
         for pair in items.chunks(2) {
             // A bare type-object key (`%(Int, 1)`) stringifies to "" with the
@@ -239,10 +250,14 @@ impl Interpreter {
     }
 
     /// Build a Hash from N Pair values on the stack (from `%(k=>v, ...)` syntax).
-    pub(super) fn exec_make_hash_from_pairs_op(&mut self, n: u32) {
+    pub(super) fn exec_make_hash_from_pairs_op(&mut self, n: u32) -> Result<(), RuntimeError> {
         let n = n as usize;
         let start = self.stack.len() - n;
         let items: Vec<Value> = self.stack.drain(start..).collect();
+        // `use fatal`: see the comment in `exec_make_array_op`. Elements here
+        // are `Pair`/`ValuePair` values, so the composite check descends one
+        // level into the pair's value.
+        self.explode_if_fatal_failure_in_composite(&items)?;
         let mut map = HashMap::new();
         for item in items {
             match item.view() {
@@ -265,6 +280,7 @@ impl Interpreter {
         }
         let result = self.decay_nil_container_elements(Value::hash(map));
         self.stack.push(result);
+        Ok(())
     }
 
     /// Box the local scalar variable `name` into a shared `ContainerRef` cell and
