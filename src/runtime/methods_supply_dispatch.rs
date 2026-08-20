@@ -544,6 +544,13 @@ impl Interpreter {
         new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
         new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
         new_attrs.insert("live".to_string(), Value::TRUE);
+        // ADR-0028 Slice 2 / ADR-0043: the transform registers immediately,
+        // but the *user's tap* on this derived Supply still reaches the
+        // "tap"|"act" chokepoint through the ordinary path — copy
+        // `"scheduler"` forward so it is still visible there.
+        if let Some(scheduler) = attributes.get("scheduler") {
+            new_attrs.insert("scheduler".to_string(), scheduler.clone());
+        }
         Some(Value::make_instance(Symbol::intern("Supply"), new_attrs))
     }
 

@@ -751,6 +751,14 @@ impl Interpreter {
                     new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
                     new_attrs.insert("supplier_id".to_string(), Value::int(downstream_sid as i64));
                     new_attrs.insert("live".to_string(), Value::TRUE);
+                    // ADR-0028 Slice 2 / ADR-0043: the flat tap registers
+                    // immediately, but the user's tap on this derived Supply
+                    // still reaches the "tap"|"act" chokepoint through the
+                    // ordinary path — copy `"scheduler"` forward (see the
+                    // `.lines` comment above).
+                    if let Some(scheduler) = attributes.get("scheduler") {
+                        new_attrs.insert("scheduler".to_string(), scheduler.clone());
+                    }
                     return Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs));
                 }
                 let source_values = self.supply_get_values(attributes)?;
