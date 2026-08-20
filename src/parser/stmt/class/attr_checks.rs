@@ -7,7 +7,13 @@ use crate::value::Value;
 pub(crate) fn expr_uses_attr_twigil(expr: &Expr) -> bool {
     match expr {
         Expr::Var(name) | Expr::ArrayVar(name) | Expr::HashVar(name) => {
-            name.starts_with('.') || name.starts_with('!')
+            // A bare "!" is `$!` (the error variable, e.g. from a no-argument
+            // `die`/`fail`), not the `$!attr` private-twigil form — same
+            // `name.len() > 1` guard used by every other twigil-detection site
+            // (compiler/mod.rs, expr_unary.rs, expr_postfix.rs, expr_call.rs).
+            // Without it, a bare `die` inside a plain `sub` nested in a class
+            // body was misdiagnosed as X::Syntax::NoSelf.
+            (name.starts_with('.') && name.len() > 1) || (name.starts_with('!') && name.len() > 1)
         }
         Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             expr_uses_attr_twigil(target) || args.iter().any(expr_uses_attr_twigil)

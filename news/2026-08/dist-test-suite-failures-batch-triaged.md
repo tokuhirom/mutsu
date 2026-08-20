@@ -41,10 +41,15 @@ parameter's aliases). Of the remaining 13:
   (`Math::Interval`'s list-destructuring sigilless bind)
 - [`todo/deep/mark-context-flags-leak-across-live-call-boundary.md`](../../todo/deep/mark-context-flags-leak-across-live-call-boundary.md)
   (`Crypt::RC4`'s remaining "Cannot modify an immutable Range")
-- [`todo/deep/trait-mod-does-not-callable-and-no-variable-mop.md`](../../todo/deep/trait-mod-does-not-callable-and-no-variable-mop.md)
-  (`Hash::Restricted`'s dynamic `trait_mod:<is>` role mixin onto a variable)
-- [`todo/deep/p5tie-container-protocol-and-array-parse-bug.md`](../../todo/deep/p5tie-container-protocol-and-array-parse-bug.md)
-  (`P5tie`'s missing container-binding protocol, plus an unrelated parse bug)
+- [`todo/deep/trait-mod-does-not-callable-sub.md`](../../todo/deep/trait-mod-does-not-callable-sub.md)
+  (`Hash::Restricted`'s dynamic `trait_mod:<is>` role mixin onto a variable;
+  the parse-bug-and-Variable-MOP framing was narrowed after a follow-up
+  investigation — see `news/2026-08/p5tie-array-rakutest-noself-parse-bug.md`
+  and the ticket's own "Investigation" section)
+- [`todo/deep/p5tie-stash-bind-key-protocol.md`](../../todo/deep/p5tie-stash-bind-key-protocol.md)
+  (`P5tie`'s missing container-binding protocol; a separate parse bug in
+  `array.rakutest` that used to block this dist was fixed independently —
+  see `news/2026-08/p5tie-array-rakutest-noself-parse-bug.md`)
 - [`todo/deep/sigilless-alias-assignment-skips-type-constraint.md`](../../todo/deep/sigilless-alias-assignment-skips-type-constraint.md)
   (`Native::Overflow`'s type constraint skipped through a sigilless alias)
 

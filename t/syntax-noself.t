@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 11;
 
 # A `$.attr` accessor used where no `self` is available is X::Syntax::NoSelf.
 # This is distinct from bare `self` (X::Syntax::Self::WithoutObject).
@@ -37,3 +37,25 @@ is-deeply
 lives-ok {
     EVAL 'class A5 { has $.x = 9; submethod TWEAK { $.x } }; A5.new'
 }, '$.attr works in a submethod body';
+
+# A bare `die`/`fail` (no argument) parses to a reference to `$!` (the error
+# variable), not the `$!attr` private-twigil form -- so a plain `sub` (which
+# has no `self`) nested in a class body may still use a bare `die`/`fail`
+# without tripping the attribute-twigil NoSelf check. Regression test for the
+# P5tie `array.rakutest` parse bug (see
+# news/2026-08/p5tie-array-rakutest-noself-parse-bug.md):
+# `class Foo { sub STORESIZE($self,\val) { die } }` used to misparse as
+# X::Syntax::NoSelf even though `die` here has nothing to do with `self`.
+lives-ok {
+    EVAL 'class A6 { sub helper() { die } }; 1'
+}, 'bare `die` in a plain sub nested in a class body is not X::Syntax::NoSelf';
+
+lives-ok {
+    EVAL 'class A7 { sub helper($x) { fail } }; 1'
+}, 'bare `fail` in a plain sub nested in a class body is not X::Syntax::NoSelf';
+
+# A genuine `$!attr` reference in a plain sub nested in a class body is still
+# correctly rejected -- the fix must not blanket-disable the check.
+throws-like
+    'class A8 { has $!x; sub helper() { $!x } }',
+    X::Syntax::NoSelf;
