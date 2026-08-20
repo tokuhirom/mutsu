@@ -1,6 +1,6 @@
 # ADR-0049: `Nil` decays to the *container's* default at the element store, and stops being a hole sentinel
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Accepted (Slices 0-2 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0040](0040-array-hash-elements-are-itemized-at-the-store.md) (the same Raku model —
@@ -570,4 +570,67 @@ follow-up ticket once slice 5 lands.
 
 ---
 
-*This ADR is Proposed. If the mechanism judgment changes later, supersede it rather than rewriting it.*
+## 8. Implementation status (2026-08-20)
+
+Slices 0-2 landed:
+
+- **Slice 0** (acceptance oracle): `t/nil-element-store-decay.t`, pinning all 29 §1.3 rows plus all 13
+  §1.4 invariants (16 assertions, since I13 bundles four checks) -- 45 assertions total, dual-oracled
+  against `raku` while writing the file. Two rows are `todo`-marked and stay open past this PR (see
+  below); every other row and invariant is a live, non-`todo` assertion.
+- **Slice 1** (the dropped element): `exec_make_array_no_flatten_op`'s `ValueView::Nil => {}` drop
+  (`src/vm/vm_data_ops.rs`) is gone -- a bare `Nil` is now a real element that decays like any other,
+  fixing row 19 (`[Nil,].elems` is `1`, not a silently-dropped `0`).
+- **Slice 2** (construction): a single new `Interpreter::decay_nil_container_elements` helper
+  (`src/vm/vm_data_ops.rs`) calls `typed_container_default` once per freshly-built container and
+  rewrites any `Nil` element/value in place (a no-op when the default comes back `Nil`, i.e. a `List`
+  or other non-container). Wired into `exec_make_array_op`, `exec_make_array_no_flatten_op`,
+  `exec_make_hash_op`, `exec_make_hash_from_pairs_op` (`src/vm/vm_data_ops.rs`),
+  `try_native_array_construct`'s and `try_native_hash_construct`'s untyped/typed return paths
+  (`src/runtime/methods_aggregate_ctor.rs`, called after `tag_container_metadata` so the decay target
+  is typed), and the two parameterized `Array[T].new`/`Hash[V,K].new` re-implementations
+  (`src/runtime/methods_object_dispatch_new.rs`). `build_hash_from_items_with_key_coercion` and
+  `coerce_to_hash` (`src/runtime/utils/coerce_containers.rs`) are free functions with no `&mut self`
+  to call `typed_container_default` from; since neither ever sees a pre-existing typed/`is default(...)`
+  container at the point a bare literal is built, a small `decay_nil_hash_value` helper hardcodes the
+  same `Any` answer `typed_container_default` would compute there, applied only at genuine
+  pair-value inserts (not at the separate odd-trailing-key-with-no-value fallback, which is a
+  pre-existing, out-of-scope divergence from raku's actual "Odd number of elements" die). The shaped
+  (`:shape(...)`) branches of the two `Array`-constructing functions were deliberately left untouched
+  in this slice, to avoid interacting with the shaped-array hole/`initialized` tracking; no acceptance
+  row exercises a shaped-array `Nil` element.
+- **Bonus, not required by the plan:** rows 27 and 28 (the two type-check divergences) turned out to
+  already flip correctly as a side effect of slices 1-2, with no slice 3 needed. `[Nil]`'s own
+  construction now decays to `[Any]` *before* `my Int @a = [Nil]` ever assigns it, so the existing
+  (unmodified) element type check at the assignment site sees a plain `Any`/`Int` mismatch and dies --
+  the same message raku produces. Symmetrically, `my %h{Int} = 1 => Nil` no longer dies, because the
+  `Nil` *value* decays to the hash's `Any` value-type default before any check runs (the `Int`
+  constraint there is on the key, which was never the problem).
+- **Two rows stay open**, both `todo`-marked in the slice-0 test with a comment pointing at their
+  territory:
+  - **Row 25** (`%h.AT-KEY("missing")` on a genuinely absent key still returns raw `Value::NIL`) is
+    slice 5's job (§2 part 5, §5.2) -- `AT-KEY` has no missing-key compensation at all yet. (Row 26,
+    the same method on a key holding a *decayed* value, already passes: the map genuinely contains
+    `Any` now, so no compensation is even needed.)
+  - **Row 29** (`my @d is default(42) = [Nil]; @d[0]` reads back `42` instead of `Any`) is not slice 3
+    or slice 5's territory as originally scoped -- measurement found the culprit is
+    `resolve_array_entry`'s read chokepoint (`src/vm/vm_var_ops.rs`), which unconditionally substitutes
+    a non-`Nil` container default for *any* in-range `Package("Any")` element, without consulting
+    `ArrayData::initialized`. That is exactly the "different bug in the same family... deserve[ing] its
+    own probe" §5.2 already flagged for the array-side rewrites at `vm_var_ops.rs:139`/`:145` (these
+    are those two lines) -- confirmed by direct measurement rather than assumed, so it is recorded here
+    as a dedicated follow-up rather than folded into slice 3 or 5.
+- **Verification**: `cargo clippy -- -D warnings` and `cargo fmt --check` clean; full local `make test`
+  and the regression pins ADR §4 slice 0 named (`t/nil-list-holes.t`, `t/typed-array-hole-adverbs.t`,
+  `t/nil-any-identity.t`, `t/is-eqv.t`, `t/array-slice-oob.t`, `t/pair-subscript-exists.t`,
+  `t/uninit-scalar-any.t`, `t/typecheck-expected-nil.t`, `t/shared-var-nil-redeclared-mask.t`) all pass
+  unchanged; no whitelisted roast file references a `Nil` array/hash literal at all (confirming §1.8).
+- **Next**: slice 3 (retire the narrow assignment-site fixups and unify onto `typed_container_default`;
+  note row 27 already dies correctly, so slice 3's own acceptance bar is now "no regression", not "make
+  it die"), slice 4 (mutation sites), slice 5 (retire the `Nil` hole sentinel, plus the two `todo` rows
+  above), and slice 6 (sweep, close out, `git mv` the originating `todo/deep/` finding to `news/`).
+
+---
+
+*This ADR is Accepted for slices 0-2. If the mechanism judgment for later slices changes, supersede
+rather than rewriting.*

@@ -11,6 +11,21 @@ pub(crate) fn hash_pair_keys(key: &Value) -> Vec<Value> {
     }
 }
 
+/// ADR-0049 slice 2: a Hash value is a `Scalar` container, so a stored `Nil`
+/// decays to `Any` (an untyped hash's own default -- these builders never see
+/// a pre-existing typed/`is default(...)` container to decay against, so
+/// `Any` is exactly what `Interpreter::typed_container_default` would compute
+/// here anyway). Applied only at genuine pair-value inserts, not at the
+/// separate odd-trailing-key fallback (a pre-existing, out-of-scope
+/// divergence unrelated to this ADR).
+fn decay_nil_hash_value(v: Value) -> Value {
+    if v.is_nil() {
+        Value::package(crate::symbol::Symbol::intern("Any"))
+    } else {
+        v
+    }
+}
+
 pub(crate) fn coerce_to_hash(value: Value) -> Value {
     let mix_weight_value = crate::value::mix_weight_to_value;
     let value = value.into_descalarized();
@@ -43,10 +58,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     // `ContainerRef`; storing into a Hash decontainerizes (copies
                     // the value), matching Raku (`%h = k => $v; $v = 2` leaves
                     // `%h<k>` unchanged).
-                    map.insert(k.clone(), v.deref_container());
+                    map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = flat[i].view() {
-                    let dv = v.deref_container();
+                    let dv = decay_nil_hash_value(v.deref_container());
                     for kk in hash_pair_keys(k) {
                         let str_key = kk.to_string_value();
                         if !matches!(kk.view(), ValueView::Str(_)) {
@@ -80,10 +95,10 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
             let mut i = 0;
             while i < items.len() {
                 if let ValueView::Pair(k, v) = items[i].view() {
-                    map.insert(k.clone(), v.deref_container());
+                    map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
                     i += 1;
                 } else if let ValueView::ValuePair(k, v) = items[i].view() {
-                    let dv = v.deref_container();
+                    let dv = decay_nil_hash_value(v.deref_container());
                     for kk in hash_pair_keys(k) {
                         let str_key = kk.to_string_value();
                         if !matches!(kk.view(), ValueView::Str(_)) {
@@ -111,13 +126,13 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
         }
         ValueView::Pair(k, v) => {
             let mut map = HashMap::new();
-            map.insert(k.clone(), v.deref_container());
+            map.insert(k.clone(), decay_nil_hash_value(v.deref_container()));
             Value::hash(map)
         }
         ValueView::ValuePair(k, v) => {
             let mut map = HashMap::new();
             let mut original_keys: HashMap<String, Value> = HashMap::new();
-            let dv = v.deref_container();
+            let dv = decay_nil_hash_value(v.deref_container());
             for kk in hash_pair_keys(k) {
                 let str_key = kk.to_string_value();
                 if !matches!(kk.view(), ValueView::Str(_)) {
@@ -278,7 +293,7 @@ where
     while let Some(item) = iter.next() {
         match item.view() {
             ValueView::Pair(key, boxed_val) => {
-                map.insert(key.clone(), boxed_val.clone());
+                map.insert(key.clone(), decay_nil_hash_value(boxed_val.clone()));
             }
             // A bare (non-itemized) hash in list context flattens into its
             // key=>value pairs (`%m = (%h,)` / `%(%h,)`). A hash sourced from a
@@ -308,6 +323,7 @@ where
             // storing the value under each of its members (`%h<a> == %h<b> == 1`),
             // matching Rakudo. Every other non-Str key stringifies as usual.
             ValueView::ValuePair(key, boxed_val) => {
+                let boxed_val = decay_nil_hash_value(boxed_val.clone());
                 for kk in hash_pair_keys(key) {
                     let (str_key, record_original) = encode_key(&kk)?;
                     if record_original {
@@ -338,7 +354,7 @@ where
                 if record_original {
                     original_keys.insert(str_key.clone(), item.clone());
                 }
-                map.insert(str_key, value);
+                map.insert(str_key, decay_nil_hash_value(value));
             }
         }
     }

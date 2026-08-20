@@ -1,6 +1,48 @@
 use super::*;
 
 impl Interpreter {
+    /// ADR-0049 (slices 1-2): a real `Array`/`Hash` element is a `Scalar`
+    /// container, and a `Scalar` cannot hold `Nil` -- storing `Nil` into one
+    /// restores the *owning container's own* default (`is default(...)` ->
+    /// native element zero -> declared element type object -> `Any`, exactly
+    /// `Interpreter::typed_container_default`). Call this once per container
+    /// right after it is fully built (and, for a typed/`.new` construction,
+    /// after `tag_container_metadata` has attached its type info), so a
+    /// nested literal decays inside-out (`[[Nil]] eqv [[Any]]` — ADR-0049
+    /// S1.5): the inner array's own construction op already ran this hook
+    /// before the outer one sees it.
+    ///
+    /// A no-op for anything `typed_container_default` cannot decay -- `List`,
+    /// `Seq`, and other non-container values, whose elements are not
+    /// `Scalar`s and legitimately keep a stored `Nil` (ADR-0049 S1.4 I1-I3).
+    pub(crate) fn decay_nil_container_elements(&mut self, mut value: Value) -> Value {
+        let default = self.typed_container_default(&value);
+        if default.is_nil() {
+            return value;
+        }
+        let decayed_array = value
+            .with_array_mut(|items, _kind| {
+                let data = crate::gc::Gc::make_mut(items);
+                for item in data.items_mut() {
+                    if item.is_nil() {
+                        *item = default.clone();
+                    }
+                }
+            })
+            .is_some();
+        if !decayed_array {
+            value.with_hash_mut(|items| {
+                let data = crate::gc::Gc::make_mut(items);
+                for v in data.map.values_mut() {
+                    if v.is_nil() {
+                        *v = default.clone();
+                    }
+                }
+            });
+        }
+        value
+    }
+
     pub(super) fn exec_make_array_op(
         &mut self,
         code: &CompiledCode,
@@ -138,11 +180,17 @@ impl Interpreter {
                 _ => elems.push(val),
             }
         }
-        if is_real_array {
-            self.stack.push(Value::real_array(elems));
+        let result = if is_real_array {
+            Value::real_array(elems)
         } else {
-            self.stack.push(Value::array(elems));
-        }
+            Value::array(elems)
+        };
+        // ADR-0049: decay a stored `Nil` element to the array's own default.
+        // A no-op for the `List` (non-real) branch above, since
+        // `typed_container_default` returns `Nil` (meaning "no decay") for a
+        // non-real-array container.
+        let result = self.decay_nil_container_elements(result);
+        self.stack.push(result);
         Ok(())
     }
 
@@ -157,12 +205,15 @@ impl Interpreter {
         for val in raw {
             match val.view() {
                 ValueView::Slip(items) => elems.extend(items.iter().cloned()),
-                // Nil in list context contributes nothing (same as value_to_list).
-                ValueView::Nil => {}
+                // ADR-0049 slice 1: a bare `Nil` is a real element here, not a
+                // List-context no-op -- it decays to the array's own default
+                // below (`[Nil,].elems` is `1`, not a silently dropped `0`).
                 _ => elems.push(val),
             }
         }
-        self.stack.push(Value::real_array(elems));
+        let result = Value::real_array(elems);
+        let result = self.decay_nil_container_elements(result);
+        self.stack.push(result);
     }
 
     pub(super) fn exec_make_hash_op(&mut self, n: u32) -> Result<(), RuntimeError> {
@@ -182,7 +233,8 @@ impl Interpreter {
             let val = pair[1].clone();
             map.insert(key, val);
         }
-        self.stack.push(Value::hash(map));
+        let result = self.decay_nil_container_elements(Value::hash(map));
+        self.stack.push(result);
         Ok(())
     }
 
@@ -211,7 +263,8 @@ impl Interpreter {
                 }
             }
         }
-        self.stack.push(Value::hash(map));
+        let result = self.decay_nil_container_elements(Value::hash(map));
+        self.stack.push(result);
     }
 
     /// Box the local scalar variable `name` into a shared `ContainerRef` cell and
