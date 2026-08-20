@@ -139,6 +139,12 @@ pub enum RakuAstClass {
     CircumfixArrayComposer,
     // Phase 2 slice 34: the `*` whatever term.
     TermWhatever,
+    // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
+    // (`* + 1`'s left operand) vs a bare Whatever value.
+    WhateverCodeArgument,
+    // ADR-0033 Phase 2: the `**` hyper-whatever term (read direction only —
+    // `**` is out of scope for priming, see the ADR's §1).
+    TermHyperWhatever,
     // Phase 2 slice 35: fat-arrow pairs (`a => 1`).
     FatArrow,
     // Phase 2 slice 36: the `do` statement prefix.
@@ -224,6 +230,8 @@ impl RakuAstClass {
             ParameterSlurpyUnflattened => "RakuAST::Parameter::Slurpy::Unflattened",
             CircumfixArrayComposer => "RakuAST::Circumfix::ArrayComposer",
             TermWhatever => "RakuAST::Term::Whatever",
+            WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
+            TermHyperWhatever => "RakuAST::Term::HyperWhatever",
             FatArrow => "RakuAST::FatArrow",
             StatementPrefixDo => "RakuAST::StatementPrefix::Do",
             StatementPrefixTry => "RakuAST::StatementPrefix::Try",
@@ -236,7 +244,13 @@ impl RakuAstClass {
     /// (`RakuAST::Assignment.new`), unlike the generic `.new()` (e.g. an empty
     /// `StatementList` still prints `RakuAST::StatementList.new()`).
     pub fn empty_parens_omitted(self) -> bool {
-        matches!(self, RakuAstClass::Assignment | RakuAstClass::TermWhatever)
+        matches!(
+            self,
+            RakuAstClass::Assignment
+                | RakuAstClass::TermWhatever
+                | RakuAstClass::WhateverCodeArgument
+                | RakuAstClass::TermHyperWhatever
+        )
     }
 
     /// Whether the node renders as a bare class name with no constructor call at
@@ -291,7 +305,13 @@ impl RakuAstClass {
             | Block
             | PointyBlock
             | CallName
-            | CallNameWithoutParentheses => TERM,
+            | CallNameWithoutParentheses
+            // `RakuAST::WhateverCode::Argument` does not start with
+            // `RakuAST::Term::`, so it does not get Term/Expression for free
+            // from the name-prefix rule in `type_object_isa` — it must be
+            // listed explicitly (ADR-0033 Phase 2 §2.4). Measured MRO:
+            // `Argument, Term, Termish, Expression, ..., Node`.
+            | WhateverCodeArgument => TERM,
             ApplyInfix | ApplyPrefix | ApplyPostfix | ApplyListInfix | Ternary => EXPR,
             _ => &[],
         }
@@ -379,7 +399,10 @@ fn semantic_type_object_ancestors(class_name: &str) -> &'static [&'static str] {
         | "RakuAST::Block"
         | "RakuAST::PointyBlock"
         | "RakuAST::Call::Name"
-        | "RakuAST::Call::Name::WithoutParentheses" => TERM,
+        | "RakuAST::Call::Name::WithoutParentheses"
+        // Same "not RakuAST::Term::"-prefixed" gap as the instance-level
+        // `semantic_ancestors` above.
+        | "RakuAST::WhateverCode::Argument" => TERM,
         "RakuAST::ApplyInfix"
         | "RakuAST::ApplyPrefix"
         | "RakuAST::ApplyPostfix"
@@ -480,6 +503,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::ParameterSlurpyUnflattened,
     RakuAstClass::CircumfixArrayComposer,
     RakuAstClass::TermWhatever,
+    RakuAstClass::WhateverCodeArgument,
+    RakuAstClass::TermHyperWhatever,
     RakuAstClass::FatArrow,
     RakuAstClass::StatementPrefixDo,
     RakuAstClass::StatementPrefixTry,

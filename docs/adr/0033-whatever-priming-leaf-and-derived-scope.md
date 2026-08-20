@@ -1,8 +1,7 @@
 # ADR-0033: Whatever-priming is a leaf property plus a derived scope — defer `WhateverCode` construction out of the parser
 
-- **Status**: Phase 1 shipped (2026-08-19). Phase 2 designed in implementable detail
-  (2026-08-20, see "Phase 2 detailed design" below) but not implemented; Phases 3-4 not
-  started — see "Outcome" below.
+- **Status**: Phase 1 shipped (2026-08-19). Phase 2 shipped (2026-08-20, see "Phase 2
+  outcome" below). Phases 3-4 not started.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -464,6 +463,74 @@ that actually changes `&&`/`||`/`//`/ternary priming results) is a separate, hig
 change that deserves its own PR and its own `t/whatever-thunky-operators.t`. Phases 2/3
 (RakuAST read/write for `* + 1`) remain open items in
 [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md).
+
+## Phase 2 outcome (2026-08-20)
+
+Implemented exactly per "Phase 2 detailed design" below. `src/whatever_curry/mark.rs` adds
+`mark_program(&mut stmts)`, a single top-down walk invoked once from
+`parser::parse_program` right after a program parses. It rewrites every `Expr::Whatever`
+leaf to `Expr::WhateverArg` unless the leaf's immediate syntactic parent is one of the
+value positions in section 2.1's table (comma operand, range/series endpoint, `xx`
+operand, assignment/bind RHS, call/method argument, whole-slice subscript, non-currying
+pseudo-method target, bareword-pair value, or a bare `*` standing alone as a whole
+statement/grouping); everything else becomes `Argument`. The predicates are genuinely
+scope-independent, not derived from `contains_whatever`/`should_wrap_whatevercode` (the
+`1 x *` and `* Z 1`/`* X 1` counter-examples from section 2.1 are both classified
+`Argument` correctly even though mutsu plants no `WhateverCurry` scope for them).
+
+`crate::parser::is_whatever` widened to `matches!(expr, Expr::Whatever | Expr::WhateverArg)`
+per section 2.2's invariant; the four remaining variant-literal `matches!(&**left/right,
+Expr::Whatever)` tests in the `x`/`xx` arms (`whatever.rs`) now go through it. Verified by
+construction (every scope/arity predicate is built on this one helper) and by the full
+`t/*whatever*.t` (35 files) + `roast/S02-types/{whatever,hyperwhatever}.t` +
+`roast/S03-operators/composition.t` + `roast/S12-subset/{multi-dispatch,subtypes,
+type-subset}.t` sweep passing unchanged.
+
+`src/rakuast/mod.rs` gained `RakuAstClass::WhateverCodeArgument`
+(`"RakuAST::WhateverCode::Argument"`, bare `.new`) and `RakuAstClass::TermHyperWhatever`
+(`"RakuAST::Term::HyperWhatever"`, bare `.new`); `WhateverCodeArgument` was added explicitly
+to the `semantic_ancestors`/`semantic_type_object_ancestors` TERM set (the section 2.4 trap:
+its printed name does not start with `RakuAST::Term::`, so the name-prefix rule would
+otherwise silently make `~~ RakuAST::Term` false). `src/rakuast/convert.rs` gained arms for
+`Expr::WhateverArg` (-> `WhateverCodeArgument`), `Expr::HyperWhatever` (-> `TermHyperWhatever`,
+a read-direction-only bonus per section 2.4 — priming for `**` stays out of scope), and
+`Expr::WhateverCurry(body)` (-> `convert_expr(body)`, no wrapper node, matching Rakudo's
+scope-free tree).
+
+Section 2.5's three remaining eager-closure sites were converted to plant
+`Expr::WhateverCurry` instead of building a `Lambda` by hand: `* ~~ Type` and `Type ~~ *`
+(`src/parser/expr/precedence/comparison.rs`, covering `~~` and `!~~` both). This required
+re-checking the SmartMatch/BangTilde asymmetry the ADR's section 2.5 called out:
+`count_whatever`/`replace_whatever_numbered`/`replace_whatever_single`
+(`src/whatever_curry/{build,replace}.rs`) only counted/substituted the *left* operand
+(the historical "Whatever on the RHS is runtime-autoprimed, not curried" rule for a
+*compound* RHS); they now also count/substitute a *bare* right-hand placeholder, which is
+exactly what the newly-planted `X ~~ *` marker needs. This incidentally fixed a latent
+mutsu bug: `$_ ~~ *`'s closure previously replaced the *outer* `$_` too (so the closure
+ignored the caller's dynamic topic), where raku's `-> $a { $_ ~~ $a }` reads the outer
+topic on the left and only primes the right — verified against raku
+(`$_ = 10; ($_ ~~ *)(3)` is `False`, i.e. `10 ~~ 3`, in both). The compound-assignment
+family (`* += 1`) stays a boundary, per section 2.5's own scoping (needs a
+`MetaInfix::Assign` class mutsu lacks — an operator-cluster-wide gap, not Whatever-specific).
+
+Two adjacent RakuAST rendering bugs surfaced (and were fixed) because this section's
+`~~`/`!~~`/`=>` constructs no longer die at the `.AST` boundary before reaching them:
+`token_kind_to_op_name` (`src/compiler/helpers_ops.rs`) rendered `!~~` as the internal
+two-tilde string `"!~"` and `=>` via its `{:?}` Debug fallback (`"FatArrow"`) — neither
+is reachable from the compiled-bytecode dispatch path (`!~~`/`~~` compile via the
+dedicated `OpCode::SmartMatchExpr`, never through the generic `InfixFunc` fallback that
+calls this function), so fixing the strings to `"!~~"` / `"=>"` (and the reverse
+`op_name_to_token_kind` lowering table) is display-only and safe.
+
+Section 2.6's two divergences (chained comparison, `* .= lc`) are left exactly as
+documented — not attempted.
+
+New dual-oracle test: `t/rakuast-whatever-code.t` (68 assertions), passing verbatim under
+both `target/debug/mutsu` and the system `raku`. Covers every row of section 2.7's test
+plan except `[*]` (excluded with an inline comment: mutsu currently parses a standalone
+`[*]` as the `[*]`-reduction metaoperator over an empty list — a pre-existing,
+Whatever-unrelated parse ambiguity with no `*` node in the tree to classify either way —
+while raku renders `Term::Whatever`; out of scope for this ADR).
 
 ## Phase 2 detailed design (added 2026-08-20)
 

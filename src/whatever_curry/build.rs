@@ -167,12 +167,17 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
             op: TokenKind::DotDotDot | TokenKind::DotDotDotCaret,
             ..
         } => 0,
-        // SmartMatch/BangTilde: Whatever on RHS is handled at runtime; only count LHS.
+        // SmartMatch/BangTilde: a *compound* Whatever on the RHS is left for
+        // runtime autoprime (not curried), so only LHS counts in general. But
+        // the RHS-autoprime forms `X ~~ *` / `X !~~ *` (ADR-0033 Phase 2 section
+        // 2.5) plant a `WhateverCurry` directly over this Binary with a *bare*
+        // placeholder on the right, and that placeholder must be counted too —
+        // it is the only one when the LHS has none (`Int ~~ *`).
         Expr::Binary {
             op: TokenKind::SmartMatch | TokenKind::BangTilde,
             left,
-            ..
-        } => count_whatever(left),
+            right,
+        } => count_whatever(left) + usize::from(is_whatever(right)),
         Expr::Binary { left, right, .. } => count_whatever(left) + count_whatever(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => count_whatever(expr),
         Expr::MethodCall { target, .. }

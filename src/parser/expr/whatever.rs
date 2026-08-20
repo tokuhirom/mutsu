@@ -55,8 +55,8 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
             op: TokenKind::Ident(name),
             left,
             right,
-        } if ((name == "x" || name == "xx") && matches!(&**right, Expr::Whatever))
-            || (name == "xx" && matches!(&**left, Expr::Whatever)) =>
+        } if ((name == "x" || name == "xx") && is_whatever(right))
+            || (name == "xx" && is_whatever(left)) =>
         {
             false
         }
@@ -107,8 +107,8 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             // point — so an enclosing postfix (`(* xx 3).elems`) must not wrap the
             // whole chain into a WhateverCode either. (`x`/`xx` with a right `*` was
             // already exempt; string `* x 2` DOES curry, so only `xx` exempts left.)
-            ((name == "xx" || name == "x") && matches!(&**right, Expr::Whatever))
-                || (name == "xx" && matches!(&**left, Expr::Whatever))
+            ((name == "xx" || name == "x") && is_whatever(right))
+                || (name == "xx" && is_whatever(left))
                 || contains_xx_with_bare_whatever(left)
                 || contains_xx_with_bare_whatever(right)
         }
@@ -135,8 +135,13 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
     }
 }
 
+/// True for a bare `*` leaf — either a `Whatever` *value* or a `WhateverArg`
+/// *priming argument* (ADR-0033 Phase 2). Outside `src/rakuast/`, the two are
+/// deliberately indistinguishable: every scope/arity predicate built on this
+/// helper must keep computing exactly what it computes today regardless of
+/// which leaf the classifier in `src/whatever_curry/mark.rs` produced.
 pub(crate) fn is_whatever(expr: &Expr) -> bool {
-    matches!(expr, Expr::Whatever)
+    matches!(expr, Expr::Whatever | Expr::WhateverArg)
 }
 
 /// True when `expr` is an already-planted WhateverCurry marker (produced by a

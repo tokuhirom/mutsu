@@ -381,7 +381,12 @@ pub(crate) fn parse_program(input: &str) -> Result<(Vec<Stmt>, Option<String>), 
         (input, None)
     };
     let result = match stmt::program(source) {
-        Ok((rest, stmts)) => {
+        Ok((rest, mut stmts)) => {
+            // ADR-0033 Phase 2: classify every `*` leaf as a value
+            // (`Expr::Whatever`) or a priming argument (`Expr::WhateverArg`)
+            // now that the whole program tree exists. Pure annotation --
+            // behaviour-preserving by construction (section 2.2's invariant).
+            crate::whatever_curry::mark::mark_program(&mut stmts);
             let rest_trimmed = rest.trim();
             if !rest_trimmed.is_empty() {
                 let consumed = source.len() - rest.len();

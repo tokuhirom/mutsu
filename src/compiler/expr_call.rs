@@ -816,8 +816,8 @@ impl Compiler {
                 && let Expr::Binary { left, op, right } = body.as_ref()
                 && *op == TokenKind::Plus
                 && let delta = match (left.as_ref(), right.as_ref()) {
-                    (Expr::Whatever, rhs) => Some(rhs.clone()),
-                    (lhs, Expr::Whatever) => Some(lhs.clone()),
+                    (lhs, rhs) if crate::parser::is_whatever(lhs) => Some(rhs.clone()),
+                    (lhs, rhs) if crate::parser::is_whatever(rhs) => Some(lhs.clone()),
                     _ => None,
                 }
                 && let Some(delta) = delta
