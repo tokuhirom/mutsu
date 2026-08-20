@@ -1,5 +1,23 @@
 # A when-only block's non-match value is still wrong outside map/grep/first
 
+**Status (2026-08-20): designed — see
+[ADR-0052](../../docs/adr/0052-a-when-clause-produces-its-value-on-the-stack.md).**
+Re-verified reproducing on `main` @ `4c58b5f59`; all three probes below are
+unchanged. The ADR confirms this is architectural rather than a point fix, and
+widens it: the same mechanism also (a) reconstructs the falsy value from a
+matcher-shape heuristic instead of observing the comparison result — already
+wrong on the fast path for `(Any,).map({ when 2 { "x" } })`, which is `(0,)` in
+raku and `(Bool::False,)` in mutsu — and (b) *leaks* a stack value on the match
+side, silently eating a sibling argument in
+`say "A: ", (given 2 { when 2 { "two" } })`. That second one is a
+single-site fix with its own ticket
+(`todo/tickets/given-expr-succeed-branch-leaks-body-stack-value.md`). The ADR
+also corrects this file's framing of the blast radius: `compile_unit`'s `Pop`
+is not "currently a no-op" but currently *unbalanced* (an unguarded
+`self.stack.pop()` reached with nothing pushed), and there are **three**
+disagreeing statement-sequence compilers, not two. Retire this file when
+ADR-0052 Slice 4 lands.
+
 **Reclassified from `todo/tickets/` (2026-08-18):** the ticket's own analysis
 already concluded a point fix isn't safe — the general fix means making
 `exec_when_op` push a value onto the VM stack on every non-match, which is a
