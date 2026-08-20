@@ -353,8 +353,17 @@ impl Interpreter {
                 } else if expected_normalized.is_empty() || expected_normalized == "Exception" {
                     true
                 } else if let Some(cls) = &ex_class {
-                    cls == expected_normalized
-                        || cls.starts_with(&format!("{}::", expected_normalized))
+                    // `cls` is the exception's REGISTRY storage name, which
+                    // for a lexically-scoped exception class (`my class
+                    // X::MyErr is Exception { ... }`) is mangled (ADR-0047
+                    // P1: `Foo\u{0}<decl-id>`). `expected_normalized` is
+                    // already the user-facing bare name (`Value::to_string_value`'s
+                    // `Package` arm demangles it). Compare the demangled form
+                    // for the name checks; the registry/MRO/role checks below
+                    // still need the real (possibly mangled) `cls` key.
+                    let cls_display = crate::value::user_facing_type_name(cls);
+                    cls_display == expected_normalized
+                        || cls_display.starts_with(&format!("{}::", expected_normalized))
                         // Check MRO: the exception's class hierarchy may include the expected type
                         || self.registry().classes.get(cls).is_some_and(|def| {
                             def.mro.iter().any(|parent| parent == expected_normalized)

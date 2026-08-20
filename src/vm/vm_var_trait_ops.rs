@@ -12,6 +12,16 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx);
         let trait_name = Self::const_str(code, trait_name_idx).to_string();
+        // `is TraitName` names its target class/role as WRITTEN in the source
+        // (a constant string baked at compile time), but a lexical class
+        // registers under a mangled storage name (ADR-0047 P1:
+        // `Foo\u{0}<decl-id>`) while `env` binds the bare name written here to
+        // it. Remap before every registry lookup below, or `my %h is Tied`
+        // (where `Tied` is a `my class`) fails every `registry().classes`/
+        // `roles` probe and the tie never engages. A no-op for a builtin
+        // trait name (`default`, `rw`, ...) or a non-lexical class: `env` has
+        // no Package binding for those under this literal name.
+        let trait_name = self.lexical_env_remap_name(&trait_name);
         // Under shadow slots a by-name `position` search resolves to the OUTER
         // same-named slot, so the trait would tag/replace the wrong container
         // (e.g. `my @a is default(42)` shadowing an outer `@a` tagged the outer

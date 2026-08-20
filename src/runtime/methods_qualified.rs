@@ -151,6 +151,16 @@ impl Interpreter {
             return None;
         };
 
+        // A qualified call names its target class as WRITTEN in the source
+        // (`self.Parent::me()`), but a lexical class registers under a
+        // mangled storage name (ADR-0047 P1: `Foo\u{0}<decl-id>`) while `env`
+        // binds the bare name written here to it. Remap through the current
+        // lexical env before comparing against the instance's MRO, or a
+        // qualified call to a lexical ancestor/role wrongly reports
+        // "not inherited or done by" even though it plainly is.
+        let qualifier_owned = self.lexical_env_remap_name(qualifier);
+        let qualifier: &str = &qualifier_owned;
+
         // Check that the qualifier class/role is in the instance's MRO or composed roles
         let inst_cn_str = inst_class.resolve();
         let inst_mro = self.class_mro(&inst_cn_str);
@@ -664,6 +674,12 @@ impl Interpreter {
         let ValueView::Mixin(inner, mixins) = target.view() else {
             return None;
         };
+        // See the identical remap in `dispatch_qualified_instance_method`: a
+        // lexical class's mangled storage name (ADR-0047 P1) is what the
+        // instance's MRO / composed roles actually name, not the bare
+        // source-written qualifier.
+        let qualifier_owned = self.lexical_env_remap_name(qualifier);
+        let qualifier: &str = &qualifier_owned;
 
         // 1) Qualifier is a role: applied at run time on this mixin, composed on the
         //    inner instance's class, or otherwise a known role. Dispatch directly to
@@ -831,6 +847,11 @@ impl Interpreter {
         if method.starts_with('!') || matches!(target.view(), ValueView::Instance { .. }) {
             return None;
         }
+        // See the identical remap in `dispatch_qualified_instance_method`: a
+        // lexical class's mangled storage name (ADR-0047 P1) is what the
+        // type's MRO actually names, not the bare source-written qualifier.
+        let qualifier_owned = self.lexical_env_remap_name(qualifier);
+        let qualifier: &str = &qualifier_owned;
         // Let constructor dispatch handle qualified base-constructor calls like
         // `self.Mu::new(...)`. Routing this through unqualified `.new` re-enters
         // user-defined constructors and recurses indefinitely.

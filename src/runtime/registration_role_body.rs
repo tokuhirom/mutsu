@@ -160,15 +160,27 @@ impl Interpreter {
             return Ok(());
         }
         if op.hides {
-            // Track hidden class relationship for this role
+            // Track hidden class relationship for this role. Resolve through
+            // the lexical env first (see the `is`-parent remap below) so a
+            // lexical class's mangled storage name is what gets recorded,
+            // not its dead bare source name.
             self.registry_mut()
                 .role_hides
                 .entry(name.to_string())
                 .or_default()
-                .push(op.name.resolve());
+                .push(self.lexical_env_remap_name(&op.name.resolve()));
             return Ok(());
         }
-        let role_name_str = op.name.resolve();
+        // A role's `is Parent`/`does Parent` clause names its parent as
+        // WRITTEN in the source (`op.name.resolve()`), but a lexical class
+        // registers under a mangled storage name (ADR-0047 P1:
+        // `Foo\u{0}<decl-id>`) while `env` binds the bare name written here to
+        // it — the same remap `exec_register_class_op` applies to a class's
+        // own `is`-parents. Without this, `role R is C2 { }` where `C2` is a
+        // `my class` reported "Unknown role: C2": the bare name is in neither
+        // `registry().roles` nor `registry().classes`, only its mangled
+        // storage name is.
+        let role_name_str = self.lexical_env_remap_name(&op.name.resolve());
         // A sibling role referenced by its short name (`role Derived
         // does Base` inside `unit module M`, where Base is registered
         // as `M::Base`) must resolve to its qualified name — the same

@@ -269,12 +269,19 @@ impl Interpreter {
                 && BUILTIN_TYPES.contains(&resolved_parent)
                 && is_non_composable_builtin(resolved_parent)
             {
+                // `name` may be a lexical class's mangled storage name
+                // (ADR-0047 P1: `Foo\u{0}<decl-id>`) — show the user-facing
+                // bare name in the message and `target-name` attribute.
+                let display_name = crate::value::user_facing_type_name(name);
                 let msg = format!(
                     "{} is not composable, so {} cannot compose it",
-                    resolved_parent, name
+                    resolved_parent, display_name
                 );
                 let mut attrs = HashMap::new();
-                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "target-name".to_string(),
+                    Value::str(display_name.to_string()),
+                );
                 attrs.insert(
                     "composer".to_string(),
                     Value::package(crate::symbol::Symbol::intern(resolved_parent)),
@@ -294,12 +301,16 @@ impl Interpreter {
                 && !self.registry().roles.contains_key(resolved_parent)
                 && !BUILTIN_TYPES.contains(&resolved_parent)
             {
+                let display_name = crate::value::user_facing_type_name(name);
                 let msg = format!(
                     "{} is not composable, so {} cannot compose it",
-                    resolved_parent, name
+                    resolved_parent, display_name
                 );
                 let mut attrs = HashMap::new();
-                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
+                attrs.insert(
+                    "target-name".to_string(),
+                    Value::str(display_name.to_string()),
+                );
                 attrs.insert(
                     "composer".to_string(),
                     Value::package(crate::symbol::Symbol::intern(resolved_parent)),

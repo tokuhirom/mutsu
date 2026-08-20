@@ -927,7 +927,12 @@ pub fn raku_value(v: &Value) -> String {
         // A Uni / normalization form nested in a container keeps its
         // constructor form (`Uni.new(0x0061).NFC`), not its decoded text.
         ValueView::Uni(u) => uni_raku_repr(&u.text, &u.form),
-        ValueView::Package(name) => name.resolve().to_string(),
+        // A lexical class/role's type object may carry a mangled storage
+        // name (ADR-0047 P1: `Foo\u{0}<decl-id>`) -- `.raku` must show the
+        // user-facing bare name.
+        ValueView::Package(name) => {
+            crate::value::user_facing_type_name(&name.resolve()).into_owned()
+        }
         // A parameterized role type object renders as `Cup[EggNog]`.
         ValueView::ParametricRole {
             base_name,

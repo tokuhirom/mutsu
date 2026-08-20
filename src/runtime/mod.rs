@@ -2099,21 +2099,16 @@ pub struct Interpreter {
     /// Stack of lexically-scoped class names per block scope depth.
     /// When a block scope exits, classes registered in that scope get suppressed.
     lexical_class_scopes: Vec<Vec<String>>,
-    /// Maps a lexical class's bare/qualified name to the source declaration site
-    /// (a stable per-`my class` site id) that currently owns that bare name in
-    /// the registry. A *different* site declaring the same name (e.g. two
-    /// `my class Foo` in separate `gather` blocks) must NOT clobber the first —
-    /// it is instead stored under a mangled internal name so its instances keep
-    /// their own type identity. See `exec_register_class_op`.
-    lexical_class_sites: std::collections::HashMap<String, u64>,
-    /// Per block-scope stack of `(qualified_name, decl_id)` ownership records.
-    /// When a block scope exits, its ownership entries are released from
-    /// `lexical_class_sites`, so a later same-named lexical class declared in a
-    /// *sequential* (already-exited) block reuses the bare name. Bodies that do
-    /// NOT push a block scope — `gather`/coroutine bodies whose produced
-    /// instances escape — keep their ownership, so their same-named siblings are
-    /// given distinct mangled identities. See `pop_lexical_class_scope`.
-    lexical_class_owner_scopes: Vec<Vec<(String, u64)>>,
+    /// Maps a lexical class's qualified name to the storage name a
+    /// currently-open scope most recently registered it under, for stub ->
+    /// full-definition continuation across two separate `decl_id`s (ADR-0047
+    /// P1; see `lexical_class_pending_stub`'s doc comment).
+    lexical_class_pending: std::collections::HashMap<String, String>,
+    /// Per block-scope stack of `(qualified_name, storage_name)` records added
+    /// to `lexical_class_pending` while that scope was open. Released (not
+    /// just popped) at `pop_lexical_class_scope` so the map can never answer a
+    /// query with an entry from an already-exited scope.
+    lexical_class_pending_scopes: Vec<Vec<(String, String)>>,
     /// Last expression value from VM execution, used by REPL for auto-display.
     pub(crate) last_value: Option<Value>,
     /// Pending env updates from regex code blocks, to be synced to VM locals.

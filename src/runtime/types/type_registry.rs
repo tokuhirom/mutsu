@@ -408,6 +408,45 @@ impl Interpreter {
             })
     }
 
+    /// Resolve `qualified` against the type registry, tolerating ADR-0047's
+    /// unconditional lexical site-key mangling (`Foo\u{0}<decl-id>`). A caller
+    /// that RECONSTRUCTS a qualified name from a package/short-name pair
+    /// (`resolve_suppressed_type`'s `"{owner}::{name}"`) cannot know the
+    /// mangled suffix a `my class`/`my grammar` nested in that owner actually
+    /// registered under, since the suffix is an opaque per-site id. Try the
+    /// bare reconstructed name first (the common case: non-lexical nested
+    /// types, and any `decl_id == 0` declaration, are never mangled); if that
+    /// misses, look for exactly the mangled forms of `qualified` across the
+    /// four type tables and return the stored key so the caller can bind the
+    /// bareword to the class's REAL identity instead of a dead bare name.
+    pub(crate) fn resolve_lexical_type_key(&self, qualified: &str) -> Option<String> {
+        if self.has_type_direct(qualified) {
+            return Some(qualified.to_string());
+        }
+        // `env` may hold an alias from the bare `qualified` name to its real
+        // (possibly mangled) storage name -- exactly the binding
+        // `exec_register_class_op` writes unconditionally for every class,
+        // lexical or not. Follow it before falling back to a raw prefix scan,
+        // and return the ALIAS TARGET (the true registry key), not the bare
+        // name that resolved it -- a caller must dispatch on the class's real
+        // identity, not the dead bare name the alias merely proves exists.
+        if let Some(ValueView::Package(target)) = self.env.get(qualified).map(Value::view) {
+            let resolved = target.resolve();
+            if resolved != qualified && self.has_type_direct(&resolved) {
+                return Some(resolved);
+            }
+        }
+        let prefix = format!("{qualified}\u{0}");
+        let reg = self.registry();
+        reg.classes
+            .keys()
+            .find(|key| key.starts_with(&prefix))
+            .or_else(|| reg.roles.keys().find(|key| key.starts_with(&prefix)))
+            .or_else(|| reg.enum_types.keys().find(|key| key.starts_with(&prefix)))
+            .or_else(|| reg.subsets.keys().find(|key| key.starts_with(&prefix)))
+            .cloned()
+    }
+
     /// Resolve a type name against the current package chain: inside
     /// `module Foo { class Params {…}; sub mk { Params.new } }` the sub's
     /// bareword `Params` names `Foo::Params` (registered fully qualified),

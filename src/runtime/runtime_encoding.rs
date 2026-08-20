@@ -136,25 +136,77 @@ impl Interpreter {
     /// Push a new lexical class scope frame.
     pub(crate) fn push_lexical_class_scope(&mut self) {
         self.lexical_class_scopes.push(Vec::new());
-        self.lexical_class_owner_scopes.push(Vec::new());
+        self.lexical_class_pending_scopes.push(Vec::new());
     }
 
-    /// Pop a lexical class scope frame, suppressing all class names registered in
-    /// it and releasing ownership of any lexical class names it claimed, so a
-    /// later same-named lexical class in a sequential scope reuses the bare name
-    /// (see `lexical_class_owner_scopes`).
+    /// Pop a lexical class scope frame, suppressing all class names registered
+    /// in it (see `lexical_class_scope_names`) and releasing this frame's
+    /// pending-stub records (see `lexical_class_pending`). Restoring the *env
+    /// binding* each of those names shadowed is not this function's job any
+    /// more (ADR-0047 D2/P2): a `my class Foo` registers its resolved name
+    /// through `register_lexical_class`, which also enrolls it in
+    /// `block_declared_vars` exactly like a `my $x` — the general block-exit
+    /// restore in `vm_misc_scope.rs` (the `saved_env`/`current_env`/
+    /// `block_declared` dance) then reverts the bare-name env binding to
+    /// whatever the enclosing scope had, the same way it reverts an ordinary
+    /// lexical variable. This function only has to keep the name suppressed so
+    /// bareword resolution outside the block does not fall back to a
+    /// registry hit for the (now out-of-scope) storage name.
     pub(crate) fn pop_lexical_class_scope(&mut self) {
         if let Some(names) = self.lexical_class_scopes.pop() {
             for name in names {
                 self.suppressed_names.insert(name);
             }
         }
-        if let Some(owned) = self.lexical_class_owner_scopes.pop() {
-            for (qualified, decl_id) in owned {
-                if self.lexical_class_sites.get(&qualified) == Some(&decl_id) {
-                    self.lexical_class_sites.remove(&qualified);
+        if let Some(owned) = self.lexical_class_pending_scopes.pop() {
+            for (qualified, storage) in owned {
+                if self.lexical_class_pending.get(&qualified) == Some(&storage) {
+                    self.lexical_class_pending.remove(&qualified);
                 }
             }
+        }
+    }
+
+    /// A storage name a currently-open lexical scope registered `qualified`
+    /// under, if that declaration is STILL a stub (`class C { ... }` not yet
+    /// completed). See `exec_register_class_op`: a stub and its later full
+    /// definition are two separate `Stmt::ClassDecl` nodes with two different
+    /// `decl_id`s (the parser assigns a fresh id per node, even for a
+    /// textually adjacent `class C { ... }; class C { method m {} }`), so
+    /// ADR-0047 P1's unconditional per-`decl_id` mangling would otherwise
+    /// register the completing definition under a BRAND NEW mangled key,
+    /// leaving the stub's key permanently stubbed and orphaned. This lets the
+    /// completing declaration find and reuse the stub's own storage name
+    /// instead, so the definition lands on the SAME registry entry the stub
+    /// occupies — exactly like two executions of one loop-body site sharing
+    /// one `decl_id`, just reached through a different route (same open
+    /// scope, adjacent statements) rather than a stable `decl_id`.
+    ///
+    /// Scoped to currently-open scopes only (released at `pop_lexical_class_scope`)
+    /// so it can never bridge two SEQUENTIAL (already-exited) scopes the way
+    /// the pre-ADR-0047 `lexical_class_sites` arbitration did — that cross-scope
+    /// reach is exactly what caused ADR-0047 S2 (a later sibling block's `my
+    /// class C` silently retargeting an earlier, already-exited block's `C`).
+    /// Gating reuse on "still a stub" additionally means a FULLY DEFINED
+    /// class is never reused this way, even if some enclosing scope is still
+    /// open — only a genuinely incomplete declaration is a continuation
+    /// target.
+    pub(crate) fn lexical_class_pending_stub(&self, qualified: &str) -> Option<String> {
+        let storage = self.lexical_class_pending.get(qualified)?;
+        self.registry()
+            .class_stubs
+            .contains(storage)
+            .then(|| storage.clone())
+    }
+
+    /// Record `storage` as `qualified`'s current declaration in the innermost
+    /// open lexical scope, so a later same-scope statement can find it via
+    /// `lexical_class_pending_stub` if it is still a stub when that happens.
+    pub(crate) fn record_lexical_class_pending(&mut self, qualified: String, storage: String) {
+        self.lexical_class_pending
+            .insert(qualified.clone(), storage.clone());
+        if let Some(frame) = self.lexical_class_pending_scopes.last_mut() {
+            frame.push((qualified, storage));
         }
     }
 
@@ -169,25 +221,21 @@ impl Interpreter {
     }
 
     /// Register a class name as lexically scoped in the current block.
+    ///
+    /// Also enrolls the name in `block_declared_vars` (ADR-0047 D2/P2), the
+    /// same set an ordinary `my $x` declaration joins. That is what makes the
+    /// general block-exit restore in `vm_misc_scope.rs` treat a `my class Foo`
+    /// binding exactly like a `my` variable: on scope exit it reverts the bare
+    /// env name back to whatever the enclosing scope had bound it to (or drops
+    /// it if the enclosing scope had nothing), rather than letting the block's
+    /// own (possibly mangled) storage-name binding leak out and permanently
+    /// steal the name.
     pub(crate) fn register_lexical_class(&mut self, name: String) {
         if let Some(scope) = self.lexical_class_scopes.last_mut() {
-            scope.push(name);
+            scope.push(name.clone());
         }
-    }
-
-    /// The declaration site that currently owns the given bare/qualified lexical
-    /// class name in the registry, if any. See `lexical_class_sites`.
-    pub(crate) fn lexical_class_site_owner(&self, name: &str) -> Option<u64> {
-        self.lexical_class_sites.get(name).copied()
-    }
-
-    /// Record `site_id` as the owner of the bare/qualified lexical class name,
-    /// and remember it in the current block scope so ownership is released when
-    /// that scope exits (see `pop_lexical_class_scope`).
-    pub(crate) fn set_lexical_class_site_owner(&mut self, name: String, site_id: u64) {
-        self.lexical_class_sites.insert(name.clone(), site_id);
-        if let Some(frame) = self.lexical_class_owner_scopes.last_mut() {
-            frame.push((name, site_id));
+        if let Some(set) = self.block_declared_vars.last_mut() {
+            set.insert(crate::symbol::Symbol::intern(&name));
         }
     }
 
@@ -368,15 +416,15 @@ impl Interpreter {
         let current_pkg = &self.current_package();
         if current_pkg != "GLOBAL" {
             let qualified = format!("{}::{}", current_pkg, name);
-            if self.has_type(&qualified) {
-                return Some(qualified);
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
         }
         // Check method class stack
         for class_name in self.method_class_stack.iter().rev() {
             let qualified = format!("{}::{}", class_name, name);
-            if self.has_type(&qualified) {
-                return Some(qualified);
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
         }
         // A method composed from a role runs with the *consuming class* on the
@@ -387,8 +435,8 @@ impl Interpreter {
         // method came from may lend its lexical types.
         if let Some(ValueView::Package(role)) = self.env().get("?ROLE").map(|v| v.view()) {
             let qualified = format!("{}::{}", role.resolve(), name);
-            if self.has_type(&qualified) {
-                return Some(qualified);
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
         }
         // The class currently being constructed. A typed attribute's default
@@ -400,8 +448,8 @@ impl Interpreter {
         // undeclared).
         if let Some(class_name) = &self.constructing_class {
             let qualified = format!("{}::{}", class_name, name);
-            if self.has_type(&qualified) {
-                return Some(qualified);
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
         }
         None

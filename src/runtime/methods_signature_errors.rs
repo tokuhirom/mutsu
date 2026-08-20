@@ -11,6 +11,11 @@ pub(super) fn make_private_permission_error(
     class_name: &str,
     calling_package: &str,
 ) -> RuntimeError {
+    // Either package name may be a lexical class's mangled storage name
+    // (ADR-0047 P1: `Foo\u{0}<decl-id>`) — show the user-facing bare name in
+    // the message and the `source-package`/`calling-package` attributes.
+    let class_name = crate::value::user_facing_type_name(class_name);
+    let calling_package = crate::value::user_facing_type_name(calling_package);
     let msg = format!(
         "Cannot call private method '{}' on package {} because it does not trust {}",
         method_name, class_name, calling_package
