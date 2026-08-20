@@ -406,26 +406,48 @@ impl Interpreter {
         // key must include the target class name, not just the role.
         //
         // A `__hoisted` forward-reference shell (see
-        // `ClassDeclModifiers::is_hoisted_shell`'s doc comment) skips the
-        // deferred body entirely, rather than running it (guarded or not):
-        // the shell's registration is throwaway and superseded at runtime by
-        // the real, source-position declaration re-registering the SAME
-        // (class, role) pair later, and the shell runs in a transient
-        // environment whose effects never reach the program's real state
-        // anyway (methods/attributes DO need to be visible on the shell for
-        // a forward reference to resolve them, which the copy above this
-        // guard already handles unconditionally; the deferred body is
-        // arbitrary side-effecting code, not structural declarations, so it
-        // has no such forward-reference need). Two bugs came from getting
-        // this wrong: memoising the shell's run under the same key as the
-        // real one left the real declaration's composition silently skipped
-        // (`t/run-nested-role-body.t`'s `$side` never got set); running it
-        // unconditionally on every shell pass double-ran it for every
-        // ordinary top-level class declaration, since a shell always
-        // precedes the real pass (caught by the new
-        // `t/role-body-composition-timing.t` two-distinct-classes case,
-        // which counted 4 runs instead of 2).
-        if !cx.is_hoisted_shell {
+        // `ClassDeclModifiers::is_hoisted_shell`'s doc comment) is exempt
+        // from this memo and always runs the deferred body unconditionally,
+        // the same as pre-guard mutsu: the shell's registration is
+        // throwaway and superseded at runtime by the real, source-position
+        // declaration re-registering the SAME (class, role) pair later, so
+        // memoising the shell's run under the guarded key would "use up"
+        // the one real run and leave the actual declaration's composition
+        // silently skipped (`t/run-nested-role-body.t`'s
+        // `$side = @outer.elems * 100` caught this: `$side` never got set,
+        // because it lives in the mainline's env, which the shell's own
+        // transient registration-time env never reaches).
+        //
+        // The shell's run is NOT a no-op to skip, either: a role body can
+        // declare structural state a LATER statement in the SAME shell
+        // registration needs to already be visible, e.g. `my constant
+        // rname = 'rsecond'; method ::(rname) { ... }` -- the indirect
+        // method name has to resolve during the shell's own registration
+        // for the shell's copy of that method to register under the right
+        // name (`t/indirect-declarator-names.t`). A registry-level
+        // declaration like that constant persists from the shell's
+        // registration (unlike a mainline lexical write), so running the
+        // body twice (once in the shell, once for real) is observably safe
+        // for structural effects -- but it does mean a WRITE TO A GLOBAL
+        // from a hoisted class's role body is visible twice, which is a
+        // mutsu-internal two-pass-registration artifact with no equivalent
+        // in Rakudo's genuine single-pass compile-time composition. Tests
+        // pinning "the body runs exactly once" for a class-header
+        // composition must therefore avoid placing the class declaration
+        // where it gets shelled (only a declaration preceded by a genuine
+        // runtime statement is; see `hoist_type_decl_shells`'s doc comment)
+        // — `t/role-body-composition-timing.t`'s class-header cases live in
+        // their own file for exactly this reason.
+        if cx.is_hoisted_shell {
+            self.run_composed_role_deferred_body(
+                cx,
+                base_role_name,
+                &role,
+                &role_param_values,
+                &role_arg_values,
+            )?;
+            self.run_composed_role_ancestor_bodies(base_role_name, cx.name)?;
+        } else {
             let compose_key = format!("class:{}:{resolved_parent_name}", cx.name);
             if self
                 .registry_mut()

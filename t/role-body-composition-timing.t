@@ -86,9 +86,25 @@ ok ?GA.parse('a') && !GA.parse('b') && ?GB.parse('b') && !GB.parse('a'),
 # be observed via `my $x = 0; ...; is $x, ...`: a runtime reset/read always
 # runs AFTER compile-time composition already happened. Accumulate into
 # $GLOBAL:: without an intervening reset instead, like $order above.
-role TwoClassRole { $GLOBAL::two_class_count++; method t { 't' } }
-class TwoClassA does TwoClassRole { }
-class TwoClassB does TwoClassRole { }
+#
+# The two class declarations are wrapped in their own `module` block rather
+# than sitting at this file's top level: `hoist_type_decl_shells` gives
+# `module`/`package`/`grammar` bodies their own independent
+# forward-reference-shell pass, so a class declared as the FIRST statement
+# in a fresh module body is never shelled (a declaration preceded only by
+# other declarations is not shelled -- see that function's doc comment).
+# Sitting at the outer file's top level, after 16 preceding `is`/`ok`
+# assertions, both classes WOULD be shelled, and the shell's own throwaway
+# registration composes roles too (needed so a genuine forward reference
+# resolves role-provided methods) -- doubling this count to 4. That
+# shell/real duplication is a mutsu-internal two-pass-registration artifact
+# with no Rakudo equivalent (Rakudo composes once, at compile time); see
+# `compose_role_into_class`'s `is_hoisted_shell` handling.
+module TwoClassCompositionCheck {
+    role TwoClassRole { $GLOBAL::two_class_count++; method t { 't' } }
+    class TwoClassA does TwoClassRole { }
+    class TwoClassB does TwoClassRole { }
+}
 is $GLOBAL::two_class_count, 2,
     'two distinct classes composing the same role each run its body once';
 

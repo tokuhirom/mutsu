@@ -60,19 +60,40 @@ one cached composed type and only run it once (case 3, case 6).
     failed attempt now removes its own key again — otherwise a second `.new` on the same
     rejected parameterization silently succeeded instead of re-dying
     (`t/role-body-guard-parameterisation.t`).
-  - **Hoisted-shell exemption.** Every top-level class declaration first gets a throwaway
-    `__hoisted` forward-reference shell registration (`hoist_type_decl_shells`), superseded at
-    runtime by the real, source-position declaration. The shell composes roles too (so a
-    forward reference resolves role-provided methods), but its deferred-body run must not
-    count toward the memo — an early version of this fix let the shell run unconditionally,
-    which then double-ran the body for every ordinary class declaration (shell + real), and a
-    version before that let the shell's run consume the class-composition memo key,
-    permanently starving the real declaration's run (`t/run-nested-role-body.t`'s
-    `$side = @outer.elems * 100` caught this: `$side` never got set). The fix: a hoisted-shell
-    composition now skips the deferred body entirely — it has no forward-reference need for
-    arbitrary side-effecting code, only for methods/attributes, which the unconditional method
-    copy above the guard already handles — and only the real, non-hoisted pass runs (and
-    memoizes) the body.
+  - **Hoisted-shell exemption.** A class declaration that follows a genuine runtime statement
+    in its block (`hoist_type_decl_shells`'s condition — the common case for any class not at
+    the very top of a file) first gets a throwaway `__hoisted` forward-reference shell
+    registration, superseded at runtime by the real, source-position declaration. Getting this
+    exemption right took three iterations:
+    1. No exemption (the memo key applied uniformly): the shell's run consumed the
+       class-composition memo key, permanently starving the real declaration's run
+       (`t/run-nested-role-body.t`'s `$side = @outer.elems * 100` caught this — `$side` never
+       got set, because the shell's registration-time env is transient and never reaches the
+       mainline's env the real declaration writes into).
+    2. Skip the shell's deferred-body run entirely, reasoning that it has no
+       forward-reference need for arbitrary side-effecting code (only for the
+       methods/attributes the unconditional copy above the guard already handles): broke
+       `t/indirect-declarator-names.t`, whose `role RIndirect { my constant rname = 'rsecond';
+       method ::(rname) { ... } }` needs the constant to actually be *bound* during the
+       shell's own registration for the shell's copy of the indirectly-named method to resolve
+       `rname` — a role's deferred body is not purely user-observable side effects, it can also
+       declare structural state (a `constant`, a nested type) a later statement in the SAME
+       registration pass needs.
+    3. The fix that stuck: the shell runs the deferred body **unconditionally**, exactly as
+       pre-guard mutsu always did, and is simply exempt from ever touching the
+       class-composition memo (so it can never block or be blocked by the real pass). A
+       registry-level declaration from the shell's run (like that `constant`) genuinely
+       persists and is what makes indirect method naming work; a mainline-lexical write from
+       the shell's run does not persist (case in point: `run-nested-role-body.t`'s `$side`).
+       But a *global* write from the shell's run — visible from anywhere, unlike a lexical —
+       DOES leak into observable state, which is a mutsu-internal two-pass-registration
+       artifact with no Rakudo equivalent (Rakudo composes once, at compile time, full stop).
+       The regression tests for cases 1/2 in the table above therefore isolate their class
+       declarations inside their own `module { ... }` block (which gets its own independent
+       `hoist_type_decl_shells` pass, and — as the FIRST statement of a fresh block — is never
+       shelled at all, per that function's own doc comment) rather than sitting at
+       `t/role-body-composition-timing.t`'s top level after 16 preceding assertions, where they
+       otherwise WOULD be shelled and show a `$GLOBAL::`-count of 4, not 2.
 
 `ClassDeclModifiers`/`RoleCompositionCx`/`ClassBodyCx` all gained an `is_hoisted_shell: bool`
 field threaded from `exec_register_class_op`'s `__hoisted` custom-trait check down to the
