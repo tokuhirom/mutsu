@@ -8,7 +8,12 @@
   ADR-0024 (mainline lexical cells), PR #2749 (broad closure boxing reverted),
   PR #2751 (escape-aware sibling-cell sharing)
 - Addresses: `todo/deep/closure-read-only-capture-loses-to-caller-env-same-name.md`
-  (directions 1 and 2; direction 3 is a separate compiler bug — see §5)
+  (directions 1 and 2; direction 3 is a separate compiler bug — see §5). That
+  ticket was retired on 2026-08-20 once all four residuals it tracked were
+  verified closed — see
+  [`news/2026-08/closure-caller-hijack-residuals-closed-family-owned-by-adr0055.md`](../../news/2026-08/closure-caller-hijack-residuals-closed-family-owned-by-adr0055.md).
+  The family's still-live scoping defect moved to
+  [ADR-0055](0055-closure-free-vars-resolve-to-their-own-binding.md).
 
 ## Context
 

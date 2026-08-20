@@ -1,7 +1,9 @@
 # ADR-0055: A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores
 
 - Status: Proposed (design complete; implementation not started)
-- Date: 2026-08-20
+- Date: 2026-08-20 (renumbered 0054 → 0055 on 2026-08-20: two ADRs were
+  authored concurrently as 0054 and this one lost the tie; the index row for
+  0054 belongs to the argument-list-interpolation ADR)
 - Related: ADR-0025 (cell boxing of captured scalars must be value-kind-blind —
   the mechanism this ADR builds on), ADR-0024 (mainline lexicals for named
   subs), ADR-0023 (binding provenance), ADR-0039 (container lexicals resolve
@@ -11,7 +13,15 @@
 - Addresses:
   `todo/deep/call-compiled-closure-lacks-merge-all-and-dual-persistence-store.md`;
   unblocks the "larger fix" named in
-  `todo/deep/eval-block-value-recompiles-every-call.md`
+  `todo/deep/eval-block-value-recompiles-every-call.md`. It also inherits the
+  headline defect of the retired ticket
+  `todo/deep/closure-read-only-capture-loses-to-caller-env-same-name.md` —
+  the *original* statement of the §1.2(b) family, whose four tracked residuals
+  were verified closed on 2026-08-20 (see
+  `news/2026-08/closure-caller-hijack-residuals-closed-family-owned-by-adr0055.md`)
+  while the family itself remained live. That ticket is where "a closure's
+  read-only captured scalar is hijacked by a same-named lexical in the caller's
+  env chain" was first written down; this ADR is now its only home.
 
 ## 1. Context
 
