@@ -367,7 +367,15 @@ impl Interpreter {
                 .reported_stub_errors
                 .insert(name.clone());
         }
-        let names_list = unresolved
+        // `unresolved` holds REGISTRY storage names, which for a lexically-
+        // scoped stub (`my class A {...}`) is mangled (ADR-0047 P1:
+        // `Foo\u{0}<decl-id>`) — show the user-facing bare name in both the
+        // message and the `.packages` attribute (`roast/S32-exceptions/misc2.t`).
+        let display_names: Vec<String> = unresolved
+            .iter()
+            .map(|n| crate::value::user_facing_type_name(n).into_owned())
+            .collect();
+        let names_list = display_names
             .iter()
             .map(|n| format!("    {}", n))
             .collect::<Vec<_>>()
@@ -379,7 +387,7 @@ impl Interpreter {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert(
             "packages".to_string(),
-            Value::array(unresolved.iter().map(|n| Value::str(n.clone())).collect()),
+            Value::array(display_names.into_iter().map(Value::str).collect()),
         );
         attrs.insert("message".to_string(), Value::str(message.clone()));
         let ex = Value::make_instance(crate::symbol::Symbol::intern("X::Package::Stubbed"), attrs);

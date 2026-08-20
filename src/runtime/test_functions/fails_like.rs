@@ -197,8 +197,15 @@ impl Interpreter {
                         if expected_normalized.is_empty() || expected_normalized == "Exception" {
                             true
                         } else if let Some(cls) = &ex_class {
-                            cls == &expected_normalized
-                                || cls.starts_with(&format!("{}::", expected_normalized))
+                            // `cls` is the exception's REGISTRY storage name, which
+                            // for a lexically-scoped exception class (`my class
+                            // X::Meow::Meow is Exception { }`) is mangled (ADR-0047
+                            // P1: `Foo\u{0}<decl-id>`). Compare the demangled,
+                            // user-facing name — mirrors the identical fix in
+                            // `throws_like.rs` (`roast/S04-exceptions/fail.t`).
+                            let cls_display = crate::value::user_facing_type_name(cls);
+                            cls_display == expected_normalized
+                                || cls_display.starts_with(&format!("{}::", expected_normalized))
                                 || (cls == "X::AdHoc" && err.message.contains(&expected_normalized))
                         } else if expected_normalized == "X::AdHoc" {
                             true

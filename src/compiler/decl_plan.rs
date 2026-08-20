@@ -187,6 +187,8 @@ impl Compiler {
             body,
             parent_args,
             is_hidden,
+            is_lexical,
+            decl_id,
             ..
         } = stmt
         else {
@@ -221,7 +223,7 @@ impl Compiler {
         // closure nesting — see its doc comment), so no special-casing is
         // needed at this call site.
         let package_name = if name_expr.is_none() && !is_hoisted_shell {
-            Some(self.qualified_class_decl_name(&name.resolve()))
+            Some(self.qualified_class_decl_name(&name.resolve(), *is_lexical, *decl_id))
         } else {
             None
         };

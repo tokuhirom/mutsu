@@ -1107,9 +1107,36 @@ pub(in crate::runtime) fn code_signature_matches_value(
             .collect()
     }
 
+    // Demangle a `SigInfo`'s type-constraint strings the same way
+    // `specialize_code_signature_params` does for `ParamDef`s — needed because
+    // `callable_signature_info` (the ACTUAL callable's signature, e.g. the
+    // `sub (Dog $x --> Bool) {...}` passed as an argument) returns `SigInfo`
+    // directly, with its `Dog` type constraint still the bare name as written.
+    // Without this, only the EXPECTED side (below) got remapped through a
+    // lexical class's mangled storage name (ADR-0047 P1: `Foo\u{0}<decl-id>`),
+    // so `Dog` (expected, remapped to `Dog\u{0}<id>`) could never string-equal
+    // `Dog` (actual, left bare) even though they name the very same `my class
+    // Dog` — every `Callable:(Dog --> ...)` signature constraint against a
+    // lexical class failed to bind (`roast/S06-signature/closure-parameters.t`).
+    fn specialize_sig_info(
+        interpreter: &Interpreter,
+        mut info: crate::value::signature::SigInfo,
+    ) -> crate::value::signature::SigInfo {
+        for p in &mut info.params {
+            if let Some(tc) = &p.type_constraint {
+                p.type_constraint = Some(resolve_captured_constraint(interpreter, tc));
+            }
+        }
+        if let Some(rt) = &info.return_type {
+            info.return_type = Some(resolve_captured_constraint(interpreter, rt));
+        }
+        info
+    }
+
     let Some(actual_info) = callable_signature_info(interpreter, value) else {
         return false;
     };
+    let actual_info = specialize_sig_info(interpreter, actual_info);
     let specialized_expected = specialize_code_signature_params(interpreter, expected_params);
     let specialized_return = expected_return_type
         .as_ref()

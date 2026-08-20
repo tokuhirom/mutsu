@@ -211,17 +211,25 @@ impl Interpreter {
             // name instead of mangling a new one (see
             // `lexical_class_pending_stub`'s doc comment for why this is
             // scoped to only currently-open scopes).
-            let storage_name = if *is_lexical && *decl_id != 0 {
-                match self.lexical_class_pending_stub(&qualified_name) {
-                    Some(pending_storage) => pending_storage,
-                    None => {
-                        let mangled = format!("{qualified_name}\u{0}{decl_id}");
-                        self.record_lexical_class_pending(qualified_name.clone(), mangled.clone());
-                        mangled
-                    }
+            //
+            // The pending-stub lookup runs REGARDLESS of whether THIS
+            // declaration itself is lexical: real Raku allows completing a
+            // `my class A::B { ... }` stub with a plain, package-scoped
+            // `class A::B { }` in the same scope (`roast/S10-packages/
+            // joined-namespaces.t`, "can stub lexical classes with joined
+            // namespaces") — gating the lookup on `*is_lexical` here meant the
+            // non-`my` completion always mangled to bare `qualified_name`
+            // (since a plain `class` never mangles), leaving the stub's
+            // `Foo\u{0}<decl-id>` entry permanently registered as a stub —
+            // "packages were stubbed but not defined" at program exit.
+            let storage_name = match self.lexical_class_pending_stub(&qualified_name) {
+                Some(pending_storage) => pending_storage,
+                None if *is_lexical && *decl_id != 0 => {
+                    let mangled = format!("{qualified_name}\u{0}{decl_id}");
+                    self.record_lexical_class_pending(qualified_name.clone(), mangled.clone());
+                    mangled
                 }
-            } else {
-                qualified_name.clone()
+                None => qualified_name.clone(),
             };
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body

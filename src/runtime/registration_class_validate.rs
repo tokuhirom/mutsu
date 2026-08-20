@@ -127,6 +127,10 @@ impl Interpreter {
     /// shape after all (mirrors the sibling variable-/attribute-trait
     /// no-candidate fallback).
     pub(crate) fn unknown_parent_error(&self, name: &str, parent_name: &str) -> RuntimeError {
+        // `name` may be a lexical class's mangled storage name (ADR-0047 P1:
+        // `Foo\u{0}<decl-id>`) — show the user-facing bare name in the message
+        // and every `child*` attribute.
+        let name = crate::value::user_facing_type_name(name);
         // Suggest close known type names (Did-you-mean).
         let suggestions = self.suggest_type_names(parent_name);
         let mut msg = format!(
@@ -175,7 +179,16 @@ impl Interpreter {
         hidden_parents: &[String],
     ) -> Result<(HashSet<String>, Vec<String>), RuntimeError> {
         const BUILTIN_TYPES: &[&str] = BUILTIN_PARENT_TYPES;
-        let self_short = short_of(name);
+        // `name` is the REGISTRY storage name, which for a lexically-scoped
+        // declaration is mangled (ADR-0047 P1: `Foo\u{0}<decl-id>`) while every
+        // `is`/`does` parent name below is compared/resolved as WRITTEN in the
+        // source. Do every self-name comparison and message against the
+        // demangled, user-facing name instead, or e.g. `my class Foobar is
+        // Foobar { }` never trips X::Inheritance::SelfInherit because the
+        // mangled storage name can never equal the bare parent name it is
+        // supposed to collide with.
+        let name = crate::value::user_facing_type_name(name);
+        let self_short = short_of(&name);
         let mut self_named_does_roles: HashSet<String> = HashSet::new();
         let mut deferred_custom_traits: Vec<String> = Vec::new();
         for parent in parents {
@@ -196,13 +209,14 @@ impl Interpreter {
             // which the short-name test above misses because it strips the type
             // arguments off the parent but not off the class.
             let is_self_named_does_role = does_parents.contains(parent)
-                && (short_of(resolved_parent) == self_short || resolved_parent_name == name)
+                && (short_of(resolved_parent) == self_short
+                    || resolved_parent_name == name.as_ref())
                 && self.registry().roles.contains_key(resolved_parent);
             if is_self_named_does_role {
                 self_named_does_roles.insert(parent.clone());
                 continue;
             }
-            if resolved_parent == name {
+            if resolved_parent == name.as_ref() {
                 let mut attrs = HashMap::new();
                 attrs.insert("name".to_string(), Value::str(name.to_string()));
                 attrs.insert(
@@ -258,7 +272,7 @@ impl Interpreter {
                     attrs.insert("message".to_string(), Value::str(msg));
                     return Err(RuntimeError::typed("X::Inheritance::Unsupported", attrs));
                 }
-                return Err(self.unknown_parent_error(name, resolved_parent_name.as_str()));
+                return Err(self.unknown_parent_error(name.as_ref(), resolved_parent_name.as_str()));
             }
             // A `does` target that is a non-composable built-in concrete class
             // (Int, Str, Num, Cool, Any, Mu, ...) — as opposed to a composable
@@ -269,19 +283,15 @@ impl Interpreter {
                 && BUILTIN_TYPES.contains(&resolved_parent)
                 && is_non_composable_builtin(resolved_parent)
             {
-                // `name` may be a lexical class's mangled storage name
-                // (ADR-0047 P1: `Foo\u{0}<decl-id>`) — show the user-facing
-                // bare name in the message and `target-name` attribute.
-                let display_name = crate::value::user_facing_type_name(name);
+                // `name` is already the demangled, user-facing name (see the
+                // shadowing at the top of this function) — safe to use
+                // directly in the message and `target-name` attribute.
                 let msg = format!(
                     "{} is not composable, so {} cannot compose it",
-                    resolved_parent, display_name
+                    resolved_parent, name
                 );
                 let mut attrs = HashMap::new();
-                attrs.insert(
-                    "target-name".to_string(),
-                    Value::str(display_name.to_string()),
-                );
+                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
                 attrs.insert(
                     "composer".to_string(),
                     Value::package(crate::symbol::Symbol::intern(resolved_parent)),
@@ -301,16 +311,12 @@ impl Interpreter {
                 && !self.registry().roles.contains_key(resolved_parent)
                 && !BUILTIN_TYPES.contains(&resolved_parent)
             {
-                let display_name = crate::value::user_facing_type_name(name);
                 let msg = format!(
                     "{} is not composable, so {} cannot compose it",
-                    resolved_parent, display_name
+                    resolved_parent, name
                 );
                 let mut attrs = HashMap::new();
-                attrs.insert(
-                    "target-name".to_string(),
-                    Value::str(display_name.to_string()),
-                );
+                attrs.insert("target-name".to_string(), Value::str(name.to_string()));
                 attrs.insert(
                     "composer".to_string(),
                     Value::package(crate::symbol::Symbol::intern(resolved_parent)),

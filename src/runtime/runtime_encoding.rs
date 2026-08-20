@@ -246,7 +246,19 @@ impl Interpreter {
     pub(crate) fn lexical_env_remap_name(&self, name: &str) -> String {
         if let Some(ValueView::Package(p)) = self.env().get(name).map(Value::view) {
             let resolved = p.resolve();
-            if resolved != name {
+            // Only trust this as an ADR-0047 lexical-class remap when `resolved`
+            // is unmistakably a mangled storage name (`Foo\u{0}<decl-id>`) — the
+            // ONLY way `exec_register_class_op` ever binds a bare name to a
+            // DIFFERENT string. Without this guard, ANY unrelated env entry
+            // whose bare name happens to collide with the argument (e.g. a
+            // user's own `my $default = Int;` aliases the bare name `default`
+            // to the type object `Any` via `main_unqualified_name` — nothing to
+            // do with `my class`) gets misread as a lexical-class alias. That
+            // silently renamed the BUILT-IN trait name `default` in `my @a is
+            // default(42)` to `"Any"`, so the `if trait_name == "default"`
+            // branch in `exec_apply_var_trait_op` never ran and the container's
+            // default was never tagged (`roast/S32-array/delete-adverb.t`).
+            if resolved != name && resolved.contains('\u{0}') {
                 return resolved;
             }
         }
