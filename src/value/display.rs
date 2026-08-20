@@ -57,11 +57,17 @@ fn anon_type_display_name(name: &str) -> Option<String> {
 /// `::Session`.
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
     if !name.contains('\u{0}') {
-        // Fast path: nothing mangled anywhere, no allocation needed.
-        return match anon_type_display_name(name) {
-            Some(display) => std::borrow::Cow::Owned(display),
-            None => std::borrow::Cow::Borrowed(name),
-        };
+        // Fast path: nothing mangled anywhere, no allocation needed. NativeCall
+        // type names never carry the `\u{0}` lexical-scope mangling (they are
+        // not `my`-scoped user declarations), so this is also the only branch
+        // that needs the NativeCall qualification check below.
+        if let Some(display) = anon_type_display_name(name) {
+            return std::borrow::Cow::Owned(display);
+        }
+        if let Some(qualified) = qualify_nativecall_type_name(name) {
+            return std::borrow::Cow::Owned(qualified);
+        }
+        return std::borrow::Cow::Borrowed(name);
     }
     let demangled = name
         .split("::")
@@ -74,6 +80,53 @@ pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
         .collect::<Vec<_>>()
         .join("::");
     std::borrow::Cow::Owned(demangled)
+}
+
+/// The bare registry names NativeCall's builtin types are kept under. Real
+/// Rakudo registers `Pointer`, `CArray`, `void`, and the seven C-width
+/// integer aliases (`long`, `ulong`, `longlong`, `ulonglong`, `size_t`,
+/// `ssize_t`, `bool`) under the `NativeCall::Types` package, so `.^name`
+/// reports the qualified path. mutsu deliberately keeps the *registry* key
+/// bare (see `docs/adr/0056-nativecall-types-display-only-qualification.md`):
+/// `Pointer[T]`/`CArray[T]` parametrization re-stringifies the already
+/// *resolved* symbol at `vm_var_index_ops.rs`, so a qualified registry key
+/// would make ordinary `use NativeCall; Pointer[uint8]` code evaluate to a
+/// name that roughly fifteen literal-string comparison sites (allow-lists,
+/// `===`/`.isa`, alias resolution) do not `::`-strip before matching --
+/// breaking everyday parametrized-type usage, not just qualified spellings.
+/// This list therefore only controls what a *human* sees: `.^name`, `.raku`,
+/// and error-message type naming. Identity/dispatch comparisons must keep
+/// reading the real (bare) registry key, so nothing in `value/types_isa.rs`
+/// or the exact-match sites listed in the ADR should route through this.
+///
+/// `OpaquePointer` is not listed: it is `constant OpaquePointer = Pointer`
+/// (an alias, not a separate registry key), so it already resolves to
+/// `"Pointer"` before this function ever sees it. `NativeCall::CStr` is not
+/// listed either -- it is registered under its real qualified key already.
+const NATIVECALL_TYPE_NAMES: &[&str] = &[
+    "Pointer",
+    "CArray",
+    "void",
+    "long",
+    "ulong",
+    "longlong",
+    "ulonglong",
+    "size_t",
+    "ssize_t",
+    "bool",
+];
+
+/// Qualify a NativeCall builtin type's display name, preserving a `[T]`
+/// parametrization suffix (`Pointer[uint8]` -> `NativeCall::Types::Pointer[uint8]`).
+/// Returns `None` for any name outside `NATIVECALL_TYPE_NAMES`.
+fn qualify_nativecall_type_name(base: &str) -> Option<String> {
+    let split_at = base.find('[').unwrap_or(base.len());
+    let (head, rest) = base.split_at(split_at);
+    if NATIVECALL_TYPE_NAMES.contains(&head) {
+        Some(format!("NativeCall::Types::{head}{rest}"))
+    } else {
+        None
+    }
 }
 
 /// Format a value for display inside a Capture gist.

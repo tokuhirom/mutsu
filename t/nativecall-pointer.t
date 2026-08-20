@@ -60,7 +60,7 @@ sub memset(int64 $p, int32 $c, int64 $n) returns int64 is native('c') { * }
     sub memset_p(Pointer $p, int32 $c, int64 $n) returns Pointer is native('c') is symbol('memset') { * }
 
     my $p = malloc(128);
-    is $p.^name, 'Pointer', 'malloc returns a Pointer object';
+    is $p.^name, 'NativeCall::Types::Pointer', 'malloc returns a Pointer object';
     isa-ok $p, Pointer, 'the return value isa Pointer';
     ok $p.Bool, 'malloc returned a non-NULL Pointer';
     # The returned Pointer is usable as a by-value Pointer argument.

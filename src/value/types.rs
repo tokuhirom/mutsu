@@ -53,7 +53,11 @@ pub(crate) fn what_type_name(val: &Value) -> String {
         // must report the demangled, user-facing name here rather than the
         // raw storage key leaking a literal NUL byte and decl-id number into
         // messages like "Type check failed in assignment ... but got
-        // Store\u{0}12::Session\u{0}13".
+        // Store\u{0}12::Session\u{0}13". The same helper also qualifies
+        // NativeCall's builtin type names (`Pointer` ->
+        // `NativeCall::Types::Pointer`, see ADR-0056), so both concerns are
+        // handled by routing through it here rather than reading the raw
+        // Symbol.
         ValueView::Instance { class_name, .. } => {
             crate::value::user_facing_type_name(&class_name.resolve()).into_owned()
         }
