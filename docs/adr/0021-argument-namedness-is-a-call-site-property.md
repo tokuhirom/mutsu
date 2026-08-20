@@ -1,9 +1,9 @@
 # ADR-0021: Argument named-ness is a call-site property — Pair flavour unification
 
-- **Status**: Accepted (P1-P3a and P3 shipped; P4 cleanup and P5 measured perf follow-up remain — see Implementation status below)
+- **Status**: Accepted (P1-P4 shipped; P5 measured perf follow-up remains — see Implementation status below)
 - **Date**: 2026-08-08
 - **Related**:
-  [todo/deep/pair-namedness-is-a-value-property-not-a-call-site-property.md](../../todo/deep/pair-namedness-is-a-value-property-not-a-call-site-property.md),
+  [news/2026-08/pair-namedness-is-a-call-site-property.md](../../news/2026-08/pair-namedness-is-a-call-site-property.md),
   [news/2026-08/hash-derived-pairs-are-positional-arguments.md](../../news/2026-08/hash-derived-pairs-are-positional-arguments.md),
   [news/2026-08/hash-list-coercion-yields-pairs.md](../../news/2026-08/hash-list-coercion-yields-pairs.md)
 
@@ -369,5 +369,5 @@ Each phase is independently shippable and lands with its own tests; CI's
 - [x] P2 slip/capture/forwarding rules
 - [x] P3a QuantHash consumer prep
 - [x] P3 minting-default inversion
-- [ ] P4 representation cleanup
+- [x] P4 representation cleanup
 - [ ] P5 measured perf follow-up
