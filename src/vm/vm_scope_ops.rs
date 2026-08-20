@@ -168,6 +168,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_idx: u32,
+        analysis_cc_idx: u32,
         param_idx: &Option<u32>,
         target_var_idx: &Option<u32>,
         param_type_idx: &Option<u32>,
@@ -178,6 +179,18 @@ impl Interpreter {
         let param_type = param_type_idx.map(|idx| Self::const_str(code, idx).to_string());
         let stmt = &code.stmt_pool[body_idx as usize];
         if let Stmt::Block(body) = stmt {
+            // Box captured-and-mutated lexicals the whenever body reads into
+            // shared ContainerRef cells BEFORE run_whenever_with_value clones
+            // the env for the callback closures below: those closures are
+            // dispatched later (possibly cross-thread, e.g. a `start` inside
+            // the body), so a by-value copy would miss the parent frame's
+            // later writes and vice versa. Mirrors MakeGather's identical
+            // precondition (`exec_make_gather_op`) for the same reason: the
+            // analysis closure compiled by `surface_stashed_body_free_vars`
+            // (Case B, cross-thread lexicals) names the free vars; the boxing
+            // rules are exactly the closure-capture ones.
+            let analysis_cc = Self::resolve_closure_code(code, Some(analysis_cc_idx));
+            self.box_captured_lexicals(code, &analysis_cc);
             // Lexicals the enclosing `supply { … }` body declared with `my`. The
             // `whenever` callbacks built below capture the live env and are
             // dispatched later from the emitting thread, whose ambient env is
