@@ -150,10 +150,14 @@ impl Interpreter {
         } else {
             fn_package
         };
-        let saved_package = self.current_package().to_string();
-        if !def_package.is_empty() && def_package != "GLOBAL" {
-            self.set_current_package(def_package.to_string());
-        }
+        // RAII (`CurrentPackageGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restores `current_package` on drop -- including on a Rust panic
+        // unwind through the body loop below, or through an early `return`
+        // on a param-binding error -- rather than the manual
+        // `self.set_current_package(saved)` calls this replaced, which a
+        // panic unwind would skip entirely.
+        let pkg_guard = (!def_package.is_empty() && def_package != "GLOBAL")
+            .then(|| self.enter_package_guarded(def_package.to_string()));
         // When the function has where constraints and there is a &name Sub in
         // env (which carries closure env), merge the Sub's captured variables
         // into the current env so where-constraint expressions can access them.
@@ -189,7 +193,8 @@ impl Interpreter {
             ) {
                 Ok(bindings) => bindings,
                 Err(e) => {
-                    self.set_current_package(saved_package);
+                    // `pkg_guard` restores `current_package` when dropped by
+                    // this early return -- see its construction above.
                     self.pop_routine();
                     self.pop_test_assertion_context(pushed_assertion);
                     self.pop_caller_env();
@@ -257,10 +262,15 @@ impl Interpreter {
         // cached-closure dispatch path (which resolves the same registration
         // id) agree on ONE key shape — the cold path used raw keys before,
         // which diverged exactly for nested subs (Cro::ConnectionConditional).
-        let saved_state_scope = self.state_scope_id;
-        if callable_id.is_some() {
-            self.state_scope_id = callable_id;
-        }
+        // RAII (`StateScopeGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restores `state_scope_id` on drop, including on a Rust panic
+        // unwind through the body loop below.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let state_scope_guard = callable_id.map(|id| unsafe {
+            crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id))
+        });
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
             let scoped_key = self.scoped_state_key(*key);
@@ -274,10 +284,14 @@ impl Interpreter {
         // matching `when` sets the global `when_matched` flag, which must not
         // leak to an enclosing `given`/`with` body (see vm_call_light.rs for the
         // full rationale). Reset for the body; restore the caller's value below.
-        let saved_when_matched = self.when_matched();
-        if cf.code.is_routine {
-            self.set_when_matched(false);
-        }
+        // RAII (`WhenMatchedGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restores `when_matched` on drop, including on a Rust panic unwind
+        // through the body loop below.
+        // SAFETY: see the `state_scope_guard` construction above.
+        let when_matched_guard = cf
+            .code
+            .is_routine
+            .then(|| unsafe { crate::vm::vm_call_state_guard::WhenMatchedGuard::new(self, false) });
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.
@@ -364,10 +378,12 @@ impl Interpreter {
         }
 
         // Restore the caller's `when_matched` — a bare `when` inside this
-        // routine body must not leak its match state to an enclosing given/with.
-        if cf.code.is_routine {
-            self.set_when_matched(saved_when_matched);
-        }
+        // routine body must not leak its match state to an enclosing
+        // given/with. Explicit drop (not left to fall out of scope) so it
+        // happens at exactly the point the old manual restore ran; on a Rust
+        // panic mid-loop above, the guard's `Drop` still runs during unwind
+        // even though this line is never reached.
+        drop(when_matched_guard);
 
         // Natural fall-through completion (no explicit return / fail / error
         // break arm): restore any `temp` bindings the body introduced so a
@@ -486,7 +502,9 @@ impl Interpreter {
             let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
-        self.state_scope_id = saved_state_scope;
+        // Explicit drop (not left to fall out of scope) so `state_scope_id`
+        // restores at exactly the point the old manual restore ran.
+        drop(state_scope_guard);
 
         // A scalar `is rw` / `is raw` parameter (`$a is rw`, stored sigil-less as
         // `a`) is bound to a slot-only local in the body (read/written via
@@ -559,7 +577,13 @@ impl Interpreter {
             }
         }
 
-        self.set_current_package(saved_package);
+        // Explicit drop (not left to fall out of scope) to restore
+        // `current_package` here, at exactly the point the old manual
+        // `self.set_current_package(saved_package)` ran -- everything below
+        // runs under the caller's package, matching prior behavior. On a
+        // Rust panic mid-loop above, the guard's `Drop` still runs during
+        // unwind even though this line is never reached.
+        drop(pkg_guard);
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);
         self.pop_block();

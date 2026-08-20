@@ -112,23 +112,31 @@ impl Interpreter {
         args: Vec<Value>,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
-        let saved_pragmas = self.save_pragma_state();
+        // RAII (`PragmaGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restores pragma state on drop -- including on a Rust panic unwind
+        // through `call_compiled_closure_with_topic` below -- rather than a
+        // manual `self.restore_pragma_state(saved)` call at this function's
+        // end, which an unwind would skip. This function is short enough
+        // that every subsequent `self.*` access below is rewritten to go
+        // through `guard` instead, so the guard can hold a plain safe
+        // `&mut Interpreter` borrow (no raw pointer needed).
+        let mut guard = crate::vm::vm_call_state_guard::PragmaGuard::new(self);
         // Initialise fatal_mode (and other pragmas) from the closure's captured
         // state so that `use fatal` propagates into lazily-evaluated sub-closures
         // (e.g. a WhateverCode created inside a `use fatal` block still throws
         // when evaluated after the block has returned).
-        self.fatal_mode = data.captured_fatal_mode;
+        guard.fatal_mode = data.captured_fatal_mode;
         let result =
-            self.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
-        // Under `use fatal` (active at this point, before the scope-restore below),
-        // a returned Failure must throw rather than propagate silently. This makes
-        // a WhateverCode like `*.Int` throw when it produces a Failure — matching
-        // Raku semantics where the pragma is captured at closure-creation time and
-        // applies to every invocation of the closure, even after the creating scope
-        // has exited.
-        let result = if self.fatal_mode {
+            guard.call_compiled_closure_with_topic(data, cc, args, None, false, compiled_fns);
+        // Under `use fatal` (active at this point, before the guard drops
+        // below), a returned Failure must throw rather than propagate
+        // silently. This makes a WhateverCode like `*.Int` throw when it
+        // produces a Failure — matching Raku semantics where the pragma is
+        // captured at closure-creation time and applies to every invocation
+        // of the closure, even after the creating scope has exited.
+        if guard.fatal_mode {
             result.and_then(|val| {
-                if let Some(err) = self.failure_to_runtime_error_if_unhandled(&val) {
+                if let Some(err) = guard.failure_to_runtime_error_if_unhandled(&val) {
                     Err(err)
                 } else {
                     Ok(val)
@@ -136,9 +144,7 @@ impl Interpreter {
             })
         } else {
             result
-        };
-        self.restore_pragma_state(saved_pragmas);
-        result
+        }
     }
 
     /// Like [`Self::call_compiled_closure`] but with an optional explicit topic
@@ -277,14 +283,23 @@ impl Interpreter {
         // failures that never run the body.
         let end_phaser_count_before = self.end_phaser_count();
         let saved_stack_depth = self.call_frames.last().unwrap().saved_stack_depth;
-        let saved_state_scope = self.state_scope_id;
         // Only resolved when the body has state variables, to keep the common
         // dispatch free of `sub_state_scope_id`'s env probe.
-        self.state_scope_id = Some(if cc.state_locals.is_empty() {
+        let new_state_scope = Some(if cc.state_locals.is_empty() {
             data.id
         } else {
             self.sub_state_scope_id(data)
         });
+        // RAII (`StateScopeGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restores `state_scope_id` on drop, including on a Rust panic unwind
+        // through the body loop below -- a manual `self.state_scope_id =
+        // saved;` statement near this function's end would be skipped by an
+        // unwind.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let state_scope_guard =
+            unsafe { crate::vm::vm_call_state_guard::StateScopeGuard::new(self, new_state_scope) };
 
         loan_env!(self, inject_pending_callsite_line());
 
@@ -759,7 +774,12 @@ impl Interpreter {
         // declaring package so nested-class short names and `our`-vars resolve
         // when the Sub value is invoked from a foreign frame (mirrors
         // `enter_routine_package` on the named-call paths).
-        let saved_pkg = {
+        // RAII (`CurrentPackageGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
+        // restoring `current_package` on drop -- rather than via a manual
+        // `self.set_current_package(p)` statement near this function's end --
+        // means the restore also runs when a Rust panic unwinds through the
+        // body loop below, not just on normal completion.
+        let pkg_guard = {
             let pkg = data.package.as_str();
             // `GLOBAL` counts: a block declared at file scope and *invoked from
             // a module* (`Test::Util`'s `group-of` calling the caller's block)
@@ -770,9 +790,7 @@ impl Interpreter {
             // (roast/integration/error-reporting.t).
             if !pkg.is_empty() && !pkg.contains("::&") && data.package != self.current_package_sym()
             {
-                let saved = self.current_package();
-                self.set_current_package(pkg.to_string());
-                Some(saved)
+                Some(self.enter_package_guarded(pkg.to_string()))
             } else {
                 None
             }
@@ -924,9 +942,13 @@ impl Interpreter {
             }
         }
 
-        if let Some(p) = saved_pkg {
-            self.set_current_package(p);
-        }
+        // Explicit drop (not left to fall out of scope) to restore
+        // `current_package` here, at exactly the point the old manual
+        // `self.set_current_package(saved)` ran -- everything below runs
+        // under the caller's package, matching prior behavior. On a Rust
+        // panic mid-loop above, the guard's `Drop` still runs during unwind
+        // even though this line is never reached.
+        drop(pkg_guard);
 
         // Natural fall-through completion (no explicit return / break arm): a
         // routine body that ends with `temp $x = ...` must restore the `temp`
@@ -991,8 +1013,11 @@ impl Interpreter {
             loan_env!(self, set_state_var(scoped_key, val));
         }
 
-        // Restore the previous state scope
-        self.state_scope_id = saved_state_scope;
+        // Restore the previous state scope. Explicit drop (not left to fall
+        // out of scope) so it happens at exactly the point the old manual
+        // restore ran; on a Rust panic mid-loop above, the guard's `Drop`
+        // still runs during unwind even though this line is never reached.
+        drop(state_scope_guard);
 
         self.truncate_routine_stack(routine_base);
         self.pop_block();

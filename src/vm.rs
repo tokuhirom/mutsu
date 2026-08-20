@@ -146,6 +146,7 @@ mod vm_call_method_ops;
 mod vm_call_named;
 mod vm_call_named_inner;
 mod vm_call_resolve;
+mod vm_call_state_guard;
 mod vm_closure_dispatch;
 mod vm_coerce_concat_ops;
 mod vm_comparison_container_ops;

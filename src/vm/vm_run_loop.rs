@@ -71,6 +71,9 @@ impl Interpreter {
         // recovered from — see `recover_call_frames_after_panic`.
         let entry_call_frame_depth = self.call_frames.len();
         let entry_stack_depth = self.stack.len();
+        let entry_caller_env_depth = self.caller_env_stack_depth();
+        let entry_let_saves_mark = self.let_saves_len();
+        let entry_test_assertion_depth = self.test_assertion_line_stack_depth();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_inner(code, compiled_fns)
         }));
@@ -78,7 +81,13 @@ impl Interpreter {
         match caught {
             Ok(r) => r,
             Err(payload) => {
-                self.recover_call_frames_after_panic(entry_call_frame_depth, entry_stack_depth);
+                self.recover_call_frames_after_panic(
+                    entry_call_frame_depth,
+                    entry_stack_depth,
+                    entry_caller_env_depth,
+                    entry_let_saves_mark,
+                    entry_test_assertion_depth,
+                );
                 Err(Self::vm_panic_error(panic_payload_message(
                     payload.as_ref(),
                 )))
@@ -703,6 +712,9 @@ impl Interpreter {
         // recovered from — see `recover_call_frames_after_panic`.
         let entry_call_frame_depth = self.call_frames.len();
         let entry_stack_depth = self.stack.len();
+        let entry_caller_env_depth = self.caller_env_stack_depth();
+        let entry_let_saves_mark = self.let_saves_len();
+        let entry_test_assertion_depth = self.test_assertion_line_stack_depth();
         let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.run_range(code, start, end, compiled_fns)
         }));
@@ -710,7 +722,13 @@ impl Interpreter {
         match caught {
             Ok(r) => r,
             Err(payload) => {
-                self.recover_call_frames_after_panic(entry_call_frame_depth, entry_stack_depth);
+                self.recover_call_frames_after_panic(
+                    entry_call_frame_depth,
+                    entry_stack_depth,
+                    entry_caller_env_depth,
+                    entry_let_saves_mark,
+                    entry_test_assertion_depth,
+                );
                 Err(Self::vm_panic_error(panic_payload_message(
                     payload.as_ref(),
                 )))

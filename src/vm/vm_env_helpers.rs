@@ -138,10 +138,26 @@ impl Interpreter {
     /// Pop every frame pushed since `entry_depth` (LIFO, so each `pop_call_frame`
     /// naturally restores its caller's state) and truncate the value stack back
     /// to `entry_stack_depth` for the same reason.
+    ///
+    /// Also truncates further side-channel stacks that are pushed/popped
+    /// separately from `call_frames` and would otherwise leak the same way:
+    /// `caller_env_stack`/`callframe_stack` (pushed by `push_caller_env`,
+    /// popped by `pop_caller_env`/`pop_caller_env_with_writeback` -- the
+    /// `CALLER::`/backtrace machinery) back to `entry_caller_env_depth`,
+    /// `let_saves` (the `let`/`temp` restore-on-exit log) back to
+    /// `entry_let_saves_mark`, and `test_assertion_line_stack` (Test-module
+    /// failure-line bookkeeping) back to `entry_test_assertion_depth`. All
+    /// three are bare truncates (discard), not their normal pop-with-effect:
+    /// the frame whose state those entries were meant to write into no
+    /// longer exists by the time this runs. See
+    /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
     pub(super) fn recover_call_frames_after_panic(
         &mut self,
         entry_depth: usize,
         entry_stack_depth: usize,
+        entry_caller_env_depth: usize,
+        entry_let_saves_mark: usize,
+        entry_test_assertion_depth: usize,
     ) {
         let mut restored_env = None;
         while self.call_frames.len() > entry_depth {
@@ -152,6 +168,9 @@ impl Interpreter {
             self.set_env(env);
         }
         self.stack.truncate(entry_stack_depth.min(self.stack.len()));
+        self.truncate_caller_env_stack(entry_caller_env_depth);
+        self.truncate_let_saves(entry_let_saves_mark);
+        self.truncate_test_assertion_line_stack(entry_test_assertion_depth);
     }
 
     fn twigil_dynamic_alias(name: &str) -> Option<String> {
