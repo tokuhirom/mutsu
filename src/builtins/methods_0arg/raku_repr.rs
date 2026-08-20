@@ -929,7 +929,9 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::Uni(u) => uni_raku_repr(&u.text, &u.form),
         // A lexical class/role's type object may carry a mangled storage
         // name (ADR-0047 P1: `Foo\u{0}<decl-id>`) -- `.raku` must show the
-        // user-facing bare name.
+        // user-facing bare name. The same helper also qualifies NativeCall's
+        // builtin type names (`Pointer` -> `NativeCall::Types::Pointer`,
+        // ADR-0056).
         ValueView::Package(name) => {
             crate::value::user_facing_type_name(&name.resolve()).into_owned()
         }
