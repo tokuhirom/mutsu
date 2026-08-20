@@ -248,6 +248,26 @@ impl Interpreter {
         // Save and restore around the body so callee's `use fatal` never leaks.
         let saved_pragmas = self.save_pragma_state();
 
+        // Push a routine frame for the body's duration so `routine_stack`
+        // consumers (`enclosing_routine_exists()`, `CALLER::`,
+        // `caller_frame_package()`, backtraces) see this call -- mirroring
+        // `call_compiled_function_fast`'s push/pop pairing (see that
+        // function's doc comment). Without this, a sub taking this
+        // positional-light path ran "frameless": `enclosing_routine_exists()`
+        // wrongly answered `false` inside its body, so e.g. `EVAL 'return 1'`
+        // escaped uncaught instead of being caught by a `CATCH` around the
+        // `EVAL` (ADR-0037 Slice 1). `func_name` is interned here rather than
+        // threaded as a pre-interned `Symbol` from the call site -- a
+        // thread-local intern-cache hit on every call after the first for a
+        // given call site, per `push_routine_with_location`'s doc comment.
+        self.push_routine_with_location(
+            Symbol::intern(&cf.package),
+            Symbol::intern(func_name),
+            self.current_source_line(),
+            self.current_source_file_sym(),
+            cf.source_file.as_deref().map(Symbol::intern),
+        );
+
         // A routine (sub/method) body is its own topicalizer for a bare
         // `when`/`default`: a matching `when` sets the global `when_matched`
         // flag (and returns via the succeed signal, caught by the
@@ -317,6 +337,13 @@ impl Interpreter {
                 break;
             }
         }
+
+        // Pop the routine frame pushed above -- see its push site for the
+        // rationale. Paired unconditionally with the push: every loop exit
+        // above (explicit return / fail / error / natural fall-through)
+        // reaches this point, there is no early `return` between push and
+        // here.
+        self.pop_routine();
 
         // Restore the caller's `when_matched` — a bare `when` inside this
         // routine body must not leak its match state to an enclosing given/with.
