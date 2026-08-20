@@ -92,22 +92,20 @@ impl Interpreter {
     ///
     /// Reverted from a compiled-first attempt
     /// (`vm_call_on_value`/`call_compiled_closure`, see
-    /// todo/deep/subtest-compiled-dispatch-breaks-class-registry-restore.md):
-    /// that path let a `my class`/`my role` declared inside the subtest body
-    /// escape `test_fn_subtest`'s post-subtest `restore_subtest_decls`
-    /// registry rollback and remain constructible from outside the subtest
-    /// after a request routed through Cro::HTTP async machinery — but the
-    /// SAME dispatch also broke the *intended* case (a transform class used
-    /// entirely within its own declaring subtest, invoked later from an
-    /// async `whenever`/`supply` pipeline on another thread/task):
-    /// `roast`'s bundled-library gate caught a real regression in
-    /// `Cro::HTTP`'s `http-middleware.rakutest` (before/after-parse
-    /// transforms silently became no-ops). The AST carrier
-    /// (`call_sub_value` -> `eval_block_value` -> a fresh
-    /// `Compiler::compile()` call) is slower — it recompiles the block's AST
-    /// on every subtest call — but its class/registry lifecycle interacts
-    /// correctly with `restore_subtest_decls`, so it stays the default until
-    /// that interaction is understood well enough to fix properly.
+    /// todo/deep/subtest-compiled-dispatch-async-middleware-regression.md):
+    /// the bundled-library gate caught a real regression in `Cro::HTTP`'s
+    /// `http-middleware.rakutest`, where the early/conditional-response half
+    /// of middleware silently stopped running. Re-measured 2026-08-20: the
+    /// compiled path fails 16 of that file's 24 subtests, and the cause is
+    /// NOT declaration lifetime — a class declared in a subtest body, its
+    /// `LEAVE` phasers, and an async `supply`/`whenever` transform all behave
+    /// identically on both paths. The AST carrier (`call_sub_value` ->
+    /// `eval_block_value` -> a fresh `Compiler::compile()` call) is slower —
+    /// it recompiles the block's AST on every subtest call — but it stays the
+    /// default until that regression is root-caused. Note that the *other*
+    /// half of the original finding (a type object escaping the subtest's
+    /// `restore_subtest_decls` registry rollback and losing `.new`) is a
+    /// separate, pre-existing bug on BOTH paths, designed in ADR-0047.
     fn subtest_call_block(&mut self, block: &Value) -> Result<Value, RuntimeError> {
         self.call_sub_value(block.clone(), vec![], true)
     }
