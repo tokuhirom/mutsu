@@ -63,7 +63,8 @@ closure-wins is only sound once every mutated capture has a cell.
 
 ## Context (original audit, 2026-08-14)
 
-`todo/deep/eval-block-value-recompiles-every-call.md` names, as its "larger
+`todo/deep/eval-block-value-recompiles-every-call.md` (retired 2026-08-20 to
+`news/2026-08/eval-block-value-recompiles-every-call.md`) named, as its "larger
 fix", making `call_sub_value`'s general `ValueView::Sub(data)` branch (the
 ~400-line tree-walk closure-call path in `src/runtime/resolution_call_sub.rs`)
 prefer `call_compiled_closure(&data, cc, args, fns)` whenever

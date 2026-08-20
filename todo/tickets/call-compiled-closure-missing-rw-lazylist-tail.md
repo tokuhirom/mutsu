@@ -36,7 +36,10 @@ This was found by an audit comparing the tree-walk branch against
 `call_compiled_closure` line-by-line while investigating whether
 `call_sub_value`'s general branch could safely be routed through
 `call_compiled_closure` (see
-`todo/deep/eval-block-value-recompiles-every-call.md`). No concrete
+`news/2026-08/eval-block-value-recompiles-every-call.md`, retired 2026-08-20;
+that fork is now
+[ADR-0055](../../docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md)
+slice 4). No concrete
 roast/`t/` repro has been constructed yet that demonstrates an observably
 wrong result — the gap is confirmed by code inspection (the tail simply does
 not exist on the compiled path), not by a failing assertion. Constructing a
