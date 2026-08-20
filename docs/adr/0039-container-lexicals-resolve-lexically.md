@@ -6,7 +6,9 @@
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
   ADR-0025 (cell boxing must be value-kind-blind — slice 3 defers `@`/`%`),
   ADR-0010 (cross-thread lexical sharing scope — the `__mutsu_atomic_*` lanes)
-- Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`
+- Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`,
+  `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
+  (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20)
 
 ## 1. Context
 
@@ -377,3 +379,163 @@ most plausibly because the test's `@vars` is method-local and never live across
 a `_push_vars` call. Treat it as a stale example, not as evidence of a fix: the
 §1.1 and §1.2 repros are the live ones, and §6's matrix replaces it as the
 acceptance measure.
+
+## 8. Addendum (2026-08-20): the cross-thread-store axis is the same bug
+
+This section folds `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
+into this ADR. It adds no new *decision* — §4's decision already covers it —
+but it adds evidence, a third sigil skip to lift, an exclusion §4.1's list
+misses, and one requirement slice 2 would otherwise get wrong. It is an
+amendment to a `Proposed`, unimplemented design, not a revision of a decided
+one.
+
+### 8.1 What the deep ticket claimed, and what is left of it
+
+The ticket's headline was that `shared_vars` is *"a **process-global** map keyed
+by bare name"*, so two frames anywhere in the program that happen to use the
+same variable name read each other's values, and that the fix is the store's
+**keying** — a per-lineage store.
+
+Both halves are now stale:
+
+- **The keying fix already shipped.** ADR-0010 replaced the one process-wide
+  `Arc<RwLock<HashMap<..>>>` with the lineage-chained `SharedStore`
+  (`src/runtime/shared_store.rs:55-61`, own/parent/root). Sibling isolation
+  works: `await (^3).map: -> $n { start { my @w = ($n,); ... } }` gives each
+  worker its own `@w` (verified against `raku`).
+- **The ticket's own driving instance is gone.** Its multi-param-`for` repro,
+  its `while --$i` scalar repro, and the three downstream tickets it named
+  (`supply-block-lexical-leaks-through-thread-lane`,
+  `cue-loop-lexical-shared-lane-residue`,
+  `for-multi-param-array-hash-shadow-clobbers-outer-container`) are all
+  resolved; `t/http-session-inmemory.rakutest` is no longer blocked on it.
+
+What survives is narrower and sharper than "the store is bare-name keyed", and
+it is not a keying problem at all.
+
+### 8.2 Measured on `52631889f` (2026-08-20)
+
+**Scalars are clean.** Ten shapes were probed — a callee's `while --$i`
+countdown, a callee that spawns and *then* writes its `my $i`, `is copy`
+parameters, `for`-loop parameters, a Nil-valued reader, a live-valued reader —
+and every one matches `raku`.
+
+**Containers diverge, and only when a thread has been spawned.** Two live
+shapes:
+
+```raku
+# (a) a callee's sub-local container escapes into an unrelated caller
+sub work($tag) {
+    my @items = ($tag,);
+    await start { 1 };          # remove this line and mutsu is correct
+    @items.push("$tag-2");
+}
+my @items = <x y z>;
+work('A');  say @items.raku;    # raku: [x y z]        mutsu: [A A-2]
+@items.push('MINE');            # raku: [x y z MINE]   mutsu: [A A-2 MINE]
+work('B');  say @items.raku;    # raku: [x y z MINE]   mutsu: [B B-2]
+```
+
+```raku
+# (b) a non-slurpy @/% PARAMETER escapes the call
+sub takes(@list is copy) { await start { 1 }; @list.push('R') }
+my @list = <x y z>;
+takes(<p q>);
+say @list.raku;                 # raku: [x y z]        mutsu: [p q R]
+```
+
+Both reproduce with `%` identically, and (a) reproduces through a `use`d module
+(the module's routine-local `@parts` overwrites the consumer's `@parts`) — the
+mirror image of §1.1, where the consumer overwrote the module. Neither needs
+concurrency: one `await start { 1 }` anywhere in the process arms the lane, and
+the collision is then deterministic and repeats on every call. The `Supply`/tap
+driver does **not** arm it; `start`/`Promise` do.
+
+**The scalar/container split is the proof.** The two lanes share the polluted
+store; they differ only in *how a read resolves the name*. A scalar reads its
+slot (`GetLocal`) and consults the store only when the slot holds `Nil`
+(`vm/vm_var_assign_local_get.rs:256,268`). A container has a slot but nothing
+reads it (§1.3), so `GetLocal`'s `@`/`%` arm consults the store
+**unconditionally** — no `is_thread_clone()` gate, no staleness test
+(`vm/vm_var_assign_local_get.rs:155-161`) — and `sync_shared_vars_to_env`
+writes every dirty store key straight into `env` under the bare name
+(`runtime/runtime_shared_vars.rs:646-648`), where the container read path will
+find it. So the store is not the defect; **by-name container resolution is**,
+exactly as §1.2 concluded from a module with no threads in it. The store is
+simply a second population route into the same by-name namespace.
+
+### 8.3 Why the mask does not save containers: a third sigil skip
+
+§1.3 lists the compile-time sigil exclusions. The thread lane has its own, and
+it is what makes §8.2 fire:
+
+- `block_captured_scalars` (`runtime/runtime_thread.rs:20-22`) `continue`s on
+  `@`/`%`/`&` when scanning a spawned block's free variables, so a container is
+  never in `captured_scalars`.
+- `clone_for_thread`'s post-seed retain
+  (`runtime/runtime_thread.rs:352-356`) keeps a `thread_redeclared_vars` entry
+  only if the name is in `captured_scalars`, `thread_decl_in_flight`, or
+  `thread_param_shadow_vars`.
+
+So **every spawn silently unmasks every container `my`**, after which
+`set_shared_var_sym`'s write gate (`runtime_shared_vars.rs:495-497`), the
+`GetLocal` container arm, and the `sync_shared_vars_to_env` filter (`:587`) all
+stop protecting it. `container_name_is_redeclared`
+(`runtime_shared_vars.rs:238-242`) — consulted at nine sites specifically to
+keep a re-declared container frame-local — is asking a set the spawn just
+emptied. This is the same `@`/`%` skip ADR-0024 and ADR-0025 defer and §4.1
+step 2 lifts, in a third place.
+
+Repro (b) is a *fourth*: `mask_thread_redeclared_params`
+(`runtime_shared_vars.rs:304-311`) deliberately never masks a **non-slurpy**
+`@`/`%` parameter, only scalars and `*@`/`*%`. A container parameter therefore
+has no per-call shadow at all.
+
+### 8.4 What this adds to §4
+
+1. **Slice 1's exclusion list gains one entry and one non-entry.** Non-slurpy
+   `@`/`%` *parameters* (repro (b)) are a distinct binding form from the file-
+   scope `my` slice 1 targets; they are **out of scope for slice 1** and belong
+   to slice 2, which is where parameters get slots. Record them, do not patch
+   `mask_thread_redeclared_params` — widening a bare-name mask is more of the
+   mechanism §4.2 is trying to delete.
+2. **Slice 2 acquires a hard requirement §4.2 does not state.** Once
+   `Expr::ArrayVar` emits `GetLocal(slot)`, the store-writeback path
+   (`sync_shared_vars_to_env`, which writes `env` only) can no longer reach the
+   reader. The sharing that *must* survive —
+   `my @a; await start { @a.push(1) }; say @a` and its `%h` twin, both correct
+   today — would silently stop working. The precedent to follow is the scalar
+   one already in the tree: `pending_caller_var_writeback` /
+   `apply_pending_rw_writeback` (`runtime_shared_vars.rs:652-671`), which drains
+   a synced cross-thread name to the owning caller's *slot* at the `await` call
+   site. Containers need the same drain, keyed by binding rather than by name.
+   **Write the bn9-shaped pin (shared push, shared hash key-set, sibling
+   isolation) as part of slice 1's corpus**, per §4.3's second argument, so
+   slice 2 cannot regress it unnoticed.
+3. **Slice 2's deletion list gains four members.** These exist only because
+   containers resolve by name and should be *removed*, not carried forward:
+   `container_name_is_redeclared` and its nine call sites; the ungated `@`/`%`
+   store preference in `GetLocal` (`vm_var_assign_local_get.rs:155-161`); the
+   `is_thread_clone()`-gated twin in `get_env_with_main_alias_inner`
+   (`vm_env_helpers.rs:840-846`); and the `@`/`%` exemptions carved into the
+   dynamic-variable filters of `clone_for_thread` (`runtime_thread.rs:241-243`)
+   and `sync_shared_vars_to_env` (`runtime_shared_vars.rs:600-604`). The
+   `__mutsu_atomic_*` lanes are **not** on this list — ADR-0010 established that
+   they are process-wide primitives, not lexical sharing, and they stay.
+4. **The ticket's proposed fix is rejected outright.** "Re-key the store" is
+   both done (ADR-0010) and insufficient: §8.2 (a) collides two frames of one
+   thread inside one lineage, so no keying discipline short of per-frame keys —
+   i.e. slots — removes it. This is the same conclusion §5 reached about
+   compile-time alpha-renaming.
+
+### 8.5 Exposure
+
+No whitelisted roast test and no bundled battery is currently blocked by this;
+the ticket's Cro session-test instance was resolved by unrelated fixes and Cro's
+own test suite is not vendored. That is a statement about which shapes appear in
+the corpus, not about severity: the failure mode is a *silent wrong value* in a
+container after any `start`/`Promise` in the process, it repeats on every call,
+and any thread-using program with two same-named containers hits it. Treat §8.2
+(a) and (b) as acceptance pins for §6 alongside the module and mainline
+matrices, and keep the deep ticket open until slice 2 lands — slice 1 alone does
+not close it, because §8.2's containers are routine-local, not file-scope.
