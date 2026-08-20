@@ -47,19 +47,7 @@ impl Interpreter {
             tap
         };
         // `(emitter, is_stamped)`: only a stamped emitter is authoritative.
-        let (emitter, stamped) = tap
-            .as_sub()
-            .map(|data| match data.env.get(Self::WHENEVER_EMITTER_ENV_KEY) {
-                Some(own) => (Some(own.clone()), true),
-                None => (
-                    data.env
-                        .keys()
-                        .find(|k| k.with_str(|s| s.starts_with("__mutsu_supply_emitter_")))
-                        .and_then(|k| data.env.get_sym(*k).cloned()),
-                    false,
-                ),
-            })
-            .unwrap_or((None, false));
+        let (emitter, stamped) = Self::whenever_tap_emitter(&tap);
         if let Some(ref e) = emitter {
             self.active_supply_emitters.push(e.clone());
         }
@@ -123,6 +111,26 @@ impl Interpreter {
             }
             (res, ..) => res,
         }
+    }
+
+    /// Extract the supply-block emitter a `whenever`/tap/phaser callback
+    /// carries: `(emitter, is_stamped)`. A stamped emitter (installed under
+    /// [`Self::WHENEVER_EMITTER_ENV_KEY`] at `whenever` registration) is
+    /// authoritative; the `__mutsu_supply_emitter_<id>` lexical the on-demand
+    /// body's parameter binds is only a fallback guess.
+    pub(crate) fn whenever_tap_emitter(tap: &Value) -> (Option<Value>, bool) {
+        tap.as_sub()
+            .map(|data| match data.env.get(Self::WHENEVER_EMITTER_ENV_KEY) {
+                Some(own) => (Some(own.clone()), true),
+                None => (
+                    data.env
+                        .keys()
+                        .find(|k| k.with_str(|s| s.starts_with("__mutsu_supply_emitter_")))
+                        .and_then(|k| data.env.get_sym(*k).cloned()),
+                    false,
+                ),
+            })
+            .unwrap_or((None, false))
     }
 
     /// `Some(supplier_id)` when `emitter` is a `Supplier` instance carrying a

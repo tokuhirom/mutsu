@@ -596,7 +596,9 @@ impl Interpreter {
                 let _react_done_handler =
                     crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new();
                 let result = match end_cb {
-                    Some((end, _)) if is_done_marker => interp.invoke_done_callback(end),
+                    Some((end, _)) if is_done_marker => {
+                        interp.invoke_done_callback(end).map(|_| ())
+                    }
                     Some((end, args)) => interp.call_sub_value(end, args, true).map(|_| ()),
                     None => interp
                         .call_sub_value(cb.clone(), vec![value], true)
