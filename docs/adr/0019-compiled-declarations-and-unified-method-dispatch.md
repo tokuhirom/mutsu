@@ -204,16 +204,44 @@ dependency is complete, but cleanup slices stay last so each intermediate `main`
     `news/2026-08/routine-code-object-carrier-runs-bytecode.md`,
     `news/2026-08/proto-star-fallback-runs-compiled-candidate.md`,
     `news/2026-08/fallback-def-arm-runs-compiled-body.md`.
-    - [ ] **C6d-2 — grammar token/rule bodies** stay interpreter-executed; that is ADR-0009's
+    - [x] **C6d-2 — grammar token/rule bodies** stay interpreter-executed; that is ADR-0009's
       execution model, not this box's. Tracked until the token/rule work lands, then closed
       together with F7.
+
+      **Closed (2026-08-20), read-only, no code.** F7 landed both its slices on 2026-08-17, so
+      this box's own stated closing condition is met. Re-reading the two sites at close-out
+      sharpened *why* they can never become an OTF-coverage question, beyond "ADR-0009 says so":
+      a token/rule body is not a routine body that a gate happens to reject, it is
+      **structurally guaranteed** to be a single regex literal. There is exactly one construction
+      site for `Stmt::TokenDecl`/`Stmt::RuleDecl` in the codebase
+      (`parser/stmt/class/grammar_module.rs`), and it always builds
+      `vec![Stmt::Expr(Expr::Literal(Value::regex(pattern)))]`; `register_token_decl`, the sole
+      feeder of `insert_token_def`, always sets `compiled: None`, exactly as ADR-0009 decided; and
+      an AST dump confirms it (`token TOP { <word>+ % \s+ }` lowers to one
+      `Expr(Literal(Regex(":ratchet <word>+ % \\s+ ")))`). So `eval_block_value(&def.body)` at
+      `dispatch.rs:eval_token_def` and
+      `regex_token_resolve.rs:resolve_token_patterns_with_args_in_pkg` is a **constant fetch**,
+      not a tree-walk of a routine body — the real work at those sites is around the call
+      (parameter binding, `interpolate_bound_regex_scalars`,
+      `bake_bound_params_into_regex_code_blocks`, `<sym>` instantiation, and a scratch
+      `Interpreter` in the resolver's case), which is a regex-execution question scoped against
+      ADR-0009 and nothing C6d-shaped. Both sites were confirmed still live with a `rust-gdb
+      -batch` breakpoint rather than assumed, and a raku-vs-mutsu comparison over the constructs
+      the C6d survey named (`where`-constrained multi with `nextsame`/`callsame`, user
+      `postfix:<!>`/`infix:<op>`, a parameterized grammar subrule, a `proto token` with
+      `multi token :sym<>` candidates under a separated-quantifier `rule`) is byte-identical
+      including the exit code. Full survey history and slice record:
+      `news/2026-08/c6d-interpreter-body-sites-are-mostly-token-bodies.md`. This was the last
+      unchecked box anywhere in Phase C, so the status paragraph's "Phases A, B, and C are fully
+      closed" is now literally true.
   - [x] **C6e** — redeclaration comparison switched to the C4 plan fingerprint, `RoutineBodyFacts`
     filled eagerly at plan lowering, and `legacy_body` itself dropped (2026-08-07) once every
     remaining consumer (class-walker method-nested subs, rw/raw scalar carriers, lvalue routines,
     NativeCall marshalling, runtime-resolved sub names, bare-block/closure `SubData`) had its own
     bytecode carrier — validated with a `MUTSU_FORCE_BODYLESS` instrument against the full `t/`
     suite and roast whitelist. `news/2026-08/legacy-body-field-dropped.md`.
-  This closes ADR-0019's C6 box except for the token/rule carve-out (C6d-2).
+  This closes ADR-0019's C6 box in full; the token/rule carve-out (C6d-2) closed 2026-08-20 with
+  F7, as a permanent ADR-0009 execution-model exception rather than deferred work.
 - [x] **C7 — Remove the sub-registration AST adapter.** Delete dead sub-shaped walker branches and
   prove the routine registry never compiles a migrated declaration on demand. The one live adapter
   was `preregister_top_level_subs` (the forward-declaration pass), which built its temporary
