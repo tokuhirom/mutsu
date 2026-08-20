@@ -523,19 +523,13 @@ impl Interpreter {
                 }
                 let result = self.call_sub_value(next, call_args, false)?;
                 if tail_call {
-                    return Err(RuntimeError {
-                        return_value: Some(result),
-                        ..RuntimeError::new("")
-                    });
+                    return Err(RuntimeError::return_signal(result));
                 }
                 return Ok(result);
             }
             // Remaining is empty: exhausted — return Nil.
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(Value::NIL),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(Value::NIL));
             }
             return Ok(Value::NIL);
         }
@@ -645,10 +639,7 @@ impl Interpreter {
                         }
                     };
                     if tail_call {
-                        return Err(RuntimeError {
-                            return_value: Some(result),
-                            ..RuntimeError::new("")
-                        });
+                        return Err(RuntimeError::return_signal(result));
                     }
                     return Ok(result);
                 }
@@ -708,10 +699,7 @@ impl Interpreter {
                     }
                     let result = self.call_sub_value(code, call_args, false)?;
                     if tail_call {
-                        return Err(RuntimeError {
-                            return_value: Some(result),
-                            ..RuntimeError::new("")
-                        });
+                        return Err(RuntimeError::return_signal(result));
                     }
                     return Ok(result);
                 }
@@ -993,10 +981,7 @@ impl Interpreter {
                 frame.invocant = new_invocant;
             }
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(result),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(result));
             }
             return Ok(result);
         }
@@ -1058,10 +1043,7 @@ impl Interpreter {
             let Some(idx) = matched_idx else {
                 // No candidate matches — return Nil (nowhere to defer to)
                 if tail_call {
-                    return Err(RuntimeError {
-                        return_value: Some(Value::NIL),
-                        ..RuntimeError::new("")
-                    });
+                    return Err(RuntimeError::return_signal(Value::NIL));
                 }
                 return Ok(Value::NIL);
             };
@@ -1139,10 +1121,7 @@ impl Interpreter {
                 }
             }
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(result),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(result));
             }
             return Ok(result);
         }
@@ -1152,10 +1131,7 @@ impl Interpreter {
         if let Some(res) = self.native_metamodel_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(result),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(result));
             }
             return Ok(result);
         }
@@ -1194,10 +1170,7 @@ impl Interpreter {
                 };
                 let result = self.call_method_with_values(invocant, "bless", call_args)?;
                 if tail_call {
-                    return Err(RuntimeError {
-                        return_value: Some(result),
-                        ..RuntimeError::new("")
-                    });
+                    return Err(RuntimeError::return_signal(result));
                 }
                 return Ok(result);
             }
@@ -1211,10 +1184,7 @@ impl Interpreter {
         if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(result),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(result));
             }
             return Ok(result);
         }
@@ -1224,10 +1194,7 @@ impl Interpreter {
         if let Some(res) = self.native_any_base_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(result),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(result));
             }
             return Ok(result);
         }
@@ -1239,10 +1206,7 @@ impl Interpreter {
         // exhaustion is already handled by the Method branch above.
         if !self.method_class_stack.is_empty() {
             if tail_call {
-                return Err(RuntimeError {
-                    return_value: Some(Value::NIL),
-                    ..RuntimeError::new("")
-                });
+                return Err(RuntimeError::return_signal(Value::NIL));
             }
             return Ok(Value::NIL);
         }
