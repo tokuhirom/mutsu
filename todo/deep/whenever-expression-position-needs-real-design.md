@@ -1,5 +1,31 @@
 # `whenever` in expression position needs real design, not a binding-bug fix
 
+> **Superseded by [ADR-0053](../../docs/adr/0053-do-whenever-produces-a-tap-on-the-stack.md)
+> (2026-08-20).** Read the ADR, not this file, before implementing.
+>
+> The re-investigation confirmed the *symptoms* below but **disproved "Root
+> cause 1"**: bare `whenever` in expression position is not a missing parser
+> feature — rakudo rejects that source outright (`Word 'whenever' interpreted
+> as a listop; please use 'do whenever' to introduce the statement control
+> word`), exactly as it rejects `my $x = if 1 { 2 }`. The legal form,
+> `do whenever … { … }`, **already parses correctly in mutsu** into the
+> `Expr::DoStmt(Stmt::Whenever { … })` shape this file's "what a real fix
+> needs" item 1 proposed building. No parser work is required.
+>
+> "Root cause 2" is confirmed and is the whole defect, and it is worse than
+> recorded here: all four (react|supply × bare-`Var`|`MethodCall`) cells answer
+> wrongly (`Supply` or `Any` where raku answers `Tap`), the non-react `.tap()`
+> arm that *does* insert a real Tap is unreachable from `do whenever` in either
+> legal context (verified by breakpoint), and the only working shape is an
+> `IO::Socket::Async::Listener` source — the sole reason
+> `roast/S32-io/IO-Socket-Async.t`'s `isa-ok $listen-tap, Tap` is green.
+> ADR-0053 replaces the name bridge with an ordinary stack value plus a
+> subscription identity that makes `Tap.close` work, in three slices.
+>
+> The "mutsu accepts statement control words in term position where rakudo
+> errors" family (`if`, `whenever`, …) is a separate parser-diagnostic
+> question; ADR-0053 §4 records it as out of scope.
+
 Reclassified from `todo/tickets/whenever-target-var-binds-wrong-value-in-react.md`
 after investigation showed the root cause is a missing language feature
 (the parser does not support `whenever` as an expression term at all),
