@@ -71,7 +71,8 @@ inside a routine (`if (my $file = %args<file> :delete)`, `Text::CSV.rakumod`'s
 separate return paths (free-var writeback drain, two return-merge exclusion
 gaps, and the interpreter-carrier write log). Fixed with the bundling PR;
 pin: `t/expr-decl-lexical-no-leak.t`. One shape remains open —
-`todo/deep/expr-decl-writes-through-captured-cell.md`.
+`todo/tickets/expr-decl-writes-through-captured-cell.md` (method bodies only, as
+of the 2026-08-20 re-verification).
 
 ---
 
