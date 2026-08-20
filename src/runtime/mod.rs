@@ -198,6 +198,33 @@ type CarrierCompileCache =
 
 const CARRIER_COMPILE_CACHE_MAX_CONTEXTS_PER_ID: usize = 4;
 
+/// Key for `map_grep_compile_cache`: pointer identity of a closure literal's
+/// pre-existing `compiled_code`, plus whether the call site is lexically
+/// inside a routine. Holds a clone of the `Arc` (not just its address) so the
+/// key stays alive for as long as its cache entry does — see the field's doc
+/// comment for why a bare pointer would be unsound.
+#[derive(Clone)]
+struct MapGrepCacheKey {
+    origin: Arc<CompiledCode>,
+    lexically_in_routine: bool,
+}
+
+impl PartialEq for MapGrepCacheKey {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.origin, &other.origin)
+            && self.lexically_in_routine == other.lexically_in_routine
+    }
+}
+
+impl Eq for MapGrepCacheKey {}
+
+impl std::hash::Hash for MapGrepCacheKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        (Arc::as_ptr(&self.origin) as usize).hash(state);
+        self.lexically_in_routine.hash(state);
+    }
+}
+
 mod accessors;
 mod accessors_misc;
 mod accessors_resolve;
@@ -1398,6 +1425,34 @@ pub struct Interpreter {
     /// `eval_block_value_cached`/`eval_test_block_value`'s `cache_id`
     /// parameter — starts empty per thread (pure recomputable optimization).
     carrier_compile_cache: CarrierCompileCache,
+    /// The map/grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`)
+    /// compile the callback block once per `.map()`/`.grep()`/`.first()` CALL
+    /// and then run every item through the same compiled bytecode via
+    /// `run_reuse` -- cheap when one call processes many items, but a block
+    /// literal declared *inside* a loop (`for @blocks { @xs.map({ ... }) }`,
+    /// the shape `Digest::RIPEMD` hits once per compression round) is a fresh
+    /// `SubData` on every outer iteration, so the naive path recompiles its
+    /// AST from scratch every time even though the block's own source never
+    /// changes. `data.compiled_code` is already an `Arc<CompiledCode>` shared
+    /// across every instantiation of the same source closure literal (see
+    /// `vm_register_ops::resolve_closure_code` -- it is pulled from the
+    /// enclosing scope's `closure_compiled_codes`, baked once at that
+    /// enclosing scope's own compile time), so its pointer identity is a
+    /// free cache key for this fast path's own (differently-shaped,
+    /// tail-normalized) compile. `MapGrepCacheKey` HOLDS a clone of that
+    /// `Arc` (not just its address) so the key stays alive for as long as the
+    /// cache entry does — a bare `usize` pointer would go unsound the moment
+    /// the *original* Arc (e.g. one built fresh per call by a dynamic
+    /// `EVAL`/RakuAST closure, never otherwise retained) is dropped and its
+    /// address reused by an unrelated later `CompiledCode` allocation, which
+    /// would then collide with a stale cache entry
+    /// (`t/rakuast-eval-block-arg.t`'s chained `.map().grep()` on one line
+    /// caught this during development). Keyed additionally on
+    /// `lexically_in_routine` since that is the only other compiler input
+    /// drawn from ambient state here. Starts empty per thread (pure
+    /// recomputable optimization).
+    map_grep_compile_cache:
+        HashMap<MapGrepCacheKey, (std::sync::Arc<CompiledCode>, std::sync::Arc<CompiledFns>)>,
     /// Compiled bytecode for subset `where` predicates, keyed by subset name.
     /// A subset's predicate is a fixed `Expr`, so it is compiled once and reused
     /// across all type checks instead of recompiling + cloning the entire

@@ -419,17 +419,17 @@ impl Interpreter {
                 return Ok((Value::array(result), list_items));
             }
 
-            // Compile once, reuse VM for every iteration.
-            // `return` inside this block should propagate up to the
-            // lexically enclosing routine (if any), so mark the fresh
-            // compiler as being lexically nested inside a routine whenever
-            // a routine is currently on the dynamic call stack.
-            let mut compiler = crate::compiler::Compiler::new();
-            compiler.lexically_in_routine = !self.routine_stack.is_empty();
+            // Compile once, reuse VM for every iteration (and reuse a cached
+            // compile across repeated calls to this same closure literal —
+            // see `compile_loop_block_cached`). `return` inside this block
+            // should propagate up to the lexically enclosing routine (if
+            // any); `compile_loop_block_cached` marks the compiler as
+            // lexically nested in a routine whenever one is currently on the
+            // dynamic call stack.
             let normalized_body =
                 super::resolution_map_grep::normalize_tail_stmt_for_value(&data.body);
             let tail_is_when = super::resolution_map_grep::tail_is_when_chain(&normalized_body);
-            let (code, compiled_fns) = compiler.compile(&normalized_body);
+            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();

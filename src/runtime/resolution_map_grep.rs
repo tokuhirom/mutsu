@@ -213,6 +213,43 @@ pub(crate) fn push_block_declared_keys(
 }
 
 impl Interpreter {
+    /// Compile a map/grep/`.first` callback's tail-normalized body for the
+    /// inline-loop fast path, reusing a cached compile when this exact
+    /// closure literal was already compiled at this lexical nesting. See
+    /// `Interpreter::map_grep_compile_cache`'s doc comment for why the
+    /// `data.compiled_code` `Arc` pointer is a sound, free cache key. A block
+    /// with no `compiled_code` (an `EVAL`-built block, or another dynamic
+    /// construction) always compiles fresh — safe, just uncached.
+    pub(super) fn compile_loop_block_cached(
+        &mut self,
+        data: &SubData,
+        normalized_body: &[crate::ast::Stmt],
+    ) -> (
+        std::sync::Arc<crate::opcode::CompiledCode>,
+        std::sync::Arc<crate::opcode::CompiledFns>,
+    ) {
+        let lexically_in_routine = !self.routine_stack.is_empty();
+        let key = data.compiled_code.as_ref().map(|cc| MapGrepCacheKey {
+            origin: cc.clone(),
+            lexically_in_routine,
+        });
+        if let Some(key) = &key
+            && let Some((code, fns)) = self.map_grep_compile_cache.get(key)
+        {
+            return (code.clone(), fns.clone());
+        }
+        let mut compiler = crate::compiler::Compiler::new();
+        compiler.lexically_in_routine = lexically_in_routine;
+        let (code, fns) = compiler.compile(normalized_body);
+        let code = std::sync::Arc::new(code);
+        let fns = std::sync::Arc::new(fns);
+        if let Some(key) = key {
+            self.map_grep_compile_cache
+                .insert(key, (code.clone(), fns.clone()));
+        }
+        (code, fns)
+    }
+
     pub(super) fn eval_map_over_items(
         &mut self,
         func: Option<Value>,
@@ -367,13 +404,13 @@ impl Interpreter {
                 }
             }
 
-            // Compile once, reuse VM for every iteration.
-            // `return` inside this block should propagate up to the
-            // lexically enclosing routine (if any), so mark the fresh
-            // compiler as being lexically nested inside a routine whenever
-            // a routine is currently on the dynamic call stack.
-            let mut compiler = crate::compiler::Compiler::new();
-            compiler.lexically_in_routine = !self.routine_stack.is_empty();
+            // Compile once, reuse VM for every iteration (and reuse a cached
+            // compile across repeated calls to this same closure literal —
+            // see `compile_loop_block_cached`). `return` inside this block
+            // should propagate up to the lexically enclosing routine (if
+            // any); `compile_loop_block_cached` marks the compiler as
+            // lexically nested in a routine whenever one is currently on the
+            // dynamic call stack.
             // The map value is taken from the block's tail-expression result (or
             // the topic `$_` if none was left on the stack). A bare tail
             // `Stmt::Call` carrying named/slip args (how an imported sub call like
@@ -382,7 +419,7 @@ impl Interpreter {
             // tail into `Stmt::Expr(Expr::Call)` so its value is preserved.
             let normalized_body = normalize_tail_stmt_for_value(&data.body);
             let tail_is_when = tail_is_when_chain(&normalized_body);
-            let (code, compiled_fns) = compiler.compile(&normalized_body);
+            let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
             let underscore = "_".to_string();
             let dollar_topic = "$_".to_string();
@@ -717,12 +754,11 @@ impl Interpreter {
         }
 
         // Compile once (mirrors grep: normalize the tail statement so the last
-        // expression lands on the stack as the predicate value).
-        let mut compiler = crate::compiler::Compiler::new();
-        compiler.lexically_in_routine = !self.routine_stack.is_empty();
+        // expression lands on the stack as the predicate value), reusing a
+        // cached compile across repeated calls to this same closure literal.
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
         let tail_is_when = tail_is_when_chain(&normalized_body);
-        let (code, compiled_fns) = compiler.compile(&normalized_body);
+        let (code, compiled_fns) = self.compile_loop_block_cached(&data, &normalized_body);
 
         let underscore = "_".to_string();
         let dollar_topic = "$_".to_string();
