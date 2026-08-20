@@ -52,8 +52,47 @@ backing container at assignment time: it scans `self.env.values()` for a `Hash` 
 pair's key, or an `Array` whose element at the pair's integer key, compares `==` to the pair's value
 (`:573-606`), requires the match to be unique by `Gc::ptr_eq`, rebuilds the whole container, and
 writes it back by identity (`overwrite_array_bindings_by_identity` / `overwrite_hash_bindings_by_identity`).
-Adjacent arms extend the same trick to shaped arrays by index tuple (`:613-646`) and to mutable
-QuantHash weights via `topic_source_var` (`:529-546`).
+Adjacent arms extend the same trick to shaped arrays by index tuple (`:613-646`), to mutable
+QuantHash weights via `topic_source_var` (`:529-546`), and — a fourth consumer, easy to miss — to
+*standalone* Pairs at `:686-723`, which scans `self.env.iter()` for every binding holding a Pair with
+the same key and the same old value and rebinds each one, "simulating Raku container semantics where
+pair values are aliases" (its own comment). That is the same search under a different name, so it
+belongs to the same deletion.
+
+One arm above it, `:445-461`, keys off a Pair `Instance` carrying a `__mutsu_hash_ref` attribute.
+**Nothing in the tree ever writes that attribute** — it is read at exactly two places
+(`methods_mut_method_lvalue.rs:454` and `builtins/methods_0arg/coercion.rs:212`) and constructed
+nowhere. It is dead and should be removed with the rest.
+
+### 1.2b `:kv`'s write path is a parser rewrite, not a runtime route
+
+The originating finding noted that `(@a[0]:kv)[1] = 'x'` works today "by a different route" and asked
+for it to be audited alongside. It is worth stating precisely what that route is, because it is not a
+runtime mechanism at all — **the parser rewrites the whole construct into a plain element assign**,
+so no adverb machinery and no Pair is ever built. Verified with `--dump-bytecode`:
+
+```
+$ mutsu --dump-bytecode -e 'my @a = <A B>; (@a[0]:kv)[1] = "x";'
+    7: IndexAssignExprNamed { name_idx: 0, is_positional: true, target_slot: Some(0) }
+
+$ mutsu --dump-bytecode -e 'my @a = <A B>; (@a[0]:p).value = "x";'
+    7: Str("__mutsu_subscript_adverb")
+   10: Str("__mutsu_assign_method_lvalue")
+```
+
+The rewrite matches `Call("__mutsu_subscript_adverb", [target, index, mode, …])` with `mode ∈ {"kv",
+"not-kv"}` and a literal index of `1`, and rebuilds it as `Expr::IndexAssign`. It is implemented
+twice — once for statement position (`src/parser/stmt/assign/lvalue.rs`) and once for expression
+position (`src/parser/expr/precedence/logic.rs`), the latter being what makes it work inside a
+closure. There is no `.value` counterpart in either, so the `:p` form always lands in the runtime
+scan.
+
+Two consequences for this ADR. First, `:kv`'s apparent health is confined to that one syntactic
+shape: its *read* direction is as stale as `:p`'s (§1.3 row 2), and anything that stores the `:kv`
+list first is unaffected by the rewrite. Second, once slice 2 gives `:kv` real element containers,
+**the rewrite becomes redundant and should be deleted with it** — leaving both means one syntactic
+form takes a fast path and every other form takes the semantic one, which is exactly the kind of
+divergence that hides bugs.
 
 ### 1.3 The divergence this produces — measured on `main` (e13d278ff)
 
@@ -165,9 +204,11 @@ Three parts:
 3. **The env scan goes away.** `methods_mut_method_lvalue.rs:547-668` — `selected_hash` /
    `selected_array`, the `self.env.values()` candidate scans, the shaped-array index-tuple scan, and
    the `overwrite_*_bindings_by_identity` rebuild — is deleted once every producer that feeds it has
-   converted. What remains in the `method == "value"` arm is the `ContainerRef` assignment at `:496`
-   (which gains the element type constraint, §4 slice 4), the `HashEntryRef` in-place write at
-   `:481`, the QuantHash weight arm, and the read-only guard.
+   converted, and so are its two outriders: the standalone-Pair env rebind at `:686-723` and the dead
+   `__mutsu_hash_ref` branch at `:445-461` (§1.2). The `:kv` parser rewrite (§1.2b) goes with them.
+   What remains in the `method == "value"` arm is the `ContainerRef` assignment at `:496` (which
+   gains the element type constraint, §4 slice 4), the `HashEntryRef` in-place write at `:481`, the
+   QuantHash weight arm, and the read-only guard.
 
 ### Why this direction
 
@@ -219,7 +260,11 @@ Each slice is independently landable and independently green.
 
 2. **Slice 2 — subscript adverbs.** Route the `:p` and `:kv` arms in
    `runtime/builtins_multidim_subscript.rs` (`:528`, `:655`, `:672`, `:739`) through slot refs when
-   the target is a mutable container. Rows 1, 2, 5, 6, 7, 8 and 12 of §1.3 turn green.
+   the target is a mutable container, and retire the `:kv` parser rewrite (§1.2b) in the same slice —
+   its two sites are `src/parser/stmt/assign/lvalue.rs` and `src/parser/expr/precedence/logic.rs`,
+   and keeping it would leave one syntactic form on a fast path while every other form takes the
+   semantic one. Rows 1, 2, 5, 6, 7, 8 and 12 of §1.3 turn green. `t/subscript-adverbs.t` is the pin
+   that the rewrite's removal must not regress.
 
 3. **Slice 3 — `.pairs` / `.kv` / `.antipairs`.** Add the container-aware path at the VM method
    dispatch layer, keeping `builtins/methods_0arg/` as the immutable-source fallback. Rows 3, 4, 9,
@@ -230,8 +275,10 @@ Each slice is independently landable and independently green.
    `lookup_container_constraint` at
    `methods_mut_method_lvalue.rs:508` sees it — note this gap exists for `:=`-bound elements today
    too (`my Str @a; my $r := @a[0]; $r = 42` wrongly succeeds), so the slice fixes both at once. Then
-   delete `methods_mut_method_lvalue.rs:547-668` and any `overwrite_*_bindings_by_identity` helper
-   left with no callers.
+   delete `methods_mut_method_lvalue.rs:547-668`, the standalone-Pair rebind at `:686-723`, the dead
+   `__mutsu_hash_ref` branch at `:445-461` (and its only other reader,
+   `builtins/methods_0arg/coercion.rs:212`), and any `overwrite_*_bindings_by_identity` helper left
+   with no callers.
 
 5. **Slice 5 — sweep.** Re-run the §1.3 table, run the whitelisted S02/S09/S32 roast families, and
    record the outcome in this ADR's "Implementation status".
