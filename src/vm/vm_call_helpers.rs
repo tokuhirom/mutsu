@@ -97,7 +97,8 @@ impl Interpreter {
     /// The light-call / OTF caches bind the *compiled* arity directly against
     /// the stack, but a Slip argument spreads into the argument list and so
     /// changes that arity. Flattening lives on the slow dispatch path
-    /// (`flatten_call_args`), so a call carrying one must skip those caches.
+    /// (`spread_call_args_by_syntax`), so a call carrying one must skip those
+    /// caches.
     pub(super) fn stack_args_have_slip(&self, arity: usize) -> bool {
         self.stack.len() >= arity
             && self.stack[self.stack.len() - arity..]
@@ -138,25 +139,51 @@ impl Interpreter {
         out
     }
 
-    /// Flatten every Slip-valued argument of a call into the argument list.
+    /// Spread a call's raw arguments by call-site syntax (ADR-0054 S1/S2),
+    /// not by a value's runtime Slip-shape: only a position the compiler
+    /// recorded as `|EXPR` (`decode_arg_slip_positions`) spreads. Every other
+    /// argument -- including one that merely evaluated to a Slip
+    /// (`f(@a.Slip)`) -- stays exactly one argument, matching Raku (a `Slip`
+    /// is an ordinary `List` subtype, not a request to spread). This
+    /// replaces the old runtime-value-shape inference
+    /// (`append_flattened_call_arg` applied unconditionally to every
+    /// argument), which could not distinguish `f(|@a)` from `f(@a.Slip)`.
     ///
-    /// `|EXPR` compiles to `MakeSlip` + an ordinary argument, so this is what
-    /// makes argument-list interpolation happen, for any number of `|` args.
-    /// It also spreads a Slip that an ordinary argument merely evaluated to
-    /// (`f(@a.Slip)`) — Rakudo keeps that one intact until slurpy binding, so
-    /// this is wider than the spec; it is long-standing mutsu behaviour and
-    /// changing it is out of scope here.
-    pub(super) fn flatten_call_args(name: &str, raw_args: Vec<Value>) -> Vec<Value> {
-        // val() uses capture semantics (Mu |) — preserve Slip as a single arg.
-        if name == "val" {
-            return raw_args;
-        }
-        let preserve_empty_slip = Self::preserve_empty_slip_arg(name);
+    /// `decoded_sources` (from `decode_arg_sources`, over the SAME
+    /// pre-flatten positions as `arg_sources_idx`) is expanded in lockstep
+    /// with the returned args, so the two never desync: a spread position
+    /// has no single traceable rw source, so every runtime argument it
+    /// expands into gets `None` there.
+    pub(super) fn spread_call_args_by_syntax(
+        code: &CompiledCode,
+        raw_args: Vec<Value>,
+        arg_sources_idx: Option<u32>,
+        decoded_sources: Option<Vec<Option<String>>>,
+    ) -> (Vec<Value>, Option<Vec<Option<String>>>) {
+        let Some(slip_at) = Self::decode_arg_slip_positions(code, arg_sources_idx) else {
+            // No `|` argument recorded at this call site: nothing spreads.
+            return (raw_args, decoded_sources);
+        };
         let mut args = Vec::with_capacity(raw_args.len());
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
+        let mut sources: Vec<Option<String>> = Vec::with_capacity(raw_args.len());
+        let mut has_source = false;
+        for (i, arg) in raw_args.into_iter().enumerate() {
+            if slip_at.contains(&i) {
+                let before = args.len();
+                Self::append_flattened_call_arg(&mut args, arg, false);
+                sources.extend(std::iter::repeat_n(None, args.len() - before));
+            } else {
+                let name = decoded_sources
+                    .as_ref()
+                    .and_then(|s| s.get(i))
+                    .cloned()
+                    .flatten();
+                has_source |= name.is_some();
+                args.push(arg);
+                sources.push(name);
+            }
         }
-        args
+        (args, if has_source { Some(sources) } else { None })
     }
 
     /// Auto-FETCH any Proxy values in function call arguments.
@@ -171,6 +198,12 @@ impl Interpreter {
         Ok(out)
     }
 
+    /// Decode the per-argument-position rw-source names baked by
+    /// `add_arg_sources_constant`. A `|EXPR` position (ADR-0054) is encoded
+    /// there as `Value::TRUE` rather than a name -- it falls through the
+    /// match below to `None` here, same as `NIL`; use
+    /// [`Self::decode_arg_slip_positions`] to recover which positions those
+    /// are.
     pub(super) fn decode_arg_sources(
         &mut self,
         code: &CompiledCode,
@@ -206,6 +239,34 @@ impl Interpreter {
             self.pending_call_arg_source_slots.insert(name, slot);
         }
         Some(names)
+    }
+
+    /// Positions this call wrote as `|EXPR` (ADR-0054 S1/S2), decoded from the
+    /// same descriptor array `decode_arg_sources` reads (a `|` position is
+    /// encoded there as `Value::TRUE`, distinct from `NIL` / `Str(name)` /
+    /// `Pair(name, Int(slot))`). Positions are pre-flatten: they index the
+    /// compiled argument list, i.e. exactly the arity the call op carries,
+    /// before any position's value is spread into zero or more runtime
+    /// arguments. `None` when there is no descriptor or no `|` argument.
+    pub(super) fn decode_arg_slip_positions(
+        code: &CompiledCode,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<Vec<usize>> {
+        let idx = arg_sources_idx?;
+        let ValueView::Array(items, ..) = code.constants[idx as usize].view() else {
+            return None;
+        };
+        let positions: Vec<usize> = items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| matches!(item.view(), ValueView::Bool(true)))
+            .map(|(i, _)| i)
+            .collect();
+        if positions.is_empty() {
+            None
+        } else {
+            Some(positions)
+        }
     }
 
     pub(super) fn unwrap_var_ref_value(value: Value) -> Value {

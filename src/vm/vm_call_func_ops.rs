@@ -776,20 +776,12 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip-valued argument (`|capture` slipping, or an ordinary
-        // argument that evaluated to a Slip).
-        let args = Self::flatten_call_args(&name, raw_args);
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let arg_sources = if arg_sources.as_ref().is_some_and(|sources| {
-            sources.len() != args.len()
-                && !(args.is_empty()
-                    && sources.len() == 1
-                    && sources.first().is_some_and(|name| name.is_some()))
-        }) {
-            None
-        } else {
-            arg_sources
-        };
+        // ADR-0054 S2: spread only the positions the caller wrote as
+        // `|EXPR` -- decided by call-site syntax, not by a value merely
+        // evaluating to a Slip (`f(@a.Slip)` stays one argument).
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         // Don't auto-FETCH Proxy args for control flow builtins that must preserve containers,
@@ -992,17 +984,11 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, false);
-        }
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
-            None
-        } else {
-            arg_sources
-        };
+        // ADR-0054 S2: spread only the `|EXPR` positions, decided by
+        // call-site syntax rather than a value's runtime Slip-shape.
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallOnValue target".to_string())
         })?;
@@ -1057,19 +1043,23 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, false);
-        }
+        // ADR-0054 S2: spread only the `|EXPR` positions, decided by
+        // call-site syntax rather than a value's runtime Slip-shape.
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
-        loan_env!(self, set_pending_callsite_line(callsite_line));
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
+        // `sanitize_call_args_owned` may drop a synthetic callsite-line
+        // marker pair, shortening `args` by one relative to the just-aligned
+        // `arg_sources` -- re-check length here (mirrors the pre-ADR-0054
+        // guard) rather than in `spread_call_args_by_syntax`, which aligns
+        // against the pre-sanitize argument list.
         let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
             None
         } else {
             arg_sources
         };
+        loan_env!(self, set_pending_callsite_line(callsite_line));
         // resolve_code_var handles pseudo-package stripping internally
         let mut target = loan_env!(self, resolve_code_var(&name));
         // A `&`-sigil binding may live only in this frame's LOCAL SLOT, never in

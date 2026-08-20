@@ -1,6 +1,6 @@
 # ADR-0054: Argument-list interpolation is a call-site property — retire blind Slip flattening
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (Slices 1-2 implemented; Slices 3-6 remain)
 - Date: 2026-08-20
 - Origin: `todo/deep/blind-slip-flattening-in-fixed-arity-calls.md`
   (re-verified reproducing on `main` @ `b1a9bb8a5`, 2026-08-20; the
@@ -369,10 +369,55 @@ on the old behaviour via a compiled trampoline.
 
 ## 7. Implementation status
 
-- [ ] Slice 0 pins
-- [ ] Slice 1 compiler descriptor
-- [ ] Slice 2 function path
-- [ ] Slice 3 method / hyper paths
+- [x] Slice 0 pins — folded into the Slice 1/2 PR: `t/slip-arg-flatten.t` was
+  already the regression net; `t/slip-value-argument-is-one-argument.t` adds
+  the fixed-arity-callee matrix (§2.1/§2.2) this ADR set out to fix.
+- [x] Slice 1 compiler descriptor — `add_arg_sources_constant`
+  (`src/compiler/mod.rs`) gains the third entry shape (`Value::TRUE`) for a
+  `|EXPR` position; the `has_slip` branch in
+  `src/compiler/expr_call.rs` now feeds it instead of hardcoding `None`.
+  `decode_arg_slip_positions` (`src/vm/vm_call_helpers.rs`) decodes the
+  positions. Method/`CallOnValue`/`CallOnCodeVar` emission sites already called
+  `add_arg_sources_constant` unconditionally, so they picked up the new shape
+  for free; the four opcodes that don't carry `arg_sources_idx` yet
+  (`CallMethodDynamic`, `CallMethodDynamicMut`, `HyperMethodCall`,
+  `HyperMethodCallDynamic`) still don't — that part of Slice 3 is unstarted.
+- [x] Slice 2 function path — `spread_call_args_by_syntax`
+  (`src/vm/vm_call_helpers.rs`) replaces `flatten_call_args` (deleted) at the
+  three named sites (`vm_call_func_ops.rs`'s `CallFunc`/`CallOnValue`/
+  `CallOnCodeVar` handlers) **and** `exec_exec_call_op`'s `ExecCall` handler
+  (`vm_call_exec_ops.rs`), which had its own hand-duplicated blind-flatten loop
+  not mentioned by name in §4 but is the same mechanism (§1.2's consumer
+  table lists it alongside `CallFunc`) and is what a bare listop-style
+  statement call compiles to when the callee isn't in the statement-call
+  allowlist. The `val`-name special case and the length-mismatch
+  "lengths disagree -> drop the whole table" fallback are gone from these four
+  sites, replaced by the lockstep expansion `spread_call_args_by_syntax`
+  builds directly (one narrow post-sanitize length re-check remains in
+  `exec_call_on_code_var_op`, guarding only against the synthetic
+  callsite-line marker `sanitize_call_args_owned` can strip — not a
+  slip-alignment concern). `preserve_empty_slip_arg` itself is NOT deleted:
+  it's still called from the method paths (Slice 3), so removing it now would
+  break the build; it becomes single-caller once Slice 3 lands.
+  A latent dependency on the old *wider-than-spec* behaviour turned up in the
+  builtin `grep`/`map` listops (`src/runtime/builtins_collection_mapgrep.rs`):
+  both relied on the call op to have already flattened a Slip-valued list
+  argument, since their own item-flattening `match` had no `Slip` arm. Per
+  §2.3 a `Slip` must still flatten into their slurpy `+@list` regardless of
+  call-site syntax, so both now flatten a `Slip` argument unconditionally
+  (ahead of the `single_arg_rule` gate, since Slip flattening is not subject
+  to that rule) — this is a Slice 2 fix, not a regression of §2.3.
+  Acceptance verified: §2.1 and §2.2's function/listop/code-variable rows now
+  match `raku` (dual-oracle checked); `t/slip-arg-flatten.t` and every "must
+  stay green" file in §6 stay green without the allow-list.
+- [ ] Slice 3 method / hyper paths — next up. `vm_call_method_ops.rs:557`,
+  `vm_call_method_mut_ops.rs:49,372,579`, `vm_hyper_method_ops.rs:502` still
+  use `append_flattened_call_arg` unconditionally (blind value-shape
+  inference); `CallMethodDynamic`/`CallMethodDynamicMut`/`HyperMethodCall`/
+  `HyperMethodCallDynamic` still lack `arg_sources_idx`. The method row of
+  `t/slip-value-argument-is-one-argument.t` (`C.m(maybe(0))`) is pinned
+  `todo` pending this slice — dual-oracle confirmed it already passes under
+  `raku`.
 - [ ] Slice 4 constant collapse + cache gate
 - [ ] Slice 5 compiler dodge cleanup
 - [ ] Slice 6 internal-caller audit

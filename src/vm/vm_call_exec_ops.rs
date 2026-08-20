@@ -17,26 +17,14 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        let mut args = Vec::new();
-        for arg in raw_args {
-            match arg.view() {
-                ValueView::Slip(items) => {
-                    for item in items.iter() {
-                        match item.view() {
-                            ValueView::Capture { positional, named } => {
-                                args.extend(positional.iter().cloned());
-                                for (k, v) in named.iter() {
-                                    args.push(Value::pair(k.clone(), v.clone()));
-                                }
-                            }
-                            _ => args.push(item.clone()),
-                        }
-                    }
-                }
-                _ => args.push(arg),
-            }
-        }
+        // ADR-0054 S2: spread only the positions the caller wrote as
+        // `|EXPR` -- decided by call-site syntax, not by a value merely
+        // evaluating to a Slip (e.g. `show maybe(0);` as a bare statement,
+        // where `maybe`'s tail `if` didn't fire and returned an Empty Slip,
+        // must pass exactly one argument).
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
         // NativeCall: a statement-level call to an `is native(...)` sub compiles
         // to `ExecCall` (a bare call statement whose value is sunk), not
         // `CallFunc` — but only `CallFunc`'s handler checked `native_call_specs`.
@@ -74,12 +62,6 @@ impl Interpreter {
                 return Ok(());
             }
         }
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        let arg_sources = if arg_sources.as_ref().is_some_and(|s| s.len() != args.len()) {
-            None
-        } else {
-            arg_sources
-        };
         let args = self.normalize_call_args_for_target(&name, args);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         // Auto-FETCH Proxy args for statement-level calls (same as CallFunc)
