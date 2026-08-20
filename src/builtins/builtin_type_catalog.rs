@@ -1,22 +1,23 @@
-//! Single static builtin-type MRO/roles catalog (ADR-0019 Phase E box E1a).
+//! Single static builtin-type MRO/roles catalog (ADR-0019 Phase E box E1a;
+//! promoted to the single ancestry oracle by ADR-0051 P1).
 //!
-//! Replaces (for the E1 classifier only — see `crate::runtime::receiver_class`) the
-//! four divergent builtin MRO tables surveyed in
-//! `todo/deep/adr0019-e1-typeid-receiver-owner.md`:
-//! [`super::builtin_type_methods::builtin_type_parents`],
+//! Originally replaced (for the E1 classifier only — see
+//! `crate::runtime::receiver_class`) four divergent builtin MRO tables surveyed
+//! in `todo/deep/adr0019-e1-typeid-receiver-owner.md`. One of those,
+//! `builtin_type_methods::builtin_type_parents`, has since been deleted
+//! (ADR-0051 P1): `classhow_mro_names` (`crate::runtime::methods_classhow_mro`)
+//! now reads this catalog directly instead. The other legacy tables —
 //! `Registry::builtin_mro_table` (`crate::runtime::registry`),
 //! `Interpreter::builtin_type_mro_chain` (`crate::runtime::methods_call_helpers`), and
-//! `builtin_type_distance`'s inline table (`crate::runtime::resolution_method`). Those
-//! four tables are left untouched by E1a (zero behavior change); this catalog is
-//! consulted only by the new shadow-mode classifier.
+//! `builtin_type_distance`'s inline table (`crate::runtime::resolution_method`) —
+//! are collapsed onto this catalog in ADR-0051 P2, not yet done.
 //!
-//! **Authority is raku, not the union of the four existing tables.** Every row below
+//! **Authority is raku, not the union of the legacy tables.** Every row below
 //! was captured from `raku -e 'say <Type>.^mro.map(*.^name); say <Type>.^roles.map(*.^name)'`
-//! (Rakudo 2026.06, this workstation) on 2026-08-10 — see
-//! `builtin_type_info_matches_raku` for the row-by-row pin. Known divergences from the
-//! four existing (possibly-wrong) mutsu tables are intentional and are *not* fixed in
-//! those tables here (E1a is shadow-only); they are called out in the E1a PR's
-//! accepted-mismatch ledger and are E1b's job to flip live.
+//! (Rakudo 2026.06, this workstation) on 2026-08-10 (and 2026-08-20 for the
+//! ADR-0051 P1 additions) — see `builtin_type_info_matches_raku` for the
+//! row-by-row pin. Known divergences from the legacy (possibly-wrong) mutsu
+//! tables are intentional and not yet fixed in those tables (P2's job).
 //!
 //! `roles` and `mro` are kept separate deliberately: `.^mro` in raku never contains a
 //! role, and role membership (`Positional`/`Associative`/`Callable`/`Numeric`/`Real`/
@@ -58,6 +59,11 @@ macro_rules! row {
 /// [`crate::runtime::utils::value_type_name`] or the four legacy MRO tables. Ordered
 /// roughly by family for reviewability; lookup is by name via [`builtin_type_info`].
 static CATALOG: &[BuiltinTypeInfo] = &[
+    // ---- Cool itself (ADR-0051 P1): previously registered nowhere -- `.^mro`
+    // for it was correct only by accident of `classhow_mro_names`' unregistered-
+    // type fallback (`vec![class_name]` plus the unconditional Any/Mu append).
+    // raku: `Cool.^mro` is `Cool, Any, Mu`; `Cool.^roles` is empty.
+    row!("Cool", mro: ["Cool", "Any", "Mu"], roles: [], owner: ""),
     // ---- Core Cool-derived scalars ----
     row!("Int", mro: ["Int", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Int"),
     row!("Num", mro: ["Num", "Cool", "Any", "Mu"], roles: ["Real", "Numeric"], owner: "Num"),
@@ -432,6 +438,35 @@ static CATALOG: &[BuiltinTypeInfo] = &[
         roles: [],
         owner: "",
     ),
+    // ---- Temporal (ADR-0051 P1): `Instant`/`Duration` genuinely ARE `Cool` in
+    // raku (verified 2026-08-10/20: `Instant.^mro`/`Duration.^mro` are
+    // `(<Type> Cool Any Mu)`, `.^roles` is `(Real Numeric)`), but had no catalog
+    // row at all -- `receiver_class.rs`'s best-effort `[name, Any, Mu]` fallback
+    // was standing in for them, which is why `Instant ~~ Cool` (source 4's
+    // hand-verified allowlist) already answered `True` while `Instant.^mro`
+    // (this catalog, before this row existed) omitted `Cool` entirely.
+    row!(
+        "Instant",
+        mro: ["Instant", "Cool", "Any", "Mu"],
+        roles: ["Real", "Numeric"],
+        owner: "",
+    ),
+    row!(
+        "Duration",
+        mro: ["Duration", "Cool", "Any", "Mu"],
+        roles: ["Real", "Numeric"],
+        owner: "",
+    ),
+    // ---- IO::Path / IO::Handle (ADR-0051 P1) ----
+    // raku: `IO::Path.^mro` is `IO::Path, Cool, Any, Mu` (`.^roles` is `(IO)`),
+    // genuinely `Cool` -- unlike `IO::Handle`, which does NOT inherit `Cool`
+    // (`IO::Handle.^mro` is `IO::Handle, Any, Mu`, `.^roles` is empty). Both
+    // were previously registered ClassDefs read by `classhow_mro_names`'
+    // registry branch (not this catalog), so a catalog-only fix does not by
+    // itself correct `.^mro`; `IO::Path`'s bootstrap `ClassDef` in
+    // `runtime_init.rs` is fixed alongside this row.
+    row!("IO::Path", mro: ["IO::Path", "Cool", "Any", "Mu"], roles: ["IO"], owner: ""),
+    row!("IO::Handle", mro: ["IO::Handle", "Any", "Mu"], roles: [], owner: ""),
     // ---- IO::Spec family (Registry::builtin_mro_table; matches raku exactly) ----
     row!("IO::Spec", mro: ["IO::Spec", "Any", "Mu"], roles: [], owner: ""),
     row!(
@@ -625,6 +660,36 @@ mod tests {
             builtin_type_info("CArray").unwrap().mro,
             &["CArray", "Any", "Mu"]
         );
+    }
+
+    #[test]
+    fn adr0051_p1_rows_match_raku_exactly() {
+        // Pins the five rows added for ADR-0051 P1 against `raku -e
+        // 'say <Type>.^mro.map(*.^name); say <Type>.^roles.map(*.^name)'`
+        // (Rakudo 2026.06, verified 2026-08-20).
+        assert_eq!(
+            builtin_type_info("Cool").unwrap().mro,
+            &["Cool", "Any", "Mu"]
+        );
+        assert!(builtin_type_info("Cool").unwrap().roles.is_empty());
+
+        let instant = builtin_type_info("Instant").unwrap();
+        assert_eq!(instant.mro, &["Instant", "Cool", "Any", "Mu"]);
+        assert_eq!(instant.roles, &["Real", "Numeric"]);
+
+        let duration = builtin_type_info("Duration").unwrap();
+        assert_eq!(duration.mro, &["Duration", "Cool", "Any", "Mu"]);
+        assert_eq!(duration.roles, &["Real", "Numeric"]);
+
+        // `IO::Path` IS Cool; `IO::Handle` is NOT -- the two must not be
+        // conflated (this is the divergence the ADR calls out explicitly).
+        let io_path = builtin_type_info("IO::Path").unwrap();
+        assert_eq!(io_path.mro, &["IO::Path", "Cool", "Any", "Mu"]);
+        assert_eq!(io_path.roles, &["IO"]);
+
+        let io_handle = builtin_type_info("IO::Handle").unwrap();
+        assert_eq!(io_handle.mro, &["IO::Handle", "Any", "Mu"]);
+        assert!(io_handle.roles.is_empty());
     }
 
     #[test]

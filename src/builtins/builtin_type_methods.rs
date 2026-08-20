@@ -224,28 +224,6 @@ pub(crate) fn builtin_type_attr_has_accessor(type_name: &str, _attr_name: &str) 
     matches!(type_name, "DateTime")
 }
 
-/// The built-in MRO (parent chain) for `type_name`, up to but not including
-/// `Any`/`Mu` (those are appended by the caller). Returns an empty slice for
-/// types with no modelled built-in hierarchy.
-pub(crate) fn builtin_type_parents(type_name: &str) -> &'static [&'static str] {
-    match type_name {
-        "Int" => &["Int", "Cool"],
-        "Num" => &["Num", "Cool"],
-        "Rat" | "FatRat" => &["Rat", "Cool"],
-        "Complex" => &["Complex", "Cool"],
-        "Str" => &["Str", "Cool"],
-        "Bool" => &["Bool", "Int", "Cool"],
-        "Array" => &["Array", "List", "Cool"],
-        "List" => &["List", "Cool"],
-        "Hash" => &["Hash", "Map", "Cool"],
-        "Map" => &["Map", "Cool"],
-        "Range" => &["Range", "Cool"],
-        "Seq" => &["Seq", "Cool"],
-        "Pair" => &["Pair"],
-        _ => &[],
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -400,24 +378,28 @@ mod tests {
     #[test]
     fn unmodelled_type_has_no_methods() {
         assert!(builtin_type_method_names("NoSuchType").is_empty());
-        assert!(builtin_type_parents("NoSuchType").is_empty());
     }
 
     #[test]
     fn every_builtin_mro_parent_resolves_to_a_known_chain() {
-        // Each parent named in a built-in MRO must itself be a type the registry
-        // recognises (either modelled here or a higher base like Cool/Map), so a
-        // walk never dead-ends on an unknown name.
+        // Each parent named in a built-in MRO (ADR-0051 P1: read from the
+        // catalog, the single source of truth for built-in type ancestry) must
+        // itself be a type the registry recognises (either modelled here or a
+        // higher base like Cool/Map), so a walk never dead-ends on an unknown
+        // name.
         let known = |name: &str| {
             matches!(name, "Cool" | "Map" | "Any" | "Mu")
-                || !builtin_type_parents(name).is_empty()
+                || crate::builtins::builtin_type_catalog::builtin_type_info(name).is_some()
                 || !builtin_type_method_names(name).is_empty()
         };
         for ty in [
             "Int", "Num", "Rat", "FatRat", "Complex", "Str", "Bool", "Array", "List", "Hash",
             "Map", "Range", "Seq", "Pair",
         ] {
-            for parent in builtin_type_parents(ty) {
+            let Some(info) = crate::builtins::builtin_type_catalog::builtin_type_info(ty) else {
+                continue;
+            };
+            for parent in info.mro {
                 assert!(known(parent), "MRO parent `{parent}` of `{ty}` is unknown");
             }
         }
