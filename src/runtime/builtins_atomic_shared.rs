@@ -766,30 +766,94 @@ impl Interpreter {
         if let Some(cell) = self.scalar_cell_target(name) {
             return Some(cell);
         }
-        if name.starts_with(['@', '%', '&', '!', '.']) || self.current_code == 0 {
+        if name.starts_with(['@', '%', '&', '!', '.']) {
             return None;
         }
         let bare = name.trim_start_matches('$');
-        // SAFETY: `current_code` is the address of the live bytecode frame's
-        // `CompiledCode`, kept alive for the whole frame by `vm_call_*`.
-        let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
-        let slot = code.locals.iter().position(|n| n == bare)?;
-        // Seed from the legacy lane when this name already has an entry there:
-        // an earlier `cas` may have written the authoritative value into the
-        // store while the frame's slot kept the pre-swap copy. The lane entry is
-        // then retired, so the cell is the single source of truth from here on.
-        let legacy = self.legacy_atomic_value(name);
-        let cur = match legacy {
-            Some(v) => {
-                self.reset_atomic_var_key(name);
-                v
+        if self.current_code != 0 {
+            // SAFETY: `current_code` is the address of the live bytecode frame's
+            // `CompiledCode`, kept alive for the whole frame by `vm_call_*`.
+            let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+            if let Some(slot) = code.locals.iter().position(|n| n == bare) {
+                // Seed from the legacy lane when this name already has an entry
+                // there: an earlier `cas` may have written the authoritative
+                // value into the store while the frame's slot kept the
+                // pre-swap copy. The lane entry is then retired, so the cell
+                // is the single source of truth from here on.
+                let legacy = self.legacy_atomic_value(name);
+                let cur = match legacy {
+                    Some(v) => {
+                        self.reset_atomic_var_key(name);
+                        v
+                    }
+                    None => self.locals.get(slot)?.clone(),
+                };
+                // Only plain scalar containers are boxed; reference types
+                // already share, and hiding a type object / Proxy behind a
+                // `ContainerRef` trips the paths that do not deref one. `Any`
+                // is the uninitialized-scalar seed and is boxed like a value
+                // (mirrors `box_captured_lexicals`).
+                if !cur.is_any_type_object()
+                    && matches!(
+                        cur.view(),
+                        ValueView::Package(_)
+                            | ValueView::Array(..)
+                            | ValueView::Hash(..)
+                            | ValueView::Sub(..)
+                            | ValueView::Instance { .. }
+                            | ValueView::Proxy { .. }
+                    )
+                {
+                    return None;
+                }
+                let container = cur.into_container_ref();
+                self.locals[slot] = container.clone();
+                self.env.insert(bare.to_string(), container.clone());
+                // A stale plain snapshot left in the cross-thread store would
+                // be written back over the cell at the next sync,
+                // disconnecting this binding from every alias — replace it
+                // (no-op when the name was never snapshotted).
+                if self.shared_vars_active {
+                    self.thread_redeclared_vars.remove(name);
+                    self.thread_redeclared_vars.remove(bare);
+                    self.set_shared_var(bare, container.clone());
+                }
+                return match container.view() {
+                    ValueView::ContainerRef(c) => Some(c.clone()),
+                    _ => None,
+                };
             }
-            None => self.locals.get(slot)?.clone(),
-        };
-        // Only plain scalar containers are boxed; reference types already share,
-        // and hiding a type object / Proxy behind a `ContainerRef` trips the
-        // paths that do not deref one. `Any` is the uninitialized-scalar seed and
-        // is boxed like a value (mirrors `box_captured_lexicals`).
+        }
+        // A class-body `my` variable (e.g. `my atomicint $current-id`) read
+        // via `⚛++`/`⚛--`/`cas` from an attribute default-value expression
+        // has no frame-local slot to find above: default-value chunks
+        // compile standalone with an empty local-slot table
+        // (`Compiler::new_decl_chunk_compiler`), so every free name in them
+        // resolves through the environment the declaration registers in —
+        // here, the per-package "static" store `package_lexicals`
+        // (`package_scope_lexical`/`read_package_scope_var`), not `env`.
+        // Box that binding into a shared cell the same way a frame-local
+        // binding is boxed above, so every alias (including a later atomic
+        // op from a different frame/instance) reads and writes the SAME
+        // cell instead of a stale by-value snapshot.
+        self.box_package_scope_lexical_cell(bare)
+    }
+
+    /// [`Self::atomic_scalar_cell`]'s fallback for a package-scoped `my`
+    /// lexical (a class-body "static") that has no frame-local slot in the
+    /// currently executing chunk. See the call site for the full rationale.
+    fn box_package_scope_lexical_cell(
+        &mut self,
+        bare: &str,
+    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+        let pkg = self.current_package();
+        if pkg.is_empty() || pkg == "GLOBAL" {
+            return None;
+        }
+        let cur = self.package_lexicals.get(&pkg)?.get(bare)?.clone();
+        if let ValueView::ContainerRef(c) = cur.view() {
+            return Some(c.clone());
+        }
         if !cur.is_any_type_object()
             && matches!(
                 cur.view(),
@@ -804,16 +868,9 @@ impl Interpreter {
             return None;
         }
         let container = cur.into_container_ref();
-        self.locals[slot] = container.clone();
-        self.env.insert(bare.to_string(), container.clone());
-        // A stale plain snapshot left in the cross-thread store would be written
-        // back over the cell at the next sync, disconnecting this binding from
-        // every alias — replace it (no-op when the name was never snapshotted).
-        if self.shared_vars_active {
-            self.thread_redeclared_vars.remove(name);
-            self.thread_redeclared_vars.remove(bare);
-            self.set_shared_var(bare, container.clone());
-        }
+        self.package_lexicals
+            .get_mut(&pkg)?
+            .insert(bare.to_string(), container.clone());
         match container.view() {
             ValueView::ContainerRef(c) => Some(c.clone()),
             _ => None,
