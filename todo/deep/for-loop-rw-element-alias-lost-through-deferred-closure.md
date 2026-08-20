@@ -1,5 +1,32 @@
 # `for @arr -> $v is rw { ... }` element aliasing doesn't survive into a closure called after the loop
 
+## Status
+
+**Designed. The mechanism decision now lives in
+[ADR-0045](../../docs/adr/0045-for-loop-parameters-bind-the-element-container.md)** (2026-08-20):
+bind the loop parameter to the element's `ContainerRef` (`array_slot_ref` / `hash_slot_ref`) at the
+bind site and retire the per-iteration writeback family. Read ADR-0045 before starting — it carries a
+27-row divergence matrix re-measured on `main` (33f75a62f), the invariant table that bounds it, the
+writeback-family inventory, the phasing, and the open questions. This file stays open only as the
+tracking record; retire it to `news/2026-08/` when ADR-0045's slice 6 lands.
+
+**Two claims below are now known to be wrong, and are kept only for the record:**
+
+1. **The stated blocker does not exist.** This file concluded that a fix must wait on a
+   *share-vs-bind distinction at the element-store layer*, because an element store write-throughs
+   any `ContainerRef` element unconditionally. [ADR-0036](../../docs/adr/0036-element-container-pairs-from-subscripts-and-pairs.md)
+   §7 answers this directly: unconditional write-through **is** the Raku semantics (`@a[0] = "Q"`
+   assigns *into* the element's `Scalar`, it never replaces it), so the distinction must not be
+   built. Re-measured on `main`, the hand-written form of the fix — a `:=`-bound element captured by
+   a closure that escapes and is called later — already produces raku's answer on every probe,
+   including the `.raku`/`.elems` invisibility invariant. The primitive shipped; the work is routing.
+2. **The symptom is much wider than a deferred closure.** The deferred-closure case is one of five
+   divergence classes. Three of the others need no closure and no `is rw` at all: an end-of-iteration
+   whole-container rebuild **clobbers writes the body made directly to the source**
+   (`for @a -> $v { @a[1] = 99 }` loses the write), `for @a.reverse -> $v is rw` writes each value to
+   the *mirror-image* index, and the mutating `<->` loop is **O(n²)** (5.2 s for 40 000 elements
+   against raku's 0.012 s) because of that same rebuild. See ADR-0045 §1.3 and §1.5.
+
 ## Symptom
 
 ```raku
@@ -106,7 +133,7 @@ ticket — see "Where this connects" below before starting design.
   aliasing here. Different surface, possibly a shared underlying primitive;
   read both before scoping a "fresh cell per binding" campaign.
 
-## Suggested next steps
+## Suggested next steps (superseded by ADR-0045 §4 — kept for the record)
 
 1. Given the confirmed root cause is element-level `ContainerRef` aliasing
    (Slice 2b of the old scalar-array-sharing campaign), this warrants a
