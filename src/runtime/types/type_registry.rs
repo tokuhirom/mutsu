@@ -380,6 +380,33 @@ impl Interpreter {
         None
     }
 
+    /// Mutable counterpart of [`Self::lookup_in_package_chain`] — same walk,
+    /// `&mut V` result. Used by the write chokepoints (ADR-0039 slice 1's
+    /// `env_root_descended_mut`) that need to mutate the entry a container
+    /// lexical resolves to in place rather than merely read it.
+    pub(crate) fn lookup_in_package_chain_mut<'a, V>(
+        table: &'a mut HashMap<String, HashMap<String, V>>,
+        owner: &str,
+        name: &str,
+    ) -> Option<&'a mut V> {
+        let mut pkg = owner.to_string();
+        loop {
+            if table
+                .get(&pkg)
+                .is_some_and(|entries| entries.contains_key(name))
+            {
+                return table
+                    .get_mut(&pkg)
+                    .and_then(|entries| entries.get_mut(name));
+            }
+            match pkg.rsplit_once("::") {
+                Some((parent, _)) => pkg = parent.to_string(),
+                None => break,
+            }
+        }
+        None
+    }
+
     /// [`Self::module_scope_lexical`] anchored at an explicit owner package
     /// instead of the running frame: the file-scope name a module declared,
     /// looked up from `owner`'s `::` chain. Used where the reader knows which

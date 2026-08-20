@@ -1,6 +1,7 @@
 # ADR-0039: `@`/`%` lexicals must resolve lexically — retiring by-name container resolution, and correcting the "container write-back is structurally different" premise
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Slice 1 (§4.1) landed 2026-08-20. Slice 2 (§4.2 — containers resolve by
+  slot/upvalue, not by name, retiring the by-name path at the compiler) is next.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
@@ -361,6 +362,69 @@ subsume.
   sigil branch on a hot read path).
 - On completion, `git mv` the deep ticket to `news/2026-08/` per the todo
   lifecycle, and update this ADR's Status.
+
+## 6.1 Slice 1 implementation notes (landed 2026-08-20)
+
+The two skips (`collect_unit_lexical_names`, ADR-0024's mainline capture in
+`vm_register_sub_ops.rs`) were lifted exactly as §4.1 specified. The read
+chokepoint (`get_env_with_main_alias` → `unit_scope_lexical` →
+`unit_lexical_slot`) needed no change, as predicted — it already derefs
+whatever sigil the stored `ContainerRef` cell holds.
+
+The write-side miss/fallback audit (§4.1 point 3) turned out **wider than the
+one call site (`push_to_shared_var`) the ADR named**, because several
+independent write chokepoints resolve their target by a raw `env.get(name)` /
+`env.get_mut(name)`, each bypassing `unit_lexicals` on its own:
+
+- `push_to_shared_var`'s tail (`runtime/runtime_thread.rs`) — fixed as
+  specified: prefer a new `unit_lexical_container(name)` accessor (the
+  dereferenced cell contents, sharing the same `Gc`) over the plain-`env`
+  fallback, mutating in place.
+- `env_root_descended_mut` (`vm/vm_var_assign_index_named.rs`) — this one
+  turned out to be the REAL chokepoint: `push`/`pop`/`unshift`/`append`/
+  `prepend` (`try_native_array_mut`) and every element-assign site funnel
+  through it. Rather than patch each of its ~10 call sites individually, the
+  function itself was made to consult a new `unit_lexical_slot_mut` (the
+  mutable counterpart of `unit_lexical_slot`, plus a new
+  `lookup_in_package_chain_mut` mutable counterpart of the existing
+  `lookup_in_package_chain`) FIRST, falling back to `env` only when the name
+  is not a unit lexical. This single change fixed element-assign, `push`,
+  and hash key-set for free, without touching any of its callers.
+- `exec_delete_index_named_op` (`vm/vm_var_delete_ops.rs`, the `:delete`
+  handler) does its own independent env-unwrap-and-restore dance (mirroring
+  its existing `:=`-bound-cell handling) rather than going through
+  `env_root_descended_mut`, so it needed its own fix: seed `env[name]` from
+  the unit-lexical cell's contents for the duration of the op, write the
+  mutated result back through the cell afterwards, then RESTORE `env[name]`
+  to whatever it held before (unlike the `:=`-bound-cell case, which
+  deliberately LEAVES the cell installed in `env`) — leaving the cell in
+  `env` here would have made the name resolve to the module's container from
+  OUTSIDE the module too, undoing the isolation.
+- Whole-container reassignment (§4.1 point 4) was already routed through
+  `cell_store_preserving_container_identity` by the existing `:=`-bound-cell
+  mechanism once the container was cell-boxed; no separate fix was needed
+  beyond making sure the anonymous-container exclusion (PR #6711 /
+  `1ec010ba8`) stays intact, which it does — `t/anon-container-cell-inplace-reassign.t`
+  passes unchanged.
+
+All four fixes carry the same `name.contains("__ANON")` exclusion (or rely on
+`is_plain_user_lexical`'s existing exclusion, which already rejects
+`__ANON_ARRAY__`/`__ANON_HASH__` since the character after the sigil is `_`,
+not lowercase) as defense in depth, even though anonymous-container names are
+never actually placed in `unit_lexicals` to begin with
+(`collect_unit_lexical_names` and the mainline capture both exclude them at
+the source).
+
+**Verification**: the module shape, the mainline-shadow shape, the
+sub-local-consumer shape, and `our @arr` (deliberately still broken, per
+§4.1's explicit exclusion) were all re-verified against `raku` after the fix.
+`t/module-file-scope-lexical.t` grew from 6 to 21 assertions (the original 6
+scalar cases plus a 15-assertion `@`/`%` matrix: read / push / element-assign /
+whole-assign / key-set / `:delete`, both sigils, both directions — module sees
+its own mutation, script's same-named container is untouched). A new
+`t/named-sub-lexical-scope-container.t` mirrors `t/named-sub-lexical-scope.t`'s
+divergence-matrix rows for `@`/`%` (mainline shadow shape, 8 rows). All scalar
+pins listed in §6 stayed green.
 
 ## 7. Status of the previously-recorded roast instance
 

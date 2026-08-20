@@ -3168,10 +3168,26 @@ impl Interpreter {
     /// a bound cell would fall through every handler's Hash/Array
     /// match and be silently dropped (Phase 3).
     ///
+    /// ADR-0039 slice 1: `var_name` may name a compunit's own file-scope
+    /// `@`/`%` (or a mainline named sub's captured free variable), which
+    /// lives in `unit_lexicals` rather than `env` — `env[var_name]` can hold
+    /// a completely unrelated same-named binding then (the loading scope's
+    /// own `my @items`, restored there once the module's mainline finished
+    /// running). This is the write-side chokepoint every element-assign /
+    /// `push`/`pop`/... / hash key-set/`:delete` call site goes through, so
+    /// the unit-lexical store is consulted FIRST here, mirroring
+    /// `get_env_with_main_alias`'s read-side precedence.
+    ///
     /// SAFETY: the returned reference points into the cell's mutex data, kept
-    /// alive by the `Arc` stored in env, and no other borrow into that data may
-    /// be live while it is held (see `descend_container_ref`).
+    /// alive by the `Arc` stored in env (or in `unit_lexicals`), and no other
+    /// borrow into that data may be live while it is held (see
+    /// `descend_container_ref`).
     pub(crate) fn env_root_descended_mut(&mut self, var_name: &str) -> Option<&mut Value> {
+        if let Some(root) = self.unit_lexical_slot_mut(var_name) {
+            let root = root as *mut Value;
+            let descended = unsafe { Self::descend_container_ref(root) };
+            return Some(unsafe { &mut *descended });
+        }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };
         Some(unsafe { &mut *descended })
