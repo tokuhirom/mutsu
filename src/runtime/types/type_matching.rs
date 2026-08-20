@@ -1325,11 +1325,23 @@ impl Interpreter {
         }
         // Check Instance class name against constraint (including parent classes)
         if let ValueView::Instance { class_name, .. } = value.view() {
-            if Self::type_matches(constraint, &class_name.resolve()) {
+            let cn = class_name.resolve();
+            // ADR-0047: a lexical `my class`/`my grammar` instance's own
+            // `class_name` is the unconditionally-mangled storage identity
+            // (`Foo\u{0}<decl-id>`), never the bare source-written name. A
+            // plain `constraint == "Foo"` (the overwhelmingly common case --
+            // `Item.new() ~~ Item`, or `has Item @!items` type-checking a
+            // freshly pushed `Item.new()`) must still match: try the
+            // user-facing (demangled) name too, not just the raw mangled
+            // string. Trying the raw string FIRST keeps a caller that already
+            // passes a mangled constraint (e.g. a recursive same-identity
+            // check elsewhere in this file) working unchanged.
+            if Self::type_matches(constraint, &cn)
+                || Self::type_matches(constraint, &crate::value::user_facing_type_name(&cn))
+            {
                 return true;
             }
             // Buf/Blob hierarchy: Buf[uint8] isa Buf, buf8 isa Buf, etc.
-            let cn = class_name.resolve();
             if (constraint == "Buf" || constraint == "Blob")
                 && crate::runtime::utils::is_buf_or_blob_class(&cn)
             {
