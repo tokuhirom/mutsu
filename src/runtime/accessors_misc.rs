@@ -466,6 +466,22 @@ impl Interpreter {
         self.let_saves.len()
     }
 
+    /// Discard `let_saves` entries pushed since `mark`, for panic-unwind
+    /// recovery (`Interpreter::recover_call_frames_after_panic`).
+    ///
+    /// Deliberately a bare truncate, NOT [`Self::restore_let_saves`]: that
+    /// method writes each saved old value back into `self.env()`, but by the
+    /// time panic recovery runs, `self.env()` has already been reset to the
+    /// boundary's caller env (via the `call_frames` pop-loop) -- writing a
+    /// panicking callee's stale `temp`/`let` values into it would corrupt the
+    /// now-restored caller's env instead of cleaning it up. Just dropping the
+    /// bookkeeping entries is correct: the frame whose env they were meant to
+    /// restore no longer exists. See
+    /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
+    pub(crate) fn truncate_let_saves(&mut self, mark: usize) {
+        self.let_saves.truncate(mark.min(self.let_saves.len()));
+    }
+
     /// Resolve the value to restore, applying `is default(...)` when restoring Nil.
     fn resolve_restore_value(&self, name: &str, val: &Value) -> Value {
         if val.is_nil()

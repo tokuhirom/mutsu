@@ -350,6 +350,40 @@ impl Interpreter {
         *self.current_package.write().unwrap() = pkg;
     }
 
+    /// Switch `current_package` to `pkg`, returning an RAII guard that
+    /// restores the previous value when dropped -- on normal control flow OR
+    /// when a Rust panic unwinds through the guarded call.
+    ///
+    /// Several call-dispatch functions (`call_compiled_closure_with_topic`,
+    /// `call_compiled_function_named_inner`) temporarily switch
+    /// `current_package` to the callee's declaring package for the duration
+    /// of the call, then restore it with a plain `self.set_current_package(saved)`
+    /// statement near the end of the function. A Rust panic caught at an
+    /// outer `catch_unwind` boundary (`run_inner_guarded`/`run_range_guarded`)
+    /// skips straight past that statement -- only `Drop` runs on unwind -- so
+    /// `current_package` was left as the panicking callee's own package
+    /// instead of the caller's, and the very next unqualified call resolved
+    /// against the wrong package ("Unknown function: ..."). See
+    /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
+    ///
+    /// Returns a guard rather than fixing the field via the `call_frames`
+    /// recovery pop-loop (`recover_call_frames_after_panic`) because the
+    /// switch does not happen at `push_call_frame()` time in either caller --
+    /// moving it there would require restructuring both dispatch functions.
+    /// An RAII guard self-heals regardless of what a future unwind boundary
+    /// looks like.
+    pub(crate) fn enter_package_guarded(&mut self, pkg: String) -> CurrentPackageGuard {
+        let saved_str = self.current_package();
+        let saved_sym_id = self.current_package_sym().id();
+        self.set_current_package(pkg);
+        CurrentPackageGuard {
+            pkg_lock: std::sync::Arc::clone(&self.current_package),
+            pkg_sym: std::sync::Arc::clone(&self.current_package_sym),
+            saved_str,
+            saved_sym_id,
+        }
+    }
+
     /// The packages a *bare* (unqualified) routine name is looked up in. A
     /// method's declaring compunit package follows its owning class, before
     /// unrelated enclosing namespaces; the walk always ends at `GLOBAL`.
@@ -420,5 +454,31 @@ impl Interpreter {
             std::sync::atomic::Ordering::Relaxed,
         );
         *self.current_package.write().unwrap() = pkg;
+    }
+}
+
+/// RAII guard returned by [`Interpreter::enter_package_guarded`]. Restores
+/// `current_package` on drop, including on a Rust panic unwind.
+///
+/// `current_package`/`current_package_sym` are already interior-mutable
+/// (`Arc<RwLock<String>>` / `Arc<AtomicU32>`, the same handles
+/// [`Interpreter::set_current_package_shared`] uses), so this guard just
+/// holds cloned `Arc` handles and writes through them directly on drop -- no
+/// `&mut Interpreter` borrow is needed, so it stays fully safe (no raw
+/// pointers) even though it is typically constructed deep inside a large
+/// `&mut self` dispatch function and lives across many further `self.*`
+/// calls before being dropped.
+pub(crate) struct CurrentPackageGuard {
+    pkg_lock: std::sync::Arc<std::sync::RwLock<String>>,
+    pkg_sym: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    saved_str: String,
+    saved_sym_id: u32,
+}
+
+impl Drop for CurrentPackageGuard {
+    fn drop(&mut self) {
+        *self.pkg_lock.write().unwrap() = std::mem::take(&mut self.saved_str);
+        self.pkg_sym
+            .store(self.saved_sym_id, std::sync::atomic::Ordering::Relaxed);
     }
 }

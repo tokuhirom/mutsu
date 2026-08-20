@@ -31,6 +31,37 @@ impl Interpreter {
         }
     }
 
+    /// Current depth of the (paired) `caller_env_stack`/`callframe_stack`,
+    /// for panic-unwind recovery (`Interpreter::recover_call_frames_after_panic`).
+    /// This is a SEPARATE push/pop stack from `call_frames` -- pushed by
+    /// `push_caller_env`/`push_caller_env_with_code`, popped by
+    /// `pop_caller_env`/`pop_caller_env_with_writeback` -- so a panic caught
+    /// mid-call leaves it holding every entry pushed since the boundary too,
+    /// for exactly the reason `call_frames` did before
+    /// `recover_call_frames_after_panic` existed. See
+    /// `todo/deep/panic-unwind-leaks-side-channel-call-state.md`.
+    pub(crate) fn caller_env_stack_depth(&self) -> usize {
+        self.caller_env_stack.len()
+    }
+
+    /// Truncate `caller_env_stack`/`callframe_stack` back to `depth` (see
+    /// [`Self::caller_env_stack_depth`]). The two are always pushed/popped
+    /// together in lockstep (`push_caller_env_with_code`,
+    /// `pop_caller_env`/`pop_caller_env_with_writeback`,
+    /// `push_eval_caller_frames`/`pop_eval_caller_frames`), so a single depth
+    /// recovers both. Deliberately a bare truncate (discard), NOT
+    /// `pop_caller_env_with_writeback`'s dynamic-variable writeback: the env
+    /// each discarded entry would have written into belongs to a callee frame
+    /// that panic recovery has already discarded (via the `call_frames`
+    /// pop-loop), so replaying those writes would write stale values into the
+    /// now-restored caller env instead.
+    pub(crate) fn truncate_caller_env_stack(&mut self, depth: usize) {
+        self.caller_env_stack
+            .truncate(depth.min(self.caller_env_stack.len()));
+        self.callframe_stack
+            .truncate(depth.min(self.callframe_stack.len()));
+    }
+
     /// Push the caller frames an `EVAL` inserts between the EVAL'd unit's
     /// mainline and the scope that invoked EVAL. Rakudo runs the compiled unit
     /// behind two intermediate frames (the EVAL multi candidate and its proto),
