@@ -397,6 +397,7 @@ impl Interpreter {
                     }
                 })
         {
+            self.check_sigilless_alias_target_constraint(&alias_name, &val)?;
             self.update_local_if_exists(code, &alias_name, &val);
             self.env_mut().insert(alias_name.clone(), val.clone());
             // Slice F: a sigilless param (`\target`) aliases a caller variable;
