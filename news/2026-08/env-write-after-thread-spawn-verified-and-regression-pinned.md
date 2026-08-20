@@ -1,115 +1,74 @@
-# A `%*ENV` write becomes invisible to a spawned child's default environment once any OS thread has ever run
+# A `%*ENV` write after a thread spawn is invisible to a later default-env child: verified fixed, audited, and regression-pinned
 
-## Minimal repro
+`todo/deep/env-var-write-invisible-to-spawn-after-a-thread.md` reported that once
+any OS thread had ever been spawned via mutsu's `clone_for_thread`/
+`worker_pool::submit*` machinery (used by every live tap: signals, sockets,
+`Supply.interval`, `Proc::Async`), a subsequent `%*ENV<key> = val` write stopped
+being visible to a *later* spawned child that relies on default OS-level env
+inheritance (no explicit `:ENV`/`:env`) — persistently, not as a timing race.
 
-```raku
-{
-    my $p = Proc::Async.new: $*EXECUTABLE, '-e', 'say "hi"';
-    my $stdout = '';
-    $p.stdout.tap: { $stdout ~= $_ };
-    my $prom = $p.start;
-    await $prom;
-}
-temp %*ENV<PERL6_RUN_SHELL_ENV_TEST> = 'meows';
-say run('sh', '-c', 'echo $PERL6_RUN_SHELL_ENV_TEST', :out).out.slurp(:close).trim;
-```
+## Status: the fix already landed, but had no dedicated regression test
 
-Expected (and what raku prints): `meows`. mutsu prints an empty string — the
-spawned `sh` does not see the env var `temp` just set, even though mutsu's own
-`%*ENV<PERL6_RUN_SHELL_ENV_TEST>` reads back as `meows` immediately after the
-assignment.
+Investigating this ticket found that PR `7ea201824` ("fix(run/shell/procasync):
+stop relying on env inheritance after any thread spawn", 2026-08-15) had already
+fixed the three spawn sites the ticket names: `Proc::Async.start()`
+(`src/runtime/native_proc_async.rs`), `run()`, and `shell()`
+(`src/runtime/builtins_system_run.rs`). All three now explicitly rebuild the
+child's environment from mutsu's own `%*ENV` hash (`cmd.env_clear()` + a loop of
+`cmd.env(k, v)`) whenever no `:ENV`/`:env` override is given, instead of relying
+on `Command::spawn()`'s default OS-level inheritance. A `ProcOptions.env_explicit`
+flag distinguishes "no `:env` given" from "explicitly `:env({})`" so an
+intentional empty override still clears the child's environment.
 
-**The trigger is not Proc::Async-specific.** The bare block above can be
-replaced with anything that spawns an OS thread via
-`Interpreter::clone_for_thread()` + `crate::runtime::worker_pool::submit*` —
-confirmed with nothing but:
+Both of the ticket's repros (spawn via `Proc::Async` with a `.stdout.tap()`, and
+spawn via `Supply.interval(...).tap()`) were re-run against current `main` and
+both now correctly print `meows`, matching `raku`.
 
-```raku
-{
-    my $done = Promise.new;
-    my $count = 0;
-    Supply.interval(0.05).tap({ $count++; $done.keep if $count >= 2 });
-    await Promise.anyof($done, Promise.in(2));
-}
-temp %*ENV<PERL6_RUN_SHELL_ENV_TEST> = 'meows';
-say run('sh', '-c', 'echo $PERL6_RUN_SHELL_ENV_TEST', :out).out.slurp(:close).trim;
-```
+## The isolation experiment (direction 2, cursory)
 
-Same empty result. **Not a timing race**: adding `sleep 1` between the block
-and the `temp`/`run` does not fix it — the corruption is persistent for the
-rest of the process, not a window that closes once the thread finishes.
+A minimal Rust program outside mutsu entirely — `std::thread::spawn(|| {})`,
+joined or left running, then `std::env::set_var(...)` then
+`Command::new("sh")...` — did **not** reproduce the hazard at all: the child
+always saw the freshly set env var, whether the spawned thread had already been
+joined or was still alive. This means the corruption is **not a generic Rust/
+libc/OS hazard that any multi-threaded Rust program hits** from
+`std::env::set_var` after a `thread::spawn` — it is specific to something in
+mutsu's own threading setup (`worker_pool`, `clone_for_thread`, GC mutator
+registration, or signal-handling setup on those threads). The root cause was not
+pinned down further (out of scope per the ticket's own guidance, which favored
+direction 1 regardless of root cause), but this result confirms direction 1 —
+never relying on OS-level default env inheritance for `%*ENV`, building the
+child's env explicitly from mutsu's own hash instead — is the correct general
+fix rather than a narrow workaround for an unavoidable upstream hazard.
 
-## What is confirmed, and what is not
+## Audit of remaining `Command::new()`/`.spawn()` sites
 
-- `%*ENV<key> = val` genuinely updates mutsu's own in-memory `%*ENV` hash
-  (`self.env.get("%*ENV")` reads back the new value immediately) — this part
-  is correct.
-- `%*ENV<key> = val` is *also* wired to call `std::env::set_var` (see the
-  `SAFETY:` comments in `vm_var_assign_element.rs` /
-  `vm_var_assign_index_named.rs`), presumably so a **subsequently spawned
-  child process that relies on `Command::spawn()`'s default OS-level env
-  inheritance** (no explicit `:ENV`/`:env`) picks it up automatically.
-- Passing the value **explicitly** (`run(..., :env(%*ENV))`) works correctly
-  every time, proving mutsu's own `%*ENV` state is right and the general
-  "build a child's env from a given hash" path (`cmd.env_clear()` +
-  `cmd.env(k, v)` in a loop) is sound.
-- Only the **default-inheritance** path is affected, and only after at least
-  one OS thread has been spawned via the `clone_for_thread` +
-  `worker_pool::submit`/`submit_joinable` mechanism (used by every
-  channel-backed live tap: signals, sockets, `Supply.interval`, and — after
-  `todo/tickets/procasync-stdout-is-not-incremental.md` landed —
-  `Proc::Async` taps registered before `.start()`).
-- Not investigated: whether `std::env::set_var`'s call genuinely fails to
-  reach the OS-level `environ` once another thread exists (a documented class
-  of hazard — `std::env::set_var` is `unsafe` in recent Rust specifically
-  because of exactly this: concurrent access from another thread is UB on
-  some platforms), or whether `Command::spawn()`'s own env-reading path
-  becomes stale/cached once other threads exist, or whether this is a
-  `worker_pool`-specific interaction (its threads' own setup/signal-mask
-  handling, thread-pool reuse, etc.) rather than a generic
-  "any second thread" hazard. No experiment isolated `worker_pool` from
-  "any second OS thread at all" (e.g. a bare `std::thread::spawn` with no
-  mutsu machinery involved was not tried).
+Every other spawn site in `src/` was checked:
 
-## Why it is deep, not a quick patch
+- `src/runtime/io_sysinfo.rs` (`sw_vers`, `cmd /C ver` for `$*DISTRO`/`$*KERNEL`)
+  and `src/runtime/system_introspect.rs` (`hostname`, `kill`/`taskkill`) are
+  OS-introspection helpers. They take no `:ENV`/`:env` parameter, are not part
+  of Raku's env-passing contract, and their output does not depend on `%*ENV`
+  content — a `%*ENV` write made after a thread spawn cannot affect what
+  `sw_vers` or `hostname` report. They rely on default inheritance only for
+  locating the binary via `PATH` and reading platform info, which is set once
+  at process start (before any user code could have raced past a thread
+  spawn) and is unaffected by this hazard in any way a test could observe.
+  These sites were left as-is; fixing them to explicitly pass `%*ENV` would add
+  no observable correctness benefit and risks accidentally dropping `PATH` if
+  mutsu's own `%*ENV` hash ever diverged from the OS environment.
+- No other `Command::spawn()` call sites exist.
 
-This sits at the intersection of Rust's documented `std::env::set_var`
-thread-safety hazard and mutsu's own threading infrastructure
-(`clone_for_thread`, `worker_pool`, the GC's registered-mutator threads via
-`spawn_gc_helper_thread`). A real fix needs to either:
+## Regression coverage
 
-1. **Stop relying on `std::env::set_var`/OS-level inheritance at all** for
-   `%*ENV` and always build every spawned child's environment explicitly from
-   mutsu's own `%*ENV` hash — the workaround applied to `Proc::Async.start()`
-   in `todo/tickets/procasync-stdout-is-not-incremental.md`'s PR. This is
-   probably the right direction generally (it sidesteps the hazard by
-   construction and matches what `%*ENV` is supposed to mean authoritatively),
-   but needs an audit of every other spawn site that currently relies on
-   default inheritance (`shell()`, any other `Command::new(...).spawn()` call
-   without explicit envs) to apply the same fix, plus a decision on whether
-   `run`/`shell` (which are presumably implemented in terms of `Proc::Async`
-   already) automatically inherit the fix or need their own.
-2. Or root-cause **why** `std::env::set_var` stops reaching a later
-   `Command::spawn()` once a thread exists in this specific codebase — trace
-   it with `rust-gdb` breakpoints on `std::env::set_var`'s libc `setenv` call
-   and on `Command::spawn()`'s env-reading path, confirmed against a MINIMAL
-   Rust program outside mutsu entirely (no `worker_pool`, no GC, just
-   `std::thread::spawn(|| {}).join(); std::env::set_var(...);
-   Command::new("sh")...`) to establish whether this is a genuine
-   upstream Rust/libc/OS hazard mutsu cannot avoid, or something mutsu's own
-   threading setup (signal handling, GC mutator registration, thread-local
-   state) specifically triggers.
+- `roast/S29-os/system.t` (already whitelisted) exercises exactly this
+  scenario for `Proc::Async`-spawned threads: its "run and shell's :env"
+  subtest runs after an earlier `Proc::Async` invocation earlier in the file,
+  so `make roast` already re-verifies this on every push.
+- Added `t/env-write-after-thread-spawn.t` as a dedicated local pin covering
+  *both* thread-spawn paths from the ticket (`Proc::Async` and
+  `Supply.interval`) against *both* `run()` and `shell()`, independent of
+  the roast file's specific ordering.
 
-## Affected files
-
-- `src/vm/vm_var_assign_element.rs`, `src/vm/vm_var_assign_index_named.rs`,
-  `src/vm/vm_var_delete_ops.rs` — the `std::env::set_var`/`remove_var` calls
-  for `%*ENV` element assignment/deletion.
-- `src/runtime/runtime_thread.rs` — `clone_for_thread`/`clone_for_thread_excluding`.
-- `src/runtime/worker_pool.rs` — `submit`/`submit_joinable`, the pooled worker
-  threads every live tap runs its callback on.
-- `src/runtime/native_proc_async.rs` — worked around locally for the default
-  (no `:ENV`) case by explicitly applying `self.env.get("%*ENV")` instead of
-  relying on inheritance.
-- Any other `std::process::Command::spawn()` call site that relies on default
-  env inheritance without this workaround remains exposed (not audited).
+No code changes were needed; the ticket is closed as verified-fixed with
+added regression coverage.
