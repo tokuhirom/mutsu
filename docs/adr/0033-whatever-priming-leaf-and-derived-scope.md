@@ -1,6 +1,8 @@
 # ADR-0033: Whatever-priming is a leaf property plus a derived scope — defer `WhateverCode` construction out of the parser
 
-- **Status**: Phase 1 shipped (2026-08-19). Phases 2-4 not started — see "Outcome" below.
+- **Status**: Phase 1 shipped (2026-08-19). Phase 2 designed in implementable detail
+  (2026-08-20, see "Phase 2 detailed design" below) but not implemented; Phases 3-4 not
+  started — see "Outcome" below.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -462,6 +464,234 @@ that actually changes `&&`/`||`/`//`/ternary priming results) is a separate, hig
 change that deserves its own PR and its own `t/whatever-thunky-operators.t`. Phases 2/3
 (RakuAST read/write for `* + 1`) remain open items in
 [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md).
+
+## Phase 2 detailed design (added 2026-08-20)
+
+Phase 1 shipped the *scope* half of this ADR's title (the `Expr::WhateverCurry` marker).
+Phase 2 is the *leaf* half: making `Expr::WhateverArg` — added but inert by Phase 1 — actually
+carry the "this `*` is a priming argument" property, and rendering it as
+`RakuAST::WhateverCode::Argument`. This section fixes the four things §1/§5 left open: the
+exact classification rule, where the classifier runs, what the rest of the interpreter is
+allowed to see, and which divergences Phase 2 deliberately does not close.
+
+Everything below was re-measured against the system `raku` and the current `main` build on
+2026-08-20; the Problem-1 and Problem-2 tables at the top of this ADR still reproduce
+verbatim (the `.AST` error text now names `WhateverCurry(...)` rather than the built closure,
+which is Phase 1 working as designed).
+
+### 2.1 The leaf rule is syntactic and scope-independent (measured)
+
+The single most important correction to a plausible-but-wrong shortcut: **do not derive the
+leaf classification from mutsu's existing "does this subtree curry" predicates.** Rakudo
+decides `Term::Whatever` vs `WhateverCode::Argument` from the operand's *immediate syntactic
+parent*, before and independently of any scope derivation. The two coincide almost
+everywhere in mutsu, but not everywhere — `1 x *` is the counter-example: mutsu plants no
+`WhateverCurry` there (`should_wrap_whatevercode` exempts `x` with a bare-`*` right operand,
+`whatever.rs:54-62`), yet `(1 x *).WHAT` is `(WhateverCode)` in *both* implementations
+because the currying happens elsewhere at runtime. A scope-derived classifier would render
+`Term::Whatever` where raku renders `WhateverCode::Argument`.
+
+The rule, measured leaf by leaf with `raku -e 'say Q[…].AST'`:
+
+| source | the `*` renders as |
+|---|---|
+| `1, *, 2` (comma operand), `say *` / any call or method **argument** | `Term::Whatever` |
+| `1..*` (bare range endpoint) — but `1..*-1` | `Term::Whatever` — but `Argument` |
+| `1, 2 ... *`, `1, 2 ...^ *` (series operand) | `Term::Whatever` |
+| `my $x = *`, `my $x := *` (assignment / bind RHS) | `Term::Whatever` |
+| `* xx 2`, `1 xx *` | `Term::Whatever` |
+| `* x 2`, `1 x *` | `Argument` (both operands) |
+| `* ff *` (flip-flop operands) | `Term::Whatever` |
+| `@a[*]` (whole-slice subscript) — but `@a[*-1]` | `Term::Whatever` — but `Argument` |
+| `*(1)` (invoking a bare `*`) | `Term::Whatever` |
+| `*.WHAT` / `.WHO` / `.HOW` / `.WHERE` / `.DEFINITE` / `.VAR` — but `*.WHICH`, `*.abs` | `Term::Whatever` — but `Argument` |
+| `(a => *)` bareword key — but `("k" => *)` | `Term::Whatever` — but `Argument` |
+| `(*)`, `[*]`, `{ * }`, a bare `*` statement | `Term::Whatever` |
+| `* ~~ Int`, `Int ~~ *`, `$_ ~~ *`, `* !~~ Int` | `Argument` (**both** sides) |
+| `-*`, `?*`, `*++`, `* Z 1`, `* X 1`, `1 R- *` | `Argument` |
+| `* .= lc` | `Term::Whatever` (raku models it `ApplyDottyInfix`) |
+
+Two properties worth stating because they make the implementation tractable:
+
+- The `Term::Whatever` rows are **exactly** the opt-out arms mutsu already hand-wrote in
+  `src/parser/expr/whatever.rs` (`contains_whatever` `:155-286`, `should_wrap_whatevercode`
+  `:14-65`, `contains_xx_with_bare_whatever` `:97-136`). §1's "the predicates are not deleted
+  — they are re-aimed" is therefore literally true: the classifier is those same arms,
+  rewritten to answer "is this `*` a value" instead of "should I wrap this subtree".
+- Every runtime behaviour implied by the table **already matches** in mutsu. Verified on
+  `main`: `(1 x *).WHAT`, `(1 xx *).WHAT`, `($_ ~~ *).WHAT`, `(* ~~ Int).WHAT`,
+  `(* Z 1).WHAT`, `(* X 1).WHAT`, `(**).WHAT`, `@a[*].WHAT`, `@a[*-1]` all agree with raku.
+  So Phase 2 is a pure *representation* change: nothing it touches should alter a result.
+
+### 2.2 In Phase 2, `Expr::WhateverArg` is a pure annotation
+
+The mechanism that makes a change of this blast radius safe is the same one Phase 1 used —
+be behaviour-preserving *by construction* rather than by testing:
+
+> **Invariant.** Outside `src/rakuast/`, `Expr::WhateverArg` and `Expr::Whatever` are
+> indistinguishable. Phase 2 adds no consumer that branches on which one it got.
+
+Concretely:
+
+- `crate::parser::is_whatever` (`whatever.rs:138`) becomes
+  `matches!(expr, Expr::Whatever | Expr::WhateverArg)`. Because today every leaf is
+  `Expr::Whatever`, every predicate built on it (`contains_whatever`, `count_whatever`,
+  `replace_whatever_single`, `replace_whatever_numbered`, `should_wrap_whatevercode`) then
+  computes exactly what it computes today, *whatever the classifier decides*. A
+  mis-classified leaf becomes a wrong `.AST` gist — never a wrong program result.
+- The three `matches!(&**right, Expr::Whatever)` / `matches!(&**left, Expr::Whatever)` literal
+  tests in the `x`/`xx` arms (`whatever.rs:58-59`, `:110-111`) and the `is_whatever(target)`
+  test in the `CallOn` arm (`:46`) must go through the same widened predicate, not stay
+  variant-literal.
+- The compiler's two arms (`src/compiler/expr.rs:51` and `:59`) already emit an identical
+  `LoadConst(Value::WHATEVER)` and stay that way — merge them or leave them, but do not make
+  `WhateverArg` compile differently. This is required, not cosmetic: §2.1's `1 x *` shows a
+  `WhateverArg` leaf can legitimately sit outside any `WhateverCurry` in Phase 2 and must
+  still compile to a plain Whatever value for the runtime autoprime to work. Drop the
+  "not yet produced by the parser" comment above `:59` as part of the change.
+- `expr_contains_topic` (`whatever_curry/build.rs:223`) already lists both variants; leave it.
+
+Phase 4 is what *upgrades* the annotation into a load-bearing signal (`plant` deriving scopes
+from marked leaves). Phase 2 must not anticipate that.
+
+### 2.3 Where the classifier runs
+
+A new module `src/whatever_curry/mark.rs`, exposing
+
+```rust
+pub(crate) fn mark_program(stmts: &mut Vec<Stmt>);
+```
+
+a single top-down walk that rewrites each `Expr::Whatever` to `Expr::WhateverArg` unless its
+immediate parent context puts it in a §2.1 value position. It is invoked once from
+`parser::parse_program` (`src/parser/mod.rs:350`), after `stmt::program` succeeds and
+alongside the existing post-parse passes — `src/placeholder_order.rs` is the precedent for a
+crate-root post-parse AST transform, and `parse_program` is the single choke point shared by
+ordinary execution, module loads, `EVAL`, and `Str.AST` (`rakuast::str_dot_ast` reaches it
+via `parse_dispatch::parse_source`, `src/rakuast/mod.rs:491`).
+
+Why a post-parse pass rather than the parser's `*` term site: the classification needs the
+*parent*, which the term parser does not have. Why not inside `rakuast::convert` (walking
+with a context parameter and never materialising the variant): because Phase 3 must be able
+to *produce* the leaf when lowering a hand-constructed
+`RakuAST::WhateverCode::Argument.new`, and Phase 4's `plant` must be able to *read* it; a
+converter-local context parameter serves neither. `mark.rs` is deliberately the seed of the
+`plant.rs` this ADR's §4 calls for — same traversal, same parent-context switch, one phase
+later it also decides where scopes begin.
+
+Cost: one extra traversal of every parsed program. Implement it unconditionally and read the
+bench CI (`bench-history.tsv` on the `bench-data` branch — local A/B is not the source of
+truth, per CLAUDE.md). If it registers, gate the walk behind a flag the `*` term parser sets;
+do not pre-optimise it into the design.
+
+### 2.4 Converter and metadata changes
+
+In `src/rakuast/mod.rs`:
+
+- New `RakuAstClass::WhateverCodeArgument` (enum near `TermWhatever`, `:141`), printed
+  `"RakuAST::WhateverCode::Argument"` (`:226`), added to `empty_parens_omitted` (`:238`) —
+  raku's gist is a bare `RakuAST::WhateverCode::Argument.new` with no parens, measured — and
+  to the `ALL_CLASSES` registry list (`:482`).
+- **It must be added to the `TERM` arm of `semantic_ancestors` (`:278-298`) explicitly.**
+  `TermWhatever` gets `Term`/`Expression` for free from the `RakuAST::Term::` name-prefix
+  rule in `type_object_isa` (`:305-330`); `RakuAST::WhateverCode::Argument` does not start
+  with that prefix, so without the explicit entry `$node ~~ RakuAST::Term` is silently false.
+  Rakudo's MRO, measured: `Argument, Term, Termish, Expression, …, Node` — a Term and an
+  Expression, same as the other leaf terms.
+- Bonus, in the same edit: `RakuAstClass::TermHyperWhatever` →
+  `"RakuAST::Term::HyperWhatever"` for `Expr::HyperWhatever` (`**`), which is a one-line
+  converter arm and today an outright `.AST` failure. Its MRO is the same `Term`/`Expression`
+  shape (measured), and the `RakuAST::Term::` prefix covers it. This ADR's §1 excludes `**`
+  from the *priming* work; it does not exclude giving it a read-direction node.
+
+In `src/rakuast/convert.rs`:
+
+- `Expr::WhateverArg` → `WhateverCodeArgument` (next to the `Expr::Whatever` arm at `:828`).
+- `Expr::WhateverCurry(body)` → `convert_expr(body)`, **no wrapper node** (§5): Rakudo's tree
+  carries no priming scope, and `(* + 1) * 2` gets its `Circumfix::Parentheses` from mutsu's
+  existing `Expr::Grouped` arm (slice 21), not from the curry marker.
+- The two `is_whatever_code` guards at `:1107` and `:1120` are only removable once §2.5 has
+  eliminated the eager sites that still reach them; until then they stay, and their error
+  text should name the surviving construct rather than "Whatever-code closure".
+
+### 2.5 The remaining eager construction sites are part of this phase
+
+Phase 1's Outcome deliberately left three hand-rolled autoprime paths building a closure
+directly instead of planting a marker. Measured on `main`, they are exactly the forms whose
+`.AST` still fails with `Whatever-code closure`: `* ~~ Int`, `Int ~~ *`, `$_ ~~ *`,
+`* !~~ Int` (`src/parser/expr/precedence/comparison.rs`, and `wrap_smartmatch_rhs` in
+`precedence/chain_cmp.rs:83-111`), and `* += 1` / `* -= 2`
+(`precedence/assign.rs`, `stmt/assign/compound_expr.rs`).
+
+Phase 2 converts the **smartmatch** family to `Expr::WhateverCurry` — they need no new
+RakuAST class (the `Int` RHS is the existing `Type::Simple`, slice 26) and §2.1 shows raku
+marks both operands `Argument`, so they render correctly the moment the marker replaces the
+closure. Keep the runtime behaviour pinned: `(* ~~ Int).WHAT`, `(Int ~~ *).WHAT` and
+`($_ ~~ *).WHAT` are all `(WhateverCode)` today and must stay so; note that
+`contains_whatever` / `count_whatever` / `replace_whatever_*` all special-case
+`SmartMatch`/`BangTilde` to look at the **left** operand only, so routing an `Int ~~ *`
+through `build_closure` needs that asymmetry re-checked rather than assumed.
+
+The **compound-assignment** family stays a boundary in Phase 2: raku models `* += 1` as
+`ApplyInfix(…, infix => RakuAST::MetaInfix::Assign.new(RakuAST::Infix.new("+")), …)`, and
+mutsu has no `MetaInfix::Assign` class. Adding one is an independent read-direction slice
+(it is not Whatever-specific — every `$x += 1` has the same gap), so it belongs with the
+operator cluster, not here.
+
+### 2.6 Divergences Phase 2 documents rather than closes
+
+- **Chained comparison.** raku renders `1 < * < 10` as a left-nested
+  `ApplyInfix(ApplyInfix(1, "<", Argument), "<", 10)`. mutsu has no chained-comparison node:
+  `chain_cmp.rs` either duplicates a pure middle operand into `(a < m) && (m < b)`
+  (`build_chain_cmp_expr_with_repeated_middle`, `:59-81`) or, for an effectful middle, emits
+  a `DoBlock` with a `__mutsu_chain_cmp_N` temporary (`:19-57`) — so `Q[1 < 2 < 3].AST`
+  already renders `RakuAST::StatementPrefix::Do` today, an *existing* divergence that is not
+  about Whatever at all. Runtime semantics are correct in both shapes (measured: the middle
+  is evaluated exactly once, and `(1 < * < 10).arity` is 1 in both implementations).
+  Record it in the same register as ADR-0011's `unless` → `if !` note. The `Expr::ChainedCompare`
+  node this ADR's "Phase-4 prerequisite" section calls for closes it for both phases at once;
+  it is not a Phase-2 dependency.
+- **`* .= lc`** already converts, but as mutsu's own shape rather than raku's
+  `ApplyDottyInfix` / `DottyInfix::CallAssign` — the pre-existing `.=` gap already listed
+  under "Read-direction representation gaps" in `todo/deep/rakuast-remaining.md`.
+
+### 2.7 Test plan
+
+`t/rakuast-whatever-code.t`, dual-oracle (must pass under **both** mutsu and raku, the
+ADR-0011 convention). Assert on `.AST.gist` for the shapes and on `.^name` / `~~` for the
+hierarchy:
+
+- Argument leaves: `* + 1`, `* + *`, `*.abs`, `*.WHICH`, `1..*-1`, `(* + 1) * 2`, `@a[* - 1]`,
+  `-*`, `?*`, `*++`, `* x 2`, `1 x *`, `* ~~ Int`, `Int ~~ *`, `$_ ~~ *`, `* !~~ Int`,
+  `"k" => *`, `(1, 2).map(* + 1)`, `(* - 1) o (* * 2)`.
+- Value leaves (regression guard for over-marking): `1, *, 2`, `1..*`, `1, 2 ... *`,
+  `my $x = *`, `* xx 2`, `1 xx *`, `@a[*]`, `*(1)`, `*.WHAT`, `(a => *)`, `say *`, `(*)`,
+  `[*]`.
+- Hierarchy: the `* + 1` left operand `.^name` is `RakuAST::WhateverCode::Argument`, and it
+  `~~ RakuAST::Term`, `~~ RakuAST::Expression`, `~~ RakuAST::Node`.
+- `**` → `RakuAST::Term::HyperWhatever`.
+
+Plus a runtime no-change guard: the existing `t/*whatever*.t` (35 files),
+`roast/S02-types/{whatever,hyperwhatever}.t` and `roast/S03-operators/composition.t` must be
+green unchanged — they are the same surface Phase 1 leaned on.
+
+### 2.8 Risks specific to Phase 2
+
+- **Over-marking is invisible at runtime.** The §2.2 invariant is what buys the safety, and
+  it is also what hides a classifier bug: a leaf marked wrongly changes only the `.AST` gist.
+  The value-leaf half of the §2.7 test list is therefore not optional padding — it is the
+  only detector.
+- **`is_whatever` widening must be total.** The three variant-literal `matches!` tests called
+  out in §2.2 are the ones a `grep` for `is_whatever` misses. Missing one turns a `xx` or
+  `CallOn` opt-out off and *does* change results.
+- **Smartmatch re-routing (§2.5) is the one part that can regress**, because it replaces a
+  hand-built closure with the generic `build_closure` path under operand-asymmetric
+  predicates. If it proves awkward, splitting it into its own follow-up PR is legitimate;
+  splitting the *leaf classification* is not, since nothing else in Phase 2 is useful without
+  it.
+- **File-size cap.** `src/rakuast/convert.rs` (1795 lines) and `mod.rs` (1048) are already
+  over the repo's 500-line convention. Per the Risks section above, land the per-cluster
+  split *with* this phase rather than growing them further.
 
 ## References
 

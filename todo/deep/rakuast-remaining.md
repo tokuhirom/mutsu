@@ -52,8 +52,9 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1` — **Phase 1 (deferral) shipped, Phases 2-4 (RakuAST
-  read/write, thunk-barrier correctness fix) not started — see
+- WhateverCode such as `* + 1` — **Phase 1 (deferral) shipped; Phase 2 (RakuAST read /
+  the leaf split) designed in implementable detail and ready to pick up; Phases 3-4
+  (RakuAST write, thunk-barrier correctness fix) not started — see
   [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
@@ -62,7 +63,7 @@ Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
 
-### Designed, Phase 1 shipped: WhateverCode (ADR-0033)
+### Designed, Phase 1 shipped, Phase 2 ready to implement: WhateverCode (ADR-0033)
 
 `* + 1` was picked first because it is the highest-frequency construct on the list
 (`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
@@ -83,9 +84,19 @@ Phase 1 (the behaviour-preserving deferral) shipped 2026-08-19: `src/whatever_cu
 now owns closure construction, invoked from a single `Expr::WhateverCurry` compiler arm;
 the parser's ~50 `wrap_whatevercode` call sites construct that marker instead of building
 the closure eagerly, verified zero-behaviour-change against the full `t/` + targeted
-roast suites. `Q[* + 1].AST` still errors and the thunky-operator priming bug is still
-live — those are Phases 2-4, not started. See the ADR's own Outcome section for the full
-list of latent-bug fixes this deferral surfaced along the way.
+roast suites. See the ADR's own Outcome section for the full list of latent-bug fixes
+this deferral surfaced along the way.
+
+Phase 2 — the *leaf* half (`Expr::WhateverArg` → `RakuAST::WhateverCode::Argument`) —
+was designed in implementable detail on 2026-08-20 and is the next unit of work; see
+the ADR's "Phase 2 detailed design" section. It carries a raku-measured leaf
+classification table, a behaviour-preserving-by-construction invariant (in Phase 2 the
+new leaf variant is a pure annotation: every consumer outside `src/rakuast/` treats it
+identically to `Expr::Whatever`), the converter/metadata edits, the conversion of the
+three remaining eager autoprime sites, and a dual-oracle test plan. `Q[* + 1].AST` still
+errors until it lands. Phase 3 (RakuAST write / `EVAL`) and Phase 4 (the thunky-operator
+priming correctness fix, which is still live and still produces silently wrong results
+for `(1..10).grep(* > 3 && * < 8)`) remain designed only at the ADR's outline level.
 
 The remaining items on both lists above are still undesigned.
 
