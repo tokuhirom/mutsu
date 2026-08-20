@@ -361,6 +361,37 @@ impl Interpreter {
                 self.stack.last().map(Value::view),
                 Some(ValueView::Pair(n, _)) if n == "__mutsu_bind_index_value"
             );
+            // A user-declared 3-argument `multi sub postcircumfix:<[
+            // ]>(SELF, index, value)` / `postcircumfix:<{ }>` candidate
+            // intercepts a subscript ASSIGNMENT (`@obj[i] = v`) — a genuine
+            // Raku multi-dispatch overload distinct from the 2-arg read-side
+            // form (`vm_var_index_ops.rs`), confirmed against real `raku`
+            // (assigning through a 2-arg-only candidate is a compile-time
+            // SORRY there; only a matching 3-arg candidate is ever called for
+            // assignment). Must be checked before the built-in
+            // BIND-POS/BIND-KEY/ASSIGN-POS/ASSIGN-KEY dispatch below, mirroring
+            // how the read-side postcircumfix probe precedes AT-POS/AT-KEY. Not
+            // consulted for a `:=` bind, which is a separate operator.
+            // See todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md.
+            if !is_bind && let Some(val_peek) = self.stack.last().cloned() {
+                let op_name = if is_positional {
+                    "postcircumfix:<[ ]>"
+                } else {
+                    "postcircumfix:<{ }>"
+                };
+                let idx_arg = match idx.view() {
+                    ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                    _ => idx.clone(),
+                };
+                let args = vec![target.clone(), idx_arg, val_peek];
+                if let Some(def) = self.resolve_function_with_types(op_name, &args) {
+                    self.stack.pop();
+                    let empty_fns = crate::opcode::CompiledFns::default();
+                    let result = self.compile_and_call_function_def(&def, args, &empty_fns)?;
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            }
             let bind_method = if is_positional {
                 "BIND-POS"
             } else {

@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 7;
+plan 11;
 
 # A user-declared `multi sub postcircumfix:<[ ]>` / `postcircumfix:<{ }>` must
 # intercept the bracket-subscript OPERATOR for a matching (invocant, index)
@@ -61,3 +61,41 @@ multi sub postcircumfix:<{ }>(PCHash:D \self, Int:D $key) {
 }
 my %h is PCHash;
 is %h{5}, 'hashcustom(5)', 'postcircumfix:<{ }> is checked independently for associative subscripts';
+
+# A 3-argument `multi sub postcircumfix:<[ ]>(target, index, value)` candidate
+# intercepts subscript ASSIGNMENT (`@obj[i] = v`) — a genuinely distinct
+# multi-dispatch form from the 2-arg read candidate above, confirmed against
+# real raku: assigning through a 2-arg-only candidate is itself a raku
+# compile-time error ("Calling postcircumfix:<[ ]>(..., Int, Int) will never
+# work"). See "Status update 2" in
+# todo/deep/user-postcircumfix-index-not-dispatched-for-instances.md.
+class PCWrite {
+    has @.store is rw = (1, 2, 3);
+    method AT-POS(\i) { "AT-POS(" ~ i ~ ")" }
+}
+
+my @log;
+multi sub postcircumfix:<[ ]>(PCWrite:D \SELF, Int:D $index, Mu $value) is rw {
+    @log.push("assign(" ~ $index ~ ", " ~ $value ~ ")");
+    SELF.store[$index] = $value;
+    "assign-result";
+}
+
+my $w = PCWrite.new;
+is ($w[0] = 42), 'assign-result',
+    'assignment through a 3-arg postcircumfix candidate returns its result';
+is @log[0], 'assign(0, 42)',
+    '... and the candidate was invoked with (index, value)';
+is $w.store[0], 42,
+    "... and the candidate's own delegation actually wrote the value";
+
+# A class with only a 2-arg (read) candidate and no matching 3-arg one falls
+# back to native array assignment for `=` — mirroring the "no candidate
+# declared at all" fallback for reads.
+class PCReadOnly is Array {}
+multi sub postcircumfix:<[ ]>(PCReadOnly:D \SELF, Str:D $key) {
+    "readonly-custom(" ~ $key ~ ")"
+}
+my @rd is PCReadOnly = 1, 2, 3;
+@rd[0] = 99;
+is @rd[0], 99, 'no matching 3-arg candidate: native array assignment still applies';
