@@ -1,5 +1,57 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Status update 5 (2026-08-20, map/grep/`.first` compile-cache lever
+> executed — general win confirmed, `t/ripemd.t` gate itself flat):** update
+> 4's closing note flagged "the `resolution_map_grep` map carrier still
+> recompiles per call/per map invocation" as an untried lever with the same
+> shape as the `reduce_items` compiled-first fix. Implemented it: the map/
+> grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`,
+> `resolution_map_grep_rw.rs`) used to run `compiler.compile()` on the
+> callback block's (tail-normalized) body on every `.map()`/`.grep()`/
+> `.first()` CALL, even when that call site's closure literal is the exact
+> same source occurrence as a previous call (e.g. a block declared inside an
+> outer loop, called fresh each iteration with a brand-new `SubData`). A new
+> `Interpreter::compile_loop_block_cached` reuses a cached compile keyed by
+> the closure's pre-existing `compiled_code` `Arc` pointer identity (already
+> shared across every instantiation of the same source closure literal —
+> baked once into the enclosing scope's `closure_compiled_codes` at that
+> scope's own compile time — so the pointer is a free, stable cache key,
+> **not** a new id-minting scheme).
+>
+> **Correctness pitfall caught during development, now fixed:** an early
+> version keyed the cache on the bare pointer *address* (`usize`) without
+> retaining the Arc, which is unsound whenever the source Arc's only owner is
+> a short-lived `SubData` (true for a dynamically-built `EVAL`/RakuAST
+> closure, never retained in any `closure_compiled_codes` table) — once
+> dropped, a later unrelated `CompiledCode` allocation can reuse the same
+> address and collide with a stale cache entry. `t/rakuast-eval-block-arg.t`
+> caught this immediately (chained `.map().grep()` on one EVAL'd line
+> returned the wrong predicate's result). Fixed by making the cache key
+> (`MapGrepCacheKey`) hold a clone of the Arc itself (custom pointer-identity
+> `Hash`/`Eq`), so the key keeps the source `CompiledCode` alive for as long
+> as the cache entry does. Pinned by `t/map-grep-first-compile-cache.t`
+> (loop-redeclared blocks for map/grep/first, plus a repeated-distinct-EVAL
+> stress case for the pointer-reuse scenario specifically).
+>
+> **Measured, isolated general win** (release, synthetic "closure declared
+> inside an outer loop, few items per call" benchmarks — the exact shape this
+> lever targets): `.map()` ~2.18s → ~1.71s (~22% faster), `.grep()` ~2.93s →
+> ~2.43s (~17%), `.first()` ~1.42s → ~1.03s (~28%) over 200k outer
+> iterations. `cargo test`, the full `t/` suite (30223 tests), and the
+> map/grep/reduce/first roast files all pass with no behavior change.
+>
+> **`t/ripemd.t`'s own gate is flat**, though (release, same machine,
+> back-to-back A/B: ~139s before, ~146s after — within run-to-run noise, no
+> real change either way). This is consistent with update 4's own flat
+> profile finding "no single dominant item left" — the outer
+> `map -> [&f, $r, @K, $s] { start {...} }, zip(...)` this lever targets is
+> evidently not RIPEMD's dominant cost; the malloc/free, thread-local symbol
+> caches, and `call_compiled_closure_with_topic` items from that profile
+> remain unaddressed. Landing this anyway as a genuine, general, verified
+> interpreter improvement (independent of whether it moves any one ticket's
+> needle) — not re-attempting `t/ripemd.t` specifically without a fresh
+> profile pointing at a new dominant item.
+
 > **Status update 4 (2026-08-05, closure-setup + reduce compiled-first —
 > gate 28s → 12s, `t/ripemd.t` 295s → 119s):** two levers executed.
 > Slice 1 (#5941) landed the top closure-call setup allocations from the
