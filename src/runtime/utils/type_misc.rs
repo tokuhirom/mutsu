@@ -27,6 +27,12 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         // but Rakudo exposes both `.lines` and `.handles` as eager `Seq`s.
         ValueView::LazyList(ll) if ll.is_cat_pull() => "Seq",
         ValueView::LazyList(ll) if ll.is_from_gather() => "Seq",
+        // An untagged genuinely-lazy list (an infinite arithmetic/closure
+        // sequence, `1…∞`, that was never assigned into an `@` slot or given
+        // an explicit `.List`/`.Array` context) is a bare `Seq` in Raku —
+        // measured: `(1…∞).^name` is `Seq`. Only a context-tagged or
+        // non-lazy `LazyList` defaults to `Array` below.
+        ValueView::LazyList(ll) if ll.is_genuinely_lazy() => "Seq",
         ValueView::LazyList(_) => "Array",
         ValueView::Hash(ref h) if h.declared_type.as_deref() == Some("Map") => "Map",
         ValueView::Hash(_) => "Hash",
@@ -104,7 +110,14 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
         ValueView::Junction { .. } => "Junction",
         ValueView::Regex(_) | ValueView::RegexWithAdverbs { .. } => "Regex",
         ValueView::Version { .. } => "Version",
-        ValueView::Seq(_) => "Seq",
+        // `.cache`/`.List` on a Seq whose source is not yet reified return a
+        // second handle over the same body tagged `SeqView::List` (ADR-0038
+        // phase 3) rather than forcing — read that tag here so `.^name`
+        // agrees with `type_matches_value` without pulling anything.
+        ValueView::Seq(body) => match body.view() {
+            crate::value::SeqView::List => "List",
+            crate::value::SeqView::Seq => "Seq",
+        },
         ValueView::HyperSeq(_) => "HyperSeq",
         ValueView::RaceSeq(_) => "RaceSeq",
         ValueView::Slip(_) => "Slip",

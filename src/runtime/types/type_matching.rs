@@ -411,11 +411,13 @@ impl Interpreter {
                 ValueView::Str(_) => constraint == "Str",
                 ValueView::Bool(_) => constraint == "Bool",
                 ValueView::Instance { class_name, .. } => class_name.as_str() == constraint,
-                // CatHandle pullers are represented by a live LazyList so they
-                // can observe mid-iteration changes, but their public Raku
-                // type is Seq (and they are not lazy from the type system's
-                // point of view).
-                ValueView::LazyList(list) if list.is_cat_pull() => constraint == "Seq",
+                // `LazyList` can present as `Array`, `List`, or `Seq` depending
+                // on context markers (`.List`/`.Array`/`.cache`) and whether it
+                // is a CatHandle puller or a `gather` pipe. `value_type_name` is
+                // the single authoritative oracle for this (ADR-0038 S2); defer
+                // to it here instead of re-deriving a partial answer, so this
+                // fast-accept never disagrees with the general checker below.
+                ValueView::LazyList(_) => constraint == crate::runtime::value_type_name(value),
                 _ => false,
             }
         };

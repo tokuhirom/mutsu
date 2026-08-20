@@ -99,12 +99,38 @@ pub(crate) enum SeqTaken {
     Taken,
 }
 
-/// The reification/consumption state of a `Seq`, `HyperSeq`, or `RaceSeq`.
-/// See the module docs for the generation graveyard `gens` relies on.
-pub(crate) struct SeqBody {
+/// Which Raku type a `SeqBody` **handle** (a particular `Value`) presents as
+/// (docs/adr/0038 S2). Deliberately NOT a field inside the shared,
+/// mutex-guarded [`SeqState`]: `.cache` on a not-yet-reified `Seq` must
+/// return a `List`-typed value while the ORIGINAL `Seq` value stays a `Seq`
+/// (measured against `raku` — `my $s = Seq.new(...); my $c = $s.cache; say
+/// $s.^name, " ", $c.^name` prints `Seq List`), so the two views must be able
+/// to live at once over the SAME reification/consumption state. See
+/// [`SeqBody::as_list_view`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub(crate) enum SeqView {
+    #[default]
+    Seq,
+    List,
+}
+
+/// The shared reification/consumption machinery a `Seq`, `HyperSeq`, or
+/// `RaceSeq` body owns. Behind its own `Arc` (inside [`SeqBody::core`]) so
+/// that two [`SeqBody`] handles with different [`SeqView`]s — e.g. a `Seq`
+/// and the `List` view its `.cache` returned — can share ONE copy of this
+/// state: a `retained`/`Taken` transition made through either handle must be
+/// visible through both (docs/adr/0038 S5).
+struct SeqCore {
     #[allow(clippy::vec_box)]
     gens: SyncUnsafeCell<Vec<Box<Vec<Value>>>>,
     state: Mutex<SeqState>,
+}
+
+/// The reification/consumption state of a `Seq`, `HyperSeq`, or `RaceSeq`.
+/// See the module docs for the generation graveyard `gens` relies on.
+pub(crate) struct SeqBody {
+    core: Arc<SeqCore>,
+    view: SeqView,
 }
 
 impl std::fmt::Debug for SeqBody {
@@ -114,6 +140,7 @@ impl std::fmt::Debug for SeqBody {
         // via `Deref`).
         f.debug_struct("SeqBody")
             .field("elements", &**self)
+            .field("view", &self.view)
             .finish_non_exhaustive()
     }
 }
@@ -134,16 +161,19 @@ impl SeqBody {
     /// every eager Seq/HyperSeq/RaceSeq constructor).
     pub(crate) fn reified(items: Vec<Value>) -> Arc<Self> {
         Arc::new(SeqBody {
-            gens: SyncUnsafeCell::new(vec![Box::new(items)]),
-            state: Mutex::new(SeqState {
-                source: SeqSource::Reified,
-                cache_requested: false,
-                lazy: false,
-                hyper: None,
-                hyper_iterator_claimed: false,
-                single_use_claimed: false,
-                retained: false,
+            core: Arc::new(SeqCore {
+                gens: SyncUnsafeCell::new(vec![Box::new(items)]),
+                state: Mutex::new(SeqState {
+                    source: SeqSource::Reified,
+                    cache_requested: false,
+                    lazy: false,
+                    hyper: None,
+                    hyper_iterator_claimed: false,
+                    single_use_claimed: false,
+                    retained: false,
+                }),
             }),
+            view: SeqView::Seq,
         })
     }
 
@@ -151,17 +181,40 @@ impl SeqBody {
     /// `IO::Handle.lines`, or a pre-consumed `Seq.new()`).
     pub(crate) fn deferred(source: SeqSource) -> Arc<Self> {
         Arc::new(SeqBody {
-            gens: SyncUnsafeCell::new(Vec::new()),
-            state: Mutex::new(SeqState {
-                source,
-                cache_requested: false,
-                lazy: false,
-                hyper: None,
-                hyper_iterator_claimed: false,
-                single_use_claimed: false,
-                retained: false,
+            core: Arc::new(SeqCore {
+                gens: SyncUnsafeCell::new(Vec::new()),
+                state: Mutex::new(SeqState {
+                    source,
+                    cache_requested: false,
+                    lazy: false,
+                    hyper: None,
+                    hyper_iterator_claimed: false,
+                    single_use_claimed: false,
+                    retained: false,
+                }),
             }),
+            view: SeqView::Seq,
         })
+    }
+
+    /// A second handle over the SAME reification/consumption core, presenting
+    /// as [`SeqView::List`] — what `.cache` (docs/adr/0038 phase 3) and
+    /// `.List` return for a Seq whose source is not yet reified. Does NOT
+    /// pull or clone any elements: `gens`/`state` (via `core`) stay the exact
+    /// same shared object, so a `retained`/`cache_requested`/`Taken`
+    /// transition made through either handle is visible through the other
+    /// (docs/adr/0038 S5) — only the type-facing `view` tag differs.
+    pub(crate) fn as_list_view(self: &Arc<Self>) -> Arc<Self> {
+        Arc::new(SeqBody {
+            core: Arc::clone(&self.core),
+            view: SeqView::List,
+        })
+    }
+
+    /// Which Raku type this handle presents as — read by `value_type_name`
+    /// (docs/adr/0038 S2), the single oracle for "what type is this value".
+    pub(crate) fn view(&self) -> SeqView {
+        self.view
     }
 
     fn live_generation(&self) -> &Vec<Value> {
@@ -170,7 +223,7 @@ impl SeqBody {
         // a reference into any generation — including this one — stays valid
         // across a later push.
         static EMPTY: Vec<Value> = Vec::new();
-        unsafe { &*self.gens.get() }
+        unsafe { &*self.core.gens.get() }
             .last()
             .map(|b| b.as_ref())
             .unwrap_or(&EMPTY)
@@ -185,7 +238,7 @@ impl SeqBody {
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let source = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.core.state.lock().unwrap();
             if matches!(state.source, SeqSource::Reified) {
                 return Ok(());
             }
@@ -198,8 +251,8 @@ impl SeqBody {
         // `live_generation` never keeps its `&Vec<Value>` past its own call,
         // and previously-returned references point at earlier, never-
         // rewritten slots (module docs).
-        unsafe { (*self.gens.get()).push(Box::new(items)) };
-        self.state.lock().unwrap().source = SeqSource::Reified;
+        unsafe { (*self.core.gens.get()).push(Box::new(items)) };
+        self.core.state.lock().unwrap().source = SeqSource::Reified;
         Ok(())
     }
 
@@ -215,7 +268,7 @@ impl SeqBody {
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<&Vec<Value>, RuntimeError> {
         {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.core.state.lock().unwrap();
             match &state.source {
                 SeqSource::Reified => {
                     state.retained = true;
@@ -226,7 +279,7 @@ impl SeqBody {
             }
         }
         self.pull_and_store(pull)?;
-        self.state.lock().unwrap().retained = true;
+        self.core.state.lock().unwrap().retained = true;
         Ok(self.live_generation())
     }
 
@@ -252,7 +305,7 @@ impl SeqBody {
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(Vec<Value>, SeqTaken), RuntimeError> {
         let (reified, servable) = {
-            let state = self.state.lock().unwrap();
+            let state = self.core.state.lock().unwrap();
             match &state.source {
                 SeqSource::Reified => (true, state.cache_requested || state.retained),
                 SeqSource::Taken => return Err(super::seq_consumed_error()),
@@ -264,13 +317,13 @@ impl SeqBody {
             return Ok((self.live_generation().clone(), SeqTaken::Served));
         }
         if reified {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.core.state.lock().unwrap();
             state.source = SeqSource::Taken;
             drop(state);
             return Ok((self.live_generation().clone(), SeqTaken::Taken));
         }
         let source = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.core.state.lock().unwrap();
             std::mem::replace(&mut state.source, SeqSource::Taken)
         };
         let items = pull(&source)?;
@@ -290,7 +343,7 @@ impl SeqBody {
     /// `"for"`, which is not in `seq_method_consumes`) and marks the body
     /// `retained` like any other reifying touch.
     pub(crate) fn claim_single_use_once(&self) -> Result<(), RuntimeError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.core.state.lock().unwrap();
         if state.single_use_claimed && !state.cache_requested {
             return Err(super::seq_consumed_error());
         }
@@ -316,7 +369,7 @@ impl SeqBody {
         pull: impl FnOnce(&SeqSource) -> Result<Vec<Value>, RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let source = {
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.core.state.lock().unwrap();
             match &state.source {
                 SeqSource::Taken => return Ok(()),
                 SeqSource::Reified if state.cache_requested || state.retained => {
@@ -336,28 +389,28 @@ impl SeqBody {
     /// every future touch. Deliberately does not pull now (see
     /// `cache_requested`'s doc comment).
     pub(crate) fn mark_cache_requested(&self) {
-        self.state.lock().unwrap().cache_requested = true;
+        self.core.state.lock().unwrap().cache_requested = true;
     }
 
     /// Whether `.cache` was requested, or the body is already reified — the
     /// two conditions under which a later touch is non-destructive.
     pub(crate) fn is_cached(&self) -> bool {
-        let state = self.state.lock().unwrap();
+        let state = self.core.state.lock().unwrap();
         state.cache_requested || matches!(state.source, SeqSource::Reified)
     }
 
     pub(crate) fn mark_lazy(&self) {
-        self.state.lock().unwrap().lazy = true;
+        self.core.state.lock().unwrap().lazy = true;
     }
 
     pub(crate) fn is_lazy(&self) -> bool {
-        self.state.lock().unwrap().lazy
+        self.core.state.lock().unwrap().lazy
     }
 
     /// Whether the source has already been handed away (and never reified in
     /// between) — a later `reify`/`take` on this body will throw.
     pub(crate) fn is_consumed(&self) -> bool {
-        matches!(self.state.lock().unwrap().source, SeqSource::Taken)
+        matches!(self.core.state.lock().unwrap().source, SeqSource::Taken)
     }
 
     /// Whether this body still has a source to pull from (an unreified
@@ -365,7 +418,7 @@ impl SeqBody {
     /// reified or already taken.
     pub(crate) fn has_deferred_source(&self) -> bool {
         matches!(
-            self.state.lock().unwrap().source,
+            self.core.state.lock().unwrap().source,
             SeqSource::Iterator(_) | SeqSource::IoLines { .. }
         )
     }
@@ -385,7 +438,7 @@ impl SeqBody {
     /// a state-mutating call, and where mutating would be wrong anyway (the
     /// native fast path may be probed more than once for the same call).
     pub(crate) fn peek_io_lines_parts(&self) -> Option<(Value, bool, bool)> {
-        match &self.state.lock().unwrap().source {
+        match &self.core.state.lock().unwrap().source {
             SeqSource::IoLines { handle, words, kv } => Some((handle.clone(), *words, *kv)),
             _ => None,
         }
@@ -397,7 +450,10 @@ impl SeqBody {
     /// that flavour (formerly `ValueView::LazyIoLines`) and left a plain
     /// `Seq.new($iterator)` alone.
     pub(crate) fn is_io_lines_source(&self) -> bool {
-        matches!(self.state.lock().unwrap().source, SeqSource::IoLines { .. })
+        matches!(
+            self.core.state.lock().unwrap().source,
+            SeqSource::IoLines { .. }
+        )
     }
 
     /// Whether a dispatch site needs to call `reify`/`take` at all before
@@ -414,7 +470,7 @@ impl SeqBody {
     /// default even when its data was fully known at birth (see
     /// `SeqBody::take`'s doc comment).
     pub(crate) fn needs_touch(&self) -> bool {
-        let state = self.state.lock().unwrap();
+        let state = self.core.state.lock().unwrap();
         !(matches!(state.source, SeqSource::Reified) && (state.retained || state.cache_requested))
     }
 
@@ -434,7 +490,7 @@ impl SeqBody {
         pull_n: impl FnOnce(&Value, bool, usize) -> Result<(Vec<Value>, bool), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let (handle, words) = {
-            let state = self.state.lock().unwrap();
+            let state = self.core.state.lock().unwrap();
             match &state.source {
                 // kv-mode IoLines never occurs at any construction site today
                 // (`Value::lazy_io_lines` is always called with `kv: false`);
@@ -464,19 +520,19 @@ impl SeqBody {
         // `gens` is held across this push, and earlier generations (still
         // reachable through outstanding `&Vec<Value>` borrows) are never
         // rewritten, only superseded by a longer one.
-        unsafe { (*self.gens.get()).push(Box::new(combined)) };
+        unsafe { (*self.core.gens.get()).push(Box::new(combined)) };
         if exhausted {
-            self.state.lock().unwrap().source = SeqSource::Reified;
+            self.core.state.lock().unwrap().source = SeqSource::Reified;
         }
         Ok(())
     }
 
     pub(crate) fn set_hyper_config(&self, batch: Option<i64>, degree: Option<i64>) {
-        self.state.lock().unwrap().hyper = Some((batch, degree));
+        self.core.state.lock().unwrap().hyper = Some((batch, degree));
     }
 
     pub(crate) fn hyper_config(&self) -> Option<(Option<i64>, Option<i64>)> {
-        self.state.lock().unwrap().hyper
+        self.core.state.lock().unwrap().hyper
     }
 
     /// `for`-loop streaming special case (`vm_for_loop_dispatch.rs`): iterate
@@ -492,7 +548,7 @@ impl SeqBody {
     pub(crate) fn claim_io_lines_for_streaming(
         &self,
     ) -> Result<Option<(Value, bool, bool)>, RuntimeError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.core.state.lock().unwrap();
         match &state.source {
             SeqSource::Taken => Err(super::seq_consumed_error()),
             SeqSource::IoLines { .. } if !state.cache_requested => {
@@ -510,7 +566,7 @@ impl SeqBody {
     /// `HyperSeq`/`RaceSeq.iterator` (rakudo #4413): claim the single
     /// allowed iterator, atomically. `Err` if already claimed.
     pub(crate) fn claim_hyper_iterator_once(&self) -> Result<(), RuntimeError> {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.core.state.lock().unwrap();
         if state.hyper_iterator_claimed {
             return Err(super::seq_consumed_error());
         }
@@ -525,13 +581,13 @@ impl SeqBody {
         // SAFETY: read-only. GC trace runs at a collect safepoint, never
         // concurrently with a `pull_and_store` on this same body (mirrors
         // `NativeBacking::trace_edges`'s reasoning).
-        let gens = unsafe { &*self.gens.get() };
+        let gens = unsafe { &*self.core.gens.get() };
         for generation in gens.iter() {
             for v in generation.iter() {
                 v.gc_trace(visit);
             }
         }
-        let state = self.state.lock().unwrap();
+        let state = self.core.state.lock().unwrap();
         match &state.source {
             SeqSource::Iterator(v) => v.gc_trace(visit),
             SeqSource::IoLines { handle, .. } => handle.gc_trace(visit),

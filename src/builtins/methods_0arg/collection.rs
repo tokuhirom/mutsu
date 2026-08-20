@@ -1217,7 +1217,14 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             if let ValueView::Seq(body) = target.view() {
                 body.mark_cache_requested();
                 if body.needs_touch() {
-                    return Some(Ok(target.clone()));
+                    // ADR-0038 phase 3: a deferred `SeqBody` has no elements
+                    // to hand back yet (that is exactly why a strict force is
+                    // wrong here — S1.6), but rakudo's `.cache` still returns
+                    // a `List`-typed value, not a `Seq`-typed one. Return a
+                    // second handle over the SAME core so a later real read
+                    // reifies once and both handles observe it.
+                    let body = std::sync::Arc::clone(&body);
+                    return Some(Ok(Value::seq_list_view(&body)));
                 }
             }
             let items = target
