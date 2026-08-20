@@ -19,7 +19,7 @@ a new `.package` attribute:
   declaring type (`Str.uc`'s real `.package` is `(Cool)`) -- a deliberate, accepted mechanism-slice
   default per ADR-0019 Phase F box F1's design decision, strictly better than the prior universal
   `Nil` but not a claim of full parity. Closing that gap exactly is separate, tracked follow-up
-  work (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`).
+  work (ADR-0019's F1 box; `news/2026-08/adr0019-f1-f2-introspection-closeout.md`).
 
 `make_method_object`/`make_method_object_with_candidates` were deleted as dead code once their
 only callers were switched to call `make_method_object_with_owner` directly with the owner
