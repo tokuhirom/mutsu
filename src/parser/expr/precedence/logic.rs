@@ -1,5 +1,4 @@
 use super::*;
-use crate::value::ValueView;
 
 pub(crate) fn or_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
     let (mut rest, mut left) = assign_or_and_expr(input, mode)?;
@@ -457,37 +456,27 @@ pub(crate) fn assign_not_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 is_bind: false,
             },
         )),
+        // ADR-0036 slice 2: `(@a[0]:kv)[1] = rhs` used to be rewritten here into
+        // a plain `@a[0] = rhs` element assign, bypassing the `:kv` Pair/list
+        // machinery entirely. Now that `:kv`'s list value carries a live
+        // element container (`array_slot_ref`/`hash_slot_ref`), the rewrite is
+        // redundant: the generic index-assign path already writes *through* a
+        // `ContainerRef` slot (`Value::assign_element_slot`), so evaluating
+        // `@a[0]:kv` normally and assigning into its `[1]` slot reaches the
+        // same backing element without a special case here.
         Expr::Index {
             target,
             index,
             is_positional,
-        } => {
-            if let Expr::Call { name, args } = target.as_ref()
-                && name == "__mutsu_subscript_adverb"
-                && args.len() >= 3
-                && matches!(index.as_ref(), Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(1)))
-                && matches!(&args[2], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(mode) if mode.as_str() == "kv" || mode.as_str() == "not-kv"))
-            {
-                return Ok((
-                    r,
-                    Expr::IndexAssign {
-                        target: Box::new(args[0].clone()),
-                        index: Box::new(args[1].clone()),
-                        value: Box::new(rhs),
-                        is_positional,
-                    },
-                ));
-            }
-            Ok((
-                r,
-                Expr::IndexAssign {
-                    target,
-                    index,
-                    value: Box::new(rhs),
-                    is_positional,
-                },
-            ))
-        }
+        } => Ok((
+            r,
+            Expr::IndexAssign {
+                target,
+                index,
+                value: Box::new(rhs),
+                is_positional,
+            },
+        )),
         Expr::Call { name, args } => Ok((
             r,
             Expr::Call {

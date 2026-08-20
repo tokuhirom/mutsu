@@ -261,12 +261,21 @@ impl Interpreter {
         // TODO: `:delete` on a mutable SetHash/BagHash/MixHash should write
         // back through the original container; the projection makes the delete
         // a no-op on the source (previously the whole slice returned empty).
+        //
+        // ADR-0036 slice 2: whether the final `target` below is the genuine
+        // backing Hash (so `:p`/`:kv` can hand out a live element container)
+        // or a throwaway snapshot — an `assoc_instance` AT-KEY projection or
+        // the QuantHash `.hash` projection just above. Both replace `target`
+        // with a fresh Hash that shares nothing with the source container, so
+        // promoting a slot in it would be invisible to the source.
+        let mut target_is_real_hash = assoc_instance.is_none();
         let target = if target.with_deref(|v| {
             matches!(
                 v.view(),
                 ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
             )
         }) {
+            target_is_real_hash = false;
             self.call_method_with_values(target.deref_container(), "hash", vec![])?
         } else {
             target
@@ -518,10 +527,29 @@ impl Interpreter {
             }
 
             if !is_multi {
-                let (key, value, exists) =
+                let (key, mut value, exists) =
                     Self::resolve_positional_scalar(&data_snap, missing_value, &indices[0]);
                 if !keep_missing && !exists {
                     return Ok(Value::array(Vec::new()));
+                }
+                // ADR-0036 slice 2: a mutable real array (not a List/Range/Seq
+                // coerced to one) hands `:p`/`:kv` the element's live Scalar
+                // container instead of a snapshot, so `.value = X` / the kv
+                // list's `[1] = X` write through to the array and a later
+                // `@a[i] = Y` is visible through the pair/list. Skip this for a
+                // `:delete` companion: the live element has already been
+                // overwritten with a hole above, so the container-aware read
+                // would hand out the *post-delete* hole instead of the
+                // pre-delete snapshot value the adverb must report.
+                if exists
+                    && !delete_after
+                    && target_is_real_array
+                    && matches!(kind, "p" | "kv")
+                    && let ValueView::Int(i) = key.view()
+                    && i >= 0
+                    && let Some(cell) = target.array_slot_ref(i as usize, true)
+                {
+                    value = cell;
                 }
                 return Ok(match kind {
                     "kv" => Value::array(vec![key, value]),
@@ -537,6 +565,7 @@ impl Interpreter {
                 &indices,
                 kind,
                 keep_missing,
+                (target_is_real_array && !delete_after).then_some(&target),
             );
             return Ok(Value::array(out));
         }
@@ -601,10 +630,21 @@ impl Interpreter {
                         (s, k)
                     };
                     let exists = map.contains_key(&key_str);
-                    let value = map
+                    let mut value = map
                         .get(&key_str)
                         .cloned()
                         .unwrap_or_else(|| missing_default.clone());
+                    // ADR-0036 slice 2: a genuine backing Hash (not a QuantHash
+                    // `.hash` projection or an AT-KEY snapshot) hands `:p`/`:kv`
+                    // the entry's live container instead of a cloned value, so
+                    // `.value = X` / the kv list's `[1] = X` write through.
+                    if exists
+                        && target_is_real_hash
+                        && matches!(kind, "p" | "kv")
+                        && let Some(cell) = target.hash_slot_ref(&key_str, true)
+                    {
+                        value = cell;
+                    }
                     rows.push((key, value, exists));
                 }
             }
@@ -707,12 +747,20 @@ impl Interpreter {
     /// `data`. A *nested* index element (a sub-list/Range) recurses and becomes
     /// ONE nested list element in the output, preserving the index tree's shape;
     /// a scalar index contributes its formatted key/value entries in place.
+    ///
+    /// `live_target` is `Some(&target)` when `data` is a snapshot of a genuine
+    /// *mutable* real array (ADR-0036 slice 2): a `p`/`kv` row for an existing
+    /// index then hands out the element's live `array_slot_ref` container
+    /// instead of the snapshot value, so the pair/list aliases the source
+    /// array. `None` for an immutable source (List/Range/Seq) or a caller that
+    /// only wants plain values (e.g. the `:delete` snapshot format above).
     pub(crate) fn format_positional_slice_level(
         data: &ArrayData,
         missing_value: PositionalMissing<'_>,
         indices: &[Value],
         kind: &str,
         keep_missing: bool,
+        live_target: Option<&Value>,
     ) -> Vec<Value> {
         let mut out = Vec::new();
         for idx in indices {
@@ -723,13 +771,24 @@ impl Interpreter {
                     &sub,
                     kind,
                     keep_missing,
+                    live_target,
                 );
                 out.push(Value::array(sub_out));
                 continue;
             }
-            let (key, value, exists) = Self::resolve_positional_scalar(data, missing_value, idx);
+            let (key, mut value, exists) =
+                Self::resolve_positional_scalar(data, missing_value, idx);
             if !keep_missing && !exists {
                 continue;
+            }
+            if exists
+                && matches!(kind, "p" | "kv")
+                && let Some(t) = live_target
+                && let ValueView::Int(i) = key.view()
+                && i >= 0
+                && let Some(cell) = t.array_slot_ref(i as usize, true)
+            {
+                value = cell;
             }
             match kind {
                 "kv" => {
