@@ -1069,6 +1069,7 @@ impl Interpreter {
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
+            is_hoisted_shell: false,
         };
         self.register_class_decl(&pun_name, &parents, modifiers)?;
         self.store_language_revision_from_version(&pun_name, &language_version);

@@ -260,6 +260,20 @@ pub(crate) struct ClassDeclModifiers<'a> {
     /// synthesis, `augment class`) — those keep the on-the-fly
     /// `run_block_raw` path unconditionally, same as an empty body.
     pub(crate) body_plan: &'a [crate::opcode::ClassBodyOp],
+    /// True for a `__hoisted` forward-reference shell's throwaway
+    /// registration (`hoist_type_decl_shells`): the shell composes roles
+    /// too (so a forward reference sees role-provided methods), but its
+    /// registration is superseded at runtime by the real, source-position
+    /// declaration re-registering later. A role's deferred body must
+    /// therefore run again at that real registration even though the shell
+    /// already ran it once for the same (class, role) pair — the
+    /// class/role composition memo (`Registry::composed_role_bodies`) is
+    /// exempted for a hoisted-shell pass so it does not "use up" the one
+    /// real run the shell's own (usually-discarded) execution shouldn't
+    /// count as. `t/run-nested-role-body.t`'s `$side = @outer.elems * 100`
+    /// caught a regression here: memoising the shell's run left the real
+    /// declaration's run skipped, so `$side` never got set.
+    pub(crate) is_hoisted_shell: bool,
 }
 
 pub(super) fn parse_role_type_args(input: &str) -> Vec<String> {

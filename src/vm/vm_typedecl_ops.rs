@@ -330,6 +330,9 @@ impl Interpreter {
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
                         body_plan,
+                        is_hoisted_shell: custom_traits
+                            .iter()
+                            .any(|(trait_name, _)| trait_name == "__hoisted"),
                     },
                 )
             )?;

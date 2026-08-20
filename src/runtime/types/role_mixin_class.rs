@@ -72,6 +72,7 @@ impl Interpreter {
             parent_pre_args: &[],
             compiled_fns: &crate::opcode::CompiledFns::default(),
             body_plan: &[],
+            is_hoisted_shell: false,
         };
         self.register_class_decl(&name, &parents, modifiers)?;
         self.compose_mixin_role_submethods(&name, &fresh);
@@ -145,9 +146,16 @@ impl Interpreter {
             return Ok(None);
         }
         let role_names: Vec<String> = roles.iter().map(|(name, _)| name.clone()).collect();
-        for name in &role_names {
-            self.run_mixin_role_body(name)?;
-        }
+        // `ensure_mixin_class` below composes each fresh role into the
+        // synthesized `base+{roles}` type via `register_class_decl`, which
+        // runs each role's deferred body exactly once per (class, role) --
+        // there is no separate direct run here. A prior version of this
+        // path also called `run_mixin_role_body` here, which duplicated
+        // that run: a single `$obj does R` executed R's deferred body
+        // TWICE (once from this call, once from the class composition
+        // inside `ensure_mixin_class`), diverging from `raku` (see the
+        // case table in
+        // news/2026-08/role-composition-memo-key-raku-case-table.md).
         let mixin_class = self.ensure_mixin_class(&base, &role_names)?;
         attributes.rebless(Symbol::intern(&mixin_class));
         // Seed the composed roles' own attributes. The object already exists, so
@@ -224,27 +232,6 @@ impl Interpreter {
         // These submethods are added after register_class_decl has compiled the
         // synthesized mixin class, so compile the completed declaration once.
         self.compile_class_methods(class_name);
-    }
-
-    /// Run a role's non-declaration body once, the same way the wrapper path
-    /// does — a guard in the body (`role R[::T] { die unless ... }`) must still
-    /// fire when the role is mixed in.
-    fn run_mixin_role_body(&mut self, role_name: &str) -> Result<(), RuntimeError> {
-        if !self
-            .registry_mut()
-            .composed_role_bodies
-            .insert(format!("mixin:{role_name}"))
-        {
-            return Ok(());
-        }
-        let ops = self
-            .registry()
-            .roles
-            .get(role_name)
-            .map(|r| r.deferred_body.clone())
-            .unwrap_or_default();
-        self.run_role_body_for_composition(role_name, role_name, &ops)?;
-        self.run_composed_role_ancestor_bodies(role_name, role_name)
     }
 
     /// Give each newly composed role attribute its declared default on an
