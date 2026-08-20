@@ -50,13 +50,23 @@ fn handle_instance(class: &str, kind: &str, roles: Vec<Value>) -> Value {
 /// Run `use <module>` in a fresh interpreter on a fresh thread with `$*LANG`
 /// bound, and return the grammar-rule names its slang registration overrode.
 /// `lib_paths` is the parser's current module search path list.
+///
+/// Spawned via `spawn_user_thread` (not a raw `std::thread::Builder::spawn`):
+/// this closure builds an `Interpreter` and runs a module's mainline, i.e. it
+/// creates, clones, and drops `Gc` values like any other user-code thread, so
+/// it must be a REGISTERED GC mutator (see `gc::stw`'s quiescence rule and
+/// `builtins_system::spawn_user_thread`'s doc comment) and must get the same
+/// large stack every other user-code thread gets, since a slang module's
+/// grammar can recurse arbitrarily deep. The join is wrapped in
+/// `gc::block_quiescent` so this (registered) parent thread does not starve a
+/// stop-the-world requested while it waits.
 pub(crate) fn run_slang_activation(
     module: String,
     lib_paths: Vec<String>,
 ) -> Result<Vec<String>, String> {
-    let handle = std::thread::Builder::new()
-        .name(ACTIVATION_THREAD_NAME.to_string())
-        .spawn(move || -> Result<Vec<String>, String> {
+    let handle = crate::runtime::builtins_system::spawn_user_thread(
+        ACTIVATION_THREAD_NAME,
+        move || -> Result<Vec<String>, String> {
             let mut interp = Interpreter::new();
             for path in lib_paths {
                 interp.add_lib_path(path);
@@ -64,10 +74,9 @@ pub(crate) fn run_slang_activation(
             interp.env.insert("*LANG".to_string(), comp_lang_instance());
             interp.use_module(&module).map_err(|e| e.message.clone())?;
             Ok(std::mem::take(&mut interp.defined_slang_rules))
-        })
-        .map_err(|e| format!("could not spawn slang activation thread: {e}"))?;
-    handle
-        .join()
+        },
+    );
+    crate::gc::block_quiescent(|| handle.join())
         .map_err(|_| "slang activation thread panicked".to_string())?
 }
 
@@ -191,5 +200,32 @@ impl Interpreter {
             .unwrap_or_default();
         roles.extend(extra_roles.iter().cloned());
         handle_instance(class_name, &kind, roles)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `parser::stmt::simple::slang_use::maybe_activate_slang_use` refuses to
+    /// recurse by checking `std::thread::current().name() ==
+    /// Some(ACTIVATION_THREAD_NAME)` — that recursion guard silently vanishes
+    /// if the activation thread ever stops reporting this name (e.g. a future
+    /// refactor of `spawn_user_thread` that stops passing `name` through to
+    /// `Builder::name`). Pin the name directly, on the actual spawned thread,
+    /// rather than trusting `spawn_user_thread`'s doc comment.
+    #[test]
+    fn activation_thread_reports_the_name_the_recursion_guard_checks() {
+        // The GC worker-registration counters are process-global; serialize
+        // against other tests that touch them (same convention as
+        // `gc::stw`'s own tests).
+        let _s = crate::gc::test_support::serial_lock();
+        let handle =
+            crate::runtime::builtins_system::spawn_user_thread(ACTIVATION_THREAD_NAME, || {
+                std::thread::current().name().map(str::to_string)
+            });
+        let name =
+            crate::gc::block_quiescent(|| handle.join()).expect("activation thread panicked");
+        assert_eq!(name.as_deref(), Some(ACTIVATION_THREAD_NAME));
     }
 }
