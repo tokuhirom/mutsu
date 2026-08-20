@@ -4,17 +4,17 @@ use crate::symbol::Symbol;
 impl Interpreter {
     /// ADR-0024: `mainline_lexical_frame_active` (the read/write resolver for
     /// a mainline named sub's captured free variables) keys off the LAST
-    /// `routine_stack` frame. Every "light"/"fast" compiled-call path
-    /// (`call_compiled_function_fast`, `call_compiled_function_light[_spec]`,
-    /// `call_compiled_function_positional_light`) deliberately skips pushing
-    /// a `RoutineFrame` — that is precisely the overhead they exist to avoid
-    /// — so a mainline sub dispatched through one of them would run with
-    /// stale/no frame info and its captured cells would silently never
-    /// resolve. Force such a sub onto the frame-pushing path
-    /// (`call_compiled_function_named[_inner]`) by excluding it from every
-    /// light/fast eligibility check at the call site. `mainline_lexical_subs`
-    /// is empty for the overwhelmingly common program, so this is one
-    /// `is_empty` test beyond what those checks already do.
+    /// `routine_stack` frame. This predicate predates ADR-0037 Slice 1, which
+    /// made every "light"/"fast" compiled-call path (`call_compiled_function_fast`,
+    /// `call_compiled_function_light[_spec]`, `call_compiled_function_positional_light`)
+    /// push a `RoutineFrame` unconditionally, so the frame is no longer
+    /// missing on these paths. This exclusion has not been re-verified
+    /// against that; keep forcing a mainline-lexical-capturing sub onto the
+    /// frame-pushing path (`call_compiled_function_named[_inner]`) by
+    /// excluding it from every light/fast eligibility check at the call site
+    /// until it is. `mainline_lexical_subs` is empty for the overwhelmingly
+    /// common program, so this is one `is_empty` test beyond what those
+    /// checks already do.
     #[inline]
     fn light_call_blocked_by_mainline_capture(&self, name: &str) -> bool {
         !self.mainline_lexical_subs.is_empty() && self.mainline_lexical_subs.contains(name)

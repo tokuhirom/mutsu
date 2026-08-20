@@ -1,6 +1,8 @@
 # ADR-0037: `EVAL ..., context => $frame` — the context frame owns the return target, and the routine chain must be dispatch-path-independent
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Partially implemented — Slice 1 landed (see "Implementation status"
+  below); Slices 2-4 (the `context`-driven return classification and
+  targeting itself) are next
 - Date: 2026-08-20
 - Origin: `todo/deep/eval-context-frame-owns-the-return-target.md`
 - Related: [ADR-0035](0035-method-calls-observe-caller-frames.md) (same family —
@@ -392,3 +394,48 @@ Deep `CALLER::CALLER::` / `callframes()` chains through frameless intermediate
 subs — ADR-0035's inherited approximation. Slice 1 makes the *routine* stack
 faithful on the light paths; the `caller_env_stack`/`callframe_stack` pair is a
 separate mechanism and is not touched here.
+
+## 8. Implementation status (2026-08-20)
+
+**Slice 1 landed.** `call_compiled_function_positional_light`
+(`src/vm/vm_call_light.rs`) and `call_compiled_function_light_spec`
+(`src/vm/vm_call_light_typed.rs`, the implementation behind
+`call_compiled_function_light`) now push a `RoutineFrame` via
+`push_routine_with_location` right after entering the routine's declaring
+package/pragma state, and pop it immediately after the body-execution loop —
+mirroring `call_compiled_function_fast`'s (`src/vm/vm_call_fast.rs`) existing
+push/pop pairing exactly. Every early exit between the two functions' entry
+and the push (the arity-mismatch and type-mismatch bails) runs before any
+frame is pushed, so needs no matching pop; every exit after the push (the
+body's `return`/`fail`/error/natural-completion arms, and the post-loop
+return-type-check failure) funnels through the single pop site, so the pairing
+holds unconditionally.
+
+The delegate path in `call_compiled_function_light` for a hand-built chunk
+with no precomputed named-call plan (`cf.named_call_plan.is_none()`) falls
+through entirely to `call_compiled_function_named`, which already pushes its
+own frame — untouched.
+
+This fixes `enclosing_routine_exists()` (and every other `routine_stack`
+consumer — `caller_frame_package()`, `executing_source_file()`, backtrace
+rendering) for every sub shape that qualifies for either light path:
+mandatory-positional-only signatures and named-only signatures. Confirmed
+against the §1.3 measured matrix (`t/eval-return-across-dispatch-paths.t`,
+new): all six dispatch-path shapes now answer `1` for
+`EVAL 'return 1'; return 2`, matching raku, where `pos1($x)` and `named1(:$x)`
+previously escaped as an uncaught `X::ControlFlow::Return`. Also re-verified
+the closest pre-existing pin for this predicate,
+`t/eval-return-target-needs-a-real-routine.t`, and the roast pin the design
+called out by name, `roast/S04-statements/return.t` (test 15 specifically),
+both still green.
+
+Cost: confirmed via `MUTSU_VM_STATS=1` on a recursive positional-arg body
+(the exact path this slice touches) that the dual-store counters
+(`clone_env`, `env_deep_copies`, `env_flushes`) are unchanged at `0` —
+the push/pop is a plain `Vec<RoutineFrame>` operation with no `Env` clone, as
+§4 predicted. A bench-CI-measured wall-clock verdict (the §4 guard) is
+pending the next `bench-history.tsv` row past this change's merge commit.
+
+**Slices 2-4 (the `context`-driven return classification and targeting) are
+not started.** They build on Slice 1's now-sound `routine_stack` but are
+independent follow-up work.
