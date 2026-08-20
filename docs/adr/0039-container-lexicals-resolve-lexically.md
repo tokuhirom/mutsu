@@ -1,0 +1,379 @@
+# ADR-0039: `@`/`%` lexicals must resolve lexically — retiring by-name container resolution, and correcting the "container write-back is structurally different" premise
+
+- Status: Proposed (design complete; implementation not started)
+- Date: 2026-08-20
+- Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
+  ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
+  ADR-0025 (cell boxing must be value-kind-blind — slice 3 defers `@`/`%`),
+  ADR-0010 (cross-thread lexical sharing scope — the `__mutsu_atomic_*` lanes)
+- Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`
+
+## 1. Context
+
+### 1.1 The symptom, as previously recorded
+
+The deep ticket records a module's file-scope `my @a` sharing storage with the
+loading script's same-named `my @a`:
+
+```raku
+# tmp/ufl/lib/UFL.rakumod
+unit module UFL;
+my @items = <a b>;
+sub peek-items() is export { @items.join(",") }
+sub push-item($v) is export { @items.push($v) }
+```
+```raku
+use UFL;
+my @items = <x y z>;
+push-item("c");
+say peek-items();        # raku: a,b,c    mutsu: x,y,z,c
+say @items.join(",");    # raku: x,y,z    mutsu: x,y,z,c
+```
+
+Re-verified on `bd34751d3` (2026-08-20): the repro still fails exactly as
+recorded, and `%h` fails identically. A full operation matrix
+(`tmp/ufl/matrix.raku`, 15 assertions over read / `push` / element-assign /
+whole-assign / key-set / `:delete`, `@` and `%`) diverges from `raku` on
+**every** line except one coincidence — including line 1, the module's own
+*initial* value, which the consumer's later `my @arr = <x y>` has already
+destroyed by the time the first module routine runs.
+
+### 1.2 What the investigation actually found: this is not a module bug
+
+The ticket frames the collision as a property of module loading — a module body
+running in the caller's `env` (`run_modules.rs:812`). That framing is too
+narrow. The identical divergence reproduces with **no module involved at all**,
+at plain mainline scope (`tmp/ufl/namedsub-mainline.raku`):
+
+```raku
+my @names = <a b>;
+sub add-name($v) { @names.push($v) }
+sub read-names()  { @names.join(",") }
+add-name("c");                       # 1: a,b,c        (mutsu agrees)
+{
+    my @names = <x y z>;             # an ordinary shadowing block
+    add-name("d");
+    say @names.join(",");            # raku: x,y,z     mutsu: x,y,z,d
+    say read-names();                # raku: a,b,c,d   mutsu: x,y,z,d
+}
+say read-names();                    # raku: a,b,c,d   mutsu: a,b,c
+```
+
+The byte-identical **scalar** program (`tmp/ufl/namedsub-scalar.raku`) matches
+`raku` on all four lines, because ADR-0024 fixed it: a mainline named sub's
+scalar free variable resolves through its own captured
+`unit_lexicals[MAINLINE_UNIT_KEY]` cell rather than through whatever the `env`
+key currently holds.
+
+A third instance falls out of the same root cause: `our @arr` in a `unit
+module` collides too (`tmp/ufl/ourtest.raku`). mutsu *does* maintain the
+package-qualified mirror — `@UFL3::arr` still reads the module's own `a,b` —
+but the module's own routines never consult it, so `a-push` lands on the
+consumer's array.
+
+**Root cause, stated once:** a named sub's `@`/`%` free variable is compiled to
+a bare by-name `GetArrayVar("@items")` / `GetHashVar("%h")`
+(`compiler/expr.rs:132-141` and its `HashVar` twin) and resolved at run time
+against whatever `env` currently holds under that key. Container lexical
+scoping is therefore **dynamic**, not lexical. Every same-named declaration
+anywhere in the process — a consumer's `my`, an inner block's shadow, a
+sibling routine's local — hijacks it. Module loading is merely the shape that
+makes the collision most likely (two independently-authored files, one `env`).
+
+This is precisely the follow-up both ADR-0024 and ADR-0025 named and deferred:
+
+- ADR-0024 "Known limitations": *"`@`/`%`/`&` free variables: excluded from
+  slice 1 ... Cell-ifying them intersects the ADR-0010 atomic lanes and Track B
+  and should be its own slice."* Enforced at `vm/vm_register_sub_ops.rs:464-470`.
+- ADR-0025 slice 3: *"`@`/`%`/`&`: reference-shared already; rebinding staleness
+  is a narrower hole. Deferred with ADR-0024's identical limitation."*
+- `run_modules.rs:977-982` ("**Scalars only.**") enforces the same skip in
+  `collect_unit_lexical_names`, the filter itself at `:1002-1008`.
+
+**This ADR owns that deferred follow-up.** The deep ticket is one of its
+symptoms, not a separate problem.
+
+### 1.3 Why `@`/`%` are the odd ones out (the compile-time asymmetry)
+
+`@`/`%` locals *are* slot-allocated — `declare_local` pushes the sigiled name
+`"@a"` into `code.locals` and `local_map` (`compiler/mod.rs:1688-1707`,
+`compiler/stmt.rs:1607`). But **nothing ever reads the slot**:
+
+- `Expr::ArrayVar` / `Expr::HashVar` consult `local_map` *only* to decide
+  whether to package-qualify the name, then unconditionally emit
+  `GetArrayVar(name)` / `GetHashVar(name)` (`compiler/expr.rs:132-141`,
+  `:142-177`). The scalar path emits `GetLocal(slot)`
+  (`compiler/expr_helpers.rs:697`).
+- `compute_upvalues` excludes them outright:
+  `is_plain_user_lexical(s) && !s.starts_with(['@','%','&'])`
+  (`opcode.rs:6124-6130`), and its read-op table matches only `GetGlobal`
+  (`:6074-6078`). So a container free variable gets no upvalue indirection.
+- `is_plain_lexical_name` excludes `@%&` (`compiler/mod.rs:1712-1721`), so
+  `plain_locals[slot] == false` and every `SetLocal` on a container takes the
+  full env-mirror path (`vm/vm_var_assign_set_local.rs:1863-1878`) — the value
+  is unconditionally written to `env["@a"]`.
+- A sub body compiles with a fresh, empty `local_map`
+  (`compiler/helpers_sub_body.rs:220`) under a mangled `"::&"` package that
+  disables `qualify_variable_name` (`compiler/mod.rs:1642-1646`), so `@items`
+  emits as the bare `"@items"`. The OTF path
+  (`vm/vm_call_dispatch.rs:188-198`) is more isolated still — no
+  `inherit_enclosing_scopes` at all.
+
+So the container lane has slots but uses names, while the scalar lane has both
+and prefers slots. Every mechanism built on top of the scalar lane
+(ADR-0024's cells, upvalues, `authoritative_free_vars`) simply has no container
+counterpart to hook into.
+
+## 2. The premise this ADR corrects
+
+The deep ticket's central technical claim — the reason it sized the fix at
+"~120+ call sites across at least a dozen files" and deferred it twice — is:
+
+> A container "write" is usually an **in-place mutation through a `Gc` pointer**
+> obtained from a *prior* read — `push`/`pop`/`splice`/element-assign call
+> `Gc::make_mut` on the array's `Gc<ArrayData>`, which silently **reallocates**
+> (breaks aliasing with any other holder) whenever the strong count is above 1
+> ... so unlike scalars, a sound fix needs a **write-through-the-canonical-slot**
+> primitive for containers, not just a value get/set pair.
+
+**That is no longer true, and it is the load-bearing premise.** Container
+mutation in mutsu is not copy-on-write; it is write-through-the-shared-node, by
+explicit design. `Value::with_array_inplace` (`value/view.rs:769-789`) says so
+in its own doc comment:
+
+> Container-identity in-place mutation (§3): run `f` on the SHARED `ArrayData`
+> backing this `Array` value, writing through the node so every by-value holder
+> of the same container ... observes the write. **`Gc::make_mut` (COW) is wrong
+> for a mutation of a variable's own container** — it detaches the container
+> from its aliases the moment the backing is shared; Raku `=` copy semantics are
+> enforced at copy time instead (`detach_shared_container`).
+
+It reaches the payload through `gc_contents_mut` — the ADR-0013 §7
+interior-mutability primitive. `push_to_shared_var`'s own env fallback
+(`runtime/runtime_thread.rs:929-948`) uses the sibling `gc_data_mut` under the
+comment *"write through the shared node so same-thread by-value holders observe
+the push (container identity §3)."*
+
+Empirically (`tmp/ufl/alias.raku`, mutsu matches `raku` on all four lines): two
+**distinct env keys** holding the same container observe each other's `push`,
+element-assign, and hash key-set. No reallocation, no lost write, no write-back
+step.
+
+The consequence is large. **In-place container mutation needs no canonical-slot
+write handle at all** — it only needs to *read* the right container. The
+ticket's ~140-site inventory is an inventory of `env` accesses, not of sites
+that would need a new write primitive; the great majority are receiver
+*resolution* (a read) that a resolver already exists for, or `__mutsu_*`
+metadata keys that are not user variables.
+
+Ironically, the ticket's own 2026-08-14 "correction" section declared ADR-0013
+orthogonal to this problem ("that is about whether taking `&mut` through a
+shared `Gc<T>` pointer is *sound* ... orthogonal to this ticket's problem, which
+is **routing**"). The routing diagnosis was right; the dismissal of ADR-0013 was
+not — ADR-0013 is exactly why the routing diagnosis is now the *whole* problem
+rather than half of it.
+
+## 3. What is already in place
+
+- **The read chokepoint exists and is sigil-agnostic.** `GetArrayVar` /
+  `GetHashVar` (`vm/vm_exec_dispatch.rs:583`, `:705`) begin their resolution
+  cascade with `get_env_with_main_alias(name)` (`:626-628`, `:733-760`), whose
+  first act is `if let Some(v) = self.unit_scope_lexical(name) { return
+  Some(v.into_deref()) }` (`vm/vm_env_helpers.rs:788-810`). A container placed
+  in `unit_lexicals` is therefore already reachable from the module's routines
+  — the store is checked *before* `env`, which is its entire purpose.
+- **The value-replace write chokepoint exists.**
+  `set_env_with_main_alias_sym` → `unit_scope_lexical_write`
+  (`vm/vm_env_helpers.rs:624-633`) updates the cell in place and reports `true`
+  so the bare `env` store is skipped.
+- **Container cells are an exercised VM state, not a new one.**
+  `box_decl_local_container_cell` (`vm/vm_var_assign_local_get.rs:381-408`)
+  already boxes whole `@`/`%` containers into a `ContainerRef` cell for the
+  "nested named sub mutates an outer `@names` by name" shape
+  (`docs/captured-outer-cell-sharing.md` §7.2), and PR #6711 (`1ec010ba8`,
+  2026-08-20) debugged a live production instance of a cell-boxed anonymous
+  `@` container in CBOR::Simple. This is ADR-0025 §"Why the skip is obsolete"
+  applied to containers: relaxing a skip enters an existing state more often; it
+  does not create a new one.
+- **A "this name in this frame is a different variable" predicate exists.**
+  `container_name_is_redeclared` (`runtime/runtime_shared_vars.rs:238-242`)
+  already masks the `__mutsu_atomic_arr::` / `__mutsu_atomic_hash::` lanes for
+  exactly this hazard, and is consulted at six sites including
+  `get_env_with_main_alias_inner` and `push_to_shared_var`.
+
+## 4. Decision
+
+Adopt the ADR-0024 mechanism for containers, then retire by-name container
+resolution outright. Two slices, in this order, for reasons given in §4.3.
+
+### 4.1 Slice 1 — a compunit's `@`/`%` file-scope lexicals get cells
+
+Lift the two `@`/`%` skips that keep containers out of the unit-lexical store,
+and fix the *read-miss fallbacks* that the move exposes.
+
+1. **`collect_unit_lexical_names`** (`runtime/run_modules.rs:983-1014`): accept
+   a leading `@` or `%` in addition to the current alphabetic-first-char test.
+   The surrounding move-into-`unit_lexicals` code (`:824-848`) already wraps the
+   value with `into_container_ref` and restores the loading scope's value under
+   the plain key, so it needs no change — a `ContainerRef` holding an Array is
+   the same shape as one holding a Str.
+2. **ADR-0024's mainline capture** (`vm/vm_register_sub_ops.rs:464-470`): drop
+   `'@'`/`'%'` from the sigil skip (keep `'&'` — the `&` lane has its own
+   registries, per ADR-0025). This is what fixes §1.2's module-free repro, and
+   it is the half that makes the fix general rather than module-specific.
+3. **Audit and fix the env-miss fallbacks.** This is the real work of slice 1
+   and the one place the ticket's warning is still valid. Once a container is
+   out of `env`, any site that does `self.env.get(name)` → miss → *builds a
+   fresh container and `env.insert`s it* silently drops the mutation into
+   storage nobody reads back (`unit_lexicals` is consulted first). The known
+   instance is `push_to_shared_var`'s tail
+   (`runtime/runtime_thread.rs:929-957`): the `env.get(key)` guard at `:931`
+   fails, execution falls to `:950-957`, which builds `Value::real_array(items)`
+   from `target_fallback` and inserts it under `key`. The fix shape is
+   uniform — resolve through `get_env_with_main_alias` (or a thin
+   `unit_lexical_container(name)` accessor returning the cell's container) before
+   consulting `env`, and mutate in place via `with_array_inplace` /
+   `with_hash_inplace`, which is already write-through.
+
+   **Bound the audit by symptom, not by grep count.** The failing pattern is
+   specifically *miss → construct → insert*, not *every* `env` access:
+   in-place mutation sites need nothing (§2), and `__mutsu_*` metadata keys are
+   not user variables. The inventory to enumerate is "sites that build a
+   replacement container when the name is absent from `env`", which is a small
+   subset of the ~140 raw accesses.
+4. **Whole-container reassignment** (`@arr = <p q>` inside the module) must
+   preserve container identity through the cell, i.e. route to
+   `cell_store_preserving_container_identity` rather than replacing the cell's
+   contents with a detached container — the same in-place-reassign path PR #6711
+   corrected for anonymous slots. Watch that PR's hazard: anonymous slot names
+   (`@__ANON_ARRAY__` / `%__ANON_HASH__`) are excluded there and must stay
+   excluded here.
+
+Explicit exclusions, matching ADR-0024/0025 discipline: `our`, `state`,
+`is export`, `$*dynamic`, `::`-qualified, type-constrained containers
+(`var_type_constraint`, per `box_decl_local_container_cell:392-401`), and the
+anonymous-container names. `our` containers (§1.2's third instance) are a
+*separate* fix — the package-qualified mirror already holds the right value, so
+they need a resolution change, not a store — and are deliberately out of scope
+here.
+
+### 4.2 Slice 2 — containers resolve by slot/upvalue, not by name
+
+Slice 1 makes compunit lexicals safe. It does not make container scoping
+lexical: a container declared in an ordinary inner block is still resolved by
+name, and every mechanism that had to grow a container special case
+(`container_name_is_redeclared`, the atomic-lane masking, the
+`module_scope_lexicals` last-resort snapshot) exists only because of that.
+
+Slice 2 closes the §1.3 asymmetry at the compiler:
+
+- `Expr::ArrayVar` / `Expr::HashVar` emit `GetLocal(slot)` when `local_map`
+  holds the sigiled name, exactly as `compile_expr_var` does for scalars,
+  falling back to `GetArrayVar`/`GetHashVar` only for genuinely free names.
+- `compute_upvalues` stops excluding `@`/`%` (`opcode.rs:6124-6130`), so a
+  closure or named sub capturing a container gets slot-addressed capture under
+  ADR-0018 rather than a bare env name.
+- `is_plain_lexical_name`'s `@%&` exclusion (`compiler/mod.rs:1712-1721`) is
+  re-examined; the unconditional env mirror on every container `SetLocal`
+  (`vm/vm_var_assign_set_local.rs:1863-1878`) is what makes the collision
+  possible in the first place.
+
+This is the high-blast-radius half, and it is the one that would let the
+container special cases above be *deleted* rather than extended.
+
+### 4.3 Why this order
+
+Slice 2 is the architecturally correct end state, so the ordering needs a
+reason. It is not risk aversion:
+
+1. Slice 1 is **mechanism reuse with a known-good precedent** — ADR-0024 ran
+   this exact play for scalars, including its failure modes (the seven
+   "materially wrong" points in ADR-0024's implementation notes are a ready-made
+   checklist). Slice 2 has no precedent in the container lane.
+2. Slice 1 **produces the test corpus slice 2 needs.** The pin file
+   (§6) is a divergence matrix that must stay green across slice 2's much
+   larger change; writing it against slice 1 is how it gets built.
+3. Slice 2 changes what a container reference *compiles to* and therefore
+   interacts with the ADR-0010 atomic lanes, `shared_vars`, and every by-name
+   runtime slot resolver that shadow slots already strain
+   (`compiler/mod.rs:1925-1990`'s own doc-comment warning). Doing it after
+   compunit lexicals are off the by-name path removes one entire class of
+   collision from that change's blast radius.
+
+Slice 1 is **not** a band-aid that makes slice 2 unnecessary: §4.2 states the
+end state, and slice 1's exclusion list is the list of things slice 2 must
+subsume.
+
+## 5. Alternatives rejected
+
+- **The ticket's `get_container_slot_mut(name) -> &mut Value` canonical-slot
+  handle, migrated across ~140 sites.** Rejected: §2 shows the write side is
+  already write-through, so the handle would be a mutable resolver for
+  mutations that do not need one. It would also be a *new* by-name resolution
+  mechanism at a moment when the goal (§4.2) is to have fewer of them, and per
+  CLAUDE.md's risk definition a 140-site mechanical migration whose failure mode
+  is a quietly-wrong value rather than a red test is the higher-risk route, not
+  the lower one.
+- **Compile-time alpha-renaming of a compunit's file-scope containers**
+  (`@items` → `@UFL::items` at compile time, so all existing `env` sites keep
+  working on a name that cannot collide). Attractive — zero runtime resolution,
+  zero site migration — but rejected as the primary route: the OTF compile path
+  (`vm/vm_call_dispatch.rs:188-198`) builds a fresh `Compiler` with no
+  `inherit_enclosing_scopes`, so a sub compiled on the fly would emit the
+  *unrenamed* name and silently miss the renamed storage; and symbolic access
+  (`::('@items')`, EVAL, interpolation) would need a demangling shim. It fixes
+  the module flavour only, leaving §1.2's module-free repro broken. Slice 2 is
+  the same idea done properly, at the slot level, where the compiler already has
+  the binding.
+- **Extending `module_scope_lexicals`** (the existing read-only bare-name
+  snapshot, `runtime/mod.rs:1511`, consulted at `vm_exec_dispatch.rs:653` after
+  `env`). Rejected for the reason the ticket already gives: being last-resort it
+  never fires when a consumer declares the same name — which is this bug's
+  precondition — and a snapshot of a mutable container goes stale on the first
+  push.
+- **Doing nothing until the real-`Test` cutover forces it.** Rejected: §1.2
+  shows the bug is not gated on module loading, so "nothing whitelisted depends
+  on it today" is a statement about which shapes happen to appear in the
+  whitelist, not about exposure.
+
+## 6. Acceptance criteria
+
+- **Pin file: `t/module-file-scope-lexical.t` + `t/lib/UnitFileLexical.rakumod`
+  extended with the `@`/`%` cases** that were written and then scoped out of the
+  scalar slice (no recoverable git history — `c5bf19e2e` squashed the
+  add-and-scope-down — so they are written fresh from this ADR's repros).
+- **A divergence matrix pin covering all three instances of the root cause**,
+  raku-verified: the module shape (`tmp/ufl/matrix.raku`, 15 assertions over
+  read / `push` / element-assign / whole-assign / key-set / `:delete` for both
+  `@` and `%`), the module-free mainline shadow shape
+  (`tmp/ufl/namedsub-mainline.raku`), and the sub-local consumer shape
+  (`tmp/ufl/repro-sub.raku`, whose current failure mode *loses* the module's
+  mutation entirely rather than merely misdirecting it).
+- The scalar pins stay green: `t/named-sub-lexical-scope.t`,
+  `t/for-loop-param-start-sibling-isolation.t`,
+  `t/closure-capture-instance-cell.t`, `t/lock-protect-shared-scalar.t`,
+  `t/lock.t`.
+- **`our @arr` (§1.2) is recorded, not fixed, by slice 1** — a separate ticket,
+  since it is a resolution bug against an existing correct store.
+- Blast radius is every module with a file-scope container and every named sub
+  with a container free variable: full `make roast` delegated to CI, not a
+  cherry-picked subset. Watch bench CI after merge (`unit_lexical_slot` gains a
+  sigil branch on a hot read path).
+- On completion, `git mv` the deep ticket to `news/2026-08/` per the todo
+  lifecycle, and update this ADR's Status.
+
+## 7. Status of the previously-recorded roast instance
+
+The ticket's measured instance — `roast/integration/99problems-41-to-50.t`
+aborting after 1 of 9 assertions with `unknown variable: A` under
+`MUTSU_REAL_TEST=1`, blamed on `Test.rakumod`'s `my @vars` colliding with the
+test's own `my @vars` — **no longer reproduces**. On `bd34751d3` the file runs
+9/9 clean under `MUTSU_REAL_TEST=1`.
+
+The collision *setup* is unchanged (`Test.rakumod:13` still declares `my
+@vars`, `:883` still pushes to it; the test still declares `my @vars` at
+`:107`), so the file passes for a reason unrelated to this bug being fixed —
+most plausibly because the test's `@vars` is method-local and never live across
+a `_push_vars` call. Treat it as a stale example, not as evidence of a fix: the
+§1.1 and §1.2 repros are the live ones, and §6's matrix replaces it as the
+acceptance measure.
