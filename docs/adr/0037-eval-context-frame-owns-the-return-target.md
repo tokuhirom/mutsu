@@ -8,7 +8,11 @@
 - Related: [ADR-0035](0035-method-calls-observe-caller-frames.md) (same family —
   frame observation that a frameless dispatch path silently elides; its
   rejected alternative (c) named the parallel-stacks unification this ADR
-  takes a first step toward)
+  takes a first step toward);
+  [ADR-0050](0050-block-routine-ness-is-a-definition-site-property.md) (the
+  *other branch* of §1.2's `in_routine` derivation — this ADR owns the
+  `is_eval_unit == true` branch, ADR-0050 owns the `else` branch every
+  re-compiled closure body takes)
 
 ## 1. Context
 
