@@ -63,11 +63,10 @@ impl Interpreter {
             | ValueView::GenericRange { .. } => "Range",
             ValueView::Array(_, kind) if kind.is_real_array() => "Array",
             ValueView::Array(_, _) => "List",
-            // A lazy list assigned into an `@` array reports `Array`; one coerced
-            // via `.List` reports `List`; a bare Seq (scalar-held) reports `Seq`.
-            ValueView::LazyList(ll) if ll.in_array_context() => "Array",
-            ValueView::LazyList(ll) if ll.in_list_context() => "List",
-            ValueView::LazyList(_) => "Seq",
+            // `value_type_name` is the single oracle for what Raku type a
+            // `LazyList` presents as (ADR-0038 S2) — defer to it instead of
+            // keeping a third, drifted copy of the same context-marker table.
+            ValueView::LazyList(_) => crate::runtime::value_type_name(target),
             ValueView::Hash(_) => "Hash",
             ValueView::Rat(_, _) => "Rat",
             ValueView::FatRat(_, _) => "FatRat",
@@ -140,7 +139,9 @@ impl Interpreter {
             ValueView::Regex(_) | ValueView::RegexWithAdverbs { .. } => "Regex",
             ValueView::Version { .. } => "Version",
             ValueView::Slip(_) => "Slip",
-            ValueView::Seq(_) => "Seq",
+            // See the matching `value_type_name` arm — `.cache`/`.List` can
+            // return a `List`-tagged handle over a not-yet-reified body.
+            ValueView::Seq(_) => crate::runtime::value_type_name(target),
             ValueView::HyperSeq(_) => "HyperSeq",
             ValueView::RaceSeq(_) => "RaceSeq",
             ValueView::Promise(_) => "Promise",

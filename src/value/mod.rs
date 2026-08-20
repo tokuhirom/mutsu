@@ -261,7 +261,7 @@ pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
 pub(crate) use seq_body::{
-    SeqBody, SeqSource, SeqTaken, seq_method_consumes, seq_method_never_touches,
+    SeqBody, SeqSource, SeqTaken, SeqView, seq_method_consumes, seq_method_never_touches,
 };
 
 /// A `'static` Nil for call sites that keep a `&Value` beyond one expression:

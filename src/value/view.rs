@@ -380,6 +380,17 @@ impl Value {
         Value::Seq(body)
     }
 
+    /// `.cache`'s (docs/adr/0038 phase 3) return value for a `Seq` whose
+    /// source is not yet reified: a `List`-typed handle sharing `body`'s
+    /// reification/consumption core, WITHOUT pulling or cloning any
+    /// elements — the raku contract measured is that `.cache.^name` answers
+    /// `List` even on an infinite, still-untouched source. The original
+    /// `Seq` value keeps reporting `Seq` (see [`SeqBody::as_list_view`]).
+    #[inline]
+    pub(crate) fn seq_list_view(body: &Arc<SeqBody>) -> Self {
+        Value::Seq(body.as_list_view())
+    }
+
     /// Construct a `HyperSeq` from an existing `SeqBody`.
     #[inline]
     pub(crate) fn hyper_seq_body(body: Arc<SeqBody>) -> Self {
