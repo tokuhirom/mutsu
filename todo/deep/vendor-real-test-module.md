@@ -6,6 +6,14 @@ intercepted in `runtime_module.rs`. Of the native providers surveyed on
 within reach — unlike `NativeCall`
 (`todo/deep/nativecall-cannot-be-vendored.md`), which is not.
 
+**This file grows by accretion and the sections below are in chronological
+order, so most of them are historical. Read the LAST section first** — it
+carries the current measurement and the current blocker list. As of 2026-08-20:
+the module is vendored and driven by `MUTSU_REAL_TEST=1`, 76 of 1436 whitelisted
+roast files and 20 `t/` files still regress under it, and
+`scripts/test-module-sweep.sh`'s pass predicate needs fixing before any `t/`
+number in the middle of this file can be trusted.
+
 ## What was measured
 
 Upstream `rakudo-2026.06/lib/Test.rakumod`: 953 lines, 90 `nqp::` references,
@@ -2474,3 +2482,205 @@ usages in the batteries corpus (e.g. `Cro::HTTP::ResponseParser`'s `when
 Header { ... }`, declared in a sibling file) as a parse error. Split out to
 its own ticket:
 `todo/deep/when-undeclared-bareword-gobbles-block-needs-cross-file-type-index.md`.
+
+## Re-measured 2026-08-20 — and `scripts/test-module-sweep.sh` has been under-reporting the `t/` residue by ~4x
+
+Picked the ticket up cold and re-measured both sides on `3d9c3bdd3`
+(`origin/main`, release build, 12-core box) before trusting any number in this
+file. Two of the three results are good news; the third invalidates every `t/`
+residue count recorded here since 2026-08-02.
+
+**The vendoring itself is intact.** `modules/Rakudo-Core/lib/Test.rakumod` is
+still the unmodified 953-line upstream file (md5
+`f34dec45d52ad099c37f42fdbd93e277`, `unit module Test;` unrenamed), the
+`MUTSU_REAL_TEST` switch is still `Interpreter::real_test_module_enabled()`
+(`src/runtime/runtime_module.rs:16`), and `t/vendored-real-test-module.t` still
+pins the functional half in ordinary CI. Nothing about step 2 has rotted.
+
+### The measurement bug: a mid-file abort emits no `not ok`, so the sweep scores it as a pass
+
+`scripts/test-module-sweep.sh` classifies a run with
+
+```sh
+passes() { ! grep -qE '^(not ok|Runtime error|Parse error|===SORRY)' "$1"; }
+```
+
+A file that aborts on the real module's own END plan check prints **only**
+`# You planned N tests, but ran M` and exits 255 — no `not ok`, no
+`Runtime error`. The predicate calls that a pass. That is precisely the
+"mid-file abort" failure shape this file's *roast*-side sections have tracked
+since 2026-08-02 (the roast sweeps classify by exit status, so they were never
+affected) — but the `t/`-side numbers all came from this text predicate.
+
+Measured both ways over the same corpus, same binary, same run conditions:
+
+| `t/` classification | regressed under the real `Test` |
+| --- | --- |
+| `scripts/test-module-sweep.sh` (grep for `not ok`) | 4 |
+| exit status of the same two runs | **24** |
+| of those 24, reproduced from the repo root | **20** |
+
+(The 4 that do not reproduce — `any-type-object-int-coercion.t`,
+`bound-nil-method-warn.t`, `type-object-numeric-coercion.t`, `warns-like.t` —
+fail only inside the sweep's `tmp/test-module-sweep/` working copy, i.e. they
+are artifacts of that harness's cwd, not of the real module. Note the same
+harness inflates its "fail under both" bucket for the same reason: 17 by the
+text predicate, 76 by exit status, mostly files that need the repo root as cwd.
+Only the *regressed* column — native exit 0, real exit non-zero — is meaningful
+either way.)
+
+So the "residue: 5 files, 5 assertions" line at the end of the 2026-08-19
+section is wrong; the real figure at that point was of the same order as the 20
+below. **The first slice for whoever picks this up is fixing the predicate**, or
+every future re-measure repeats the error:
+
+```sh
+# in run_one, capture the status of each run:
+( cd "$WORK" && MUTSU_REAL_TEST= timeout 90 "$MUTSU" ... ; echo "$?" > "$WORK/$name.native.st" )
+( cd "$WORK" && MUTSU_REAL_TEST=1 timeout 90 "$MUTSU" ... ; echo "$?" > "$WORK/$name.real.st" )
+# ...and classify on those two numbers instead of calling passes().
+# Also add `# You planned` to the detail grep, or the regression report is blank
+# for exactly the files this bug was hiding.
+```
+
+`tmp/t-sweep-status.sh` in the working tree of this investigation is that
+script; it was deliberately not committed, since this pass was
+investigation-only.
+
+### The honest `t/` residue: 20 files
+
+Confirmed one by one from the repo root (native run exits 0, real run does not):
+
+| file | real exit | shape |
+| --- | --- | --- |
+| `bare-precedes-placeholder-nested-scope.t` | 255 | planned 11, ran 5 |
+| `exception-role-membership.t` | 1 | `X::Undeclared::Symbols` vs `X::Comp::Group` (already triaged) |
+| `exec-call-mixed-block.t` | 255 | planned 2, ran 0 |
+| `exec-call-pairs.t` | 255 | `Unknown call: dies-ok` — the real `dies-ok`'s signature rejects the pin's argument shape |
+| `exits-ok.t` | 4 | planned 13, ran 0 |
+| `failure-sink-handled.t` | 255 | planned 4, ran 3 |
+| `io-cathandle-lazy.t` | **134** | Rust stack overflow, `SIGABRT` |
+| `is-lazy-io-lines.t` | 2 | already triaged (deferred-`Seq` reification) |
+| `malformed-syntax-classes.t` | 255 | back in the list after being reported gone on 2026-08-19 |
+| `pair-improvements.t` | 255 | planned 10, ran 7 |
+| `parametric-role-of-type.t` | 255 | planned 14, ran 5 |
+| `signature-introspection-gaps.t` | 255 | planned 8, ran 7 |
+| `skip-list-vs-test.t` | 255 | the real `skip` rejects the pin's argument (`non-integer number of tests`) |
+| `skip-user-multi-shadows-test.t` | 1 | |
+| `subscript-adverbs.t` | 2 | already triaged (`:p` snapshot Pair) |
+| `throws-like-gather-sink.t` | 255 | already triaged; **the sweep now scores it a PASS** — it is the exact file that exposed the predicate bug |
+| `two-terms-in-a-row-initializer-listop.t` | 255 | |
+| `undeclared-when-type.t` | 1 | already triaged (`when` bareword gobble) |
+| `vm-panic-boundary.t` | 255 | planned 9, ran 6 |
+| `whenever-out-of-scope.t` | 255 | planned 8, ran 4 |
+
+Five of these were the previously-recorded residue; **fifteen were invisible**.
+Several are mutsu's own pins whose assertions were written against the native
+provider's looser signatures (`exec-call-pairs.t`, `skip-list-vs-test.t`) — but
+this file has recorded three separate times that a "just re-point the pin" label
+was wrong, so **run each under `raku` before believing it**.
+
+### roast: 76 genuine regressions, down from 141
+
+Method as in the "Step 3" section, except that only the real-module side needs
+running: the whitelist *is* the native-provider baseline, since `main` is
+protected by a green `make roast`. Release build, `-j4`, then every raw failure
+re-run **alone** with `MUTSU_ROAST_TIMEOUT_SCALE=4`.
+
+| | files |
+| --- | --- |
+| whitelisted | 1436 |
+| raw failures under `-j4` | 82 |
+| pass when re-run alone (load artifacts) | 6 |
+| **genuine regressions** | **76** |
+
+Trend: 90 (2026-08-14) → 141 (2026-08-18) → **76** (2026-08-20). The 2026-08-18
+entry flagged the rise to 141 as evidence that "something is regressing under
+`MUTSU_REAL_TEST=1` that nothing currently monitors". That is not what happened:
+the count came back down without anyone working this ticket, so the 141 was
+either measurement conditions or ordinary residue that the general-interpreter
+work of the last two days closed. The six load artifacts this round were all in
+the known slow families (the four `6.d/S32-str/sprintf-*.t` and both
+`S03-buf/*-bits/int.t`), consistent with the 2026-08-03 finding that those files
+are simply 4000+ interpreted assertions each.
+
+Shape of the 76: **9 abort mid-file, 67 lose individual assertions**. No
+TODO-handling cluster hides in there — every one of the 76 has at least one
+non-`# TODO` failure or a hard abort (checked explicitly, because several files'
+*first* `not ok` is a `__mutsu_backend_todo__` line and reads like one).
+
+### Three roast files abort with a Rust stack overflow — the largest shared mechanism left
+
+`roast/S16-io/words.t`, `roast/S32-io/io-cathandle.t` and
+`roast/S32-list/tail.t` all die with
+
+```
+thread 'mutsu-main' has overflowed its stack
+fatal runtime error: stack overflow, aborting
+```
+
+(exit 134), and so does `t/io-cathandle-lazy.t` on the other side. Four files,
+one mechanism, and a Rust-level abort is the highest-priority class the project
+recognises. This is almost certainly the already-filed
+`todo/deep/cathandle-real-test-is-deeply-infinite-recursion.md`; it is now worth
+more than that ticket's original single-file framing.
+
+### A category this campaign had not named: files that pass only because the native provider is *wider* than upstream `Test`
+
+Not every regression is an interpreter gap. Two of the 76 are whitelisted only
+because mutsu's native provider offers surface the genuine upstream module does
+not have at all:
+
+- `roast/S24-testing/2-force_todo.t` calls `force_todo(...)`. Upstream
+  `Test.rakumod` has no such routine (`grep` finds nothing), and `raku` on the
+  same file answers `Undeclared routine: force_todo used at line 7`. mutsu
+  implements it natively, so the file passes today. The file guards the call
+  with a `#?rakudo eval "Module Test doesn't implement force_todo yet"` fudge
+  directive that mutsu's `MUTSU_FUDGE` does not implement — so **implementing
+  the `#?rakudo eval` fudge directive is the fix**, not implementing
+  `force_todo` on the real module.
+- `roast/S24-testing/6-done_testing.t` calls `ok 0, :todo(1)`. The upstream
+  `multi sub ok(Mu $cond, $desc = '')` has no `:todo` named parameter, so the
+  call is `Unknown call: ok`; raku's own baseline for this file is `ABORT`.
+
+Neither is fixable by growing the interpreter, and neither should be. At step 3
+they get un-whitelisted or fudged. Expect more of this shape once the
+interpreter gaps thin out — **before filing a residue file as an interpreter
+gap, check whether the assertion depends on a native-provider extension**.
+
+### Verdict on the ticket's own question (retirability), 2026-08-20
+
+Unchanged, and now measured rather than assumed: the real module is **the right
+answer and the campaign is working**. `Test` is nothing like
+`NativeCall` (`todo/deep/nativecall-cannot-be-vendored.md`, which needs
+`use QAST:from<NQP>`, MoarVM dispatch programs and 61 missing `nqp::` ops) —
+the genuine upstream file parses, loads, and answers every assertion it
+exports, and has done since 2026-08-01. There is no open architectural fork
+here, so **this ticket does not want an ADR**; it wants the residue worked
+down. Roughly 95% of roast and (by the corrected count) 99.4% of `t/` already
+pass under the real module, and essentially every fix the campaign has produced
+was a general interpreter bug that the strict module merely exposed.
+
+What still blocks step 3 (flipping `runtime_module.rs`), in priority order:
+
+1. **Fix `scripts/test-module-sweep.sh`'s pass predicate** (above). Everything
+   else in this list is measured through it.
+2. **The four stack-overflow aborts** — one mechanism, a Rust-level abort,
+   `todo/deep/cathandle-real-test-is-deeply-infinite-recursion.md`.
+3. The 20 `t/` files and 76 roast files, most of them one general interpreter
+   gap each — the same long tail this file has been grinding down since
+   2026-08-01, at an observed rate of roughly one file per fix and occasionally
+   two.
+4. Un-whitelist (or fudge) the native-provider-only files named above; implement
+   the `#?rakudo eval` fudge directive while doing it.
+5. `todo/deep/interpreter-call-path-in-hot-loops.md` — still the perf blocker
+   the 2026-08-03 measurement named (`S04-declarations/state.t`: 3.7 s native,
+   61.8 s real, 0.9 s raku). Not re-measured this round.
+
+One process note, since the 2026-08-18 entry raised it: **this mode is still not
+in CI**, so nothing detects a `MUTSU_REAL_TEST` regression between manual
+sweeps. Gating it properly means a second full roast pass (~2x the roast CI
+cost) and is not worth it while 76 files are red; the cheap interim is to re-run
+the corrected `t/` sweep at the start of every session that touches this ticket,
+which costs a few minutes and would have caught the fifteen invisible `t/` files
+much earlier.
