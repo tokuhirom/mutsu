@@ -1,5 +1,32 @@
 # Array-literal `[Nil]` keeps raw `Nil` instead of decaying to `Any` at construction — root cause of the RSV `eqv`/`is-deeply` gap, plus a second typed-array divergence
 
+> **Status (2026-08-20): still open; the design is now decided in
+> [ADR-0049](../../docs/adr/0049-nil-decays-to-the-container-default-at-the-element-store.md).**
+> Read the ADR first — it is the authoritative account, and it corrects three things below. A
+> re-verification against `main` (227e38e4f) confirmed every claim in this file still reproduces, and
+> found the problem is both wider and structurally different from what is written here:
+>
+> - **The decay target is the *owning container's* default, not literally `Any`.** `nil_elems_to_any`'s
+>   hardcoded `Any` is why the fixup has to gate itself off for typed arrays. Measured:
+>   `my @d is default(42) = [Nil]` is `(Any)` in raku but `42` in mutsu, because mutsu applies the
+>   *outer* container's default to a `Nil` that should already have decayed inside the `[Nil]` literal.
+>   `Interpreter::typed_container_default` (`src/vm/vm_var_ops.rs:377`) is the ladder that already
+>   exists and should be the single decay target.
+> - **The real architectural weight is a sentinel collision this file does not mention.** `Value::NIL`
+>   is simultaneously the stored value `Nil`, `resolve_hash_entry`'s "absent key", and
+>   `ArrayData::hole_at`'s "deleted slot / gap" — while `Package("Any")` is the *intended* gap marker
+>   everywhere else and `ArrayData::initialized` is already a precise hole discriminator. That is why
+>   `[Nil,1][0]:exists` is `False` (raku: `True`) and why `[Nil].List.raku` is `(Nil,)` (raku: `(Any,)`)
+>   — the same `.List` code is right for a real hole and wrong for a real element because mutsu cannot
+>   tell them apart. The fix is worth doing largely *because* it retires that collision.
+> - **Two divergences worse than `eqv` were missed.** `[Nil,].elems` is `0` in mutsu and `1` in raku —
+>   `exec_make_array_no_flatten_op` (`src/vm/vm_data_ops.rs:160`) *drops* a `Nil` element outright, so
+>   this is data loss, not a wrong value. And `my %h{Int} = 1 => Nil` **dies** in mutsu while raku
+>   accepts it — the mirror image of the typed-array leniency this file records, from the same root.
+>
+> The ADR's §1.3 table (29 rows) and §1.4 invariant table (13 rows) supersede the repro notes below;
+> the bisection history from RSV is kept here because the ADR does not carry it.
+
 Supersedes `todo/tickets/rsv-from-rsv-result-extra-itemization-sigil.md`. That
 ticket's own framing ("container-identity mismatch... extra itemization
 sigil") was a **misdiagnosis** — the `got: $[[Any],]` vs `expected: [[Any],]`
@@ -133,11 +160,14 @@ construction-time-decay fix, not just cargo-cult it in.
   reference `my @a = (1,2)[1,2]` producing `[2, Any]` — a case worth
   re-verifying still works post-fix).
 - Binding (`:=`) currently "accidentally passes" every test in this area by
-  being equally wrong on both sides; a real fix might newly expose binding
-  as the ONE remaining path that (correctly, per Rakudo's own no-decay-on-
-  bind semantics — TODO: verify Rakudo's `:=` case explicitly, not yet done
-  this round) keeps raw `Nil`, which would need its own explicit carve-out
-  rather than blanket construction-time decay.
+  being equally wrong on both sides. **The open TODO here is now answered, and
+  the answer removes the worry:** `raku -e 'my @a := [Nil]; say @a[0].WHAT'`
+  is `(Any)`, because the `[Nil]` literal decayed at *its own* construction
+  before the bind ever saw it. Rakudo has no "no-decay-on-bind" carve-out to
+  match — binding is simply downstream of a decay that already happened. So
+  construction-time decay needs no bind-side exception, and the existing
+  `!is_bind` gate in the assignment fixup is itself a symptom of applying the
+  rule at the wrong place.
 
 ## Severity
 
