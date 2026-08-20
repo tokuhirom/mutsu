@@ -1673,7 +1673,7 @@ impl Interpreter {
                     // swapping the cell to a fresh pointer) so any other
                     // holder of the old container (e.g. the outer `%ao` a
                     // loop-var `%a` is aliased to) observes this mutation.
-                    Self::cell_store_preserving_container_identity(&arc, &val);
+                    Self::cell_store_preserving_container_identity(&name, &arc, &val);
                 }
                 self.flush_local_to_env(code, idx);
                 return Ok(());

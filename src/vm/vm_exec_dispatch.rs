@@ -1495,7 +1495,7 @@ impl Interpreter {
                         // Preserve the inner container's identity (§3): a boxed
                         // captured `@a`/`%h` whole-reassigned here must keep its
                         // backing `Gc` so by-value holders observe the update.
-                        Self::cell_store_preserving_container_identity(&arc, &val);
+                        Self::cell_store_preserving_container_identity(&name, &arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1508,7 +1508,7 @@ impl Interpreter {
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
                         self.check_container_cell_constraint(&arc, &val)?;
-                        Self::cell_store_preserving_container_identity(&arc, &val);
+                        Self::cell_store_preserving_container_identity(&name, &arc, &val);
                         *ip += 1;
                         return Ok(());
                     }
@@ -1520,7 +1520,7 @@ impl Interpreter {
                         && let ValueView::ContainerRef(arc) = cell_val.view()
                     {
                         self.check_container_cell_constraint(&arc, &val)?;
-                        Self::cell_store_preserving_container_identity(&arc, &val);
+                        Self::cell_store_preserving_container_identity(&name, &arc, &val);
                         *ip += 1;
                         return Ok(());
                     }

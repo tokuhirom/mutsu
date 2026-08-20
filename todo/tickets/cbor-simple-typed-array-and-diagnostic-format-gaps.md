@@ -1,5 +1,44 @@
 # `CBOR::Simple`'s own upstream suite fails broadly outside the narrow slice Cro::HTTP/Log::Timeline exercise
 
+> **Update (2026-08-20, second pass): test 68's nested-array decode aliasing bug (and the stack
+> overflow right after it) are ROOT-CAUSED and FIXED.** `01-basic.rakutest` now runs cleanly to
+> completion (74/74 attempted, only the 4 pre-existing unrelated float/unicode failures at tests
+> 24/27/28/53 remain — see the earlier 2026-08-18 update).
+>
+> **Root cause**: `cell_store_preserving_container_identity` (`vm_var_assign_ops.rs`) mutates an
+> existing `ContainerRef` cell's backing container IN PLACE when a whole array/hash reassignment
+> reaches it, so aliases (`my @b := @a; @a = ...`) observe the update — correct for a REAL
+> reassignment. But anonymous containers (`my @ = EXPR`, `my % = EXPR`) all compile to a single
+> shared slot name (`@__ANON_ARRAY__` / `%__ANON_HASH__`; see the `is_anon_container` comment in
+> `vm_var_assign_set_local.rs`), so each successive declaration is a DISTINCT logical variable that
+> merely reuses that name — and every OTHER in-place-reassign call site already excludes anon names
+> for exactly this reason (`vm_var_assign_set_local.rs`'s `SetLocal` handler, `vm_exec_dispatch.rs`'s
+> `SetGlobal` handler, `vm_misc_assign.rs`'s array/hash guards). `cell_store_preserving_container_identity`
+> was the one call site missing that exclusion. It only matters when the anonymous slot has been
+> promoted to a `ContainerRef` cell by escape analysis (a captured-and-mutated outer container) —
+> which is exactly `CBOR::Simple`'s `decode-array` shape: `!! my @ = (^read-uint).map(&decode)` is a
+> closure declared and invoked fresh per recursive `cbor-decode()` call, and `&decode` reading a
+> captured free variable is what triggers the promotion. Two sibling recursive calls (one per nested
+> definite-length array inside an indefinite-length one) then landed on the SAME cell, so the second
+> call's in-place reassign silently overwrote the first's still-referenced result — exactly the
+> `$[1, [4, 5], [4, 5]]` symptom, and the stack overflow shortly after was a downstream consequence
+> of decoding against corrupted state.
+>
+> **Fix**: threaded the variable name through `cell_store_preserving_container_identity`'s 7 call
+> sites and added the same `name.contains("__ANON")` exclusion its four siblings already have.
+> Pinned by `t/anon-container-cell-inplace-reassign.t` (a CBOR-independent mimic of the shape,
+> plus the actual CBOR::Simple repro and a second nested-indefinite case). Full `t/` suite (30219
+> tests), the map/grep/reduce/first/splice/state/closure/container roast files (91 files, ~3450
+> tests), and `Text::CSV`'s `79_callbacks.t` (the other file the surrounding code comments call out
+> as a past regression risk for this exact mechanism) all pass with no behavior change elsewhere.
+>
+> Two standalone (non-CBOR) mimics of the bug shape were tried during the investigation and neither
+> reproduced it even *before* the fix — the trigger needs `CBOR::Simple`'s specific closure/escape
+> shape (many free variables captured across `@decoders`'s dispatch table, `$pos`/`@bytes`/`$breakable`),
+> not just "closure declared fresh per recursive call, returns a naked `my @ = ...`". Not fully
+> reduced past that; not needed once the root cause was found via `MUTSU_DEBUG_ARRAY_ALLOC`-style
+> instrumented builds tracing every `array_inplace_reassign` call site rather than more guessing.
+
 > **Update (2026-08-20): test 68's nested-array decode aliasing bug reduced to a 4-line,
 > CBOR::Simple-scoped repro (previously thought to need the full file's accumulated state) —
 > root cause still open, filed as a lead for a follow-up `todo/deep`.** Bisecting the file

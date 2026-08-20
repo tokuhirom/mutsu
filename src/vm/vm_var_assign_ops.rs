@@ -739,19 +739,38 @@ impl Interpreter {
     /// whole-reassigned from a nested frame otherwise orphans every by-value
     /// holder of the old backing `Gc` (e.g. `%h` captured into a list). Non
     /// matching shapes fall back to a plain store.
+    ///
+    /// Skips the in-place path (falling through to a plain store) when `name`
+    /// is one of the anonymous container slots (`@__ANON_ARRAY__`,
+    /// `%__ANON_HASH__`) that every bare `my @ = ...`/`my % = ...` expression
+    /// declaration shares: each such declaration is a DISTINCT logical
+    /// variable that merely reuses the slot NAME, so preserving the cell's
+    /// old backing `Gc` would incorrectly alias two unrelated declarations —
+    /// exactly the exclusion the sibling in-place-reassign call sites already
+    /// apply (`vm_var_assign_set_local.rs`'s `is_anon_container`,
+    /// `vm_exec_dispatch.rs`'s `SetGlobal` handler, `vm_misc_assign.rs`'s
+    /// array/hash guards). This cell-store path was the one exclusion missed
+    /// — reachable whenever an anonymous container's declaration is captured
+    /// into a `ContainerRef` cell (escape analysis promotes a
+    /// captured-and-mutated outer container to a cell), which silently
+    /// aliased two sibling `my @ = (^N).map(&callback)` results decoded in
+    /// separate recursive calls (`CBOR::Simple`'s `decode-array` on a nested
+    /// indefinite-length array).
     pub(super) fn cell_store_preserving_container_identity(
+        name: &str,
         arc: &crate::gc::Gc<std::sync::Mutex<Value>>,
         val: &Value,
     ) {
+        let is_anon_container = name.contains("__ANON");
         let mut inner = arc.lock().unwrap();
         let replacement = match (inner.view(), val.view()) {
             (ValueView::Hash(old_gc), ValueView::Hash(new_gc))
-                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                if !is_anon_container && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
             {
                 Some(Self::hash_inplace_reassign(&old_gc, &new_gc))
             }
             (ValueView::Array(old_gc, _), ValueView::Array(new_gc, kind))
-                if !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
+                if !is_anon_container && !crate::gc::Gc::ptr_eq(&old_gc, &new_gc) =>
             {
                 Some(Self::array_inplace_reassign(&old_gc, &new_gc, kind))
             }

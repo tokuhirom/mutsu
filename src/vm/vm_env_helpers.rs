@@ -975,7 +975,7 @@ impl Interpreter {
             && let Some(cell_val) = self.env().get(name).cloned()
             && let ValueView::ContainerRef(arc) = cell_val.view()
         {
-            Self::cell_store_preserving_container_identity(&arc, &value);
+            Self::cell_store_preserving_container_identity(name, &arc, &value);
             return;
         }
         // Slice B (docs/vm-single-store.md): while a carrier (EVAL / interpreter

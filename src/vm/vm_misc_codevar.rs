@@ -365,7 +365,7 @@ impl Interpreter {
             && let ValueView::ContainerRef(arc) = existing.view()
         {
             self.check_container_cell_constraint(&arc, &value)?;
-            Self::cell_store_preserving_container_identity(&arc, &value);
+            Self::cell_store_preserving_container_identity(&store_name, &arc, &value);
             self.note_caller_env_write(&store_name);
             let result = if sigil == "$" {
                 Self::itemize_value(value)
@@ -426,7 +426,7 @@ impl Interpreter {
             && let ValueView::ContainerRef(arc) = existing.view()
         {
             self.check_container_cell_constraint(&arc, &value)?;
-            Self::cell_store_preserving_container_identity(&arc, &value);
+            Self::cell_store_preserving_container_identity(&store_name, &arc, &value);
             self.note_caller_env_write(&store_name);
             self.stack.push(value);
             return Ok(());
