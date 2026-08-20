@@ -47,7 +47,7 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0019](0019-compiled-declarations-and-unified-method-dispatch.md) | Compile declarations and unify method dispatch entries | Proposed |
 | [0020](0020-shared-worker-pool.md) | Shared worker pool — elastic growth, blocking `await` | Accepted (all slices landed; per-task clone slimming tracked separately) |
 | [0021](0021-argument-namedness-is-a-call-site-property.md) | Argument named-ness is a call-site property — Pair flavour unification | Accepted (P1-P3a and P3 shipped; P4/P5 remain) |
-| [0022](0022-regex-alternation-ltm-ranking.md) | `\|` alternation ranks branches by declarative-prefix LTM, not by longest actual match | Proposed (design complete; implementation not started) |
+| [0022](0022-regex-alternation-ltm-ranking.md) | `\|` alternation ranks branches by declarative-prefix LTM, not by longest actual match | Accepted (all five slices implemented and merged) |
 | [0023](0023-binding-provenance-spawn-capture.md) | Spawn-time capture ownership is decided by binding provenance, not value type | Accepted (implemented) |
 | [0024](0024-mainline-lexicals-for-named-subs.md) | Mainline is a compunit — named subs resolve mainline free variables through unit-lexical cells | Accepted (implemented) |
 | [0025](0025-captured-scalar-cells-value-kind-blind.md) | Cell boxing of captured scalars must be value-kind-blind — retiring the Instance skip | Accepted (slice 1 implemented; slices 2-3 planned) |
@@ -71,3 +71,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0043](0043-scheduled-delivery-hop-belongs-to-the-tapped-supply.md) | The scheduled-delivery hop belongs to the tapped Supply — every derived live operator carries `"scheduler"` forward | Proposed (Decision 1 verified and ready to implement; Decision 2 deferred behind a recorded trigger) |
 | [0044](0044-listops-are-routines-not-a-syntactic-rewrite.md) | Core listops (`push`/`pop`/`splice`/…) are routines, not a syntactic rewrite — give them a callable core candidate | Proposed (design complete; implementation not started) |
 | [0045](0045-for-loop-parameters-bind-the-element-container.md) | A `for` loop parameter binds the element *container*; the per-iteration writeback is retired | Proposed (design complete; implementation not started) |
+| [0046](0046-proto-token-ltm-shares-one-ranking-mechanism.md) | Proto-token dispatch shares the one LTM ranking mechanism, and interpolation provenance covers arrays and token bodies | Proposed (design complete; implementation not started) |

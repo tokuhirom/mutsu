@@ -18,6 +18,11 @@
   already ranks by declarative prefix (ADR-0009, `dispatch.rs::eval_token_call_values_at`)
   and is NOT changed here; interpolated-`@array` alternation already approximates LTM by
   length-sorting and is not changed here.
+  **Both halves of this carve-out were shown to be wrong on 2026-08-20** — nested `<name>`
+  proto dispatch uses a third ranking path that measures no declarative prefix at all, and
+  Rakudo terminates the prefix at *every* array interpolation rather than ranking its
+  alternatives. See [ADR-0046](0046-proto-token-ltm-shares-one-ranking-mechanism.md), which
+  moves both onto this ADR's primitives. The decision recorded here is unchanged.
 
 ## 1. Problem
 
