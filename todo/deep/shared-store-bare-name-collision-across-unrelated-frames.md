@@ -1,144 +1,112 @@
-# Two unrelated frames sharing a variable name collide through the global store
+# Two unrelated frames sharing a container name collide through the cross-thread store
 
-Once any thread has been spawned, a plain lexical write goes through
-`set_env_plain_lexical` → `set_shared_var_sym` into `shared_vars`, a
-**process-global map keyed by bare name**. Two frames that merely happen to use
-the same variable name — in unrelated files, at unrelated times — then read each
-other's values.
+**Status 2026-08-20: still live, but re-scoped. Design is owned by
+[ADR-0039 §8](../../docs/adr/0039-container-lexicals-resolve-lexically.md).**
+This file is now the *evidence* record; do not start work from the original
+proposal below, which is superseded.
 
-This is the clearest real-code instance found so far, in Cro's
-`t/http-session-inmemory.rakutest`:
+## Where this stands
 
-```raku
-given Cro::HTTP::Client.new(:cookie-jar) -> $client {
-    for 1..5 -> $i {
-        given await $client.get("$url/hits") {
-            is await(.body-text), "Visit $i",
-                "Session cookie being sent makes state work (request $i)";
-        }
-    }
-}
-```
+Re-measured on `52631889f`. Two of the three claims this ticket was built on
+have expired, and the third has narrowed to a single sigil.
 
-Instrumented (`note` before and after the request):
+- **"The store is a process-global map" — fixed.** ADR-0010 shipped the
+  lineage-chained `SharedStore` (`src/runtime/shared_store.rs:55-61`). Sibling
+  spawns no longer see each other's lexicals; verified against `raku` with three
+  concurrent workers each declaring `my @w`.
+- **"Re-key the store" (this ticket's proposed fix) — rejected.** It is both
+  already done and insufficient: the live repro below collides two frames of
+  *one* thread inside *one* lineage. No keying discipline short of per-frame
+  keys — that is, slots — removes it. ADR-0039 §8.4 records the rejection.
+- **Scalars — clean.** Ten shapes were probed (a callee's `while --$i`
+  countdown, a callee that spawns and then writes its `my $i`, `is copy`
+  parameters, `for` parameters, Nil-valued and live-valued readers). All match
+  `raku`. The `thread_redeclared_vars` mask plus the Nil-gated `GetLocal` pull
+  cover the scalar lane.
+- **Containers (`@`/`%`) — still broken.** This is the whole of what is left.
 
-```
-[T] loop top i=1
-[T] after get i=4        <-- the request rewrote the loop variable
-[T] in given i=4
-not ok 3 - Session cookie being sent makes state work (request 4)
-[T] loop top i=2
-[T] after get i=4
-...
-```
+## The live repro
 
-Every iteration reports `request 4`, and only the iteration where the body
-really is `Visit 4` passes.
-
-## Update 2026-08-08: the concrete Cro instance was a multi-param `for` loop
-
-The instrumentation below was re-run on current `main` and identified the
-writer exactly: **`Cro.rakumod`'s `for @components-in.kv -> $i, $comp`** (the
-pipeline compose), not the HPACK `while` loop originally guessed. A
-multi-parameter `for` binds its parameters with a plain `Stmt::Assign`
-(`build_for_bind_stmts`), which reaches `set_shared_var_sym` and publishes each
-per-iteration value under the bare name — while a *single*-param loop binds
-natively and is exempt. Minimal repro (no Cro, no modules):
+Deterministic, no modules, no concurrency — one `await start { 1 }` anywhere in
+the process is enough to arm the lane, and the collision then repeats on every
+call.
 
 ```raku
-sub compose(@components) {
-    my $last;
-    for @components.kv -> $i, $comp { $last = $i + $comp }
+sub work($tag) {
+    my @items = ($tag,);
+    await start { 1 };          # delete this line and mutsu is correct
+    @items.push("$tag-2");
 }
-await start { 1 };
-for 1..5 -> $i {
-    compose([10, 20, 30, 40, 50]);
-    await start { 1 };
-    say "loop i=$i";     # raku: 1..5;  mutsu (before the fix): 1,4,4,4,4
-}
+my @items = <x y z>;
+work('A');  say @items.raku;    # raku: [x y z]        mutsu: [A A-2]
+@items.push('MINE');            # raku: [x y z MINE]   mutsu: [A A-2 MINE]
+work('B');  say @items.raku;    # raku: [x y z MINE]   mutsu: [B B-2]
 ```
 
-Fixed by masking a multi-param loop's names out of the bare-name lane for the
-loop's duration (the rule `exec_set_var_dynamic_op` already applies to a `my`
-re-declaration) — `src/vm/vm_for_loop_body.rs`, pinned by
-`t/for-multi-param-shared-lane.t`. `t/http-session-inmemory.rakutest`'s
-tests 3-7 still fail after it, but with a *different* wrong value (`-1`, the
-HPACK Huffman `while --$i >= 0` residue) reaching the frame through the **`env`
-axis, not the store** — no `SharedStore` write or pull for `i` happens any more.
-So the remaining leak on this file is a plain env-key collision, and this
-ticket's store-keying redesign is no longer what blocks it.
+A second, independent shape — a **non-slurpy `@`/`%` parameter** escaping its
+call, because `mask_thread_redeclared_params`
+(`src/runtime/runtime_shared_vars.rs:304-311`) masks only scalars and slurpies:
 
-**Update (same day, resolved for this file).** That env-key collision was
-chased to the end and fixed in two more steps, neither of which touched the
-store: a loop body's `my` outliving its block
-(`t/loop-body-my-does-not-outlive-the-block.t`), and `check_method_wrap_chain`
-writing back every lexical a wrapper merely *captured*
-(`t/method-wrap-writeback-only-mutations.t`). `t/http-session-inmemory.rakutest`
-is now 10/13; the three remaining failures are the concurrent-client pair and
-session expiration, which are unrelated to this ticket. The store-keying
-redesign proposed below therefore has **no known blocked test driving it** —
-re-measure before starting it.
-
-Related, still open and single-threaded (no store involved):
-`todo/tickets/for-multi-param-array-hash-shadow-clobbers-outer-container.md` —
-a multi-param loop variable with no local slot in its frame writes a *global*
-of the same name (`sub f() { for <a b>.kv -> $j, $u {} }` clobbers an outer
-`my $j`). Same root cause (the bind is an assignment, not a declaration); the
-real fix is making it a per-iteration declaration, which is entangled with the
-§1.4 shadow-slot campaign.
-
-## Mechanism, measured
-
-`Env::insert`/`insert_sym` were instrumented behind an env var to print a
-backtrace on every write to the key `i`. During the request, an unrelated
-`while`-loop somewhere in the Cro/dependency stack counts a variable of its own
-called `$i` down from 13:
-
-```
-[CLOBBER] insert(str) i = 12
-   1: runtime_shared_vars::set_shared_var_sym
-   2: vm_env_helpers::set_env_with_main_alias_sym
-   3: vm_env_helpers::set_env_with_main_alias
-   4: vm_misc_coerce::exec_pre_decrement_op_inner
-   …
-  10: vm_control_ops::exec_while_loop_op_inner
+```raku
+sub takes(@list is copy) { await start { 1 }; @list.push('R') }
+my @list = <x y z>;
+takes(<p q>);
+say @list.raku;                 # raku: [x y z]        mutsu: [p q R]
 ```
 
-Each `--$i` lands in the global map, and the test's own `$i` — an ordinary `for`
-loop variable in a different file — reads the last value written there.
+Both reproduce identically with `%`, and the first also reproduces through a
+`use`d module (the module routine's local `@parts` overwrites the consumer's
+`@parts` — the mirror image of
+`todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`, where
+the consumer overwrites the module). A `Supply`/tap driver does not arm the
+lane; `start` and `Promise` do.
 
-## Why this is the architectural issue, not a local bug
+## Root cause, restated
 
-`session-shared-store-bare-name-collision` (2026-07-17) root-caused the same map
-for zef: `clone_for_thread` migrates *every* lexical into it by bare name, and
-the `thread_redeclared_vars` mask does not help because each spawned thread has
-its own `Interpreter` (and its own mask) while the map is a single
-`Arc<RwLock<HashMap<String, _>>>` for the whole process. The recorded conclusion
-was that the fix is the store's **keying** — a per-lineage store where
-`clone_for_thread` gives the child a store that inherits from the parent's and
-writes back on join — and that it needs an ADR first.
+Not the store's keying — **by-name container resolution**, which is
+ADR-0039's root cause reached through a second population route.
 
-Related open tickets, all downstream of the same map:
+The scalar and container lanes share the same polluted store and differ only in
+how a read resolves the name. A scalar reads its slot and consults the store
+only when the slot holds `Nil` (`src/vm/vm_var_assign_local_get.rs:256,268`). A
+container has a slot that nothing ever reads, so `GetLocal`'s `@`/`%` arm
+consults the store unconditionally — no `is_thread_clone()` gate, no staleness
+test (`src/vm/vm_var_assign_local_get.rs:155-161`) — and
+`sync_shared_vars_to_env` writes every dirty store key into `env` under the bare
+name (`src/runtime/runtime_shared_vars.rs:646-648`), where that read finds it.
 
-- `todo/tickets/supply-block-lexical-leaks-through-thread-lane.md` — a supply
-  block's `my` reaching the caller when a thread drives the emit;
-- `todo/tickets/cue-loop-lexical-shared-lane-residue.md`.
+What defeats the guard is a **third instance of the `@`/`%` sigil skip** that
+ADR-0024 and ADR-0025 already defer and ADR-0039 §4.1 lifts:
+`block_captured_scalars` (`src/runtime/runtime_thread.rs:20-22`) skips
+`@`/`%`/`&`, so a container is never in `captured_scalars`, so
+`clone_for_thread`'s retain (`src/runtime/runtime_thread.rs:352-356`) drops the
+container's `thread_redeclared_vars` entry at **every** spawn. After that,
+`container_name_is_redeclared` (`src/runtime/runtime_shared_vars.rs:238-242`) —
+consulted at nine sites precisely to keep a re-declared container frame-local —
+is querying a set the spawn just emptied.
 
-## Why it matters now
+## What to do
 
-It is what remains between mutsu and Cro's session tests: with the
-five client-side fixes of 2026-08-08 landed,
-`t/http-session-inmemory.rakutest` runs 13 tests and passes 6, and the failures
-that are left are this collision (tests 3-7) plus the concurrent-client pair
-(8-9), which is the same map under two clients at once.
+Nothing standalone. ADR-0039 §8 folds this in and records what it adds to that
+ADR's plan: the parameter shape belongs to slice 2 (do **not** widen
+`mask_thread_redeclared_params` — that grows the mechanism slice 2 deletes);
+slice 2 must add a container counterpart to the scalar
+`pending_caller_var_writeback` drain, or `my @a; await start { @a.push(1) }`
+(correct today) silently breaks; and four by-name container mechanisms become
+deletable rather than carried forward.
 
-## Reproducing
+Keep this file open until ADR-0039 **slice 2** lands. Slice 1 alone does not
+close it — the containers above are routine-local and parameter-bound, not
+file-scope.
 
-```
-bash tmp/run-session-test.sh          # the instrumentable copy of the test
-MUTSU_DEBUG_CLOBBER=i bash tmp/run-session-test.sh
-```
+## Exposure
 
-The second form needs the temporary hook in `Env::insert`/`insert_sym` described
-above — note that the String-keyed `insert` does **not** route through
-`insert_sym`, so both have to be hooked.
+No whitelisted roast test and no bundled battery is blocked today. The ticket's
+original driver, Cro's `t/http-session-inmemory.rakutest`, was resolved by
+unrelated fixes and Cro's test suite is not vendored. The three downstream
+tickets this file named — `supply-block-lexical-leaks-through-thread-lane`,
+`cue-loop-lexical-shared-lane-residue`, and
+`for-multi-param-array-hash-shadow-clobbers-outer-container` — are all resolved.
+That is a statement about which shapes the corpus happens to contain, not about
+severity: the failure mode is a silent wrong container value in any program that
+spawns a thread and reuses a container name.
