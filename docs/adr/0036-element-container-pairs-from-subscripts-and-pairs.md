@@ -1,0 +1,323 @@
+# ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
+
+- **Status**: Proposed (design complete; implementation not started)
+- **Date**: 2026-08-20
+- **Deciders**: tokuhirom, Claude
+- **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
+
+> Raku's `@a[0]:p` is `0 => @a[0]` where the *value is the element's `Scalar` container*. mutsu builds
+> that Pair from a snapshot of the element and then compensates for the missing link with a runtime
+> search of `self.env` for an array whose element happens to compare equal. This ADR decides to
+> retire that search by producing the Pair from the element container that mutsu already has a
+> primitive for, and scopes which producers convert.
+
+---
+
+## 1. Context
+
+### 1.1 What Raku specifies
+
+An `Array`/`Hash` element is a `Scalar` container, and every construct that hands an element out as a
+`Pair` value or a `kv` list element hands out *that container*, not a copy of what it holds:
+
+```
+$ raku -e 'my @a = <A B>; say @a[0].VAR.^name'                    # Scalar
+$ raku -e 'my @a = <A B>; say (@a[0]:p).value.VAR.^name'          # Scalar
+$ raku -e 'my @a = <A B>; say (@a[0]:kv)[1].VAR.^name'            # Scalar
+$ raku -e 'my @a = <A B>; say (@a.pairs)[0].value.VAR.^name'      # Scalar
+```
+
+Two consequences follow directly, and both are observable:
+
+- **Writing through the pair updates the array** — `(@a[0]:p).value = 'x'` sets `@a[0]`, with no
+  search for the array involved: it is an ordinary container assignment.
+- **Reading through the pair sees later writes to the array** — `my $p = @a[0]:p; @a[0] = 'Q';
+  $p.value` is `Q`.
+
+Where the source is *not* a mutable container the pair value is an immutable item and the write must
+die: `(1,2).pairs[0].value = 3` raises `Cannot modify an immutable Int (1)`.
+
+### 1.2 What mutsu does
+
+The pair producers build the Pair from a cloned element:
+
+- `builtins_multidim_subscript.rs:528`, `:655`, `:672`, `:739` — every `"p" => Value::value_pair(key, value)`
+  arm of the subscript-adverb machinery (`:p`, and the `:kv` list rows next to them).
+- `builtins/methods_0arg/mod.rs:815` and `collection.rs:598` — `.pairs` / `.kv` / `.antipairs`, which
+  map over an already-decontainerized `&[Value]` with `v.clone()`.
+
+So the Pair holds no link back to its source. To make `.value = X` work anyway,
+`assign_method_lvalue_with_values` (`runtime/methods_mut_method_lvalue.rs:462`…) *searches for* the
+backing container at assignment time: it scans `self.env.values()` for a `Hash` whose entry at the
+pair's key, or an `Array` whose element at the pair's integer key, compares `==` to the pair's value
+(`:573-606`), requires the match to be unique by `Gc::ptr_eq`, rebuilds the whole container, and
+writes it back by identity (`overwrite_array_bindings_by_identity` / `overwrite_hash_bindings_by_identity`).
+Adjacent arms extend the same trick to shaped arrays by index tuple (`:613-646`) and to mutable
+QuantHash weights via `topic_source_var` (`:529-546`).
+
+### 1.3 The divergence this produces — measured on `main` (e13d278ff)
+
+| program | raku | mutsu |
+| --- | --- | --- |
+| `my @a = <A B>; my $p = @a[0]:p; @a[0] = "Q"; say $p.value` | `Q` | `A` |
+| `my @a = <A B>; my $kv = @a[0]:kv; @a[0] = "Q"; say $kv` | `(0 Q)` | `(0 A)` |
+| `my @a = <A B>; my $p = @a.pairs[0]; @a[0] = "Q"; say $p.value` | `Q` | `A` |
+| `my %h = a => 1; my $p = %h.pairs[0]; %h<a> = 7; say $p.value` | `7` | `1` |
+| `my @a = <A B>; my $p = @a[0]:p; $p.value = "x"; say $p.raku` | `0 => "x"` | `0 => "A"` |
+| `my @a = <A B>; say (@a[0]:p).value.VAR.^name` | `Scalar` | `Str` |
+| `my @a = <A B>; my @b = @a; (@a[0]:p).value = "z"; say @a` | `[z B]` | **dies** `X::Assignment::RO: cannot assign through .value on non-instance` |
+| `my %h = a => 1; my %g = a => 1; (%h<a>:p).value = 9; say %h` | `{a => 9}` | **dies**, same error |
+| `my @a = <A B>; my @c = <A B>; for @a.pairs -> $p { $p.value = "y" }; say @a` | `[y y]` | `[A B]` — **silent no-op** |
+| `my @a = <A B>; my $p = 0 => @a[0]; $p.value = "x"` (with a sibling `my @c = <A B>`) | `[x B]` | `[A B]` — silent no-op |
+| `my $l = (1,2); $l.pairs[0].value = 3` | dies `Cannot modify an immutable Int (1)` | silently succeeds as a no-op |
+| `my Str @a = <A B>; (@a[0]:p).value = 42` | dies `Type check failed for an element of @a` | `[42 B]` |
+
+Read the failure column as three distinct classes:
+
+1. **Stale reads** (rows 1-5). No widening of the search can fix these — the search runs at
+   *assignment* time and there is no assignment. Only a live container can.
+2. **Ambiguity failures** (rows 7-10). The uniqueness guard is defeated by any second container in
+   scope that happens to hold an equal value at the same key — including `my @b = @a`, an ordinary
+   copy. The `:p` form then *dies* with a misleading `X::Assignment::RO ... on non-instance` (control
+   falls out of the whole `method == "value"` arm and reaches the generic instance-attribute path);
+   the `.pairs` form *silently does nothing*, which is worse.
+3. **Missing enforcement** (rows 11-12). A rebuild-and-reinsert write bypasses both the immutability
+   of a `List` source and the element type constraint of a typed array.
+
+The originating finding (`todo/deep/…`) reported class 2 through a much narrower repro — a bare block
+whose `@a` is a *local slot* rather than an env entry because a later sibling block redeclares the
+name, so the env scan matches nothing at all. That repro still reproduces verbatim, but it is a
+special case of the same defect, not the defect.
+
+### 1.4 What already exists — and why this is not "Track B is missing"
+
+The originating finding concluded "there is no `array_element_cell`-style API today" and that the fix
+therefore waits on ADR-0001's Track B. **That is out of date.** The element-container primitive
+shipped and is in daily use on the binding path:
+
+- `Value::array_slot_ref(idx, terminal)` (`value/value_methods_b.rs:94`) replaces an array element in
+  place with a shared `ContainerRef` cell (reusing one already there) and returns that same cell, so
+  the alias is by cell identity and survives COW clones of any enclosing container. `Value::hash_slot_ref`
+  (`value/value_methods_a.rs:603`) and `hash_autovivify_cell` (`:558`) are its hash analogues.
+- Reads decontainerize at single chokepoints — `resolve_array_entry` (`vm/vm_var_ops.rs:123`, the
+  `ValueView::ContainerRef(cell) => cell.lock().unwrap().clone()` arm at `:147`) and `resolve_hash_entry`
+  — so a promoted slot is invisible to value contexts.
+- `assign_method_lvalue_with_values` already assigns through a `ContainerRef` pair value
+  (`methods_mut_method_lvalue.rs:496-521`), frozen-check and `of`-type constraint included. That arm
+  is what makes `key => $var` pairs write through today.
+- The `for %h -> $p` loop already yields pairs whose value is a live `HashEntryRef`, handled in place
+  at `:481-490`.
+
+And it demonstrably works end to end:
+
+```
+$ mutsu -e 'my @a = <A B>; my $r := @a[0]; $r = "x"; say @a'                  # [x B]
+$ mutsu -e 'my @a = <A B>; my $r := @a[0]; @a[0] = "Q"; say $r'               # Q
+$ mutsu -e 'my @a = <A B>; my $r := @a[0]; my @c = <A B>; $r = "x"; say @c'   # [A B]  (no ambiguity)
+$ mutsu -e 'my @a = <A B>; my $r := @a[0]; say @a.raku'                       # ["A", "B"]  (invisible)
+```
+
+So the missing piece is **not** a primitive. It is that the pair *producers* never ask for the slot,
+and that a search-based compensator was grown next to them instead. This ADR is therefore a scoping
+and sequencing decision over an existing mechanism, not the start of a new campaign — which is
+precisely the state ADR-0013 §5 Q3 anticipated when it resolved "land 2b first, then pursue 2c
+incrementally where it measurably reduces container-level structural sites". This is the first place
+where 2c buys *correctness* rather than soundness tidiness, so it is the natural first increment.
+
+### 1.5 Why the producers cannot simply be patched in place
+
+`.pairs` / `.kv` / `.antipairs` live in the arity-dispatched fast path (`builtins/methods_0arg/`),
+which is value-in/value-out by construction: it receives `&[Value]` — the *decontainerized* items —
+and has neither the invocant container's identity nor the ability to mutate it. Producing an element
+container needs both (promotion is an in-place write into the container's storage). The subscript
+adverbs (`builtins_multidim_subscript.rs`) are closer to the container but are likewise pure
+functions over a resolved target.
+
+That is the real reason this is an architecture decision rather than a four-line edit: the change has
+to move the decision of *what a pair value is* to a layer that holds container identity, and it has
+to do so without regressing the fast path for the overwhelming majority of `.pairs` calls that only
+read.
+
+---
+
+## 2. Decision
+
+**Produce element-container Pairs at the container-aware layer, discriminated by the source's
+mutability, and delete the env-scan compensator.**
+
+Three parts:
+
+1. **A container-aware production path.** For a *mutable container* invocant/target — `Array`
+   (any `ArrayKind`), `Hash`, and the shaped-array multidim forms — `:p`, `:kv`, `.pairs`, `.kv`, and
+   `.antipairs` produce their value elements by `array_slot_ref(i, true)` / `hash_slot_ref(k, true)`
+   rather than by cloning the element. The producer therefore lives in the VM method/subscript
+   dispatch layer (`vm/vm_call_method_mut_ops.rs`, `runtime/builtins_multidim_subscript.rs`'s
+   callers), with the existing pure-value implementation retained as the fallback.
+
+2. **Mutability is the discriminator, and it is the whole of the immutability story.** A `List`,
+   `Seq`, `Range`, `Capture`, `Match`, or immutable `Set`/`Bag`/`Mix` invocant keeps the snapshot
+   producer. A snapshot pair value is a bare item, so `.value = X` on it reaches the existing
+   read-only guard and dies with `Cannot modify an immutable <T>` — which is exactly raku's behaviour
+   for `(1,2).pairs[0].value = 3` and requires no new check. Mutable QuantHashes (`SetHash`/`BagHash`/
+   `MixHash`) keep their weight-writeback arm: a weight is not a stored element container and has
+   removal semantics at 0, so it is genuinely a different operation (see §5 Q2).
+
+3. **The env scan goes away.** `methods_mut_method_lvalue.rs:547-668` — `selected_hash` /
+   `selected_array`, the `self.env.values()` candidate scans, the shaped-array index-tuple scan, and
+   the `overwrite_*_bindings_by_identity` rebuild — is deleted once every producer that feeds it has
+   converted. What remains in the `method == "value"` arm is the `ContainerRef` assignment at `:496`
+   (which gains the element type constraint, §4 slice 4), the `HashEntryRef` in-place write at
+   `:481`, the QuantHash weight arm, and the read-only guard.
+
+### Why this direction
+
+- **It is the only direction that fixes stale reads.** Classes 1 and 2 of §1.3 have a single common
+  cause and a single fix; a wider or smarter search addresses at most class 2, and would deepen a
+  mechanism that is already wrong.
+- **It removes a heuristic rather than adding one.** The scan's uniqueness guard is not a
+  conservative approximation that errs safe — it errs into a *misleading exception* on one path and a
+  *silent no-op* on another, both triggered by an ordinary array copy. Under the project's gain/risk
+  definitions this is squarely a gain: a value-equality search over the environment is exactly the
+  kind of incomplete static reasoning that cannot be made sound by refinement.
+- **It reuses a shipped, proven primitive.** `array_slot_ref`/`hash_slot_ref` are already exercised by
+  every `:=`-bound element, already invisible to `.raku`/`.elems`/copy, and already survive COW. The
+  new work is routing, not invention.
+- **It closes an enforcement hole for free.** Assigning through a real cell runs the frozen check and
+  the constraint check that the rebuild path skipped entirely (row 12).
+- **It is the increment ADR-0013 §5 Q3 asked for**, with a correctness justification attached, so it
+  does not re-open the deferred general 2c migration: only element *reads that hand the element out*
+  promote, not every element.
+
+---
+
+## 3. Options considered
+
+| Option | Fixes stale reads | Fixes ambiguity | Fixes immutability/constraints | Blast radius | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| **Status quo (search `self.env`)** | ✗ | ✗ | ✗ | — | Rejected — the defect |
+| **A. Widen the search to `self.locals`** | ✗ | ✗ (worsens: more equal candidates → more declines) | ✗ | tiny | **Rejected.** It repairs only the originating finding's narrow repro and makes the ambiguity class strictly more likely. |
+| **B. Back-reference Pair (hold `Gc<ArrayData>` + index in the Pair)** | ✓ | ✓ | partial | medium | Rejected — this is the `HashEntryRef` design, and `array_slot_ref`'s own doc records why it was abandoned: a back-reference goes stale when an enclosing container is COW-cloned on a later write. Re-adopting it for arrays would reintroduce a bug class that cell identity already solved. |
+| **C. Element containers at the producer, mutability-discriminated (this ADR)** | ✓ | ✓ | ✓ | medium | **Chosen** |
+| **D. Full 2c: every element is a cell, always** | ✓ | ✓ | ✓ | very large | Deferred, not rejected. It subsumes C, but pays a cell per element on construction and forces every `ValueView::Array(arr, _)` consumer that inspects elements to decontainerize. C reaches the same observable semantics for the constructs that need them, and it is the honest first measurement of what D would cost. |
+
+Option D's cost is the reason C promotes **lazily, per element handed out**, exactly as the binding
+path does. `@a.pairs` over an N-element array promotes N slots; `@a[0]:p` promotes one.
+
+---
+
+## 4. Phasing
+
+Each slice is independently landable and independently green.
+
+1. **Slice 1 — pin the semantics.** Add `t/subscript-pair-element-container.t` covering every row of
+   §1.3 as a *currently failing* expectation set, fudged/skipped as needed so it lands green, plus the
+   `.VAR.^name` probes. This is the acceptance oracle for slices 2-4 and prevents the campaign from
+   being declared done on the write direction alone. The existing `t/subscript-adverbs.t`,
+   `t/pairs-value-writeback-array-kind.t`, and `t/for-pairs-value-quanthash-writeback.t` are the
+   regression pins — all three pass today *only* via the scan, so they are precisely what must keep
+   passing after it is deleted.
+
+2. **Slice 2 — subscript adverbs.** Route the `:p` and `:kv` arms in
+   `runtime/builtins_multidim_subscript.rs` (`:528`, `:655`, `:672`, `:739`) through slot refs when
+   the target is a mutable container. Rows 1, 2, 5, 6, 7, 8 and 12 of §1.3 turn green.
+
+3. **Slice 3 — `.pairs` / `.kv` / `.antipairs`.** Add the container-aware path at the VM method
+   dispatch layer, keeping `builtins/methods_0arg/` as the immutable-source fallback. Rows 3, 4, 9,
+   10 and 11 turn green.
+
+4. **Slice 4 — enforcement and deletion.** Teach the promoted cell the container's element
+   constraint (`ArrayData::value_type` / `HashData::value_type`, `src/value/mod.rs`) so
+   `lookup_container_constraint` at
+   `methods_mut_method_lvalue.rs:508` sees it — note this gap exists for `:=`-bound elements today
+   too (`my Str @a; my $r := @a[0]; $r = 42` wrongly succeeds), so the slice fixes both at once. Then
+   delete `methods_mut_method_lvalue.rs:547-668` and any `overwrite_*_bindings_by_identity` helper
+   left with no callers.
+
+5. **Slice 5 — sweep.** Re-run the §1.3 table, run the whitelisted S02/S09/S32 roast families, and
+   record the outcome in this ADR's "Implementation status".
+
+---
+
+## 5. Open questions (the forks for the deciders)
+
+1. **Does `.pairs` promote eagerly over the whole array, or lazily per reified element?**
+   `.pairs` returns a `Seq`; promoting all N slots when only the first is inspected is avoidable if
+   promotion happens at reification. Interacts with [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md).
+   *Recommendation: start eager (simpler, matches the current `Value::seq(pairs)` shape), measure,
+   and make it lazy only if a bench regression shows up.*
+
+2. **Do mutable QuantHash weights stay on the `topic_source_var` arm, or become cells?**
+   A `BagHash` weight is not a stored element container in mutsu's representation and `.value = 0`
+   *removes* the key, so it is a different operation with different semantics. *Recommendation: keep
+   the weight arm; it is not part of the scan being deleted and `t/for-pairs-value-quanthash-writeback.t`
+   pins it.*
+
+3. **Does the shaped-array multidim `:p` form convert in slice 2 or later?**
+   It has its own scan (`:613-646`) keyed by index tuple and its own rebuild path
+   (`multidim_assign_nested`). *Recommendation: convert it in slice 2 with the rest of the adverbs —
+   leaving it behind means the scan cannot be deleted in slice 4.*
+
+4. **Is `resolve_array_entry` genuinely the only read chokepoint?**
+   Its doc claims so and the `:=` path corroborates it, but that path promotes far fewer slots than
+   `.pairs` will. *Recommendation: slice 2 lands behind the §4.1 test set; any leaked `ContainerRef`
+   surfaces there as a wrong `.raku`/`.WHAT`/`.gist`, which is a deterministic failure, not a flake.*
+
+5. **Does anything depend on the pair being a snapshot?**
+   `.pairs` output feeding a `Hash` constructor, `is-deeply` comparison, or serialization must see
+   values, not cells. Covered by the decontainerizing chokepoint if Q4 holds; called out separately
+   because it is the most likely source of a slice-3 regression.
+
+---
+
+## 6. Consequences
+
+- **`methods_mut_method_lvalue.rs` loses ~120 lines of search-and-rebuild**, and the surviving
+  `method == "value"` arm becomes a short list of container kinds rather than a search.
+- **`X::Assignment::RO: cannot assign through .value on non-instance` stops being reachable from
+  correct programs.** It is currently the observable face of a failed search, which is why it reads
+  as a nonsense diagnostic in the §1.3 rows.
+- **More array/hash slots hold `ContainerRef`** during a program's life. This is the change with real
+  blast radius: any consumer that pattern-matches on `ValueView::Array(arr, _)` and inspects
+  `arr[i]` without going through `resolve_array_entry` will now sometimes see a cell. Q4/Q5 exist to
+  bound it, and the failures are deterministic.
+- **Element type constraints start being enforced** on element-container writes, including for
+  `:=`-bound elements that bypass them today. This can surface as *new* deterministic failures in
+  code that was silently storing the wrong type — that is the fix working.
+- **`todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` is superseded by this ADR** and
+  should be removed when slice 2 lands, with the outcome recorded here and in `news/`.
+- **If rejected / indefinitely deferred:** the twelve divergences in §1.3 stay, and the ambiguity
+  class keeps being re-discovered as an unrelated-looking bug — a `my @b = @a;` added anywhere in
+  scope can break a `.value =` elsewhere in the file, which is close to undebuggable from the error
+  message alone. That is the specific cost of leaving it.
+
+---
+
+## 7. Adjacent open findings — the same model, different surfaces
+
+"An array/hash element is a `Scalar` container" is a single Raku model that mutsu approximates in
+three separate places. This ADR takes the *pair-producer* surface only, deliberately; the other two
+are recorded here so a future reader can see the shape of the whole and not re-derive it.
+
+- **`todo/deep/element-itemization-lost-in-scalar-binding.md`** — the *read* surface. Because elements
+  are containers, a bare element read is itemized: raku prints `$["a", "b"]` for `@d[0].raku` where
+  mutsu prints `["a", "b"]`. Its bind-side half shipped (`news/2026-08/param-bind-itemization.md`);
+  the store-side half is open and is survey-sized because it changes what is *in* every array. **This
+  ADR does not depend on it and does not advance it**: promoting a slot to a `ContainerRef` on demand
+  is invisible to `.raku` (verified — `my $r := @a[0]; say @a.raku` is `["A", "B"]` in both), because
+  the read chokepoint decontainerizes. Itemization is a separate question about what the
+  decontainerized value *is*.
+- **`todo/deep/for-loop-rw-element-alias-lost-through-deferred-closure.md`** — the *binding-lifetime*
+  surface. `for @a -> $v is rw` binds a plain clone and snapshots it back once per iteration, so a
+  closure that escapes the loop and mutates `$v` later writes a disconnected cell. That finding names
+  the same missing primitive from the other side and reaches the same conclusion ("a genuine
+  per-element `ContainerRef` alias"), and it is the natural *next* consumer of this ADR's routing:
+  bind the loop param to `array_slot_ref(i, true)` and `write_back_for_rw_param` becomes unnecessary.
+  One caveat it raises is worth answering here: it worries that an element store write-throughs *any*
+  `ContainerRef` element unconditionally on reassign, with no replace-vs-alias distinction. For this
+  ADR that behaviour is not a problem but the requirement — raku's `@a[0] = "Q"` assigns *into* the
+  element's `Scalar`, never replaces it, which is exactly why `my $p = @a[0]:p; @a[0] = "Q"` must
+  make `$p.value` read `Q`.
+
+---
+
+*This ADR is Proposed. If the mechanism judgment changes later, supersede it rather than rewriting it.*
