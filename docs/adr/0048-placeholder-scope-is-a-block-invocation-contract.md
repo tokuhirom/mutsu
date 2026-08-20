@@ -1,0 +1,308 @@
+# ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
+
+- Status: Proposed (design complete; implementation not started)
+- Date: 2026-08-20
+- Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
+  (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`)
+
+## Context
+
+A `$^name` placeholder attaches to the innermost enclosing block that can take a
+signature, and that block is then invoked with some number of arguments. mutsu
+models only *half* of that: `src/ast.rs`'s `collect_ph_stmt_shallow` /
+`collect_ph_expr_shallow` decide, per AST arm, a single boolean — "descend
+(transparent) or stop (boundary)" — and where a value has to be bound, each
+construct's codegen does it ad hoc.
+
+Two structural consequences follow, and both are visible as user-facing
+divergences today:
+
+1. **A boolean has no room for "how many arguments does this construct
+   supply".** So `if`/`given` bind exactly one placeholder via a copy-pasted
+   `collect_placeholders_shallow(...).find(|n| n.starts_with('^'))` — the
+   *first* one — and any further placeholder silently falls through to the
+   enclosing block instead of producing raku's arity error.
+2. **A boolean has no room for "this body may not take a signature at
+   all".** So the rejecting constructs (`loop {}`, `try {}`, phasers, statement
+   prefixes, `default {}`) are simply left as transparent, and their
+   placeholders leak into the enclosing block's signature.
+
+The same table is additionally hand-maintained in three independent walks
+(`collect_ph_stmt_shallow`/`collect_ph_expr_shallow`,
+`collect_unattached_ph_stmt`, and `src/placeholder_order.rs`'s
+`order_check_stmt`/`order_check_expr` + `check_bare_var_stmt`/
+`check_bare_var_expr`), and the value-binding half is copy-pasted at four
+codegen sites (`src/compiler/stmt.rs:2088` for `Stmt::If`,
+`src/compiler/stmt.rs:3062` for `Stmt::Given`,
+`src/compiler/helpers_control_flow.rs:270` and
+`src/compiler/helpers_do_expr.rs:177` for the two value-position `if` forms).
+`src/compiler/helpers_do_expr.rs:21` (`compile_do_block_expr`) holds the one
+rejecting case that *is* implemented, and `src/compiler/stmt.rs:3078` /
+`src/compiler/helpers_sub_body.rs:1270` hold a fifth, entirely separate ad-hoc
+diagnostic for the bare-`{}` case.
+
+### Correcting the deep finding this ADR replaces
+
+`todo/deep/placeholder-scope-loop-while-block-boundaries.md` (2026-08-18)
+concluded that `while`, `loop {}` and bare `{}` have "three genuinely different
+rules, not a single shared boundary decision", and warned: "assume the same is
+true here until checked one by one. Do not batch-fix by pattern-matching the
+existing arms."
+
+A full construct-by-construct audit against real `raku` (2026-08-20, ~45 probes,
+transcripts summarised below) **falsifies that premise.** There is exactly one
+rule, parameterised by two columns:
+
+> Every `{}` body is a Block. Per construct, ask (a) *may* that Block carry a
+> signature, and (b) *what* does the construct pass when it invokes it. A
+> placeholder in a body whose answer to (a) is "no" is a compile-time
+> `X::Placeholder::Block`; otherwise the body's placeholders are its own
+> parameters, and supplying fewer arguments than it declares is the ordinary
+> runtime "Too few positionals passed" arity failure.
+
+That is good news: the work is a table plus one shared emitter, not eleven
+bespoke investigations. It is still architectural — the table has nowhere to
+live in the current model, and populating it changes the real *arity* of
+existing blocks — which is why it belongs in an ADR rather than a ticket.
+
+## Evidence
+
+Audited on `main` @ `227e38e4f` with a debug build against system `raku`.
+Probe scripts were throwaway (`tmp/ph-probe*.sh`); the table is the result.
+
+### Constructs whose body may take a signature
+
+| Construct | raku supplies | raku observable | mutsu today |
+|---|---|---|---|
+| routine body, `{...}`/`-> ...` closure *as a value* | caller's args | `{ $^c }(42)` -> 42 | correct |
+| `if`/`elsif`/`unless`/`with`/`without` block | 1 — the **raw** condition value | `if 42 { $^c }` -> 42 | correct for one placeholder |
+| `if 42 { "$^a $^b" }` | still 1 | `Too few positionals passed; expected 2 arguments but got 1` | prints `42 True` — `$^b` leaks to the enclosing block |
+| `while`/`until` block | 1 — the **raw** condition value, re-supplied every iteration | `while 42 { $^c }` -> `42`; `until False { $^c }` -> `False` | prints `True` (a *boolified* condition) **and** leaks the name: `{ while 42 { $^c } }.arity` is 1, raku's is 0 |
+| `repeat {} while/until` block | 1 — `Mu` on the first pass, then the condition value | `Mu`, then `True` | `True`, `True` |
+| `while COND -> $x { $^c }` | — | `Placeholder variable '$^c' cannot override existing signature` | accepted silently |
+| `for` block | N — N elements per iteration, N = the body's placeholder count | `for 1,2 { "$^a $^b" }` -> `1 2` | correct (this is the existing precedent for an N-ary supply) |
+| `given`/`with` block | 1 — the topic | `given 5 { $^c }` -> 5 | correct for one placeholder; `given 5 { "$^a $^b" }` prints `5 True` where raku raises the arity error |
+| `when` block | **0** | `given 5 { when 5 { $^c } }` -> `Too few positionals passed; expected 1 argument but got 0`; `{ when 5 { $^c } }.arity` is 0 | binds the topic (prints 5) and reports arity 1 |
+| bare `{ ... }` **statement** | **0** | `{ $^c }` -> `Too few positionals passed; expected 1 argument but got 0` | ad-hoc die `Implicit placeholder parameters are not available in bare nested blocks` at the mainline; inside a sub it instead leaks arity onto the sub |
+| `role` body | 1 — `Mu` at composition | `role R { $^c }; class D does R {}` -> `(Mu)`, runs fine | **over-rejects** with `X::Placeholder::Block` |
+
+### Constructs whose body may **not** take a signature
+
+All of the following are one and the same compile-time error in raku —
+`Placeholder variable '$^c' may not be used here because the surrounding block
+does not take a signature.` — i.e. exactly what `compile_do_block_expr` already
+emits via `method_signature_shared::placeholder_scope_error("block", ph)`:
+
+| Construct | mutsu today |
+|---|---|
+| `do { }` | correct (the only implemented case) |
+| `quietly { }`, `class C { }` | correct |
+| `loop { }` (headerless and C-style) | accepted; leaks to the enclosing block |
+| `try { }` | accepted; leaks |
+| `react { }` | accepted; leaks |
+| `once { }` | accepted; leaks |
+| `default { }` (incl. inside `CATCH`) | accepted; binds the topic |
+| phasers: `BEGIN`, `ENTER`, `LEAVE`, `CONTROL`, `CATCH`, ... | accepted; leaks |
+| `race { }` | accepted; leaks |
+| `gather`, `supply`, `start`, `sink`, `lazy`, `eager` | accepted, and the placeholder silently reads `Any` (prints empty) — a *third* wrong behaviour, distinct from the leak |
+| `module M { }` | accepted; prints `Nil` |
+
+The mainline itself is not signature-capable in either implementation:
+`raku -e 'say $^a'` and mutsu both give *"Cannot use placeholder parameter $^a
+outside of a sub or block"*.
+
+So mutsu has three different wrong behaviours (leak-to-enclosing-signature,
+leak-to-`Any`, ad-hoc die) where raku has one rule, and gets the *supplied
+arity* wrong on four constructs it already treats as boundaries.
+
+## Decision
+
+### D1 — Keep inlining control-flow bodies; do not build real `Block` objects
+
+Raku's model is "every body is a Block invoked with arguments". mutsu compiles
+`if`/`while`/`given`/`when`/bare-block bodies *inline* into the enclosing
+frame's bytecode (`compile_block_inline`), which is why placeholder attribution
+had to be reconstructed by an AST walk in the first place.
+
+We keep that. Reifying a `Block` per `if`/`while` body would be a large,
+diffuse performance regression on the hottest constructs in the language, for a
+feature whose entire observable surface is placeholder attribution and one
+error message. **The block-invocation contract is adopted as a *model*, not as
+a runtime representation**: we encode "may this body take a signature" and
+"what does the construct supply" as compile-time data, and keep emitting inline
+code.
+
+### D2 — One classification oracle, consulted by every walk and by codegen
+
+Introduce a single function in `src/ast.rs` that is the *only* place the table
+above lives:
+
+```rust
+pub(crate) enum ArgSupply {
+    /// The enclosing block's own arguments (routine bodies, closure values).
+    CallerArgs,
+    /// One argument: the raw (un-boolified) condition value.
+    Condition,
+    /// One argument: `Mu` on the first pass, then the condition value.
+    ConditionAfterFirstPass,
+    /// One argument: the topic.
+    Topic,
+    /// N arguments per iteration, N = the body's own placeholder count.
+    Elements,
+    /// Zero arguments.
+    None,
+}
+
+pub(crate) enum PlaceholderBodyKind {
+    /// No block of its own: descend, placeholders belong to the enclosing scope.
+    /// (Statement modifiers: `$^a if $^n`, `$^b.push($_) for @list`, `... given $^n`.)
+    Transparent,
+    /// A boundary that takes a signature; the construct supplies `ArgSupply`.
+    Signature(ArgSupply),
+    /// A boundary that may not take a signature: X::Placeholder::Block.
+    NoSignature,
+}
+
+pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind;
+// plus an `Expr` sibling for Try/Gather/Supply/Start/Race/DoBlock/...
+```
+
+`collect_ph_stmt_shallow` / `collect_ph_expr_shallow`,
+`collect_unattached_ph_stmt`, and `placeholder_order.rs`'s
+`order_check_stmt` / `order_check_expr` / `check_bare_var_stmt` /
+`check_bare_var_expr` each collapse to a thin `match placeholder_body_kind(..)`.
+Three hand-mirrored tables become one; the long explanatory comments currently
+attached to the `If` / `For` / `Given` / `Whenever` arms move to the oracle,
+where they document the whole table instead of one arm.
+
+### D3 — One shared emitter for the bind, and it binds *all* the placeholders
+
+Replace the four copy-pasted `cond_placeholder` blocks with a single compiler
+helper:
+
+```rust
+fn emit_inlined_body_placeholder_binds(&mut self, body: &[Stmt], supplied: ArgSupply);
+```
+
+It collects **all** caret placeholders of the body in `collect_placeholders_shallow`
+order (not `.find(first)`), binds as many as `supplied` provides, and — when the
+body declares more than `supplied` provides — emits raku's exact runtime
+failure, `Too few positionals passed; expected N arguments but got M`. This one
+change fixes `if 42 { "$^a $^b" }` and `given 5 { "$^a $^b" }`, and makes
+`when` and the bare `{}` statement (both `ArgSupply::None`) correct for free.
+
+### D4 — `while`/`until`/`repeat` supply the raw condition value, per iteration
+
+`Stmt::While` (`src/compiler/stmt.rs:2206`) has no placeholder handling at all
+today; `compile_condition_expr` boolifies the condition for the loop jump, so
+the only value reachable inside the body is a `Bool`. The fix mirrors
+`compile_if_value`'s shape but is *not* a reuse of it: `Dup` the condition
+**before** the boolify, and place the bind in the loop-body prologue so it is
+re-executed on every pass. `repeat`'s first pass supplies `Mu` (the condition
+has not run yet), so `ArgSupply::ConditionAfterFirstPass` seeds the slot with
+`Mu` ahead of the loop.
+
+This is the only genuinely new codegen in the plan.
+
+### D5 — An explicit signature wins over a placeholder
+
+`while COND -> $x { $^c }` is `X::Placeholder::Signature`-shaped
+("Placeholder variable '$^c' cannot override existing signature"). The
+`binding_var.is_none()` guards already scattered through the `if` sites
+approximate this by staying silent; promote them to the oracle plus a real
+error.
+
+### D6 — The bare `{}` statement stays inlined and gets the arity error, not a real invocation
+
+raku compiles a bare `{ ... }` statement as a genuine Block and *calls* it with
+zero arguments, so `{ $^c }` dies at runtime with "Too few positionals passed".
+Two ways to match that:
+
+- **(a) Compile it as a real invoked closure.** Exact, but changes bare-block
+  compilation wholesale — lexical scoping, `state` re-clone semantics, phaser
+  placement, `LEAVE`, `import` scoping — for every bare block in the codebase,
+  placeholder or not.
+- **(b) Keep inlining; classify it `Signature(ArgSupply::None)`.** *(chosen)*
+  D3's shared arity check then produces raku's exact message and exit
+  behaviour, replacing the ad-hoc string at `src/compiler/stmt.rs:3078` and
+  `src/compiler/helpers_sub_body.rs:1270`.
+
+(b) is chosen because the *only* observable difference between them is the
+error text, and (b) produces the right text: a placeholder-bearing bare block
+always dies, so no surviving block ever needs the real invocation. If a future
+requirement makes bare blocks first-class invokables for unrelated reasons,
+this classification stays valid unchanged.
+
+### D7 — Role bodies are signature-capable; module bodies are not
+
+`role R { $^c }` is legal in raku (the body runs at composition with `Mu`);
+`module M { $^c }` and `class C { $^c }` are compile-time errors. mutsu has
+both backwards for `role` (over-rejects) and `module` (accepts). Classify
+`RoleDecl` as `Signature(ArgSupply::None)`-with-`Mu` and `module` as
+`NoSignature`.
+
+## Rejected alternatives
+
+- **Fix the constructs one at a time as tickets.** This is what the superseded
+  deep finding proposed, on the belief that each construct had its own rule.
+  The audit shows they do not, and eleven independent patches to three mirrored
+  walks would re-create the very drift that made the current arms diverge.
+- **Reify a `Block` per control-flow body (full raku fidelity).** Rejected per
+  D1: a large regression on the hottest constructs, buying only error-message
+  fidelity that D3/D6 already deliver.
+- **Treat this as diagnostics-only (emit errors, leave arity alone).**
+  Rejected: the leak is not merely a missing diagnostic. `{ while 42 { $^c } }`
+  really has arity 1 in mutsu and arity 0 in raku, so a block that mutsu
+  believes needs an argument is a live mis-compilation of the *enclosing*
+  block's signature, not just a missing warning.
+
+## Consequences
+
+- Changing the boundary set changes the real arity of any existing block whose
+  only `$^name` use sits inside one of the newly-classified bodies. Every call
+  site of `collect_placeholders_shallow` (`src/compiler/expr_closure.rs:101`,
+  `:111`; `src/compiler/expr_block.rs:120`, `:947`; `src/compiler/stmt.rs:831`,
+  `:4122`) must be re-audited for what it assumes about a block's own signature.
+  This is the highest-risk part of the change and the reason CI's roast run is
+  the acceptance gate.
+- Several constructs move from "silently accepted" to "compile-time error".
+  Any bundled battery or roast test that happens to contain a stray placeholder
+  in a `try {}` / phaser / statement-prefix body will start failing loudly.
+  That is the intended outcome, but it should be expected during the first CI
+  run rather than treated as a regression.
+- After D2 the per-arm comments in `collect_ph_stmt_shallow` become redundant.
+  Move them, do not duplicate them: a second copy of the table is exactly the
+  failure mode being retired.
+
+## Implementation phases
+
+1. **Oracle + walk unification (no behaviour change).** Add
+   `placeholder_body_kind`, populate it with mutsu's *current* behaviour, and
+   rewrite the three walks to consult it. CI must be green with zero
+   observable change. This isolates the mechanical refactor from the semantic
+   one.
+2. **Rejecting set.** Flip `loop`/`try`/`react`/`once`/`default`/phasers/
+   statement prefixes/`module` to `NoSignature`, reusing
+   `placeholder_scope_error("block", ph)`. Expect battery/roast fallout here.
+3. **Shared bind emitter + arity error (D3).** Fixes multi-placeholder
+   `if`/`given`, and `when` / bare `{}` via `ArgSupply::None`; retires the two
+   ad-hoc bare-block strings.
+4. **`while`/`until`/`repeat` raw-condition supply (D4) and the signature
+   clash (D5).**
+5. **Role/module classification (D7).**
+
+## Verification
+
+Each phase lands with `t/` pins built from the audit table above — one file
+per column of the table (`t/placeholder-scope-signature-capable.t`,
+`t/placeholder-scope-rejecting.t`), each case asserting against the raku
+observable recorded here rather than against mutsu's current output.
+
+## Severity and priority
+
+Low urgency: no roast test currently depends on any row of the table, and no
+miscompilation of *value flow* has been observed (once a placeholder is bound,
+values resolve sensibly). The reason to record the design now is that the audit
+that produces the table is the expensive part, and it is done; the phases above
+can be picked up independently whenever a maintainability or diagnostics slice
+is wanted.
