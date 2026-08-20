@@ -49,15 +49,31 @@ fn anon_type_display_name(name: &str) -> Option<String> {
 /// before it. Anonymous class/grammar/role internal names display as
 /// Rakudo's `<anon|N>`. This is a pure function so `display.rs` (which has
 /// no interpreter context) can map the name for `.gist`/`.raku`/`say`.
+///
+/// A NESTED lexical declaration (e.g. `my monitor Store { my class Session
+/// {...} }`) mangles each `::`-qualified segment independently, producing
+/// `Store\u{0}<id1>::Session\u{0}<id2>` — so every segment is stripped, not
+/// just the first, or a display would keep only `Store` and silently drop
+/// `::Session`.
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
-    let base = match name.split_once('\u{0}') {
-        Some((short, _)) => short,
-        None => name,
-    };
-    match anon_type_display_name(base) {
-        Some(display) => std::borrow::Cow::Owned(display),
-        None => std::borrow::Cow::Borrowed(base),
+    if !name.contains('\u{0}') {
+        // Fast path: nothing mangled anywhere, no allocation needed.
+        return match anon_type_display_name(name) {
+            Some(display) => std::borrow::Cow::Owned(display),
+            None => std::borrow::Cow::Borrowed(name),
+        };
     }
+    let demangled = name
+        .split("::")
+        .map(|segment| {
+            let base = segment
+                .split_once('\u{0}')
+                .map_or(segment, |(short, _)| short);
+            anon_type_display_name(base).unwrap_or_else(|| base.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join("::");
+    std::borrow::Cow::Owned(demangled)
 }
 
 /// Format a value for display inside a Capture gist.

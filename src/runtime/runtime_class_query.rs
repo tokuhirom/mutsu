@@ -25,6 +25,23 @@ impl Interpreter {
     /// Returns `None` when the name is already qualified or when nothing along
     /// the chain matches; the caller then keeps the bare name.
     pub(crate) fn resolve_bare_type_name(&self, name: &str) -> Option<String> {
+        // A lexically-scoped `my class`/`my role` registers under a mangled
+        // storage name (ADR-0047 P1: `Name\u{0}<decl-id>`) while `env` still
+        // binds the (bare OR already-qualified, e.g. `my class Foo::Bar`)
+        // name to it — the same alias `exec_get_bare_word_op` follows for
+        // type-object position. Call position needs the same resolution, or
+        // a lexical class's coercion call (`B("q")`, `Foo::Bar("q")`) reports
+        // "Unknown function: B" / misparses the qualified form as a routine
+        // call, because `has_class(name)` misses the mangled registry key.
+        // Checked before the "::"-gated package-chain walk below, and before
+        // it too — `env` reflects the innermost lexical scope directly, which
+        // is at least as precise as walking `current_package`'s chain.
+        if let Some(ValueView::Package(target)) = self.env().get(name).map(Value::view) {
+            let resolved = target.resolve();
+            if resolved != name && (self.has_class(&resolved) || self.has_role(&resolved)) {
+                return Some(resolved);
+            }
+        }
         if name.contains("::") {
             return None;
         }

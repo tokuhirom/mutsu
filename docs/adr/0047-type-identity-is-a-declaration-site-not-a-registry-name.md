@@ -1,6 +1,6 @@
 # ADR-0047: A type's identity is its declaration site, not its current registry name — retiring `subtest`'s registry rollback
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Partially adopted — P1 and P2 landed (PR #6757); P3/P4 not started
 - Date: 2026-08-20
 - Supersedes: nothing
 - Related: [ADR-0024](0024-mainline-lexicals-for-named-subs.md) (name-vs-lexical resolution),
@@ -226,19 +226,49 @@ explicitly **not** part of this ADR.
 
 Each phase is independently landable and independently verifiable.
 
-- **P1 (D1)** — unconditional site keys; delete `lexical_class_sites` arbitration.
-  Pins: S2 and S3 as `t/lexical-class-sibling-identity.t`.
-- **P2 (D2)** — name-binding restore at scope exit. Pin: S3's second line.
-- **P3 (D3)** — delete the subtest registry rollback. Pins: S1 as
+- **P1 (D1) — LANDED (PR #6757).** Unconditional site keys; deleted
+  `lexical_class_sites`/`lexical_class_owner_scopes` arbitration. Pins: S2 and
+  S3 as `t/lexical-class-sibling-identity.t`. Extended to `grammar` as well:
+  `my grammar`/`our grammar` never actually set `is_lexical` before this PR
+  (`grammar_decl` hardcoded `is_lexical: false` regardless of the `my`/`our`
+  prefix), so `grammar_decl` was split into a plain (package-scoped) entry
+  point and `grammar_decl_my` that threads `is_lexical` through, mirroring
+  `class_decl_body`. A narrower `lexical_class_pending`/
+  `lexical_class_pending_scopes` mechanism (scoped strictly to
+  currently-open scopes) was added so a stub (`my class C { ... }`) and its
+  own later full definition in the SAME open scope — two separate
+  `decl_id`s, since the parser assigns a fresh id per `Stmt::ClassDecl` node
+  even for a textually-adjacent stub+definition pair — still share one
+  registry entry, without reintroducing S2/S3's cross-scope reach.
+  `role`/`subset` were investigated but found to have NO existing
+  `decl_id`/`is_lexical` mangling infrastructure at all (unlike `class`/
+  `grammar`, which share one code path) — extending them is a separate,
+  larger follow-up, not part of this landing.
+  Making mangling unconditional (rather than collision-only) surfaced
+  several sites that assumed a lexical class's registry key equals its
+  source-written name; each was fixed to resolve through the lexical env or
+  demangle for display (bareword/call-position type resolution, qualified
+  method dispatch, private-method owner resolution, role `is`/`hides`
+  parent resolution, variable tie traits, and several exception/error
+  message constructors) — see PR #6757's description for the full list.
+- **P2 (D2) — LANDED (PR #6757).** Name-binding restore at scope exit.
+  Implemented by enrolling a lexical class's declared name in
+  `block_declared_vars` (the same set an ordinary `my $x` joins), so the
+  EXISTING general block-exit restore machinery in `vm_misc_scope.rs`
+  reverts the bare-name env binding on scope exit exactly like a shadowed
+  lexical variable — no bespoke restore mechanism needed. Pin: S3's second
+  line (part of `t/lexical-class-sibling-identity.t`).
+- **P3 (D3) — NOT STARTED.** Delete the subtest registry rollback. Pins: S1 as
   `t/subtest-escaped-type-stays-constructible.t`; `t/subtest-module-reuse.t` must
-  still pass. Gate on the `scripts/battery-testsuite.sh` whitelist, which is what
+  still pass (verified still passing after P1+P2, unaffected by this slice).
+  Gate on the `scripts/battery-testsuite.sh` whitelist, which is what
   caught #6499.
 - **P4 (follow-up, not scheduled here)** — with lifetime decoupled from the
   dispatch path, re-attempt #6499's compiled-first `subtest_call_block`. Note this
   is *necessary but not sufficient*: the compiled path has a separate, un-root-caused
   async regression (see the todo file named in S4).
 
-P1 and P2 are worth landing even if P3 is deferred: S2 is a silent wrong answer
+P1 and P2 were landed even though P3 is deferred: S2 is a silent wrong answer
 and does not involve `subtest` at all.
 
 ## Rejected alternatives

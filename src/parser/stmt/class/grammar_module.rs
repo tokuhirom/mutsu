@@ -128,8 +128,26 @@ pub(crate) fn token_decl(input: &str) -> PResult<'_, Stmt> {
     }
 }
 
-/// Parse `grammar` declaration.
+/// Parse a plain (non-`my`/`our`-prefixed) `grammar` declaration. Package-
+/// scoped like a bare `class Foo { }`: not lexical.
 pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
+    grammar_decl_inner(input, false)
+}
+
+/// Parse a `my`/`our`-prefixed `grammar` declaration (called from the
+/// my/our keyword dispatcher, which has already stripped the `my`/`our`
+/// keyword off `input` and knows whether it was `my`). `is_lexical` mirrors
+/// `class_decl_body`'s `!is_our` threading — without it, `my grammar Foo { }`
+/// silently registered exactly like a package-scoped `grammar Foo { }` (the
+/// hardcoded `is_lexical: false` below never varied), so it got none of
+/// ADR-0047's per-declaration-site identity protection: two sibling
+/// `my grammar Foo { }` blocks collapsed to the same registry entry instead
+/// of two distinct grammars.
+pub(crate) fn grammar_decl_my(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
+    grammar_decl_inner(input, is_lexical)
+}
+
+fn grammar_decl_inner(input: &str, is_lexical: bool) -> PResult<'_, Stmt> {
     let rest = keyword("grammar", input).ok_or_else(|| PError::expected("grammar declaration"))?;
     let (rest, _) = ws1(rest)?;
     let (rest, name) = qualified_ident(rest)?;
@@ -211,7 +229,7 @@ pub(crate) fn grammar_decl(input: &str) -> PResult<'_, Stmt> {
             parents,
             class_is_rw: false,
             is_hidden: false,
-            is_lexical: false,
+            is_lexical,
             hidden_parents: vec![],
             does_parents,
             repr: None,

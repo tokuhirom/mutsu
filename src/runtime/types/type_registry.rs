@@ -435,6 +435,55 @@ impl Interpreter {
             })
     }
 
+    /// Resolve `qualified` against the type registry, tolerating ADR-0047's
+    /// unconditional lexical site-key mangling (`Foo\u{0}<decl-id>`). A caller
+    /// that RECONSTRUCTS a qualified name from a package/short-name pair
+    /// (`resolve_suppressed_type`'s `"{owner}::{name}"`) cannot know the
+    /// mangled suffix a `my class`/`my grammar` nested in that owner actually
+    /// registered under, since the suffix is an opaque per-site id. Try the
+    /// bare reconstructed name first (the common case: non-lexical nested
+    /// types, and any `decl_id == 0` declaration, are never mangled); if that
+    /// misses, look for exactly the mangled forms of `qualified` across the
+    /// four type tables and return the stored key so the caller can bind the
+    /// bareword to the class's REAL identity instead of a dead bare name.
+    pub(crate) fn resolve_lexical_type_key(&self, qualified: &str) -> Option<String> {
+        // `env` may hold an alias from the bare `qualified` name to its real
+        // (possibly mangled) storage name -- exactly the binding
+        // `exec_register_class_op` writes unconditionally for every class,
+        // lexical or not. Follow it BEFORE the `has_type_direct(qualified)`
+        // shortcut below, and return the ALIAS TARGET (the true registry
+        // key), not the bare name that resolved it -- a caller must dispatch
+        // on the class's real identity, not the dead bare name the alias
+        // merely proves exists. Checking this first matters whenever a STALE
+        // unmangled registry entry also happens to exist under the exact
+        // `qualified` string (e.g. two unrelated classes both computed under
+        // the same erroneously-leaked package prefix): `has_type_direct`
+        // alone would silently return that stale entry and never consult env
+        // for the more recent lexical declaration shadowing it here
+        // (`roast/S12-attributes/class.t` "is the private attribute
+        // initialized to default value" — a `my class A` after an earlier
+        // `class A` under the same computed qualified name dispatched to the
+        // FIRST class's methods instead of its own).
+        if let Some(ValueView::Package(target)) = self.env.get(qualified).map(Value::view) {
+            let resolved = target.resolve();
+            if resolved != qualified && self.has_type_direct(&resolved) {
+                return Some(resolved);
+            }
+        }
+        if self.has_type_direct(qualified) {
+            return Some(qualified.to_string());
+        }
+        let prefix = format!("{qualified}\u{0}");
+        let reg = self.registry();
+        reg.classes
+            .keys()
+            .find(|key| key.starts_with(&prefix))
+            .or_else(|| reg.roles.keys().find(|key| key.starts_with(&prefix)))
+            .or_else(|| reg.enum_types.keys().find(|key| key.starts_with(&prefix)))
+            .or_else(|| reg.subsets.keys().find(|key| key.starts_with(&prefix)))
+            .cloned()
+    }
+
     /// Resolve a type name against the current package chain: inside
     /// `module Foo { class Params {…}; sub mk { Params.new } }` the sub's
     /// bareword `Params` names `Foo::Params` (registered fully qualified),
@@ -454,13 +503,43 @@ impl Interpreter {
         }
         let pkg_owned = self.current_package().to_string();
         let mut pkg: &str = &pkg_owned;
+        // Self-reference from inside a lexically-mangled class's OWN body
+        // (ADR-0047 P1: `my class A { ...; A.^add_method(...) }`). While the
+        // body executes, `current_package()` is already the REAL storage name
+        // (`A\u{0}<decl-id>`), but the registry shell was published under
+        // that same mangled key, never under the bare `A` this loop's
+        // `"{pkg}::{name}"` probe builds — a self-reference can never match a
+        // NESTED name shape. Recognize the case directly: if the (demangled)
+        // current package IS exactly `name`, the class is referring to
+        // itself, so return the storage name as-is. Without this, `A` inside
+        // its own body resolved to nothing typed at all (falling through to
+        // a bare-string fallback further down the caller's chain), so
+        // `A.^add_method('bar', ...)` mutated a bogus, never-registered
+        // entity instead of the real class (`roast/S12-introspection/
+        // meta-class.t`, "Can .^add_method what .^lookup returns...").
+        if self.has_type_direct(pkg) && crate::value::user_facing_type_name(pkg).as_ref() == name {
+            return Some(pkg.to_string());
+        }
         loop {
             if pkg.is_empty() || pkg == "GLOBAL" {
                 return None;
             }
             let qualified = format!("{pkg}::{name}");
-            if self.has_type_direct(&qualified) {
-                return Some(qualified);
+            // ADR-0047: a lexically-scoped `my class`/`my grammar` reachable
+            // through this package chain is registered under a mangled
+            // storage name (`{qualified}\u{0}<decl-id>`), never the bare
+            // `qualified` this loop just built. `has_type_direct(&qualified)`
+            // alone therefore misses it, and this is exactly the scenario a
+            // qualified sub call's OWN body hits: `resolve_type_in_current_package`
+            // runs with `current_package()` set to the sub's declaring package
+            // (not the caller's), so a bareword type reference INSIDE that sub
+            // body (e.g. `X::Encode::Unknown.new(...)` inside `Encode::decode`)
+            // needs the mangled key, not just the bare concatenation.
+            // `resolve_lexical_type_key` tries the bare form FIRST (so a
+            // `decl_id == 0` / non-lexical declaration is unaffected) and only
+            // then scans for the mangled variant.
+            if let Some(key) = self.resolve_lexical_type_key(&qualified) {
+                return Some(key);
             }
             match pkg.rsplit_once("::") {
                 Some((parent, _)) => pkg = parent,

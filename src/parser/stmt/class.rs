@@ -38,7 +38,9 @@ pub(super) use class_decl::{also_trait_stmt, class_decl_body};
 pub(crate) use class_decl::{
     anon_class_decl, augment_class_decl, class_decl, declare_decl, native_decl,
 };
-pub(super) use grammar_module::{does_decl, grammar_decl, module_decl, token_decl, trusts_decl};
+pub(super) use grammar_module::{
+    does_decl, grammar_decl, grammar_decl_my, module_decl, token_decl, trusts_decl,
+};
 pub(super) use package_decl::{
     package_decl, package_decl_my, proto_decl, proto_decl_scoped, unit_module_stmt,
 };

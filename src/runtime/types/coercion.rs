@@ -249,7 +249,17 @@ impl Interpreter {
                 return Ok(coerced);
             }
         }
-        if self.registry().classes.contains_key(base_target) {
+        // `base_target` is the coercion target as WRITTEN in the source (e.g.
+        // `R[StrContainer:D(Int)]` role-parameterization binds `T` to the
+        // literal string "StrContainer:D"), but a lexical class registers
+        // under a mangled storage name (ADR-0047 P1: `Foo\u{0}<decl-id>`)
+        // while `env` binds the bare name written here to it. Remap before
+        // the registry probe below, or a coercion target that is a `my
+        // class` never matches `registry().classes` and every such coercion
+        // falls straight through to `X::Coerce::Impossible`
+        // (`roast/S12-coercion/parameterized.t`).
+        let remapped_base_target = self.lexical_env_remap_name(base_target);
+        if self.registry().classes.contains_key(&remapped_base_target) {
             // Wrap Pair values in a Scalar container so they are passed as
             // positional arguments to COERCE/new rather than being flattened
             // into named arguments by the method dispatch logic.
@@ -259,11 +269,11 @@ impl Interpreter {
             };
             // Try COERCE method first
             if let Ok(coerced) = self.call_method_with_values(
-                Value::package(Symbol::intern(base_target)),
+                Value::package(Symbol::intern(&remapped_base_target)),
                 "COERCE",
                 vec![coerce_arg.clone()],
             ) {
-                if self.type_matches_value(base_target, &coerced) {
+                if self.type_matches_value(&remapped_base_target, &coerced) {
                     return Ok(coerced);
                 }
                 return Err(coerce_impossible_error(target, &value));
@@ -272,13 +282,13 @@ impl Interpreter {
             // but only if there's an explicit `new` variant that accepts a
             // positional parameter matching the value type.  The default
             // constructor (named-only params) must NOT be used for coercion.
-            if self.class_has_new_accepting_positional(base_target, &value)
+            if self.class_has_new_accepting_positional(&remapped_base_target, &value)
                 && let Ok(coerced) = self.call_method_with_values(
-                    Value::package(Symbol::intern(base_target)),
+                    Value::package(Symbol::intern(&remapped_base_target)),
                     "new",
                     vec![coerce_arg],
                 )
-                && self.type_matches_value(base_target, &coerced)
+                && self.type_matches_value(&remapped_base_target, &coerced)
             {
                 return Ok(coerced);
             }

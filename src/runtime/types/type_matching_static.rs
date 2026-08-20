@@ -13,8 +13,18 @@ impl Interpreter {
     /// swallowed a plain `…::DependencySpecification` and then died calling the
     /// `.specs` method only the `::Any` sibling has.
     fn short_name_bridges(qualified: &str, short: &str) -> bool {
-        qualified.rsplit("::").next() == Some(short)
-            && !crate::runtime::Interpreter::is_builtin_type(short)
+        // ADR-0047: `qualified`'s trailing component may itself be a
+        // lexically-mangled storage name (`Session\u{0}<decl-id>`), e.g. a
+        // `my class Session` nested inside a `my monitor Store` registers as
+        // `Store\u{0}<id1>::Session\u{0}<id2>`. Strip any such suffix before
+        // comparing, or a type object's own bare-name self-check (`has
+        // Session $x` defaulting to the `Session` type object) never bridges
+        // back to its own declared constraint.
+        let last = qualified.rsplit("::").next().unwrap_or(qualified);
+        let last = last
+            .split_once('\u{0}')
+            .map_or(last, |(stripped, _)| stripped);
+        last == short && !crate::runtime::Interpreter::is_builtin_type(short)
     }
 
     pub(crate) fn type_matches(constraint: &str, value_type: &str) -> bool {

@@ -95,17 +95,20 @@ impl Interpreter {
         attr_name: &str,
         twigil: &str,
     ) -> RuntimeError {
+        // `ctx.pkg_name` is the class's REGISTRY storage name, which for a
+        // `my`-scoped declaration is mangled (ADR-0047 P1: `Foo\u{0}<id>`).
+        // The exception's `.package-name` and message must show the
+        // user-facing bare name, like every other class-name-in-a-message
+        // site.
+        let pkg_name = crate::value::user_facing_type_name(ctx.pkg_name);
         let symbol = format!("${}{}", twigil, attr_name);
         let message = format!(
             "Attribute {} not declared in {} {}",
-            symbol, ctx.pkg_kind, ctx.pkg_name
+            symbol, ctx.pkg_kind, pkg_name
         );
         let mut attrs = HashMap::new();
         attrs.insert("symbol".to_string(), Value::str(symbol.clone()));
-        attrs.insert(
-            "package-name".to_string(),
-            Value::str(ctx.pkg_name.to_string()),
-        );
+        attrs.insert("package-name".to_string(), Value::str(pkg_name.to_string()));
         attrs.insert(
             "package-kind".to_string(),
             Value::str(ctx.pkg_kind.to_string()),

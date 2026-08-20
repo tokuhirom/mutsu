@@ -510,6 +510,18 @@ impl Interpreter {
     /// name should still fail the caller's check rather than be silently
     /// accepted.
     pub(super) fn resolve_private_class_name(&self, context_class: &str, short: &str) -> String {
+        // A lexical class (`my class Jar::Cookie { ... }`) registers under a
+        // mangled storage name (ADR-0047 P1: `Foo\u{0}<decl-id>`) while `env`
+        // binds the name written in source to it -- the same alias ordinary
+        // bareword/qualified-method resolution follows. Without this, a
+        // qualified private call whose owner is a lexical class (`trusts` /
+        // `$o!Owner::meth`) canonicalizes to the dead bare name, which is
+        // never a key in `class_trusts`, so the owner's `trusts` never
+        // matches and every such call is wrongly denied.
+        let remapped = self.lexical_env_remap_name(short);
+        if remapped != short {
+            return remapped;
+        }
         let via_chain = self.resolve_type_name_for_owner(context_class, short.to_string());
         if via_chain != short {
             return via_chain;

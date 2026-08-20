@@ -353,8 +353,17 @@ impl Interpreter {
                 } else if expected_normalized.is_empty() || expected_normalized == "Exception" {
                     true
                 } else if let Some(cls) = &ex_class {
-                    cls == expected_normalized
-                        || cls.starts_with(&format!("{}::", expected_normalized))
+                    // `cls` is the exception's REGISTRY storage name, which
+                    // for a lexically-scoped exception class (`my class
+                    // X::MyErr is Exception { ... }`) is mangled (ADR-0047
+                    // P1: `Foo\u{0}<decl-id>`). `expected_normalized` is
+                    // already the user-facing bare name (`Value::to_string_value`'s
+                    // `Package` arm demangles it). Compare the demangled form
+                    // for the name checks; the registry/MRO/role checks below
+                    // still need the real (possibly mangled) `cls` key.
+                    let cls_display = crate::value::user_facing_type_name(cls);
+                    cls_display == expected_normalized
+                        || cls_display.starts_with(&format!("{}::", expected_normalized))
                         // Check MRO: the exception's class hierarchy may include the expected type
                         || self.registry().classes.get(cls).is_some_and(|def| {
                             def.mro.iter().any(|parent| parent == expected_normalized)
@@ -544,7 +553,15 @@ impl Interpreter {
                 }
             }
             ValueView::Package(type_name) => actual_val.is_some_and(|actual| {
-                crate::value::types::what_type_name(actual) == type_name.resolve()
+                // ADR-0047 P1: a lexically-scoped class's type object carries
+                // its mangled storage name (`Foo\u{0}<decl-id>`), while
+                // `what_type_name` on the actual value reports the demangled,
+                // user-facing name. Demangle the matcher side too, or a
+                // `got => TestSink` matcher against a `my class TestSink`
+                // never matches (Cro::Core composer/connection-conditional).
+                let matcher_name = type_name.resolve();
+                crate::value::types::what_type_name(actual)
+                    == crate::value::user_facing_type_name(&matcher_name).as_ref()
             }),
             ValueView::Junction { kind, values } => {
                 let mut matches = values

@@ -886,14 +886,22 @@ impl Interpreter {
                 }
             }
             let source_type = crate::runtime::types::diagnostic_type_name(&args[0]);
+            // `name` may be a lexical class's mangled storage name
+            // (ADR-0047 P1: `Foo\u{0}<decl-id>`) resolved above via
+            // `resolve_bare_type_name` -- show the user-facing bare name in
+            // both the message and the `target-type` attribute.
+            let display_name = crate::value::user_facing_type_name(name);
             let msg = format!(
                 "Impossible coercion from '{}' into '{}': no acceptable coercion method found",
-                source_type, name
+                source_type, display_name
             );
             return Err(RuntimeError::typed(
                 "X::Coerce::Impossible",
                 std::collections::HashMap::from([
-                    ("target-type".to_string(), Value::str(name.to_string())),
+                    (
+                        "target-type".to_string(),
+                        Value::str(display_name.to_string()),
+                    ),
                     ("from-type".to_string(), Value::str(source_type)),
                     ("message".to_string(), Value::str(msg)),
                 ]),

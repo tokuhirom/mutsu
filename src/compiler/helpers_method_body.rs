@@ -182,7 +182,12 @@ impl Compiler {
     /// bracketing does, and that always sets `current_package` directly to
     /// the real name, bypassing the mangled form) — see
     /// `qualified_role_decl_name`'s identical rule and ADR-0019 D3-8d.
-    pub(super) fn qualified_class_decl_name(&self, resolved_name: &str) -> String {
+    pub(super) fn qualified_class_decl_name(
+        &self,
+        resolved_name: &str,
+        is_lexical: bool,
+        decl_id: u64,
+    ) -> String {
         let base_package: &str = if self.current_package.contains("::&") {
             self.enclosing_package
                 .as_deref()
@@ -190,7 +195,7 @@ impl Compiler {
         } else {
             &self.current_package
         };
-        if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
+        let qualified = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
         } else if base_package == "GLOBAL"
             || resolved_name == base_package
@@ -199,6 +204,28 @@ impl Compiler {
             resolved_name.to_string()
         } else {
             format!("{base_package}::{resolved_name}")
+        };
+        // ADR-0047 P1: every `my`/`our`-lexical class or grammar declaration
+        // site with a nonzero `decl_id` registers under a MANGLED storage name
+        // (`exec_register_class_op`, `Foo\u{0}<decl-id>`), not under its bare
+        // qualified name. This function's whole purpose is to predict, at
+        // compile time, the exact package name that op will use — so that
+        // method bodies and class-body-level `our`/static declarations
+        // precompiled HERE (under this predicted name) later resolve the SAME
+        // bareword the runtime registration actually binds. Missing this step
+        // left every `our $x` inside a `my class` unreachable from its own
+        // methods: the declaration was baked "Klass::$x" (this function's
+        // pre-ADR-0047 answer) while a method's runtime bareword-fallback
+        // lookup used the REAL (mangled) `current_package()` at call time,
+        // "Klass\u{0}<id>::$x" — two different strings
+        // (`roast/S03-binding/attributes.t`, `roast/S12-attributes/class.t`).
+        // This does not replicate the stub+full-definition continuation
+        // special case (`lexical_class_pending_stub`) — a stub body has no
+        // methods/our-decls of its own to qualify, so that gap is moot here.
+        if is_lexical && decl_id != 0 {
+            format!("{qualified}\u{0}{decl_id}")
+        } else {
+            qualified
         }
     }
 

@@ -184,38 +184,52 @@ impl Interpreter {
                 format!("{current_package}::{resolved_name}")
             };
             // A lexical (`my`) class is stored in the registry under a *storage
-            // name* that is normally the same as `qualified_name`. But when a
-            // *different* source declaration site reuses the same name *after the
-            // earlier one's scope has exited* (e.g. two `my class Foo` in
-            // separate `gather` blocks), it must not clobber the first one —
-            // instances of the first class still reference it by name. Such a
-            // later, out-of-scope collision is stored under a mangled internal
-            // name `Foo\u{0}<site-id>`. The site id is the parse-time-assigned
-            // `decl_id`, stable across re-executions of the same site (a loop
-            // body keeps one identity) but distinct between sites. `decl_id == 0`
-            // (deserialized/synthesized node) opts out.
+            // name* distinct from its source `qualified_name` (ADR-0047 D1/P1):
+            // every `my`-scoped declaration site with a nonzero `decl_id` mangles
+            // unconditionally to `Foo\u{0}<site-id>`. The site id is the
+            // parse-time-assigned `decl_id`, stable across re-executions of the
+            // same site (a loop body keeps one identity), but distinct between
+            // sites. `decl_id == 0` (deserialized/synthesized node) opts out
+            // and uses the bare qualified name.
             //
-            // A same-name declaration that is *upgrading a stub* of the same name
-            // (`my class C { ... }` then `my class C { ... }`) is NOT a collision:
-            // it must keep the bare name so the definition lands on the same
-            // registry entry. So only mangle when the existing same-named class
-            // is already a fully-defined (non-stub) class from a different site.
-            let storage_name = if *is_lexical && *decl_id != 0 {
-                match self.lexical_class_site_owner(&qualified_name) {
-                    Some(owner)
-                        if owner != *decl_id
-                            && self.has_class(&qualified_name)
-                            && !self.registry().class_stubs.contains(&qualified_name) =>
-                    {
-                        format!("{qualified_name}\u{0}{decl_id}")
-                    }
-                    _ => {
-                        self.set_lexical_class_site_owner(qualified_name.clone(), *decl_id);
-                        qualified_name.clone()
-                    }
+            // Two distinct declaration sites therefore NEVER share a registry
+            // key, by construction, so a later sibling `my class Foo` cannot
+            // retarget an earlier one's already-existing instances (ADR-0047 S2)
+            // and scope exit never has to arbitrate a claim/release dance over a
+            // bare name (that used to live in `lexical_class_sites` /
+            // `lexical_class_owner_scopes`, deleted with this change). The env
+            // binding for the bare name (`Foo` -> this storage name) is instead
+            // scoped and restored by the ordinary block-exit machinery via
+            // `register_lexical_class`/`block_declared_vars` (ADR-0047 D2/P2).
+            //
+            // EXCEPTION: a stub (`my class C { ... }`) and its own later full
+            // definition (`my class C { method m {} }`) are two SEPARATE
+            // `Stmt::ClassDecl` nodes with two different `decl_id`s, even
+            // though they are one logical class. If the current scope has an
+            // still-incomplete stub pending under this qualified name, this
+            // declaration completes THAT stub, so it reuses its exact storage
+            // name instead of mangling a new one (see
+            // `lexical_class_pending_stub`'s doc comment for why this is
+            // scoped to only currently-open scopes).
+            //
+            // The pending-stub lookup runs REGARDLESS of whether THIS
+            // declaration itself is lexical: real Raku allows completing a
+            // `my class A::B { ... }` stub with a plain, package-scoped
+            // `class A::B { }` in the same scope (`roast/S10-packages/
+            // joined-namespaces.t`, "can stub lexical classes with joined
+            // namespaces") — gating the lookup on `*is_lexical` here meant the
+            // non-`my` completion always mangled to bare `qualified_name`
+            // (since a plain `class` never mangles), leaving the stub's
+            // `Foo\u{0}<decl-id>` entry permanently registered as a stub —
+            // "packages were stubbed but not defined" at program exit.
+            let storage_name = match self.lexical_class_pending_stub(&qualified_name) {
+                Some(pending_storage) => pending_storage,
+                None if *is_lexical && *decl_id != 0 => {
+                    let mangled = format!("{qualified_name}\u{0}{decl_id}");
+                    self.record_lexical_class_pending(qualified_name.clone(), mangled.clone());
+                    mangled
                 }
-            } else {
-                qualified_name.clone()
+                None => qualified_name.clone(),
             };
             // If the name was previously suppressed (e.g. by a `my class` in an
             // earlier block), clear the suppression before running the class body

@@ -211,7 +211,7 @@ pub(super) fn try_keyword_dispatch(
     }
     // my grammar Name { ... }
     if keyword("grammar", rest).is_some() {
-        return super::super::class::grammar_decl(rest).map(Some);
+        return super::super::class::grammar_decl_my(rest, !is_our).map(Some);
     }
     // my role Name[...] { ... }
     if keyword("role", rest).is_some() {
