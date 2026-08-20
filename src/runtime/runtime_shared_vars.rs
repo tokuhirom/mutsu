@@ -687,8 +687,17 @@ impl Interpreter {
             // cell the capturing sub still reads through, permanently
             // disconnecting it from every future write. Write through the
             // parent's own cell instead, when it has one.
+            //
+            // ADR-0039 slice 1 widens this from `mainline_lexical_cell`
+            // (mainline-only) to `unit_lexical_container_cell` (mainline OR
+            // module file-scope): a spawned worker's `@`/`%` container
+            // mutation dirtying this key needs the identical write-through,
+            // for the identical reason -- `env.insert`-ing a module's own
+            // container back here would either vanish (nothing reads `env`
+            // for that name back) or pollute the loading scope's same-named
+            // `env` entry.
             if !matches!(val.view(), ValueView::ContainerRef(_))
-                && let Some(cell) = self.mainline_lexical_cell(&key)
+                && let Some(cell) = self.unit_lexical_container_cell(&key)
             {
                 cell.lock().unwrap().clone_from(&val);
                 continue;

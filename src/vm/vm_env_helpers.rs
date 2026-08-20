@@ -438,7 +438,7 @@ impl Interpreter {
     /// chokepoints (element-delete, ADR-0039 slice 1's `:delete` fix) that
     /// need to write back THROUGH the cell rather than just read its current
     /// contents once.
-    pub(super) fn unit_lexical_container_cell(
+    pub(crate) fn unit_lexical_container_cell(
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
