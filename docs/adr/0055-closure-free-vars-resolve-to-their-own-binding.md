@@ -1,4 +1,4 @@
-# ADR-0054: A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores
+# ADR-0055: A closure's free variable resolves to its own captured binding — retiring `merge_all` and the two closure-state stores
 
 - Status: Proposed (design complete; implementation not started)
 - Date: 2026-08-20

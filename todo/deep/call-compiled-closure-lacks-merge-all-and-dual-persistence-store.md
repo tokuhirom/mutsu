@@ -1,12 +1,12 @@
 # `call_compiled_closure` has no `merge_all`-equivalent knob, and its per-instance state lives in a different store than the tree-walk branch's — both block a general `call_sub_value` → `call_compiled_closure` fork
 
-## Status (2026-08-20): re-verified on `main` (`b1a9bb8a5`), and REFRAMED — design now lives in ADR-0054
+## Status (2026-08-20): re-verified on `main` (`b1a9bb8a5`), and REFRAMED — design now lives in ADR-0055
 
 Both gaps below are structurally intact on `main`. But a re-investigation
 sharpened the diagnosis enough that the fix shape this ticket proposed ("give
 `call_compiled_closure` a `merge_all` knob") is now explicitly **rejected**.
 The design that replaces it is
-[`docs/adr/0054-closure-free-vars-resolve-to-their-own-binding.md`](../../docs/adr/0054-closure-free-vars-resolve-to-their-own-binding.md)
+[`docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md`](../../docs/adr/0055-closure-free-vars-resolve-to-their-own-binding.md)
 (Proposed). Read that ADR before touching this area; the remainder of this file
 is kept as the original audit record plus the corrections below.
 
@@ -55,7 +55,7 @@ is kept as the original audit record plus the corrections below.
    has been fixed and retired; `todo/tickets/call-compiled-closure-missing-rw-lazylist-tail.md`
    is still open and independent of this ADR.
 
-**Not a small fix — do not implement piecemeal.** ADR-0054 sequences it as five
+**Not a small fix — do not implement piecemeal.** ADR-0055 sequences it as five
 slices, and slice 1 (finish ADR-0025's cell coverage) is a hard prerequisite:
 closure-wins is only sound once every mutated capture has a cell.
 
@@ -135,7 +135,7 @@ this ticket's proposed fork: `.()` and any other call reaching
 tree-walk branch uses `closure_env_overrides`. Routing *more* of
 `call_sub_value`'s traffic through `call_compiled_closure` does not introduce
 the hazard, but it does widen how often it can bite, and does so unevenly if
-the fork ends up conditional (e.g. gated on `!merge_all`) — hence ADR-0054's
+the fork ends up conditional (e.g. gated on `!merge_all`) — hence ADR-0055's
 rule that the fork must be gated on the *closure instance*
 (`compiled_code.is_some()`), never on `merge_all` or on the call site.
 
