@@ -1379,7 +1379,9 @@ impl Interpreter {
                             }),
                         },
                     );
-                    return Ok(result);
+                    // ADR-0049 slice 2: decay a `Nil` argument to the tagged
+                    // element type (e.g. `Array[Int].new(Nil)[0].WHAT` is `(Int)`).
+                    return Ok(self.decay_nil_container_elements(result));
                 }
                 if matches!(base_class_name, "Hash" | "Map") {
                     let mut flat = Vec::new();
@@ -1428,7 +1430,10 @@ impl Interpreter {
                         key_type,
                         declared_type: Some(class_name.resolve()),
                     };
-                    return Ok(self.tag_container_metadata(result, info));
+                    let result = self.tag_container_metadata(result, info);
+                    // ADR-0049 slice 2: decay a `Nil` value to the tagged
+                    // element type.
+                    return Ok(self.decay_nil_container_elements(result));
                 }
             }
             // Not `if let ... else`: the role branch is skipped entirely while

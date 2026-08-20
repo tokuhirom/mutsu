@@ -306,6 +306,10 @@ impl Interpreter {
             };
             result = self.tag_container_metadata(result, info);
         }
+        // ADR-0049 slice 2: decay a `Nil` argument to the constructed array's
+        // own default (untyped -> `Any`, typed -> the tagged element type
+        // above) -- `Array.new(Nil)[0].WHAT` is `(Any)`, not `Nil`.
+        result = self.decay_nil_container_elements(result);
         Ok(result)
     }
 
@@ -429,9 +433,13 @@ impl Interpreter {
             } else {
                 crate::runtime::utils::set_hash_original_keys(result, original_keys)
             };
-            return Ok(self.tag_container_metadata(result, info));
+            let result = self.tag_container_metadata(result, info);
+            // ADR-0049 slice 2: decay a `Nil` value to the tagged element type.
+            return Ok(self.decay_nil_container_elements(result));
         }
-        Ok(result)
+        // ADR-0049 slice 2: an untyped `Hash.new`/`Map.new` decays a `Nil`
+        // value to `Any` (`Hash.new("a", Nil)<a>.WHAT` is `(Any)`).
+        Ok(self.decay_nil_container_elements(result))
     }
 
     /// VM fast-path wrapper: build an aggregate (`Array`/`List`/`Positional`/
