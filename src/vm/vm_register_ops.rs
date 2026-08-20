@@ -989,14 +989,25 @@ impl Interpreter {
             let Some(idx) = baked_idx else {
                 continue;
             };
-            let cur = &self.locals[idx];
             // Already a shared cell -> a sibling closure (or earlier capture)
             // boxed it; reuse the same Arc.
-            if cur.is_container_ref() {
+            if self.locals[idx].is_container_ref() {
                 continue;
             }
+            let cur = &self.locals[idx];
             // Only box plain scalar containers. Reference types share already;
             // type objects / proxies must not be hidden behind a ContainerRef.
+            // Seq/HyperSeq/RaceSeq/Slip are Arc-backed the same way Array/Hash
+            // are Gc-backed, so the founding rationale ("reference-shared
+            // already, left untouched", commit 5cedcfe60) applies to them
+            // equally -- they were simply not in the original list (see
+            // `news/2026-08/atomic-cell-shape-refusal-asymmetry-resolved.md`, resolved
+            // by adding them here). Excluding them also removes the specific
+            // hazard that ticket documented: a var whose value transitions
+            // from a refused shape (Array) to a Seq mid-sequence (e.g. via
+            // `flat`) no longer triggers a MID-SEQUENCE promotion here, so it
+            // stays on one lane (the general shared_vars reconcile) for its
+            // whole lifetime instead of switching mechanisms partway through.
             // EXCEPTION: the Any type object is the uninitialized-scalar seed
             // (PLAN 8.5 step 3) — box it exactly like the old Nil seed, so a
             // captured-then-reassigned lexical stays a shared cell
@@ -1009,6 +1020,10 @@ impl Interpreter {
                         | ValueView::Hash(..)
                         | ValueView::Sub(..)
                         | ValueView::Proxy { .. }
+                        | ValueView::Seq(..)
+                        | ValueView::HyperSeq(..)
+                        | ValueView::RaceSeq(..)
+                        | ValueView::Slip(..)
                 )
             {
                 continue;
