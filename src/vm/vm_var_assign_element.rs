@@ -413,6 +413,60 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // ADR-0039 slice 1: `name_idx` may name a compunit's own file-scope
+        // `@`/`%` (its authoritative storage is the cell in `unit_lexicals`,
+        // not `env[var_name]` — that key can hold a completely unrelated
+        // same-named binding, the loading scope's own `my %items`). Every
+        // helper this op delegates to below (`try_shared_hash_element_assign`,
+        // `try_shared_array_element_assign`, `try_fast_hash_element_assign`,
+        // `exec_index_assign_expr_named_op_inner`) is env-centric and has no
+        // idea `unit_lexicals` exists, so a plain `%h{$k} = $v` on a used
+        // module's own file-scope hash silently auto-vivified a brand-new,
+        // disconnected env entry instead of writing through the real cell
+        // (File::Temp's `%roster{$name} = $fh` inside `make-temp`, discovered
+        // via the bundled-library battery gate). Mirror
+        // `exec_delete_index_named_op`'s identical seed/restore for `:delete`:
+        // temporarily seed env with the cell's inner container, run the op,
+        // write the mutated result back through the cell, then restore env to
+        // whatever it held before.
+        let var_name_for_cell = Self::const_str(code, name_idx).to_string();
+        let unit_cell = self.unit_lexical_container_cell(&var_name_for_cell);
+        let saved_env_entry = unit_cell.as_ref().map(|cell| {
+            let saved = self.env().get(&var_name_for_cell).cloned();
+            let inner = cell.lock().unwrap().clone();
+            self.env_mut().insert(var_name_for_cell.clone(), inner);
+            saved
+        });
+        let result =
+            self.exec_index_assign_expr_named_op_seeded(code, name_idx, is_positional, target_slot);
+        if let Some(cell) = unit_cell {
+            if let Some(mutated) = self.env().get(&var_name_for_cell).cloned() {
+                *cell.lock().unwrap() = mutated;
+            }
+            // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
+            // guarded by the same `if let Some(cell) = ...` above at seed
+            // time), so this `flatten()` recovers the ORIGINAL env entry —
+            // `Some(Some(v))` (had one) or `Some(None)` (had none) — not a
+            // "did we even seed" flag.
+            match saved_env_entry.flatten() {
+                Some(v) => {
+                    self.env_mut().insert(var_name_for_cell.clone(), v);
+                }
+                None => {
+                    self.env_mut().remove(&var_name_for_cell);
+                }
+            }
+        }
+        result
+    }
+
+    fn exec_index_assign_expr_named_op_seeded(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        is_positional: bool,
+        target_slot: Option<u32>,
+    ) -> Result<(), RuntimeError> {
         // A lazy `@`-array must reify its prefix before an element assignment
         // (`@a[i] = v`) — the assign machinery needs a materialized backing. (L2)
         self.reify_lazy_array_slot(Self::const_str(code, name_idx))?;
