@@ -789,6 +789,57 @@ impl Interpreter {
         }
     }
 
+    /// Splice a freshly-minted/reused `:=` bind `container` into every
+    /// ancestor call frame that already owns `name` in its saved env, so the
+    /// binding survives that frame's later env restore (on return) instead of
+    /// reverting to the stale pre-bind value. Shared by the `SetLocal`
+    /// (`vm_var_assign_set_local.rs`, two branches) and `SetGlobal`
+    /// (`vm_exec_dispatch.rs`) `:=`-bind handlers, which used to carry three
+    /// near-identical copies of this loop.
+    ///
+    /// `code` is the CURRENTLY EXECUTING frame's compiled function, used only
+    /// to look up `name`'s local-slot index for the `saved_locals` patch
+    /// below. **That index is generally wrong for `frame`**, an ancestor call
+    /// frame: `VmCallFrame` carries no per-frame locals-name table (see
+    /// `src/vm.rs`), so there is no way to look up the *right* index for a
+    /// frame belonging to a different compiled function than `code`. The
+    /// patch is therefore a no-op for the common cross-function free-variable
+    /// case this mechanism exists for (a `:=` bind performed inside a callee,
+    /// naming a lexical owned by some ancestor). It only happens to land
+    /// correctly when `frame` is a *recursive* invocation of the exact same
+    /// compiled function as `code`, where the two locals layouts coincide by
+    /// construction — narrow enough that it is kept rather than deleted, but
+    /// it must not be relied on as the general mechanism.
+    ///
+    /// The `saved_env` splice just above it, keyed by name rather than slot
+    /// index, is what actually carries the binding correctly across an
+    /// ordinary (non-recursive) call chain: when the ancestor frame's env is
+    /// restored on return, its `saved_env` already holds the shared
+    /// `ContainerRef`, and the "lazy sync" block in
+    /// `exec_set_local_op_inner` (`vm_var_assign_set_local.rs`) adopts that
+    /// `ContainerRef` from `env` back into `locals` on the next read/write of
+    /// the name in that frame — which is why the fixed tests in
+    /// `t/bind-source-tracks-through-call-chain.t` pass despite the
+    /// `saved_locals` patch being unreliable. See
+    /// `todo/tickets/bind-alias-saved-locals-wrong-frame-index.md`.
+    pub(super) fn propagate_bind_to_ancestor_frames(
+        &mut self,
+        name: &str,
+        code: &CompiledCode,
+        container: &Value,
+    ) {
+        for frame in self.call_frames.iter_mut().rev() {
+            if frame.saved_env.contains_key_own_tier(name) {
+                frame.saved_env.insert(name.to_string(), container.clone());
+                for (i, local_name) in code.locals.iter().enumerate() {
+                    if local_name == name && i < frame.saved_locals.len() {
+                        frame.saved_locals[i] = container.clone();
+                    }
+                }
+            }
+        }
+    }
+
     /// The `Hash` analogue of [`array_inplace_reassign`]. Redirects any
     /// self-referencing hash value that pointed at `new_gc` back to `old_gc`.
     pub(super) fn hash_inplace_reassign(
