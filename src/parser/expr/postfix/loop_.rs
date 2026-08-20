@@ -602,13 +602,30 @@ pub(in crate::parser) fn brace_newline_state(consumed: &str) -> (bool, bool) {
 /// `throws-like '5.', X::Comp::Group, sorrows => sub (@s) { @s[0] ~~
 /// X::Syntax::Number::IllegalDecimal }` checks exactly this shape), not a
 /// lone typed exception.
+///
+/// Having rejected `5.` as a number, rakudo retries the trailing `.` as a
+/// method-call postfix, finds no method name, and panics with
+/// `X::Syntax::Malformed` carrying `what => 'postfix call'`. The group's own
+/// `.message` is the sorrow's message and the panic's message joined by a
+/// newline (`"Decimal point must be followed by digit\nMalformed postfix
+/// call"`), matching rakudo exactly.
 fn illegal_decimal_point_error() -> PError {
     const MSG: &str = "Decimal point must be followed by digit";
+    const PANIC_WHAT: &str = "postfix call";
+    let panic_message = format!("Malformed {PANIC_WHAT}");
     let sorrow = Value::make_exception(
         "X::Syntax::Number::IllegalDecimal",
         &[("message", Value::str(MSG.to_string()))],
     );
-    PError::comp_group(sorrow, false, "Confused", MSG.to_string())
+    let panic = Value::make_exception(
+        "X::Syntax::Malformed",
+        &[
+            ("message", Value::str(panic_message.clone())),
+            ("what", Value::str(PANIC_WHAT.to_string())),
+        ],
+    );
+    let group_message = format!("{MSG}\n{panic_message}");
+    PError::comp_group_with_panic(sorrow, false, panic, group_message)
 }
 
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
