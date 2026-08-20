@@ -1,5 +1,45 @@
 # A plain (non-`Cool`) class answers `Cool`-only builtin methods it should not have
 
+## Status (2026-08-20): designed — see ADR-0051; this file's diagnosis is WRONG below "What was tried"
+
+The **symptom** below is real and reproduces on `main` (`class G {}; G.new.uc` answers `"G()"`;
+26 divergences across the `Cool` string-method surface). The **diagnosis and the recommended fix
+direction are falsified.** Read
+[`docs/adr/0051-type-ancestry-has-one-oracle-and-an-unresolved-method-throws.md`](../../docs/adr/0051-type-ancestry-has-one-oracle-and-an-unresolved-method-throws.md)
+instead of planning from this file. The two load-bearing claims that do not survive re-measurement:
+
+1. **"There is no cross-module `(class, method)` row-existence predicate; one would need to be
+   built and exposed."** Stale. `native_method_row_exists` (`src/builtins/native_method_row.rs:213`)
+   is `pub(crate)`, and `Interpreter::e2_native_method_exists`
+   (`src/runtime/receiver_class.rs:490`) already wraps it with the full dispatch-chain walk and the
+   `canonical_builtin_owner` fold. Both landed for ADR-0019 Phase E box E7 step 4 (`.^can`) after
+   this file was written, and are consumed from `runtime/` today.
+
+2. **"All six regressions are coincidentally-named genuine per-type methods with NOTHING to do with
+   `Cool` inheritance."** Wrong — generalized from a single `DateTime` measurement. `raku` says
+   `Instant`, `Duration`, `IO::Path`, and `Match` **are** `Cool` (`Instant.^mro` is
+   `(Instant, Cool, Any, Mu)`). mutsu's ancestry data omits `Cool` for all four, and three of them
+   contradict *themselves*: `Instant ~~ Cool` is `True` while `Instant.^mro` lacks `Cool`, in the
+   same process. So `Instant.abs` and `IO::Path.chars` broke because the **ancestry data is wrong**,
+   not because the gate was wrong; `("Cool","abs")` and `("Cool","chars")` rows already exist and
+   would have served them. Only `Instant.DateTime` and `Date.IO` are genuinely missing rows, and
+   `DateTime.Date` already has one.
+
+The root cause is one level down from where this file looks: `Cool`-ness is answered by **twelve
+independently-maintained tables** (dispatch reads `builtin_type_catalog`, `.^mro`/`.^can` read
+`builtin_type_parents`, smartmatch reads a `Cool` allowlist in `type_matching_static.rs`, `are()`
+reads a denylist, multi-dispatch narrowness has three private copies, …). Any gate keyed on
+ancestry inherits whichever table it happens to call — which is why the attempt recorded below
+looked like six unrelated regressions instead of one data gap. ADR-0051 fixes the data first and
+gates second, and it does the gating with machinery that already shipped.
+
+**The historical record below is preserved as-is.** Everything from "The bug" through "What was
+tried" is accurate as a description of what was attempted and observed; only its *conclusions*
+(the two claims above, the "Why this is `todo/deep`" reasoning, and the "Suggested fix direction")
+are superseded.
+
+---
+
 Reclassified from `todo/tickets/plain-classes-answer-cool-only-builtin-methods.md`
 (2026-08-18) after attempting the fix that ticket sketched and finding the
 blast radius is real and larger than "verify it's not common, then land it" —
