@@ -2,6 +2,31 @@ use super::super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
+    /// Whether `e` is a *live* `return` control-flow signal still in flight
+    /// -- i.e. not yet converted into a typed exception. Such a signal is not
+    /// "the block died": it targets an enclosing routine's own call frame
+    /// (possibly outside the test-assertion block's nested-run boundary) and
+    /// must keep propagating unchanged so that routine's own return-handling
+    /// catches it, exactly like Rakudo (`lives-ok { $cb() }` where `$cb`'s
+    /// `return` targets the *caller* of `lives-ok` unwinds past the
+    /// assertion without recording a pass/fail — verified against `raku`).
+    /// A `return` with truly no enclosing routine anywhere is converted to a
+    /// typed `X::ControlFlow::Return` (`control: None`) at the `Return`
+    /// opcode itself (`OpCode::ReturnFromNonRoutine`, compile-time lexical
+    /// check) before it ever reaches here, so this predicate still correctly
+    /// reports that case as "died".
+    ///
+    /// `last`/`next`/`redo` are deliberately NOT included here: unlike
+    /// `return`, they have no equivalent compile-time "no enclosing loop"
+    /// check, so a genuinely homeless `last` (`lives-ok { last }` with no
+    /// loop anywhere) still carries `is_last() == true` when it reaches this
+    /// point and must still be reported as "died", matching `raku`
+    /// (`lives-ok { last }` fails with "last without loop construct" as a
+    /// normal test failure, not an uncaught abort).
+    fn is_live_nonlocal_control(e: &RuntimeError) -> bool {
+        e.is_return()
+    }
+
     pub(crate) fn test_fn_lives_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let block = Self::positional_value_required(args, 0, "lives-ok expects block")?.clone();
         let desc = Self::positional_string(args, 1);
@@ -13,7 +38,7 @@ impl Interpreter {
                 // eval_block_value sets "_" via SetTopic and we must restore it.
                 let saved_topic_sigil = self.env.get("$_").cloned();
                 let saved_topic_bare = self.env.get("_").cloned();
-                let result = self.eval_test_callable_body(&data).is_ok();
+                let result = self.eval_test_callable_body(&data);
                 match saved_topic_sigil {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
@@ -31,7 +56,12 @@ impl Interpreter {
                     }
                 }
                 self.pop_caller_env();
-                result
+                if let Err(ref e) = result
+                    && Self::is_live_nonlocal_control(e)
+                {
+                    return result;
+                }
+                result.is_ok()
             }
             _ => true,
         };
@@ -50,13 +80,6 @@ impl Interpreter {
                 let saved_topic_sigil = self.env.get("$_").cloned();
                 let saved_topic_bare = self.env.get("_").cloned();
                 let result = self.eval_test_callable_body(&data);
-                let died = match &result {
-                    Err(_) => true,
-                    Ok(val) => {
-                        // A Failure value in sink context should throw
-                        Self::is_failure_value(val)
-                    }
-                };
                 match saved_topic_sigil {
                     Some(v) => {
                         self.env.insert("$_".to_string(), v);
@@ -74,7 +97,18 @@ impl Interpreter {
                     }
                 }
                 self.pop_caller_env();
-                died
+                if let Err(ref e) = result
+                    && Self::is_live_nonlocal_control(e)
+                {
+                    return result;
+                }
+                match &result {
+                    Err(_) => true,
+                    Ok(val) => {
+                        // A Failure value in sink context should throw
+                        Self::is_failure_value(val)
+                    }
+                }
             }
             _ => false,
         };

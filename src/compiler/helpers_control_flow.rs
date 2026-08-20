@@ -625,17 +625,27 @@ impl Compiler {
             self.pop_dynamic_scope_lexical(saved);
             return;
         }
-        // Separate CATCH/CONTROL blocks from body.
+        // Separate CATCH/CONTROL blocks from body. Also track, in the
+        // ORIGINAL textual order, whether a CATCH/CONTROL phaser is the last
+        // thing in the block (nothing but `SetLine` markers following it) --
+        // see `discards_tail_value` below, which uses this to decide whether
+        // the block's would-be-tail statement is sunk.
         let mut main_stmts = Vec::new();
         let mut catch_stmts = catch.clone();
         let mut control_stmts: Option<Vec<Stmt>> = None;
+        let mut phaser_is_last_in_body = false;
         for stmt in body {
             if let Stmt::Catch(catch_body) = stmt {
                 catch_stmts = Some(catch_body.clone());
+                phaser_is_last_in_body = true;
             } else if let Stmt::Control(control_body) = stmt {
                 control_stmts = Some(control_body.clone());
+                phaser_is_last_in_body = true;
             } else {
                 main_stmts.push(stmt.clone());
+                if !matches!(stmt, Stmt::SetLine(_)) {
+                    phaser_is_last_in_body = false;
+                }
             }
         }
         let has_explicit_catch = catch_stmts.is_some();
@@ -671,14 +681,27 @@ impl Compiler {
             self.compile_expr(&Expr::Var("_".to_string()));
             main_leaves_value = true;
         } else {
+            // A CATCH/CONTROL phaser occupies a slot in the block's statement
+            // sequence for tail-position purposes, exactly like an ordinary
+            // statement, even though it does not run in textual order (it only
+            // fires on an exception/control signal). So the would-be-tail
+            // statement is sunk in place (Raku: "Useless use of ... in sink
+            // context") ONLY when the phaser is textually the LAST thing in
+            // the block -- i.e. it "follows" that statement, bumping it out of
+            // tail position. When the phaser comes BEFORE the real last
+            // statement, that statement is still the tail and its value still
+            // flows through normally. Verified against `raku`:
+            //   sub f { 42; CATCH { default { } } }; say f();   # Nil (phaser after)
+            //   sub f { CATCH { default { } }; 42 }; say f();   # 42  (phaser before)
+            // So the sink applies only when `phaser_is_last_in_body` is true.
+            let discards_tail_value = phaser_is_last_in_body;
             for (i, stmt) in main_stmts.iter().enumerate() {
-                let is_last = i == main_stmts.len() - 1;
+                let is_last = i == main_stmts.len() - 1 && !discards_tail_value;
                 // Keep the final expression's value on the stack so the try
                 // block evaluates to it (the value of a `do`/sub/closure body).
-                // This holds even with an explicit CATCH block: on the success
-                // path Raku still yields the last expression. compile_try always
-                // leaves exactly one value (LoadNil below when none), so stack
-                // discipline is unchanged for statement-context callers.
+                // compile_try always leaves exactly one value (LoadNil below
+                // when none), so stack discipline is unchanged for
+                // statement-context callers.
                 if is_last {
                     if let Stmt::Expr(expr) = stmt {
                         self.compile_expr(expr);
