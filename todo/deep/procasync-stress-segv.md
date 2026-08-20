@@ -261,7 +261,7 @@ Four slices, in priority order. All are small and none needs an ADR.
    exactly the deliberate `strdup(0)` NativeCall probe (`roast/S29-os/system.t`). Manually verified
    against a fabricated allowlisted report (exit 0) and a fabricated `advent2014-day05.t`-shaped
    report (exit 1, `::error::` annotation).
-4. **Still open.** **Re-measure the `advent2014-day05.t` quarantine.** Its `flaky-tests.txt` reason
+4. **DONE (2026-08-20).** **Re-measure the `advent2014-day05.t` quarantine.** See §7. Its `flaky-tests.txt` reason
    attributes the failures to CPU-contention timing; §2 is hard evidence that at least one of them was
    heap corruption. Per the ledger's own bar the entry should be pulled (or at minimum re-justified)
    now that slices 2-3 have landed and a recurrence can no longer hide. This needs the crash to
@@ -270,19 +270,70 @@ Four slices, in priority order. All are small and none needs an ADR.
 
 ### 6. Recommended next action
 
-~~Land slices 1-3 as one small PR.~~ **Done 2026-08-19, #6695** — see §5. What remains, in order:
+~~Land slices 1-3 as one small PR.~~ **Done 2026-08-19, #6695** — see §5.
+~~Slice 4.~~ **Done 2026-08-20** — see §7. What remains:
 
-1. **Slice 4** (§5.4): re-measure `roast/integration/advent2014-day05.t`'s `flaky-tests.txt` entry now
-   that a signal death there can no longer be silently retried away. Either it stops needing
-   quarantine at all (if the "CPU-contention timing" flake was actually always this crash), or its
-   reason needs to be rewritten to acknowledge the crash risk explicitly — the ledger's evidence
-   standard (`docs/flaky-test-policy.md` §2) does not currently cover "sometimes aborts with heap
-   corruption" as a quarantine-eligible cause, and §3 explicitly says a crash must never be
-   quarantined. This may mean the entry needs to come OFF the ledger and the underlying heap
-   corruption root-caused instead, once it recurs with the new diagnostics.
-2. **Stop chasing `roast/S17-procasync/stress.t` directly.** It is a ~1-in-several-dozen CI event that
+1. **Stop chasing `roast/S17-procasync/stress.t` directly.** It is a ~1-in-several-dozen CI event that
    survived ~96 targeted local runs across four configurations, and the productive move was always to
    make the next crash — in *any* file — self-diagnosing rather than burn more cycles on a repro loop
    that has not worked. That diagnostics work (named threads, non-launderable signal deaths, an
    un-muted crash-report step) is now in place. A sanitizer job or core dumps are only worth building
    if a future named-thread report still leaves the subsystem ambiguous.
+
+## 7. Cross-check against `promise-spawn-segv-under-load`, 2026-08-20
+
+The two SEGV tickets were suspected of sharing one root cause (spawn/thread stack depth under
+concurrency load). **They do not.** The sibling is closed; this one is unchanged.
+
+### 7.1 The sibling is resolved, for a reason that does not apply here
+
+`todo/deep/promise-spawn-segv-under-load.md` is now
+`news/2026-08/promise-spawn-segv-resolved-by-the-worker-pool.md`. Its crash frames
+(`drop_in_place<JoinHandle<()>>` -> `pthread_detach`, called from
+`spawn_callable_promise`) stopped existing on 2026-08-05, one day after it was filed:
+`9e91bc37b` (ADR-0020 slice 1) replaced the per-promise `spawn_user_thread` with
+`worker_pool::submit`, which returns no handle. Measured on the current tree,
+`roast/S17-lowlevel/semaphore.t`'s 8000 `Promise.start` calls peak at **4** OS threads instead of
+one per promise, and it is 144/144 clean in the exact `jit-stress` 12-concurrent configuration that
+previously crashed at 6-8%.
+
+None of that touches this ticket. `Proc::Async` never held a `JoinHandle` on the crashing path, its
+threads are `spawn_gc_helper_thread` service threads that run no user VM code (§4), and it does not
+go through `worker_pool`. Its own crash was on the 2026-07-30 tree, five days *before* the worker
+pool existed, so the worker pool cannot have fixed it either — this ticket's non-reproduction long
+predates that change and is unexplained rather than resolved.
+
+Also worth carrying forward: the sibling's "promise threads inherit the default stack" premise was
+factually wrong — `spawn_user_thread` gave them the same 256 MiB as `mutsu-main`. Do not reuse
+"a VM thread ran out of its default stack" as a hypothesis for this ticket without checking which
+spawn wrapper the thread actually came from.
+
+### 7.2 This file: 12 more clean runs
+
+`roast/S17-procasync/stress.t`, profiling build, `MUTSU_JIT=on MUTSU_JIT_THRESHOLD=2 MUTSU_FUDGE=1`,
+2 rounds x 6 concurrent: 12/12 clean. Running total across all sessions: 22 (2026-07-30) + ~96
+(2026-08-19) + 12 = **~130 clean runs, zero faults.** §6's advice stands unchanged: do not spend
+another session on a repro loop.
+
+### 7.3 Slice 4 closed
+
+`roast/integration/advent2014-day05.t` stays quarantined, with its `flaky-tests.txt` reason extended
+to state the scope explicitly. The reasoning: the entry documents an *assertion-level* race the test
+itself writes down (`isnt $a, $times` after a racy `$*SCHEDULER.cue`), which is quarantine-eligible
+under `docs/flaky-test-policy.md` §2. The thing that was not eligible — §2's SIGABRT heap corruption
+being retried green — is no longer possible at all: since #6695 `scripts/flaky-retry.sh` refuses to
+retry any `rc >= 128` signal death and fails on the first attempt. So the quarantine can now only
+launder what it was justified for, and a crash in that file fails CI loudly. The underlying heap
+corruption remains un-root-caused and still awaits a recurrence under the named-thread reports; that
+is tracked by this ticket's §2, not by the ledger entry.
+
+### 7.4 Incidental finding
+
+The audit for this cross-check turned up the one site in non-test `src/` that still spawns a
+user-code-running thread outside `spawn_registered_thread`:
+`src/runtime/slang_activation.rs:57` builds a raw `std::thread::Builder` with no stack size, runs a
+full `Interpreter::new()` + `use_module()` on it, and joins it without `gc::block_quiescent`. That is
+an unregistered GC mutator of exactly the class §4 ruled out for the `Proc::Async` paths — §4's audit
+simply did not cover the slang path. Filed as
+`todo/tickets/slang-activation-thread-is-unregistered-and-default-stack.md`. It is not a candidate
+explanation for this ticket (`stress.t` loads no slang module), but it is a live soundness gap.
