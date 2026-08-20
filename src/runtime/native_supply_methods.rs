@@ -23,7 +23,14 @@ impl Interpreter {
     /// Invoke a done callback. If the callback is a WheneverDoneGroup marker,
     /// decrement the group counter and only call the real done callback when
     /// all whenevers are done. Otherwise, call the callback directly.
-    pub(super) fn invoke_done_callback(&mut self, done_cb: Value) -> Result<(), RuntimeError> {
+    ///
+    /// Returns `true` when the callback completed the enclosing supply block
+    /// itself via `done` (a `LAST done;` phaser body, whose desugared
+    /// `$emitter.done()` already delivered the downstream done and tore the
+    /// block down) — the caller's done-callback batch for the triggering
+    /// source must stop then, or the group marker still queued behind the
+    /// phaser would deliver the downstream done a second time.
+    pub(super) fn invoke_done_callback(&mut self, done_cb: Value) -> Result<bool, RuntimeError> {
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -37,13 +44,15 @@ impl Interpreter {
                 // The group's stored callback may itself be a marker (a chained
                 // on-demand whenever passes the outer group's marker as the
                 // inner tap's done), so dispatch recursively.
-                self.invoke_done_callback(real_done_cb)?;
+                return self.invoke_done_callback(real_done_cb);
             }
-            return Ok(());
+            return Ok(false);
         }
         // A done chain bundles several done callbacks (e.g. a whenever's LAST
         // phaser plus the enclosing supply's done-group marker) into the single
-        // `done => ...` slot of a chained inner tap. Fire each in order.
+        // `done => ...` slot of a chained inner tap. Fire each in order; a
+        // member that completed the supply itself short-circuits the rest
+        // (see the doc comment above).
         if let ValueView::Instance {
             class_name,
             attributes,
@@ -55,10 +64,12 @@ impl Interpreter {
                 attributes.as_map().get("callbacks").map(|v| v.view())
             {
                 for cb in cbs.iter().cloned().collect::<Vec<_>>() {
-                    self.invoke_done_callback(cb)?;
+                    if self.invoke_done_callback(cb)? {
+                        return Ok(true);
+                    }
                 }
             }
-            return Ok(());
+            return Ok(false);
         }
         // A close marker fires the supply's CLOSE-phaser callbacks (registered
         // on the emitter) when the supply terminates normally. Taking them
@@ -77,7 +88,7 @@ impl Interpreter {
             for cb in take_supplier_close_callbacks(cid as u64) {
                 self.call_sub_value(cb, vec![], true)?;
             }
-            return Ok(());
+            return Ok(false);
         }
         // When an on-demand supply with `whenever`s completes via `done` (an
         // explicit `done` in the block or a `done` inside a whenever body), the
@@ -108,10 +119,58 @@ impl Interpreter {
             {
                 let _ = self.call_sub_value(down.clone(), vec![], true);
             }
-            return Ok(());
+            return Ok(false);
         }
-        self.call_sub_value(done_cb, Vec::new(), true)?;
-        Ok(())
+        // A plain callback here is typically a `whenever`'s LAST phaser (or a
+        // downstream `done => ...` handler). A LAST body may itself contain
+        // `done` — the `LAST done;` idiom Cro::HTTP2::GeneralParser uses to
+        // complete the enclosing supply block once its input source finishes.
+        // The supply-body desugar rewrites that `done` to `$emitter.done()`
+        // followed by a `SupplyBodyDone` control signal, and a bare `done`
+        // reached via a nested sub call raises a raw react-done signal.
+        // Dispatching via bare `call_sub_value` let both escape this call:
+        // `invoke_done_callback_or_quit` re-propagated them and the producer's
+        // own `.done()` call site aborted with an empty runtime error. Handle
+        // them here exactly the way `call_supply_tap` handles the whenever
+        // body's own `done`.
+        let (emitter, stamped) = Self::whenever_tap_emitter(&done_cb);
+        let emitter_sid = emitter.as_ref().and_then(Self::emitter_supplier_id_of);
+        let done_before = emitter_sid.map(supplier_done_call_count);
+        if let Some(ref e) = emitter {
+            self.active_supply_emitters.push(e.clone());
+        }
+        // Only a stamped callback (one written inside a `supply` block) has a
+        // consumer for a react-done signal; hold the guard for it so a bare
+        // `done` in a nested sub raises the consumable signal form. An
+        // unstamped callback keeps today's behavior (`done` becomes
+        // X::ControlFlow, routed by `invoke_done_callback_or_quit`).
+        let react_done_handler =
+            stamped.then(crate::runtime::react_done_handler_depth::ReactDoneHandlerGuard::new);
+        let res = self.call_sub_value(done_cb, Vec::new(), true);
+        drop(react_done_handler);
+        if emitter.is_some() {
+            self.active_supply_emitters.pop();
+        }
+        match (res, stamped, emitter) {
+            // The desugar's own terminator — its preceding `$emitter.done()`
+            // already completed the supply; just absorb the signal and stop
+            // the rest of this source's done-callback batch.
+            (Err(err), ..) if err.is_supply_body_done() => Ok(true),
+            // A raw `done` signal from a stamped callback completes the
+            // enclosing supply block, same as in a whenever body.
+            (Err(err), true, Some(e)) if err.is_react_done() => {
+                self.call_method_with_values(e, "done", vec![])?;
+                Ok(true)
+            }
+            // The callback may have completed the supply through the emitter
+            // without a signal escaping; the emitter's done-call count is the
+            // authoritative record (same discriminator `run_on_demand_body`
+            // uses for "did the body complete *this* supply?").
+            (res, ..) => res.map(|_| match (emitter_sid, done_before) {
+                (Some(sid), Some(before)) => supplier_done_call_count(sid) > before,
+                _ => false,
+            }),
+        }
     }
 
     /// Like `invoke_done_callback`, but a die escaping the callback (the
@@ -128,49 +187,55 @@ impl Interpreter {
     /// unobserved quit is simply not delivered anywhere, not resurfaced as
     /// an error from the unrelated call that happened to trigger done.
     ///
-    /// Returns `true` when the callback died and was converted to a quit —
-    /// the caller's `take_supplier_done_callbacks(supplier_id)` loop must
-    /// stop delivering the rest of that batch then (e.g. the enclosing
-    /// whenever-done-group marker that would otherwise still fire the
-    /// downstream `done =>` handler right after): a supply terminates via
-    /// either `done` or `quit`, never both.
+    /// Returns `true` when the callback died and was converted to a quit, or
+    /// completed the enclosing supply itself via `done` (see
+    /// [`Self::invoke_done_callback`]) — the caller's
+    /// `take_supplier_done_callbacks(supplier_id)` loop must stop delivering
+    /// the rest of that batch then (e.g. the enclosing whenever-done-group
+    /// marker that would otherwise still fire the downstream `done =>`
+    /// handler right after): a supply terminates via either `done` or
+    /// `quit`, never both, and only once.
     pub(super) fn invoke_done_callback_or_quit(
         &mut self,
         done_cb: Value,
         supplier_id: u64,
     ) -> Result<bool, RuntimeError> {
-        if let Err(err) = self.invoke_done_callback(done_cb) {
-            // A `return` inside the callback targets its lexically enclosing
-            // routine: propagate unchanged, not a supply failure.
-            if err.is_return() || err.return_value.is_some() {
-                return Err(err);
+        match self.invoke_done_callback(done_cb) {
+            Ok(completed_supply) => Ok(completed_supply),
+            Err(err) => {
+                // A `return` inside the callback targets its lexically
+                // enclosing routine: propagate unchanged, not a supply failure.
+                if err.is_return() || err.return_value.is_some() {
+                    return Err(err);
+                }
+                // `last` inside a whenever body ends the enclosing supply;
+                // propagate the control signal unchanged so the supply
+                // machinery consumes it. (`done` and the desugared
+                // `SupplyBodyDone` no longer reach here — `invoke_done_callback`
+                // consumes them against the callback's own stamped emitter.)
+                if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
+                    return Err(err);
+                }
+                // `next` skips the rest of this body run — not a supply failure.
+                if err.is_next() {
+                    return Ok(false);
+                }
+                let reason = err
+                    .exception
+                    .as_deref()
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(err.message.clone()));
+                // ADR-0031: the downstream tap's quit => handler for a
+                // whenever-subscribed source lives on the enclosing supply
+                // block's emitter (Decision A), not on this source's own
+                // `supplier_id` — reach it via the serialize-group link, same
+                // as the `Supplier."quit"` unhandled-QUIT-phaser arm.
+                for qcb in take_supplier_quit_callbacks_via_group(supplier_id) {
+                    self.call_supply_quit_handler(qcb, reason.clone())?;
+                }
+                Ok(true)
             }
-            // `done`/`last` inside a whenever body ends the enclosing supply;
-            // propagate the control signal unchanged so the supply machinery
-            // consumes it.
-            if err.is_react_done() || err.is_last() || err.is_supply_body_done() {
-                return Err(err);
-            }
-            // `next` skips the rest of this body run — not a supply failure.
-            if err.is_next() {
-                return Ok(false);
-            }
-            let reason = err
-                .exception
-                .as_deref()
-                .cloned()
-                .unwrap_or_else(|| Value::str(err.message.clone()));
-            // ADR-0031: the downstream tap's quit => handler for a
-            // whenever-subscribed source lives on the enclosing supply
-            // block's emitter (Decision A), not on this source's own
-            // `supplier_id` — reach it via the serialize-group link, same
-            // as the `Supplier."quit"` unhandled-QUIT-phaser arm.
-            for qcb in take_supplier_quit_callbacks_via_group(supplier_id) {
-                self.call_supply_quit_handler(qcb, reason.clone())?;
-            }
-            return Ok(true);
         }
-        Ok(false)
     }
 
     /// Marker registered on the emitter's done so that a supply terminating via
