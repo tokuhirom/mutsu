@@ -208,6 +208,54 @@ impl Interpreter {
         }
     }
 
+    /// Like `failure_to_runtime_error_if_unhandled`, but also looks one level
+    /// into a `Pair`/`ValuePair` — the shape a `key => value` element takes on
+    /// the stack before `MakeHashFromPairs` collects it into a Hash. A Failure
+    /// as the pair's value (e.g. `%(a => "a".Int)`) must still be caught.
+    fn failure_to_runtime_error_if_unhandled_in_composite_elem(
+        &self,
+        value: &Value,
+    ) -> Option<RuntimeError> {
+        if let Some(err) = self.failure_to_runtime_error_if_unhandled(value) {
+            return Some(err);
+        }
+        match value.view() {
+            ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
+                self.failure_to_runtime_error_if_unhandled(v)
+            }
+            _ => None,
+        }
+    }
+
+    /// Under `use fatal`, a list/array/hash literal (`(...)`, `[...]`,
+    /// `%(...)`) must not silently embed an unhandled `Failure` produced by
+    /// one of its element expressions (e.g. `(1, "a".Int, 3)`) -- real Raku
+    /// throws while *building* the composite, before it is ever bound to a
+    /// variable. The existing per-assignment `fatal_mode` checks only see the
+    /// composite's own value (an Array/Hash, never itself a Failure
+    /// instance), so they never catch this. Call this right after a
+    /// composite-construction opcode (`MakeArray`/`MakeRealArray`/
+    /// `MakeHash`/`MakeHashFromPairs`) collects its element values off the
+    /// stack, before the composite becomes a stored value.
+    ///
+    /// Gated on `self.fatal_mode` first so the common (non-fatal) case pays
+    /// only a single bool check, not a scan of every element.
+    pub(crate) fn explode_if_fatal_failure_in_composite(
+        &self,
+        values: &[Value],
+    ) -> Result<(), RuntimeError> {
+        if !self.fatal_mode {
+            return Ok(());
+        }
+        if let Some(err) = values
+            .iter()
+            .find_map(|v| self.failure_to_runtime_error_if_unhandled_in_composite_elem(v))
+        {
+            return Err(err);
+        }
+        Ok(())
+    }
+
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception_value();
         let mut failure_attrs = std::collections::HashMap::new();
