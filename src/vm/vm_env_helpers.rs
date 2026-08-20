@@ -435,15 +435,48 @@ impl Interpreter {
     /// `@`/`%` lexical, or `None` if `name` is not a unit lexical or its
     /// stored value is not (yet) a `ContainerRef`. Unlike
     /// [`Self::unit_scope_lexical`] (which derefs), this is for write
-    /// chokepoints (element-delete, ADR-0039 slice 1's `:delete` fix) that
-    /// need to write back THROUGH the cell rather than just read its current
-    /// contents once.
+    /// chokepoints (element-delete, ADR-0039 slice 1's `:delete` fix; and the
+    /// cross-thread sync chokepoints in `sync_shared_vars_to_env` /
+    /// `builtins_atomic_shared.rs`) that need to write back THROUGH the cell
+    /// rather than just read its current contents once.
+    ///
+    /// Consults the mainline bucket (`unit_lexicals[MAINLINE_UNIT_KEY]`)
+    /// UNCONDITIONALLY first, deliberately bypassing
+    /// `unit_lexical_slot`'s `mainline_lexical_frame_active()` gate (which
+    /// requires the CURRENTLY RUNNING frame to itself be the mainline named
+    /// sub that captured `name`). That gate is correct for an ordinary name
+    /// *read* -- disambiguating a captured mainline scalar from an unrelated
+    /// same-named module/package lexical -- but wrong for these write
+    /// chokepoints, which are reached from whatever frame happens to be
+    /// active when a worker thread's result lands, almost never the
+    /// capturing sub's own frame. This function used to be two separate
+    /// helpers -- `mainline_lexical_cell` (deliberately frame-unconditional)
+    /// and this one (frame-gated via `unit_lexical_slot`, for module
+    /// file-scope containers) -- until the ADR-0039 slice 1 cross-thread fix
+    /// collapsed callers onto this one alone, silently losing the
+    /// unconditional mainline check: `$port = await $tap.socket-port`
+    /// resolving directly at mainline/bare-block scope (not inside a named
+    /// sub) then failed to write through the cell that a later-called named
+    /// sub's closure still read, permanently stranding it on the pre-await
+    /// value (roast `S32-io/IO-Socket-Async.t`, "Connection refused" on a
+    /// stale port after the first tap's listener already closed). Falls
+    /// through to [`Self::unit_lexical_slot`] for the module file-scope case,
+    /// which is unaffected by the mainline gate.
     pub(crate) fn unit_lexical_container_cell(
         &self,
         name: &str,
     ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
         if name.contains("__ANON") {
             return None;
+        }
+        if !name.contains("::")
+            && let Some(ValueView::ContainerRef(arc)) = self
+                .unit_lexicals
+                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .and_then(|m| m.get(name))
+                .map(Value::view)
+        {
+            return Some(crate::gc::Gc::clone(&arc));
         }
         match self.unit_lexical_slot(name)?.view() {
             ValueView::ContainerRef(arc) => Some(crate::gc::Gc::clone(&arc)),
