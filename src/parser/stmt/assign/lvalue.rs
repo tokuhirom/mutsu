@@ -166,21 +166,11 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
             }
             None
         }
-        Expr::Index { target, index, .. } => {
-            let (base_target, base_index, mode) = subscript_parts(target.as_ref())?;
-            if mode != "kv" && mode != "not-kv" {
-                return None;
-            }
-            if !matches!(&*index, Expr::Literal(lit) if lit.as_int() == Some(1)) {
-                return None;
-            }
-            Some(Expr::IndexAssign {
-                target: Box::new(base_target),
-                index: Box::new(base_index),
-                value: Box::new(rhs),
-                is_positional: true,
-            })
-        }
+        // ADR-0036 slice 2: the `:kv` rewrite that used to live here
+        // (`(@a[0]:kv)[1] = rhs` -> a plain `@a[0] = rhs` element assign) is
+        // deleted — `:kv`'s list value now carries a live element container,
+        // so the generic index-assign path's `ContainerRef` write-through
+        // reaches the same backing element without a special case.
         _ => None,
     }
 }

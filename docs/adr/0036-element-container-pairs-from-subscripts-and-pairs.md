@@ -1,6 +1,6 @@
 # ADR-0036: A Pair produced by a subscript adverb or `.pairs` carries the element *container*, not a snapshot
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Partially implemented — slices 1-2 landed (2026-08-20), slices 3-4 open
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 (element-level cells, "2c / Track B proper" — deferred there, and this ADR is the correctness driver that reopens it in a scoped form), [ADR-0001](0001-gc-strategy-and-phasing.md) (layer 3a / Track B framing), [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) (Pair flavour unification — `.pairs`' output is data, not a call site), `todo/deep/subscript-p-pair-is-a-snapshot-not-a-container.md` (the originating finding)
@@ -282,6 +282,56 @@ Each slice is independently landable and independently green.
 
 5. **Slice 5 — sweep.** Re-run the §1.3 table, run the whitelisted S02/S09/S32 roast families, and
    record the outcome in this ADR's "Implementation status".
+
+---
+
+## Implementation status (updated 2026-08-20)
+
+**Slices 1-2 landed.** `t/subscript-pair-element-container.t` pins all twelve §1.3 rows (plus the two
+`.VAR.^name` probes from §1.1), `todo`-marking the rows that need slice 3 or 4. `:p` and `:kv` in
+`builtin_subscript_adverb` (`runtime/builtins_multidim_subscript.rs`) now hand out
+`array_slot_ref`/`hash_slot_ref` element containers instead of snapshots when the source is a genuine
+mutable Array/Hash (not a List/Range/Seq coercion, not a QuantHash `.hash` projection, not an
+AT-KEY-instance snapshot) — covering both the single-index and slice/nested-index shapes. The `:kv`
+parser rewrite (§1.2b) is deleted from both sites (`src/parser/stmt/assign/lvalue.rs`,
+`src/parser/expr/precedence/logic.rs`); `(@a[0]:kv)[1] = x` now reaches the same outcome through the
+ordinary index-assign write-through-a-`ContainerRef` path (`Value::assign_element_slot`) instead of a
+syntax-specific rewrite.
+
+- **Rows 1, 2, 5, 6, 7 and 8 of §1.3 turn green** (six rows, not seven — see the row 12 correction
+  below). Verified against `raku -e` for each row plus the ambiguity/ `:kv` variants exercised in the
+  new test file.
+- **Row 12 does NOT turn green in slice 2**, correcting §4's phase list above: enforcing the typed
+  array's element constraint requires teaching the promoted cell about `ArrayData::value_type` /
+  `HashData::value_type` (`register_container_constraint`), which is explicitly slice 4's job. Slice 2
+  only routes the *value*, not the constraint, through the cell, so `(@a[0]:p).value = 42` on a
+  `Str @a` still succeeds silently pending slice 4. `t/subscript-pair-element-container.t` marks this
+  row `todo` with a comment pointing at slice 4.
+- **Rows 3, 4, 9, 10 and 11 remain slice 3 territory**, unchanged and `todo`-marked, including row 10
+  (`key => @a[i]`) — the FatArrow `key => $var` container-capture optimization
+  (`compiler/expr_binary.rs`'s `WrapVarRef`) only recognizes a bare `Expr::Var` RHS today, not an
+  arbitrary Index expression, so extending it belongs with the rest of slice 3's container-aware
+  producers rather than slice 2's subscript-adverb-only scope.
+- **A `:delete` companion needed an extra gate.** The first slice-2 pass promoted `:p`/`:kv` array rows
+  unconditionally whenever the source index existed pre-delete, which broke
+  `roast/S09-subscript/slice.t`'s "Nested slice, delete + p/kv adverbs" subtests: the array branch
+  applies `:delete` (overwriting the live slot with a hole) *before* formatting the adverb's rows, so
+  promoting *after* delete handed back a container around the fresh hole instead of the pre-delete
+  snapshot value the adverb must report. Fixed by skipping the container-aware path whenever
+  `delete_after` is set (both the single-index and `format_positional_slice_level` slice/nested paths),
+  falling back to the plain snapshot value there — matching raku, where a deleted slot has nothing left
+  to alias.
+- The shaped-array multidim `:p`/`:kv` form (§5 Q3) was **not** converted in this pass — it lives in a
+  separate function (`runtime/builtins_multidim_ops.rs`'s `builtin_multidim_subscript_adverb`), not the
+  four `builtins_multidim_subscript.rs` sites this slice targeted, and none of the twelve §1.3 rows
+  exercise it. Left for a follow-up alongside slice 3/4; the shaped-array env-scan
+  (`methods_mut_method_lvalue.rs:613-646`) stays until then.
+- Regression pins verified green: `t/subscript-adverbs.t`, `t/pairs-value-writeback-array-kind.t`,
+  `t/for-pairs-value-quanthash-writeback.t`, the roast S02/S03/S06/S09/S12/S29/S32 pair/subscript/delete
+  families, and the full local `t/` suite (`make test`).
+- **Next**: slice 3 (`.pairs`/`.kv`/`.antipairs` at the VM method dispatch layer, plus extending
+  FatArrow's container capture to an Index RHS for row 10) and slice 4 (element type constraint on the
+  promoted cell, then deleting the `methods_mut_method_lvalue.rs` env-scan compensator).
 
 ---
 

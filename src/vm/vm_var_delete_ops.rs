@@ -646,6 +646,7 @@ impl Interpreter {
             inner,
             "v",
             true,
+            None,
         ));
         // Remove every leaf index through the shared flat-delete machinery.
         let mut leaves = Vec::new();
