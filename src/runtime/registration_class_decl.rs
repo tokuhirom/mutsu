@@ -132,6 +132,7 @@ impl Interpreter {
             parent_pre_args,
             compiled_fns,
             body_plan,
+            is_hoisted_shell,
         } = modifiers;
         let class_lang_rev = language_revision_letter(class_language_version);
         // Normalize parent names: strip leading `::` (indirect name lookup syntax).
@@ -219,6 +220,7 @@ impl Interpreter {
                 class_lang_rev: &class_lang_rev,
                 class_def: &mut class_def,
                 out: RoleCompositionOutcome::default(),
+                is_hoisted_shell,
             };
             if let Err(err) =
                 self.compose_class_parent_roles(&mut cx, parents, does_parents, parent_pre_args)
@@ -265,6 +267,7 @@ impl Interpreter {
             declared_static_names,
             compiled_fns,
             body_plan,
+            is_hoisted_shell,
         )?;
         self.finalize_class_registration(name, parents, class_def, &snapshot)?;
         self.install_class_exporthow(name, parents)?;

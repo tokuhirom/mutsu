@@ -455,17 +455,29 @@ impl Interpreter {
                     .is_some_and(|params| !params.is_empty())
             {
                 self.ensure_parametric_role_pun_class(role_name, role_args)?;
-            } else if self
-                .registry_mut()
-                .composed_role_bodies
-                .insert(format!("mixin:{role_name}"))
-            {
-                let ops = role
-                    .as_ref()
-                    .map(|r| r.deferred_body.clone())
-                    .unwrap_or_default();
-                self.run_role_body_for_composition(role_name, role_name, &ops)?;
-                self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+            } else {
+                // The memo key must include the value's base type, not just
+                // the role: Rakudo's memoized composed type is `Int+{R}` vs
+                // `Str+{R}` — two DIFFERENT anonymous types — so `1 but R`
+                // and `"x" but R` each run R's deferred body once (verified
+                // against `raku`; see the case table in
+                // news/2026-08/role-composition-memo-key-raku-case-table.md).
+                // A role-only key would wrongly treat the second value's
+                // composition as already done just because some earlier,
+                // unrelated base type already composed the same role.
+                let base_type = crate::value::types::what_type_name(&left);
+                if self
+                    .registry_mut()
+                    .composed_role_bodies
+                    .insert(format!("mixin:{base_type}:{role_name}"))
+                {
+                    let ops = role
+                        .as_ref()
+                        .map(|r| r.deferred_body.clone())
+                        .unwrap_or_default();
+                    self.run_role_body_for_composition(role_name, role_name, &ops)?;
+                    self.run_composed_role_ancestor_bodies(role_name, role_name)?;
+                }
             }
         }
 

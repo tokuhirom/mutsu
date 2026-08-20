@@ -69,6 +69,8 @@ pub(super) struct RoleCompositionCx<'a> {
     pub(super) class_lang_rev: &'a str,
     pub(super) class_def: &'a mut ClassDef,
     pub(super) out: RoleCompositionOutcome,
+    /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
+    pub(super) is_hoisted_shell: bool,
 }
 
 impl Interpreter {
@@ -390,113 +392,80 @@ impl Interpreter {
             .cloned()
             .zip(role_arg_values.iter().cloned())
             .collect();
-        self.run_composed_role_deferred_body(
-            cx,
-            base_role_name,
-            &role,
-            &role_param_values,
-            &role_arg_values,
-        )?;
-        // Composing a role composes the roles it composes, so their
-        // bodies run too — nearest first, which is the order Rakudo
-        // runs them in for `role GP {...}; role P does GP {...};
-        // class K does P { }` (P, then GP). Their methods already
-        // transit into the class below; only the bodies were missing.
-        self.run_composed_role_ancestor_bodies(base_role_name, cx.name)?;
-        self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
-        Ok(())
-    }
-
-    /// Record the composed-role lists on the registry and propagate role
-    /// parent classes and `hides` declarations (recursively through
-    /// sub-roles) onto the class.
-    pub(super) fn record_class_composed_roles(
-        &mut self,
-        name: &str,
-        class_def: &mut ClassDef,
-        composed_roles_list: &[String],
-        direct_composed_roles: &[String],
-    ) {
-        // Clear stale composed roles from previous registration
-        self.registry_mut().class_composed_roles.remove(name);
-        if !composed_roles_list.is_empty() {
-            // Propagate role parent classes to the class (recursively through sub-roles)
-            // When a role `R is C1` is composed into a class, C1 becomes a parent
+        // A role's deferred body must run once per (class, role) composition,
+        // not once per `register_class_decl` call. Rakudo memoises the
+        // composed *type*: `class A does R {}` re-executed against the same
+        // already-existing type object `A` (e.g. from inside a `for` loop
+        // that redeclares the class each pass, or a re-`EVAL`) does not
+        // re-run `R`'s deferred body a second time, even though `A`'s own
+        // mainline statements DO re-run every pass — only role composition
+        // is idempotent, not the class body itself. Two DISTINCT classes
+        // composing the same role each get their own run (verified against
+        // `raku`; see the case table in
+        // news/2026-08/role-composition-memo-key-raku-case-table.md), so the
+        // key must include the target class name, not just the role.
+        //
+        // A `__hoisted` forward-reference shell (see
+        // `ClassDeclModifiers::is_hoisted_shell`'s doc comment) skips the
+        // deferred body entirely, rather than running it (guarded or not):
+        // the shell's registration is throwaway and superseded at runtime by
+        // the real, source-position declaration re-registering the SAME
+        // (class, role) pair later, and the shell runs in a transient
+        // environment whose effects never reach the program's real state
+        // anyway (methods/attributes DO need to be visible on the shell for
+        // a forward reference to resolve them, which the copy above this
+        // guard already handles unconditionally; the deferred body is
+        // arbitrary side-effecting code, not structural declarations, so it
+        // has no such forward-reference need). Two bugs came from getting
+        // this wrong: memoising the shell's run under the same key as the
+        // real one left the real declaration's composition silently skipped
+        // (`t/run-nested-role-body.t`'s `$side` never got set); running it
+        // unconditionally on every shell pass double-ran it for every
+        // ordinary top-level class declaration, since a shell always
+        // precedes the real pass (caught by the new
+        // `t/role-body-composition-timing.t` two-distinct-classes case,
+        // which counted 4 runs instead of 2).
+        if !cx.is_hoisted_shell {
+            let compose_key = format!("class:{}:{resolved_parent_name}", cx.name);
+            if self
+                .registry_mut()
+                .composed_role_bodies
+                .insert(compose_key.clone())
             {
-                let mut role_stack: Vec<String> = composed_roles_list
-                    .iter()
-                    .map(|r| {
-                        r.split_once('[')
-                            .map(|(b, _)| b)
-                            .unwrap_or(r.as_str())
-                            .to_string()
-                    })
-                    .collect();
-                let mut seen_roles = HashSet::new();
-                while let Some(role_name) = role_stack.pop() {
-                    if !seen_roles.insert(role_name.clone()) {
-                        continue;
-                    }
-                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
-                        for rp in rparents {
-                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
-                                // It's a sub-role, recurse
-                                role_stack.push(rp_base.to_string());
-                            } else if self.registry().classes.contains_key(rp_base)
-                                && !class_def.parents.contains(&rp)
-                            {
-                                class_def.parents.push(rp);
-                            }
-                        }
-                    }
+                // A body that dies (a guard rejecting this parameterisation,
+                // `role Guarded[::T] { die unless ... }`) must reject EVERY
+                // attempt at this same composition, not just the first: the
+                // key was inserted before running the body to guarantee it is
+                // consumed at most once on success, but a failed attempt has
+                // not actually composed anything, so its slot must be freed
+                // again on error rather than permanently masking the retry
+                // (`t/role-body-guard-parameterisation.t`'s `.new` on a
+                // rejected parameterisation caught this).
+                let run = (|| -> Result<(), RuntimeError> {
+                    self.run_composed_role_deferred_body(
+                        cx,
+                        base_role_name,
+                        &role,
+                        &role_param_values,
+                        &role_arg_values,
+                    )?;
+                    // Composing a role composes the roles it composes, so
+                    // their bodies run too — nearest first, which is the
+                    // order Rakudo runs them in for `role GP {...}; role P
+                    // does GP {...}; class K does P { }` (P, then GP). Their
+                    // methods already transit into the class below; only the
+                    // bodies were missing.
+                    self.run_composed_role_ancestor_bodies(base_role_name, cx.name)
+                })();
+                if run.is_err() {
+                    self.registry_mut()
+                        .composed_role_bodies
+                        .remove(&compose_key);
                 }
-            }
-            self.registry_mut()
-                .class_composed_roles
-                .insert(name.to_string(), composed_roles_list.to_vec());
-            self.registry_mut()
-                .class_direct_composed_roles
-                .insert(name.to_string(), direct_composed_roles.to_vec());
-            // Propagate `hides` from composed roles (and sub-roles) to the class
-            {
-                let mut role_stack: Vec<String> = composed_roles_list
-                    .iter()
-                    .map(|r| {
-                        r.split_once('[')
-                            .map(|(b, _)| b)
-                            .unwrap_or(r.as_str())
-                            .to_string()
-                    })
-                    .collect();
-                let mut seen_roles = HashSet::new();
-                while let Some(role_name) = role_stack.pop() {
-                    if !seen_roles.insert(role_name.clone()) {
-                        continue;
-                    }
-                    // Hoist the clone to a `let` so the read guard drops before the
-                    // registry_mut write below (read->write on the same lock deadlocks).
-                    let hides_list = self.registry().role_hides.get(&role_name).cloned();
-                    if let Some(hides_list) = hides_list {
-                        for hidden in hides_list {
-                            self.registry_mut()
-                                .hidden_defer_parents
-                                .entry(name.to_string())
-                                .or_default()
-                                .insert(hidden);
-                        }
-                    }
-                    // Recurse into sub-roles
-                    if let Some(rparents) = self.registry().role_parents.get(&role_name).cloned() {
-                        for rp in rparents {
-                            let rp_base = rp.split_once('[').map(|(b, _)| b).unwrap_or(rp.as_str());
-                            if self.registry().roles.contains_key(rp_base) {
-                                role_stack.push(rp_base.to_string());
-                            }
-                        }
-                    }
-                }
+                run?;
             }
         }
+        self.propagate_composed_role_parent_specs(cx, base_role_name, &role, &role_param_values);
+        Ok(())
     }
 }

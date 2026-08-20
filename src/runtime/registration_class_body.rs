@@ -40,6 +40,8 @@ pub(super) struct ClassBodyCx<'a> {
     /// The ambient program-wide compiled-function pool (ADR-0019 D3-8b); see
     /// `ClassDeclModifiers::compiled_fns`.
     pub(super) compiled_fns: &'a crate::opcode::CompiledFns,
+    /// See [`super::registration_class::ClassDeclModifiers::is_hoisted_shell`].
+    pub(super) is_hoisted_shell: bool,
 }
 
 impl ClassBodyCx<'_> {
@@ -96,6 +98,7 @@ impl Interpreter {
         declared_static_names: &[Symbol],
         compiled_fns: &crate::opcode::CompiledFns,
         body_plan: &[crate::opcode::ClassBodyOp],
+        is_hoisted_shell: bool,
     ) -> Result<ClassDef, RuntimeError> {
         let saved_package = self.current_package();
         let saved_env = self.env.clone();
@@ -127,6 +130,7 @@ impl Interpreter {
             method_decls,
             method_name_chunk_idx: 0,
             compiled_fns,
+            is_hoisted_shell,
         };
         let saved_functions_keys: HashSet<String> = self
             .registry()
