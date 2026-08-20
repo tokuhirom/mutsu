@@ -211,6 +211,25 @@ impl Interpreter {
         // A lazy `@`-array reifies its prefix before an element delete
         // (`@a[i]:delete`) — delete needs a materialized backing. (L2)
         self.reify_lazy_array_slot(&var_name)?;
+        // ADR-0039 slice 1: `var_name` may be a compunit's own file-scope
+        // `@`/`%` (its authoritative storage is the cell in `unit_lexicals`,
+        // not `env[var_name]` — that key can hold a completely unrelated
+        // same-named binding, the loading scope's own `my %items`). Unlike
+        // the `:=`-bound-cell handling just below (which LEAVES the cell
+        // installed in env afterwards, correct for a real bind alias), this
+        // must instead temporarily seed env with the cell's inner container,
+        // run the op, write the mutated result back through the cell, and
+        // then RESTORE env to whatever it held before — leaving the cell in
+        // env here would wrongly make this name resolve to the module's
+        // container from outside the module too, undoing the isolation this
+        // ADR establishes.
+        let unit_cell = self.unit_lexical_container_cell(&var_name);
+        let saved_env_entry = unit_cell.as_ref().map(|cell| {
+            let saved = self.env().get(&var_name).cloned();
+            let inner = cell.lock().unwrap().clone();
+            self.env_mut().insert(var_name.clone(), inner);
+            saved
+        });
         let bound_cell = match self.env().get(&var_name).map(Value::view) {
             Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
             _ => None,
@@ -260,6 +279,24 @@ impl Interpreter {
             let cell_val = Value::container_ref(cell);
             self.env_mut().insert(var_name.clone(), cell_val.clone());
             self.write_local_slot_or_name(code, slot, &var_name, cell_val);
+        }
+        if let Some(cell) = unit_cell {
+            if let Some(mutated) = self.env().get(&var_name).cloned() {
+                *cell.lock().unwrap() = mutated;
+            }
+            // `saved_env_entry` is `Some(_)` whenever `unit_cell` is (both
+            // guarded by the same `if let Some(cell) = ...` above at seed
+            // time), so this `flatten()` recovers the ORIGINAL env entry —
+            // `Some(Some(v))` (had one) or `Some(None)` (had none) — not a
+            // "did we even seed" flag.
+            match saved_env_entry.flatten() {
+                Some(v) => {
+                    self.env_mut().insert(var_name.clone(), v);
+                }
+                None => {
+                    self.env_mut().remove(&var_name);
+                }
+            }
         }
         result
     }

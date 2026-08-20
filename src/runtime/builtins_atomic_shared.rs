@@ -345,10 +345,20 @@ impl Interpreter {
                 // atomic entry EMPTY, silently dropping everything already in
                 // the array (`Test.rakumod`'s `@vars` subtest stack lost its
                 // outer frame the first time a test file spawned a thread).
+                //
+                // ADR-0039 slice 1: a compunit's own file-scope `@`/`%` (or a
+                // mainline named sub's captured free variable) lives in
+                // `unit_lexicals`, NOT `env` — `env[arr_name]` may hold a
+                // completely unrelated same-named binding (the loading
+                // scope's own `my @items`). Prefer it over the plain `env`
+                // fallback for the same reason every other ADR-0039 write
+                // chokepoint does.
                 let local = shared
                     .get(arr_name)
-                    .or_else(|| self.env.get(arr_name))
-                    .map(Value::deref_container);
+                    .cloned()
+                    .or_else(|| self.unit_lexical_container(arr_name))
+                    .or_else(|| self.env.get(arr_name).cloned())
+                    .map(|v| v.deref_container());
                 let seed = match local.as_ref().map(Value::view) {
                     Some(ValueView::Array(elems, _)) => elems.as_ref().clone(),
                     _ => crate::value::ArrayData::default(),
@@ -392,7 +402,18 @@ impl Interpreter {
             // other holder (a closure's captured copy, a `:=` alias), so
             // replacing the binding with a bare Array would detach them all and
             // freeze them at the pre-mutation contents.
-            if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view) {
+            //
+            // ADR-0039 slice 1: a unit-lexical container's cell (module
+            // file-scope, or a mainline named sub's captured free variable)
+            // takes priority over `env` for the identical reason as the seed
+            // step above — writing into `env[arr_name]` here would either
+            // silently vanish (nothing reads it back) or, worse, pollute the
+            // loading scope's own same-named `env` entry.
+            if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
+                *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+            } else if let Some(ValueView::ContainerRef(cell)) =
+                self.env.get(arr_name).map(Value::view)
+            {
                 *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
             } else {
                 self.env.insert(arr_name.to_string(), updated.clone());
@@ -436,15 +457,24 @@ impl Interpreter {
         let updated = {
             let atomic_root = self.shared_vars.atomic_lane_scope(arr_name);
             let mut shared = atomic_root.own_map().write().unwrap();
+            // ADR-0039 slice 1: fall back to the unit-lexical container
+            // (module file-scope / mainline captured free var) before the
+            // plain `env` entry, and deref through a `ContainerRef` binding
+            // either way — see `shared_array_mutate`'s twin comment.
             let mut elements: Vec<Value> = match shared.get(&atomic_key).map(Value::view) {
                 Some(ValueView::Array(elems, _)) => elems.to_vec(),
                 _ => match shared
                     .get(arr_name)
-                    .or_else(|| self.env.get(arr_name))
-                    .map(Value::view)
+                    .cloned()
+                    .or_else(|| self.unit_lexical_container(arr_name))
+                    .or_else(|| self.env.get(arr_name).cloned())
+                    .map(|v| v.deref_container())
                 {
-                    Some(ValueView::Array(elems, _)) => elems.to_vec(),
-                    _ => Vec::new(),
+                    Some(v) => match v.view() {
+                        ValueView::Array(elems, _) => elems.to_vec(),
+                        _ => Vec::new(),
+                    },
+                    None => Vec::new(),
                 },
             };
             if idx >= elements.len() {
@@ -461,7 +491,14 @@ impl Interpreter {
         if let Ok(mut dirty) = self.shared_vars_dirty.write() {
             dirty.insert(arr_name.to_string());
         }
-        self.env.insert(arr_name.to_string(), updated);
+        if let Some(cell) = self.unit_lexical_container_cell(arr_name) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+        } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(arr_name).map(Value::view)
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+        } else {
+            self.env.insert(arr_name.to_string(), updated);
+        }
         value
     }
 
@@ -497,15 +534,21 @@ impl Interpreter {
         let updated = {
             let atomic_root = self.shared_vars.atomic_lane_scope(hash_name);
             let mut shared = atomic_root.own_map().write().unwrap();
+            // ADR-0039 slice 1: see `shared_array_elem_set`'s twin comment.
             let mut map = match shared.get(&atomic_key).map(Value::view) {
                 Some(ValueView::Hash(h)) => h.as_ref().clone(),
                 _ => match shared
                     .get(hash_name)
-                    .or_else(|| self.env.get(hash_name))
-                    .map(Value::view)
+                    .cloned()
+                    .or_else(|| self.unit_lexical_container(hash_name))
+                    .or_else(|| self.env.get(hash_name).cloned())
+                    .map(|v| v.deref_container())
                 {
-                    Some(ValueView::Hash(h)) => h.as_ref().clone(),
-                    _ => crate::value::HashData::default(),
+                    Some(v) => match v.view() {
+                        ValueView::Hash(h) => h.as_ref().clone(),
+                        _ => crate::value::HashData::default(),
+                    },
+                    None => crate::value::HashData::default(),
                 },
             };
             Value::hash_insert_through(&mut map.map, elem_key, value.clone());
@@ -516,7 +559,14 @@ impl Interpreter {
         if let Ok(mut dirty) = self.shared_vars_dirty.write() {
             dirty.insert(hash_name.to_string());
         }
-        self.env.insert(hash_name.to_string(), updated);
+        if let Some(cell) = self.unit_lexical_container_cell(hash_name) {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+        } else if let Some(ValueView::ContainerRef(cell)) = self.env.get(hash_name).map(Value::view)
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = updated.clone();
+        } else {
+            self.env.insert(hash_name.to_string(), updated);
+        }
         value
     }
 

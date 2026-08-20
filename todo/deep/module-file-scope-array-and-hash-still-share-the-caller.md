@@ -1,14 +1,25 @@
 # A module's file-scope `my @a` / `my %h` is still the caller's variable
 
-**Design: [ADR-0039](../../docs/adr/0039-container-lexicals-resolve-lexically.md)
-(Proposed, 2026-08-20).** That ADR owns the decision and the slicing; this file
-is now just the open-finding marker. It stays in `todo/deep/` until slice 1
-lands, at which point it moves to `news/2026-08/` per the todo lifecycle.
+**Design: [ADR-0039](../../docs/adr/0039-container-lexicals-resolve-lexically.md).
+Slice 1 (§4.1) LANDED 2026-08-20** — the module shape, the module-free mainline
+shadow shape, and the sub-local-consumer shape from this file's repros are all
+fixed and pinned (`t/module-file-scope-lexical.t`,
+`t/named-sub-lexical-scope-container.t`). **This file stays open** because
+slice 2 (§4.2 — containers resolve by slot/upvalue at the compiler, not by
+name, retiring `unit_lexicals`'s container special-casing entirely) is the
+ADR's stated architectural end state, not merely a follow-up; the exclusion
+list slice 1 carries (`our`, `state`, `is export`, `$*dynamic`, `::`-qualified,
+type-constrained, anonymous-container names) is explicitly "the list of things
+slice 2 must subsume" (ADR-0039 §4.3). `our @arr` colliding (§1.2's third
+instance) is ALSO still broken — slice 1 deliberately does not touch it (a
+separate resolution-bug ticket, not a store gap). Move this file to
+`news/2026-08/` only once slice 2 lands and closes the remaining by-name
+container resolution path.
 
 `news/2026-08/module-file-scope-lexical-is-not-the-callers.md` fixed this for
 **scalars**: a `unit` compunit's file-scope `my $x` now lives in a shared cell in
 `Interpreter::unit_lexicals`, keyed by the unit package. `@`/`%` were
-deliberately left out of that store, so for them the bug stands:
+deliberately left out of that store until slice 1 landed:
 
 ```raku
 # UFL.rakumod
@@ -21,11 +32,13 @@ sub push-item($v) is export { @items.push($v) }
 use UFL;
 my @items = <x y z>;
 push-item("c");
-say peek-items();        # raku: a,b,c    mutsu: x,y,z,c
-say @items.join(",");    # raku: x,y,z    mutsu: x,y,z,c
+say peek-items();        # raku: a,b,c    mutsu (slice 1): a,b,c  (was: x,y,z,c)
+say @items.join(",");    # raku: x,y,z    mutsu (slice 1): x,y,z  (was: x,y,z,c)
 ```
 
-Re-verified on `bd34751d3` (2026-08-20), `%h` included.
+Verified fixed on the slice-1 branch, 2026-08-20 — see ADR-0039 §6.1 for the
+implementation notes (which write chokepoints needed fixing beyond the two
+skips) and the full acceptance-criteria verification.
 
 ## Two corrections the 2026-08-20 investigation made (read before touching this)
 
@@ -62,15 +75,27 @@ tail (`src/runtime/runtime_thread.rs:929-957`) being the sharpest — plus
 whole-container reassignment, which must preserve container identity through
 the cell.
 
-## Where the `@`/`%` exclusion is enforced
+## What slice 1 changed, and what slice 2 still owns
 
-- `collect_unit_lexical_names` — `src/runtime/run_modules.rs:983-1014`
-  (doc comment "**Scalars only.**"; the filter itself at `:1002-1008`). Its
-  doc comment also cites this file under the wrong directory
-  (`todo/tickets/`, not `todo/deep/`) — worth correcting when slice 1 lands.
-- ADR-0024's mainline capture — `src/vm/vm_register_sub_ops.rs:464-470`.
-- `compute_upvalues` — `src/opcode.rs:6124-6130`.
-- `box_captured_lexicals` — `src/vm/vm_register_ops.rs:927`.
+- `collect_unit_lexical_names` (`src/runtime/run_modules.rs`) and ADR-0024's
+  mainline capture (`src/vm/vm_register_sub_ops.rs`) no longer skip `@`/`%` —
+  see ADR-0039 §4.1/§6.1 for the full list of write-side chokepoints
+  (`env_root_descended_mut`, `push_to_shared_var`, `exec_delete_index_named_op`)
+  that had to learn to consult `unit_lexicals` first.
+- **`compute_upvalues`** (`src/opcode.rs:6124-6130`, still excludes
+  `@`/`%`/`&`) and **`is_plain_lexical_name`**'s `@%&` exclusion
+  (`compiler/mod.rs:1712-1721`) are UNCHANGED by slice 1 — a container
+  free variable still resolves by NAME at the compiler, not by slot/upvalue.
+  This is exactly slice 1's scope boundary: it makes a compunit's OWN
+  file-scope containers safe by giving them a name-keyed cell store that
+  wins over `env`, but does not make container scoping lexical in general
+  (an ordinary inner block's `@a` is still name-resolved). Closing that
+  asymmetry — deleting `unit_lexicals`'s container special-casing along with
+  it — is slice 2 (ADR-0039 §4.2), not this file's concern any more once
+  slice 2 lands.
+- `box_captured_lexicals` (`src/vm/vm_register_ops.rs:927`) is the scalar-only
+  box-on-capture mechanism (lever C slice 2, unrelated numbering to this
+  ADR's slice 2) — still scalar-only, not touched by ADR-0039 slice 1.
 
 ## Stale: the `roast/integration/99problems-41-to-50.t` instance
 
@@ -82,13 +107,30 @@ measure; ADR-0039 §6's divergence matrix replaces it.
 
 ## Repros
 
-`tmp/ufl/` (regenerate from ADR-0039 §1.1/§1.2): `matrix.raku` (15-assertion
-`@`/`%` operation matrix through a module), `namedsub-mainline.raku` (the
-module-free mainline shadow shape), `repro-sub.raku` (consumer declares the
-shadow inside a sub — this one *loses* the module's mutation entirely),
-`ourtest.raku` (`our @a`), `alias.raku` (the write-through control).
+`tmp/ufl/` (regenerate from ADR-0039 §1.1/§1.2, or from ADR-0039 §6.1's fixed
+examples): `matrix.raku` (15-assertion `@`/`%` operation matrix through a
+module — now pinned as `t/module-file-scope-lexical.t`'s container half),
+`namedsub-mainline.raku` (the module-free mainline shadow shape — now pinned
+as `t/named-sub-lexical-scope-container.t`), `repro-sub.raku` (consumer
+declares the shadow inside a sub — now fixed too), `ourtest.raku` (`our @a` —
+STILL diverges from `raku`, deliberately unfixed by slice 1), `alias.raku`
+(the write-through control, unaffected by this ADR either way).
 
-Pin when fixed: extend `t/module-file-scope-lexical.t` and
-`t/lib/UnitFileLexical.rakumod` with the array/hash cases that were written and
-then removed when the scalar slice was scoped down (no recoverable git history
-— the add-and-scope-down happened inside one squashed commit, `c5bf19e2e`).
+## Remaining open scope (why this file is not fully closed)
+
+1. **`our @arr` colliding** (§1.2's third instance, `ourtest.raku`) — still
+   reproduces after slice 1. mutsu maintains the package-qualified mirror
+   (`@UFL3::arr` reads correctly), but the module's own routines never
+   consult it by the bare name, so `a-push` still lands on the consumer's
+   array. This needs a RESOLUTION fix (prefer the package-qualified mirror
+   for an `our`-declared name when running inside that package), not a store
+   change — deliberately out of slice 1's scope per ADR-0039 §4.1.
+2. **Slice 2** (ADR-0039 §4.2): container free variables in ordinary inner
+   blocks, closures, and any non-compunit-file-scope declaration still
+   resolve by name at the compiler (`Expr::ArrayVar`/`Expr::HashVar` emit
+   `GetArrayVar`/`GetHashVar` unconditionally, never `GetLocal(slot)`). Slice
+   1 is a name-keyed cell store that shadows `env` for exactly the compunit
+   file-scope case; slice 2 is the architectural fix that makes container
+   scoping lexical everywhere, the way scalar scoping already is, and lets
+   the container special cases slice 1 introduced be deleted rather than
+   extended further.

@@ -461,11 +461,15 @@ impl Interpreter {
                 let mut captured_any = false;
                 for sym in free_syms {
                     let name = sym.resolve();
-                    // Scalars only (sigil-less env key); `@`/`%`/`&` are a
-                    // follow-up (ADR-0024 "Known limitations").
-                    if !crate::env::is_plain_user_lexical(&name)
-                        || name.starts_with(['@', '%', '&'])
-                    {
+                    // ADR-0039 slice 1: `@`/`%` are captured the same way as
+                    // scalars now (the "Known limitations" follow-up ADR-0024
+                    // named). `&` stays excluded — the code/sub lane has its
+                    // own registries (ADR-0025). `is_plain_user_lexical`
+                    // already excludes the anonymous-container slot names
+                    // (`@__ANON_ARRAY__`/`%__ANON_HASH__`: the char after the
+                    // sigil is `_`, not lowercase), so no extra guard is
+                    // needed for that hazard here.
+                    if !crate::env::is_plain_user_lexical(&name) || name.starts_with('&') {
                         continue;
                     }
                     // `our`/`state`/`dynamic`-declared names are excluded —

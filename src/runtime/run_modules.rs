@@ -974,12 +974,15 @@ impl Interpreter {
     /// `$*dynamic`s are dynamically scoped by definition, and an `is export`
     /// variable is meant to reach the caller, so all three stay in `env`.
     ///
-    /// **Scalars only.** A `@`/`%` compunit lexical is still shared with the
-    /// loading scope: every mutating method resolves its receiver by name straight
-    /// out of `self.env` (`call_method_mut_with_values` and the ~20
-    /// `env_mut().get_mut(name)` sites), so moving the container out of `env` would
-    /// make `@a.push` silently mutate a *different* array instead of isolating it.
-    /// See `todo/tickets/module-file-scope-array-and-hash-still-share-the-caller.md`.
+    /// `@`/`%` compunit lexicals are included too (ADR-0039 slice 1) — see
+    /// `docs/adr/0039-container-lexicals-resolve-lexically.md`. Container
+    /// mutation in mutsu is write-through-the-shared-node (ADR-0013 §7,
+    /// `Value::with_array_inplace`/`with_hash_inplace`), not copy-on-write, so
+    /// moving a container into `unit_lexicals` does not detach `@a.push` from
+    /// the read chokepoint that already resolves it (`unit_scope_lexical`) —
+    /// the stale "every mutating method resolves by name out of `self.env`"
+    /// premise this comment used to record was corrected by that ADR.
+    /// See `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`.
     fn collect_unit_lexical_names(stmts: &[crate::ast::Stmt]) -> Vec<String> {
         let mut names: Vec<String> = Vec::new();
         for s in stmts {
@@ -996,13 +999,22 @@ impl Interpreter {
             if *is_our || *is_dynamic || *is_export || name.contains("::") {
                 continue;
             }
-            // A scalar `my $x` is stored sigil-less (env key `x`); `@`/`%` keep
-            // their sigil and are out of scope here (see the doc comment).
-            // Twigils and compiler-internal keys never start with a letter.
+            // Anonymous container slots (`@__ANON_ARRAY__`/`%__ANON_HASH__`)
+            // all share one name across every `my @ = EXPR`/`my % = EXPR`
+            // declaration — each is a DISTINCT logical variable that merely
+            // reuses the slot name, so it must never be treated as a single
+            // stable compunit lexical (the same hazard PR #6711/1ec010ba8
+            // fixed for in-place cell reassignment).
+            if name.contains("__ANON") {
+                continue;
+            }
+            // A scalar `my $x` is stored sigil-less (env key `x`); `@`/`%`
+            // keep their sigil (`@a`/`%h`). Twigils and compiler-internal
+            // keys never start with a letter, `@`, or `%`.
             if !name
                 .chars()
                 .next()
-                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+                .is_some_and(|c| c.is_ascii_alphabetic() || c == '_' || c == '@' || c == '%')
             {
                 continue;
             }

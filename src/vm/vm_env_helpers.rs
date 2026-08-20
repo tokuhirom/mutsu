@@ -431,6 +431,59 @@ impl Interpreter {
         self.unit_lexical_slot(name).cloned()
     }
 
+    /// The raw `ContainerRef` cell backing a compunit's own file-scope
+    /// `@`/`%` lexical, or `None` if `name` is not a unit lexical or its
+    /// stored value is not (yet) a `ContainerRef`. Unlike
+    /// [`Self::unit_scope_lexical`] (which derefs), this is for write
+    /// chokepoints (element-delete, ADR-0039 slice 1's `:delete` fix; and the
+    /// cross-thread sync chokepoints in `sync_shared_vars_to_env` /
+    /// `builtins_atomic_shared.rs`) that need to write back THROUGH the cell
+    /// rather than just read its current contents once.
+    ///
+    /// Consults the mainline bucket (`unit_lexicals[MAINLINE_UNIT_KEY]`)
+    /// UNCONDITIONALLY first, deliberately bypassing
+    /// `unit_lexical_slot`'s `mainline_lexical_frame_active()` gate (which
+    /// requires the CURRENTLY RUNNING frame to itself be the mainline named
+    /// sub that captured `name`). That gate is correct for an ordinary name
+    /// *read* -- disambiguating a captured mainline scalar from an unrelated
+    /// same-named module/package lexical -- but wrong for these write
+    /// chokepoints, which are reached from whatever frame happens to be
+    /// active when a worker thread's result lands, almost never the
+    /// capturing sub's own frame. This function used to be two separate
+    /// helpers -- `mainline_lexical_cell` (deliberately frame-unconditional)
+    /// and this one (frame-gated via `unit_lexical_slot`, for module
+    /// file-scope containers) -- until the ADR-0039 slice 1 cross-thread fix
+    /// collapsed callers onto this one alone, silently losing the
+    /// unconditional mainline check: `$port = await $tap.socket-port`
+    /// resolving directly at mainline/bare-block scope (not inside a named
+    /// sub) then failed to write through the cell that a later-called named
+    /// sub's closure still read, permanently stranding it on the pre-await
+    /// value (roast `S32-io/IO-Socket-Async.t`, "Connection refused" on a
+    /// stale port after the first tap's listener already closed). Falls
+    /// through to [`Self::unit_lexical_slot`] for the module file-scope case,
+    /// which is unaffected by the mainline gate.
+    pub(crate) fn unit_lexical_container_cell(
+        &self,
+        name: &str,
+    ) -> Option<crate::gc::Gc<std::sync::Mutex<Value>>> {
+        if name.contains("__ANON") {
+            return None;
+        }
+        if !name.contains("::")
+            && let Some(ValueView::ContainerRef(arc)) = self
+                .unit_lexicals
+                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .and_then(|m| m.get(name))
+                .map(Value::view)
+        {
+            return Some(crate::gc::Gc::clone(&arc));
+        }
+        match self.unit_lexical_slot(name)?.view() {
+            ValueView::ContainerRef(arc) => Some(crate::gc::Gc::clone(&arc)),
+            _ => None,
+        }
+    }
+
     /// ADR-0024: true while the running routine is a mainline-declared named
     /// sub that captured at least one mainline `my` scalar free variable into
     /// `unit_lexicals[MAINLINE_UNIT_KEY]` at its own registration
@@ -535,6 +588,87 @@ impl Interpreter {
         None
     }
 
+    /// Mutable counterpart of [`Self::unit_lexical_slot`] — identical
+    /// resolution algorithm (see its doc comment), `&mut Value` result. The
+    /// write-side chokepoint every container-mutation call site
+    /// (element-assign, `push`/`pop`/..., hash key-set/`:delete`) must go
+    /// through for the same reason [`Self::get_env_with_main_alias`] is the
+    /// read-side one: a compunit's own file-scope `@`/`%` (ADR-0039 slice 1)
+    /// must never be mutated through the loading scope's same-named `env`
+    /// entry. Consulted by [`Self::env_root_descended_mut`].
+    pub(crate) fn unit_lexical_slot_mut(&mut self, name: &str) -> Option<&mut Value> {
+        if self.unit_lexicals.is_empty() || name.is_empty() {
+            return None;
+        }
+        // Resolve WHICH unit-lexicals bucket (and, for the `::`-qualified
+        // case, which bare name) holds `name`, using only immutable
+        // accessors first — mirroring `unit_lexical_slot`'s own candidate
+        // order exactly. The single mutable borrow happens only in the
+        // return statement of each branch below, never inside its `if`
+        // condition: interleaving an early-returning mutable borrow with
+        // later immutable accessor calls in the same function does not
+        // borrow-check under NLL even though the borrow is never actually
+        // live past the `return`.
+        let mainline_active = !name.contains("::") && self.mainline_lexical_frame_active();
+        if mainline_active
+            && self
+                .unit_lexicals
+                .get(crate::runtime::MAINLINE_UNIT_KEY)
+                .is_some_and(|m| m.contains_key(name))
+        {
+            crate::vm::vm_stats::record_mainline_lexical_hit();
+            return self
+                .unit_lexicals
+                .get_mut(crate::runtime::MAINLINE_UNIT_KEY)
+                .and_then(|m| m.get_mut(name));
+        }
+        let cur = self.current_package();
+        if name.contains("::") {
+            // Only scalars are in the store (see `collect_unit_lexical_names`) and
+            // a scalar is keyed sigil-less, so the only sigil that can appear here
+            // is its own.
+            let (pkg, bare) = name.strip_prefix('$').unwrap_or(name).rsplit_once("::")?;
+            if pkg != cur || cur.is_empty() || cur == "GLOBAL" {
+                return None;
+            }
+            let bare = bare.to_string();
+            return Self::lookup_in_package_chain_mut(&mut self.unit_lexicals, &cur, &bare);
+        }
+        // Same candidate order as `unit_lexical_slot`: the frame's lexical
+        // package, the method-class-stack top, the frame's own package, then
+        // whatever package is current. Collected as owned `String`s up front
+        // (via the owned `method_class_stack_top`, not the borrowing
+        // `_str` form) so the read-only accessors are done before the
+        // mutable borrow of `self.unit_lexicals` below starts.
+        let frame = self.routine_stack().last();
+        let candidates: Vec<String> = [
+            frame
+                .and_then(|f| f.lexical_package)
+                .map(|s| s.as_str().to_string()),
+            self.method_class_stack_top(),
+            frame
+                .map(|f| f.package.as_str().to_string())
+                .filter(|pkg| !pkg.is_empty() && pkg != "GLOBAL"),
+            Some(cur.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        for candidate in candidates {
+            if candidate.is_empty() || candidate == "GLOBAL" || candidate.contains("::&") {
+                continue;
+            }
+            if Self::lookup_in_package_chain(&self.unit_lexicals, &candidate, name).is_some() {
+                return Self::lookup_in_package_chain_mut(
+                    &mut self.unit_lexicals,
+                    &candidate,
+                    name,
+                );
+            }
+        }
+        None
+    }
+
     /// True when `name` resolves to a file-scope lexical of the compunit the
     /// running routine belongs to — the non-cloning predicate form of
     /// [`Self::unit_scope_lexical`].
@@ -621,12 +755,24 @@ impl Interpreter {
     /// Writing `env` as well would put the module's value back under the key the
     /// loading scope's own `my` uses, which is the collision this store exists to
     /// end.
+    ///
+    /// ADR-0039 slice 1: a whole-container (`@`/`%`) reassignment must go
+    /// through [`Self::cell_store_preserving_container_identity`], which copies
+    /// the new contents INTO the cell's existing backing `Gc` node rather than
+    /// swapping the cell to point at a fresh one. A plain `clone_from` here
+    /// orphans every by-value holder of the old `Gc` (e.g. a raw-captured
+    /// argument evaluated before this write that still references the old
+    /// array/hash node directly) — exactly the aliasing hazard
+    /// `cell_store_preserving_container_identity`'s own doc comment describes.
+    /// This bit for scalars only by accident: a scalar has no secondary `Gc`
+    /// node for another holder to alias independently of the cell, so the
+    /// naive replace was invisible until `@`/`%` joined this store.
     pub(super) fn unit_scope_lexical_write(&mut self, name: &str, val: &Value) -> bool {
         let Some(slot) = self.unit_lexical_slot(name) else {
             return false;
         };
         if let ValueView::ContainerRef(cell) = slot.view() {
-            cell.lock().unwrap().clone_from(val);
+            Self::cell_store_preserving_container_identity(name, &cell, val);
             return true;
         }
         false
@@ -783,6 +929,20 @@ impl Interpreter {
         // Respect lexical shadowing by resolving the most recently-declared local.
         let idx = code.locals.iter().rposition(|n| n == bare)?;
         Some(self.locals.get(idx)?.clone())
+    }
+
+    /// The dereferenced value of a compunit's own file-scope `@`/`%`/`$`
+    /// lexical (or a mainline named sub's captured free variable), or `None`
+    /// if `name` is not one — i.e. just the `unit_scope_lexical` half of
+    /// [`Self::get_env_with_main_alias`], exposed outside `crate::vm` for
+    /// callers (`push_to_shared_var`, ADR-0039 slice 1) that must prefer this
+    /// store over a plain `env` lookup for the SAME reason
+    /// `get_env_with_main_alias` does, but must NOT fall through to that
+    /// function's other env/atomic-store branches when `name` is not a unit
+    /// lexical — those callers have their own, different fallback order for
+    /// the non-unit-lexical case.
+    pub(crate) fn unit_lexical_container(&self, name: &str) -> Option<Value> {
+        self.unit_scope_lexical(name).map(Value::into_deref)
     }
 
     pub(crate) fn get_env_with_main_alias(&self, name: &str) -> Option<Value> {

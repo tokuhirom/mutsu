@@ -841,6 +841,37 @@ impl Interpreter {
         mut values: Vec<Value>,
         target_fallback: &Value,
     ) -> Value {
+        // ADR-0039 slice 1: a compunit's own file-scope `@`/`%` (or a
+        // mainline named sub's captured free variable) resolves through
+        // `unit_lexicals` BEFORE `env` (`get_env_with_main_alias`'s doc
+        // comment) — `env[key]` can hold a completely unrelated same-named
+        // binding (e.g. the loading scope's own `my @items`, restored there
+        // once the module's mainline finished running). Falling through to
+        // the plain-env / `real_array` paths below for such a name would
+        // either push onto that WRONG array, or replace the cell's contents
+        // with a detached copy that the cell's own readers never see again
+        // — the "miss -> construct -> insert" hazard this ADR is about.
+        // Mutate the shared node in place instead (container mutation is
+        // write-through-the-node, ADR-0013 §7) and return; no write-back is
+        // needed since the cell and this dereferenced value share the same
+        // `Gc<ArrayData>`. Excludes the anonymous-container slot names for
+        // the same reason `collect_unit_lexical_names` does (they are never
+        // actually placed in `unit_lexicals`, so this is defense in depth).
+        if !key.contains("__ANON")
+            && let Some(mut existing) = self.unit_lexical_container(key)
+            && matches!(existing.view(), ValueView::Array(..))
+        {
+            return existing
+                .with_array_mut(|arc_items, kind| {
+                    let items = crate::value::gc_data_mut(arc_items);
+                    items.extend(values);
+                    if key.starts_with('@') && *kind == ArrayKind::List {
+                        *kind = ArrayKind::Array;
+                    }
+                    Value::array_with_kind(crate::gc::Gc::clone(arc_items), *kind)
+                })
+                .unwrap();
+        }
         // A plain lexical `@name` already present in the shared store routes
         // through the atomic store (see `push_to_existing_shared_array`); when
         // absent it is thread-local and falls through to the env path below.

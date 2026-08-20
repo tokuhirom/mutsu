@@ -2748,6 +2748,10 @@ impl Interpreter {
         // array — a `(0, @a)` capture, an element holding the array — observes
         // the mutation. Descend through a whole-container `:=` bound cell
         // (`my @x := @a`) so the mutation writes through the shared cell.
+        // `env_root_descended_mut` itself prefers a compunit unit-lexical
+        // container (ADR-0039 slice 1) over the raw `env` entry when
+        // `target_name` names one, so a module's/mainline-sub's own `@items`
+        // is never confused with the loading scope's same-named `env` entry.
         let result =
             self.env_root_descended_mut(target_name)?
                 .with_array_mut(|arc_items, kind| {
