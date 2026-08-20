@@ -1,6 +1,8 @@
 # ADR-0025: Cell boxing of captured scalars must be value-kind-blind — retiring the Instance skip, and demoting the escape verdict from correctness gate to perf hint
 
-- Status: Accepted (slice 1 implemented; slices 2-3 planned)
+- Status: Accepted (slice 1 implemented; slice 2 closed out 2026-08-20 as
+  already resolved by intervening work, no dedicated implementation needed
+  — see "Slice 2 outcome" below; slice 3 planned)
 - Date: 2026-08-11
 - Related: ADR-0010 (lineage-scoped sharing), ADR-0023 (binding provenance),
   ADR-0024 (mainline lexical cells), PR #2749 (broad closure boxing reverted),
@@ -229,6 +231,58 @@ enumerate frame-independent "assign this name by value" utilities
 values. Points 5/7 were fixed via the mainline-map-specific
 `mainline_lexical_cell` lookup; slice 2 must generalize those two sites to
 preserve ANY `ContainerRef` env entry (point 6's fix already is generic).
+
+### Slice 2 outcome (2026-08-20): closed out without a dedicated implementation
+
+`todo/deep/adr0025-slice2-implementation-plan.md` (written 2026-08-11) was
+picked up for direct implementation and re-verified against `main` first, per
+this project's standing "things go stale fast" triage rule. Every premise the
+plan was built on turned out to already be fixed by intervening, independently
+motivated work, so no code change was needed:
+
+- **Step 0 (the cross-thread stale-plain-over-cell race).** The named repro
+  (`http2-response-serializer.rakutest`, "check 4" family, ~50% fail rate over
+  8 runs on 2026-08-11) now passes **0/8 failures** over 8 fresh runs of the
+  debug binary — and all 29 of its subtests pass on every run, not just check
+  4. The other three HTTP/2 suites named in the plan's residuals
+  (`http2-request-parser.rakutest` 61/61, `http2-request-serializer.rakutest`
+  32/32, `http2-response-parser.rakutest` 9/9) are also fully green. The most
+  likely fix is `2011b083b` (2026-08-19, "reuse the source cell for SetGlobal
+  `:=` binds and stop dropping cell promotions across nested call frames"),
+  which touched exactly the closure-dispatch captured-env merge
+  (`vm_closure_dispatch.rs`) the plan's Step 0 pointed gdb at, for an
+  unrelated symptom (`t/has-attr-binding.t`) that shared the same merge-site
+  defect class.
+- **Steps 1-4 (decl-site cells for vouch-refused captured scalars).** The
+  plan's own motivating examples — a closure stored via `@registry.push($cb)`,
+  `.tap($cb)`, and a constructor named-arg (`Holder.new(now => $cb)`), both as
+  a pre-bound variable and as a literal written directly at the call site —
+  all read the creator's post-capture rebind correctly on `main`, verified by
+  ad hoc repros under `tmp/` (not committed; the mechanism is already
+  regression-tested by the pins below). So do less obvious shapes the plan
+  did not name: a plain (non-method) function call passed a stored closure
+  variable, and a closure literal assigned directly into an array/hash
+  *element* (`@cb[0] = -> { $s }`, not a `$`-named `my`). Root cause: this
+  plan predates two changes that together close the "escape verdict" gap it
+  targeted — `cf9dc72be` (2026-08-04) made `method_escapes_closure_args`
+  unconditionally `true` (every method-call closure argument escapes, not
+  just `then`/`tap`/`act`/`start`), and the pre-existing `escaping_position`
+  flag already covers assignment/VarDecl RHS, `return`, bind RHS, and literal
+  collection elements — which is every syntactic position a closure needs to
+  reach to become reachable later. What remains classified non-escaping
+  (control-flow bodies, sort/map/grep predicate blocks) is correctly
+  non-escaping: those blocks are invoked synchronously and never stored, so
+  no staleness window exists for them.
+
+Existing pins (`t/closure-capture-instance-cell.t`,
+`t/for-loop-param-start-sibling-isolation.t`, `t/named-sub-lexical-scope.t`,
+`t/lock-protect-shared-scalar.t`, `t/closure-container-capture-alias.t`,
+`t/closure-arg-shares-its-captured-container.t`) all stay green; no new
+mechanism means no new pin was added. The two adjacent findings the ADR's §5
+separated out (the loop-param hijack, and the `http-session` rc=139 crash)
+have themselves both since been resolved and their ticket files retired —
+see `news/2026-08/for-loop-param-getupvalue-hijack-fix.md` — independently of
+this slice.
 
 ### Slice 3 (follow-ups, each its own slice)
 
