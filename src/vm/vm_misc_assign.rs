@@ -536,7 +536,7 @@ impl Interpreter {
             // the cell with the inner container's identity preserved (contents
             // copied — `=` copy semantics — so a later `@foo[0]++` cannot reach
             // the RHS source array), and keep the CELL installed in env/locals.
-            Self::cell_store_preserving_container_identity(cell, &val);
+            Self::cell_store_preserving_container_identity(&name, cell, &val);
             let cell_val = Value::container_ref(cell.clone());
             self.update_local_if_exists(code, &name, &cell_val);
             self.set_env_with_main_alias(&name, cell_val);
