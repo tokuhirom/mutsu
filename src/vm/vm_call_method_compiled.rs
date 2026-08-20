@@ -131,6 +131,18 @@ impl Interpreter {
         };
         let captured_env = sub_data.as_ref().map(|data| &data.env);
 
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // this inline exec is another call boundary that runs a callee's
+        // compiled block body without going through `vm_run_loop.rs`'s
+        // nested-run save/restore -- isolate the "mark context" one-shot
+        // flag family so a caller's pending `:=` mark does not leak into the
+        // protect block's own vardecl/store opcodes.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);

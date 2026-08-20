@@ -172,6 +172,19 @@ impl Interpreter {
         capture_rw_topic: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<Value, RuntimeError> {
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // isolate the "mark context" one-shot flag family (bind_context et
+        // al.) so a caller's pending `:=` mark does not leak into this
+        // callee's own vardecl/store opcodes -- restored on every exit path,
+        // including a Rust panic unwind through the body loop below. Also
+        // covers the junction-autothreading recursive re-entry below (each
+        // level gets its own isolated flag family).
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         // One-shot: consumed here so a nested call inside the body does not
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance = std::mem::take(&mut self.suppress_binding_error_enhance);

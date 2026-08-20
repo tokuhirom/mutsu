@@ -133,3 +133,92 @@ impl<'a> Drop for PragmaGuard<'a> {
         self.interp.restore_pragma_state(self.saved);
     }
 }
+
+/// RAII guard isolating the "mark context" family of one-shot VM flags across
+/// a live function/method call boundary. See
+/// `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`.
+///
+/// `MarkBindContext` and its siblings (`MarkScalarBindContext`,
+/// `MarkParamRawBindContext`, `MarkRebindContext`, `MarkConstantContext`,
+/// `MarkArrayShareSource`, `MarkExplicitInitializerContext`,
+/// `MarkVarDeclContext`) are compiler-emitted opcodes that set a single
+/// `Interpreter`-wide flag immediately before a `:=`/vardecl target's own
+/// store op (`SetLocal`/`SetGlobal`), meant to be consumed by that VERY NEXT
+/// store op. When a real function/method CALL sits between the mark and its
+/// consumer (`@!other := make();` compiles to `MarkBindContext; ...;
+/// CallFuncNamed; ...; SetGlobal`), the callee's own body runs with the
+/// flag still set, so any vardecl/store inside the callee is wrongly treated
+/// as a bind target too.
+///
+/// `vm_run_loop.rs`'s nested-run boundary (EVAL, `dies-ok`/`lives-ok` blocks)
+/// already isolates this same flag family around `f(self)` — this guard
+/// applies the identical save/clear/restore to the ordinary compiled-call
+/// dispatch functions (`call_compiled_function_light_spec`,
+/// `call_compiled_function_positional_light`, `call_compiled_function_fast`,
+/// `call_compiled_function_named_inner`, `call_compiled_closure_with_topic`),
+/// which push call frames in-place in a flat bytecode loop rather than
+/// through a nested Rust-level `run()` invocation, so `vm_run_loop.rs`'s
+/// boundary never fires for them.
+pub(crate) struct MarkContextGuard {
+    interp: *mut Interpreter,
+    saved_bind_context: bool,
+    saved_scalar_bind_context: bool,
+    saved_param_raw_bind_context: bool,
+    saved_bound_decont_active: bool,
+    saved_rebind_context: bool,
+    saved_constant_context: bool,
+    saved_array_share_context: bool,
+    saved_array_share_source: Option<String>,
+    saved_explicit_initializer_context: bool,
+    saved_vardecl_context: bool,
+}
+
+impl MarkContextGuard {
+    /// # Safety
+    /// See the module-level safety invariant.
+    pub(crate) unsafe fn new(interp: &mut Interpreter) -> Self {
+        let guard = MarkContextGuard {
+            interp: interp as *mut Interpreter,
+            saved_bind_context: interp.bind_context,
+            saved_scalar_bind_context: interp.scalar_bind_context,
+            saved_param_raw_bind_context: interp.param_raw_bind_context,
+            saved_bound_decont_active: interp.bound_decont_active,
+            saved_rebind_context: interp.rebind_context,
+            saved_constant_context: interp.constant_context,
+            saved_array_share_context: interp.array_share_context,
+            saved_array_share_source: interp.array_share_source.take(),
+            saved_explicit_initializer_context: interp.explicit_initializer_context,
+            saved_vardecl_context: interp.vardecl_context,
+        };
+        interp.bind_context = false;
+        interp.scalar_bind_context = false;
+        interp.param_raw_bind_context = false;
+        interp.bound_decont_active = false;
+        interp.rebind_context = false;
+        interp.constant_context = false;
+        interp.array_share_context = false;
+        interp.array_share_source = None;
+        interp.explicit_initializer_context = false;
+        interp.vardecl_context = false;
+        guard
+    }
+}
+
+impl Drop for MarkContextGuard {
+    fn drop(&mut self) {
+        // SAFETY: see the module-level invariant.
+        unsafe {
+            let interp = &mut *self.interp;
+            interp.bind_context = self.saved_bind_context;
+            interp.scalar_bind_context = self.saved_scalar_bind_context;
+            interp.param_raw_bind_context = self.saved_param_raw_bind_context;
+            interp.bound_decont_active = self.saved_bound_decont_active;
+            interp.rebind_context = self.saved_rebind_context;
+            interp.constant_context = self.saved_constant_context;
+            interp.array_share_context = self.saved_array_share_context;
+            interp.array_share_source = self.saved_array_share_source.take();
+            interp.explicit_initializer_context = self.saved_explicit_initializer_context;
+            interp.vardecl_context = self.saved_vardecl_context;
+        }
+    }
+}

@@ -699,6 +699,18 @@ impl Interpreter {
             _ => return self.force_lazy_list_bridge(list),
         };
 
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // this inline exec is another call boundary that runs a callee's
+        // compiled body without going through `vm_run_loop.rs`'s nested-run
+        // save/restore -- isolate the "mark context" one-shot flag family so
+        // a caller's pending `:=` mark (e.g. `@x := $lazy-list.eager`) does
+        // not leak into the gather body's own vardecl/store opcodes.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         // Save current Interpreter state. Locals are kept coherent with env by
         // write-through (`flush_local_to_env`), so no explicit flush is needed
         // here; we restore locals directly on return.
