@@ -3,6 +3,30 @@
 `Interpreter::var_type_constraints` is a single global `HashMap<String,
 String>` keyed by BARE variable name, and it is never frame-scoped.
 
+## Status 2026-08-20: superseded by ADR-0042 — read that first
+
+The remaining work is now designed in
+[ADR-0042](../../docs/adr/0042-type-constraints-belong-to-the-container-not-to-a-name.md).
+Re-verified against `3766df1de`; the "What is still scope-blind" section below
+is **stale in two ways** and the ADR carries the corrected, measured version:
+
+- **The scalar residual is larger than recorded.** Seven shapes still leak, not
+  the two compile paths issue 2 names: `if`, `unless`, `else`, `while`,
+  C-style `loop`, `repeat`, and `for` bodies. (Loop bodies take
+  `compile_body_with_implicit_try`, which emits *no* scope wrapper at all.)
+- **The container residual is the opposite of "the meaningful one".** `ArrayData`
+  and `HashData` already carry `value_type`/`key_type`, and a differently-named
+  bound alias enforces correctly in 8 of 8 container shapes — so for containers
+  the name map is a redundant second source of truth contributing only false
+  positives, and the container-first accessor (`element_constraint_for`) already
+  exists. That half is mechanical. The genuinely architectural half is
+  **scalars**: `ContainerRef(Gc<Mutex<Value>>)` has no constraint field, so
+  `my Str $s; my $t := $s; $t = 42` wrongly succeeds.
+
+Residual 4 (`for`-loop typed params) does not reproduce as a divergence; see
+ADR-0042 §9. Slice 1 of ADR-0042 is **ready for direct implementation** — it is
+mechanical and needs no further design.
+
 ## Status 2026-08-13: routine-scoped SCALARS are fixed
 
 The main leak — a typed scalar `my` inside a routine poisoning a same-named
@@ -46,7 +70,7 @@ base name against `block_declared` too.
 Pinned by `t/typed-lexical-constraint-block-scoped.t` (verified against
 `raku` directly, all 7 assertions match).
 
-## What is still scope-blind
+## What is still scope-blind (as recorded 2026-08-13 — see the stale-scope note above)
 
 1. **`@`/`%` containers**: `my Int @a` inside a routine still registers the
    bare name in the global map (their element/key-type metadata is consulted
@@ -97,10 +121,14 @@ Pinned by `t/typed-lexical-constraint-block-scoped.t` (verified against
 ## The sound architecture (unchanged)
 
 Rakudo attaches the constraint to the Scalar CONTAINER: a container created
-by `my Str $e` carries `of Str` wherever it flows. The remaining fix
-direction for the residuals is the same as the ticket originally proposed —
-carry constraints on the container/cell (ArrayData/HashData already carry
-element types; scalars would need cell-carried `of`) and make the
-name-keyed store compile-time/EVAL bridging only. The container residual
-(1) is the meaningful one: it needs the `_fast` consultation sites
-(push/subscript) to read per-container metadata instead of the name map.
+by `my Str $e` carries `of Str` wherever it flows. The fix direction is to
+carry constraints on the container/cell and make the name-keyed store
+compile-time/EVAL bridging only.
+
+**Correction (2026-08-20):** the sentence that used to end this section —
+"the container residual (1) is the meaningful one" — had the two halves
+backwards. Containers already carry their constraint on `ArrayData`/`HashData`,
+so residual 1 reduces to routing the `_fast` consultation sites through the
+existing `element_constraint_for` accessor: mechanical, not architectural.
+Scalars are the architectural half, because the scalar cell has no `of` field
+at all. ADR-0042 §3 has the measurements.
