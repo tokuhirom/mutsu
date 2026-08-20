@@ -1,5 +1,36 @@
 # Core listops (`splice`, `push`, `pop`, ...) are not real multi-subs, so user/module `multi` candidates can't merge with them
 
+## Status (2026-08-20): designed — see ADR-0044
+
+Re-verified against `main` @ `b821d5e53`. The finding is real and still open,
+with two corrections to what is written below:
+
+- **The import case's symptom has moved.** This file records `use Module;`
+  exporting a `multi splice` as producing `Unknown function: splice` — i.e. the
+  imported candidate never being consulted. That is stale: the parser's
+  `make_call_expr` (`src/parser/primary/ident/listop.rs:35`) now routes the
+  call to the imported candidate via `Expr::UserRoutineCall` when
+  `is_imported_function` holds, so `say splice('', 0, 'Raku')` works. But the
+  import now wins the name *outright*, so the core array form dies with
+  `No matching candidates for proto sub: splice` — exactly the local-shadow
+  failure in the section below, just triggered by an import.
+- **There is a worse, simpler facet not recorded here:** the core listops have
+  no callable existence at all, so `&splice(@a, 1, 2)` dies with
+  `Unknown function: splice`, and `&push(@a, 7)` / `my &f = &push; f(@a, 7)`
+  **succeed and silently do nothing**. No user `multi` is needed to hit it.
+
+The design is recorded in
+[docs/adr/0044-listops-are-routines-not-a-syntactic-rewrite.md](../../docs/adr/0044-listops-are-routines-not-a-syntactic-rewrite.md).
+Its key finding is that the fix is smaller than the analysis below assumes:
+mutsu **already** lets a user `multi` extend a core builtin (`multi abs(Str)`
+alongside core `abs` works today) through the
+`dispatch_func_call_inner` → `call_function_fallback` chain. Listops are the
+only builtins with no function-form implementation for that chain to fall back
+to, because their core behaviour exists solely as a compiler rewrite to
+`CallMethodMut`. Supplying that function form (ADR-0044 D1) is the first
+slice; the parser/compiler suppression switches then stop being load-bearing
+for correctness and become a fast-path veto (D2).
+
 ## Symptom
 
 Raku treats `splice` (and the other array listops: `push`, `pop`, `shift`,
