@@ -52,13 +52,27 @@ impl Interpreter {
             return None;
         }
         // Reject when type/key constraints, defaults, readonly, or bound indices
-        // exist — those need the full assignment path's healing.
-        if self.var_type_constraint_fast(var_name).is_some()
-            || self.var_default(var_name).is_some()
-            || self.var_hash_key_constraint_fast(var_name)
-            || self.is_readonly(var_name)
+        // exist — those need the full assignment path's healing. ADR-0042
+        // slice 1: the type/key-constraint check reads the target hash's own
+        // embedded metadata (`container_type_metadata`, true iff `value_type`
+        // OR `key_type` OR `declared_type` is set — a key-only object hash
+        // like `my %h{Int}` has an empty `value_type`, so `element_constraint_for`
+        // alone would miss it) instead of the scope-blind name-keyed map.
+        // Scoped tightly: `current` must NOT stay alive past this check — it
+        // holds a clone of the hash's Arc, and the fast-path commit below
+        // (through `assign_hash_elem_to_shared_var`) needs to see this
+        // variable's TRUE reference count, not one inflated by our own
+        // temporary clone (see the `try_fast_hash_element_assign` comment
+        // below, where this exact shape tripped its `strong_count > 2`
+        // external-binding guard).
         {
-            return None;
+            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            if self.container_type_metadata(&current).is_some()
+                || self.var_default(var_name).is_some()
+                || self.is_readonly(var_name)
+            {
+                return None;
+            }
         }
         {
             let bound_key = format!("__mutsu_bound_index::{}", var_name);
@@ -127,12 +141,22 @@ impl Interpreter {
             return None;
         }
         // Reject typed / defaulted / shaped / readonly / bound arrays — those need
-        // the full path's native-fill, hole, and shape handling.
-        if self.var_type_constraint_fast(var_name).is_some()
-            || self.var_default(var_name).is_some()
-            || self.is_readonly(var_name)
+        // the full path's native-fill, hole, and shape handling. ADR-0042
+        // slice 1: the type-constraint check reads the target array's own
+        // embedded metadata via `element_constraint_for` instead of the
+        // scope-blind name-keyed map. Scoped tightly: `current` holds a clone
+        // of the array's Arc and must not stay alive into the commit below,
+        // which needs the variable's TRUE reference count (see the
+        // `try_fast_hash_element_assign` comment for the bug this shape
+        // caused when the clone lived too long).
         {
-            return None;
+            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            if self.element_constraint_for(var_name, &current).is_some()
+                || self.var_default(var_name).is_some()
+                || self.is_readonly(var_name)
+            {
+                return None;
+            }
         }
         {
             let shaped_key = format!("__mutsu_shaped_array_dims::{}", var_name);
@@ -230,14 +254,31 @@ impl Interpreter {
         if matches!(val_ref.view(), ValueView::Nil) {
             return None;
         }
-        // Check that no type constraints, key constraints, or defaults exist
-        // Use fast lookups that avoid format! allocations
-        if self.var_type_constraint_fast(var_name).is_some()
-            || self.var_default(var_name).is_some()
-            || self.var_hash_key_constraint_fast(var_name)
-            || self.is_readonly(var_name)
+        // Check that no type constraints, key constraints, or defaults exist.
+        // ADR-0042 slice 1: reads the target hash's own embedded metadata
+        // (see the `try_shared_hash_element_assign` comment above for why
+        // `container_type_metadata` rather than `element_constraint_for`) —
+        // the `has_type_meta()` check further below is a second,
+        // container-only belt-and-suspenders check on the SAME embedded
+        // metadata, kept for its extra strong-count/local-slot bookkeeping.
+        //
+        // Scoped tightly in its own block: `current` clones the hash's Arc,
+        // and the `strong_count` check a few lines below (the "does an
+        // external binding exist" heuristic) counts EVERY live Arc clone —
+        // including this temporary one, if it were still alive. An
+        // unscoped `let current = ...` here made every hash-element
+        // assignment whose value's rvalue-itemization is observed by
+        // surrounding code (`my @z = (%a<x> = ...)`) see `strong_count == 3`
+        // instead of 2, permanently falling off the fast path and losing its
+        // itemization (`t/hash-key-single-itemize.t`).
         {
-            return None;
+            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            if self.container_type_metadata(&current).is_some()
+                || self.var_default(var_name).is_some()
+                || self.is_readonly(var_name)
+            {
+                return None;
+            }
         }
         // Reject if any bound indices exist for this variable
         // (e.g. `%h<a> := $foo` makes element writes propagate to $foo)

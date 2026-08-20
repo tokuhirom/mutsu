@@ -110,6 +110,20 @@ impl Interpreter {
             format!("__mutsu_type::{}", name),
             Value::str(info.value_type),
         );
+        // ADR-0042 slice 1: an object-hash's key type (`my %h{Int}`) must be
+        // scoped the same way its value type is. `var_hash_key_constraint`
+        // checks this env-scoped key first, so registering it here is what
+        // lets the container-tagging step right after `SetVarTypeScoped`
+        // (`exec_set_var_type`) embed the key type onto the freshly-declared
+        // hash. Without it a key-only object hash declared inside a routine
+        // (now scoped since step 3 stopped excluding `%` from the scoped
+        // opcode) silently lost key-type enforcement.
+        let hash_key_meta_key = format!("__mutsu_hash_key_type::{}", name);
+        if let Some(key_type) = info.key_type {
+            self.env.insert(hash_key_meta_key, Value::str(key_type));
+        } else {
+            self.env.remove(&hash_key_meta_key);
+        }
         self.env_type_constraint_seen = true;
     }
 
@@ -528,15 +542,5 @@ impl Interpreter {
         let tc = self.self_attr_type_constraint(bare)?;
         let (_, key_type) = crate::runtime::types::split_object_hash_constraint(&tc);
         key_type.map(str::to_string)
-    }
-
-    /// Fast check for hash key constraint — only checks the HashMap,
-    /// skipping the `format!("__mutsu_hash_key_type::...")` + env lookup.
-    /// Object-hash attributes still have to take the slow path, so they are
-    /// resolved through the class registry here too (only for `%`-sigil
-    /// attribute names, which never appear on the hot local-variable path).
-    pub(crate) fn var_hash_key_constraint_fast(&self, name: &str) -> bool {
-        self.var_hash_key_constraints.contains_key(name)
-            || self.attr_hash_key_constraint(name).is_some()
     }
 }

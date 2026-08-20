@@ -877,11 +877,25 @@ impl Interpreter {
                 // The remaining special cases (typed/readonly anon scalar, fatal-mode
                 // Failure explosion, `:=` container write-through, capture RHS) are
                 // excluded by the guards and fall through to the general path.
+                // ADR-0042 slice 1: route the constraint check through
+                // `element_constraint_for` (container-embedded metadata
+                // first, name-keyed map as fallback) like the other mutation
+                // chokepoints in this ADR's table, for mechanical
+                // consistency. `__ANON_STATE__` is always a scalar, so this
+                // falls straight through to the name-keyed lookup — the
+                // scalar cell-carried `of` is ADR-0042 slice 2. The name
+                // comparison stays first so a non-`__ANON_STATE__` SetGlobal
+                // (the overwhelming majority) never pays the env lookup.
                 if name_str == "__ANON_STATE__"
                     && !raw_mode
                     && !is_rebind
                     && !self.fatal_mode
-                    && self.var_type_constraint_fast(name_str).is_none()
+                    && {
+                        let anon_state_val =
+                            self.env().get(name_str).cloned().unwrap_or(Value::NIL);
+                        self.element_constraint_for(name_str, &anon_state_val)
+                            .is_none()
+                    }
                     && !self.is_readonly(name_str)
                     // A `VarRef` RHS (a `:=` bind of `$` to a variable) must reach
                     // the general path, which is where the wrapper is unwrapped and

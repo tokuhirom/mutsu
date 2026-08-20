@@ -110,8 +110,22 @@ impl Interpreter {
         ) {
             return None;
         }
-        if self.var_type_constraint_fast(var_name).is_some() || self.is_readonly(var_name) {
-            return None;
+        // ADR-0042 slice 1: read the target hash's own embedded metadata
+        // instead of the scope-blind name-keyed map. `container_type_metadata`
+        // (true iff `value_type` OR `key_type` OR `declared_type` is set)
+        // rather than `element_constraint_for` so a key-only object hash
+        // (`my %h{Int}`, empty `value_type`) still bails to the slow path.
+        // Scoped tightly: `current` clones the hash's Arc, and the
+        // `strong_count` check below (the "does an external binding exist"
+        // heuristic) counts every live clone — an unscoped `current` here
+        // inflated it by one and permanently disabled this fast path (see
+        // the identical bug fixed in `try_fast_hash_element_assign`,
+        // `vm_var_assign_element.rs`).
+        {
+            let current = self.env().get(var_name).cloned().unwrap_or(Value::NIL);
+            if self.container_type_metadata(&current).is_some() || self.is_readonly(var_name) {
+                return None;
+            }
         }
         // A `:=`-bound-to-literal key must clear its read-only marker on delete;
         // route it to the slow path (which calls `unmark_ro_indices`) so a later

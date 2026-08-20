@@ -68,16 +68,18 @@ impl Interpreter {
         if name.starts_with('%') || name.starts_with('@') {
             self.clear_all_ro_index(&name);
         }
-        if name.starts_with('%')
-            && self
-                .var_type_constraint_fast(&name)
+        // ADR-0042 slice 1: read the target hash's own embedded metadata via
+        // `element_constraint_for` instead of the scope-blind name-keyed map.
+        if name.starts_with('%') {
+            let current = self.get_env_with_main_alias(&name);
+            let is_mix = current
+                .as_ref()
+                .and_then(|v| self.element_constraint_for(&name, v))
                 .and_then(|s| Self::quant_hash_trait_from_constraint(s.as_str()))
-                == Some("Mix")
-            && self
-                .get_env_with_main_alias(&name)
-                .is_some_and(|current| !current.is_nil())
-        {
-            return Err(RuntimeError::assignment_ro(None));
+                == Some("Mix");
+            if is_mix && current.is_some_and(|current| !current.is_nil()) {
+                return Err(RuntimeError::assignment_ro(None));
+            }
         }
         if name.starts_with('&') && !name.contains("::") {
             let bare = name.trim_start_matches('&');
