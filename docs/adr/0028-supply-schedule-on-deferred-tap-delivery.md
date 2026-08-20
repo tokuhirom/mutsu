@@ -474,6 +474,23 @@ raku quirks, before they were trustworthy — see below):
   new synthesized-shim class following the `__ScheduledTapPump` idiom;
   design sketch, confirmed repro, and affected-file inventory are in
   `todo/deep/schedule-on-live-transform-operators-bypass-deferral.md`.
+
+  **Update (2026-08-20): this bullet's diagnosis was wrong, and §4's open
+  question now has a measured answer — see
+  [ADR-0043](0043-scheduled-delivery-hop-belongs-to-the-tapped-supply.md).**
+  These operators *do* build a fresh downstream attrs map
+  (`make_live_transform_supply`, and the `"flat"` arm), so `"scheduler"` can be
+  threaded through them exactly as the category above; the user's tap still
+  registers at `.tap()` time through this ADR's chokepoint. A probe patch of
+  eight lines flips all four operators from `Planned` to `Kept`, matching raku,
+  with every existing pin green — no shim class needed. The deep ticket was
+  re-scoped to
+  `todo/tickets/scheduled-supply-derived-transform-ops-drop-scheduler-attr.md`.
+  What *does* remain is narrower and different: a blocking user *transform
+  callable* still runs on the emitting thread, because mutsu places its single
+  deferral hop at the final `.tap` while Rakudo places it at the scheduled-source
+  boundary. ADR-0043 owns that placement decision and defers it behind a
+  recorded trigger.
 - **Probed, NOT a gap:** `react whenever $scheduled-supply { ... }`. A naive
   thread-identity probe was misleading here — mutsu's react drive loop
   already runs on its own dedicated driving thread even *without*
