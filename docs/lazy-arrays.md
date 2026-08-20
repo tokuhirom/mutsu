@@ -218,17 +218,22 @@ Array), and teach the array *mutation* path to reify-on-write.**
 | value | how produced | lazy? | `@a[N]` reifies? |
 |---|---|---|---|
 | `Value::Range(a, i64::MAX)` | `1..*` literal | yes (`*` end = `i64::MAX`) | as a **scalar** yes; assigned to `@a` → capped |
-| `Value::Array(_, ArrayKind::Lazy)` | `coerce_to_array(Range(a,MAX))` caps at `MAX_ARRAY_EXPAND` = 100k | **fake** (finite 100k, just *flagged* lazy) | only `< 100k` |
+| `Value::Array(_, ArrayKind::Lazy)` | `coerce_to_array(Range(a,MAX))` caps at `MAX_LAZY_RANGE_PREFIX` = 100k | **fake** (finite 100k, just *flagged* lazy) | only `< 100k` |
 | `Value::LazyList { coroutine }` | `lazy gather {…}` | yes (truly) | **yes** (proven) |
 | `Value::LazyList { sequence_spec }` | `1,2,3 … *` (`SequenceSpec::Arithmetic`/`Geometric*`) | yes | yes via `force_lazy_list_vm_n` — **but** assigned to `@a` it is forced/capped |
 | `Value::LazyList { closure_seq }` | `1,1,*+* … *` | yes | yes |
 
-**The capping points** (all use the constant `100_000`):
-- `src/runtime/utils.rs::coerce_to_array` — `Range`/`RangeExcl*`/`GenericRange`
-  arms with `b == i64::MAX` build a capped `ArrayKind::Lazy` Array
-  (`MAX_ARRAY_EXPAND`).
-- `src/vm/vm_var_assign_ops.rs::assignment_rhs_values` — slice-assign RHS
-  expansion (`MAX_ASSIGN_SLICE_EXPAND`).
+**The capping points** (all use the shared constant `MAX_LAZY_RANGE_PREFIX` =
+`100_000`, `src/runtime/utils.rs`; these all gate on `b == i64::MAX` only — a
+finite range is never capped, and always expands in full):
+- `src/runtime/utils/coerce_containers.rs::coerce_to_array` —
+  `Range`/`RangeExcl*`/`GenericRange` arms with `b == i64::MAX` build a
+  capped `ArrayKind::Lazy` Array.
+- `src/vm/vm_var_assign_coerce.rs::assignment_rhs_values` and
+  `src/vm/vm_var_assign_typed.rs::slice_indices_from_index` — slice-assign
+  RHS/index expansion.
+- `src/runtime/types/signature.rs::flatten_into_slurpy` — slurpy (`*@`)
+  binding.
 - `src/vm/vm_var_assign_ops.rs` `@`-assign SetLocal path (~6268): a plain
   `LazyList` (no preserve marker, no coroutine) is **forced**
   (`force_lazy_list_vm`); only `coroutine` lists and lists carrying
@@ -330,6 +335,7 @@ Named regression watch-list: `roast/S32-array/create.t`,
 - `src/vm/vm_var_index_ops.rs:387` — bounded incremental pull on index (works).
 - `src/vm/vm_helpers.rs` — `force_lazy_list_vm` / `force_lazy_list_vm_n` /
   `extend_sequence_cache` / `extend_closure_sequence`.
-- `src/runtime/utils.rs::coerce_to_array` — the capping point for ranges.
+- `src/runtime/utils/coerce_containers.rs::coerce_to_array` — the capping
+  point for ranges.
 - `src/runtime/types/signature.rs::flatten_into_slurpy` — the slurpy hang.
 - `t/` building blocks to add: `t/lazy-array-index.t`, `t/lazy-gist.t`.

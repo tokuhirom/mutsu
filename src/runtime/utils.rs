@@ -9,6 +9,31 @@ use num_traits::{Signed, ToPrimitive, Zero};
 /// Maximum number of elements when expanding an infinite range to a list.
 pub(crate) const MAX_RANGE_EXPAND: i64 = 1_000_000;
 
+/// Maximum number of elements eagerly pre-populated when a genuinely
+/// *infinite* i64 `Range` (`b == i64::MAX`, e.g. `^Inf`, `1..*`) is bound
+/// into a `Lazy`-kind Array, a slurpy (`*@`) parameter, or the RHS/index set
+/// of a slice assignment — the initial window materialized before further
+/// elements are reified on demand. This must NEVER be applied to a *finite*
+/// range: a finite range has a real, known bound and always expands to it in
+/// full (see `todo/tickets/finite-range-assign-truncates-at-100k.md` — a
+/// prior bug applied this cap unconditionally, silently truncating finite
+/// assignments above 100k elements).
+///
+/// This single constant replaces what used to be three independent
+/// same-valued literals (`coerce_to_array`'s `MAX_ARRAY_EXPAND`,
+/// `assignment_rhs_values`/`slice_indices_from_index`'s
+/// `MAX_ASSIGN_SLICE_EXPAND`, and `flatten_into_slurpy`'s
+/// `MAX_SLURPY_RANGE_EXPAND`) — all three capped the exact same case
+/// (an infinite i64 Range) with the same value, so keeping them as separate
+/// numbers was a maintenance hazard, not a deliberate difference.
+///
+/// Deliberately NOT unified with `MAX_RANGE_EXPAND` above: that constant
+/// bounds a full, non-lazy, one-shot materialization (`.List`/`.Array`
+/// coercion, `map`/`grep` over a range) where a larger allowance is
+/// reasonable because the result is not retained as an on-demand `Lazy`
+/// array.
+pub(crate) const MAX_LAZY_RANGE_PREFIX: i64 = 100_000;
+
 /// The env key recording the `:=` alias target of the sigilless/aliased variable
 /// `name` (`my $b := $a` stores `a` under the key for `b`). The single definition
 /// of the key shape, so a hot path can pre-intern it instead of rebuilding it per

@@ -361,10 +361,6 @@ where
     Ok(set_hash_original_keys(Value::hash(map), original_keys))
 }
 
-/// Maximum number of elements when expanding an infinite range into an Array.
-/// TODO: Properly implement lazy arrays that reify elements on demand.
-const MAX_ARRAY_EXPAND: i64 = 100_000;
-
 /// Replace Nil elements with the Any type object when materializing values
 /// into a fresh untyped real Array: assigning Nil to an element container
 /// resets it to its default (`my @a = (..., Nil, ...)` stores Any).
@@ -429,51 +425,51 @@ pub(crate) fn coerce_to_array(value: Value) -> Value {
         }
         ValueView::Range(a, b) => {
             if b == i64::MAX {
-                // Infinite range — mark as lazy
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                // Infinite range — mark as lazy, capped to
+                // MAX_LAZY_RANGE_PREFIX (the array is reified on demand
+                // from here; see ArrayKind::Lazy / force_lazy_list_vm_n).
+                let end = b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX));
                 Value::array_with_kind(
                     crate::gc::Gc::new((a..=end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a..=end).map(Value::int).collect())
+                // Finite range: no cap. The bound is real, so materialize it
+                // in full (matches raku, which has no built-in size limit here).
+                Value::real_array((a..=b).map(Value::int).collect())
             }
         }
         ValueView::RangeExcl(a, b) => {
             if b == i64::MAX {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                let end = b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX));
                 Value::array_with_kind(
                     crate::gc::Gc::new((a..end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a..end).map(Value::int).collect())
+                Value::real_array((a..b).map(Value::int).collect())
             }
         }
         ValueView::RangeExclStart(a, b) => {
             if b == i64::MAX {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                let end = b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX));
                 Value::array_with_kind(
                     crate::gc::Gc::new((a + 1..=end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a + 1..=end).map(Value::int).collect())
+                Value::real_array((a + 1..=b).map(Value::int).collect())
             }
         }
         ValueView::RangeExclBoth(a, b) => {
             if b == i64::MAX {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
+                let end = b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX));
                 Value::array_with_kind(
                     crate::gc::Gc::new((a + 1..end).map(Value::int).collect()),
                     ArrayKind::Lazy,
                 )
             } else {
-                let end = b.min(a.saturating_add(MAX_ARRAY_EXPAND));
-                Value::real_array((a + 1..end).map(Value::int).collect())
+                Value::real_array((a + 1..b).map(Value::int).collect())
             }
         }
         ValueView::GenericRange { start, end, .. }

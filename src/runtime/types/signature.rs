@@ -122,13 +122,6 @@ pub(crate) fn unwrap_varref_value(value: Value) -> Value {
     }
 }
 
-/// Upper bound on how many elements an infinite range contributes to a slurpy.
-/// Mirrors `coerce_to_array`'s `MAX_ARRAY_EXPAND`: binding `1..*` to a `*@`/`+@`
-/// slurpy must not loop forever (`for i in a..=i64::MAX`). This caps it to a
-/// finite prefix instead of hanging. (A truly lazy slurpy binding is the goal of
-/// the lazy-array campaign — see `docs/lazy-arrays.md` Slice L4.)
-const MAX_SLURPY_RANGE_EXPAND: i64 = 100_000;
-
 /// Flatten a list of RAW caller arguments for `*@` (flattening slurpy)
 /// parameter binding / a slurpy-taking builtin (`sprintf`, `catdir`, ...).
 /// Every caller of this function passes un-pre-processed values (an
@@ -163,7 +156,11 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
                 flatten_into_slurpy(&items, out);
             }
             ValueView::Range(a, b) => {
-                let end = b.min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end >= a {
                     for i in a..=end {
                         out.push(Value::int(i));
@@ -171,7 +168,11 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
                 }
             }
             ValueView::RangeExcl(a, b) => {
-                let end = b.min(a.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(a.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end > a {
                     for i in a..end {
                         out.push(Value::int(i));
@@ -180,7 +181,11 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
             }
             ValueView::RangeExclStart(a, b) => {
                 let start = a.saturating_add(1);
-                let end = b.min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end >= start {
                     for i in start..=end {
                         out.push(Value::int(i));
@@ -189,7 +194,11 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
             }
             ValueView::RangeExclBoth(a, b) => {
                 let start = a.saturating_add(1);
-                let end = b.min(start.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                let end = if b == i64::MAX {
+                    b.min(start.saturating_add(crate::runtime::utils::MAX_LAZY_RANGE_PREFIX))
+                } else {
+                    b
+                };
                 if end > start {
                     for i in start..end {
                         out.push(Value::int(i));
@@ -210,11 +219,15 @@ pub(crate) fn flatten_into_slurpy(values: &[Value], out: &mut Vec<Value>) {
                     (start.as_ref().view(), end.as_ref().view()),
                     (ValueView::Int(_), ValueView::Int(_))
                 ) {
+                    // Both endpoints are `Int` (i64), which cannot represent
+                    // an infinite range (that would be a `Num` Inf/Whatever
+                    // endpoint, handled by the `value_to_list` fallback
+                    // below) — so this range is always finite and expands
+                    // in full, uncapped.
                     let a = crate::runtime::to_int(start);
                     let b = crate::runtime::to_int(end);
                     let s = if excl_start { a + 1 } else { a };
-                    let raw_e = if excl_end { b } else { b + 1 };
-                    let e = raw_e.min(s.saturating_add(MAX_SLURPY_RANGE_EXPAND));
+                    let e = if excl_end { b } else { b + 1 };
                     for i in s..e {
                         out.push(Value::int(i));
                     }
