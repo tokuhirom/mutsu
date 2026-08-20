@@ -203,7 +203,7 @@ impl Interpreter {
             // detach a backing node shared with the initializer so a later
             // `@foo[0]++` on the state var does not reach the source array
             // (`(state @foo) = @bar`, S04-declarations/state.t).
-            let coerced = if name.starts_with('@') {
+            let mut coerced = if name.starts_with('@') {
                 runtime::coerce_to_array(init_val).detach_shared_container()
             } else if name.starts_with('%') {
                 self.coerce_object_to_hash(init_val)
@@ -211,6 +211,35 @@ impl Interpreter {
             } else {
                 init_val
             };
+            // ADR-0042 slice 1 §3.1: a `state Int @a` container is boxed into
+            // a `ContainerRef` cell unconditionally below (Track B slice 3),
+            // but until now nothing tagged the ARRAY/HASH inside that cell
+            // with its own `ContainerTypeInfo` the way a plain `my Int @a`
+            // does — so enforcement worked only through the bare name `@a`
+            // and not through a differently-named alias (`my @x := @a;
+            // @x.push("s")`). Embed the declared constraint on the value
+            // itself before it is wrapped, exactly like `my`'s
+            // `register_var_container_type_metadata`.
+            if (name.starts_with('@') || name.starts_with('%'))
+                && let Some(value_type) = self.var_type_constraint(name)
+            {
+                let info = crate::runtime::ContainerTypeInfo {
+                    declared_type: if name.starts_with('@')
+                        && crate::runtime::native_types::is_native_array_element_type(&value_type)
+                    {
+                        Some(format!("array[{value_type}]"))
+                    } else {
+                        None
+                    },
+                    value_type,
+                    key_type: if name.starts_with('%') {
+                        self.var_hash_key_constraint(name)
+                    } else {
+                        None
+                    },
+                };
+                coerced = self.tag_container_metadata(coerced, info);
+            }
             // Track B slice 3: a `state @a` / `state %h` aggregate lives in a
             // shared `ContainerRef` cell in ALL modes, not just under an active
             // thread context. Every closure created in the declaring routine

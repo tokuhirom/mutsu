@@ -6,6 +6,12 @@ impl Interpreter {
     /// Storing Nil into a fresh array element resets it to the element
     /// default: Any for untyped arrays, the element type object for typed
     /// (`my Int @a; @a.push(Nil)` stores `Int`). Slips convert per element.
+    ///
+    /// ADR-0042 slice 1: reads the constraint via `element_constraint_for`,
+    /// which prefers the metadata embedded on the target array's own value
+    /// over the (scope-blind) name-keyed `var_type_constraints` map — the
+    /// same value-carrying accessor every other container mutation site in
+    /// this ADR routes through.
     fn push_nil_to_elem_default(&mut self, target_name: &str, val: Value) -> Value {
         let has_nil = match val.view() {
             ValueView::Slip(items) => items.iter().any(Value::is_nil),
@@ -14,10 +20,8 @@ impl Interpreter {
         if !has_nil {
             return val;
         }
-        let default = match self
-            .var_type_constraint_fast(target_name)
-            .map(|s| s.to_string())
-        {
+        let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
+        let default = match self.element_constraint_for(target_name, &target) {
             Some(c) => {
                 let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&c));
                 Value::package(crate::symbol::Symbol::intern(&nominal))
@@ -303,15 +307,18 @@ impl Interpreter {
 
     /// Type-check a pushed value (or every element of a pushed `Slip`) against
     /// the declared element type of `target_name`. A no-op for an untyped array.
+    ///
+    /// ADR-0042 slice 1: constraint comes from `element_constraint_for`
+    /// (container-embedded metadata first, name-keyed map as fallback) rather
+    /// than the map-only `var_type_constraint_fast` — this is the hot
+    /// `@a.push` chokepoint the ADR names for the bench-CI watch.
     fn check_push_element_type(
         &mut self,
         target_name: &str,
         val: &Value,
     ) -> Result<(), RuntimeError> {
-        let Some(type_name) = self
-            .var_type_constraint_fast(target_name)
-            .map(|s| s.to_string())
-        else {
+        let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
+        let Some(type_name) = self.element_constraint_for(target_name, &target) else {
             return Ok(());
         };
         // Owned clone of the Slip backing (a view guard's borrow cannot
@@ -358,8 +365,13 @@ impl Interpreter {
     }
 
     /// The native integer element type of the array variable `name`, if any.
+    ///
+    /// ADR-0042 slice 1: routed through `element_constraint_for` (see
+    /// `check_push_element_type`) instead of the map-only
+    /// `var_type_constraint_fast`.
     pub(crate) fn native_int_element_constraint(&mut self, name: &str) -> Option<String> {
-        let constraint = self.var_type_constraint_fast(name)?.to_string();
+        let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
+        let constraint = self.element_constraint_for(name, &target)?;
         crate::runtime::native_types::is_native_int_type(&constraint).then_some(constraint)
     }
 

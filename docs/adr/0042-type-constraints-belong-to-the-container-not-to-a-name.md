@@ -1,6 +1,7 @@
 # ADR-0042: A type constraint belongs to the container, not to a name — retiring the `var_type_constraints` side table
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Partially Implemented — Slice 1 landed 2026-08-20 (see §10). Slices 2
+  and 3 not started.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline lexicals —
   the same by-name/lexical split for scalar *values*),
@@ -334,3 +335,59 @@ It is therefore not a live bug but a **mechanism that should not exist**: the
 save/restore is a workaround for the unscoped map, carrying the latent
 promotion defect noted in §5.3. It is recorded here as part of slice 3's
 deletion list, not as a failing shape to fix.
+
+## 10. Slice 1 status (landed 2026-08-20)
+
+All four §5.1 steps landed as specified, with two adjustments discovered
+during implementation:
+
+- **Extra fix, not in the original four steps:** `set_var_type_constraint_routine_scoped`
+  (`src/runtime/runtime_var_meta.rs`) only ever registered the env-scoped
+  `__mutsu_type::name` (value type) entry, never `__mutsu_hash_key_type::name`
+  (key type). Step 3 (dropping `%` from `emit_set_var_type`'s sigil
+  exclusion) routes a key-only object hash declared inside a routine/block
+  (`my %h{Int}`, empty `value_type`) through this SCOPED path for the first
+  time — and losing the key-type registration there silently dropped key-type
+  enforcement for exactly that shape (measured: `sub f { my %h{Int}; %h{1} =
+  "a"; %h{"bad"} = "b" }` stopped dying). Fixed by also registering
+  `__mutsu_hash_key_type::name` there. A second, related fix: three
+  `var_type_constraint_fast(name).is_some() || ... || var_hash_key_constraint_fast(name)`
+  bailout checks (`try_shared_hash_element_assign`, `try_fast_hash_element_assign`,
+  `try_fast_hash_delete`) were routed through a single
+  `container_type_metadata(&current).is_some()` check instead of
+  `element_constraint_for` — `element_constraint_for` filters out an empty
+  `value_type`, which is exactly what a key-only object hash has, so it alone
+  would have reintroduced the same gap at the read side. `container_type_metadata`
+  (true iff `value_type` OR `key_type` OR `declared_type` is set) does not.
+  `var_hash_key_constraint_fast` is now dead code (no remaining callers) and
+  was removed.
+- **One step (a §5.1-step-4 extension) was prototyped and reverted.** An
+  attempt to also fix the "outer-first shadow" shape (see the new finding
+  below) by extending `loop_local_saved_env` (the mechanism
+  `pop_loop_local_scope` already uses to restore a shadowed outer binding's
+  bare-name value) to snapshot/restore the `__mutsu_type::`/
+  `__mutsu_hash_key_type::` metadata keys too was implemented and measured to
+  have **no effect** on that shape — proving its root cause is at the VALUE
+  layer (the container's own embedded metadata gets corrupted), not the
+  name-keyed metadata layer this ADR's slice 1 targets. Reverted to keep
+  slice 1 scoped to its four specified, verified-effective steps.
+
+**Verified green**, `raku`-oracled: the §2.2 container matrix (all 7 shapes:
+routine/block/if/while/for/`my Int %h`/`my %h{Int}`), the §2.1 `if`/`unless`/
+`else` scalar rows, the §3 alias probe (7/7 shapes), and the §3.1 `state`
+container gap. Pinned in `t/typed-constraint-scope-matrix.t` and
+`t/state-typed-container-alias.t`. Zero regressions across the 62 pre-existing
+`t/*typed*` files and the `S02-types`/`S09-typed-arrays` roast whitelist
+(19 files, 4824 tests).
+
+**New finding, NOT fixed by slice 1 and NOT one of its four steps:** a
+DIFFERENT, deeper, pre-existing bug — present on `main` before slice 1 and
+unaffected by it — where a typed declaration that SHADOWS an already-existing
+outer binding of the same name (as opposed to being a fresh, non-shadowing
+declaration) corrupts the outer binding's own value in place, for BOTH
+scalars and containers, across EVERY branch/loop construct measured —
+`if`/`unless`/`else` are affected exactly as much as `while`/`loop`/`repeat`/
+`for`, contradicting this ADR's own §2.1 prediction that step 4 would fix the
+former. Root cause and fix direction: `todo/deep/scoped-type-declaration-tags-the-shadowed-outer-value.md`.
+Pinned (as expected-failing `# TODO` assertions) in
+`t/typed-constraint-shadow-leak-unfixed.t`.

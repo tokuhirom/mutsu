@@ -341,6 +341,20 @@ impl Interpreter {
                 continue;
             }
             self.env_mut().remove_sym(*sym);
+            // ADR-0042 slice 1 step 4: also strip the env-scoped
+            // type-constraint metadata keys (`__mutsu_type::<name>`,
+            // `__mutsu_hash_key_type::<name>`) so a block-local typed
+            // declaration — now including `@`/`%` containers, since slice 1
+            // step 3 stopped excluding them from the scoped opcode — does not
+            // leak its constraint onto a same-named variable read after this
+            // branch exits. Mirrors the prefix-stripping restore
+            // `exec_block_scope_op` already does for genuine `{ ... }`
+            // blocks.
+            sym.with_str(|s| {
+                self.env_mut().remove(&format!("__mutsu_type::{}", s));
+                self.env_mut()
+                    .remove(&format!("__mutsu_hash_key_type::{}", s));
+            });
             for &idx in &owned_slots {
                 if idx < self.locals.len() && code.local_sym(idx) == Some(*sym) {
                     self.locals[idx] = Value::NIL;

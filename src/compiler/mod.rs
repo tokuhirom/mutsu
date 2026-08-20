@@ -2170,29 +2170,35 @@ impl Compiler {
     }
 
     /// Emit the declaration-time type-constraint registration op for a
-    /// `my TYPE $x`-family declaration. A SCALAR `my`/`state` lexically inside
-    /// a routine, or directly inside a plain `{ ... }` block (see
+    /// `my TYPE $x`-family declaration. A `my`/`state` declaration lexically
+    /// inside a routine, or directly inside a plain `{ ... }` block (see
     /// `lexically_in_block`), gets `SetVarTypeScoped` — env-only
     /// registration, exactly like a typed parameter — so its constraint dies
     /// with the frame/block instead of leaking onto a same-named variable
     /// elsewhere through the global name-keyed store
     /// (`todo/deep/bare-name-type-constraint-store-is-scope-blind.md`).
-    /// Everything else keeps the both-store `SetVarType`: `@`/`%` containers
-    /// (their element/key metadata is consulted through the global map by the
-    /// push/subscript fast paths), `our` (package-scoped, outlives the frame),
-    /// dynamics (`$*x`, read cross-frame by design), an anonymous scalar
-    /// (`my T $`, name `__ANON_STATE__` — stored via `SetGlobal`/`GetGlobal`
-    /// rather than a local slot, immediately consumed into a
-    /// `WrapTypedContainer` cell, so there is no per-declaration slot for a
-    /// block/frame exit to scope; going through the env-only opcode here
-    /// starved that read of the global-map registration it depends on — see
+    ///
+    /// ADR-0042 slice 1: `@`/`%` containers now use the same scoped opcode as
+    /// scalars. Their element/key metadata is embedded directly on the
+    /// container VALUE (`ArrayData`/`HashData`) by the mutation chokepoints
+    /// (`element_constraint_for` / `container_type_metadata`), not read
+    /// through the global map at the hot push/subscript paths any more — the
+    /// global-map registration this doc comment used to require for those
+    /// paths is no longer their source of truth, so containers no longer need
+    /// to be excluded from scoping. `&` (routines are not scoped this way)
+    /// stays excluded. Everything else keeps the both-store `SetVarType`:
+    /// `our` (package-scoped, outlives the frame), dynamics (`$*x`, read
+    /// cross-frame by design), an anonymous scalar (`my T $`, name
+    /// `__ANON_STATE__` — stored via `SetGlobal`/`GetGlobal` rather than a
+    /// local slot, immediately consumed into a `WrapTypedContainer` cell, so
+    /// there is no per-declaration slot for a block/frame exit to scope;
+    /// going through the env-only opcode here starved that read of the
+    /// global-map registration it depends on — see
     /// `t/pair-typed-value-container.t`), and mainline declarations outside
     /// any block (no frame/scope to scope to).
     fn emit_set_var_type(&mut self, name: &str, name_idx: u32, tc_idx: u32, is_our: bool) {
         let scoped = !is_our
             && (self.is_routine || self.lexically_in_routine || self.lexically_in_block)
-            && !name.starts_with('@')
-            && !name.starts_with('%')
             && !name.starts_with('&')
             && !name.starts_with('*')
             && name != "__ANON_STATE__"

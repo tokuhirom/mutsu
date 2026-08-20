@@ -9,10 +9,20 @@ use Test;
 # which covers the routine-scoped half of the same fix.
 #
 # Scope: this covers only a genuine source `{ ... }` block (compiled to
-# `OpCode::BlockScope`). An `if`/`while`/`for`/C-style-loop BODY with a
-# block-local `my` compiles through two different, still-unfixed paths
-# (`OpCode::BlockLocalScope`, and plain inlining for a `while`/loop body with
-# no topic rebind) — see the todo file for the remaining gap.
+# `OpCode::BlockScope`). The `if`/`unless`/`else` branch-body half
+# (`OpCode::BlockLocalScope`) is now ALSO fixed, for the "fresh-after" shape
+# (a typed `my` inside the branch, then a FRESH untyped `my` of the same name
+# declared after the branch exits) — see ADR-0042 slice 1 (step 4) and
+# t/typed-constraint-scope-matrix.t, which pins it (plus the ADR's container
+# matrix). `while`/`for`/C-style-loop bodies (no scope-boundary opcode at
+# all) remain unfixed for that same "fresh-after" shape in principle, though
+# no live fresh-after repro is known for them either (every one tried during
+# the ADR-0042 slice-1 session already passed). A SEPARATE, deeper "outer-first
+# shadow" shape (an outer variable declared BEFORE the inner typed shadow,
+# then reused after it exits) is unfixed for EVERY branch/loop construct
+# including if/unless/else — see
+# todo/deep/scoped-type-declaration-tags-the-shadowed-outer-value.md and
+# t/typed-constraint-shadow-leak-unfixed.t.
 
 plan 7;
 

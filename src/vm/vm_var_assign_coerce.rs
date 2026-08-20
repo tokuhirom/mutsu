@@ -159,13 +159,17 @@ impl Interpreter {
         name: &str,
         value: Value,
     ) -> Result<Value, RuntimeError> {
-        if let Some(constraint) = self.var_type_constraint_fast(name).cloned()
+        // ADR-0042 slice 1: read the target hash's own embedded metadata via
+        // `element_constraint_for` instead of the scope-blind name-keyed map.
+        let current = self.env().get(name).cloned();
+        if let Some(constraint) = current
+            .as_ref()
+            .and_then(|v| self.element_constraint_for(name, v))
             && let Some(trait_name) = Self::quant_hash_trait_from_constraint(&constraint)
         {
             // Only coerce if the variable IS a QuantHash container (declared via `is`),
             // not when the constraint is a value type (declared via `of`).
             // Check: if the current value is already a QuantHash, it's an `is` trait.
-            let current = self.env().get(name).cloned();
             let is_quanthash_container = matches!(
                 current.as_ref().map(Value::view),
                 Some(ValueView::Bag(_, _) | ValueView::Mix(_, _) | ValueView::Set(_, _))
