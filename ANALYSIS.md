@@ -106,12 +106,14 @@ inside the ADR:
   (`declare_drive_how_protocol` driving `new_type`/`add_method`/`compose`) — declaration
   *registration*, not body execution, which is fully compiled. This is the largest remaining
   tree-walk surface and the one most likely to keep growing with future MOP features (§1.9).
-- **Native/builtin method introspection fidelity** (F1/F2's remaining slice): user-method
+- **Native/builtin method introspection fidelity** (F1/F2, closed 2026-08-20): user-method
   `.^methods`/`.^can`/method MRO views are now derived from the canonical table (no longer
-  hand-maintained, closing most of §4 item 1 below); native method metadata (`.package` on
-  multi dispatchers, exact per-method `.signature`, the `.^lookup` Sub-vs-Method-Instance
-  representation mismatch) is not yet at full parity. Tracked in
-  `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`.
+  hand-maintained, closing most of §4 item 1 below), and `.^lookup`/`.^find_method` now return the
+  same `Method` `Instance` shape those readers build (the former Sub-vs-Method-Instance mismatch
+  is fixed). What remains is exact per-native-method fidelity (`.package` on multi dispatchers,
+  exact `.signature` instead of the synthesized generic default) — a deliberately reactive,
+  per-case override slice, tracked directly in ADR-0019's F1 box rather than a separate ticket
+  (`news/2026-08/adr0019-f1-f2-introspection-closeout.md`).
 - **E2's exact-handler-ID catalog** (giving every native entry a static type×method row) is
   open cleanup, no longer gating dispatch correctness — `native_call_unmodeled` is a
   monitoring signal, not a precondition. Tracked in `todo/deep/adr0019-e2-e4-resolver-core.md`.
@@ -377,11 +379,9 @@ surface issue, not a second dispatch mechanism. `runtime/methods_call_dispatch.r
 3875 lines.
 
 What remains is the E2 exact-handler-ID catalog (giving every native entry a static row
-instead of the arity-cascade fallback) and deriving the last mile of introspection fidelity
-(§4 item 1) — both open cleanup tracked as independent tickets
-(`todo/deep/adr0019-e2-e4-resolver-core.md`,
-`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`), no longer gating dispatch
-correctness or performance.
+instead of the arity-cascade fallback, `todo/deep/adr0019-e2-e4-resolver-core.md`) and the last
+mile of native-method introspection fidelity (§4 item 1, tracked in ADR-0019's F1 box) — both
+open cleanup, no longer gating dispatch correctness or performance.
 
 ---
 
@@ -390,14 +390,15 @@ correctness or performance.
 No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts remain:
 
 1. **User-method `.^methods`/`.^can`/method MRO views are now derived** from the canonical
-   `Registry::method_entries[(owner, name)].user_candidates` table (ADR-0019 F1/F2, closed for
-   this half 2026-08-14) — no longer hand-maintained for user-declared types. **Native/builtin
+   `Registry::method_entries[(owner, name)].user_candidates` table (ADR-0019 F1/F2, closed
+   2026-08-20) — no longer hand-maintained for user-declared types, and `.^lookup`/`.^find_method`
+   return the same `Method` `Instance` shape those readers build. **Native/builtin
    method metadata stays a hand-maintained shortcut**: `builtins/builtin_type_methods.rs` (960
    lines, rev10: 874) centralizes the native candidate-name universe, guarded by structural
    tests plus `t/can-methods-drift.t`; per-method fidelity gaps (native `.package` on multi
-   dispatchers, synthesized-not-exact `.signature`, the `.^lookup` Sub-vs-Method-Instance
-   mismatch) remain open in
-   `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`. The growth rate matters now
+   dispatchers, synthesized-not-exact `.signature`) remain open, deliberately as a reactive
+   per-case slice rather than an upfront sweep — tracked in ADR-0019's F1 box
+   (`news/2026-08/adr0019-f1-f2-introspection-closeout.md`). The growth rate matters now
    that §1.9 lets user code introspect through the same surface.
 2. **Parser grammar relaxations for roast** (minor, unchanged): `is List` type-ish traits,
    the Test::Assuming colonpair, and the `throws-like` trailing-`)` special form.

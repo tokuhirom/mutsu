@@ -119,8 +119,9 @@ unchecked even if its original PR merged. PRs are sequential branches from the t
 **Status: Accepted/Implemented (2026-08-17), all four completion gates closed.** Phases A, B, and
 C are fully closed. Phase D is fully closed (D2c-5, its last optional item, landed 2026-08-19).
 Phase E is closed except E2
-(still-open cleanup, no longer gating — E1, E3-E11 are all closed). Phase F: F3, F4 (all of
-F4a/F4b/F4c), and F5 are closed; F1/F2 are done except a deliberately-parked fidelity slice; F6 is
+(still-open cleanup, no longer gating — E1, E3-E11 are all closed). Phase F: F1, F2, F3, F4 (all of
+F4a/F4b/F4c), and F5 are closed (F1/F2 with a deliberately-parked fidelity slice — see their
+entry); F6 is
 closed (with an amended completion criterion — see its entry); F7 is closed (with a role-body
 permanent-exception carve-out — see its entry). Of the completion gates, G1 is closed (satisfied
 by the `main` branch ruleset's required status checks, after closing a `jit-stress`
@@ -893,26 +894,58 @@ architectural outcome.
 
 ### Phase F — derive introspection and remove compatibility state
 
-- [ ] **F1 — Build `Method` objects from canonical entries.** Store ownership, visibility,
+- [x] **F1 — Build `Method` objects from canonical entries.** Store ownership, visibility,
   signature, multi/submethod, wrap, and native metadata needed by introspection.
-- [ ] **F2 — Derive `.^methods`, `.^can`, and method MRO views from the resolver/table.** Use the
+- [x] **F2 — Derive `.^methods`, `.^can`, and method MRO views from the resolver/table.** Use the
   same TypeId MRO and visibility rules as calls.
+
+  **Closed (2026-08-20), mechanism slice complete; a deliberately-parked fidelity slice remains —
+  see the final update below.** Summary of what shipped:
+  `news/2026-08/adr0019-f1-f2-introspection-closeout.md` consolidates the whole box's history.
 
   **Progress (2026-08-14):** the user-method half of F1/F2 is done, in the shadow-then-cutover
   style E1a set. All three MRO/table readers that used to walk `ClassDef::methods` directly now
   build every candidate list from the canonical `Registry::method_entries[(owner,
   name)].user_candidates` table: `.^methods`/`.^method_table` (#6399/#6400) and `.^can`/`.can`
   (#6402/#6406). Native/builtin method metadata (F1's "native metadata" clause) and full
-  `Method`-object fidelity (F2's "visibility rules") remain open — see
-  `todo/deep/adr0019-f1-f2-introspection-canonical-source.md` for the raku ground truth gathered so
-  far and why it needs a dedicated verification pass before a design. That pass also surfaced a
-  distinct bug, `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`: `.^lookup`
+  `Method`-object fidelity (F2's "visibility rules") remain open — see this box's later updates for
+  the raku ground truth gathered and why it needed a dedicated verification pass before a design.
+  That pass also surfaced a distinct bug, `todo/tickets/classhow-lookup-returns-sub-not-method-instance.md`
+  (closed by the 2026-08-15 update below): `.^lookup`
   builds a `Sub`-shaped value instead of the same `Method` `Instance` these readers now share.
   **Update (#6420):** the sharpest symptom of that bug — `.is_dispatcher`/`.multi` silently
   returning a bogus `<composed-method:NAME>` callable instead of a real answer — is fixed with
   targeted handling on the `Sub`-shaped value, verified against `raku` ground truth (pin:
   `t/classhow-lookup-method-is-dispatcher-multi.t`). The underlying representation mismatch (Sub
   vs. Method Instance) remains open; this was a scoped patch, not the unification.
+
+  **Decision (2026-08-14): columns on the E2 catalog, not a second table.** Consulted and
+  confirmed with the user. `.package`/`.signature.gist`/`.is_dispatcher`/`.multi` fidelity for
+  native methods needs per-method hand data to match real Rakudo exactly (a raku ground-truth
+  sweep found no single derivable shape for `.signature` across ~280 samples, and a `.package`
+  divergence sweep across 9 owners found 199 divergent triples, projecting to 400+ across all
+  ~650 introspectable rows). The rejected-alternative ban ("Build an introspection-only catalog",
+  below) is about a *second source of truth over which methods exist and how they dispatch* — not
+  about all hand-authored data everywhere. Declaration metadata with no in-repo derivation
+  (Rakudo's own hand-written core signatures have no Raku source in mutsu to read them from, the
+  same way `MethodDef::param_defs` is the only source for a *user* method's signature) is a
+  different category: for a native method it *is* the canonical answer, expressed as data because
+  Rust match arms can't carry it. Resolution: extend `NativeMethodRow`
+  (`src/builtins/native_method_row.rs`, the catalog E2 already generated) with optional columns
+  (e.g. `declared_package: Option<&'static str>`, a small `sig_shape` enum) rather than a second
+  `(owner, name)` table — one key, one row. Volume stays small **by construction**, not by
+  discipline: most native signatures are already the generic/arity-erased shapes a synthesized
+  template gets close to for free, so only the minority that diverge get an explicit override,
+  added lazily and reactively (one at a time, each raku-verified and pinned under `t/`, guarded by
+  a test tying every override to a live catalog row) — never an upfront sweep of all ~350 native
+  methods. Sequencing: F3 (retire the per-type hand tables, no F1 dependency) lands first; then
+  F1's mechanism slice (no hand data — synthesize generic `.package`/`.signature` defaults from
+  the arity cascade, plus the Sub-vs-Instance unification); then F1's fidelity slice (the override
+  columns, populated only as real assertions demand). A follow-up finding the same day (native
+  `is_dispatcher`/`.multi` is the *majority*-True case for Cool/Any-declared methods, not the rare
+  edge case first assumed — a tried default-False/False guess was reverted as wrong more often
+  than right) moved native dispatcher/multiplicity fidelity into this same fidelity-slice bucket
+  rather than the mechanism slice.
   **Update (2026-08-14, F1 mechanism slice, `.package` only):** `make_native_method_object`/
   `make_method_object_with_owner` never set a `.package` attribute at all (always `Nil`, not just
   imprecise). Fixed: exact for user/role methods (declaring class/role, raku-verified); a multi
@@ -921,8 +954,7 @@ architectural outcome.
   catalog owner (an accepted imperfect mechanism-slice default, e.g. `Str.uc` answers `(Str)` not
   Rakudo's true `(Cool)` — the fidelity slice closes that gap later). `.signature`'s synthesized
   default and the Sub-vs-Instance unification remain open. Pin: `t/classhow-methods-package.t`;
-  design detail in `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Progress
-  (2026-08-14): F1 mechanism slice, `.package` only".
+  full detail in `news/2026-08/adr0019-f1-method-package-mechanism-slice.md`.
   **Update (2026-08-15, F1 mechanism slice, `.signature` default):** `make_native_method_object`
   hardcoded every native `Method` Instance's `.signature` as an empty `Signature()` — `.^methods`/
   `.^method_table` on any built-in type answered zero params regardless of the method's real arity.
@@ -956,6 +988,13 @@ architectural outcome.
   `t/classhow-lookup-method-instance-callable.t`. F1's only remaining open piece is the fidelity
   slice (per-native-method `.signature`/`.package`/`.is_dispatcher` override columns), correctly idle
   until a real assertion demands a specific override (per the 2026-08-14 decision above).
+  **Closeout (2026-08-20):** re-verified the mechanism-slice defaults against real `raku`
+  (`(42).^lookup("floor").signature`, `"abc".^lookup("uc").package`,
+  `(42).^lookup("Numeric").is_dispatcher`) — all three still show exactly the documented
+  approximate defaults, no regression, and no `t/`/roast assertion has yet demanded a fidelity
+  override. Boxes checked; the fidelity slice stays open by design, tracked here rather than in a
+  separate `todo/deep` file (removed — its content is fully absorbed by this box's history and
+  `news/2026-08/adr0019-f1-f2-introspection-closeout.md`).
 - [x] **F3 — Delete the per-type method-name lists and the test-only `METHOD_UNIVERSE`.** B1/B2
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
@@ -1101,9 +1140,10 @@ architectural outcome.
 - [x] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
   **Split in place (2026-08-15), following the C6/D2/E1-E11 precedent** — a read-site
-  classification pass (`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s sibling
-  survey, and an earlier scoping pass -- both now folded into this box's own progress notes below,
-  which fully supersede that scoping's now-deleted file) found `Registry::sync_user_method_entries`
+  classification pass (a sibling survey to the one that scoped F1/F2's own introspection-canonical-source
+  ticket, now closed and removed -- see F1/F2's box and `news/2026-08/adr0019-f1-f2-introspection-closeout.md` --
+  and an earlier scoping pass, both now folded into this box's own progress notes below) found
+  `Registry::sync_user_method_entries`
   currently writes the canonical table FROM
   `ClassDef::methods` (the opposite of what F4 wants), with ~15-20 files of live dispatch/MOP/
   BUILD-TWEAK read sites and ~10 files of write sites. That work does not fit one PR or one
@@ -3158,9 +3198,9 @@ not about all hand-authored data everywhere. F1's native-metadata work (declarin
 native methods are hand-written Raku signatures mutsu reimplements in Rust with no signature to
 read them from. That is declaration metadata, not a competing existence/dispatch catalog, and F1
 attaches it as optional columns on the single already-generated `NativeMethodRow` catalog (one key,
-one row) rather than a second `(owner, name)` structure — see
-`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Decision (2026-08-14)" for the full
-reasoning and sequencing.
+one row) rather than a second `(owner, name)` structure — see F1's box above ("Decision
+(2026-08-14): columns on the E2 catalog, not a second table") for the full reasoning and
+sequencing.
 
 ### Preserve separate native and user resolvers behind one facade
 
@@ -3187,13 +3227,15 @@ each instruction.
 
 **Accepted/Implemented (2026-08-17).** The checklist above ("Execution plan and progress") is the
 authoritative, currently-maintained record of what has landed. Phases A-D, E (all of E1/E3-E11),
-and F (F3, F4, F5, F6, F7; F1/F2 for their user-method half) are closed, and all four completion
+and F (F1, F2, F3, F4, F5, F6, F7) are closed, and all four completion
 gates (G1-G4) are closed — see each box's own entry above for full design and slice history, and
 the linked `todo/deep/adr0019-*.md` docs for design detail that outlived the checklist.
 
 Deliberately non-gating residue remains, tracked as independent tickets rather than inside this
 ADR: E2's exact-handler-ID catalog (`todo/deep/adr0019-e2-e4-resolver-core.md`, open cleanup, no
-longer gating dispatch correctness), and F1/F2's native-method introspection fidelity
-(`todo/deep/adr0019-f1-f2-introspection-canonical-source.md`). D2c-5's optional env-setup
-de-duplication landed 2026-08-19 (`news/2026-08/adr0019-d2c5-collapse-default-eval-env-setup.md`).
+longer gating dispatch correctness). F1/F2's native-method introspection fidelity slice is
+deliberately parked and reactive-only, tracked inline in F1's own box above (no separate ticket —
+closed out 2026-08-20, see `news/2026-08/adr0019-f1-f2-introspection-closeout.md`). D2c-5's
+optional env-setup de-duplication landed 2026-08-19
+(`news/2026-08/adr0019-d2c5-collapse-default-eval-env-setup.md`).
 Individual accomplishments are additionally recorded per-PR under `news/2026-08/`.

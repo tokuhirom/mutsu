@@ -124,6 +124,6 @@ no change at all (the `Instance` shape already carried the same `__mutsu_lookup_
 local)` used), and direct callability needed one `CALL-ME` handler at the single centralized
 "invoke a Value" entry point (`call_sub_value`/`dispatch_instance_and_fallback`), not a general
 "make an Instance callable everywhere" capability. The F1 *fidelity* slice (per-native-method
-`.signature`/`.package`/`.is_dispatcher` override columns on `NativeMethodRow`, populated reactively —
-see `todo/deep/adr0019-f1-f2-introspection-canonical-source.md`'s "Decision (2026-08-14)") remains
-correctly idle until a real `t/`/roast assertion demands a specific override.
+`.signature`/`.package`/`.is_dispatcher` override columns on `NativeMethodRow`, populated
+reactively — see ADR-0019's F1 box and `news/2026-08/adr0019-f1-f2-introspection-closeout.md`)
+remains correctly idle until a real `t/`/roast assertion demands a specific override.
