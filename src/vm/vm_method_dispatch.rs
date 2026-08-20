@@ -25,6 +25,17 @@ impl Interpreter {
         // site did not drain; nested calls in the body self-drain via their own
         // call-site ops before this frame records its own sources.
         self.pending_rw_writeback_sources.clear();
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // isolate the "mark context" one-shot flag family (bind_context et
+        // al.) so a caller's pending `:=` mark does not leak into this
+        // method's own vardecl/store opcodes -- restored on every exit path,
+        // including a Rust panic unwind through the body loop below.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
             let cl = Some(self.cur_source_line);
@@ -1307,6 +1318,17 @@ impl Interpreter {
             ValueView::Instance { attributes, .. } => Some(attributes.clone()),
             _ => None,
         };
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // isolate the "mark context" one-shot flag family (bind_context et
+        // al.) so a caller's pending `:=` mark does not leak into this
+        // method's own vardecl/store opcodes -- restored on every exit path,
+        // including a Rust panic unwind through the body loop below.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         if let Some(ref msg) = method_def.deprecated_message {
             loan_env!(
                 self,

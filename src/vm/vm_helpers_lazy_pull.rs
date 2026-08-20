@@ -67,6 +67,18 @@ impl Interpreter {
             }
         };
 
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // this inline exec is another call boundary that runs a callee's
+        // compiled body (fresh or resumed) without going through
+        // `vm_run_loop.rs`'s nested-run save/restore -- isolate the "mark
+        // context" one-shot flag family so a caller's pending `:=` mark does
+        // not leak into the gather body's own vardecl/store opcodes.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         // Save current Interpreter state
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.clone_env();

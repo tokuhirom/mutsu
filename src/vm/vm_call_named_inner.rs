@@ -22,6 +22,17 @@ impl Interpreter {
         // wrong slot. Nested calls in the body self-drain via their own ExecCall
         // ops, leaving the list empty before this frame records its own sources.
         self.pending_rw_writeback_sources.clear();
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // isolate the "mark context" one-shot flag family (bind_context et
+        // al.) so a caller's pending `:=` mark does not leak into this
+        // callee's own vardecl/store opcodes -- restored on every exit path,
+        // including a Rust panic unwind through the body loop below.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));

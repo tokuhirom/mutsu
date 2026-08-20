@@ -11,6 +11,17 @@ impl Interpreter {
         // GC safepoint (§9.2a `call`): this fast path skips push_call_frame,
         // so it emits the call safepoint itself.
         crate::gc::gc_safepoint(crate::gc::SafepointKind::Call);
+        // RAII (`MarkContextGuard`,
+        // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
+        // isolate the "mark context" one-shot flag family (bind_context et
+        // al.) so a caller's pending `:=` mark does not leak into this
+        // callee's own vardecl/store opcodes -- restored on every exit path,
+        // including a Rust panic unwind through the body loop below.
+        // SAFETY: this function holds a single exclusive `&mut self` borrow
+        // for its entire body and the guard never escapes it (module-level
+        // invariant in `vm_call_state_guard`).
+        let _mark_context_guard =
+            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
         self.record_cf_deprecation(cf);
         // Gate user-infix overrides out of module code: only count a call as
         // "module code" when the function's source file differs from the main
