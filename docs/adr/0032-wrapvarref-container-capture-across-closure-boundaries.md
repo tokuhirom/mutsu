@@ -342,7 +342,7 @@ introduced to kill (`t/list-alias-shadowed-name.t`).
   simply keeps today's snapshot behaviour. That is a known, documented residue
   (ADR-0025 slice 3), not a new one.
 - **A new cell can make an inner expression-declared `my` clobber the owner.**
-  `todo/deep/expr-decl-writes-through-captured-cell.md` documents the live
+  `todo/tickets/expr-decl-writes-through-captured-cell.md` documents the live
   instance: an expression-position `my $g` (inside an `if` condition) compiles to
   env-only `MarkVarDeclContext; SetGlobal` with no local slot, finds the captured
   cell under the bare env key, and writes *through* it into the caller's
