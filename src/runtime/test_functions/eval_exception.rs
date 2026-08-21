@@ -16,15 +16,30 @@ impl Interpreter {
     /// check) before it ever reaches here, so this predicate still correctly
     /// reports that case as "died".
     ///
-    /// `last`/`next`/`redo` are deliberately NOT included here: unlike
-    /// `return`, they have no equivalent compile-time "no enclosing loop"
-    /// check, so a genuinely homeless `last` (`lives-ok { last }` with no
-    /// loop anywhere) still carries `is_last() == true` when it reaches this
-    /// point and must still be reported as "died", matching `raku`
-    /// (`lives-ok { last }` fails with "last without loop construct" as a
-    /// normal test failure, not an uncaught abort).
+    /// `last`/`next`/`redo` are included too, but they need a different test
+    /// than `return`: they have no compile-time "no enclosing loop" check
+    /// (`runtime/loop_handler_depth.rs` explains why that check must be
+    /// dynamic -- a loop-control signal legitimately crosses routine/`EVAL`
+    /// boundaries). Instead the `Last`/`Next`/`Redo` opcodes themselves
+    /// already convert a genuinely homeless signal into a typed
+    /// `X::ControlFlow` (`RuntimeError::control_flow_illegal`) at the raise
+    /// site, using `loop_handler_depth::loop_handler_in_scope()` to check
+    /// whether anything on the *dynamic* chain would handle it -- so a raw
+    /// `is_last()`/`is_next()`/`is_redo()` signal that reaches this point is
+    /// guaranteed to still be live and headed for a real enclosing loop
+    /// (verified against `raku`: `lives-ok { last }` inside a real `for`
+    /// unwinds the loop without recording a pass/fail).
+    ///
+    /// `RuntimeError::is_illegal_control()` is what distinguishes the two:
+    /// `control_flow_illegal` sets `exception` (via `RuntimeError::typed`) in
+    /// addition to `control`, while the live signal constructors
+    /// (`last_signal`/`next_signal`/`redo_signal`) leave `exception` unset.
+    /// So a genuinely homeless `last` (`lives-ok { last }` with no loop
+    /// anywhere) is excluded here and still reported as "died", matching
+    /// `raku` (`lives-ok { last }` fails with "last without loop construct"
+    /// as a normal test failure, not an uncaught abort).
     fn is_live_nonlocal_control(e: &RuntimeError) -> bool {
-        e.is_return()
+        e.is_return() || ((e.is_last() || e.is_next() || e.is_redo()) && !e.is_illegal_control())
     }
 
     pub(crate) fn test_fn_lives_ok(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
