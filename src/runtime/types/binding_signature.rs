@@ -706,6 +706,35 @@ impl Interpreter {
                     )));
                 }
             }
+            // A `^`-twigil placeholder or named (`:name`) placeholder sub may
+            // legitimately accept more positionals than its placeholders
+            // declare, via a bare `@_`/`%_` read in its body (see the comment
+            // above `required_positional_count`) -- so the "too many" check
+            // below is confined to a params list made ENTIRELY of plain
+            // (non-placeholder) identifiers. That shape only arises from an
+            // explicit single-param pointy block (`-> $a { }`, compiled via
+            // `Expr::Lambda`) or a non-mutating WhateverCode (`*+1`), neither
+            // of which can coexist with a body `@_`/`%_` read -- Raku rejects
+            // that combination at compile time (`X::Signature::Placeholder`,
+            // "Placeholder variable '@_' cannot override existing
+            // signature"), so a caret/colon-free params list here is never
+            // ambiguous (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
+            let all_plain_positional = params.iter().all(|p| {
+                !p.starts_with('^')
+                    && !p.starts_with("@^")
+                    && !p.starts_with("%^")
+                    && !p.starts_with("&^")
+                    && !p.starts_with(':')
+                    && !p.starts_with("@:")
+                    && !p.starts_with("%:")
+            });
+            if all_plain_positional && positional_idx < positional_args.len() {
+                return Err(RuntimeError::new(format!(
+                    "Too many positionals passed; expected {} arguments but got {}",
+                    required_positional_count,
+                    positional_args.len()
+                )));
+            }
             self.env.insert(
                 "@_".to_string(),
                 Value::array(positional_args[positional_idx..].to_vec()),
