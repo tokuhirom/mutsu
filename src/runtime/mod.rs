@@ -469,7 +469,7 @@ mod runtime_module;
 mod runtime_module_export_sub;
 mod runtime_module_exports;
 mod runtime_output;
-mod runtime_shared_vars;
+pub(crate) mod runtime_shared_vars;
 mod runtime_thread;
 mod runtime_var_meta;
 mod seq_helpers;
@@ -1695,7 +1695,19 @@ pub struct Interpreter {
     /// Reset to empty in `clone_for_thread` (a child thread captures the
     /// parent's *current* bindings). Only populated while
     /// `shared_vars_active`; empty (zero-cost) for single-threaded programs.
-    pub(crate) thread_redeclared_vars: std::collections::HashSet<String>,
+    /// Boxed and wrapped in `RefCell` (not a plain `HashSet<String>` field) so
+    /// `ThreadParamMaskGuard` (`vm::vm_call_state_guard`) can hold a raw
+    /// pointer into this field's OWN heap allocation -- disjoint from
+    /// `Interpreter`'s own allocation -- and mutate it on `Drop` (including
+    /// during a Rust panic unwind) without ever needing a reference to
+    /// `Interpreter` itself. See that module's doc comment ("v3") for why a
+    /// pointer taken directly into a field embedded in `Interpreter`'s own
+    /// struct is unsound. `RefCell` (not `Cell`, unlike `state_scope_id`/
+    /// `when_matched`) because `HashSet` isn't `Copy`, so `Cell`'s get/set API
+    /// is awkward for it; `RefCell` gives the same disjoint-allocation
+    /// property while keeping ordinary `insert`/`remove`/`contains` methods
+    /// available through `borrow`/`borrow_mut`.
+    pub(crate) thread_redeclared_vars: Box<std::cell::RefCell<std::collections::HashSet<String>>>,
     /// Subset of [`Self::thread_redeclared_vars`] whose declaration is still
     /// *in flight*: the `my` has run but its initializer has not stored a value
     /// yet, so neither the slot nor `env` holds the new binding — both still
@@ -1732,7 +1744,10 @@ pub struct Interpreter {
     /// [`mask_thread_redeclared_params`](Self::mask_thread_redeclared_params) /
     /// [`unmask_thread_redeclared_params`](Self::unmask_thread_redeclared_params),
     /// has no such interference. Empty for single-threaded programs.
-    pub(crate) thread_param_shadow_vars: std::collections::HashSet<String>,
+    /// Same `Box<RefCell<...>>` wrapping and same reason as
+    /// [`Self::thread_redeclared_vars`] -- `ThreadParamMaskGuard` needs a
+    /// stable, `Interpreter`-disjoint pointer into this field too.
+    pub(crate) thread_param_shadow_vars: Box<std::cell::RefCell<std::collections::HashSet<String>>>,
     /// `@`/`%` names bound as **parameters through the env-level (runtime)
     /// binding path** — a destructuring sub-signature (`-> [$a, @K] { ... }`)
     /// or a runtime-invoked callback's plain parameter (`reduce -> $h, @words

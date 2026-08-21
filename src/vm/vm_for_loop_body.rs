@@ -65,8 +65,9 @@ impl Interpreter {
     /// exit path, including the error returns, so a mask can never outlive the
     /// binding it describes.
     fn unmask_for_multi_params(&mut self, names: &[String]) {
+        let mut redeclared = self.thread_redeclared_vars.borrow_mut();
         for name in names {
-            self.thread_redeclared_vars.remove(name);
+            redeclared.remove(name);
         }
     }
 
@@ -342,7 +343,11 @@ impl Interpreter {
             .multi_param_names
             .iter()
             .filter(|name| !name.starts_with('&') && name.as_str() != "_")
-            .filter(|name| self.thread_redeclared_vars.insert((*name).clone()))
+            .filter(|name| {
+                self.thread_redeclared_vars
+                    .borrow_mut()
+                    .insert((*name).clone())
+            })
             .cloned()
             .collect();
         // Save the single named loop param (`for ... -> $x`) too, so a loop in a

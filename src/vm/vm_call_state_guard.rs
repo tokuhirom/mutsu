@@ -290,6 +290,66 @@ impl MarkContextGuard {
     }
 }
 
+/// RAII guard undoing the per-call masking
+/// [`Interpreter::mask_thread_redeclared_params`] applies to
+/// `thread_redeclared_vars`/`thread_param_shadow_vars` on drop -- including
+/// when a Rust panic unwinds through the guarded call. See
+/// `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md` for the bug this
+/// closes and `runtime::runtime_shared_vars::mask_thread_redeclared_params`
+/// for what the mask records and why the two sets are tracked independently.
+///
+/// Unlike [`StateScopeGuard`]/[`WhenMatchedGuard`] (a single scalar field),
+/// unmasking removes a SPECIFIC SET of names (recorded in the
+/// [`ThreadParamMask`](crate::runtime::runtime_shared_vars::ThreadParamMask)
+/// returned by `mask_thread_redeclared_params`) from two shared
+/// `HashSet<String>` fields -- not a depth to truncate back to. The v3
+/// disjoint-heap-allocation trick this module documents still applies, with
+/// `thread_redeclared_vars`/`thread_param_shadow_vars` boxed as
+/// `Box<RefCell<HashSet<String>>>` (see their field docs on `Interpreter`)
+/// instead of `Box<Cell<T>>`: a `HashSet` isn't `Copy`, so `Cell`'s get/set
+/// API is awkward for it, while `RefCell` keeps the same disjoint-allocation
+/// property and ordinary `insert`/`remove`/`contains` via `borrow`/`borrow_mut`.
+pub(crate) struct ThreadParamMaskGuard {
+    /// Raw pointer into `thread_redeclared_vars`'s OWN `Box` allocation --
+    /// never a pointer to `Interpreter` itself.
+    redeclared_cell: *const std::cell::RefCell<std::collections::HashSet<String>>,
+    /// Raw pointer into `thread_param_shadow_vars`'s OWN `Box` allocation.
+    shadow_cell: *const std::cell::RefCell<std::collections::HashSet<String>>,
+    mask: crate::runtime::runtime_shared_vars::ThreadParamMask,
+}
+
+impl ThreadParamMaskGuard {
+    /// Masks `param_defs` (via `mask_thread_redeclared_params`) and returns a
+    /// guard that undoes exactly that masking on drop.
+    pub(crate) fn new<'a>(
+        interp: &mut Interpreter,
+        param_defs: impl Iterator<Item = &'a crate::ast::ParamDef>,
+    ) -> Self {
+        let mask = interp.mask_thread_redeclared_params(param_defs);
+        ThreadParamMaskGuard {
+            redeclared_cell: &*interp.thread_redeclared_vars
+                as *const std::cell::RefCell<std::collections::HashSet<String>>,
+            shadow_cell: &*interp.thread_param_shadow_vars
+                as *const std::cell::RefCell<std::collections::HashSet<String>>,
+            mask,
+        }
+    }
+}
+
+impl Drop for ThreadParamMaskGuard {
+    fn drop(&mut self) {
+        // SAFETY: `redeclared_cell`/`shadow_cell` were taken from those
+        // fields' own `Box` allocations at construction (see module doc);
+        // those allocations outlive the guard and never move (the `Box`es are
+        // not reassigned while the guard is alive). This never forms a
+        // reference to `Interpreter` itself, so it is unaffected by any
+        // `&mut self` calls made elsewhere while the guard was alive.
+        unsafe {
+            self.mask.unmask(&*self.redeclared_cell, &*self.shadow_cell);
+        }
+    }
+}
+
 impl Drop for MarkContextGuard {
     fn drop(&mut self) {
         // SAFETY: see the module doc's "v3" section -- each pointer was taken

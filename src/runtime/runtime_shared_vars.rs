@@ -3,14 +3,44 @@ use crate::value::ValueView;
 
 /// The bare scalar names [`Interpreter::mask_thread_redeclared_params`] newly
 /// added to `thread_redeclared_vars` / `thread_param_shadow_vars` for one
-/// call, so [`Interpreter::unmask_thread_redeclared_params`] can remove
-/// exactly those entries — from each set independently — on return, without
-/// disturbing a still-active ancestor frame's own mask. See the doc comment
-/// on `mask_thread_redeclared_params` for why the two sets are tracked apart.
+/// call, so [`ThreadParamMask::unmask`] can remove exactly those entries —
+/// from each set independently — on return, without disturbing a still-active
+/// ancestor frame's own mask. See the doc comment on
+/// `mask_thread_redeclared_params` for why the two sets are tracked apart.
+///
+/// Removal is exposed as [`unmask`](Self::unmask), taking the two backing
+/// `RefCell`s directly rather than `&mut Interpreter` (an ordinary
+/// `Interpreter` method) — that is what lets
+/// `vm::vm_call_state_guard::ThreadParamMaskGuard` call it from `Drop` using
+/// only the raw pointers it captured at construction, without ever forming a
+/// reference to `Interpreter` itself. See that guard's doc comment.
 #[derive(Default)]
 pub(crate) struct ThreadParamMask {
     redeclared: Vec<String>,
     shadowed: Vec<String>,
+}
+
+impl ThreadParamMask {
+    /// Remove exactly the names this mask added from each set. Safe to call
+    /// with only the two `RefCell`s in hand (no `&Interpreter` needed) so
+    /// `ThreadParamMaskGuard::drop` can call it through a raw pointer during a
+    /// panic unwind.
+    pub(crate) fn unmask(
+        &self,
+        redeclared_vars: &std::cell::RefCell<std::collections::HashSet<String>>,
+        shadow_vars: &std::cell::RefCell<std::collections::HashSet<String>>,
+    ) {
+        {
+            let mut redeclared_vars = redeclared_vars.borrow_mut();
+            for name in &self.redeclared {
+                redeclared_vars.remove(name);
+            }
+        }
+        let mut shadow_vars = shadow_vars.borrow_mut();
+        for name in &self.shadowed {
+            shadow_vars.remove(name);
+        }
+    }
 }
 
 impl Interpreter {
@@ -238,7 +268,7 @@ impl Interpreter {
     pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
         self.shared_vars_active
             && key.starts_with(['@', '%'])
-            && self.thread_redeclared_vars.contains(key)
+            && self.thread_redeclared_vars.borrow().contains(key)
     }
 
     /// Mask each scalar parameter, and each **slurpy** `@`/`%` parameter
@@ -310,26 +340,22 @@ impl Interpreter {
                 continue;
             }
             let bare = name.trim_start_matches('$').to_string();
-            if self.thread_redeclared_vars.insert(bare.clone()) {
+            if self
+                .thread_redeclared_vars
+                .borrow_mut()
+                .insert(bare.clone())
+            {
                 mask.redeclared.push(bare.clone());
             }
-            if self.thread_param_shadow_vars.insert(bare.clone()) {
+            if self
+                .thread_param_shadow_vars
+                .borrow_mut()
+                .insert(bare.clone())
+            {
                 mask.shadowed.push(bare);
             }
         }
         mask
-    }
-
-    /// Undo exactly the masking [`mask_thread_redeclared_params`] applied for
-    /// this call, restoring bare-name shared-store visibility for the
-    /// parameter's name once the call returns.
-    pub(crate) fn unmask_thread_redeclared_params(&mut self, mask: &ThreadParamMask) {
-        for name in &mask.redeclared {
-            self.thread_redeclared_vars.remove(name);
-        }
-        for name in &mask.shadowed {
-            self.thread_param_shadow_vars.remove(name);
-        }
     }
 
     /// Snapshot the set of keys currently present in `shared_vars`. Used by the
@@ -494,7 +520,7 @@ impl Interpreter {
         // from it (see `suppress_shared_publish`).
         if self.shared_vars_active
             && !self.suppress_shared_publish
-            && !self.thread_redeclared_vars.contains(key)
+            && !self.thread_redeclared_vars.borrow().contains(key)
         {
             // Ensure @-variables always store Array(true) (real Arrays) in the
             // cross-thread shared store, which backs the atomic-array CAS
@@ -584,7 +610,7 @@ impl Interpreter {
                 .iter()
                 // A name re-declared in this thread is a fresh local binding;
                 // pulling the shared (outer) value in would clobber it.
-                .filter(|k| !self.thread_redeclared_vars.contains(*k))
+                .filter(|k| !self.thread_redeclared_vars.borrow().contains(*k))
                 // `self` and `?`-pseudo-lexicals are per-invocation/per-scope
                 // bindings, never shared variables — a store polluted by an
                 // older seed must not overwrite the live frame's invocant

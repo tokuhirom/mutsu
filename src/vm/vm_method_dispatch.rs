@@ -642,9 +642,14 @@ impl Interpreter {
         // callee's `$url` parameter is mistaken for a write to the caller's
         // `$url`. See `mask_thread_redeclared_params` for why a bare
         // `thread_redeclared_vars` mask alone is not sufficient and the
-        // `thread_param_shadow_vars` companion is also needed. Unmasked again
-        // at return (search `unmask_thread_redeclared_params`).
-        let masked_params = self.mask_thread_redeclared_params(bind_param_defs.iter());
+        // `thread_param_shadow_vars` companion is also needed.
+        // RAII (`ThreadParamMaskGuard`,
+        // `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md`): restores
+        // the mask on drop -- including on a Rust panic unwind through the
+        // body below -- rather than the manual `unmask_thread_redeclared_params`
+        // call this replaced, which a panic unwind would skip entirely.
+        let thread_param_mask_guard =
+            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, bind_param_defs.iter());
 
         // Initialize locals from env
         self.locals = vec![Value::NIL; cc.locals.len()];
@@ -991,8 +996,12 @@ impl Interpreter {
 
         // Restore bare-name shared-store visibility for this call's own
         // parameter names now that the call is over (see
-        // `mask_thread_redeclared_params`).
-        self.unmask_thread_redeclared_params(&masked_params);
+        // `mask_thread_redeclared_params`). Explicit drop (not left to fall
+        // out of scope) so it happens at exactly the point the old manual
+        // `unmask_thread_redeclared_params` call ran; on a Rust panic mid-loop
+        // above, the guard's `Drop` still runs during unwind even though this
+        // line is never reached.
+        drop(thread_param_mask_guard);
 
         let final_result = match result {
             Ok(()) => Ok(explicit_return.unwrap_or(ret_val)),

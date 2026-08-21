@@ -1048,8 +1048,9 @@ impl Interpreter {
                 // block the replacement below: leaving the stale plain snapshot
                 // in place lets `sync_shared_vars_to_env` write it back over the
                 // cell after the next await and disconnect the parent.
-                self.thread_redeclared_vars.remove(&s);
+                self.thread_redeclared_vars.borrow_mut().remove(&s);
                 self.thread_redeclared_vars
+                    .borrow_mut()
                     .remove(s.trim_start_matches('$'));
                 loan_env!(self, set_shared_var(&s, container.clone()));
             }
