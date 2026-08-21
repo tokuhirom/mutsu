@@ -23,6 +23,13 @@ pub(super) struct LexicalScopeSnapshot {
     constant_values: std::collections::HashMap<String, Value>,
     my_vars_current_scope: std::collections::HashSet<String>,
     class_names_current_scope: std::collections::HashSet<String>,
+    accessed_dynamic_vars: std::collections::HashSet<String>,
+    /// True when this push left `accessed_dynamic_vars` untouched (a
+    /// transparent synthetic-wrapper inlining, not a real scope) — see
+    /// `push_dynamic_scope_lexical`. The matching pop must then also leave it
+    /// untouched, discarding any reads recorded WHILE this frame was open
+    /// would wrongly un-track them from the enclosing real scope.
+    accessed_dynamic_vars_transparent: bool,
 }
 
 impl Compiler {
@@ -34,6 +41,13 @@ impl Compiler {
         // Enter a fresh local-slot scope frame (§1.4 groundwork; inert today —
         // `declare_local` still shares the outer slot for a nested `my $x`).
         self.push_local_scope();
+        // Consumed one-shot: when set, THIS push must not reset
+        // `accessed_dynamic_vars` — see the field's doc comment. Used only by
+        // the recursive `compile_block_inline` call that inlines a
+        // `Stmt::SyntheticBlock`'s body in tail position, which is not a real
+        // lexical scope.
+        let dynamic_reads_transparent =
+            std::mem::take(&mut self.next_dynamic_scope_inline_transparent);
         // `std::mem::take` resets the current-scope constant set: the entered
         // block starts with no constants of its own, so an inner `constant X`
         // may legitimately shadow an outer one without being a redeclaration.
@@ -54,6 +68,25 @@ impl Compiler {
             // Likewise a same-named class inside an inner block shadows rather
             // than redeclares the outer one.
             class_names_current_scope: std::mem::take(&mut self.class_names_current_scope),
+            // The entered block starts with no dynamic-var reads recorded of
+            // its own: X::Dynamic::Postdeclaration must only fire for a `my
+            // $*x` that follows an earlier read of `$*x` in the SAME block —
+            // an outer or sibling scope's read is irrelevant (and a read
+            // inside a NESTED block that this block encloses is discarded
+            // when that nested block's scope pops, so it never leaks back
+            // out to a later declaration here either).
+            //
+            // When `dynamic_reads_transparent` is set, this push is inlining a
+            // synthetic wrapper rather than entering a real scope, so leave
+            // `self.accessed_dynamic_vars` untouched entirely (not even
+            // cloned into the snapshot — the matching pop skips restoring it,
+            // see `accessed_dynamic_vars_transparent`).
+            accessed_dynamic_vars: if dynamic_reads_transparent {
+                std::collections::HashSet::new()
+            } else {
+                std::mem::take(&mut self.accessed_dynamic_vars)
+            },
+            accessed_dynamic_vars_transparent: dynamic_reads_transparent,
         }
     }
 
@@ -72,6 +105,13 @@ impl Compiler {
         self.constant_values = saved.constant_values;
         self.my_vars_current_scope = saved.my_vars_current_scope;
         self.class_names_current_scope = saved.class_names_current_scope;
+        // A transparent push (see `push_dynamic_scope_lexical`) never touched
+        // `accessed_dynamic_vars`, so the matching pop must not touch it
+        // either — restoring the (empty, unused) snapshot value here would
+        // wrongly erase any reads recorded while this frame was "open".
+        if !saved.accessed_dynamic_vars_transparent {
+            self.accessed_dynamic_vars = saved.accessed_dynamic_vars;
+        }
     }
 
     pub(super) fn apply_dynamic_scope_pragma(&mut self, arg: Option<&Expr>) {
@@ -172,6 +212,42 @@ impl Compiler {
         let idx = self.code.add_constant(err);
         self.code.emit(OpCode::LoadConst(idx));
         self.code.emit(OpCode::Die);
+    }
+
+    /// Check a dynamic-variable declaration (`my $*x` / `my $*x := ...`) for the
+    /// two compile-time errors that apply to it -- X::Dynamic::Package (a
+    /// package-like name) and X::Dynamic::Postdeclaration (the SAME name was
+    /// already read earlier in this exact lexical block, per
+    /// `accessed_dynamic_vars`'s scoped lifecycle -- see
+    /// `push_dynamic_scope_lexical`). Emits the error and returns `true` when
+    /// one applies, so the caller can stop compiling this declaration; returns
+    /// `false` (emitting nothing) otherwise.
+    ///
+    /// Shared between the ordinary `Stmt::VarDecl` compile arm and the
+    /// block-final (tail-position) `VarDecl` arm in `compile_block_inline` --
+    /// the latter is a separate, hand-inlined compile path (needed so a
+    /// block-final declaration yields its value) that must not silently skip
+    /// these checks just because the declaration is the block's last
+    /// statement.
+    pub(super) fn check_dynamic_var_decl_errors(&mut self, name: &str) -> bool {
+        if Self::is_dynamic_package_var(name) {
+            self.emit_dynamic_package_error(name);
+            return true;
+        }
+        if name.starts_with('*')
+            && self.accessed_dynamic_vars.contains(name)
+            && !Self::is_builtin_dynamic_var(name)
+        {
+            let symbol = Self::dynamic_var_symbol(name);
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("symbol".to_string(), Value::str(symbol));
+            let err = Value::make_instance(Symbol::intern("X::Dynamic::Postdeclaration"), attrs);
+            let idx = self.code.add_constant(err);
+            self.code.emit(OpCode::LoadConst(idx));
+            self.code.emit(OpCode::Die);
+            return true;
+        }
+        false
     }
 
     /// If `name` is a `sub`/`multi sub` declaration of a reserved special-form

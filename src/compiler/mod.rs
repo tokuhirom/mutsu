@@ -1228,7 +1228,13 @@ pub(crate) struct Compiler {
     /// current compiler lexical scope. Seeded by the sub-hoist pass so a call
     /// before its textual declaration resolves like Rakudo.
     user_listop_shadows: std::collections::HashSet<String>,
-    /// Track dynamic variable accesses (names starting with '*') for postdeclaration check
+    /// Track dynamic variable accesses (names starting with '*') for the
+    /// X::Dynamic::Postdeclaration check. Scoped to the CURRENT lexical block
+    /// only (reset by `push_dynamic_scope_lexical`, restored by
+    /// `pop_dynamic_scope_lexical` — same lifecycle as `my_vars_current_scope`):
+    /// Raku only flags a `my $*x := ...` declaration as illegal when an EARLIER
+    /// read of `$*x` appears directly in that SAME block, not when the read was
+    /// in an enclosing or sibling scope (see `LexicalScopeSnapshot`).
     accessed_dynamic_vars: std::collections::HashSet<String>,
     /// Number of enclosing `for`-loop blocks between the code currently being
     /// compiled and the enclosing routine. A `for` block is a distinct call
@@ -1381,6 +1387,21 @@ pub(crate) struct Compiler {
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
     /// decide whether the resulting scope is a backtrace-visible callframe.
     synthetic_block_body: bool,
+    /// Set true immediately before the ONE NEXT `push_dynamic_scope_lexical`
+    /// call recursively invoked to inline a `Stmt::SyntheticBlock`'s body (the
+    /// parser's wrapper for a `:=`-bind declaration, e.g. `my $x := expr` ->
+    /// `[MarkReadonly, VarDecl]`) via `compile_block_inline` in block-final
+    /// (tail) position. A `SyntheticBlock` is never a genuine lexical scope —
+    /// its direct (non-tail) dispatch (`Stmt::SyntheticBlock` in
+    /// `compile_stmt`) inlines its statements with NO push/pop at all — so
+    /// this flag tells that one push not to reset `accessed_dynamic_vars`:
+    /// otherwise a dynamic-var read earlier in the SAME enclosing block would
+    /// be lost right before the wrapped declaration's own
+    /// X::Dynamic::Postdeclaration check runs, wrongly treating a genuine
+    /// same-block postdeclaration as legal just because it happened to be the
+    /// block's last statement. Consumed (reset to false) by
+    /// `push_dynamic_scope_lexical`.
+    next_dynamic_scope_inline_transparent: bool,
     /// Set true immediately before compiling a loop body that is a sole source
     /// `{ ... }` block (the `{ ... } for @xs` statement-modifier form). The
     /// `Stmt::Block` arm consumes it to skip the block's per-execution
@@ -1562,6 +1583,7 @@ impl Compiler {
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
             synthetic_block_body: false,
+            next_dynamic_scope_inline_transparent: false,
             suppress_loop_block_state_reset: false,
             next_try_is_bare_block: false,
             fold_ctx: std::sync::Arc::new(const_fold::FoldCtx::enabled()),
