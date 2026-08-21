@@ -256,6 +256,66 @@ impl Interpreter {
         Ok(())
     }
 
+    /// Under `use fatal`, a plain function/method call must not silently pass
+    /// an unhandled `Failure` produced by one of its *argument expressions*
+    /// into the callee -- real Raku explodes at the call site, before the
+    /// callee's body ever runs (`use fatal; sub f($a,$b,$c) {...}; f(1,
+    /// "a".Int, 3);` throws the coercion error and never prints `f`'s body).
+    ///
+    /// Unlike a list/array/hash literal, a call's arguments are not
+    /// assembled through `MakeArray`/`MakeHash` first: every `CallFunc`/
+    /// `CallFuncNamed`/`CallMethod`/... opcode arm in `vm_exec_dispatch.rs`
+    /// dispatches straight to its own `exec_call_*_op` handler, which pops
+    /// its `arity` argument values directly off the VM stack (with any
+    /// receiver/name value pushed *below* them, so the top `arity` slots are
+    /// always exactly the argument values). Call this from the opcode arm,
+    /// before delegating to the handler, passing that same `arity`.
+    ///
+    /// A literal composite argument (`f((1, "a".Int, 3))`) is unaffected:
+    /// its own `MakeArray`-time check (`explode_if_fatal_failure_in_composite`)
+    /// already explodes while the composite is built, long before it becomes
+    /// one of this call's `arity` values, so there is no double-firing.
+    ///
+    /// A handful of callee names are exempt: unlike an ordinary sub call,
+    /// real Raku does not explode a Failure argument passed to these, even
+    /// under `use fatal` (verified against real `raku` for each):
+    ///
+    /// - `require EXPR` -- a special form. `require ::("Foo")` legitimately
+    ///   evaluates its argument to an unhandled "No such symbol" Failure when
+    ///   `Foo` hasn't been loaded yet -- `require`'s own implementation
+    ///   inspects that Failure to derive the module name to load
+    ///   (`missing_symbol_name_from_failure` in `builtins_system_require.rs`,
+    ///   the shape `HTTP::UserAgent`-style lazy-`require` loaders use).
+    /// - `defined EXPR` -- `roast/S04-exceptions/fail.t` "use fatal respects
+    ///   defined" pins this: `defined it-will-fail()` answers `False`
+    ///   without exploding, alongside the *operator* forms `//`, `||`, `&&`,
+    ///   `if`/`unless`, `??!!`, `?`, `so`, `!`, `not` (which never reach this
+    ///   check at all -- they compile to dedicated opcodes, not a call).
+    ///   Note this is `defined` specifically, not a blanket "any
+    ///   definedness/Bool-testing function": `so(EXPR)` and `not(EXPR)`
+    ///   called as ordinary functions (parenthesized call syntax, as opposed
+    ///   to the `so`/`not` *operator* forms) DO explode in real Raku, so they
+    ///   are deliberately not exempted here.
+    ///
+    /// `name` is the resolved callee name (pass `""` for a call with no
+    /// static name, e.g. a method or `CallOnValue` dispatch, which can never
+    /// match either of these).
+    ///
+    /// Delegates to `explode_if_fatal_failure_in_composite`, which is gated
+    /// on `self.fatal_mode` first, so the common (non-fatal) case pays only a
+    /// single bool check plus a saturating-sub, not a scan of the stack.
+    pub(crate) fn explode_if_fatal_failure_in_call_args(
+        &self,
+        name: &str,
+        arity: usize,
+    ) -> Result<(), RuntimeError> {
+        if !self.fatal_mode || matches!(name, "require" | "defined") {
+            return Ok(());
+        }
+        let start = self.stack.len().saturating_sub(arity);
+        self.explode_if_fatal_failure_in_composite(&self.stack[start..])
+    }
+
     pub(crate) fn fail_error_to_failure_value(&self, err: &RuntimeError) -> Value {
         let exception = err.exception_value();
         let mut failure_attrs = std::collections::HashMap::new();

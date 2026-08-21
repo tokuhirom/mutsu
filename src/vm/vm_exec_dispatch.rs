@@ -3188,6 +3188,13 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: explode an unhandled Failure produced by one of
+                // this call's argument expressions before the callee runs.
+                // See `explode_if_fatal_failure_in_call_args`.
+                self.explode_if_fatal_failure_in_call_args(
+                    Self::const_str(code, *name_idx),
+                    *arity as usize,
+                )?;
                 match self.exec_call_func_op(
                     code,
                     *name_idx,
@@ -3215,6 +3222,11 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above.
+                self.explode_if_fatal_failure_in_call_args(
+                    Self::const_str(code, *name_idx),
+                    *arity as usize,
+                )?;
                 match self.exec_call_func_named_op(
                     code,
                     *name_idx,
@@ -3242,6 +3254,11 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. The
+                // receiver sits below the `arity` argument values on the stack,
+                // so this only ever scans the arguments, not the invocant. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 match self.exec_call_method_op(
                     code,
                     *name_idx,
@@ -3278,6 +3295,9 @@ impl Interpreter {
                 quoted,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx, *quoted) {
                     Ok(()) => {}
                     Err(e) => {
@@ -3302,6 +3322,9 @@ impl Interpreter {
                 quoted,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 let pre = self.attr_env_snapshot(code, *target_name_idx);
                 match self.exec_call_method_dynamic_mut_op(
                     code,
@@ -3342,6 +3365,9 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 let pre = self.attr_env_snapshot(code, *target_name_idx);
                 // The receiver's env binding before the call, so the writeback
                 // below can tell whether this method actually rebound it (see
@@ -3423,6 +3449,10 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. The
+                // target is a `Value` here, not a static name, so `require`'s
+                // exemption can never apply -- pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 // Set a resume point before propagating a control signal so an
                 // enclosing `CONTROL {}` can `.resume` after this call — e.g.
                 // `my $w = &warn; $w.("x")` raises a resumable `warn` signal from
@@ -3445,6 +3475,11 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above.
+                self.explode_if_fatal_failure_in_call_args(
+                    Self::const_str(code, *name_idx),
+                    *arity as usize,
+                )?;
                 match self.exec_call_on_code_var_op(
                     code,
                     *name_idx,
@@ -3468,6 +3503,11 @@ impl Interpreter {
                 arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above.
+                self.explode_if_fatal_failure_in_call_args(
+                    Self::const_str(code, *name_idx),
+                    *arity as usize,
+                )?;
                 match self.exec_exec_call_op(
                     code,
                     *name_idx,
@@ -3492,6 +3532,11 @@ impl Interpreter {
                 keep_value,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above.
+                self.explode_if_fatal_failure_in_call_args(
+                    Self::const_str(code, *name_idx),
+                    *arity as usize,
+                )?;
                 self.exec_exec_call_pairs_op(
                     code,
                     compiled_fns,
@@ -4373,6 +4418,10 @@ impl Interpreter {
                 target_name_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above --
+                // the shared `arity` extra-args applied to every element. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 match self.exec_hyper_method_call_op(
                     code,
                     *name_idx,
@@ -4399,6 +4448,9 @@ impl Interpreter {
                 modifier_idx,
             } => {
                 self.sync_source_line(code, *ip);
+                // `use fatal`: see the comment on the `CallFunc` arm above. A
+                // method can never be `require` (a bareword sub), so pass "".
+                self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
                 match self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx) {
                     Ok(()) => {}
                     Err(e) => {
