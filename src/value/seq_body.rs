@@ -217,7 +217,13 @@ impl SeqBody {
         self.view
     }
 
-    fn live_generation(&self) -> &Vec<Value> {
+    /// The current generation's elements — `pub(crate)` (rather than
+    /// private) so `seq_body_shapes.rs`'s Miri probes can take a reference
+    /// directly, without routing through `Deref` (which coerces through
+    /// `Arc<SeqBody>` and trips rustc's `invalid_reference_casting` lint
+    /// when the result is later cast to a raw pointer for the
+    /// retired-generation probe — see that module for the full shape).
+    pub(crate) fn live_generation(&self) -> &Vec<Value> {
         // SAFETY: this only ever reads the graveyard. `pull_and_store` is the
         // sole writer and never overwrites an existing slot (module docs), so
         // a reference into any generation — including this one — stays valid

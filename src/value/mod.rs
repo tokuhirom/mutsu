@@ -253,6 +253,7 @@ mod view;
 pub(crate) mod waker;
 
 mod native_cache_shapes;
+mod seq_body_shapes;
 
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
