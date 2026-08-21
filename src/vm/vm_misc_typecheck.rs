@@ -238,6 +238,27 @@ impl Interpreter {
                     base_constraint
                 )));
             }
+            // A native `num32` scalar narrows to IEEE-754 single precision
+            // immediately at the declaration/store, mirroring the native-int
+            // branch just above (which mutates the stack value via
+            // `validate_native_int_assignment`) — not just later when
+            // something happens to coerce it. This is the single place both
+            // the statement-form (`my num32 $x = …;`) and expression-context
+            // (`f((my num32 $x = …))`, e.g. `nqp::iseq_n($_, (my num32
+            // $num32 = $_))`) declarations both compile through, so fixing it
+            // here (rather than in the SetLocal/SetGlobal store paths, which
+            // only cover the statement form and run too late for the
+            // expression form) covers both uniformly. `CBOR::Simple`'s float
+            // encoder relies on exactly this: it decides "can this Num
+            // shrink to a 4-byte CBOR float?" by writing into a `num32`
+            // temporary and checking `$_ == $num32` for a lossless
+            // round-trip — without truncation that check was always true, so
+            // every double got wrongly encoded as a 4-byte float.
+            if base_constraint == "num32"
+                && let ValueView::Num(f) = value.view()
+            {
+                *self.stack.last_mut().unwrap() = Value::num(f as f32 as f64);
+            }
             return Ok(());
         }
         if runtime::is_known_type_constraint(base_constraint) {

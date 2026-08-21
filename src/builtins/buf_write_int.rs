@@ -51,6 +51,12 @@ fn to_u128_value(value: &Value) -> u128 {
                 ((n as i128) / (d as i128)) as u128
             }
         }
+        // An enum value (e.g. `CBOR_Tag_Date_Integer` from `enum CBORMinMax (...
+        // => 100, ...)`) passed directly as a `write-uint*`/`nqp::writeuint`
+        // argument must write its underlying numeric value, not silently write
+        // 0 — the pattern `nqp::writeuint($buf, $pos, CBOR_Tag_Date_Integer,
+        // $ne8)` (CBOR::Simple's Date tag encoding) hit exactly this gap.
+        ValueView::Enum { value, .. } => to_u128_value(&value.to_value()),
         _ => 0,
     }
 }

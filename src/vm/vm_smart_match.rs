@@ -201,6 +201,22 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         // any value — a bare `**` pattern matches everything, like `*`).
         (_, ValueView::Whatever | ValueView::HyperWhatever) => Some(true),
 
+        // Enum VALUE (not the enum type object) on either side compares by its
+        // underlying value, exactly like Raku's `Enumeration.ACCEPTS` — even a
+        // plain `Int ~~ SomeEnumConstant` matches when the numbers agree, and
+        // this even crosses enum types (`Red ~~ Apple` is True when both
+        // underlying values are 0). Without this, `given/when` against an enum
+        // constant derived from a bitmask (`$byte +& CBOR_MajorType_Mask`, a
+        // very common CBOR/binary-protocol idiom) always silently fell through
+        // to the interpreter's generic string-equality fallback, comparing the
+        // stringified Int ("0") against the enum key's own name ("CBOR_UInt")
+        // — always False. Recursing after unwrapping propagates `None` (so
+        // junction autothreading etc. on the OTHER side still falls through to
+        // the interpreter unaffected) whenever the unwrapped comparison isn't
+        // itself handled by a `pure_smart_match` arm.
+        (ValueView::Enum { value: v, .. }, _) => pure_smart_match(&v.to_value(), right),
+        (_, ValueView::Enum { value: v, .. }) => pure_smart_match(left, &v.to_value()),
+
         // Junction ~~ Junction/Mu type: a Junction IS a Junction, don't autothread
         (ValueView::Junction { .. }, ValueView::Package(name))
             if matches!(name.resolve().as_str(), "Junction" | "Mu") =>

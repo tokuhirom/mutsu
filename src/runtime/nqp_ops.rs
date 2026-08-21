@@ -11,6 +11,7 @@
 //! itself a hard dep of Cro::HTTP), whose encoder/decoder is written almost
 //! entirely in these ops — see `todo/tickets/cbor-simple-nqp-buf-ops.md`.
 
+use crate::builtins::mvm_array_read_buf_oob_message;
 use crate::runtime::{Interpreter, RuntimeError};
 use crate::value::value_buf;
 use crate::value::{Value, ValueView};
@@ -162,6 +163,12 @@ impl Interpreter {
                     Some(ValueView::Instance { class_name, .. }) => {
                         class_name.resolve().to_string()
                     }
+                    // `Nil` used as a type argument (`nqp::istype($x, Nil)`) is a
+                    // bare `ValueView::Nil`, not a `Package("Nil")` type object
+                    // like other builtin types — CBOR::Simple's absent-value
+                    // encoding (`nqp::istype($_, Nil)` on an array element bound
+                    // to Nil via BIND-POS) hit exactly this gap, always False.
+                    Some(ValueView::Nil) => "Nil".to_string(),
                     _ => String::new(),
                 };
                 Ok(bool_int(
@@ -344,9 +351,10 @@ impl Interpreter {
                     Err(e) => Err(e),
                     Ok(bytes) => {
                         if bytes.len() < offset + size {
-                            Err(RuntimeError::new(format!(
-                                "nqp::{op}: read of {size} bytes at offset {offset} past end ({} bytes)",
-                                bytes.len()
+                            Err(RuntimeError::new(mvm_array_read_buf_oob_message(
+                                offset,
+                                bytes.len(),
+                                size,
                             )))
                         } else {
                             Ok(crate::builtins::read_int_value(
@@ -367,8 +375,10 @@ impl Interpreter {
                     Err(e) => Err(e),
                     Ok(bytes) => {
                         if bytes.len() < offset + size {
-                            Err(RuntimeError::new(format!(
-                                "nqp::readnum: read of {size} bytes at offset {offset} past end"
+                            Err(RuntimeError::new(mvm_array_read_buf_oob_message(
+                                offset,
+                                bytes.len(),
+                                size,
                             )))
                         } else if size == 4 {
                             Ok(Value::num(crate::builtins::read_f32_endian(

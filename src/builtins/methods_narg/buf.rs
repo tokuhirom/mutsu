@@ -181,11 +181,22 @@ pub(crate) fn read_byte_offset(
         .flatten();
     match start {
         Some(off) if off.checked_add(size).is_some_and(|end| end <= bytes.len()) => Ok(off),
-        _ => Err(RuntimeError::new(format!(
-            "read from out of range. Is: {}, should be in 0..{}",
-            offset,
-            bytes.len() / width
-        ))),
+        // MoarVM's own wording for this exact out-of-bounds read
+        // (`.read-uint16`/`.read-int32`/`.read-num64`/... are implemented in
+        // terms of the same underlying op as `nqp::readuint`/`readnum`) —
+        // MoarVM-op-based decoders (`CBOR::Simple` among them) match it by
+        // PREFIX in their own `CATCH { when /^ 'MVMArray: read_buf out of
+        // bounds' / { ... } }`. See `mvm_array_read_buf_oob_message`'s
+        // doc comment for the full story; `offset` here is the pre-width-
+        // scaled BYTE offset (clamped to 0 when the raw offset was already
+        // negative, matching the caller-facing `Is: {offset}` wording).
+        _ => Err(RuntimeError::new(
+            crate::builtins::mvm_array_read_buf_oob_message(
+                offset.max(0) as usize * width,
+                bytes.len(),
+                size,
+            ),
+        )),
     }
 }
 
