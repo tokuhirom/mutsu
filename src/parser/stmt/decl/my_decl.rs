@@ -456,6 +456,11 @@ fn parse_variable_traits<'a>(
             // `my %h is Hash::str` keeps its full name (plain `ident` would
             // truncate it to `Hash`, breaking tied-hash backing).
             let (r2, trait_name) = qualified_ident(r2)?;
+            // Captured before any whitespace is skipped: `is TraitName<a b>`
+            // sugar (for `is TraitName(<a b>)`) requires the `<...>`
+            // word-list to be strictly adjacent to the trait name, matching
+            // Rakudo (`is TraitName <a b>` with a space is a parse error).
+            let r2_immediate = r2;
             if trait_name == "readonly" {
                 return Err(PError::fatal(
                     "X::Comp::Trait::Unknown: Unknown variable trait 'is readonly'".to_string(),
@@ -589,6 +594,13 @@ fn parse_variable_traits<'a>(
                     custom_traits.push((trait_name.clone(), Some(trait_arg)));
                 }
                 r = r3;
+            } else if r2_immediate.starts_with('<') {
+                let (r3, trait_arg) = crate::parser::primary::angle_list(r2_immediate)?;
+                let (r3, _) = ws(r3)?;
+                if include_in_traits {
+                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                }
+                r = r3;
             } else {
                 if include_in_traits {
                     custom_traits.push((trait_name.clone(), None));
@@ -680,6 +692,9 @@ fn parse_variable_traits<'a>(
         while let Some(after_is) = keyword("is", rest) {
             let (r2, _) = ws1(after_is)?;
             let (r2, trait_name) = ident(r2)?;
+            // Captured before whitespace is skipped, same adjacency rule as
+            // in the first `is`-trait loop above.
+            let r2_immediate = r2;
             let is_builtin = is_supported_variable_trait(&trait_name);
             let include_in_traits = !is_builtin || trait_name == "default";
             let (r2, _) = ws(r2)?;
@@ -688,6 +703,13 @@ fn parse_variable_traits<'a>(
                 let (r3, trait_arg) = expression(r3)?;
                 let (r3, _) = ws(r3)?;
                 let (r3, _) = parse_char(r3, ')')?;
+                let (r3, _) = ws(r3)?;
+                if include_in_traits {
+                    custom_traits.push((trait_name.clone(), Some(trait_arg)));
+                }
+                rest = r3;
+            } else if r2_immediate.starts_with('<') {
+                let (r3, trait_arg) = crate::parser::primary::angle_list(r2_immediate)?;
                 let (r3, _) = ws(r3)?;
                 if include_in_traits {
                     custom_traits.push((trait_name.clone(), Some(trait_arg)));
