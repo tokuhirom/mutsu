@@ -31,7 +31,30 @@ my $deep = CompUnit::Repository::Installation.new(prefix => $base.add("a/b/c").a
 ok $deep.can-install, 'deeply-nested creatable prefix (missing ancestors) can-install';
 
 # But a prefix whose only existing ancestor is a non-writable root is NOT
-# installable.
-my $unrootable = CompUnit::Repository::Installation.new(
-    prefix => "/mutsu-nonexistent-root-{$*PID}/repo");
-nok $unrootable.can-install, 'prefix under a non-writable root cannot install';
+# installable. Don't hardcode "/" as that root: in some dev/container
+# environments the invoking user actually owns "/" (e.g. a single-user LXC
+# container where the process uid is also the owner of the filesystem root),
+# which makes "/" genuinely writable and defeats the assumption this subtest
+# relies on. Instead, probe a short list of directories that are reliably
+# non-writable regardless of who owns the box -- /proc's top level is a
+# synthetic filesystem that refuses new entries, and /sys is the same -- using
+# the exact writability check `can-install` itself uses internally
+# (`IO::Path.w`), and skip the subtest if none of them turns out to be
+# non-writable in the current environment.
+my $nonwritable-root;
+for "/proc".IO, "/sys".IO, "/root".IO -> $candidate {
+    next unless $candidate.e;
+    if !$candidate.w {
+        $nonwritable-root = $candidate;
+        last;
+    }
+}
+
+with $nonwritable-root -> $root {
+    my $unrootable = CompUnit::Repository::Installation.new(
+        prefix => $root.add("mutsu-nonexistent-root-{$*PID}/repo").absolute);
+    nok $unrootable.can-install, 'prefix under a non-writable root cannot install';
+}
+else {
+    skip 'no non-writable candidate root (/proc, /sys, /root) found in this environment', 1;
+}
