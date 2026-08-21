@@ -540,6 +540,13 @@ impl Env {
         self.inner.get(&Symbol::intern(key))
     }
 
+    /// Symbol-keyed twin of [`overlay_get`] — avoids re-interning on a hot
+    /// per-opcode read that already has a pre-interned `Symbol` in hand (see
+    /// `exec_get_local_op`'s lazy-sync check).
+    pub(crate) fn overlay_get_sym(&self, key: Symbol) -> Option<&Value> {
+        self.inner.get(&key)
+    }
+
     /// Check whether two `Env` values point to the same underlying overlay map.
     /// Note: this compares the overlay only; two scoped envs sharing an overlay
     /// but differing in parent would compare equal (callers that rely on ptr_eq
