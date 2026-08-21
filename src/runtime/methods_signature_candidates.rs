@@ -59,7 +59,12 @@ impl Interpreter {
         Some((name.resolve(), inner.clone()))
     }
 
-    pub(super) fn var_target_from_meta_value(value: &Value) -> Option<String> {
+    /// The `__mutsu_var_target` env-key name a `.VAR` reflection value (or a
+    /// `Mixin`-wrapped one) carries, if any. `pub(crate)` (rather than
+    /// `pub(super)`) so `vm::vm_mixin_does_ops`'s `trait_mod:<does>` writeback
+    /// helper can resolve a `Variable:D` argument back to its live variable —
+    /// see `__mutsu_trait_mod_does_apply`.
+    pub(crate) fn var_target_from_meta_value(value: &Value) -> Option<String> {
         match value.view() {
             ValueView::Mixin(inner, _) => Self::var_target_from_meta_value(inner),
             ValueView::Instance { attributes, .. } => {

@@ -603,8 +603,29 @@ impl Interpreter {
             call_method_mut_with_values(name, target, "VAR", vec![])
         )?;
         let named_arg = Value::pair(trait_name.clone(), trait_value);
-        match self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg]) {
-            Ok(_) => Ok(()),
+        // Arm the trait_mod writeback relay (`runtime::mod`'s
+        // `trait_mod_writeback_key`/`value`) so that a mixin performed via
+        // `trait_mod:<does>(v, role)` — called as a plain function from
+        // *inside* the `trait_mod:<is>` handler below, e.g. `Hash::Restricted`'s
+        // `restricted` trait — propagates back to this variable, not just to
+        // the handler's own local. Same relay the Routine-`is`-trait case in
+        // `registration_sub.rs` already uses, now generalized to the Variable
+        // case (see `vm_trait_mod_does_ops::apply_trait_mod_does`, which is
+        // where the relay actually gets armed-into).
+        let saved_writeback_key = self.trait_mod_writeback_key.take();
+        self.trait_mod_writeback_key = Some(name.to_string());
+        let call_result = self.vm_call_function("trait_mod:<is>", vec![var_obj, named_arg]);
+        self.trait_mod_writeback_key = saved_writeback_key;
+        let mixin_writeback = self.trait_mod_writeback_value.take();
+        match call_result {
+            Ok(_) => {
+                if let Some(mixed) = mixin_writeback {
+                    let name_owned = name.to_string();
+                    self.write_local_slot_or_name(code, eff_slot, &name_owned, mixed.clone());
+                    self.set_env_with_main_alias(&name_owned, mixed);
+                }
+                Ok(())
+            }
             // No user candidate accepted this trait. `Test.rakumod` exports
             // `multi sub trait_mod:<is>(Routine:D, :$test-assertion!)`, so
             // merely importing `Test` used to turn every unrecognised variable

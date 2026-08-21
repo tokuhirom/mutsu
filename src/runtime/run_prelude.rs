@@ -1,6 +1,6 @@
 use super::run::{
     IO_SOCKET_ROLE_PRELUDE, NATIVECALL_POINTER_PRELUDE, NATIVECALL_SUB_PRELUDES,
-    RATIONAL_ROLE_PRELUDE,
+    RATIONAL_ROLE_PRELUDE, TRAIT_MOD_DOES_PRELUDE,
 };
 use super::*;
 
@@ -156,6 +156,35 @@ impl Interpreter {
         static IO_SOCKET_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
         let prelude = IO_SOCKET_STMTS.get_or_init(|| {
             crate::parse_dispatch::parse_source(IO_SOCKET_ROLE_PRELUDE)
+                .map(|(s, _)| s)
+                .unwrap_or_default()
+        });
+        if prelude.is_empty() {
+            return;
+        }
+        let mut combined = prelude.clone();
+        combined.append(stmts);
+        *stmts = combined;
+    }
+
+    /// Prepend the `trait_mod:<does>` CORE.setting candidates when the source
+    /// calls it as a plain function (`trait_mod:<does>(v, role)`, the
+    /// `Hash::Restricted`/`Injector` idiom for mixing a role into a declared
+    /// variable at `is`-trait time). Gated on the literal name appearing in
+    /// source, like the other preludes in this file — a program that never
+    /// mentions it pays nothing. Not gated on "does the source already
+    /// declare its own candidate": Rakudo's builtin coexists with (and can
+    /// collide with) a user-declared candidate of the same name, and that
+    /// collision is exactly what proves the builtin is registered correctly
+    /// (see `TRAIT_MOD_DOES_PRELUDE`'s doc comment).
+    pub(super) fn inject_trait_mod_does_prelude(source: &str, stmts: &mut Vec<Stmt>) {
+        if !source.contains("trait_mod:<does>") {
+            return;
+        }
+        use std::sync::OnceLock;
+        static TRAIT_MOD_DOES_STMTS: OnceLock<Vec<Stmt>> = OnceLock::new();
+        let prelude = TRAIT_MOD_DOES_STMTS.get_or_init(|| {
+            crate::parse_dispatch::parse_source(TRAIT_MOD_DOES_PRELUDE)
                 .map(|(s, _)| s)
                 .unwrap_or_default()
         });

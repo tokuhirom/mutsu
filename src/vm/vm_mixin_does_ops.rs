@@ -337,7 +337,14 @@ impl Interpreter {
             .push(clean);
     }
 
-    fn vm_does_values(&mut self, left: Value, right: Value) -> Result<Value, RuntimeError> {
+    // `pub(super)` (rather than private) so `vm_trait_mod_does_ops`'s
+    // `trait_mod:<does>` native helper can reuse the same mixin logic the
+    // `does` operator uses, instead of duplicating it.
+    pub(super) fn vm_does_values(
+        &mut self,
+        left: Value,
+        right: Value,
+    ) -> Result<Value, RuntimeError> {
         // `does`/`but` on a type-object invocant (undefined scalars are stored
         // as Nil and act as the `Any` type object) is illegal *when composing a
         // role or another type* — there is no instance to compose into. Mixing a

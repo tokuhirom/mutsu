@@ -230,6 +230,7 @@ pub(crate) mod vm_stats;
 pub(crate) mod vm_string_regex_ops;
 pub(crate) mod vm_subst_apply;
 pub(crate) mod vm_subst_exec;
+mod vm_trait_mod_does_ops;
 mod vm_try_catch_ops;
 mod vm_typedecl_ops;
 mod vm_value_helpers;

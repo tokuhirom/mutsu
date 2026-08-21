@@ -392,6 +392,60 @@ impl Interpreter {
         })?
     }
 
+    /// When a role mixed directly into a native builtin value (`%h does R`,
+    /// `@a does R`, `"x" does R`, ...) overrides a method and calls
+    /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE method on
+    /// the mixin's inner value is the final base candidate. This mirrors
+    /// [`native_array_storage_next_candidate`], but for a plain `Mixin` over
+    /// a builtin `Value` rather than an `is Array` subclass's synthesized
+    /// `__mutsu_array_storage` attribute.
+    ///
+    /// `dispatch_mixin_method_call` (`runtime::methods_mixin_dispatch`) only
+    /// pushes a `method_dispatch_stack` frame with real "next candidate"
+    /// entries when the mixin's inner value is a user-declared `Instance`
+    /// (its `base_class`/`resolve_all_methods_with_owner` lookup needs a
+    /// registered class name) — a native `Hash`/`Array`/`Str`/... inner value
+    /// has no `MethodDef`s to find, so that frame is empty and `nextsame`
+    /// previously fell through to the generic "exhausted MRO" `Nil` at the
+    /// end of [`dispatch_next_candidate`] instead of reaching the real
+    /// native implementation (`Hash::AT-KEY`, ...). Verified against
+    /// `Hash::Restricted`'s `restrict-current`/`restrict-given` roles, whose
+    /// `AT-KEY`/`ASSIGN-KEY`/`BIND-KEY`/`STORE` overrides all `nextsame`/
+    /// `callsame` to the real `Hash` behavior once the allowed-keys check
+    /// passes.
+    fn native_mixin_base_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ctx = self.samewith_context_stack.last().cloned();
+        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
+        let invocant = self
+            .method_dispatch_stack
+            .last()
+            .map(|f| f.invocant.clone())
+            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
+            .or_else(|| self.env.get("self").cloned())?;
+        let ValueView::Mixin(inner, _) = invocant.view() else {
+            return None;
+        };
+        // A user-`Instance` inner is handled by the regular MRO chain that
+        // `dispatch_mixin_method_call` already builds; only a native inner
+        // (no `MethodDef`s at all) needs this bridge.
+        if matches!(inner.view(), ValueView::Instance { .. }) {
+            return None;
+        }
+        let args: Vec<Value> = match override_args {
+            Some(a) => a.to_vec(),
+            None => self
+                .method_dispatch_stack
+                .last()
+                .map(|f| f.args.clone())
+                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
+                .unwrap_or_default(),
+        };
+        self.try_native_method(inner, Symbol::intern(&method_name), &args)
+    }
+
     /// When a user `gist`/`Str`/`raku` override calls `nextsame`/`callsame`
     /// and the user MRO is exhausted, Mu's native default implementation is
     /// the final base candidate — it is not a `MethodDef`, so the regular MRO
@@ -630,6 +684,10 @@ impl Interpreter {
                         res?
                     } else if let Some(res) =
                         self.native_any_base_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
+                        self.native_mixin_base_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else {
@@ -1192,6 +1250,16 @@ impl Interpreter {
         // (`method gist() { "custom+" ~ callsame }`) with no wrap/multi/role
         // complications.
         if let Some(res) = self.native_any_base_next_candidate(override_args.as_deref()) {
+            let result = res?;
+            if tail_call {
+                return Err(RuntimeError::return_signal(result));
+            }
+            return Ok(result);
+        }
+        // A role mixed directly into a native builtin value (`%h does R`)
+        // pushes no `method_dispatch_stack` frame either — the native method
+        // on the mixin's inner value is the correct base candidate.
+        if let Some(res) = self.native_mixin_base_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));

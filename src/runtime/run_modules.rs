@@ -505,6 +505,7 @@ impl Interpreter {
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
         Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
+        Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
 
         // Save to precompilation cache when the module is eligible.
         if precomp_eligible {
