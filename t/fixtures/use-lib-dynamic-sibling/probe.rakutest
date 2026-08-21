@@ -1,0 +1,3 @@
+use lib $*PROGRAM.sibling('lib');
+use Matcher;
+matches -5, 'hello';

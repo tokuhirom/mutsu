@@ -75,6 +75,27 @@ fn extract_lib_path(expr: &Expr) -> Option<String> {
             let result = std::path::Path::new(&base).join(&add_arg);
             Some(result.to_string_lossy().into_owned())
         }
+        // use lib $*PROGRAM.sibling("path") -- a path in the same directory
+        // as the running script (the standard `t/foo.rakutest` ->
+        // `t/lib` idiom, e.g. roast/S12-traits/precomp.t). Only the direct
+        // `$*PROGRAM.sibling(...)` target is handled; sibling-of-sibling
+        // chains are not (nothing in the corpus needs them yet).
+        Expr::MethodCall {
+            target, name, args, ..
+        } if name == "sibling" => {
+            let sib_arg = args.first().and_then(extract_static_string)?;
+            if let Expr::Var(v) = target.as_ref()
+                && v == "*PROGRAM"
+            {
+                let program_path = PROGRAM_PATH.with(|p| p.borrow().clone())?;
+                let dir = std::path::Path::new(&program_path)
+                    .parent()
+                    .unwrap_or_else(|| std::path::Path::new(""));
+                Some(dir.join(&sib_arg).to_string_lossy().into_owned())
+            } else {
+                None
+            }
+        }
         _ => None,
     }
 }
