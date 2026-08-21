@@ -45,7 +45,7 @@ is_run(
     }
     say "done";
     CODE
-    { out => "1..1\nstart 1\ndone\n", status => 255 },
+    { out => "1..1\nstart 1\ndone\n# You planned 1 test, but ran 0\n", status => 255 },
     'last inside a lives-ok block escapes to a real enclosing for loop, breaking it after one iteration',
 );
 
@@ -65,7 +65,10 @@ is_run(
     }
     say "done";
     CODE
-    { out => "1..1\nstart 1\nstart 2\nstart 3\ndone\n", status => 255 },
+    {
+        out => "1..1\nstart 1\nstart 2\nstart 3\ndone\n# You planned 1 test, but ran 0\n",
+        status => 255,
+    },
     'next inside a lives-ok block escapes to a real enclosing for loop, skipping the rest of each iteration',
 );
 
@@ -107,7 +110,7 @@ is_run(
     }
     say "done";
     CODE
-    { out => "1..1\nstart 1\ndone\n", status => 255 },
+    { out => "1..1\nstart 1\ndone\n# You planned 1 test, but ran 0\n", status => 255 },
     'last inside a dies-ok block escapes to a real enclosing for loop, breaking it after one iteration',
 );
 
