@@ -585,6 +585,49 @@ pub(crate) struct SavedReadonlyState {
     pub(crate) frames: u32,
 }
 
+/// Close a readonly scope: undo every journaled mutation made since the
+/// matching `enter_readonly_frame`, newest first, then pop the scope
+/// sentinel. This is the shared implementation behind both
+/// `Interpreter::exit_readonly_frame` (called with `&mut Interpreter`, e.g.
+/// from `pop_call_frame`) and
+/// [`crate::vm::vm_call_state_guard::ReadonlyFrameGuard`]'s `Drop` impl
+/// (called through raw pointers into `readonly_vars`/`readonly_undo`/
+/// `readonly_frames`'s own boxed allocations, since `Drop::drop` cannot
+/// obtain `&mut Interpreter` — see that guard's doc comment). Taking `&Cell`/
+/// `&RefCell` here rather than `&mut Interpreter` is what lets both callers
+/// share one implementation without either duplicating this logic or
+/// reintroducing the unsound whole-`Interpreter` raw-pointer patterns
+/// documented in `vm_call_state_guard.rs`'s module doc.
+pub(crate) fn replay_readonly_undo(
+    vars: &std::cell::RefCell<ReadonlySet>,
+    undo: &std::cell::RefCell<Vec<ReadonlyUndo>>,
+    frames: &Cell<u32>,
+    mark: usize,
+) {
+    frames.set(frames.get().saturating_sub(1));
+    let mut undo_ref = undo.borrow_mut();
+    let mut vars_ref = vars.borrow_mut();
+    while undo_ref.len() > mark {
+        match undo_ref.pop().unwrap() {
+            ReadonlyUndo::Marked(sym) => {
+                vars_ref.remove(&sym);
+            }
+            ReadonlyUndo::Unmarked(sym) => {
+                vars_ref.insert(sym);
+            }
+            // An abandoned inner scope's sentinel: its exit was skipped by an
+            // error unwind (or, prior to this guard's introduction, a Rust
+            // panic), so re-balance the open-scope counter here.
+            ReadonlyUndo::Scope => {
+                frames.set(frames.get().saturating_sub(1));
+            }
+        }
+    }
+    // Pop this scope's own sentinel (at `mark - 1`).
+    debug_assert!(matches!(undo_ref.last(), Some(ReadonlyUndo::Scope)));
+    undo_ref.pop();
+}
+
 /// A set of variable names (`block_declared_vars` / `loop_local_vars`), keyed by
 /// the interned `Symbol` rather than an owned `String`.
 ///
@@ -2139,17 +2182,23 @@ pub struct Interpreter {
     /// Pending env updates from regex code blocks, to be synced to VM locals.
     pub(crate) pending_local_updates: Vec<(String, Value)>,
     /// Set of variable names that are readonly (default parameter binding).
-    /// Copy-on-write and `Symbol`-keyed — see [`ReadonlySet`].
-    readonly_vars: ReadonlySet,
+    /// Copy-on-write and `Symbol`-keyed — see [`ReadonlySet`]. Boxed (its own
+    /// heap allocation, separate from `Interpreter`'s) so
+    /// [`crate::vm::vm_call_state_guard::ReadonlyFrameGuard`] can hold a raw
+    /// pointer into it that survives intervening `&mut self` calls — see that
+    /// guard's doc comment and the module doc in `vm_call_state_guard.rs`
+    /// ("v3": each guarded field is its own separate heap allocation).
+    pub(crate) readonly_vars: Box<std::cell::RefCell<ReadonlySet>>,
     /// Journal of readonly-set mutations made while at least one readonly
     /// scope is open (newest last); `exit_readonly_frame` replays the
     /// inverses back to its scope's mark. `Scope` sentinels bound each open
     /// frame's entries (see `enter_readonly_frame`). Journaling is off at top
     /// level (`readonly_frames == 0`), so the journal cannot grow across a
-    /// program's lifetime.
-    readonly_undo: Vec<ReadonlyUndo>,
+    /// program's lifetime. Boxed for the same reason as [`Self::readonly_vars`].
+    pub(crate) readonly_undo: Box<std::cell::RefCell<Vec<ReadonlyUndo>>>,
     /// Number of currently-open readonly scopes (see `enter_readonly_frame`).
-    readonly_frames: u32,
+    /// Boxed for the same reason as [`Self::readonly_vars`].
+    pub(crate) readonly_frames: Box<Cell<u32>>,
     /// Metadata for Seq values produced by `squish` with callbacks, used to
     /// provide callback-aware iterator behavior.
     pub(crate) squish_iterator_meta: HashMap<usize, SquishIteratorMeta>,

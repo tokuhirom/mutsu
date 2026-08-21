@@ -132,15 +132,16 @@ impl Interpreter {
     /// integer ops total.
     #[inline]
     pub(crate) fn enter_readonly_frame(&mut self) -> usize {
-        self.readonly_frames += 1;
+        self.readonly_frames.set(self.readonly_frames.get() + 1);
         // The scope sentinel bounds the cancellation peephole in
         // `unmark_readonly_sym`: an unmark may only cancel a mark journaled by
         // the *same* frame — cancelling across the sentinel would erase an
         // outer frame's rollback entry (e.g. an `is copy` param transiently
         // unmarking the caller's same-named readonly param would eat the
         // caller's own mark, leaving it writable after the inner call).
-        self.readonly_undo.push(ReadonlyUndo::Scope);
-        self.readonly_undo.len()
+        let mut undo = self.readonly_undo.borrow_mut();
+        undo.push(ReadonlyUndo::Scope);
+        undo.len()
     }
 
     /// Close a readonly scope: undo every journaled mutation made since the
@@ -149,29 +150,18 @@ impl Interpreter {
     /// call frame); an inner scope abandoned by an error unwind is cleaned up
     /// by the enclosing exit, since rolling back to a lower mark replays the
     /// abandoned entries (and drops their sentinels) too.
+    ///
+    /// The actual replay lives in [`super::replay_readonly_undo`] so
+    /// [`crate::vm::vm_call_state_guard::ReadonlyFrameGuard`]'s `Drop` impl —
+    /// which cannot obtain `&mut Interpreter` — can run the identical logic
+    /// through raw pointers into these fields' own boxed allocations.
     pub(crate) fn exit_readonly_frame(&mut self, mark: usize) {
-        self.readonly_frames -= 1;
-        while self.readonly_undo.len() > mark {
-            match self.readonly_undo.pop().unwrap() {
-                ReadonlyUndo::Marked(sym) => {
-                    self.readonly_vars.remove(&sym);
-                }
-                ReadonlyUndo::Unmarked(sym) => {
-                    self.readonly_vars.insert(sym);
-                }
-                // An abandoned inner scope's sentinel: its exit was skipped by
-                // an error unwind, so re-balance the open-scope counter here.
-                ReadonlyUndo::Scope => {
-                    self.readonly_frames = self.readonly_frames.saturating_sub(1);
-                }
-            }
-        }
-        // Pop this scope's own sentinel (at `mark - 1`).
-        debug_assert!(matches!(
-            self.readonly_undo.last(),
-            Some(ReadonlyUndo::Scope)
-        ));
-        self.readonly_undo.pop();
+        super::replay_readonly_undo(
+            &self.readonly_vars,
+            &self.readonly_undo,
+            &self.readonly_frames,
+            mark,
+        );
     }
 
     /// Swap out the whole readonly state for a lazily-forced body run
@@ -184,19 +174,28 @@ impl Interpreter {
     /// loses in-body protection of captured outer readonly names (rare) but
     /// never blocks the body's own writes. Restore with
     /// [`Self::restore_readonly_state`] on every exit path.
+    ///
+    /// Swaps the *contents* of the boxed cells in place rather than replacing
+    /// the `Box`es themselves (which `std::mem::take`/`replace` on the field
+    /// would do) — a live [`crate::vm::vm_call_state_guard::ReadonlyFrameGuard`]
+    /// further up the call stack may hold a raw pointer into these fields'
+    /// current allocations, and replacing the `Box` would free that
+    /// allocation out from under it.
     pub(crate) fn take_readonly_state(&mut self) -> super::SavedReadonlyState {
         super::SavedReadonlyState {
-            vars: std::mem::take(&mut self.readonly_vars),
-            undo: std::mem::take(&mut self.readonly_undo),
-            frames: std::mem::replace(&mut self.readonly_frames, 0),
+            vars: std::mem::take(&mut *self.readonly_vars.borrow_mut()),
+            undo: std::mem::take(&mut *self.readonly_undo.borrow_mut()),
+            frames: self.readonly_frames.replace(0),
         }
     }
 
     /// Restore the readonly state saved by [`Self::take_readonly_state`].
+    /// See that method's doc comment for why this writes into the existing
+    /// boxed cells' contents instead of replacing the `Box`es.
     pub(crate) fn restore_readonly_state(&mut self, saved: super::SavedReadonlyState) {
-        self.readonly_vars = saved.vars;
-        self.readonly_undo = saved.undo;
-        self.readonly_frames = saved.frames;
+        *self.readonly_vars.borrow_mut() = saved.vars;
+        *self.readonly_undo.borrow_mut() = saved.undo;
+        self.readonly_frames.set(saved.frames);
     }
 
     /// Check if a variable is readonly.
@@ -207,7 +206,7 @@ impl Interpreter {
     /// Check if an already-interned name is readonly.
     #[inline]
     pub(crate) fn is_readonly_sym(&self, sym: Symbol) -> bool {
-        self.readonly_vars.contains(&sym)
+        self.readonly_vars.borrow().contains(&sym)
     }
 
     /// Mark a variable as readonly.
@@ -220,8 +219,10 @@ impl Interpreter {
     /// re-marking a param the caller's frame already marked) journals nothing.
     #[inline]
     pub(crate) fn mark_readonly_sym(&mut self, sym: Symbol) {
-        if self.readonly_vars.insert(sym) && self.readonly_frames > 0 {
-            self.readonly_undo.push(ReadonlyUndo::Marked(sym));
+        if self.readonly_vars.borrow_mut().insert(sym) && self.readonly_frames.get() > 0 {
+            self.readonly_undo
+                .borrow_mut()
+                .push(ReadonlyUndo::Marked(sym));
         }
     }
 
@@ -230,7 +231,7 @@ impl Interpreter {
     /// [`unmark_readonly`] would need just to miss.
     #[inline]
     pub(crate) fn no_readonly_vars(&self) -> bool {
-        self.readonly_vars.is_empty()
+        self.readonly_vars.borrow().is_empty()
     }
 
     /// Remove a variable from the readonly set.
@@ -247,11 +248,12 @@ impl Interpreter {
     /// an outer frame's mark stays journaled so its exit re-marks the name.
     #[inline]
     pub(crate) fn unmark_readonly_sym(&mut self, sym: Symbol) {
-        if self.readonly_vars.remove(&sym) && self.readonly_frames > 0 {
-            if self.readonly_undo.last() == Some(&ReadonlyUndo::Marked(sym)) {
-                self.readonly_undo.pop();
+        if self.readonly_vars.borrow_mut().remove(&sym) && self.readonly_frames.get() > 0 {
+            let mut undo = self.readonly_undo.borrow_mut();
+            if undo.last() == Some(&ReadonlyUndo::Marked(sym)) {
+                undo.pop();
             } else {
-                self.readonly_undo.push(ReadonlyUndo::Unmarked(sym));
+                undo.push(ReadonlyUndo::Unmarked(sym));
             }
         }
     }
