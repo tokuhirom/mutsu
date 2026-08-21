@@ -1615,6 +1615,40 @@ impl Compiler {
         self.current_package = package;
     }
 
+    /// The real (non-synthetic) package a `RegisterDecl`/`RegisterSub` op
+    /// compiled from this code will see as the interpreter's runtime
+    /// `current_package()`. Mirrors `qualified_class_decl_name`'s shared rule
+    /// (ADR-0019 D3-8d): inside a synthetic STATE-SCOPE pseudo-package
+    /// (`current_package` containing `::&`, assigned to every closure/sub
+    /// body purely for `state`-variable key uniqueness — see
+    /// `compile_sub_body`/`compile_closure_body`), `current_package` does NOT
+    /// track the runtime package at all — a bare block/closure/sub body never
+    /// itself pushes its own mangled name as the interpreter's current
+    /// package (only an explicit `class`/`package`/`module`/`unit` bracketing
+    /// does, always setting `current_package` directly to the real name).
+    /// `self.enclosing_package` (captured before the state-scope override,
+    /// propagated unchanged through arbitrarily deep closure/sub nesting) IS
+    /// the runtime package in that case.
+    ///
+    /// A `sub` declared directly inside a closure/block body used the
+    /// synthetic name uncorrected as the package component of its
+    /// `compiled_fns` key (`compile_sub_body_with_deprecation`), which no
+    /// runtime lookup that reconstructs candidate keys from the ACTUAL
+    /// runtime package (`Interpreter::bare_name_packages`,
+    /// `find_compiled_function`) could ever match — forcing every call to
+    /// fall through the slow resolution ladder instead of the cached
+    /// compiled-function fast path
+    /// (`news/2026-08/nested-sub-in-block-otf-recompile-fixed.md`).
+    pub(crate) fn runtime_current_package(&self) -> &str {
+        if self.current_package.contains("::&") {
+            self.enclosing_package
+                .as_deref()
+                .unwrap_or(&self.current_package)
+        } else {
+            &self.current_package
+        }
+    }
+
     pub(crate) fn qualify_package_name(&self, name: &str) -> String {
         // `GLOBAL` is the implicit root namespace: `package GLOBAL::X::Y` declares
         // `X::Y` absolutely, regardless of the enclosing package. Strip the leading
