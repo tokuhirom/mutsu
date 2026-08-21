@@ -268,6 +268,22 @@ impl Interpreter {
                 {
                     return None;
                 }
+                // ADR-0051 P4: an `Instance` receiver whose ancestry does not
+                // actually provide `.IO` (no `Cool` anywhere in its dispatch
+                // chain) must not be answered by this generic interceptor --
+                // it is receiver-class-blind by construction (unconditional
+                // `target.to_string_value()`), which is exactly the leak the
+                // ADR closes. `should_bypass_native_fastpath`/`shadows_builtin`
+                // already route this call past this function entirely for a
+                // plain (non-wildcard-handles) class; this is the direct
+                // guard the ADR also calls for, so this interceptor stays
+                // correct even if reached by a future call path that skips
+                // those two gates.
+                if matches!(target.view(), ValueView::Instance { .. })
+                    && !self.e2_native_method_exists(&target, "IO")
+                {
+                    return None;
+                }
                 // `.IO` on an IO::Path (sub)class type object returns the type
                 // object itself, so `IO::Path::Unix === IO::Path::Unix.IO`.
                 if let ValueView::Package(name) = target.view() {

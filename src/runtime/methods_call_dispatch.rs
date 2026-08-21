@@ -3836,6 +3836,22 @@ impl Interpreter {
                         // `should_bypass_native_fastpath`).
                         || (Self::cool_only_builtin_method(method)
                             && self.class_has_wildcard_handles_or_fallback(&class_name))
+                    // ADR-0051 P4 NOTE: no blanket "cool_only && !e2_native_method_exists"
+                    // term here, unlike the other two gate sites. `dispatch_method_by_name_1/2/3`
+                    // mix receiver-class-BLIND arms (`.IO`, `.subst` -- guarded directly at
+                    // their own call sites instead, see `dispatch_method_by_name_1`'s `"IO"`
+                    // arm and `dispatch_subst`) with receiver-class-AWARE arms that happen to
+                    // share a cool_only name with no E2 row of their own (e.g. `Supply.comb`/
+                    // `.words` in `dispatch_method_by_name_2`, which explicitly checks
+                    // `class_name == "Supply"` and returns `None` for anything else). A
+                    // blanket `shadows_builtin` term here would skip ALL THREE dispatch
+                    // functions whenever `e2_native_method_exists` misses -- which it does for
+                    // any name recognized only by a by-name arm's own internal receiver check,
+                    // never modeled in the E2 native-method-row catalog at all. Confirmed by a
+                    // real regression: `roast/S17-supply/comb.t`/`words.t` broke this way
+                    // before this term was removed. Per-arm guards at the specific
+                    // receiver-blind sites are the correct granularity; this match arm's older
+                    // `handles */FALLBACK` term above is unaffected.
                 }
                 ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
                 _ => false,

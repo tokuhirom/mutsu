@@ -359,6 +359,22 @@ impl Interpreter {
                 {
                     return None;
                 }
+                // ADR-0051 P4: a Cool-only builtin the receiver's own
+                // ancestry does NOT actually provide (no `Cool` -- or, for
+                // `Instant`/`DateTime`/`Date`, no own-method row -- anywhere
+                // in the dispatch chain) must not be answered by this fast
+                // path either: its cascade arms are receiver-class-blind by
+                // construction and would unconditionally stringify the
+                // receiver (`"G()".uc`), which is wrong for a genuinely
+                // unresolved method (real Rakudo throws
+                // `X::Method::NotFound`). Deferring to the interpreter lets
+                // normal "no candidate" resolution throw instead of
+                // fabricating a stringified answer.
+                if Self::cool_only_builtin_method(&method_name)
+                    && !self.e2_native_method_exists(target, method_sym.as_str())
+                {
+                    return None;
+                }
             }
         } else if matches!(target.view(), ValueView::Package(name) if name == "Supply")
             && matches!(

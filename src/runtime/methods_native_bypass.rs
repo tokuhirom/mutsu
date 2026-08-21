@@ -401,6 +401,23 @@ impl Interpreter {
                     // for the rare "Instance x Cool-only name" shape.
                     || (Self::cool_only_builtin_method(method)
                         && self.class_has_wildcard_handles_or_fallback(&class_name))
+                    // ADR-0051 P4: a Cool-only builtin the receiver's own
+                    // ancestry does NOT actually provide (no `Cool` --
+                    // or, for the handful of types with their own genuine
+                    // row, e.g. `Instant.Date` -- anywhere in the dispatch
+                    // chain) must not be answered by this fast path either:
+                    // its cascade arms are receiver-class-blind by
+                    // construction and would unconditionally stringify the
+                    // receiver (`"G()".uc`), which is wrong for a
+                    // genuinely unresolved method (real Rakudo throws
+                    // `X::Method::NotFound`). Deferring to the interpreter
+                    // lets normal "no candidate" resolution throw instead
+                    // of fabricating a stringified answer.
+                    || (Self::cool_only_builtin_method(method)
+                        && !self.e2_native_method_exists(
+                            target,
+                            crate::symbol::Symbol::intern(method).as_str(),
+                        ))
             }
             ValueView::Package(class_name) => {
                 let class_name = class_name.resolve();

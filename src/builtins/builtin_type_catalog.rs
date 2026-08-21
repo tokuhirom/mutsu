@@ -467,6 +467,24 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     // `runtime_init.rs` is fixed alongside this row.
     row!("IO::Path", mro: ["IO::Path", "Cool", "Any", "Mu"], roles: ["IO"], owner: ""),
     row!("IO::Handle", mro: ["IO::Handle", "Any", "Mu"], roles: [], owner: ""),
+    // ---- StrDistance (ADR-0051 P4 CI fallout, 2026-08-21) ----
+    // Found via a real CI regression (roast/S32-num/rat.t): `StrDistance` is a
+    // plain `Value::make_instance` type (no registered `ClassDef`, like
+    // `Instant`/`Duration` above) and genuinely inherits `Cool` in raku
+    // (verified: `StrDistance.^mro` is `(StrDistance Cool Any Mu)`,
+    // `.^roles(:local)` is empty), but had no catalog row at all, so
+    // `StrDistance.Rat` -- a real Cool coercion -- wrongly died as
+    // "No such method" once P4's existence gate landed. This is the same
+    // shape as the four P1 rows above; P1's own audit was scoped to the
+    // types the reverted 2026-08-18 attempt's `make test` run surfaced and
+    // did not (and could not, without a full corpus sweep) claim to be
+    // exhaustive over every raku builtin type.
+    row!(
+        "StrDistance",
+        mro: ["StrDistance", "Cool", "Any", "Mu"],
+        roles: [],
+        owner: "",
+    ),
     // ---- IO::Spec family (Registry::builtin_mro_table; matches raku exactly) ----
     row!("IO::Spec", mro: ["IO::Spec", "Any", "Mu"], roles: [], owner: ""),
     row!(

@@ -1,6 +1,6 @@
 # ADR-0051: Type ancestry has one oracle, and an unresolved method throws instead of stringifying
 
-- Status: Accepted (P1 landed; P2/P4/P5 not started)
+- Status: Accepted (P1/P3/P4 landed; P2/P5 not started)
 - Date: 2026-08-20
 - Supersedes: none
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (§2 "One registry owns
@@ -281,7 +281,7 @@ Each phase is independently landable and independently valuable.
   regression test's `Pair` assertions both still pass, confirming the false-positive shape did not
   reappear.
 
-- P2/P4/P5 below are unchanged from the original design and remain not started.
+- P2/P5 below are unchanged from the original design and remain not started.
 
 - **P2 — Collapse the remaining sources onto the catalog.** Delete `Registry::builtin_mro_table`
   and the three hardcoded narrowness chains (sources 7-9); re-point `class_mro_readonly`,
@@ -290,18 +290,94 @@ Each phase is independently landable and independently valuable.
   Expect this to surface real divergences (sources 7/8 carry role names like
   `Stringy`/`Positional`/`Numeric` that source 1 tracks separately in `roles`) — reconcile them into
   the catalog's `mro`+`roles` shape rather than keeping a private copy. `isa_check`'s claim that a
-  `Capture` instance is `Cool` is wrong (Rakudo: `Capture, Any, Mu`) and disappears with it.
+  `Capture` instance is `Cool` is wrong (Rakudo: `Capture, Any, Mu`) and disappears with it. This
+  phase is expected to also fix pre-existing false positives P3's audit found but did not touch (see
+  P3's note below) — `e2_native_method_exists`/`.^can` wrongly saying `Match.succ`/`.pred`/`.base`/
+  `.polymod`/`.parse-base` and `Any.lazy` exist, when real Rakudo says they do not.
 
-- **P3 — Fill the two genuine missing rows.** `("Instant","DateTime")` and `("Date","IO")`, both
-  Rakudo-verified own methods. Audit the rest of `cool_only_builtin_method`'s 94 names against
-  every catalog type for the same shape; the audit is bounded and mechanical once P1/P2 make
-  ancestry trustworthy.
+- **P3 — Fill the two genuine missing rows. LANDED (PR #6795, 2026-08-21).** Added
+  `("Instant","DateTime",1,0)` and `("Date","IO",8,12)` to `RAW_ROWS`
+  (`src/builtins/native_method_row_table.rs`), both Rakudo-verified own methods, already dispatched
+  correctly and now also visible to `.^can`/`e2_native_method_exists`.
 
-- **P4 — Gate the string-coercion leak.** At the three gate sites and the two by-name dispatchers,
-  require `e2_native_method_exists` (or the resolver's candidate sequence) before entering the
-  cascade for an `Instance` receiver. Un-`todo` `t/handles-wildcard-builtin-methods.t` tests 14-15.
-  Keep `cool_only_builtin_method`'s `handles *`/`FALLBACK` term as-is — it is a *different*
-  question (may an interceptor see this call) and remains correct.
+  The audit of `cool_only_builtin_method`'s remaining 94 names against the seven types P1 touched
+  (`Instant`, `Duration`, `IO::Path`, `IO::Handle`, `DateTime`, `Date`, `Match`) found the gap was
+  much larger than the two rows above: **48 more names** genuinely resolve via `Cool` in real Rakudo
+  (`Cool.^can(name)` raku-verified nonzero for each) but had no `"Cool"` row in `RAW_ROWS` at all —
+  the whole trig/Unicode/coercion tail (`sin`, `cos`, `tan`, `NFC`, `uniname`, `IO`, `Version`, `UInt`,
+  `tclc`, `subst`, `sprintf`, `trans`, `indent`, `samemark`, `roots`, `unpolar`, `cis`, ...). Left
+  unfilled, P4's existence gate would have wrongly rejected genuine calls such as `Instant.sin` or
+  `Match.NFC` — the two-row estimate in this phase's original text only covered the six-type
+  regression set from the reverted 2026-08-18 attempt, not the full 94-name list. Arity/flags were
+  determined the same way the rest of `RAW_ROWS` was generated: probed against `Int(2)`/`Str("5")`
+  samples via `native_method_arities`, cross-checked against a direct `Int.<name>` invocation in real
+  `raku` to settle `TYPE_OBJECT_OK` (every name dies on an indefinite receiver in real Rakudo except
+  `Version`). Six cool_only names (`Date`, `DateTime`, `lazy`, `race`, `hyper`, `parse-base`) were
+  deliberately excluded from the `Cool` block: real Rakudo's `Cool.^can` is 0 for all six (`Date`/
+  `DateTime` are `Str`-only multi candidates with their own `"Str"` rows already; the other four
+  resolve through neither `Cool` nor `Any`), so a `Cool` row for them would have been a false claim.
+  One more name, `samespace`, was found to be genuinely *unimplemented* in mutsu (dies for every
+  receiver including `Str`, not just an `Instance`) — no row was added for it either, confirmed
+  against `t/can-methods-drift.t`'s existing "unimplemented samespace is not over-claimed" assertion,
+  which catches exactly this kind of over-claim.
+
+  Six more genuine own-method-row gaps (same shape as the two named in this phase) turned up during
+  the audit, all already dispatched correctly and just missing their row: `Instant.Date`,
+  `DateTime.IO`, `DateTime.DateTime`, `Date.pred`, `Date.Date`, `Date.DateTime`.
+
+  The audit also surfaced pre-existing false positives that are P2's job, not P3's — see the P2 entry
+  above for the list. None of these are introduced or worsened by P3/P4; they were already reachable
+  via `e2_native_method_exists`/`.^can` before this PR.
+
+  **CI fallout, fixed forward on the same PR:** `StrDistance` (a plain `Value::make_instance` type
+  like `Instant`/`Duration`, returned by `Str.subst-distance`-family methods) genuinely inherits
+  `Cool` in real Rakudo (`StrDistance.^mro` is `(StrDistance Cool Any Mu)`) but was missing from
+  `builtin_type_catalog` entirely — the same shape as P1's four rows, just not one of the types the
+  reverted 2026-08-18 attempt's `make test` run happened to surface, so P1's audit never saw it.
+  `StrDistance.Rat` (`roast/S32-num/rat.t`) broke on CI once P4 landed. Added a `StrDistance` catalog
+  row alongside `Instant`/`Duration` with the same P1-style justification.
+
+  Pinned by `t/adr0051-cool-only-gate.t`.
+
+- **P4 — Gate the string-coercion leak. LANDED (PR #6795, 2026-08-21).** At two of the three gate
+  sites (`should_bypass_native_fastpath`, `try_native_method_raw`) and the two by-name dispatchers
+  (`.IO` in `methods_dispatch_match.rs`, `.subst`/`dispatch_subst` in `methods_string.rs`), a
+  `cool_only_builtin_method` name on an `Instance` receiver now requires `e2_native_method_exists`
+  before the fast-path/interceptor machinery may answer it — falling through to ordinary "no
+  candidate" resolution otherwise, which throws `X::Method::NotFound` with the same message real
+  Rakudo uses (verified: `mutsu -e 'class G {}; G.new.uc'` now dies exactly like `raku`).
+  `cool_only_builtin_method`'s `handles */FALLBACK` term was left untouched, as specified.
+  Un-`todo`'d `t/handles-wildcard-builtin-methods.t` tests 14-15 (both now genuinely pass).
+
+  **`shadows_builtin` (the third named gate site) deliberately does NOT carry this check, unlike the
+  ADR's original text assumed — CI fallout, fixed forward on the same PR.** `shadows_builtin` gates
+  whether `dispatch_method_by_name_1/2/3` run at all. Those three functions mix receiver-class-BLIND
+  arms (`.IO`, `.subst` — already guarded directly at their own call sites, per above) with
+  receiver-class-AWARE arms that happen to share a `cool_only` name with no row in the E2 catalog at
+  all: `Supply.comb`/`.words` (`dispatch_method_by_name_2`) explicitly check
+  `class_name == "Supply"` and return `None` for anything else — a real per-type method, just never
+  modeled as an E2 "row" because it isn't served by the pure arity cascade. A blanket
+  `shadows_builtin` term skipped ALL THREE dispatch functions whenever `e2_native_method_exists`
+  missed, which broke `roast/S17-supply/comb.t`/`words.t` on CI (the two arity-cascade gate sites
+  don't have this problem: `native_fastpath_receiver_state_guard`, consulted before either of their
+  `cool_only` terms, already special-cases `Supply.comb`/`.words`/... unconditionally). The correct
+  granularity is a guard at the specific receiver-blind arm, not a blanket gate over dispatch
+  functions that also contain receiver-aware arms — `.IO`/`.subst`'s own inline guards (added at the
+  same time, per the ADR's literal "two by-name dispatchers" instruction) already cover the two
+  arms that actually need it.
+
+  Verified with the full local `t/` suite (859 unit tests + the TAP suite) and a targeted 147-file
+  roast sweep before the first push, then CI caught the `shadows_builtin`/`StrDistance` fallout
+  above (`test`/`gc-stress`/`jit-stress` red, `roast/S17-supply/comb.t`/`words.t`,
+  `roast/S32-num/rat.t`). After fixing forward, re-verified with the full local `t/` suite again and
+  the **entire local `roast-whitelist.txt`** (1436 files, 218817 subtests) rather than another
+  spot-check, given the first spot-check had already missed two real regressions — all green except
+  one pre-existing environment artifact (`t/compunit-can-install.t`'s "non-writable root" check,
+  unrelated: this sandbox happens to allow `mkdir` directly under `/`) and three files
+  (`gb18030`/`gb2312`/`shiftjis-encode-decode.t`) that only fail when `prove` is invoked directly
+  instead of through `scripts/run-roast-test.sh` (a stale `t/spec/` sample-file path, unrelated to
+  method dispatch — confirmed passing via the proper runner). The blast radius stayed contained to
+  the two fixes above; no further scoping-down of P4 was needed.
 
 - **P5 — Retire `cool_only_builtin_method`.** Once P4's existence check is authoritative, the
   94-name list is derivable: "a name with a row under `Cool` but not under `Any`/`Mu`". Deleting it
