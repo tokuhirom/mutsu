@@ -309,7 +309,7 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
      `PlaceholderBodyKind::NoSignature` in `src/ast.rs` for the full
      explanation. Giving `do {}` a real `NoSignature` classification is left
      to whichever later phase untangles this interaction.
-2. **Rejecting set. LANDED (2026-08-21).** Flipped `loop` (headerless and
+2. **Rejecting set. LANDED (PR #6820, 2026-08-21).** Flipped `loop` (headerless and
    C-style — `repeat: false`), `try`, `react`, `once`, `default`, standalone
    `CATCH`/`CONTROL`, every `Stmt::Phaser` kind (`BEGIN`/`CHECK`/`INIT`/
    `ENTER`/`LEAVE`/`KEEP`/`UNDO`/`END`/`PRE`/`POST`), `gather`, and
