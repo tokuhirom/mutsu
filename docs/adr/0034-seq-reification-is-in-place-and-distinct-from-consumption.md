@@ -516,10 +516,14 @@ The one case this leaves wrong relative to raku — explicit `.list()` on an alr
 staying reusable — is pinned as a KNOWN GAP subtest in `t/seq-consumption-matrix.t`. A real fix
 needs the parser to emit a distinct method name for the two call shapes; out of scope here.
 
-**Phase 5 (the Miri probe module, `src/value/seq_body_shapes.rs`) was not done** — deferred to
-`todo/tickets/adr0034-phase5-seq-body-miri-probes.md` rather than extending the session further.
-Functional correctness is covered extensively by `t/` and roast; phase 5 is soundness-probe
-infrastructure, not a functional gap.
+**Phase 5 (the Miri probe module, `src/value/seq_body_shapes.rs`) was not done** in this PR —
+deferred to `todo/tickets/adr0034-phase5-seq-body-miri-probes.md` rather than extending the session
+further. Functional correctness is covered extensively by `t/` and roast; phase 5 is soundness-probe
+infrastructure, not a functional gap. **Done in a follow-up PR** (see
+`news/2026-08/adr0034-phase5-seq-body-miri-probes.md`): `src/value/seq_body_shapes.rs` probes the
+`SeqBody` generation graveyard the same way `native_cache_shapes.rs` probes `NativeBacking`'s, and
+CI's `miri` job runs it via an explicit `--lib value::seq_body_shapes` invocation (`ci.yml`'s filter
+is a substring match on `gc::`, which does not select either module).
 
 Two bugs surfaced only by end-to-end testing, neither anticipated by the design (§1.5's site list
 was, as risk §5 predicted, incomplete):
