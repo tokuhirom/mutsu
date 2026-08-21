@@ -1,6 +1,6 @@
 # ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
 
-- Status: Accepted (P1 landed; P2-P5 not started)
+- Status: Accepted (P1, P2 landed; P3-P5 not started)
 - Date: 2026-08-20
 - Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
   (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`)
@@ -309,15 +309,150 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
      `PlaceholderBodyKind::NoSignature` in `src/ast.rs` for the full
      explanation. Giving `do {}` a real `NoSignature` classification is left
      to whichever later phase untangles this interaction.
-2. **Rejecting set.** Flip `loop`/`try`/`react`/`once`/`default`/phasers/
-   statement prefixes/`module` to `NoSignature`, reusing
-   `placeholder_scope_error("block", ph)`. Expect battery/roast fallout here.
+2. **Rejecting set. LANDED (PR #6820, 2026-08-21).** Flipped `loop` (headerless and
+   C-style — `repeat: false`), `try`, `react`, `once`, `default`, standalone
+   `CATCH`/`CONTROL`, every `Stmt::Phaser` kind (`BEGIN`/`CHECK`/`INIT`/
+   `ENTER`/`LEAVE`/`KEEP`/`UNDO`/`END`/`PRE`/`POST`), `gather`, and
+   `module`/`package`/`grammar` (all three `PackageKind`s, not just `module`
+   — raku rejects all three identically) to reject with the same
+   `placeholder_scope_error("block", ph)`/`X::Placeholder::Block`
+   `do {}`'s existing rejection uses, via the shared
+   `Compiler::emit_block_placeholder_die` helper.
+   - **`repeat {} while/until` (`repeat: true`) is a same-AST-variant sibling
+     that must NOT be included, and an initial pass of this phase wrongly
+     lumped it in with `loop {}` before a roast-corpus scan caught it.**
+     `Stmt::Loop`'s `repeat: bool` field distinguishes headerless/C-style
+     `loop {}` from `repeat {} while/until` — both compile through the same
+     AST variant, but per the evidence table above, only the former is
+     `NoSignature`; `repeat` is signature-capable
+     (`ArgSupply::ConditionAfterFirstPass`, D4/Phase 4's territory) and
+     `raku` does not reject a placeholder inside one. This is exactly what
+     `roast/S04-statements/repeat.t`'s "placeholders and 'repeat while' mix"
+     subtest (from `old-issue-tracker/issues/1283`) pins — a corpus scan of
+     `roast/`/`modules/`/`vendor/` for `$^`/`@^`/`%^` usage directly inside
+     any of this phase's rejecting constructs turned up exactly this one
+     real hit (every other match was either legitimate — inside a nested
+     signature-capable block/closure/`where` — or already correctly
+     unaffected). Fixed by narrowing the `emit_block_placeholder_die` guard
+     (and the oracle classification) to `repeat: false` only; pinned by both
+     the roast file staying whitelisted and a new case in
+     `t/placeholder-scope-rejecting.t` asserting `repeat` still *accepts* a
+     placeholder.
+   - **A method's implicit `*%_` (leftover named args) must stay usable
+     inside a nested `NoSignature` block, and the first CI run of this PR
+     broke exactly that.** `t/placeholder-named-in-method-do.t` already pins
+     that `%_` is valid anywhere in a method body, including nested in a
+     signature-less `do {}` — `compile_do_block_expr` has always exempted
+     `self.lexically_in_method && ph == "%_"` from its stray-placeholder
+     check. `Compiler::emit_block_placeholder_die` (the helper this phase
+     reuses for every other `NoSignature` construct) had no such exemption,
+     so `try {}`/`loop {}`/... newly rejected a legitimate `%_` inside a
+     method. This broke every DBIish battery test at once: `DBIish::
+     CommonTesting.connect-or-skip` (a method) calls `DBIish.connect(
+     $driver-name, |%_)` inside a `try {}`, so the bundled-library gate's
+     "Bundled-library test suites" CI job failed with every DBIish backend
+     collapsing to `ok=2/109` (including SQLite, which needs no live
+     server — proving it was not a service-availability issue) and the gate
+     reporting `REGRESSION` against the whitelist for every whitelisted
+     DBIish file. Root-caused by reproducing locally: `%_`/`@^`/`$^` weren't
+     even considered during the original `roast`/`modules`/`vendor` scan
+     above, because that scan only grepped for the caret sigil forms
+     (`$^`/`@^`/`%^`) — it missed the *implicit slurpy* placeholder forms
+     (`@_`/`%_`), which `collect_unattached_placeholders` also recognizes.
+     Fixed by adding the same `lexically_in_method && ph == "%_"` exemption
+     to `emit_block_placeholder_die` itself (so every call site gets it for
+     free), plus a parallel exemption in `supply_method_call`
+     (`src/parser/primary/ident/supply.rs`), which checks
+     `collect_unattached_placeholders` directly at *parse* time (no
+     `Compiler`/`lexically_in_method` available yet) rather than through the
+     shared helper — that one exempts `%_` unconditionally rather than only
+     inside a method, a deliberate (documented in that file) narrower gap:
+     `supply { %_ }` outside a method should reject per `raku` but no longer
+     does, versus the alternative of `supply { %_ }` inside a method
+     wrongly degrading into an eagerly-run `DoBlock` and breaking `supply`'s
+     async semantics. `@_` is not exempted anywhere (only a method gets an
+     implicit `*%_`, never `*@_`). Pinned by four new cases in
+     `t/placeholder-scope-rejecting.t` (method-context `%_` accepted inside
+     `try`/`loop`/`supply`, and non-method-context `%_` inside `try` still
+     rejecting) and by re-running the DBIish/SQLite battery files locally
+     (`44-sqlite-memory.rakutest` 108/109 — matching the pre-existing
+     baseline — and `25-mysql-common.rakutest`/`34-pg-types.rakutest`
+     gracefully SKIPping all subtests again, both previously collapsed to
+     `ok=2/109`).
+   - **The oracle change alone was not sufficient.** `placeholder_body_kind`/
+     `placeholder_body_kind_expr` reclassifying these to `NoSignature` only
+     changes what the *shallow walks* (parameter collection, order/redeclare
+     checks) do; it does not by itself make the compiler *reject* anything.
+     Landing this phase meant separately wiring `emit_block_placeholder_die`
+     (or the `collect_unattached_placeholders` check it wraps) into every
+     concrete place each construct's body is actually compiled — which, for
+     several of these constructs, turned out to be more than one place:
+     `BEGIN`/phasers in particular are compiled from up to 6 different call
+     sites (statement position via `compile_stmt`, tail/value position via
+     `compile_check_phaser_value` from three different callers, a top-level
+     mainline *hoisting* pre-pass in `run_toplevel_begin_phasers` that
+     bypasses the compiler's `Stmt::Phaser` wrapper entirely by pre-running
+     the unwrapped body through the tree-walk-era `eval_block_value`, and
+     `ENTER`/`LEAVE`/`KEEP`/`UNDO`/`PRE`/`POST` extraction inside
+     `compile_phaser_block_scope`/`compile_pre_phasers`/
+     `compile_post_phasers`). The fix pushes the check down into the
+     lowest-level shared primitives (`compile_check_phaser`,
+     `compile_check_phaser_value`, `compile_pre_phasers`,
+     `compile_post_phasers`, the `compile_phaser_block_scope` ENTER/LEAVE/
+     KEEP/UNDO loops, plus disqualifying a placeholder-bearing body from
+     top-level `BEGIN` hoisting) rather than guarding every call site
+     individually.
+   - **The statement-prefix group that desugars its body into a real closure
+     at PARSE time (`start`, `sink`, `supply`, `lazy`, `eager`) cannot be
+     classified via the oracle at all.** By the time `placeholder_body_kind_
+     expr` would run, `make_anon_sub` (for `start`/`sink`, via
+     `Expr::Call`) or the dedicated `supply`/`.lazy`/`Eager` builders have
+     already consumed a bare `{ $^c }` block's placeholder as that closure's
+     *own* signature parameter (`Expr::AnonSubParams`/`Expr::Lambda`), so
+     there is no `NoSignature`-shaped body left to classify — this is
+     exactly why Phase 1 kept `Expr::DoBlock` `Transparent` instead of
+     `NoSignature` (see the long note on `PlaceholderBodyKind::NoSignature`
+     in `src/ast.rs`), and the same interaction applies to this whole group.
+     Each of these five is instead rejected at its own compiler/parser call
+     site by re-deriving the same signal `make_anon_sub` used
+     (`collect_unattached_placeholders` on the closure's still-intact body)
+     and swapping in an `Expr::DoBlock`/direct
+     `emit_block_placeholder_die` call instead of compiling the closure:
+     `sink`/`start` in `src/compiler/expr_call.rs`, `.lazy`/`Eager` in
+     `src/compiler/expr.rs`, `supply` in
+     `src/parser/primary/ident/supply.rs` (the only one of the five handled
+     at parse time rather than compile time, because `supply {}` always
+     builds its own fixed-parameter `Expr::Lambda`, never an
+     `AnonSubParams`, so the placeholder is otherwise never looked at again).
+     `quietly {}` already had this exact `AnonSub`/`AnonSubParams` → `DoBlock`
+     pattern pre-existing (which is how it was already correct per the
+     evidence table); Phase 2 only had to extend `sink`'s matching arm to
+     cover `AnonSubParams` the same way.
+   - **Known gaps left for a follow-up, not blocking this phase:**
+     `race { }` (the bare, non-`for` statement-prefix form) has no dedicated
+     AST construct in mutsu at all — `race` parses as an ordinary bareword —
+     so it is unaddressed. `FIRST`/`NEXT`/`LAST`/`CLOSE` loop-scoped phasers
+     and a `CLOSE` phaser nested inside a `supply {}` block are extracted by
+     `expand_loop_phasers`/`rewrite_supply_stmt` into synthetic
+     `Stmt::Block`/closure shapes before ever reaching a `Stmt::Phaser`-typed
+     check, so a placeholder inside one of those specific four kinds still
+     leaks rather than rejecting. `PRE {}`/`POST {}` at the true top-level
+     mainline are not enforced by mutsu at all yet (a pre-existing gap
+     unrelated to this ADR — `PRE { False }` at the mainline does not die
+     either) so the placeholder check is correspondingly untestable there;
+     `t/placeholder-scope-rejecting.t` pins the sub-body form instead, where
+     `PRE`/`POST` are enforced and share the same primitive.
+   - Verified via a new `t/placeholder-scope-rejecting.t` (22 cases, one per
+     construct/kind) and a clean run of the full local `t/` suite (30788
+     tests; the only failure was the pre-existing, environment-specific
+     `t/compunit-can-install.t` test 4 already noted under Phase 1).
 3. **Shared bind emitter + arity error (D3).** Fixes multi-placeholder
    `if`/`given`, and `when` / bare `{}` via `ArgSupply::None`; retires the two
    ad-hoc bare-block strings.
 4. **`while`/`until`/`repeat` raw-condition supply (D4) and the signature
    clash (D5).**
-5. **Role/module classification (D7).**
+5. **Role classification (D7).** (`module`/`package`/`grammar` — the other
+   half of D7 — already landed in Phase 2 above.)
 
 ## Verification
 

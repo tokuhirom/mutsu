@@ -45,9 +45,19 @@ impl Compiler {
     /// signature-capable block), emit an `X::Placeholder::Block` die and return
     /// true. Used for class/role bodies, which do not take a signature.
     pub(super) fn emit_block_placeholder_die(&mut self, body: &[Stmt]) -> bool {
+        // A method always carries an implicit `*%_` (leftover named args),
+        // so `%_` is a valid lexical ANYWHERE in the method body -- including
+        // directly inside a nested NoSignature block (`try {}`, `loop {}`,
+        // ...), not just `do {}`. Mirrors the same exemption in
+        // `compile_do_block_expr` (`src/compiler/helpers_do_expr.rs`); see
+        // `t/placeholder-named-in-method-do.t` and the ADR-0048 Phase 2 fix
+        // this comment documents (DBIish's `DBIish::CommonTesting.
+        // connect-or-skip` calls `DBIish.connect($driver-name, |%_)` inside a
+        // `try {}`, which regressed without this exemption). `@_` is NOT
+        // exempted -- only a METHOD gets an implicit `*%_`, never `*@_`.
         if let Some(ph) = crate::ast::collect_unattached_placeholders(body)
             .into_iter()
-            .next()
+            .find(|ph| !(self.lexically_in_method && ph == "%_"))
         {
             let err = crate::method_signature_shared::placeholder_scope_error("block", &ph);
             let idx = self.code.add_constant(err);

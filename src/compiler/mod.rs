@@ -3301,6 +3301,14 @@ impl Compiler {
                 body,
             } = s
             {
+                // ADR-0048 Phase 2: `ENTER {}` does not take a signature in
+                // raku. This function is the only place an ENTER body is
+                // compiled (extracted from the enclosing block's statement
+                // list before `compile_stmt` ever sees the wrapping
+                // `Stmt::Phaser`), so the check lives here.
+                if self.emit_block_placeholder_die(body) {
+                    continue;
+                }
                 if last_is_enter && i == last_idx {
                     // Compile so the body's final statement leaves its value on the
                     // stack, then move it onto the ENTER-result stack.
@@ -3409,8 +3417,12 @@ impl Compiler {
                         self.code.patch_leave_guard_next(pg);
                     }
                     let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
-                    for inner in body {
-                        self.compile_stmt(inner);
+                    // ADR-0048 Phase 2: `LEAVE {}`/`KEEP {}` do not take a
+                    // signature in raku.
+                    if !self.emit_block_placeholder_die(body) {
+                        for inner in body {
+                            self.compile_stmt(inner);
+                        }
                     }
                     prev_guard = Some(guard_idx);
                 }
@@ -3430,8 +3442,12 @@ impl Compiler {
                         self.code.patch_leave_guard_next(pg);
                     }
                     let guard_idx = self.code.emit(OpCode::LeaveGuard { next: 0 });
-                    for inner in body {
-                        self.compile_stmt(inner);
+                    // ADR-0048 Phase 2: `LEAVE {}`/`UNDO {}` do not take a
+                    // signature in raku.
+                    if !self.emit_block_placeholder_die(body) {
+                        for inner in body {
+                            self.compile_stmt(inner);
+                        }
                     }
                     prev_guard = Some(guard_idx);
                 }

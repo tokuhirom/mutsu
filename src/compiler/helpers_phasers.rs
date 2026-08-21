@@ -4,6 +4,13 @@ impl Compiler {
     /// Compile a CHECK phaser body wrapped in error-catching logic.
     /// If the body throws, the error is wrapped in X::Comp::BeginTime.
     pub(super) fn compile_check_phaser(&mut self, body: &[Stmt]) {
+        // ADR-0048 Phase 2: BEGIN/CHECK do not take a signature in raku. This
+        // is the shared primitive both statement-position phaser kinds route
+        // through (see `stmt.rs`'s `Stmt::Phaser` arms), so the check lives
+        // here rather than at every caller.
+        if self.emit_block_placeholder_die(body) {
+            return;
+        }
         let start_idx = self.code.emit(OpCode::CheckPhaserStart { end_ip: 0 });
         // A `CATCH` in the phaser body handles that body's exceptions, including
         // ones thrown from a call inside it. Compiled inline into the enclosing
@@ -46,6 +53,15 @@ impl Compiler {
     /// true compile time (see `Compiler::compile_phaser_expr`), so it evaluates
     /// once at first use instead of once during parsing.
     pub(super) fn compile_check_phaser_value(&mut self, body: &[Stmt]) {
+        // ADR-0048 Phase 2: BEGIN does not take a signature in raku, whether
+        // in statement or (this function's) value/tail position — this is
+        // the shared primitive every tail-position `BEGIN` call site routes
+        // through (`helpers_block_inline.rs`, `helpers_control_flow.rs`,
+        // `helpers_sub_body.rs`), so the check lives here rather than at
+        // every caller.
+        if self.emit_block_placeholder_die(body) {
+            return;
+        }
         // Compiled exactly like the rvalue form (`Expr::PhaserExpr`), so a
         // statement-position `BEGIN` and an expression-position one share both
         // the value and the run-once contract: `BeginOnceExpr` memoizes the

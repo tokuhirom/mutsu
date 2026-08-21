@@ -2275,14 +2275,16 @@ pub(crate) enum PlaceholderBodyKind {
     /// No block of its own: descend, placeholders belong to the enclosing
     /// scope. Covers statement MODIFIERS (`if`/`for`/`given` with
     /// `is_statement_modifier: true`, which have no block at all — mirroring
-    /// the `For`/`Given` modifier rule below), and also `while`/`loop`/
-    /// `react`/bare `{}`-family statements/`when`/WhateverCode closures,
-    /// which mutsu currently (WRONGLY, per ADR-0048's raku audit) treats the
-    /// same way: they leak their placeholders to the enclosing scope instead
-    /// of raising `X::Placeholder::Block` or binding their own arity. Phase 1
-    /// is a pure refactor of the existing (partly wrong) behaviour into one
-    /// table; the wrong entries are corrected by ADR-0048's later phases, not
-    /// here.
+    /// the `For`/`Given` modifier rule below), and also `while`/bare
+    /// `{}`-family statements/`when`/`RoleDecl`/WhateverCode closures, which
+    /// mutsu currently (WRONGLY, per ADR-0048's raku audit) treats the same
+    /// way: they leak their placeholders to the enclosing scope (or, for
+    /// `RoleDecl`, over-reject) instead of matching raku's rule. Phase 1 was
+    /// a pure refactor of the existing (partly wrong) behaviour into one
+    /// table; Phase 2 corrected `loop`/`react`/`default`/`Catch`/`Control`/
+    /// `Phaser` (moved to `NoSignature`, see below); the remaining wrong
+    /// entries are corrected by ADR-0048's later phases (D3 for `when`/bare
+    /// `{}`'s *arity*, D7 for `RoleDecl`), not here.
     Transparent,
     /// A boundary that takes a signature; the construct supplies `ArgSupply`
     /// when it invokes its body. `if`/`elsif`/`unless`/`with`/`without`
@@ -2298,12 +2300,24 @@ pub(crate) enum PlaceholderBodyKind {
     /// classification.
     Signature(ArgSupply),
     /// A boundary that may not take a signature at all: a placeholder used
-    /// directly inside it is `X::Placeholder::Block`. No construct classifies
-    /// as this in Phase 1 (see the `DoBlock` note below); ADR-0048 Phase 2
-    /// moves `do {}` and more constructs (`loop`, `try`, `react`, `once`,
-    /// `default`, phasers, statement prefixes, `module`) into this variant,
-    /// reusing the `placeholder_scope_error("block", ph)` helper `do {}`'s
-    /// existing (separately-implemented) rejection already uses.
+    /// directly inside it is `X::Placeholder::Block`. `class`/`RoleDecl`
+    /// bodies fall to this variant via the catch-all below (RoleDecl is a
+    /// deliberate Phase-1 over-reject, corrected only in Phase 5/D7).
+    /// ADR-0048 Phase 2 moved `loop`, `try`, `react`, `once`, `default`,
+    /// `CATCH`/`CONTROL` (standalone, and `Stmt::Phaser`'s BEGIN/CHECK/INIT/
+    /// ENTER/END/PRE/POST kinds), `gather`, and `module`/`package`/`grammar`
+    /// into this variant too, each reusing the same
+    /// `placeholder_scope_error("block", ph)` helper `do {}`'s existing
+    /// (separately-implemented) rejection already used. The statement-prefix
+    /// group that desugars its body into a real closure at PARSE time
+    /// (`start`, `sink`, `supply`, `lazy`, `eager`) cannot be classified here
+    /// at all — by the time this oracle runs the placeholder has already been
+    /// consumed as that closure's own signature — so Phase 2 rejects those at
+    /// their compiler call sites instead (see the `emit_block_placeholder_die`
+    /// call sites in `src/compiler/expr_call.rs`/`expr.rs`/`supply.rs`), not
+    /// via this table. `race { }` (the bare, non-`for` statement-prefix form)
+    /// has no dedicated AST construct in mutsu at all yet — `race` parses as
+    /// an ordinary bareword, so it is left unaddressed by Phase 2.
     ///
     /// `do {}` (`Expr::DoBlock`) is *not* classified `NoSignature` here even
     /// though it already rejects a stray placeholder at runtime: that
@@ -2343,21 +2357,36 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
             ..
         } => PlaceholderBodyKind::Transparent,
         Stmt::For { .. } => PlaceholderBodyKind::Signature(ArgSupply::Elements),
-        Stmt::Loop { .. } | Stmt::React { .. } => PlaceholderBodyKind::Transparent,
+        // ADR-0048 Phase 2: `loop {}` (headerless and C-style) does not take
+        // a signature in raku — flip from the Phase-1 (wrong) `Transparent`
+        // classification to `NoSignature` via the catch-all below. `repeat
+        // {} while/until` (`repeat: true`) is a DIFFERENT construct that
+        // stays `Transparent` here: per the ADR's evidence table it IS
+        // signature-capable (`ArgSupply::ConditionAfterFirstPass` — `Mu` on
+        // the first pass, then the condition value), so it belongs with D4
+        // (Phase 4), not this rejecting set. Verified against `raku`:
+        // `repeat while $b < 10 { $tracker = $^a; $b++ }` does NOT reject
+        // `$^a` (pins `roast/S04-statements/repeat.t`'s "placeholders and
+        // 'repeat while' mix" subtest, which would otherwise regress).
+        Stmt::Loop { repeat: true, .. } => PlaceholderBodyKind::Transparent,
+        // `loop {}` (`repeat: false`, both headerless and C-style) and
+        // `react {}` fall through to the `NoSignature` catch-all below.
         // The `whenever` body is its own block scope, supplied the emitted
         // value (aliased as the topic) — but mutsu's shallow walks never
         // descend into it today (only the `supply` header is collected in
         // this scope), so this classification's practical effect in Phase 1
         // is identical to `NoSignature`: a boundary, body not visited here.
         Stmt::Whenever { .. } => PlaceholderBodyKind::Signature(ArgSupply::Topic),
-        Stmt::Block(_)
-        | Stmt::SyntheticBlock(_)
-        | Stmt::Default(_)
-        | Stmt::Catch(_)
-        | Stmt::Control(_)
-        | Stmt::RoleDecl { .. }
-        | Stmt::Phaser { .. }
-        | Stmt::When { .. } => PlaceholderBodyKind::Transparent,
+        // `Default`/`Catch`/`Control`/`Phaser` do not take a signature in
+        // raku either — ADR-0048 Phase 2 flips them to `NoSignature` via the
+        // catch-all below. `Block`/`SyntheticBlock` (the bare `{}` statement,
+        // D6) and `When` (D3) stay `Transparent`/pending later phases;
+        // `RoleDecl` stays `Transparent` too (a deliberate Phase-1
+        // over-reject via its own `emit_block_placeholder_die` call site —
+        // correcting it is Phase 5/D7, not here).
+        Stmt::Block(_) | Stmt::SyntheticBlock(_) | Stmt::RoleDecl { .. } | Stmt::When { .. } => {
+            PlaceholderBodyKind::Transparent
+        }
         Stmt::Given {
             is_statement_modifier: true,
             ..
@@ -2392,13 +2421,17 @@ pub(crate) fn placeholder_body_kind_expr(expr: &Expr) -> PlaceholderBodyKind {
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
             PlaceholderBodyKind::Signature(ArgSupply::CallerArgs)
         }
-        Expr::Block(_) | Expr::Gather(_) => PlaceholderBodyKind::Transparent,
+        // The bare `{}` term (D6, Phase 3) stays `Transparent`. `Gather`
+        // (`gather {}`) does NOT — ADR-0048 Phase 2 flips it to `NoSignature`
+        // via the catch-all below (raku: a placeholder inside `gather {}` is
+        // `X::Placeholder::Block`, not the enclosing block's own param).
+        Expr::Block(_) => PlaceholderBodyKind::Transparent,
         // Not `NoSignature` — see the long note on `PlaceholderBodyKind::NoSignature`
         // above: the chained-comparison desugar's synthetic `DoBlock` relies
         // on this leak to attach `$^p` to the enclosing block.
         Expr::DoBlock { .. } => PlaceholderBodyKind::Transparent,
-        Expr::Try { .. } => PlaceholderBodyKind::Transparent,
-        Expr::PhaserExpr { .. } | Expr::Once { .. } => PlaceholderBodyKind::Transparent,
+        // `Try`/`PhaserExpr`/`Once` do not take a signature in raku — ADR-0048
+        // Phase 2 flips them to `NoSignature` via the catch-all below.
         _ => PlaceholderBodyKind::NoSignature,
     }
 }
