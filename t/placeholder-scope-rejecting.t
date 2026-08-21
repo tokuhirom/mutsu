@@ -1,6 +1,6 @@
 use Test;
 
-plan 26;
+plan 27;
 
 # ADR-0048 Phase 2: constructs whose body may NOT take a signature.
 # `raku` gives the exact same `X::Placeholder::Block` for all of these
@@ -63,10 +63,13 @@ throws-like 'CHECK { $^c }', X::Placeholder::Block,
 throws-like 'INIT { $^c }', X::Placeholder::Block,
     'INIT {} rejects a placeholder';
 
-# PRE {}/POST {} at the true mainline are not currently enforced at all by
-# mutsu (a pre-existing gap unrelated to ADR-0048 -- `PRE { False }` at the
-# mainline does not die), so this pins the sub-body form instead, where PRE
-# is enforced and reaches the same `compile_pre_phasers` primitive.
+# PRE {}/POST {} at the true mainline used to be a silent no-op (see
+# `news/2026-08/pre-post-phasers-enforced-at-mainline.md`); now that they are
+# enforced, the mainline form goes through the same `compile_pre_phasers`
+# primitive as the sub-body form and rejects a placeholder the same way.
+throws-like 'PRE { $^c }', X::Placeholder::Block,
+    'PRE {} rejects a placeholder (mainline)';
+
 throws-like 'sub f { PRE { $^c }; 1 }; f()', X::Placeholder::Block,
     'PRE {} rejects a placeholder (sub body)';
 

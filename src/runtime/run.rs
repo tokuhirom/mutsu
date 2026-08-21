@@ -464,7 +464,7 @@ impl Interpreter {
         Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
         Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
-        let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
+        let (pre_ph, enter_ph, success_ph, failure_ph, post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run
         // even if the main body dies or throws an exception.
@@ -507,6 +507,52 @@ impl Interpreter {
                 })
                 .collect();
             body_main.splice(0..0, enter_stmts);
+        }
+        // Re-insert top-level PRE/POST phasers the same way (rather than
+        // discarding them, which previously made `PRE`/`POST` at the true
+        // mainline a silent no-op -- see
+        // `todo/tickets/pre-post-phasers-not-enforced-at-mainline.md`).
+        // `compile_stmt`'s own `Stmt::Phaser { kind: Pre | Post, .. }` arms
+        // (`src/compiler/stmt.rs`) already compile a correct inline
+        // `CheckPhaser` assertion wherever such a node appears -- the same
+        // mechanism used inside routine bodies -- so no new compiler wiring
+        // is needed, only making sure these nodes actually reach the
+        // compiler instead of being dropped here. Verified against real
+        // `raku`: a `PRE` runs before every other mainline statement (even
+        // ones textually preceding it) and a `POST` runs after all of them
+        // (even ones textually following it), so both are repositioned to
+        // the block boundary rather than left at their textual position.
+        if !pre_ph.is_empty() {
+            let pre_stmts: Vec<Stmt> = pre_ph
+                .into_iter()
+                .map(|s| {
+                    if let Stmt::Block(body) = s {
+                        Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Pre,
+                            body,
+                        }
+                    } else {
+                        s
+                    }
+                })
+                .collect();
+            body_main.splice(0..0, pre_stmts);
+        }
+        if !post_ph.is_empty() {
+            let post_stmts: Vec<Stmt> = post_ph
+                .into_iter()
+                .map(|s| {
+                    if let Stmt::Block(body) = s {
+                        Stmt::Phaser {
+                            kind: crate::ast::PhaserKind::Post,
+                            body,
+                        }
+                    } else {
+                        s
+                    }
+                })
+                .collect();
+            body_main.extend(post_stmts);
         }
         // Run top-level BEGIN phasers at compile time (before the mainline), so
         // reads textually preceding a BEGIN see its side effects. Removes the
@@ -643,11 +689,16 @@ impl Interpreter {
     /// throw where Raku does not. A bare variable or an assignment keeps the
     /// value container-wrapped and never auto-sinks either.
     fn tail_stmt_sinks_fresh_rvalue(stmts: &[Stmt]) -> bool {
-        // Trailing `SetLine` markers are not statements.
+        // Trailing `SetLine` markers are not statements. A trailing
+        // `Stmt::Phaser` is also not the program's real tail statement: a
+        // top-level `POST { ... }` is repositioned to the very end of
+        // `body_main` regardless of its original textual position (see
+        // `run()`'s PRE/POST re-splicing), so it must not shadow the actual
+        // last value-producing statement that precedes it.
         stmts
             .iter()
             .rev()
-            .find(|s| !matches!(s, Stmt::SetLine(_)))
+            .find(|s| !matches!(s, Stmt::SetLine(_) | Stmt::Phaser { .. }))
             .is_some_and(Self::stmt_tail_is_fresh_rvalue)
     }
 
