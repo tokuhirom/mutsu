@@ -2478,6 +2478,19 @@ impl Interpreter {
                             args.len(),
                             false,
                         );
+                        // Seed the synthetic binding with the current storage
+                        // BEFORE dispatching: methods like `ASSIGN-POS`/`BIND-POS`/
+                        // `DELETE-POS` mutate by scanning `self.env` for a binding
+                        // whose Array Arc pointer identity matches the receiver
+                        // (`overwrite_array_bindings_by_identity`) rather than
+                        // returning an updated value through `target_var`. A real
+                        // named `@a.ASSIGN-POS(...)` call works because `@a` is
+                        // already bound in `self.env` with that same Arc; without
+                        // this seed, `"__mutsu_array_tmp"` was never in `self.env`
+                        // at call time, so the identity scan found nothing and the
+                        // mutation silently no-op'd.
+                        self.env_mut()
+                            .insert("__mutsu_array_tmp".to_string(), storage.clone());
                         let result = loan_env!(
                             self,
                             call_method_mut_with_values(
