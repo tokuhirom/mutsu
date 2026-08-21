@@ -595,6 +595,18 @@ impl Interpreter {
         } else {
             Value::TRUE
         };
+        // Gather the declaration's own initializer value BEFORE any trait
+        // dispatch below can replace it (the compiler always emits the
+        // initializer's `SetLocal` before this trait op runs — see
+        // compiler/stmt.rs ~1709-1719). If the trait handler below mixes in a
+        // role with a `STORE` method (e.g. `Hash::Restricted`'s `is
+        // restricted`, via `trait_mod:<does>` called from *inside* the
+        // handler), this raw value is re-fed through that STORE afterwards
+        // (see `refeed_store_after_var_trait`), matching real Raku's
+        // declaration-time dispatch.
+        let init_source_for_store = self
+            .read_local_slot_or_name(code, slot, name)
+            .or_else(|| self.get_env_with_main_alias(name));
         let target = self.env().get(name).cloned().unwrap_or(Value::NIL);
         // CARRIER: `.VAR` pseudo-method + `trait_mod:<is>` metaprogramming hook
         // (reflective container object + user trait handler). See ledger §C.
@@ -624,6 +636,7 @@ impl Interpreter {
                     self.write_local_slot_or_name(code, eff_slot, &name_owned, mixed.clone());
                     self.set_env_with_main_alias(&name_owned, mixed);
                 }
+                self.refeed_store_after_var_trait(code, eff_slot, name, init_source_for_store)?;
                 Ok(())
             }
             // No user candidate accepted this trait. `Test.rakumod` exports
@@ -641,6 +654,78 @@ impl Interpreter {
             }
             Err(e) => Err(e),
         }
+    }
+
+    /// Generalizes the `is ClassName` STORE-re-feed compensation above
+    /// (~500-559) to the generic `trait_mod:<is>`-dispatched custom-trait
+    /// case: that block only fires when the trait name IS ITSELF a
+    /// registered class/role (`self.registry().classes`/`roles.contains_key`),
+    /// which never matches a user-declared custom trait like
+    /// `Hash::Restricted`'s `is restricted` — a multi candidate that mixes a
+    /// role into the variable indirectly via `trait_mod:<does>` (see
+    /// `vm_trait_mod_does_ops::apply_trait_mod_does`).
+    ///
+    /// If the value now bound to the variable is a `Mixin` whose composed
+    /// role(s) declare a public `STORE` method, re-feed the declaration's
+    /// own initializer value (`init_source`, gathered by the caller BEFORE
+    /// any trait dispatch ran) through that `STORE` with `:INITIALIZE`,
+    /// mirroring real Raku's declaration-time dispatch. The underlying
+    /// container was already populated by the compiler's plain `SetLocal`
+    /// before this trait op ran, so this call exists for the role's STORE
+    /// side effects (e.g. auto-populating role state from the initial
+    /// data) — the result is only written back when it is itself
+    /// tie-bindable (mirrors `tied_store_dispatch`'s own fallback), so a
+    /// `STORE` that merely `callsame`s into an untracked default (returning
+    /// Nil) leaves the already-correct container value untouched.
+    fn refeed_store_after_var_trait(
+        &mut self,
+        code: &CompiledCode,
+        eff_slot: Option<u32>,
+        name: &str,
+        init_source: Option<Value>,
+    ) -> Result<(), RuntimeError> {
+        let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
+            Some(ValueView::Hash(h)) if !h.is_empty() => h
+                .iter()
+                .map(|(k, v)| Value::pair(k.clone(), v.clone()))
+                .collect(),
+            Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
+            Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
+            Some(ValueView::Slip(s)) if !s.is_empty() => s.iter().cloned().collect(),
+            _ => Vec::new(),
+        };
+        if init_values.is_empty() {
+            return Ok(());
+        }
+        let current = self
+            .read_local_slot_or_name(code, eff_slot, name)
+            .or_else(|| self.get_env_with_main_alias(name));
+        let Some(current) = current else {
+            return Ok(());
+        };
+        let has_store = match current.view() {
+            ValueView::Mixin(_, mixins) => mixins.keys().any(|k| {
+                k.strip_prefix("__mutsu_role__").is_some_and(|role_name| {
+                    self.has_user_method_including_role(role_name, "STORE")
+                })
+            }),
+            _ => false,
+        };
+        if !has_store {
+            return Ok(());
+        }
+        let list_arg = Value::array(init_values);
+        let stored = self.try_compiled_method_or_interpret(
+            current,
+            "STORE",
+            vec![list_arg, Value::pair("INITIALIZE".to_string(), Value::TRUE)],
+        )?;
+        if Self::is_tie_bindable(&stored) {
+            let name_owned = name.to_string();
+            self.write_local_slot_or_name(code, eff_slot, &name_owned, stored.clone());
+            self.set_env_with_main_alias(&name_owned, stored);
+        }
+        Ok(())
     }
 
     /// Whether `e` is the "none of these signatures matches" verdict for
