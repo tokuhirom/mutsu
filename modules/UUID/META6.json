@@ -1,0 +1,12 @@
+{
+    "perl" : "6.*",
+    "name" : "UUID",
+    "version" : "1.0.0",
+    "author" : "github:retupmoca",
+    "description" : "UUID Generator",
+    "depends" : [],
+    "provides" : {
+        "UUID" : "lib/UUID.pm6"
+    },
+    "source-url" : "git://github.com/retupmoca/P6-UUID.git"
+}

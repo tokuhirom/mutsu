@@ -183,6 +183,12 @@ SIDECAR = {
         "slot": "JSON (reference / Grammar+Actions)",
         "record": "docs/batteries/json-tiny.md",
     },
+    "UUID": {
+        "slot": "UUID generation",
+        "record": "docs/batteries/uuid.md",
+        # META6.json has no license key; the dist ships an MIT LICENSE file.
+        "license": "MIT",
+    },
 }
 
 
