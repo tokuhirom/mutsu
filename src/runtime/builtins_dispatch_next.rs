@@ -392,6 +392,93 @@ impl Interpreter {
         })?
     }
 
+    /// The Associative twin of [`Self::native_array_storage_next_candidate`]:
+    /// when a user `is Hash`/`is Map` subclass overrides an Associative
+    /// protocol method (`AT-KEY`/`ASSIGN-KEY`/`DELETE-KEY`/...) and calls
+    /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE hash
+    /// behavior on the instance's backing `__mutsu_hash_storage` is the final
+    /// base candidate.
+    fn native_hash_storage_next_candidate(
+        &mut self,
+        override_args: Option<&[Value]>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ctx = self.samewith_context_stack.last().cloned();
+        let method_name = ctx.as_ref().map(|c| c.name.clone())?;
+        let invocant = self
+            .method_dispatch_stack
+            .last()
+            .map(|f| f.invocant.clone())
+            .or_else(|| ctx.as_ref().and_then(|c| c.invocant.clone()))
+            .or_else(|| self.env.get("self").cloned())?;
+        let args: Vec<Value> = match override_args {
+            Some(a) => a.to_vec(),
+            None => self
+                .method_dispatch_stack
+                .last()
+                .map(|f| f.args.clone())
+                .or_else(|| ctx.as_ref().and_then(|c| c.args.clone()))
+                .unwrap_or_default(),
+        };
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = invocant.view()
+        else {
+            return None;
+        };
+        if !attributes.contains_key("__mutsu_hash_storage")
+            || !self
+                .mro_readonly(&class_name.resolve())
+                .iter()
+                .any(|n| Self::is_associative_base(n))
+        {
+            return None;
+        }
+        // Mutating key methods write into the SHARED backing storage in
+        // place (interior mutability via `with_attr_mut`), mirroring the
+        // Array analog's simple-mutator fast path.
+        if matches!(method_name.as_str(), "ASSIGN-KEY" | "DELETE-KEY") && !args.is_empty() {
+            let key = args[0].to_string_value();
+            let is_assign = method_name == "ASSIGN-KEY";
+            let value = if is_assign {
+                args.get(1).cloned().unwrap_or(Value::NIL)
+            } else {
+                Value::NIL
+            };
+            let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
+                storage.with_hash_mut(|gc| {
+                    let data = crate::value::gc_data_mut(gc);
+                    if is_assign {
+                        data.insert(key.clone(), value.clone());
+                    } else {
+                        data.remove(&key);
+                    }
+                })
+            });
+            outcome?;
+            return Some(Ok(value));
+        }
+        if matches!(method_name.as_str(), "push" | "append") {
+            let outcome = attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
+                storage.with_hash_mut(|gc| {
+                    let data = crate::value::gc_data_mut(gc);
+                    for arg in &args {
+                        if let ValueView::Pair(k, v) = arg.view() {
+                            data.insert(k.to_string(), v.clone());
+                        }
+                    }
+                })
+            });
+            outcome?;
+            return Some(Ok(invocant.clone()));
+        }
+        let method_sym = Symbol::intern(&method_name);
+        attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
+            self.try_native_method(storage, method_sym, &args)
+        })?
+    }
+
     /// When a role mixed directly into a native builtin value (`%h does R`,
     /// `@a does R`, `"x" does R`, ...) overrides a method and calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`), the NATIVE method on
@@ -680,6 +767,10 @@ impl Interpreter {
                         res?
                     } else if let Some(res) =
                         self.native_array_storage_next_candidate(override_args.as_deref())
+                    {
+                        res?
+                    } else if let Some(res) =
+                        self.native_hash_storage_next_candidate(override_args.as_deref())
                     {
                         res?
                     } else if let Some(res) =
@@ -1240,6 +1331,15 @@ impl Interpreter {
         // The native array behavior on the backing `__mutsu_array_storage` is
         // still the correct base candidate.
         if let Some(res) = self.native_array_storage_next_candidate(override_args.as_deref()) {
+            let result = res?;
+            if tail_call {
+                return Err(RuntimeError::return_signal(result));
+            }
+            return Ok(result);
+        }
+        // Same no-frame shape as above, for an `is Hash`/`is Map` subclass's
+        // Associative override (`method AT-KEY($k) { nextwith $k.lc }`).
+        if let Some(res) = self.native_hash_storage_next_candidate(override_args.as_deref()) {
             let result = res?;
             if tail_call {
                 return Err(RuntimeError::return_signal(result));

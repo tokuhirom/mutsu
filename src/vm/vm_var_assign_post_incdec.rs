@@ -530,6 +530,44 @@ impl Interpreter {
                 .push(if return_new { new_val } else { effective });
             return Ok(());
         }
+        // `$h<a>++` / `$h<a>--` on an `is Hash`/`is Map` subclass instance held
+        // in a scalar: inc/dec the value at the backing `__mutsu_hash_storage`
+        // key in place, mirroring the Array-storage block above.
+        if let Some(cont) = container.clone()
+            && let ValueView::Instance { attributes, .. } = cont.view()
+            && attributes.contains_key("__mutsu_hash_storage")
+        {
+            let storage = attributes
+                .as_map()
+                .get("__mutsu_hash_storage")
+                .cloned()
+                .unwrap_or_else(|| Value::hash(std::collections::HashMap::new()));
+            let old = match storage.view() {
+                ValueView::Hash(map) => map.get(&key).cloned().unwrap_or(Value::NIL),
+                _ => Value::NIL,
+            };
+            let effective = Self::normalize_incdec_source(if old.is_nil() {
+                self.var_default(&name)
+                    .cloned()
+                    .filter(|d| !d.is_nil())
+                    .unwrap_or(Value::int(0))
+            } else {
+                old
+            });
+            let new_val = if increment {
+                self.increment_value_smart(&effective)?
+            } else {
+                self.decrement_value_smart(&effective)?
+            };
+            attributes.with_attr_mut("__mutsu_hash_storage", |st| {
+                st.with_hash_mut(|gc| {
+                    crate::value::gc_data_mut(gc).insert(key.clone(), new_val.clone());
+                });
+            });
+            self.stack
+                .push(if return_new { new_val } else { effective });
+            return Ok(());
+        }
         // `$c[0]++` / `$c<a>++` on a Capture: when the element is a shared
         // `ContainerRef` cell (built from `\($a)` / `\(:$a)`), increment *through*
         // the cell so the original variable observes the change. The generic

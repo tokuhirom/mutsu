@@ -755,6 +755,29 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `$h1{"a"} = 1` / `$h1{"a"} := $x` on an `is Hash`/`is Map` subclass
+        // instance held in a scalar: delegate through ASSIGN-KEY/BIND-KEY on
+        // the backing `__mutsu_hash_storage`, instead of falling through to
+        // the plain-Hash coercion further below (which would REPLACE the
+        // instance with a fresh Hash, losing its class identity — the
+        // Associative twin of the positional block above).
+        if !is_positional
+            && let Some(inst) = self.env().get(&var_name).cloned()
+            && matches!(inst.view(), ValueView::Instance { .. })
+        {
+            let key_val = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let method = if bind_mode { "BIND-KEY" } else { "ASSIGN-KEY" };
+            let delegate_args = [key_val, val.clone()];
+            if let Some(result) =
+                self.try_hash_storage_delegate_mut(&var_name, &inst, method, &delegate_args)
+            {
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
         // Map containers are immutable - prevent assignment and binding to keys.
         // A `constant %M = (a => 1)` is now a Map (declared_type "Map"), but its
         // element assignment must die with the VALUE-level X::Assignment::RO

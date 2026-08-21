@@ -340,6 +340,15 @@ impl Interpreter {
                     return native_result;
                 }
             }
+            // Hash-subclass instance delegation: the Associative twin of the
+            // Array-subclass delegation just above — this is what makes a
+            // subscript read (`$h2<a>` → AT-KEY, see `vm_var_index_ops.rs`)
+            // on an `is Hash` Instance reach the backing
+            // `__mutsu_hash_storage` instead of returning Nil.
+            if let Some(result) = self.try_hash_storage_delegate(&target, method_sym, &args) {
+                self.method_dispatch_pure = true;
+                return result;
+            }
             // A user-defined subclass of a builtin type may override an inherited
             // native method (e.g. `class IO::Blob is IO::Handle { method get {…} }`).
             // The user override must win, so do not take the native fork when the

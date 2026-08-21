@@ -2286,6 +2286,39 @@ impl Interpreter {
                     let storage = self.positional_base_storage(class_key, Vec::new());
                     attrs.insert("__mutsu_array_storage".to_string(), storage);
                 }
+                // If the class inherits from Hash or Map, add backing storage
+                // populated from any constructor Pair args that do not name a
+                // declared attribute (mirrors the Array/List block above).
+                // Raku's `Hash.new(a => 1, b => 2)` populates the hash's own
+                // key/value storage, not generic "attributes" — but the named-arg
+                // loop above (shared with every other class, including the
+                // attribute-bag classes like `X::AdHoc`) already stored every
+                // such Pair as a generic attribute since Bar/`class Bar is Hash {}`
+                // declares no attributes of its own, so those bogus entries are
+                // removed here in favor of real storage.
+                if self
+                    .class_mro(class_key)
+                    .iter()
+                    .any(|n| *n == "Hash" || *n == "Map")
+                    && !attrs.contains_key("__mutsu_hash_storage")
+                {
+                    let declared: std::collections::HashSet<&str> =
+                        class_attrs_info.iter().map(|a| a.name.as_str()).collect();
+                    let hash_pairs: Vec<Value> = args
+                        .iter()
+                        .filter(|a| {
+                            matches!(a.view(), ValueView::Pair(k, _) if !declared.contains(k.as_str()))
+                        })
+                        .cloned()
+                        .collect();
+                    for pair in &hash_pairs {
+                        if let ValueView::Pair(k, _) = pair.view() {
+                            attrs.remove(k.as_str());
+                        }
+                    }
+                    let storage = self.associative_base_storage(class_key, hash_pairs);
+                    attrs.insert("__mutsu_hash_storage".to_string(), storage);
+                }
                 // Tag typed `@`/`%` attributes (`has Int @.nums`) with
                 // element-type metadata and type-check their elements (the
                 // variable path `my Int @a` does the same). The element type

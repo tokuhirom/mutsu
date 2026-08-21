@@ -421,6 +421,55 @@ impl Interpreter {
         }
     }
 
+    /// True for the two builtin bases whose subclasses keep their entries in
+    /// the instance's `__mutsu_hash_storage` and delegate Associative
+    /// methods to it: `Hash` and `Map`. Mirrors [`Self::is_positional_base`].
+    ///
+    /// `class C is Hash { }` (and, less commonly, `class C is Map { }`) needs
+    /// the same treatment `is Array`/`is List` subclasses already get: the
+    /// instance's key/value data lives in the backing storage and every
+    /// Associative-protocol method (`AT-KEY`, `keys`, `.raku`, ...) answers
+    /// from it instead of the generic attribute bag.
+    pub(crate) fn is_associative_base(name: &str) -> bool {
+        name == "Hash" || name == "Map"
+    }
+
+    /// The backing store a fresh `is Hash`/`is Map` subclass instance gets,
+    /// seeded from `pairs` (constructor `Pair` args that do not name a
+    /// declared attribute). A `Map` subclass that is not ALSO an `is Hash`
+    /// subclass (`Hash` extends `Map`, so its own MRO always contains both)
+    /// is backed by an immutable Map — `%m<a> = 1` on it must still raise
+    /// like raku's `X::Assignment::RO`, matching how
+    /// [`Self::positional_base_storage`] picks an immutable `List` over a
+    /// mutable `Array` for an `is List`-but-not-`is Array` subclass.
+    pub(crate) fn associative_base_storage(&mut self, class_key: &str, pairs: Vec<Value>) -> Value {
+        let mut map = HashMap::new();
+        for item in pairs {
+            match item.view() {
+                ValueView::Pair(k, v) => {
+                    map.insert(k.to_string(), v.clone());
+                }
+                ValueView::ValuePair(k, v) => {
+                    map.insert(k.to_string_value(), v.clone());
+                }
+                _ => {}
+            }
+        }
+        let result = Value::hash(map);
+        if self.class_mro(class_key).iter().any(|n| n == "Hash") {
+            result
+        } else {
+            self.tag_container_metadata(
+                result,
+                super::ContainerTypeInfo {
+                    value_type: String::new(),
+                    key_type: None,
+                    declared_type: Some("Map".to_string()),
+                },
+            )
+        }
+    }
+
     pub(crate) fn clear_closure_captured_state_for(&mut self, id: u64) {
         self.closure_captured_state
             .retain(|(entry_id, _), _| *entry_id != id);

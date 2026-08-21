@@ -2520,6 +2520,25 @@ impl Interpreter {
                         return Ok(());
                     }
                 }
+                // Hash-subclass instance delegation (mut path): the Associative
+                // twin of the Array-subclass delegation block just above. See
+                // `vm_hash_subclass_delegate.rs` for why this reuses the
+                // existing native Hash dispatch (via a synthetic env binding)
+                // instead of hand-written Rust mutators.
+                if let Some(result) =
+                    self.try_hash_storage_delegate_mut(&target_name, &target, &method, &args)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "native");
+                    self.shadow_check_native_row_candidate(
+                        &target,
+                        &method,
+                        method_sym,
+                        args.len(),
+                        true,
+                    );
+                    self.stack.push(result?);
+                    return Ok(());
+                }
                 // NOTE: No Nil absorber here for CallMethodMut. Unlike CallMethod
                 // (which handles direct Nil.method calls), CallMethodMut targets
                 // are from variables. Uninitialized variables in mutsu are Nil
