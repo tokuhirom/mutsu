@@ -1475,10 +1475,8 @@ impl Interpreter {
                 // binding survives method returns (env restore) without
                 // reverting to a stale value (same as the scalar path below).
                 // See `propagate_bind_to_ancestor_frames`'s doc comment for
-                // why the `saved_locals` half of this is a no-op outside
-                // same-function recursion, and what actually carries the
-                // binding in the general case.
-                self.propagate_bind_to_ancestor_frames(&effective_source, code, &container);
+                // what actually carries the binding across the call chain.
+                self.propagate_bind_to_ancestor_frames(&effective_source, &container);
                 self.set_env_with_main_alias(name, container.clone());
                 self.flush_local_to_env(code, idx);
                 return Ok(());
@@ -1549,14 +1547,12 @@ impl Interpreter {
                 // Update source in env
                 self.env_mut()
                     .insert(resolved_source.clone(), container.clone());
-                // Propagate ContainerRef to all saved call frame envs AND locals
-                // so the binding survives method returns (env restore) and a
-                // later restore doesn't overwrite with stale values. See
-                // `propagate_bind_to_ancestor_frames`'s doc comment for why
-                // the `saved_locals` half of this is a no-op outside
-                // same-function recursion, and what actually carries the
-                // binding in the general case.
-                self.propagate_bind_to_ancestor_frames(&resolved_source, code, &container);
+                // Propagate ContainerRef to all saved call frame envs so the
+                // binding survives method returns (env restore) and a later
+                // restore doesn't overwrite with stale values. See
+                // `propagate_bind_to_ancestor_frames`'s doc comment for what
+                // actually carries the binding across the call chain.
+                self.propagate_bind_to_ancestor_frames(&resolved_source, &container);
                 // Propagate ContainerRef to aliased attribute locals (e.g., when
                 // binding sigilless `$x`, also update `!x` so attribute writeback picks it up).
                 let alias_key_for_target = format!("__mutsu_sigilless_alias::{}", name);
