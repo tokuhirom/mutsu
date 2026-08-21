@@ -1190,7 +1190,16 @@ impl Compiler {
         // sink: evaluate the expression (including calling blocks), discard result, push Nil
         else if name == "sink" && args.len() == 1 {
             match &args[0] {
-                Expr::AnonSub { body, .. } => {
+                // ADR-0048 Phase 2: `sink {}` does not take a signature in
+                // raku. A bare `{ $^c }` argument was parsed (before this
+                // point) directly into `AnonSubParams` with the placeholder
+                // already consumed as that closure's own parameter — mirror
+                // the plain `AnonSub` arm below (both route through
+                // `DoBlock`, which rejects a stray placeholder in its body)
+                // instead of falling to the generic `_` arm, which would
+                // compile it as a genuine arity-N closure and merely sink the
+                // closure *value* itself.
+                Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
                     // sink { ... } -- execute the block body inline via do block
                     let do_block = Expr::DoBlock {
                         body: body.clone(),
@@ -1212,6 +1221,26 @@ impl Compiler {
                     self.code.emit(OpCode::LoadNil);
                 }
             }
+        }
+        // ADR-0048 Phase 2: `start {}` does not take a signature in raku. A
+        // bare `{ $^c }` argument was parsed (before this point) directly
+        // into `AnonSubParams` with the placeholder already consumed as that
+        // closure's own parameter, so `placeholder_body_kind_expr` never
+        // sees a `start`-shaped body to classify. Detect the same shape here
+        // instead — `body` still literally contains the caret reference, so
+        // re-deriving it with `collect_unattached_placeholders` reconstructs
+        // the signal `make_anon_sub` used at parse time — and die immediately
+        // rather than falling through to the generic `CallFunc` path below,
+        // which would otherwise compile it as a genuine arity-N closure and
+        // hand it to a thread. Only fires when a placeholder is actually
+        // present; a normal `start { ... }` (no placeholder, or an explicit
+        // `sub { ... }`/named closure argument, which stays `Expr::AnonSub`/
+        // some other shape) falls through unchanged.
+        else if name == "start"
+            && args.len() == 1
+            && let Expr::AnonSubParams { body, .. } = &args[0]
+            && self.emit_block_placeholder_die(body)
+        {
         }
         // quietly: suppress warnings raised while evaluating the expression, but
         // run it INLINE in the current scope (so `quietly my $x = ...` leaks $x),

@@ -564,6 +564,16 @@ impl Interpreter {
         if has_decl {
             return false;
         }
+        // ADR-0048 Phase 2: a top-level BEGIN whose body uses a `$^name`
+        // placeholder must reach the normal compile path (which rejects it
+        // with `X::Placeholder::Block`) rather than being pre-run here via
+        // `eval_block_value` — that re-entrant evaluator compiles `body`
+        // directly (the `Stmt::Phaser` wrapper this check normally hangs off
+        // is already gone by the time it runs), so it would silently accept
+        // the placeholder as an ordinary bareword instead of rejecting it.
+        if !crate::ast::collect_unattached_placeholders(body).is_empty() {
+            return false;
+        }
         let debug = format!("{body:?}");
         !debug.contains("BareWord(") && !debug.contains("Call")
     }

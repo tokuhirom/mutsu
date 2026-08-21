@@ -540,6 +540,24 @@ impl Compiler {
                     self.compile_expr_method_generic(target, name, args, &None, false);
                 }
             }
+            // ADR-0048 Phase 2: `lazy {}` does not take a signature in raku.
+            // `lazy EXPR` parses to `EXPR.lazy` (see `parser/expr/postfix/
+            // loop_.rs`), so a bare `{ $^c }` operand reaches here as
+            // `target` already parsed into `AnonSubParams` — same shape and
+            // same reasoning as `Expr::Eager` above.
+            Expr::MethodCall {
+                target, name, args, ..
+            } if name.resolve().as_str() == "lazy"
+                && args.is_empty()
+                && matches!(target.as_ref(), Expr::AnonSubParams { .. }) =>
+            {
+                let Expr::AnonSubParams { body, .. } = target.as_ref() else {
+                    unreachable!()
+                };
+                if !self.emit_block_placeholder_die(body) {
+                    self.compile_expr_method_generic(target, name, args, &None, false);
+                }
+            }
             // Method call on non-variable target (no writeback needed)
             Expr::MethodCall {
                 target,
@@ -800,6 +818,11 @@ impl Compiler {
                 let op_idx = self.code.add_constant(Value::str(op.clone()));
                 self.code.emit(OpCode::Reduction(op_idx));
             }
+            // ADR-0048 Phase 2: a phaser-as-expression / `once {}` body does
+            // not take a signature in raku, same as its statement-form
+            // sibling.
+            Expr::PhaserExpr { body, .. } | Expr::Once { body }
+                if self.emit_block_placeholder_die(body) => {}
             // Phaser expression (INIT/CHECK/END as rvalue)
             Expr::PhaserExpr { kind, body } => {
                 self.compile_expr_phaser(kind, body);
@@ -825,6 +848,11 @@ impl Compiler {
             | Expr::InfixFunc { .. } => {
                 self.compile_expr_op(expr);
             }
+            // ADR-0048 Phase 2: `try {}` does not take a signature in raku.
+            // Only the try's OWN main body is checked here; a nested
+            // `CATCH`/`CONTROL` phaser body is checked separately inside
+            // `compile_try_region` after it is extracted.
+            Expr::Try { body, .. } if self.emit_block_placeholder_die(body) => {}
             Expr::Try { body, catch } => {
                 self.compile_try(body, catch);
             }
@@ -836,6 +864,10 @@ impl Compiler {
             Expr::DoStmt(stmt) => {
                 self.compile_expr_do_stmt(stmt);
             }
+            // ADR-0048 Phase 2: `gather {}` does not take a signature in raku
+            // (unlike the bare `{}` term/routine bodies): a `$^c` inside it
+            // is `X::Placeholder::Block`.
+            Expr::Gather(body) if self.emit_block_placeholder_die(body) => {}
             Expr::Gather(_) => {
                 if let Expr::Gather(body) = expr {
                     let idx = self.code.add_stmt(Stmt::Block(body.clone()));
@@ -848,7 +880,22 @@ impl Compiler {
                     self.code.emit(OpCode::MakeGather(idx, Some(cc_idx)));
                 }
             }
+            // ADR-0048 Phase 2: `eager {}` does not take a signature in raku.
+            // A bare `{ $^c }` operand is parsed (at parse time, before this
+            // oracle ever runs) directly into `Expr::AnonSubParams` with the
+            // placeholder already consumed as that closure's own parameter —
+            // so this cannot be caught via `placeholder_body_kind_expr`
+            // (there is no `Expr::Eager`-shaped body left to classify by the
+            // time compilation reaches it). Detect the same shape here
+            // instead: `inner`'s own body still literally contains the caret
+            // reference, so re-deriving it with `collect_unattached_placeholders`
+            // reconstructs the same signal `make_anon_sub` used at parse time.
             Expr::Eager(inner) => {
+                if let Expr::AnonSubParams { body, .. } = inner.as_ref()
+                    && self.emit_block_placeholder_die(body)
+                {
+                    return;
+                }
                 self.compile_expr(inner);
                 self.code.emit(OpCode::Eager);
             }

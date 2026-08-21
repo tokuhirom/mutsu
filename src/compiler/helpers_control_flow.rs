@@ -647,6 +647,25 @@ impl Compiler {
                 }
             }
         }
+        // ADR-0048 Phase 2: a standalone `CATCH {}`/`CONTROL {}` phaser body
+        // does not take a signature in raku. Checked here (after extraction
+        // from `body`, for both a genuine `try {}` and any other block that
+        // merely contains one of these phasers) rather than at the
+        // `Stmt::Catch`/`Stmt::Control` catch-all no-op arm in
+        // `compile_stmt`, since that arm is only reached for an orphan
+        // phaser this extraction never sees.
+        if let Some(ref catch_body) = catch_stmts
+            && self.emit_block_placeholder_die(catch_body)
+        {
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
+        if let Some(ref control_body) = control_stmts
+            && self.emit_block_placeholder_die(control_body)
+        {
+            self.pop_dynamic_scope_lexical(saved);
+            return;
+        }
         let has_explicit_catch = catch_stmts.is_some();
         let resume_safe = control_stmts
             .as_deref()

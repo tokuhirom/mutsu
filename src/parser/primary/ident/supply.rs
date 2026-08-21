@@ -5,6 +5,19 @@ use crate::symbol::Symbol;
 static SUPPLY_EMITTER_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
+    // ADR-0048 Phase 2: `supply {}` does not take a signature in raku. Unlike
+    // `start`/`sink` (which wrap their body via `make_anon_sub`, consuming a
+    // stray placeholder as that closure's own parameter), `supply {}` always
+    // builds its own `Expr::Lambda` below with a fixed (non-placeholder)
+    // parameter — the emitter — so a `$^c` written in the source body is
+    // still literally present here. Detect it directly and hand back a
+    // `DoBlock`, whose compiler already rejects a stray placeholder with
+    // `X::Placeholder::Block`, instead of building the on-demand Lambda
+    // (which would otherwise silently let `$^c` read `Any` at runtime, since
+    // nothing ever binds it).
+    if !crate::ast::collect_unattached_placeholders(&body).is_empty() {
+        return Expr::DoBlock { body, label: None };
+    }
     // Each `supply { ... }` block gets a UNIQUE emitter variable name. The
     // emitter is bound as the on-demand lambda's parameter and `emit` is
     // rewritten to `$emitter.emit(...)`. A shared name would be clobbered when

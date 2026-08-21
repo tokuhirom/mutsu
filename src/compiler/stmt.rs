@@ -2599,6 +2599,22 @@ impl Compiler {
                     self.code.emit(OpCode::RestoreForParam);
                 }
             }
+            // ADR-0048 Phase 2: `loop {}` (headerless and C-style) does not
+            // take a signature in raku. `repeat: true` (`repeat {}
+            // while/until`) is deliberately EXCLUDED here — it is a
+            // different, signature-capable construct (D4/Phase 4; see the
+            // oracle's doc comment on `Stmt::Loop { repeat: true, .. }` in
+            // `src/ast.rs`) — matching real `raku`, which does NOT reject a
+            // placeholder in a `repeat` body
+            // (`roast/S04-statements/repeat.t`'s "placeholders and 'repeat
+            // while' mix" subtest). Guard placed before both real
+            // `Stmt::Loop` arms (this one and the repeat-loop arm further
+            // below), mirroring the existing `ClassDecl`/`RoleDecl` pattern.
+            Stmt::Loop {
+                body,
+                repeat: false,
+                ..
+            } if self.emit_block_placeholder_die(body) => {}
             // C-style loop (non-repeat, no phasers)
             Stmt::Loop {
                 init,
@@ -3149,6 +3165,12 @@ impl Compiler {
                 }
                 self.code.patch_body_end(when_idx);
             }
+            // ADR-0048 Phase 2: `default {}` does not take a signature in
+            // raku (`$^c` used directly inside one is `X::Placeholder::Block`,
+            // even though `default` itself binds the topic). Guard placed
+            // before the real `Stmt::Default` arm below, mirroring the
+            // existing `ClassDecl`/`RoleDecl` pattern.
+            Stmt::Default(body) if self.emit_block_placeholder_die(body) => {}
             Stmt::Default(body) => {
                 let default_idx = self.code.emit(OpCode::Default { body_end: 0 });
                 let block_local_idx = Self::branch_declares_block_local(body).then(|| {
@@ -3314,6 +3336,8 @@ impl Compiler {
                 self.code.emit(OpCode::Take);
             }
 
+            // ADR-0048 Phase 2: `react {}` does not take a signature in raku.
+            Stmt::React { body } if self.emit_block_placeholder_die(body) => {}
             // --- React: event loop scope ---
             Stmt::React { body } => {
                 let idx = self.code.emit(OpCode::ReactScope { body_end: 0 });
@@ -3323,6 +3347,9 @@ impl Compiler {
                 self.code.patch_body_end(idx);
             }
 
+            // ADR-0048 Phase 2: `module`/`package`/`grammar` bodies do not
+            // take a signature in raku (unlike `role`, D7/Phase 5).
+            Stmt::Package { body, .. } if self.emit_block_placeholder_die(body) => {}
             // --- Package scope ---
             Stmt::Package {
                 name,
@@ -3424,6 +3451,16 @@ impl Compiler {
                 }
             }
 
+            // ADR-0048 Phase 2: no phaser body takes a signature in raku
+            // (`$^c` inside `BEGIN`/`ENTER`/`LEAVE`/`CONTROL`/`CATCH`/... is
+            // `X::Placeholder::Block`). This covers every `Stmt::Phaser` kind
+            // that reaches `compile_stmt` directly (BEGIN/CHECK/INIT/ENTER at
+            // top level/END/PRE/POST, per the arms below); LEAVE/KEEP/UNDO/
+            // FIRST/NEXT/LAST/CLOSE are extracted and compiled elsewhere
+            // (`helpers_block_inline.rs`, `expand_loop_phasers`) before ever
+            // reaching this match, so they are not covered by this guard —
+            // left as a known gap for a follow-up.
+            Stmt::Phaser { body, .. } if self.emit_block_placeholder_die(body) => {}
             // --- Phaser (BEGIN/CHECK/INIT) ---
             // These are extracted before compilation by extract_check_init_phasers()
             // and run in the correct order. If one remains (e.g. inside a sub body),
@@ -4388,6 +4425,14 @@ impl Compiler {
                 body,
             } = s
             {
+                // ADR-0048 Phase 2: `PRE {}` does not take a signature in
+                // raku. This helper is the only place a PRE body is compiled
+                // (extracted from the enclosing block's statement list by
+                // `compile_phaser_block_scope` before `compile_stmt` ever
+                // sees the wrapping `Stmt::Phaser`), so the check lives here.
+                if compiler.emit_block_placeholder_die(body) {
+                    continue;
+                }
                 // Compile the PRE body as a block expression that produces a value
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
@@ -4421,6 +4466,11 @@ impl Compiler {
                 body,
             } = s
             {
+                // ADR-0048 Phase 2: `POST {}` does not take a signature in
+                // raku — same reasoning as `compile_pre_phasers` above.
+                if compiler.emit_block_placeholder_die(body) {
+                    continue;
+                }
                 for (i, inner) in body.iter().enumerate() {
                     if i == body.len() - 1 {
                         match inner {
