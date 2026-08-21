@@ -530,8 +530,7 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.set_pending_call_arg_sources(arg_sources.clone());
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let method_raw = Self::const_str(code, name_idx);
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let method_cow = Self::rewrite_method_name_cow(method_raw, modifier);
@@ -550,19 +549,12 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let args = if raw_args
-            .iter()
-            .any(|a| matches!(a.view(), ValueView::Slip(_)))
-        {
-            let preserve_empty_slip = Self::preserve_empty_slip_arg(method);
-            let mut args = Vec::new();
-            for arg in raw_args {
-                Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
-            }
-            args
-        } else {
-            raw_args
-        };
+        // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
+        // -- decided by call-site syntax, not by a value merely evaluating to
+        // a Slip (`.method(@a.Slip)` stays one argument).
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        self.set_pending_call_arg_sources(arg_sources);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethod target".to_string())
         })?;

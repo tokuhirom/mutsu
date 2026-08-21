@@ -65,11 +65,47 @@ sub k(*@a) { @a.elems }
 is k(|@s), 2, '|@array spreads into a slurpy callee';
 is k(@s.Slip), 2, '@array.Slip flattens into a slurpy callee (slurpy binding is call-site independent, §2.3)';
 
-# --- method-call form: not yet fixed (ADR-0054 Slice 3) ---
+# --- method-call and hyper-method-call forms (ADR-0054 Slice 3) ---
 class C { method m($a) { $a.elems } }
-{
-    todo 'method dispatch does not yet spread by call-site syntax -- ADR-0054 Slice 3';
-    lives-ok { C.m(maybe(0)) }, 'method call: Slip result of a non-firing if is one argument';
-}
+my $c = C.new;
+my $mname = 'm';
+
+# Bareword target (non-variable) -- compiles to CallMethod.
+is C.m(maybe(0)), 0, 'method call (CallMethod): Slip result of a non-firing if is one argument';
+
+# Variable target -- compiles to CallMethodMut.
+is $c.m(maybe(0)), 0, 'method call (CallMethodMut): Slip result of a non-firing if is one argument';
+
+# Dynamic method name, bareword target -- compiles to CallMethodDynamic.
+is C."$mname"(maybe(0)), 0,
+    'dynamic method call (CallMethodDynamic): Slip result of a non-firing if is one argument';
+
+# Dynamic method name, variable target -- compiles to CallMethodDynamicMut.
+is $c."$mname"(maybe(0)), 0,
+    'dynamic method call (CallMethodDynamicMut): Slip result of a non-firing if is one argument';
+
+class D { method n($a) { "n:" ~ $a.raku } }
+my @objs = D.new, D.new;
+
+# Hyper method call, static name -- compiles to HyperMethodCall.
+is-deeply (@objs>>.n(maybe(0))).List, ("n:Empty", "n:Empty").List,
+    'hyper method call (HyperMethodCall): Slip result of a non-firing if is one argument per element';
+
+# Hyper method call, dynamic name -- compiles to HyperMethodCallDynamic.
+my $dyn_mname = 'n';
+is-deeply (@objs>>."$dyn_mname"(maybe(0))).List, ("n:Empty", "n:Empty").List,
+    'hyper dynamic method call (HyperMethodCallDynamic): Slip result of a non-firing if is one argument per element';
+
+# --- `|EXPR` still spreads correctly for method/hyper forms too ---
+class G { method g2($a, $b) { "$a-$b" } }
+my $g = G.new;
+my @s2 = (1, 2);
+is $g.g2(|@s2), '1-2', 'method call: |@array spreads into a fixed 2-arity method';
+is G.g2(|@s2), '1-2', 'method call (bareword target): |@array spreads into a fixed 2-arity method';
+
+class K { method k(*@a) { @a.elems } }
+my $k = K.new;
+is $k.k(|@s2), 2, 'method call: |@array spreads into a slurpy method';
+is $k.k(@s2.Slip), 2, 'method call: @array.Slip flattens into a slurpy method (slurpy binding is call-site independent)';
 
 done-testing;

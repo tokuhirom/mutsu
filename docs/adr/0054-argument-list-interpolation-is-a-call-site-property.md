@@ -1,6 +1,6 @@
 # ADR-0054: Argument-list interpolation is a call-site property — retire blind Slip flattening
 
-- Status: Accepted (Slices 1-2 implemented; Slices 3-6 remain)
+- Status: Accepted (Slices 1-3 implemented; Slices 4-6 remain)
 - Date: 2026-08-20
 - Origin: `todo/deep/blind-slip-flattening-in-fixed-arity-calls.md`
   (re-verified reproducing on `main` @ `b1a9bb8a5`, 2026-08-20; the
@@ -410,14 +410,35 @@ on the old behaviour via a compiled trampoline.
   Acceptance verified: §2.1 and §2.2's function/listop/code-variable rows now
   match `raku` (dual-oracle checked); `t/slip-arg-flatten.t` and every "must
   stay green" file in §6 stay green without the allow-list.
-- [ ] Slice 3 method / hyper paths — next up. `vm_call_method_ops.rs:557`,
-  `vm_call_method_mut_ops.rs:49,372,579`, `vm_hyper_method_ops.rs:502` still
-  use `append_flattened_call_arg` unconditionally (blind value-shape
-  inference); `CallMethodDynamic`/`CallMethodDynamicMut`/`HyperMethodCall`/
-  `HyperMethodCallDynamic` still lack `arg_sources_idx`. The method row of
-  `t/slip-value-argument-is-one-argument.t` (`C.m(maybe(0))`) is pinned
-  `todo` pending this slice — dual-oracle confirmed it already passes under
-  `raku`.
+- [x] Slice 3 method / hyper paths — landed. `CallMethod` (`vm_call_method_ops.rs`)
+  and `CallMethodMut` (`vm_call_method_mut_ops.rs`) now call
+  `spread_call_args_by_syntax` instead of unconditionally flattening every
+  Slip-shaped argument, exactly mirroring the Slice 2 function-path change
+  (and, for `CallMethodMut`, now feeding the *post-spread* lockstep source
+  list to `set_pending_call_arg_sources` instead of the pre-spread one, so
+  `is rw` source tracking and `|` spreading cooperate instead of the old
+  defensive length-mismatch fallback silently dropping the source table).
+  `CallMethodDynamic`, `CallMethodDynamicMut`, `HyperMethodCall` and
+  `HyperMethodCallDynamic` gained the `arg_sources_idx` field §3.2
+  anticipated (baked by the same `add_arg_sources_constant` call the scalar
+  method sites use) and now spread only the recorded `|EXPR` positions too;
+  none of the four tracks rw-arg sources (they never did), so their VM sides
+  pass `None` for the decoded-sources slot and discard
+  `spread_call_args_by_syntax`'s returned source list. `HyperMethodCallDynamic`
+  previously did not flatten a Slip argument AT ALL (neither by shape nor by
+  syntax), so this slice is also a genuine fix for `@a>>.$name(|@x)`, not
+  just a parity change. The method row of `t/slip-value-argument-is-one-argument.t`
+  (`C.m(maybe(0))`) is un-todo'd and the file grew matching cases for
+  `CallMethodMut`/`CallMethodDynamic`/`CallMethodDynamicMut`/`HyperMethodCall`/
+  `HyperMethodCallDynamic`, plus `|EXPR`-still-spreads pins for a fixed-arity
+  and a slurpy method — all 23 cases dual-oracle verified against `raku`.
+  `preserve_empty_slip_arg` is deleted outright (its two callers were both in
+  this slice's scope); `append_flattened_call_arg` now has two remaining
+  callers (`spread_slip_positions`, used by `ExecCallPairs`'s still-separate
+  mechanism 1, and `spread_call_args_by_syntax`, used by every other call op)
+  rather than the single caller §4 anticipated — Slice 4's constant collapse
+  is what reduces that to one, so the inlining note there is deferred to
+  that slice.
 - [ ] Slice 4 constant collapse + cache gate
 - [ ] Slice 5 compiler dodge cleanup
 - [ ] Slice 6 internal-caller audit

@@ -81,17 +81,6 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn preserve_empty_slip_arg(name: &str) -> bool {
-        // Operator calls receive their operands as single terms — an Empty
-        // operand (`!$foo.bar()` where bar returned a false `if`'s Empty)
-        // must not vanish from the positional list the way a slipped
-        // capture does in an ordinary argument list.
-        name.starts_with("prefix:<")
-            || name.starts_with("postfix:<")
-            || name.starts_with("infix:<")
-            || matches!(name, "andthen" | "notandthen" | "__mutsu_andthen_finalize")
-    }
-
     /// Does any of the top `arity` stack values need Slip flattening?
     ///
     /// The light-call / OTF caches bind the *compiled* arity directly against

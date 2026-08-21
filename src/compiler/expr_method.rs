@@ -606,6 +606,9 @@ impl Compiler {
         self.compile_expr(target);
         self.compile_expr(name_expr);
         let arity = args.len() as u32;
+        // ADR-0054 S3: bake `|EXPR` positions before compiling the args
+        // themselves, matching `compile_expr_method_on_var`/`_generic`.
+        let arg_sources_idx = self.add_arg_sources_constant(args);
         for arg in args {
             self.compile_method_arg(arg);
         }
@@ -617,12 +620,14 @@ impl Compiler {
                 target_name_idx,
                 modifier_idx,
                 quoted,
+                arg_sources_idx,
             });
         } else {
             self.code.emit(OpCode::CallMethodDynamic {
                 arity,
                 modifier_idx,
                 quoted,
+                arg_sources_idx,
             });
         }
     }
@@ -667,6 +672,9 @@ impl Compiler {
         }
         self.compile_expr(target);
         let arity = args.len() as u32;
+        // ADR-0054 S3: bake `|EXPR` positions before compiling the args
+        // themselves, matching the scalar `CallMethod`/`CallMethodMut` sites.
+        let arg_sources_idx = self.add_arg_sources_constant(args);
         for arg in args {
             self.compile_method_arg(arg);
         }
@@ -692,6 +700,7 @@ impl Compiler {
             modifier_idx,
             quoted,
             target_name_idx,
+            arg_sources_idx,
         });
     }
 
@@ -706,6 +715,9 @@ impl Compiler {
         self.compile_expr(target);
         self.compile_expr(name_expr);
         let arity = args.len() as u32;
+        // ADR-0054 S3: bake `|EXPR` positions before compiling the args
+        // themselves, matching the scalar `CallMethod`/`CallMethodMut` sites.
+        let arg_sources_idx = self.add_arg_sources_constant(args);
         for arg in args {
             self.compile_method_arg(arg);
         }
@@ -713,6 +725,7 @@ impl Compiler {
         self.code.emit(OpCode::HyperMethodCallDynamic {
             arity,
             modifier_idx,
+            arg_sources_idx,
         });
     }
 }

@@ -32,6 +32,7 @@ impl Interpreter {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.flatten_scoped_env();
@@ -44,10 +45,12 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, false);
-        }
+        // ADR-0054 S3: spread only the `|EXPR` positions -- this opcode has
+        // never tracked rw-arg sources, so the decoded name list is
+        // discarded (it exists solely to keep the slip-position decoder
+        // in the shared helper).
+        let (args, _arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
         let name_val = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamic name")
         })?;
@@ -354,6 +357,7 @@ impl Interpreter {
         target_name_idx: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         self.flatten_scoped_env();
@@ -367,10 +371,10 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, false);
-        }
+        // ADR-0054 S3: spread only the `|EXPR` positions (see the matching
+        // comment in `exec_call_method_dynamic_op`).
+        let (args, _arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
         let name_val = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in CallMethodDynamicMut")
         })?;
@@ -545,9 +549,7 @@ impl Interpreter {
         // Consume (and unconditionally clear) the accessor-ref marker: it is
         // emitted immediately before this opcode and scoped to this one dispatch.
         let want_ref = std::mem::take(&mut self.accessor_ref_pending);
-        // Set pending arg sources for `is rw` dispatch matching
-        let arg_sources = self.decode_arg_sources(code, arg_sources_idx);
-        self.set_pending_call_arg_sources(arg_sources.clone());
+        let decoded_sources = self.decode_arg_sources(code, arg_sources_idx);
         let method_raw = Self::const_str(code, name_idx);
         let target_name = Self::const_str(code, target_name_idx).to_string();
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
@@ -566,25 +568,15 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        let mut has_slip = false;
-        let mut has_varref = false;
-        for a in &raw_args {
-            match a.view() {
-                ValueView::Slip(_) => has_slip = true,
-                ValueView::VarRef { .. } => has_varref = true,
-                _ => {}
-            }
-        }
-        let args = if has_slip {
-            let preserve_empty_slip = Self::preserve_empty_slip_arg(&method);
-            let mut args = Vec::new();
-            for arg in raw_args {
-                Self::append_flattened_call_arg(&mut args, arg, preserve_empty_slip);
-            }
-            args
-        } else {
-            raw_args
-        };
+        let has_varref = raw_args
+            .iter()
+            .any(|a| matches!(a.view(), ValueView::VarRef { .. }));
+        // ADR-0054 S3: spread only the positions the caller wrote as `|EXPR`
+        // -- decided by call-site syntax, not by a value merely evaluating to
+        // a Slip (`.method(@a.Slip)` stays one argument).
+        let (args, arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, decoded_sources);
+        self.set_pending_call_arg_sources(arg_sources.clone());
         // Elements appended to a NATIVE integer array store through the native
         // slot, so each one wraps to the element width exactly as an assignment
         // does (`my uint8 @e; @e.push(1, 300, 2)` stores 1, 44, 2). Done here,
