@@ -35,6 +35,14 @@ A pre-existing, unrelated `splice` arity bug was found and filed separately rath
 (`todo/tickets/splice-multi-arg-array-incorrectly-flattens.md`) to keep this change's blast radius
 scoped to itemization.
 
+CI caught a genuine companion bug this change exposed: `.pick`/`.roll`'s generic fallback decomposed
+a value into elements using the *same* itemization-respecting `value_to_list` the store sites rely
+on — correct when a value is flattened as an element of some other container, but wrong when the
+value is the *receiver itself* (`%h<a>.roll` needs one of `%h<a>`'s own pairs, regardless of whether
+`%h<a>` is itemized). A new sibling, `value_to_list_for_receiver`, strips the receiver's own
+itemization first; `roast/integration/advent2010-day11.t`, which builds a nested Markov-chain hash
+and rolls from it, now passes again.
+
 The acceptance oracle, `t/element-store-itemization.t`, pins the full ADR-0040 §1.3 divergence
 matrix (dual-oracled against `raku`) plus the invariants that must never move — an `Array`'s own
 `.raku` still de-itemizes its elements, `Pair`/`Set`/`Int` elements stay unwrapped, and the arity

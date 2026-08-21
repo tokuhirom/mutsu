@@ -569,12 +569,39 @@ applied to whatever `splice` already decides to keep as one element (which corre
 discrete `Range` argument, pinned in the acceptance test) without touching that unrelated flattening
 decision, to keep this PR's blast radius scoped to itemization.
 
+**A companion bug in `.pick`/`.roll`/`.head`/`.tail`'s generic fallback was found by CI**
+(`roast/integration/advent2010-day11.t` died mid-run: `%next-step{$a ~ $b}.roll.key` threw "No such
+method 'key' for invocant of type 'Hash'"). `value_to_list` (`src/runtime/utils/list.rs`) has two
+call-site shapes that need opposite answers to the same question, "does this value expand to its
+elements": when `val` is being flattened as an ELEMENT of some OTHER container (its primary, correct
+job, and the one every store-site hook in this ADR relies on), itemization must stop it from
+expanding — but `.pick`/`.roll`'s generic fallback (`dispatch_core_range.rs`) and `.head`/`.tail`'s
+non-`Array` fallback call `value_to_list(target)` where `target` IS THE RECEIVER, to decompose it
+into ITS OWN elements — a question itemization has no say in, since it was never itemized as an
+element of anything here. A nested-autovivified `%next-step{$a~$b}` (now itemized by Slice 1)
+exposed the gap: `value_to_list` treated it as one opaque item and `.roll` "rolled" the whole hash
+instead of one of its pairs. Fixed with a new sibling, `value_to_list_for_receiver` (same file),
+that strips the receiver's own itemization (`descalarize` + de-itemize `Array`/`Hash`) before
+decomposing — used at every `value_to_list(target)` call in `dispatch_core_range.rs` where `target`
+is confirmed to be the method's own receiver (left the two sites where `target` was already
+narrowed to a bare `Range`/`GenericRange` by an outer match unchanged, since those can never be a
+Scalar-wrapped receiver). `.roll`/`.pick` also gained a dedicated `Hash` arm for `.roll` (mirroring
+the one `.pick` already had), rather than relying on the fallback at all for the common case.
+Pinned in `t/element-store-itemization.t`'s new CI-regression section (itemized Hash/Array elements
+via `.pick`/`.roll`/`.head`/`.tail`).
+
+A `roast/integration/deep-recursion-initing-native-array.t` stack overflow observed locally under a
+**debug** build is unrelated and pre-existing (reproduces identically on `main`, unaffected by this
+PR); it passes under the **release** build CI actually uses for `make roast` (confirmed both on
+`main` and on this branch), matching the documented debug-vs-release roast guidance.
+
 **Verification**: `cargo clippy -- -D warnings` and `cargo fmt --check` clean. Full local `t/` suite
-(3322 files) passes unchanged. Targeted whitelisted roast batches — `S32-array/*` (all 21
+(3328 files) passes unchanged. Targeted whitelisted roast batches — `S32-array/*` (all 21
 whitelisted files, including `push`/`unshift`/`splice`/`create`/`delete*`/`multislice-6e`),
 `S32-hash/*` (all 17 whitelisted files), `S09-typed-arrays/*` (9 files, including the native/shaped
-variants), and `S02-types/{array,array_extending,array_ref,assigning-refs,autovivification,
-flattening,hash,hash_ref,list,multi_dimensional_array}.t` — all pass unchanged.
+variants), `S02-types/{array,array_extending,array_ref,assigning-refs,autovivification,
+flattening,hash,hash_ref,list,multi_dimensional_array}.t`, `S32-list/{pick,roll}.t`, and **all 119
+whitelisted `roast/integration/*.t` files** (release build) — all pass.
 
 ---
 

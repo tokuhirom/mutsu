@@ -135,7 +135,10 @@ pub(super) fn dispatch(
                 }
             }
             _ => {
-                let items = runtime::value_to_list(target);
+                // ADR-0040: decompose the RECEIVER into its own elements,
+                // ignoring its own itemization (see
+                // `value_to_list_for_receiver`'s doc comment).
+                let items = runtime::value_to_list_for_receiver(target);
                 Some(Ok(items.first().cloned().unwrap_or(Value::NIL)))
             }
         }),
@@ -146,7 +149,7 @@ pub(super) fn dispatch(
             ValueView::Instance { .. } => return None,
             ValueView::Array(items, ..) => Some(Ok(items.last().cloned().unwrap_or(Value::NIL))),
             _ => {
-                let items = runtime::value_to_list(target);
+                let items = runtime::value_to_list_for_receiver(target);
                 Some(Ok(items.last().cloned().unwrap_or(Value::NIL)))
             }
         }),
@@ -194,7 +197,9 @@ pub(super) fn dispatch(
                 let items = if crate::runtime::utils::is_shaped_array(target) {
                     crate::runtime::utils::shaped_array_leaves(target)
                 } else {
-                    runtime::value_to_list(target)
+                    // ADR-0040: decompose the RECEIVER into its own
+                    // elements, ignoring its own itemization.
+                    runtime::value_to_list_for_receiver(target)
                 };
                 if items.is_empty() {
                     Some(Ok(Value::NIL))
@@ -230,6 +235,27 @@ pub(super) fn dispatch(
                 }
                 return Some(Some(Ok(items.typed_key(keys[idx]))));
             }
+            // ADR-0040: a Hash is decomposed into its OWN key-value pairs
+            // here regardless of the hash's own itemization flag -- `.roll`
+            // is called ON this hash as the receiver, not flattened as an
+            // element of some other container, so the itemization axis
+            // (which governs the latter) does not apply. Mirrors `.pick`'s
+            // own dedicated `ValueView::Hash` arm above; `value_to_list`
+            // below would otherwise treat an itemized Hash (e.g. one
+            // produced by nested autovivification, `%h<a><b>++`) as a
+            // single opaque item and "roll" the whole hash instead of one
+            // of its pairs.
+            if let ValueView::Hash(items) = target.view() {
+                if items.is_empty() {
+                    return Some(Some(Ok(Value::NIL)));
+                }
+                let mut idx = (crate::builtins::rng::builtin_rand() * items.len() as f64) as usize;
+                if idx >= items.len() {
+                    idx = items.len() - 1;
+                }
+                let (key, value) = items.iter().nth(idx).expect("index in range");
+                return Some(Some(Ok(items.typed_pair(key, value.clone()))));
+            }
             // Try efficient range sampling first
             if let Some(v) = sample_one_from_range(target) {
                 return Some(Some(Ok(v)));
@@ -237,7 +263,9 @@ pub(super) fn dispatch(
             let items = if crate::runtime::utils::is_shaped_array(target) {
                 crate::runtime::utils::shaped_array_leaves(target)
             } else {
-                runtime::value_to_list(target)
+                // ADR-0040: decompose the RECEIVER into its own elements,
+                // ignoring its own itemization.
+                runtime::value_to_list_for_receiver(target)
             };
             if items.is_empty() {
                 Some(Some(Ok(Value::NIL)))

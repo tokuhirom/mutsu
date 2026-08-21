@@ -260,4 +260,50 @@ is @c.raku, '[["a", "b"], ["c", "d"]]', 'row 25: @c.raku stays bare (invariant)'
     is @a7[0].raku, '$[1, 2, 3]', 'slice 1: mutating @b propagates through the shared cell';
 }
 
+# === CI regression (roast/integration/advent2010-day11.t crashed): an
+# itemized element must decompose into its OWN elements for `.pick`/`.roll`/
+# `.head`/`.tail`, not be treated as a single opaque item. Itemization
+# governs how a value flattens as an ELEMENT of some OTHER container; it
+# must not change how a value decomposes when it is itself the receiver of
+# one of these methods. ===
+
+{
+    # Nested-autovivified Hash element (`%h<a><b>++`): `.roll` on it must
+    # roll one of ITS OWN pairs, not return the whole (itemized) hash.
+    my %outer;
+    %outer{"x"}{"y"}++;
+    my $rolled = %outer{"x"}.roll;
+    is $rolled.WHAT, Pair, 'roll on itemized Hash element returns a Pair';
+    is $rolled.raku, ':y(1)', 'roll on itemized Hash element rolls its own pair';
+}
+
+{
+    # Same for `.pick` on an itemized Hash element.
+    my %outer2;
+    %outer2{"x"}{"y"}++;
+    my $picked = %outer2{"x"}.pick;
+    is $picked.WHAT, Pair, 'pick on itemized Hash element returns a Pair';
+}
+
+{
+    # Itemized Array element (`@a.push([1,2,3])`): `.roll`/`.pick` must
+    # return one of its own elements, not the whole itemized array.
+    my @a;
+    @a.push([1, 2, 3]);
+    my $rolled = @a[0].roll;
+    is $rolled.WHAT, Int, 'roll on itemized Array element returns an element';
+    ok (1 <= $rolled <= 3), 'roll on itemized Array element is in range';
+    my $picked = @a[0].pick;
+    is $picked.WHAT, Int, 'pick on itemized Array element returns an element';
+}
+
+{
+    # `.head`/`.tail` on an itemized Array element likewise decompose into
+    # elements, not the whole itemized array.
+    my @a2;
+    @a2.push([1, 2, 3]);
+    is @a2[0].head, 1, 'head on itemized Array element returns its first element';
+    is @a2[0].tail, 3, 'tail on itemized Array element returns its last element';
+}
+
 done-testing;
