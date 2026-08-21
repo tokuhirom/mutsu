@@ -1140,6 +1140,9 @@ pub(crate) enum OpCode {
         arity: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        /// ADR-0054 S3: `|EXPR` positions (and, incidentally, rw-arg source
+        /// names) baked the same way `CallMethod`'s does.
+        arg_sources_idx: Option<u32>,
     },
     /// Dynamic method call on a variable target (allows mutation/writeback).
     /// Stack layout: [target, name_value, arg0, arg1, ...]
@@ -1148,6 +1151,9 @@ pub(crate) enum OpCode {
         target_name_idx: u32,
         modifier_idx: Option<u32>,
         quoted: bool,
+        /// ADR-0054 S3: `|EXPR` positions (and, incidentally, rw-arg source
+        /// names) baked the same way `CallMethodMut`'s does.
+        arg_sources_idx: Option<u32>,
     },
     /// Statement-level call: pop `arity` args, call name (no push).
     ExecCall {
@@ -1755,10 +1761,16 @@ pub(crate) enum OpCode {
         /// the Arc-identity scan that over-reaches COW-shared copies. `None` for
         /// non-variable targets (`@b[0]>>++`, `(1,2,3)>>.uc`).
         target_name_idx: Option<u32>,
+        /// ADR-0054 S3: `|EXPR` positions, baked the same way `CallMethod`'s
+        /// `arg_sources_idx` is.
+        arg_sources_idx: Option<u32>,
     },
     HyperMethodCallDynamic {
         arity: u32,
         modifier_idx: Option<u32>,
+        /// ADR-0054 S3: `|EXPR` positions, baked the same way `CallMethod`'s
+        /// `arg_sources_idx` is.
+        arg_sources_idx: Option<u32>,
     },
 
     // -- HyperOp (>>op<<) --

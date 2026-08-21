@@ -475,6 +475,7 @@ impl Interpreter {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn exec_hyper_method_call_op(
         &mut self,
         code: &CompiledCode,
@@ -483,6 +484,7 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         quoted: bool,
         target_name_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let method_raw = Self::const_str(code, name_idx);
         let target_var: Option<String> =
@@ -496,11 +498,12 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let raw_args: Vec<Value> = self.stack.drain(start..).collect();
-        // Flatten any Slip values in the argument list (from |capture slipping)
-        let mut args = Vec::new();
-        for arg in raw_args {
-            Self::append_flattened_call_arg(&mut args, arg, false);
-        }
+        // ADR-0054 S3: spread only the `|EXPR` positions -- this opcode has
+        // never tracked rw-arg sources, so the decoded name list is
+        // discarded (it exists solely to keep the slip-position decoder
+        // in the shared helper).
+        let (args, _arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
         let target = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCall target")
         })?;
@@ -1259,6 +1262,7 @@ impl Interpreter {
         code: &CompiledCode,
         arity: u32,
         modifier_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         let modifier = modifier_idx.map(|idx| Self::const_str(code, idx));
         let arity = arity as usize;
@@ -1268,7 +1272,14 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - arity;
-        let args: Vec<Value> = self.stack.drain(start..).collect();
+        let raw_args: Vec<Value> = self.stack.drain(start..).collect();
+        // ADR-0054 S3: spread only the `|EXPR` positions (see the matching
+        // comment in `exec_hyper_method_call_op`). Previously this opcode
+        // never spread a slip argument at all -- neither `|EXPR` nor a value
+        // merely evaluating to a Slip -- so this also fixes the former
+        // under-flattening of `@a>>.$method(|@x)`.
+        let (args, _arg_sources) =
+            Self::spread_call_args_by_syntax(code, raw_args, arg_sources_idx, None);
         let name_val = self.stack.pop().ok_or_else(|| {
             RuntimeError::new("Interpreter stack underflow in HyperMethodCallDynamic name")
         })?;

@@ -3292,12 +3292,19 @@ impl Interpreter {
                 arity,
                 modifier_idx,
                 quoted,
+                arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                match self.exec_call_method_dynamic_op(code, *arity, *modifier_idx, *quoted) {
+                match self.exec_call_method_dynamic_op(
+                    code,
+                    *arity,
+                    *modifier_idx,
+                    *quoted,
+                    *arg_sources_idx,
+                ) {
                     Ok(()) => {}
                     Err(e) => {
                         // Record a resume point so a method that raises a
@@ -3319,6 +3326,7 @@ impl Interpreter {
                 target_name_idx,
                 modifier_idx,
                 quoted,
+                arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
@@ -3331,6 +3339,7 @@ impl Interpreter {
                     *target_name_idx,
                     *modifier_idx,
                     *quoted,
+                    *arg_sources_idx,
                 ) {
                     Ok(()) => {}
                     Err(e) => {
@@ -4417,6 +4426,7 @@ impl Interpreter {
                 modifier_idx,
                 quoted,
                 target_name_idx,
+                arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above --
@@ -4430,6 +4440,7 @@ impl Interpreter {
                     *modifier_idx,
                     *quoted,
                     *target_name_idx,
+                    *arg_sources_idx,
                 ) {
                     Ok(()) => {}
                     Err(e) => {
@@ -4447,12 +4458,18 @@ impl Interpreter {
             OpCode::HyperMethodCallDynamic {
                 arity,
                 modifier_idx,
+                arg_sources_idx,
             } => {
                 self.sync_source_line(code, *ip);
                 // `use fatal`: see the comment on the `CallFunc` arm above. A
                 // method can never be `require` (a bareword sub), so pass "".
                 self.explode_if_fatal_failure_in_call_args("", *arity as usize)?;
-                match self.exec_hyper_method_call_dynamic_op(code, *arity, *modifier_idx) {
+                match self.exec_hyper_method_call_dynamic_op(
+                    code,
+                    *arity,
+                    *modifier_idx,
+                    *arg_sources_idx,
+                ) {
                     Ok(()) => {}
                     Err(e) => {
                         if !e.is_resume() && self.resume_ip.is_none() {
