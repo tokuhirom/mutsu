@@ -50,16 +50,15 @@ class FwdFb { method inner() handles * { Bare.new }; method FALLBACK($n, |c) { "
 # These two depend on `Bare.new.uc` itself dying with "No such method" (Bare
 # is a plain Any-derived class, not Cool-derived, per raku semantics) so the
 # wildcard block's `Err(_) => continue` falls through to FALLBACK / the final
-# error. mutsu's native fast path answers Cool builtin methods (`.uc`, ...)
-# for ANY instance regardless of whether its MRO actually includes Cool, so
-# `Bare.new.uc` succeeds (stringifying to "BARE()") instead of dying — a
-# separate, broader gap: todo/tickets/plain-classes-answer-cool-only-builtin-methods.md
-todo 'Bare.new.uc succeeds instead of dying (plain classes wrongly get Cool methods)';
+# error. Fixed by ADR-0051 P4 (docs/adr/0051-type-ancestry-has-one-oracle-and-
+# an-unresolved-method-throws.md): the native fast path now checks
+# `e2_native_method_exists` before answering a Cool-only builtin method
+# (`.uc`, ...) for an `Instance` receiver, so `Bare.new.uc` dies with
+# "No such method" instead of stringifying to "BARE()".
 is FwdFb.new.uc, 'FB:uc', 'FALLBACK fires when the delegate cannot handle';
 
 # missing on delegate, no FALLBACK: dies naming the method
 class FwdMiss { method inner() handles * { Bare.new } }
-todo 'Bare.new.uc succeeds instead of dying (plain classes wrongly get Cool methods)';
 throws-like { FwdMiss.new.uc }, Exception, message => /uc/,
     'missing on delegate dies with no-such-method for uc';
 

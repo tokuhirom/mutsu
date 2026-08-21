@@ -931,10 +931,18 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Date", "Str", 3, 0),
     ("Date", "raku", 1, 0),
     ("Date", "gist", 1, 0),
+    ("Date", "IO", 8, 12),
     ("Date", "year", 1, 0),
     ("Date", "mm-dd-yyyy", 1, 0),
     ("Date", "yyyy-mm-dd", 1, 0),
     ("Date", "dd-mm-yyyy", 1, 0),
+    // ADR-0051 P3 audit finds (2026-08-21): `Date.Date`/`Date.DateTime` are
+    // genuine own methods (`date_method_0arg`, `methods_0arg/
+    // temporal_dispatch.rs` -- the `"Date"`/`"DateTime"` arms), already
+    // dispatched correctly, just missing their row (`Date.^can("Date")`/
+    // `("DateTime")` raku-verified as 1, was 0 in mutsu).
+    ("Date", "Date", 1, 0),
+    ("Date", "DateTime", 1, 0),
     ("DateTime", "Str", 3, 0),
     ("DateTime", "raku", 1, 0),
     ("DateTime", "gist", 1, 0),
@@ -992,6 +1000,12 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Complex", "isNaN", 1, 8),
     ("Instant", "to-posix", 1, 0),
     ("Instant", "Numeric", 1, 0),
+    ("Instant", "DateTime", 1, 0),
+    // ADR-0051 P3 audit find (2026-08-21): `Instant.Date` is a genuine own
+    // method too (`methods_0arg/mod.rs`'s `"Date"` arm right next to the
+    // `"DateTime"` arm above), already dispatched correctly, just missing
+    // its row (`Instant.^can("Date")` raku-verified as 1, was 0 in mutsu).
+    ("Instant", "Date", 1, 0),
     ("Uni", "Str", 3, 0),
     ("Block", "lazy", 1, 0),
     ("Supply", "list", 1, 0),
@@ -1014,6 +1028,10 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Date", "formatter", 1, 0),
     ("Date", "day-of-week", 1, 0),
     ("Date", "succ", 1, 0),
+    // ADR-0051 P3 audit find (2026-08-21): `Date.pred` (`date_method_0arg`'s
+    // `"pred"` arm, next to the already-rowed `"succ"` arm above) was
+    // already dispatched correctly, just missing its row.
+    ("Date", "pred", 1, 0),
     ("Date", "perl", 1, 0),
     ("Date", "days-in-year", 1, 0),
     ("Date", "daycount", 1, 0),
@@ -1030,6 +1048,16 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("DateTime", "yyyy-mm-dd", 1, 0),
     ("DateTime", "offset-in-hours", 1, 0),
     ("DateTime", "Instant", 1, 0),
+    // ADR-0051 P3 audit finds (2026-08-21): both already dispatched
+    // correctly today (the generic by-name `.IO` interceptor already
+    // stringifies any non-IO::Handle-like receiver,
+    // `methods_dispatch_match.rs`; `DateTime.DateTime` already answers a
+    // fresh, value-equal `DateTime` via some other existing fallback --
+    // confirmed NOT an identity return, `=:=` is False in both mutsu and
+    // real raku), just missing their rows (`DateTime.^can("IO")`/
+    // `("DateTime")` raku-verified as 1, was 0 in mutsu).
+    ("DateTime", "IO", 8, 12),
+    ("DateTime", "DateTime", 8, 12),
     ("Backtrace", "flat", 7, 0),
     ("Backtrace", "defined", 1, 0),
     ("Backtrace", "concise", 1, 0),
@@ -1189,6 +1217,85 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Cool", "Str", 3, 9),
     ("Cool", "gist", 1, 9),
     ("Cool", "raku", 1, 9),
+    // ADR-0051 P3 (2026-08-21): the rest of `cool_only_builtin_method`'s
+    // 94-name list that genuinely resolves via `Cool` in real Rakudo
+    // (`Cool.^can(name)` verified nonzero for every row below) but had no
+    // row at all -- e2_native_method_exists therefore answered `false` for
+    // these on every Cool-derived type (`Instant`/`Duration`/`IO::Path`/
+    // `Match` after P1's ancestry fix), which would make P4's gate
+    // wrongly reject a genuine call. Arity/TYPE_OBJECT_OK probed against
+    // the same `Int(2)`/`Str("5")` pair as the rest of this block, PLUS a
+    // direct `Int.<name>` invocation against real `raku` to settle
+    // TYPE_OBJECT_OK precisely (`tmp/type_obj_probe.p6`): every name here
+    // dies on an indefinite receiver in real Rakudo except `Version`
+    // (`Int.Version` succeeds), so only `Version` carries the bit.
+    // `sprintf`/`subst`/`IO`/`samespace`/`trans` are handled by named
+    // interceptors ahead of the arity cascades (mirrors the existing
+    // `("Str", "subst"/"IO"/"trans", 8, 12)` rows), hence `N`/`SPECIAL`.
+    // Six cool_only names are deliberately NOT here because real Rakudo's
+    // `Cool.^can` is 0 for them -- they resolve through a different,
+    // narrower path than `Cool` even though a plain Any-derived class also
+    // lacks them (confirmed against `raku`, 2026-08-21):
+    // `Date`/`DateTime` are `Str`-only multi candidates (already own rows
+    // under `"Str"`), and `lazy`/`race`/`hyper`/`parse-base` resolve
+    // through neither `Cool` nor `Any` (some other role/mixin the row
+    // catalog does not model per-role) -- adding a `Cool` row for any of
+    // these six would be a false claim, not a fix.
+    ("Cool", "tclc", 1, 8),
+    ("Cool", "subst", 8, 12),
+    ("Cool", "sprintf", 8, 12),
+    ("Cool", "ord", 1, 8),
+    ("Cool", "truncate", 1, 8),
+    ("Cool", "log2", 1, 8),
+    ("Cool", "sin", 1, 8),
+    ("Cool", "cos", 1, 8),
+    ("Cool", "tan", 1, 8),
+    ("Cool", "asin", 1, 8),
+    ("Cool", "acos", 1, 8),
+    ("Cool", "atan", 1, 8),
+    ("Cool", "atan2", 3, 8),
+    ("Cool", "sinh", 1, 8),
+    ("Cool", "cosh", 1, 8),
+    ("Cool", "tanh", 1, 8),
+    ("Cool", "asinh", 1, 8),
+    ("Cool", "acosh", 1, 8),
+    ("Cool", "atanh", 1, 8),
+    ("Cool", "sec", 1, 8),
+    ("Cool", "cosec", 1, 8),
+    ("Cool", "cotan", 1, 8),
+    ("Cool", "sech", 1, 8),
+    ("Cool", "cosech", 1, 8),
+    ("Cool", "cotanh", 1, 8),
+    ("Cool", "cis", 1, 8),
+    ("Cool", "unpolar", 2, 8),
+    ("Cool", "roots", 2, 8),
+    ("Cool", "IO", 8, 12),
+    ("Cool", "samemark", 2, 8),
+    // NOTE: no `("Cool", "samespace", ...)` row -- unlike the rest of this
+    // block, `.samespace` is not actually implemented anywhere in mutsu yet
+    // (`"abc".samespace(...)` dies "No such method" for every receiver, not
+    // just an `Instance` one), confirmed by `t/can-methods-drift.t`'s
+    // "unimplemented samespace is not over-claimed" assertion. Adding a row
+    // here would make `.^can`/`e2_native_method_exists` claim a capability
+    // that then dies with a different, wrong error when actually invoked --
+    // a genuine missing-feature gap, not an ADR-0051 ancestry/row-table gap.
+    ("Cool", "trans", 8, 12),
+    ("Cool", "indent", 2, 8),
+    ("Cool", "uniname", 1, 8),
+    ("Cool", "uninames", 1, 8),
+    ("Cool", "unival", 1, 8),
+    ("Cool", "univals", 1, 8),
+    ("Cool", "uniprop", 3, 8),
+    ("Cool", "uniprops", 3, 8),
+    ("Cool", "uniparse", 1, 8),
+    ("Cool", "parse-names", 1, 8),
+    ("Cool", "NFC", 1, 8),
+    ("Cool", "NFD", 1, 8),
+    ("Cool", "NFKC", 1, 8),
+    ("Cool", "NFKD", 1, 8),
+    ("Cool", "encode", 1, 8),
+    ("Cool", "UInt", 1, 8),
+    ("Cool", "Version", 1, 9),
     // ADR-0019 E11 slice 2 (2026-08-14, follow-up): the native-int-coercion
     // method family (`42.int8`, `"42".byte`, ...), genuinely dispatched via
     // `target.isa_check("Cool")` for the eleven real coercion names,

@@ -161,6 +161,30 @@ impl Interpreter {
         target: Value,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
+        // ADR-0051 P4: an `Instance` receiver whose ancestry does not
+        // actually provide `.subst` (no `Cool` anywhere in its dispatch
+        // chain) must not be answered here -- this function is
+        // receiver-class-blind by construction (unconditional
+        // `target.to_string_value()` below). `should_bypass_native_fastpath`/
+        // `shadows_builtin` already route a plain (non-wildcard-handles)
+        // class's `.subst` call past this function entirely; this direct
+        // guard is the one the ADR also calls for, so it stays correct even
+        // if reached by a future call path that skips those two gates. Real
+        // Rakudo's `X::Method::NotFound` for the unresolved case is the
+        // caller's responsibility once this returns the error below.
+        if matches!(target.view(), ValueView::Instance { .. })
+            && !self.e2_native_method_exists(&target, "subst")
+        {
+            let type_name = match target.view() {
+                ValueView::Instance { class_name, .. } => class_name.resolve(),
+                _ => unreachable!(),
+            };
+            return Err(
+                super::methods_signature_errors::make_method_not_found_error(
+                    "subst", &type_name, false,
+                ),
+            );
+        }
         let text = target.to_string_value();
         let mut positional: Vec<Value> = Vec::new();
         let mut global = false;

@@ -3838,6 +3838,20 @@ impl Interpreter {
                         // `should_bypass_native_fastpath`).
                         || (Self::cool_only_builtin_method(method)
                             && self.class_has_wildcard_handles_or_fallback(&class_name))
+                        // ADR-0051 P4: a Cool-only builtin the receiver's
+                        // own ancestry does NOT actually provide must not
+                        // reach the by-name dispatchers below either --
+                        // `.IO`/`.subst` (`dispatch_method_by_name_1`) are
+                        // exactly the two receiver-class-blind interceptors
+                        // this closes, per the ADR's decision 3. Shadowing
+                        // sends the call past all `dispatch_method_by_name_*`
+                        // to the "no candidate found" tail, which throws
+                        // `X::Method::NotFound` like real Rakudo.
+                        || (Self::cool_only_builtin_method(method)
+                            && !self.e2_native_method_exists(
+                                &target,
+                                crate::symbol::Symbol::intern(method).as_str(),
+                            ))
                 }
                 ValueView::Package(name) => self.class_has_user_method(&name.resolve(), method),
                 _ => false,
