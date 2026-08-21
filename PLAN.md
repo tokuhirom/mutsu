@@ -44,7 +44,7 @@ mutsu's unique position. Four components:
 
 ## 1. 🔋 Batteries — bundled libraries and distribution (main effort)
 
-35 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
+36 libraries are vendored under `modules/` and resolved with zero configuration; the release-time
 gate runs their upstream suites against the shipped copies
 ([docs/batteries/testsuite-gate.md](docs/batteries/testsuite-gate.md)) and is **all-green, so a drop
 below the whitelisted baseline is a regression to fix, not a baseline to accept**. Adding a battery
@@ -87,17 +87,19 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.
-      Open batch: [todo/tickets/dist-test-suite-failures-batch.md](todo/tickets/dist-test-suite-failures-batch.md).
-      Per bug: minimal repro → general fix → `t/` pin → PR.
-      **Standing rule when reading a sweep**: verify any non-`missing_dep` bucket against
+      The previous batch (`scripts/dist-compat-sweep.py --run-tests`, n=60) is now fully triaged
+      (`news/2026-08/dist-test-suite-failures-batch-triaged.md`) — the next step is a fresh
+      full-corpus sample, not a specific open ticket. Per bug: minimal repro → general fix → `t/`
+      pin → PR. **Standing rule when reading a sweep**: verify any non-`missing_dep` bucket against
       `raku -I lib` before treating it as a mutsu bug — most turn out not to be.
 - [ ] **Do NOT build an `nqp::` op layer** (measured 2026-07-26 — `news/2026-07/nqp-op-layer-measured-and-rejected.md`).
       The reverse-dependency weight is dominated by modules mutsu already bundles, and per dist the
       op set is a threshold function. Implement an individual op when a real dist needs it (as
       `nqp::sha1` was for zef).
-- [ ] **NativeCall surface gaps** — inventory in
-      [todo/tickets/nativecall-surface-gaps.md](todo/tickets/nativecall-surface-gaps.md); native-backed
-      `array[T]` / reference-element `CArray` are ADR-0015 P3b/P3c.
+- [ ] **NativeCall**: `nativecall-cannot-be-vendored.md` (measured non-vendorable, stays a justified
+      rung-3 provider — [todo/deep/nativecall-cannot-be-vendored.md](todo/deep/nativecall-cannot-be-vendored.md));
+      native-backed `array[T]` / reference-element `CArray` are ADR-0015 P3b (done) / P3c (optional,
+      pick up only when a real consumer needs it).
 - [ ] Other open module-compat findings are individual files under
       [todo/tickets/](todo/tickets/) and [todo/deep/](todo/deep/).
 
@@ -112,30 +114,25 @@ work; see the CLAUDE.md "mzef package manager and distribution" section. The **R
 | 4 — JIT (Cranelift) | ✅ default on (ADR-0004 closed) |
 | 3c — biased refcount | 🧊 frozen; measured-trigger only |
 
-Do **not** restart a "GC campaign". What is left:
+Do **not** restart a "GC campaign". ADR-0013's Miri gate is closed (required CI job, landed) and the
+OTF compilation-gate leftovers ticket is retired — both were stale entries here. What is left:
 
-- [ ] **Close ADR-0013 — the Miri gate**:
-      [todo/tickets/miri-gate-for-adr-0013.md](todo/tickets/miri-gate-for-adr-0013.md).
 - [ ] Profile-driven GC follow-ups (clone-traffic pruning, layer-3a hardening H1–H5):
       `docs/gc-post-3a-roadmap.md`. Optimization, not correctness.
-- [ ] OTF compilation-gate leftovers:
-      [todo/tickets/otf-compilation-gate-leftovers.md](todo/tickets/otf-compilation-gate-leftovers.md).
 
 ---
 
 ## 3. roast — at its ceiling; no cluster left to attack
 
-The whitelist stands at **1435 / 1464**. `integration/` — the real-Raku-program files closest to the
+The whitelist stands at **1436 / 1464**. `integration/` — the real-Raku-program files closest to the
 project goal — is **fully whitelisted**. Per
 [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md), nearly every remaining file is *non-goal* (rakudo
 itself fails), *no oracle* (local raku SORRYs), or *awaiting infrastructure* (6.e generics).
 
 **Implication for planning: roast is no longer the productive axis.** Prefer §1, §4, §5 or §6; pick
-up a roast file only when another change happens to unblock it.
-
-- [ ] Language-feature gaps that no roast file whitelists (multi-line feeds, the remaining typed
-      exceptions, `exits-ok`, `:D`/`:U` DefiniteHow):
-      [todo/tickets/remaining-language-feature-gaps.md](todo/tickets/remaining-language-feature-gaps.md).
+up a roast file only when another change happens to unblock it. (The former "remaining
+language-feature gaps" ticket here — multi-line feeds, typed exceptions, `exits-ok`, `:D`/`:U`
+DefiniteHow — is fully closed; no open roast-adjacent language-feature backlog remains right now.)
 
 ---
 
@@ -161,19 +158,21 @@ bench CI, never a local run.
 
 ## 5. Concurrency and structural refactoring
 
-- [ ] **Implement the shared worker pool per [ADR-0020](docs/adr/0020-shared-worker-pool.md)**
-      (Proposed 2026-08-05) — elastic pool, blocking `await`; slices in the ADR §6. The pool alone
-      recovers only ~10% of per-`start` cost, so whitelisting Digest's `t/ripemd.t` also needs the
-      per-task `clone_for_thread` slimming tracked in
-      [todo/tickets/digest-ripemd-start-per-block-overhead.md](todo/tickets/digest-ripemd-start-per-block-overhead.md).
-- [ ] **Remove the full locals clone/restore in `BlockScope`** — the final move of the lexical-scope
-      slot campaign and the perf core: [docs/lexical-scope-slot-campaign.md](docs/lexical-scope-slot-campaign.md).
-      A load-bearing refactor entangled with `$OUTER::`, GC roots, and env resync; suited to a
-      dedicated session.
+The [shared worker pool](docs/adr/0020-shared-worker-pool.md) is done (Accepted, all slices landed
+2026-08-05) — do not re-plan it. Its only open follow-up: the pool alone recovered only ~10% of
+per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
+levers, tracked in
+[todo/tickets/digest-ripemd-start-per-block-overhead.md](todo/tickets/digest-ripemd-start-per-block-overhead.md)
+(actively worked, see its own status log). The whole-`locals` clone/restore in `BlockScope` is also
+already gone under the default shadow-slots path (`exec_block_scope_op`, `vm/vm_misc_scope.rs`,
+closed via [ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md)) —
+`docs/lexical-scope-slot-campaign.md` is kept only as a historical record now. `.^methods`/`.can`
+deriving from the real dispatch table is also done (ADR-0019 F1/F2, closed 2026-08-20).
+
 - [ ] Semaphore / non-blocking await / lock contention (S17; hard; separate axis).
 - [ ] Propagate Supply detached-worker panics to QUIT (currently swallowed).
-- [ ] Derive `.^methods` / `.can` from the real dispatch table; split out the roast fudge logic; split
-      files over 500 lines.
+- [ ] Split out the roast fudge logic; split files over 500 lines (336 files now, still growing —
+      `ANALYSIS.md` §6).
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
       deep-recursion `fatal runtime error: stack overflow` process abort for crashes.
@@ -214,10 +213,10 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 
 | Metric | Current | Target |
 |---|---|---|
-| Bundled libraries | **22 vendored**, upstream suites gated at release | 10+ bundled, all documented |
+| Bundled libraries | **36 vendored**, upstream suites gated at release | 10+ bundled, all documented |
 | mzef | install / fetch / resolution / test phase all work E2E | Full pipeline on the real fez index |
 | Binary distribution | 4 release targets + GHCR image + mise ✅ | Achieved |
-| roast whitelist | **1435 / 1464** | Achieved; remainder is mostly non-goal |
+| roast whitelist | **1436 / 1464** | Achieved; remainder is mostly non-goal |
 | GC / JIT | **default on** ✅ | Achieved |
 | Startup vs raku | **0.04×** | maintain |
 | fib / method-call / bench-class vs raku | all under target (bench CI) | maintain |
