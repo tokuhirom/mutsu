@@ -295,7 +295,7 @@ Each phase is independently landable and independently valuable.
   P3's note below) — `e2_native_method_exists`/`.^can` wrongly saying `Match.succ`/`.pred`/`.base`/
   `.polymod`/`.parse-base` and `Any.lazy` exist, when real Rakudo says they do not.
 
-- **P3 — Fill the two genuine missing rows. LANDED (PR #6800, 2026-08-21).** Added
+- **P3 — Fill the two genuine missing rows. LANDED (PR #6795, 2026-08-21).** Added
   `("Instant","DateTime",1,0)` and `("Date","IO",8,12)` to `RAW_ROWS`
   (`src/builtins/native_method_row_table.rs`), both Rakudo-verified own methods, already dispatched
   correctly and now also visible to `.^can`/`e2_native_method_exists`.
@@ -331,7 +331,7 @@ Each phase is independently landable and independently valuable.
 
   Pinned by `t/adr0051-cool-only-gate.t`.
 
-- **P4 — Gate the string-coercion leak. LANDED (PR #6800, 2026-08-21).** At the three gate sites
+- **P4 — Gate the string-coercion leak. LANDED (PR #6795, 2026-08-21).** At the three gate sites
   (`should_bypass_native_fastpath`, `shadows_builtin`, `try_native_method_raw`) and the two by-name
   dispatchers (`.IO` in `methods_dispatch_match.rs`, `.subst`/`dispatch_subst` in
   `methods_string.rs`), a `cool_only_builtin_method` name on an `Instance` receiver now additionally
