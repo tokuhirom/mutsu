@@ -685,10 +685,21 @@ impl Compiler {
                         );
                         continue;
                     }
-                    Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
+                    Stmt::Block(stmts) => {
                         // Bare blocks in final statement position auto-execute and
                         // produce their final value.
                         sub_compiler.compile_block_inline(stmts);
+                        continue;
+                    }
+                    Stmt::SyntheticBlock(stmts) => {
+                        // A parser wrapper (e.g. a tail `my $*x := ...` bind),
+                        // not a real lexical scope -- see
+                        // `compile_synthetic_block_inline`. `sub_compiler` is
+                        // a fresh `Compiler` for this routine body, which
+                        // never pushes its own dynamic-var scope around the
+                        // body itself, so an earlier read anywhere in this
+                        // body must stay visible here.
+                        sub_compiler.compile_synthetic_block_inline(stmts);
                         continue;
                     }
                     Stmt::VarDecl { name, .. } => {
@@ -1133,8 +1144,14 @@ impl Compiler {
                     );
                     continue;
                 }
-                if is_value && let Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) = stmt {
+                if is_value && let Stmt::Block(stmts) = stmt {
                     sub_compiler.compile_block_inline(stmts);
+                    continue;
+                }
+                if is_value && let Stmt::SyntheticBlock(stmts) = stmt {
+                    // See the `Stmt::SyntheticBlock` arm above -- a parser
+                    // wrapper, not a real scope.
+                    sub_compiler.compile_synthetic_block_inline(stmts);
                     continue;
                 }
                 if is_value && let Stmt::VarDecl { name, .. } = stmt {
@@ -1287,6 +1304,10 @@ impl Compiler {
                                     "Implicit placeholder parameters are not available in bare nested blocks"
                                         .to_string(),
                                 ))));
+                            } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
+                                // A parser wrapper, not a real scope -- see
+                                // `compile_synthetic_block_inline`.
+                                sub_compiler.compile_synthetic_block_inline(stmts);
                             } else {
                                 sub_compiler.compile_block_inline(stmts);
                             }

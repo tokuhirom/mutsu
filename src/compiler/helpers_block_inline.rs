@@ -49,6 +49,13 @@ impl Compiler {
                 // real `BlockScope` rather than being inlined (which drops them).
                 if Self::has_block_enter_leave_phasers(inner) {
                     self.compile_phaser_block_scope(inner, PhaserBlockResult::Push);
+                } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
+                    // A parser wrapper (e.g. a tail `my $*x := ...` bind used
+                    // as a `given`/`when` body's last statement), not a real
+                    // lexical scope -- see `compile_synthetic_block_inline`.
+                    // A genuine `Stmt::Block` is a real scope and keeps
+                    // resetting normally (the `else` branch below).
+                    self.compile_synthetic_block_inline(inner);
                 } else {
                     self.compile_block_inline(inner);
                 }
@@ -198,16 +205,9 @@ impl Compiler {
                             self.compile_bare_block_inline(inner);
                         } else {
                             // `stmt` is a `SyntheticBlock` here (the other arm
-                            // of this match) — a parser wrapper, not a real
-                            // lexical scope (its direct, non-tail dispatch in
-                            // `compile_stmt` inlines with no push/pop at all).
-                            // Tell the recursive `compile_block_inline`'s own
-                            // push not to reset dynamic-var read tracking, so
-                            // an earlier read in THIS enclosing block is still
-                            // visible to the wrapped declaration's own
-                            // X::Dynamic::Postdeclaration check.
-                            self.next_dynamic_scope_inline_transparent = true;
-                            self.compile_block_inline(inner);
+                            // of this match) — see
+                            // `compile_synthetic_block_inline`.
+                            self.compile_synthetic_block_inline(inner);
                         }
                         self.pop_dynamic_scope_lexical(saved);
                         return;
