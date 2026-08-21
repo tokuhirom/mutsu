@@ -30,38 +30,40 @@
 //! the final winner is [`Interpreter::pick_method_winner`]'s existing tie-break
 //! ladder, unchanged.
 //!
-//! **E8a's own accepted divergence, found by the new deferral-list shadow check**
-//! ([`Interpreter::shadow_check_deferral_sequence`]): [`Self::resolve_sequence`]'s
-//! per-level lookup, `Registry::user_method_overloads`, silently returns nothing
-//! for a **role** owner that has never been *punned* (used as a standalone type
-//! via `RoleName.new`) — `Registry::method_entries` (the E1/E2 canonical table
-//! `user_method_overloads` reads) is only ever populated for `self.classes`
-//! keys, and a role is not one unless a pun briefly registered (and then
-//! withdrew) a synthetic `ClassDef` for it. `resolve_all_methods_with_owner`
-//! (the real deferral-list walker `push_method_dispatch_frame` still uses) does
-//! not have this gap — it reads `self.registry().roles` directly, bypassing
-//! `method_entries` — so every mismatch this shadow check found (2026-08-12
-//! sweep) had the same shape: the sequence is missing exactly the role-owned
-//! candidate the real walker still finds (a role's un-flattened method the
-//! composing class overrides with its own, or a role-qualified call
-//! `self.R::name()`). Full root-cause and fix plan in
-//! `news/2026-08/method-entries-never-covers-unpunned-roles.md` — not fixed here
-//! because `method_entries` also feeds several REAL dispatch paths (winner
-//! selection included), so populating it for roles is a real-behavior-change
-//! outside this shadow-only box's scope.
+//! **E8a's own accepted divergence, found by the new deferral-list shadow
+//! check** ([`Interpreter::shadow_check_deferral_sequence`]), root-caused and
+//! fixed by `todo/tickets/e8a-deferral-shadow-sequence-is-role-blind.md`
+//! (2026-08-21): [`Self::resolve_sequence`]'s per-level lookup silently
+//! omitted every candidate owned by a **role** that had never been *punned*
+//! (used as a standalone type via `RoleName.new`), because it always read
+//! the plain `Registry::user_method_overloads` — `Registry::method_entries`
+//! (the E1/E2 canonical table that reads) deliberately excludes role owners
+//! as stated policy (ADR-0019 F4c design note (1); the table is maintained
+//! by `registry_method_table.rs`'s per-declaration mutators, not by any
+//! writer's early return). The real deferral-list walker,
+//! [`Interpreter::resolve_deferral_expansion`] (ADR-0019 E9a,
+//! `resolution_deferral.rs`), has no such gap: its per-level lookup,
+//! `own_overloads_at_level`, consults
+//! `Registry::get_method_overloads_with_role_fallback`, which reads
+//! `Registry::roles` directly when the plain table has nothing — so every
+//! mismatch the shadow check found (2026-08-12 sweep) had the same shape:
+//! the sequence was missing exactly the role-owned candidate the real walker
+//! still found (a role's un-flattened method the composing class overrides
+//! with its own, or a role-qualified call `self.R::name()`). Full root-cause
+//! writeup in `news/2026-08/method-entries-never-covers-unpunned-roles.md`.
 //!
-//! **The paragraph above is kept for its history but is stale in its mechanics
-//! and its target** (2026-08-20 re-audit): `sync_user_method_entries` no longer
-//! exists (ADR-0019 F4c-9b) and role exclusion from `method_entries` is stated
-//! policy now, not a writer's early return (F4c design note (1)); and the real
-//! deferral walker is [`Interpreter::resolve_deferral_expansion`] (E9a), not
-//! `resolve_all_methods_with_owner`. The real walker consults
-//! `Registry::get_method_overloads_with_role_fallback` while
-//! [`Self::resolve_sequence`] here still does not, which is what keeps this
-//! divergence alive. Fixing it is a shadow-instrument change only (thread a
-//! role-fallback mode into `resolve_sequence` for the shadow caller alone —
-//! winner selection must keep the role-blind lookup, ADR-0019 F4a):
-//! `todo/tickets/e8a-deferral-shadow-sequence-is-role-blind.md`.
+//! The fix is the [`RoleFallback`] parameter: [`Self::resolve_sequence`] is
+//! *also* the candidate source for live winner selection
+//! ([`Interpreter::resolve_via_sequence_cache`]), and ADR-0019 F4a's rule is
+//! that winner selection must never consult the role fallback, so widening
+//! the lookup unconditionally was not an option. Only
+//! [`Interpreter::shadow_check_deferral_sequence`]'s own call site passes
+//! [`RoleFallback::Enabled`]; every other caller — winner selection included,
+//! whose `resolved_seq_cache` key must keep meaning "no fallback" — passes
+//! [`RoleFallback::Disabled`], the original role-blind behavior, unchanged.
+//! A second, unrelated divergence (governing proto-block ordering vs
+//! per-level stored order) remains out of this box's scope; see the ticket
+//! for its repro (`t/defer-multi-cross-level-proto-block.t`).
 
 use super::*;
 use crate::builtins::native_method_row::{NativeArityMask, native_row_servable};
@@ -112,6 +114,31 @@ pub(crate) enum MethodVisibility {
     /// `resolve_private_method_any_owner` (`resolution_private_method.rs`),
     /// neither of which checks `is_my` at all.
     Private,
+}
+
+/// Whether [`Interpreter::resolve_sequence`]'s per-level lookup widens to
+/// `Registry::get_method_overloads_with_role_fallback` (a role owner that was
+/// never `.new`-punned still contributes its own candidates) or stays with
+/// the plain `Registry::user_method_overloads` (a role owner with no pun
+/// contributes nothing). Added for `todo/tickets/
+/// e8a-deferral-shadow-sequence-is-role-blind.md`: `resolve_sequence` is also
+/// the candidate source for live winner selection
+/// ([`Interpreter::resolve_via_sequence_cache`]), and ADR-0019 F4a's rule is
+/// that winner selection must never consult the role fallback — so this is
+/// an explicit per-call choice, not a global switch. Only
+/// [`Interpreter::shadow_check_deferral_sequence`]'s own `resolve_sequence`
+/// call passes [`RoleFallback::Enabled`]; every other caller (including
+/// [`Interpreter::resolve_via_sequence_cache`], whose `resolved_seq_cache`
+/// key must keep meaning "no fallback") passes [`RoleFallback::Disabled`],
+/// the pre-existing role-blind behavior, unchanged.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RoleFallback {
+    /// `Registry::user_method_overloads` only — the original, role-blind
+    /// lookup every caller used before this ticket.
+    Disabled,
+    /// `Registry::get_method_overloads_with_role_fallback` — also surfaces a
+    /// never-punned role's own candidates at the MRO level it occupies.
+    Enabled,
 }
 
 /// One candidate in a [`ResolvedSequence`]. E4a only ever constructed `User`;
@@ -273,6 +300,7 @@ impl Interpreter {
                     method_sym,
                     native_shape,
                     MethodVisibility::Public,
+                    RoleFallback::Disabled,
                 ));
                 self.resolved_seq_cache
                     .insert((owner, method_sym, shape), built.clone());
@@ -302,6 +330,7 @@ impl Interpreter {
         name: Symbol,
         native_shape: NativeCallShape,
         visibility: MethodVisibility,
+        role_fallback: RoleFallback,
     ) -> ResolvedSequence {
         let generation = self.registry().method_generation;
         let mut candidates = Vec::new();
@@ -310,10 +339,15 @@ impl Interpreter {
         for (level, owner) in chain.iter().enumerate() {
             let is_ancestor = level > 0;
             let owner_str = owner.as_str();
-            if let Some(overloads) = self
-                .registry()
-                .user_method_overloads(owner_str, name.as_str())
-            {
+            let overloads = match role_fallback {
+                RoleFallback::Disabled => self
+                    .registry()
+                    .user_method_overloads(owner_str, name.as_str()),
+                RoleFallback::Enabled => self
+                    .registry()
+                    .get_method_overloads_with_role_fallback(owner_str, name.as_str()),
+            };
+            if let Some(overloads) = overloads {
                 for (stored_idx, def) in overloads.into_iter().enumerate() {
                     let visible = match visibility {
                         MethodVisibility::Public => !(def.is_private || (def.is_my && is_ancestor)),
@@ -648,7 +682,13 @@ impl Interpreter {
         let saved_ambiguous = self.dispatch_ambiguous;
         let definite = invocant.map(value_is_definite).unwrap_or(false);
         let native_shape = NativeCallShape::new(arg_values.len(), definite);
-        let seq = self.resolve_sequence(chain, method_sym, native_shape, visibility);
+        let seq = self.resolve_sequence(
+            chain,
+            method_sym,
+            native_shape,
+            visibility,
+            RoleFallback::Disabled,
+        );
         let has_where_candidate = seq.candidates.iter().any(|c| {
             let ResolvedCandidate::User { def, .. } = c else {
                 return false;
@@ -706,7 +746,13 @@ impl Interpreter {
         }
         let chain = self.dispatch_mro(target);
         let native_shape = NativeCallShape::new(arg_count, value_is_definite(target));
-        let seq = self.resolve_sequence(&chain, method_sym, native_shape, MethodVisibility::Public);
+        let seq = self.resolve_sequence(
+            &chain,
+            method_sym,
+            native_shape,
+            MethodVisibility::Public,
+            RoleFallback::Disabled,
+        );
         let native_row_owner = seq.candidates.iter().find_map(|c| match c {
             ResolvedCandidate::Native { owner } => Some(owner.as_str()),
             ResolvedCandidate::User { .. } | ResolvedCandidate::NativeCallBinding { .. } => None,
@@ -782,7 +828,19 @@ impl Interpreter {
         let mro = self.class_mro(receiver_class);
         let chain: Vec<TypeId> = mro.iter().map(|s| TypeId::from_symbol(*s)).collect();
         let native_shape = NativeCallShape::new(arg_values.len(), value_is_definite(invocant));
-        let seq = self.resolve_sequence(&chain, method_sym, native_shape, MethodVisibility::Public);
+        // RoleFallback::Enabled — the whole point of this ticket's fix: the
+        // real deferral walker (`resolve_deferral_expansion`, E9a) consults
+        // `Registry::get_method_overloads_with_role_fallback`, so the shadow
+        // list must widen the same way or every role-in-MRO shape reports a
+        // false mismatch. This is the ONLY `resolve_sequence` call site that
+        // passes `Enabled` — see the `RoleFallback` doc comment.
+        let seq = self.resolve_sequence(
+            &chain,
+            method_sym,
+            native_shape,
+            MethodVisibility::Public,
+            RoleFallback::Enabled,
+        );
         let has_where_candidate = seq.candidates.iter().any(|c| {
             let ResolvedCandidate::User { def, .. } = c else {
                 return false;
@@ -853,6 +911,7 @@ mod tests {
             Symbol::intern("greet"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         let owners: Vec<&str> =
             seq.candidates
@@ -877,6 +936,7 @@ mod tests {
             Symbol::intern("only-base"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
@@ -895,6 +955,7 @@ mod tests {
             Symbol::intern("only-base"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert_eq!(seq.candidates.len(), 1);
     }
@@ -909,6 +970,7 @@ mod tests {
             Symbol::intern("nope"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(seq.candidates.is_empty());
     }
@@ -927,6 +989,7 @@ mod tests {
             Symbol::intern("tap"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.iter().any(
@@ -949,6 +1012,7 @@ mod tests {
             Symbol::intern("chars"),
             NativeCallShape::new(0, true),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.iter().any(
@@ -968,6 +1032,7 @@ mod tests {
             Symbol::intern("chars"),
             NativeCallShape::new(1, true),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             !seq.candidates
@@ -991,6 +1056,7 @@ mod tests {
             Symbol::intern("secret"),
             default_shape(),
             MethodVisibility::Private,
+            RoleFallback::Disabled,
         );
         let owners: Vec<&str> =
             seq.candidates
@@ -1016,6 +1082,7 @@ mod tests {
             Symbol::intern("secret"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
@@ -1035,6 +1102,7 @@ mod tests {
             Symbol::intern("chars"),
             NativeCallShape::new(0, true),
             MethodVisibility::Private,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
@@ -1055,6 +1123,7 @@ mod tests {
             Symbol::intern("chomp"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
@@ -1083,6 +1152,7 @@ mod tests {
             Symbol::intern("greet"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         let facts: Vec<(&str, u16, u16)> =
             seq.candidates
@@ -1127,6 +1197,7 @@ mod tests {
             Symbol::intern("greet"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         let owners: Vec<&str> =
             seq.candidates
@@ -1166,6 +1237,7 @@ mod tests {
             Symbol::intern("greet"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
         let shadow = i.pick_method_winner_from_sequence(
@@ -1196,6 +1268,7 @@ mod tests {
             Symbol::intern("greet"),
             default_shape(),
             MethodVisibility::Public,
+            RoleFallback::Disabled,
         );
         let mro: Vec<Symbol> = chain.iter().map(|t| t.symbol()).collect();
         let shadow = i
