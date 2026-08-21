@@ -603,9 +603,15 @@ impl Interpreter {
         self.reconcile_caller_after_lazy_force(caller_code);
         // An array-context lazy list IS the array's element store: a Nil the
         // pipe produced resets its fresh element container to Any, like any
-        // other store into an untyped array element.
+        // other store into an untyped array element (ADR-0049 slice 3:
+        // `decay_nil_vec_elements`, sharing the same store-time decay
+        // authority as every other construction/assignment site instead of
+        // hardcoding `Any` here independently).
         if list.in_array_context() {
-            return r.map(crate::runtime::utils::nil_elems_to_any);
+            return match r {
+                Ok(items) => Ok(self.decay_nil_vec_elements(items)),
+                err => err,
+            };
         }
         r
     }
@@ -877,7 +883,10 @@ impl Interpreter {
         self.reconcile_caller_after_lazy_force(caller_code);
         // See force_lazy_list_vm: array-context elements store Any, not Nil.
         if list.in_array_context() {
-            return r.map(crate::runtime::utils::nil_elems_to_any);
+            return match r {
+                Ok(items) => Ok(self.decay_nil_vec_elements(items)),
+                err => err,
+            };
         }
         r
     }

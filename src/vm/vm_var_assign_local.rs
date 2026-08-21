@@ -146,28 +146,18 @@ impl Interpreter {
                 if list.preserve_lazy_on_array_assign() {
                     Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                 } else {
-                    Value::real_array(crate::runtime::utils::nil_elems_to_any(
-                        self.force_lazy_list_vm(&list)?,
-                    ))
+                    let forced = self.force_lazy_list_vm(&list)?;
+                    Value::real_array(self.decay_nil_vec_elements(forced))
                 }
             } else {
                 runtime::coerce_to_array(raw_val)
             };
-            // An untyped `@` assignment resets Nil elements to Any (their
-            // fresh containers' default); typed arrays keep Nil for the typed
-            // element coercion downstream.
-            if loan_env!(self, var_type_constraint(name)).is_none()
-                && let ValueView::Array(items, kind) = assigned.view()
-                && kind.is_real_array()
-                && items.iter().any(Value::is_nil)
-            {
-                // Clone the ArrayData so shape/default/type metadata survive;
-                // only the items are rewritten.
-                let mut data = (**items).clone();
-                let old_items = data.take_items();
-                *data.items_mut() = crate::runtime::utils::nil_elems_to_any(old_items);
-                assigned = Value::array_with_kind(crate::gc::Gc::new(data), kind);
-            }
+            // An `@` (list-)assignment resets Nil elements to the target
+            // container's own default (ADR-0049 slice 3: see the SetLocal
+            // sibling in `vm_var_assign_set_local.rs` for the full rationale).
+            // This AssignExpr form is never a bind, so no `!is_bind` guard is
+            // needed here.
+            assigned = self.decay_nil_elements_for_var_assign(name, assigned);
             let class_name = match self.locals[idx].view() {
                 ValueView::Instance { class_name, .. } => Some(class_name),
                 ValueView::Package(class_name) => Some(class_name),

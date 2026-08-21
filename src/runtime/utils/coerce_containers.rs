@@ -361,25 +361,6 @@ where
     Ok(set_hash_original_keys(Value::hash(map), original_keys))
 }
 
-/// Replace Nil elements with the Any type object when materializing values
-/// into a fresh untyped real Array: assigning Nil to an element container
-/// resets it to its default (`my @a = (..., Nil, ...)` stores Any).
-pub(crate) fn nil_elems_to_any(items: Vec<Value>) -> Vec<Value> {
-    if !items.iter().any(Value::is_nil) {
-        return items;
-    }
-    items
-        .into_iter()
-        .map(|v| {
-            if v.is_nil() {
-                Value::package(crate::symbol::Symbol::intern("Any"))
-            } else {
-                v
-            }
-        })
-        .collect()
-}
-
 pub(crate) fn coerce_to_array(value: Value) -> Value {
     fn metadata_shape_for_items(
         items: &crate::gc::Gc<crate::value::ArrayData>,

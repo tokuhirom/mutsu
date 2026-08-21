@@ -240,6 +240,7 @@ mod vm_var_assign_element;
 mod vm_var_assign_index_named;
 mod vm_var_assign_local;
 mod vm_var_assign_local_get;
+mod vm_var_assign_nil_decay;
 mod vm_var_assign_ops;
 mod vm_var_assign_post_incdec;
 mod vm_var_assign_set_local;

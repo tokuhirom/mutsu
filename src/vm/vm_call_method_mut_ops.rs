@@ -2763,83 +2763,93 @@ impl Interpreter {
         // container (ADR-0039 slice 1) over the raw `env` entry when
         // `target_name` names one, so a module's/mainline-sub's own `@items`
         // is never confused with the loading scope's same-named `env` entry.
-        let result =
-            self.env_root_descended_mut(target_name)?
-                .with_array_mut(|arc_items, kind| {
-                    if !matches!(*kind, crate::value::ArrayKind::Array) {
-                        return None;
+        // ADR-0049 slice 3: precompute the (possibly Nil-decaying) argument
+        // list BEFORE taking the mutable borrow into `self`'s env below --
+        // `decay_nil_vec_elements` needs `&mut self`, which the
+        // `with_array_mut` closure below cannot borrow (it is already
+        // running inside `self.env_root_descended_mut(..)`'s mutable
+        // borrow). This whole function bailed out above for any typed or
+        // metadata-tagged target, so the result is always the untyped `Any`
+        // default -- exactly what the old hardcoded `nil_elems_to_any` call
+        // produced here, now sourced from the one shared decay helper.
+        let mut precomputed_args = match method {
+            // `@a.push`/`.unshift` compile to `ArrayPush`/(unshift opcode)
+            // only for a single-arg call on a *local* array; the
+            // captured-closure and multi-arg forms reach here as
+            // `CallMethodMut`. Mirror the opcode's env-bound branch
+            // (`normalize_push_unshift_args` then extend/insert).
+            "push" | "unshift" => Some(self.decay_nil_vec_elements(
+                crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec()),
+            )),
+            "append" | "prepend" => Some(
+                self.decay_nil_vec_elements(crate::runtime::flatten_append_args(args.to_vec())),
+            ),
+            _ => None,
+        };
+        let result = self.env_root_descended_mut(target_name)?.with_array_mut(
+            move |arc_items, kind| {
+                if !matches!(*kind, crate::value::ArrayKind::Array) {
+                    return None;
+                }
+                // SAFETY: audited aliased in-place container write (see
+                // value::aliased_mut); no other borrow into this node is
+                // live across the mutation below.
+                let items = unsafe { crate::value::gc_contents_mut(arc_items) };
+                Some(match method {
+                    "push" => {
+                        let norm = precomputed_args.take().expect("precomputed for push above");
+                        items.extend(norm);
+                        Value::array_with_kind(
+                            crate::gc::Gc::clone(arc_items),
+                            crate::value::ArrayKind::Array,
+                        )
                     }
-                    // SAFETY: audited aliased in-place container write (see
-                    // value::aliased_mut); no other borrow into this node is
-                    // live across the mutation below.
-                    let items = unsafe { crate::value::gc_contents_mut(arc_items) };
-                    Some(match method {
-                        "push" => {
-                            // `@a.push` compiles to `ArrayPush` only for single-arg pushes on
-                            // a *local* array; the captured-closure and multi-arg forms reach
-                            // here as `CallMethodMut`. Mirror the `ArrayPush` opcode's env-bound
-                            // branch (`normalize_push_unshift_args` then extend). This path is
-                            // gated to untyped arrays, so a Nil element stores Any.
-                            let norm = crate::runtime::utils::nil_elems_to_any(
-                                crate::runtime::Interpreter::normalize_push_unshift_args(
-                                    args.to_vec(),
-                                ),
-                            );
-                            items.extend(norm);
-                            Value::array_with_kind(
-                                crate::gc::Gc::clone(arc_items),
-                                crate::value::ArrayKind::Array,
-                            )
-                        }
-                        "append" | "prepend" => {
-                            let flat = crate::runtime::utils::nil_elems_to_any(
-                                crate::runtime::flatten_append_args(args.to_vec()),
-                            );
-                            if method == "append" {
-                                items.extend(flat);
-                            } else {
-                                for (i, v) in flat.into_iter().enumerate() {
-                                    items.insert(i, v);
-                                }
-                            }
-                            Value::array_with_kind(
-                                crate::gc::Gc::clone(arc_items),
-                                crate::value::ArrayKind::Array,
-                            )
-                        }
-                        "unshift" => {
-                            let norm = crate::runtime::utils::nil_elems_to_any(
-                                crate::runtime::Interpreter::normalize_push_unshift_args(
-                                    args.to_vec(),
-                                ),
-                            );
-                            for (i, v) in norm.into_iter().enumerate() {
+                    "append" | "prepend" => {
+                        let flat = precomputed_args
+                            .take()
+                            .expect("precomputed for append/prepend above");
+                        if method == "append" {
+                            items.extend(flat);
+                        } else {
+                            for (i, v) in flat.into_iter().enumerate() {
                                 items.insert(i, v);
                             }
-                            Value::array_with_kind(
-                                crate::gc::Gc::clone(arc_items),
-                                crate::value::ArrayKind::Array,
-                            )
                         }
-                        "pop" => {
-                            if items.is_empty() {
-                                crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
-                            } else {
-                                items.pop().unwrap_or(Value::NIL)
-                            }
+                        Value::array_with_kind(
+                            crate::gc::Gc::clone(arc_items),
+                            crate::value::ArrayKind::Array,
+                        )
+                    }
+                    "unshift" => {
+                        let norm = precomputed_args
+                            .take()
+                            .expect("precomputed for unshift above");
+                        for (i, v) in norm.into_iter().enumerate() {
+                            items.insert(i, v);
                         }
-                        "shift" => {
-                            if items.is_empty() {
-                                crate::runtime::utils::make_empty_array_failure_what(
-                                    "shift", "Array",
-                                )
-                            } else {
-                                items.remove(0)
-                            }
+                        Value::array_with_kind(
+                            crate::gc::Gc::clone(arc_items),
+                            crate::value::ArrayKind::Array,
+                        )
+                    }
+                    "pop" => {
+                        if items.is_empty() {
+                            crate::runtime::utils::make_empty_array_failure_what("pop", "Array")
+                        } else {
+                            items.pop().unwrap_or(Value::NIL)
                         }
-                        _ => unreachable!(),
-                    })
-                })??;
+                    }
+                    "shift" => {
+                        if items.is_empty() {
+                            crate::runtime::utils::make_empty_array_failure_what("shift", "Array")
+                        } else {
+                            items.remove(0)
+                        }
+                    }
+                    _ => unreachable!(),
+                })
+            },
+        )??;
         Some(Ok(result))
     }
 
