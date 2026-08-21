@@ -245,6 +245,7 @@ mod value_eq;
 mod value_gc;
 mod value_instance;
 mod value_lazy;
+mod value_lazy_ctors;
 mod value_methods_a;
 mod value_methods_b;
 mod value_methods_c;
@@ -1962,6 +1963,22 @@ pub(crate) struct LazyList {
     /// Lazy `IO::CatHandle.lines` / `.handles` generator (see `CatPullSpec`):
     /// each pull reads the next line / handle from the live cat instance.
     pub(crate) cat_pull: Option<Mutex<CatPullSpec>>,
+    /// Bound/assigned into an `@` array slot. A `Value::LazyList` carries no
+    /// `[`-vs-`(` context on its own, so this flag lets gist/`.WHAT` render
+    /// `[...]`/`Array` (held in `@a`) instead of `(...)`/`Seq` (a bare `$s`
+    /// Seq). Typed field (was the `__mutsu_lazylist_array_context` env
+    /// marker; see `todo/tickets/collapse-lazylist-cache-copies.md`).
+    pub(crate) array_context: bool,
+    /// Coerced via `.List` (so `.WHAT` is `List`, not the default `Seq`).
+    /// Mutually exclusive with `array_context` in practice. Typed field (was
+    /// the `__mutsu_lazylist_list_context` env marker).
+    pub(crate) list_context: bool,
+    /// Set by `.cache` on a genuinely-lazy list: the result is a cached,
+    /// re-iterable view, so sinking it is a no-op (it must NOT drain the
+    /// underlying source). A bare lazy Seq sunk still drains; only the
+    /// `.cache`-returned view carries this flag. Typed field (was the
+    /// `__mutsu_lazylist_cached_no_sink` env marker).
+    pub(crate) cached_no_sink: bool,
 }
 
 /// Placeholder string rendered for a genuinely-lazy list under

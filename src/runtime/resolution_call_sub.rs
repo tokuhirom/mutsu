@@ -1125,6 +1125,9 @@ impl Interpreter {
                             .cat_pull
                             .as_ref()
                             .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                        array_context: list.array_context,
+                        list_context: list.list_context,
+                        cached_no_sink: list.cached_no_sink,
                     }))
                 } else {
                     v

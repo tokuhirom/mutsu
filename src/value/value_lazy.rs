@@ -45,23 +45,18 @@ impl Clone for LazyList {
                 .cat_pull
                 .as_ref()
                 .map(|c| Mutex::new(c.lock().unwrap().clone())),
+            array_context: self.array_context,
+            list_context: self.list_context,
+            cached_no_sink: self.cached_no_sink,
         }
     }
 }
 
 impl LazyList {
-    /// Marker key inserted into `env` when a lazy list is bound/assigned into
-    /// an `@` array slot. A `Value::LazyList` carries no `[`-vs-`(` context on
-    /// its own, so this flag lets gist/`.WHAT` render `[...]`/`Array` (held in
-    /// `@a`) instead of `(...)`/`Seq` (a bare `$s` Seq).
-    pub(crate) const ARRAY_CONTEXT_MARKER: &'static str = "__mutsu_lazylist_array_context";
-
-    /// Whether this lazy list was assigned into an `@` array (see marker above).
+    /// Whether this lazy list was assigned into an `@` array (see the
+    /// `array_context` field doc on `LazyList`).
     pub(crate) fn in_array_context(&self) -> bool {
-        matches!(
-            self.env.get(Self::ARRAY_CONTEXT_MARKER).map(Value::view),
-            Some(ValueView::Bool(true))
-        )
+        self.array_context
     }
 
     /// True when this list is genuinely lazy (`.is-lazy`), so gist/Str/raku
@@ -247,332 +242,63 @@ impl LazyList {
     /// Return a clone of this list tagged as living in `@` array context.
     pub(crate) fn with_array_context(&self) -> Self {
         let mut cloned = self.clone();
-        cloned
-            .env
-            .insert(Self::ARRAY_CONTEXT_MARKER.to_string(), Value::Bool(true));
+        cloned.array_context = true;
         cloned
     }
-
-    pub(crate) const LIST_CONTEXT_MARKER: &'static str = "__mutsu_lazylist_list_context";
 
     /// Whether this lazy list was coerced via `.List` (so `.WHAT` is `List`,
     /// not the default `Seq`). Mutually exclusive with array context in practice.
     pub(crate) fn in_list_context(&self) -> bool {
-        matches!(
-            self.env.get(Self::LIST_CONTEXT_MARKER).map(Value::view),
-            Some(ValueView::Bool(true))
-        )
+        self.list_context
     }
 
     /// Return a clone of this list tagged as a `.List`-coerced list. Preserves
     /// laziness (the generator is untouched) while making `.WHAT` report `List`.
     pub(crate) fn with_list_context(&self) -> Self {
         let mut cloned = self.clone();
-        cloned
-            .env
-            .insert(Self::LIST_CONTEXT_MARKER.to_string(), Value::Bool(true));
+        cloned.list_context = true;
         cloned
     }
 
-    /// Marker set by `.cache` on a genuinely-lazy list: the result is a cached,
-    /// re-iterable view, so sinking it is a no-op (it must NOT drain the
-    /// underlying source). A bare lazy Seq sunk still drains; only the
-    /// `.cache`-returned view carries this marker.
-    pub(crate) const CACHED_NO_SINK_MARKER: &'static str = "__mutsu_lazylist_cached_no_sink";
-
-    /// Whether this list is a `.cache`-returned view whose sink is a no-op.
+    /// Whether this list is a `.cache`-returned view whose sink is a no-op
+    /// (see the `cached_no_sink` field doc on `LazyList`).
     pub(crate) fn is_cached_no_sink(&self) -> bool {
-        matches!(
-            self.env.get(Self::CACHED_NO_SINK_MARKER).map(Value::view),
-            Some(ValueView::Bool(true))
-        )
+        self.cached_no_sink
     }
 
     /// Return a clone tagged as a `.cache`-returned view (no-op on sink).
     pub(crate) fn with_cached_no_sink(&self) -> Self {
         let mut cloned = self.clone();
-        cloned
-            .env
-            .insert(Self::CACHED_NO_SINK_MARKER.to_string(), Value::Bool(true));
+        cloned.cached_no_sink = true;
         cloned
     }
 
-    /// Create a pre-cached lazy list (no body to evaluate).
-    pub(crate) fn new_cached(items: Vec<Value>) -> Self {
-        Self {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: Mutex::new(Some(items)),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create an infinite sequence lazy list that can generate elements on demand.
-    pub(crate) fn new_sequence(seeds: Vec<Value>, spec: SequenceSpec) -> Self {
-        Self {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: Mutex::new(Some(seeds)),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: Some(spec),
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create a lazy scan (triangle reduce) list that computes elements on demand.
-    pub(crate) fn new_scan(spec: ScanSpec) -> Self {
-        Self {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: Mutex::new(Some(Vec::new())),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: Some(Mutex::new(spec)),
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create a lazy `map`/`grep` pipeline stage over `source`.
+    /// The shared `.cache` `LazyList` arm: a genuinely-lazy list (infinite
+    /// sequence, lazy pipe, cat-handle pull, …) must stay lazy under
+    /// `.cache` — Rakudo's `.cache` reifies and caches elements on demand,
+    /// it does not force the whole list. Returns the cached, list-context
+    /// view (tagged both "sink is a no-op" and "`.WHAT` reports `List`")
+    /// when this list needs that treatment; `None` when `.cache` should fall
+    /// through to the generic Positional/Seq caching path instead.
     ///
-    /// The result stays lazy: its elements are produced on demand by pulling
-    /// from `source` and applying `func`. The `__mutsu_lazylist_from_gather`
-    /// marker is set so the VM's `.head`/`.first`/index dispatch routes through
-    /// the bounded incremental-pull path.
-    pub(crate) fn new_pipe(source: Value, func: Value, is_grep: bool) -> Self {
-        let mut env = crate::env::Env::new();
-        env.insert(
-            "__mutsu_lazylist_from_gather".to_string(),
-            Value::Bool(true),
-        );
-        Self {
-            body: Vec::new(),
-            env,
-            cache: Mutex::new(Some(Vec::new())),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: Some(Mutex::new(MapGrepSpec {
-                source,
-                func,
-                is_grep,
-                source_idx: 0,
-                done: false,
-                index_transform: None,
-            })),
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create a lazy `.pairs`/`.antipairs`/`.kv` stage over `source`.
-    ///
-    /// Stays lazy (carries the gather + preserve markers so array assignment
-    /// keeps it lazy, matching Rakudo where these methods are `.is-lazy` over a
-    /// lazy list). Elements are produced on demand by pulling from `source` and
-    /// applying the index transform with the source position as the key.
-    pub(crate) fn new_index_pipe(source: Value, transform: IndexTransform) -> Self {
-        let mut env = crate::env::Env::new();
-        env.insert(
-            "__mutsu_lazylist_from_gather".to_string(),
-            Value::Bool(true),
-        );
-        env.insert(
-            "__mutsu_preserve_lazy_on_array_assign".to_string(),
-            Value::Bool(true),
-        );
-        Self {
-            body: Vec::new(),
-            env,
-            cache: Mutex::new(Some(Vec::new())),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: Some(Mutex::new(MapGrepSpec {
-                source,
-                func: Value::Nil,
-                is_grep: false,
-                source_idx: 0,
-                done: false,
-                index_transform: Some(transform),
-            })),
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create an infinite closure-based sequence (`1, 1, * + * ... *`).
-    ///
-    /// `seeds` is the initial element history (already includes any eagerly
-    /// generated prefix); `state` carries the generator closure so more
-    /// elements can be produced on demand via the VM.
-    pub(crate) fn new_closure_sequence(seeds: Vec<Value>, state: ClosureSeqState) -> Self {
-        Self {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: Mutex::new(Some(seeds)),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: Some(Mutex::new(state)),
-            walk_pending: None,
-            cat_pull: None,
-        }
-    }
-
-    /// Create a lazy `IO::CatHandle.lines` / `.handles` list backed by a live
-    /// cat instance (sharing its attribute cell). Each element is pulled on
-    /// demand by reading from / advancing the cat, so mid-iteration changes to
-    /// the cat's attributes take effect.
-    pub(crate) fn new_cat_pull(cat: Value, mode: crate::value::CatPullMode) -> Self {
-        Self {
-            body: Vec::new(),
-            env: crate::env::Env::new(),
-            cache: Mutex::new(Some(Vec::new())),
-            compiled_code: None,
-            compiled_fns: None,
-            elems_count: None,
-            scan_spec: None,
-            sequence_spec: None,
-            coroutine: None,
-            lazy_pipe: None,
-            closure_seq: None,
-            walk_pending: None,
-            cat_pull: Some(Mutex::new(crate::value::CatPullSpec {
-                cat,
-                mode,
-                started: false,
-                done: false,
-            })),
-        }
-    }
-
-    /// Force a scan-based lazy list to compute up to `needed` elements.
-    /// Uses builtin arithmetic for common operators. Returns the cached elements.
-    /// This can be called from contexts without VM access (builtins, interpreter).
-    pub(crate) fn force_scan_to(&self, needed: usize) -> Vec<Value> {
-        let scan_mutex = match &self.scan_spec {
-            Some(s) => s,
-            None => return self.cache.lock().unwrap().clone().unwrap_or_default(),
-        };
-
-        let mut spec = scan_mutex.lock().unwrap();
-        let mut cache_guard = self.cache.lock().unwrap();
-        let out = cache_guard.get_or_insert_with(Vec::new);
-
-        if out.len() >= needed {
-            return out[..needed].to_vec();
-        }
-
-        let remaining = needed - out.len();
-        let already = spec.computed_count;
-        let source = spec.source.clone();
-        let base_op = spec.op.clone();
-        let negate = spec.negate;
-
-        // Generate source values
-        let new_values: Vec<Value> = match source.view() {
-            ValueView::Range(a, b) => {
-                let start = a + already as i64;
-                let end = if b == i64::MAX { a + needed as i64 } else { b };
-                (start..=end).take(remaining).map(Value::Int).collect()
-            }
-            ValueView::RangeExcl(a, b) => {
-                let start = a + already as i64;
-                let end = if b == i64::MAX { a + needed as i64 } else { b };
-                (start..end).take(remaining).map(Value::Int).collect()
-            }
-            _ => {
-                let items = crate::runtime::utils::value_to_list(&source);
-                items.into_iter().skip(already).take(remaining).collect()
-            }
-        };
-
-        let mut acc = spec.accumulator.clone();
-        for val in new_values {
-            acc = Some(match acc.take() {
-                None => {
-                    out.push(val.clone());
-                    val
-                }
-                Some(prev) => {
-                    let v = Self::scan_binary_op(&base_op, prev, val);
-                    let v = if negate { Value::Bool(!v.truthy()) } else { v };
-                    out.push(v.clone());
-                    v
-                }
-            });
-            spec.computed_count += 1;
-        }
-        spec.accumulator = acc;
-        out.clone()
-    }
-
-    /// Apply a binary operator for scan reduction. Supports common builtin ops.
-    fn scan_binary_op(op: &str, left: Value, right: Value) -> Value {
-        match op {
-            "+" => crate::builtins::arith::arith_add(left, right).unwrap_or(Value::Nil),
-            "-" => crate::builtins::arith::arith_sub(left, right),
-            "*" => crate::builtins::arith::arith_mul(left, right),
-            "/" => crate::builtins::arith::arith_div(left, right).unwrap_or(Value::Nil),
-            "%" | "mod" => crate::builtins::arith::arith_mod(left, right).unwrap_or(Value::Nil),
-            "**" => crate::builtins::arith::arith_pow(left, right),
-            "~" => Value::str(format!(
-                "{}{}",
-                left.to_string_value(),
-                right.to_string_value()
-            )),
-            "max" => {
-                if left.to_f64() >= right.to_f64() {
-                    left
-                } else {
-                    right
-                }
-            }
-            "min" => {
-                if left.to_f64() <= right.to_f64() {
-                    left
-                } else {
-                    right
-                }
-            }
-            _ => Value::Nil, // Unsupported op — VM path handles these
+    /// This logic was copy-pasted at five call sites (builtins, the runtime
+    /// slow-path dispatcher, and the three VM call-method paths) before
+    /// being collapsed here — see
+    /// `todo/tickets/collapse-lazylist-cache-copies.md`.
+    pub(crate) fn cache_lazy_view(&self) -> Option<Value> {
+        if self.is_genuinely_lazy() || self.is_cat_pull() {
+            Some(Value::lazy_list(crate::gc::Gc::new(
+                self.with_cached_no_sink().with_list_context(),
+            )))
+        } else {
+            None
         }
     }
 }
+
+// Constructors (`new_cached`, `new_sequence`, ...) and the scan-reduction
+// forcer live in `value_lazy_ctors.rs` (same `impl LazyList` split across
+// files to keep both under the repo's 500-line-per-file convention).
 
 impl Clone for LazyThunkData {
     fn clone(&self) -> Self {

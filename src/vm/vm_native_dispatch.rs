@@ -184,9 +184,10 @@ impl Interpreter {
                 "List" | "list" | "values" => {
                     Value::lazy_list(crate::gc::Gc::new(ll.with_list_context()))
                 }
-                "cache" => Value::lazy_list(crate::gc::Gc::new(
-                    ll.with_cached_no_sink().with_list_context(),
-                )),
+                // `ll.lazy_pipe.is_some()` (checked above) is one of
+                // `is_genuinely_lazy()`'s disjuncts, so this always returns
+                // `Some`; the fallback just avoids relying on that invariant.
+                "cache" => ll.cache_lazy_view().unwrap_or_else(|| target.clone()),
                 _ => target.clone(),
             };
             return Some(Ok(retagged));

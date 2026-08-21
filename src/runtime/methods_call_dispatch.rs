@@ -3561,11 +3561,9 @@ impl Interpreter {
         // mid-iteration changes to the cat's `.nl-in`/`.chomp`.
         if let ValueView::LazyList(ll) = target.view()
             && method == "cache"
-            && (ll.is_genuinely_lazy() || ll.is_cat_pull())
+            && let Some(result) = ll.cache_lazy_view()
         {
-            return Ok(Value::lazy_list(crate::gc::Gc::new(
-                ll.with_cached_no_sink().with_list_context(),
-            )));
+            return Ok(result);
         }
 
         // Force LazyList and re-dispatch as Seq
