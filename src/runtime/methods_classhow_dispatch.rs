@@ -212,10 +212,25 @@ impl Interpreter {
                         );
                     }
                     ValueView::Package(name) => {
-                        self.type_metadata
-                            .entry(name.resolve())
-                            .or_default()
-                            .insert("__set_name__".to_string(), Value::str(new_name.clone()));
+                        let resolved = name.resolve();
+                        // A builtin type's `Package` value (e.g. `Hash`, `Array`) is
+                        // the SAME shared value for every variable of that type —
+                        // it is not a fresh per-instance metaobject. Writing a
+                        // display-name override keyed by "Hash" would rename the
+                        // type process-wide for every hash, not just the caller's
+                        // (see `Hash::Restricted`'s `v.var.WHAT.^set_name(...)` in
+                        // todo/tickets/set-name-on-builtin-type-package-no-op.md —
+                        // the real fix there is giving a role-mixed native value's
+                        // `.WHAT` a distinct anonymous type object, which mutsu does
+                        // not do yet). Silently no-op for builtins; only a
+                        // user-declared class's own `Package` value is safe to
+                        // rename this way.
+                        if !Self::is_builtin_type(&resolved) {
+                            self.type_metadata
+                                .entry(resolved)
+                                .or_default()
+                                .insert("__set_name__".to_string(), Value::str(new_name.clone()));
+                        }
                     }
                     ValueView::Instance { class_name, .. } => {
                         self.type_metadata
