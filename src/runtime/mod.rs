@@ -362,6 +362,7 @@ mod io_sysinfo_kernel;
 mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
+mod listop_functions;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod main_args;

@@ -80,6 +80,8 @@ pub(crate) const BUILTIN_FUNCTION_NAMES: &[&str] = &[
     "pop",
     "shift",
     "unshift",
+    "append",
+    "prepend",
     "dir",
     "chdir",
     "QX",
@@ -622,7 +624,12 @@ impl Interpreter {
                     err.exception = Some(Box::new(ex));
                     return Err(err);
                 }
-                Ok(Value::NIL)
+                // ADR-0044 D1: route to the real native listop implementation
+                // (`try_call_listop_function` via `call_function_fallback`)
+                // instead of the no-op `Ok(Value::NIL)` this used to return —
+                // that silently discarded every mutation reached through a
+                // routine value (`&push(@b, 7)`, `my &f = &push; f(@c, 7)`).
+                self.call_function_fallback(name, &args)
             }
             // Introspection
             "callframe" => self.builtin_callframe(&args, 0),

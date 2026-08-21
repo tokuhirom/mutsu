@@ -356,11 +356,22 @@ impl Interpreter {
         // reaches the native table exactly as before.
         let user_shadows_builtin = Self::is_builtin_function(name)
             && self.resolve_function_with_alias(name, args).is_some();
-        if !user_shadows_builtin
-            && let Some(native_result) =
+        if !user_shadows_builtin {
+            // ADR-0044 D1: `push`/`pop`/`shift`/`unshift`/`append`/`prepend`/
+            // `splice` as native function-form routines, reached here
+            // whenever the compiler's `CallMethodMut` fast path did not fire
+            // (a competing user/imported `multi`, or a call through `&push`
+            // / a stored routine value). Checked before `native_function`
+            // because these seven have no entry there (they were, until
+            // this ADR, purely a compile-time rewrite).
+            if let Some(result) = self.try_call_listop_function(name, args) {
+                return result;
+            }
+            if let Some(native_result) =
                 crate::builtins::native_function(crate::symbol::Symbol::intern(name), args)
-        {
-            return native_result;
+            {
+                return native_result;
+            }
         }
         if name == "substr"
             && let Some((target, rest)) = args.split_first()
