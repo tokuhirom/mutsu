@@ -329,28 +329,55 @@ Each phase is independently landable and independently valuable.
   above for the list. None of these are introduced or worsened by P3/P4; they were already reachable
   via `e2_native_method_exists`/`.^can` before this PR.
 
+  **CI fallout, fixed forward on the same PR:** `StrDistance` (a plain `Value::make_instance` type
+  like `Instant`/`Duration`, returned by `Str.subst-distance`-family methods) genuinely inherits
+  `Cool` in real Rakudo (`StrDistance.^mro` is `(StrDistance Cool Any Mu)`) but was missing from
+  `builtin_type_catalog` entirely — the same shape as P1's four rows, just not one of the types the
+  reverted 2026-08-18 attempt's `make test` run happened to surface, so P1's audit never saw it.
+  `StrDistance.Rat` (`roast/S32-num/rat.t`) broke on CI once P4 landed. Added a `StrDistance` catalog
+  row alongside `Instant`/`Duration` with the same P1-style justification.
+
   Pinned by `t/adr0051-cool-only-gate.t`.
 
-- **P4 — Gate the string-coercion leak. LANDED (PR #6795, 2026-08-21).** At the three gate sites
-  (`should_bypass_native_fastpath`, `shadows_builtin`, `try_native_method_raw`) and the two by-name
-  dispatchers (`.IO` in `methods_dispatch_match.rs`, `.subst`/`dispatch_subst` in
-  `methods_string.rs`), a `cool_only_builtin_method` name on an `Instance` receiver now additionally
-  requires `e2_native_method_exists` before the fast-path/interceptor machinery may answer it —
-  falling through to ordinary "no candidate" resolution otherwise, which throws
-  `X::Method::NotFound` with the same message real Rakudo uses (verified: `mutsu -e 'class G {}; G.new.uc'`
-  now dies exactly like `raku`). The by-name dispatchers already stopped being reachable for the
-  false case once `shadows_builtin` was fixed (both route through `dispatch_method_by_name_1`, which
-  is skipped when `shadows_builtin` is true), so their own guards are a direct, literal-per-the-ADR
-  safety net rather than the change that made the fix work — confirmed by testing before adding
-  them. `cool_only_builtin_method`'s `handles */FALLBACK` term was left untouched, as specified.
+- **P4 — Gate the string-coercion leak. LANDED (PR #6795, 2026-08-21).** At two of the three gate
+  sites (`should_bypass_native_fastpath`, `try_native_method_raw`) and the two by-name dispatchers
+  (`.IO` in `methods_dispatch_match.rs`, `.subst`/`dispatch_subst` in `methods_string.rs`), a
+  `cool_only_builtin_method` name on an `Instance` receiver now requires `e2_native_method_exists`
+  before the fast-path/interceptor machinery may answer it — falling through to ordinary "no
+  candidate" resolution otherwise, which throws `X::Method::NotFound` with the same message real
+  Rakudo uses (verified: `mutsu -e 'class G {}; G.new.uc'` now dies exactly like `raku`).
+  `cool_only_builtin_method`'s `handles */FALLBACK` term was left untouched, as specified.
   Un-`todo`'d `t/handles-wildcard-builtin-methods.t` tests 14-15 (both now genuinely pass).
 
-  Verified with the full local `t/` suite (859 unit tests + the TAP suite) and a targeted roast
-  sweep (`S02-types`, `S03-smartmatch`, `S05-match`, `S05-capture`, `S32-io`, 147 files) — all green
-  except one pre-existing environment artifact (`t/compunit-can-install.t`'s "non-writable root"
-  check, unrelated: this sandbox happens to allow `mkdir` directly under `/`). The blast radius
-  stayed contained to the P3 row-table gap described above; no other regression required scoping P4
-  down.
+  **`shadows_builtin` (the third named gate site) deliberately does NOT carry this check, unlike the
+  ADR's original text assumed — CI fallout, fixed forward on the same PR.** `shadows_builtin` gates
+  whether `dispatch_method_by_name_1/2/3` run at all. Those three functions mix receiver-class-BLIND
+  arms (`.IO`, `.subst` — already guarded directly at their own call sites, per above) with
+  receiver-class-AWARE arms that happen to share a `cool_only` name with no row in the E2 catalog at
+  all: `Supply.comb`/`.words` (`dispatch_method_by_name_2`) explicitly check
+  `class_name == "Supply"` and return `None` for anything else — a real per-type method, just never
+  modeled as an E2 "row" because it isn't served by the pure arity cascade. A blanket
+  `shadows_builtin` term skipped ALL THREE dispatch functions whenever `e2_native_method_exists`
+  missed, which broke `roast/S17-supply/comb.t`/`words.t` on CI (the two arity-cascade gate sites
+  don't have this problem: `native_fastpath_receiver_state_guard`, consulted before either of their
+  `cool_only` terms, already special-cases `Supply.comb`/`.words`/... unconditionally). The correct
+  granularity is a guard at the specific receiver-blind arm, not a blanket gate over dispatch
+  functions that also contain receiver-aware arms — `.IO`/`.subst`'s own inline guards (added at the
+  same time, per the ADR's literal "two by-name dispatchers" instruction) already cover the two
+  arms that actually need it.
+
+  Verified with the full local `t/` suite (859 unit tests + the TAP suite) and a targeted 147-file
+  roast sweep before the first push, then CI caught the `shadows_builtin`/`StrDistance` fallout
+  above (`test`/`gc-stress`/`jit-stress` red, `roast/S17-supply/comb.t`/`words.t`,
+  `roast/S32-num/rat.t`). After fixing forward, re-verified with the full local `t/` suite again and
+  the **entire local `roast-whitelist.txt`** (1436 files, 218817 subtests) rather than another
+  spot-check, given the first spot-check had already missed two real regressions — all green except
+  one pre-existing environment artifact (`t/compunit-can-install.t`'s "non-writable root" check,
+  unrelated: this sandbox happens to allow `mkdir` directly under `/`) and three files
+  (`gb18030`/`gb2312`/`shiftjis-encode-decode.t`) that only fail when `prove` is invoked directly
+  instead of through `scripts/run-roast-test.sh` (a stale `t/spec/` sample-file path, unrelated to
+  method dispatch — confirmed passing via the proper runner). The blast radius stayed contained to
+  the two fixes above; no further scoping-down of P4 was needed.
 
 - **P5 — Retire `cool_only_builtin_method`.** Once P4's existence check is authoritative, the
   94-name list is derivable: "a name with a row under `Cool` but not under `Any`/`Mu`". Deleting it

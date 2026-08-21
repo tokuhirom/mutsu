@@ -8,7 +8,7 @@ use Test;
 # genuine Cool-derived / own-method call (P1's ancestry fix + P3's row
 # additions) still resolves correctly.
 
-plan 9;
+plan 12;
 
 # The reported symptom: a plain class must NOT answer `.uc`.
 class G {}
@@ -42,3 +42,24 @@ isa-ok Date.new(2020, 3, 5).IO, IO::Path, 'Date.IO still resolves';
 ok Instant.^can("DateTime").elems, 'Instant.^can("DateTime") is nonzero';
 
 ok Date.^can("IO").elems, 'Date.^can("IO") is nonzero';
+
+# CI regression (2026-08-21, fixed forward on the same PR): a cool_only name
+# shared with a genuine, receiver-aware by-name dispatcher arm (Supply's
+# own `.comb`/`.words` combinators, which explicitly check for a Supply
+# receiver and have no entry in the E2 native-method-row catalog at all)
+# must NOT be blocked just because that E2 lookup misses. Blanket-gating
+# `shadows_builtin` broke this; the fix keeps the P4 gate only at the two
+# genuinely receiver-class-blind by-name arms (`.IO`, `.subst`) plus the
+# arity-cascade gate sites.
+lives-ok { Supply.from-list(<a b c>).comb.tap(-> $v { }) },
+    'Supply.comb still resolves (own combinator, not a Cool coercion)';
+
+lives-ok { Supply.from-list(<a b c>).words.tap(-> $v { }) },
+    'Supply.words still resolves (own combinator, not a Cool coercion)';
+
+# CI regression (2026-08-21): StrDistance genuinely inherits Cool in real
+# Rakudo but was missing from builtin_type_catalog (same shape as P1's
+# Instant/Duration/IO::Path rows, just not one of the types that
+# investigation's `make test` run happened to surface).
+my $sd = StrDistance.new(:before<a>, :after<b>);
+lives-ok { $sd.Rat }, 'StrDistance.Rat resolves (StrDistance is Cool)';

@@ -49,15 +49,15 @@ dispatch gate.
 
 ## P4 — gated the string-coercion leak
 
-At the three gate sites (`should_bypass_native_fastpath`,
-`shadows_builtin`, `try_native_method_raw`) and the two by-name dispatchers
-(`.IO`, `.subst`), a `cool_only_builtin_method` name on an `Instance`
-receiver now additionally requires `Interpreter::e2_native_method_exists` to
-say the method genuinely exists somewhere in the receiver's dispatch chain
-before the fast-path/interceptor machinery is allowed to answer it. When it
-doesn't, the call now falls through to ordinary "no candidate found"
-resolution, which already throws `X::Method::NotFound` with byte-identical
-text to real Rakudo — no new error path needed.
+At two of the three gate sites (`should_bypass_native_fastpath`,
+`try_native_method_raw`) and the two by-name dispatchers (`.IO`, `.subst`),
+a `cool_only_builtin_method` name on an `Instance` receiver now requires
+`Interpreter::e2_native_method_exists` to say the method genuinely exists
+somewhere in the receiver's dispatch chain before the fast-path/interceptor
+machinery is allowed to answer it. When it doesn't, the call now falls
+through to ordinary "no candidate found" resolution, which already throws
+`X::Method::NotFound` with byte-identical text to real Rakudo — no new
+error path needed.
 
 `class G {}; G.new.uc` now dies exactly like real `raku`. Every genuine
 Cool-derived and native-type call (`Instant.abs`, `IO::Path.chars`,
@@ -69,6 +69,34 @@ pass.
 `cool_only_builtin_method`'s `handles */FALLBACK` term was left untouched
 per the ADR — it answers a different question ("may an interceptor see this
 call") from the new existence check.
+
+**Two real regressions caught by CI, fixed forward on the same PR:**
+
+- `shadows_builtin` (the third named gate site) does NOT carry the new
+  existence check, unlike originally planned. It gates whether
+  `dispatch_method_by_name_1/2/3` run at all, and those functions mix
+  receiver-class-blind arms (`.IO`, `.subst` — already guarded directly at
+  their own call sites) with receiver-class-*aware* arms sharing a
+  `cool_only` name that was never modeled as an E2 row because it isn't
+  served by the pure arity cascade: `Supply.comb`/`.words`
+  (`dispatch_method_by_name_2`) explicitly check for a `Supply` receiver
+  and decline otherwise. Blanket-gating `shadows_builtin` skipped those
+  arms entirely whenever the (irrelevant, for them) E2 lookup missed,
+  breaking `roast/S17-supply/comb.t`/`words.t`. Fix: removed the check from
+  `shadows_builtin`; the arity-cascade gate sites don't have this problem
+  (an earlier, unconditional `Supply`-specific guard already runs before
+  their own `cool_only` term), and `.IO`/`.subst`'s own inline guards
+  already cover the two arms that actually need protection.
+- `StrDistance` genuinely inherits `Cool` in real Rakudo but was missing
+  from `builtin_type_catalog` — the same shape as P1's four rows, just not
+  one of the types that investigation's `make test` run happened to
+  surface. `StrDistance.Rat` broke on CI (`roast/S32-num/rat.t`). Fix:
+  added a `StrDistance` catalog row alongside `Instant`/`Duration`.
+
+Re-verified after the fix with the full local `t/` suite and the **entire**
+local `roast-whitelist.txt` (1436 files) rather than another spot-check,
+since the first (147-file) spot-check had already missed both regressions —
+all green.
 
 P2 (collapsing the remaining ancestry tables onto one oracle) and P5
 (retiring `cool_only_builtin_method` once P4 is authoritative) remain not
