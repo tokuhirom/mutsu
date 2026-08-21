@@ -1,8 +1,8 @@
 # ADR-0037: `EVAL ..., context => $frame` — the context frame owns the return target, and the routine chain must be dispatch-path-independent
 
-- Status: Partially implemented — Slice 1 landed (see "Implementation status"
-  below); Slices 2-4 (the `context`-driven return classification and
-  targeting itself) are next
+- Status: Partially implemented — Slices 1-3 landed (see "Implementation
+  status" below); Slice 4 (targeting a live context routine) and Slice 5
+  (residue/end-to-end sweep) are next
 - Date: 2026-08-20
 - Origin: `todo/deep/eval-context-frame-owns-the-return-target.md`
 - Related: [ADR-0035](0035-method-calls-observe-caller-frames.md) (same family —
@@ -440,6 +440,72 @@ the push/pop is a plain `Vec<RoutineFrame>` operation with no `Env` clone, as
 §4 predicted. A bench-CI-measured wall-clock verdict (the §4 guard) is
 pending the next `bench-history.tsv` row past this change's merge commit.
 
-**Slices 2-4 (the `context`-driven return classification and targeting) are
-not started.** They build on Slice 1's now-sound `routine_stack` but are
+**Slices 2-3 landed (2026-08-21, PR #6821).** Slice 2:
+`caller_frame_enclosing_routine()` (`src/runtime/accessors_stack.rs`) walks
+`routine_stack` from `caller_frame_package`'s same frame down past any block
+frames to the nearest actual routine, and the `CALLER::`/`CALLERS::` stamp
+site (`src/vm/vm_var_assign_local.rs`) now stamps its `package::name` onto the
+pseudo-stash as `__mutsu_origin_routine`
+(`Interpreter::stamp_stash_origin_routine`, `src/runtime/accessors_stash.rs`)
+beside the existing `__mutsu_origin_package` — same invisible-attribute
+convention, absent entirely when the captured frame is a mainline. A reader,
+`eval_context_routine`, sits beside `eval_context_package`.
+
+Slice 3: `builtin_eval` (`src/runtime/builtins_eval_misc.rs`) reads that
+identity via a new `classify_eval_context_routine` helper into an
+`EvalContextRoutineState` (`Mainline` / `Live` / `Dead`, `src/runtime/mod.rs`),
+walking `routine_stack` for a `package::name` match to decide liveness —
+sound only because Slice 1 made every dispatch path push a frame. The
+classification is threaded through a new `pending_eval_context_routine` field
+(save/restore around the `EVAL` call, mirroring `pending_eval_sigilless`)
+into `compile_block_value_opts`'s `in_routine` derivation (via a shared
+`eval_unit_in_routine()` helper) **and** into `carrier_compile_ctx_key`, so
+the carrier-compile cache cannot serve a unit compiled under a different
+classification. `Live` is treated exactly like the ambient
+"an enclosing routine exists" answer (Slice 4's job is to additionally target
+that specific frame — not implemented yet, so a `Live` classification today
+just keeps the pre-ADR-0037 non-local-return behavior). `Mainline` and `Dead`
+both compile `is_routine = false`, but `Dead` additionally sets a new
+`Compiler::eval_context_dead_routine` flag, which rides a second `bool` added
+to `OpCode::ReturnFromNonRoutine` so the thrown `X::ControlFlow::Return`
+carries `out-of-dynamic-scope: True`.
+
+That flag also drove a small, independently-useful correction to
+`RuntimeError::controlflow_return()`: its message was hardcoded to "Attempt
+to return outside of any Routine" regardless of `out_of_dynamic_scope`, but
+`raku` uses a second, fuller wording ("Attempt to return outside of
+immediately-enclosing Routine (i.e. `return` execution is outside the dynamic
+scope of the Routine where `return` was used)") whenever a routine genuinely
+was the target at some point and is no longer live — verified directly
+against `raku` for both the plain "no routine at all" case and a `-> { return
+5 }` closure called after its defining routine returned. The message now
+branches on the flag, which also correctly changes the wording for the two
+pre-existing `out_of_dynamic_scope: true` call sites (`io_env.rs`'s
+`render_gist_value`, `vm_run_loop.rs`'s top-level escaping-signal
+conversion) — checked against the tests that pin the old wording
+(`t/exception-messages.t`, `t/try-catch-tail-statement-sink.t`) and confirmed
+none of them exercise an `out_of_dynamic_scope: true` path.
+
+Verified directly against `raku -e` for all three rows the ADR's §2.3 table
+assigns to these slices: §1.1(a)'s mainline-context probe (`thrower saw:
+X::ControlFlow::Return`, `thrower-end`, `still alive`) and a dead-routine
+probe modeled on §1.1(c) (`Attempt to return outside of
+immediately-enclosing Routine ...`) both match mutsu's output exactly, and
+the uncontextualized `sub f() { EVAL 'return 1'; return 2 }` still answers
+`1`. Pins: `t/eval-context-caller-routine-attr.t` (new — the hidden-attribute
+invisibility pin for Slice 2, and confirms `t/eval-context-package.t` is
+unaffected). The ADR's own acceptance gate,
+`MUTSU_REAL_TEST=1 prove -e target/debug/mutsu t/throws-like-gather-sink.t`,
+now reaches 4/4 (previously aborted after subtest 1). Full local `t/` suite
+(30847 tests) green; targeted roast re-runs on both debug and release
+binaries (`roast/S04-statements/return.t` test 15 specifically,
+`roast/S32-exceptions/misc.t`, `roast/S02-types/WHICH.t`,
+`roast/6.c/S02-names/SETTING-6c.t`, `roast/S02-names/{SETTING-6e,caller}.t`,
+`roast/S03-binding/scalars.t`, `roast/S04-statements/goto.t`,
+`roast/S06-signature/definite-return.t`) all green; `cargo clippy -- -D
+warnings` and `cargo fmt` clean.
+
+**Slice 4 (targeting a live context routine) and Slice 5 (residue and
+end-to-end sweep) are not started.** They build on Slice 1's now-sound
+`routine_stack` and Slice 2-3's classification/identity machinery but are
 independent follow-up work.

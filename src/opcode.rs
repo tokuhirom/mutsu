@@ -1898,14 +1898,22 @@ pub(crate) enum OpCode {
     // -- Functions --
     Return,
     /// Return used outside a routine.
-    /// The `bool` payload is `true` if the op is lexically nested inside a
-    /// routine (a closure/block in a sub) — in that case `return` should
+    /// The first `bool` payload is `true` if the op is lexically nested inside
+    /// a routine (a closure/block in a sub) — in that case `return` should
     /// perform a non-local return up to the enclosing routine, and only
     /// become an `X::ControlFlow::Return` exception when no enclosing routine
     /// is on the dynamic call stack (out-of-dynamic-scope).
     /// When `false`, the op is at top level with no lexical routine and
     /// throws `X::ControlFlow::Return` directly.
-    ReturnFromNonRoutine(bool),
+    ///
+    /// The second `bool` (only meaningful when the first is `false`) is
+    /// ADR-0037 §2.3's dead-routine-context classification: `EVAL ..., context
+    /// => $ctx` where `$ctx` names a routine that already exited the dynamic
+    /// call stack decides this *eagerly*, at EVAL entry, rather than by
+    /// unwinding a real signal — so the `X::ControlFlow::Return` thrown here
+    /// still needs `out-of-dynamic-scope` set and rakudo's fuller wording,
+    /// exactly like a signal that genuinely escaped every frame.
+    ReturnFromNonRoutine(bool, bool),
     RegisterDecl(u32),
     RegisterEnum(u32),
     AugmentClass(u32),

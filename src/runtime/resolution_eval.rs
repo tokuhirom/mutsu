@@ -85,6 +85,20 @@ impl Interpreter {
         result
     }
 
+    /// ADR-0037 §2.3: `in_routine` for an EVAL unit's mainline. Prefers the
+    /// classification `builtin_eval` derived from an explicit `context => `
+    /// argument's stamped routine identity; falls back to the ambient
+    /// `enclosing_routine_exists()` when no `context` argument drove one (the
+    /// unchanged, pre-ADR-0037 behavior — `sub f() { EVAL 'return 1' }` still
+    /// returns from `f`).
+    fn eval_unit_in_routine(&self) -> bool {
+        match self.pending_eval_context_routine {
+            Some(EvalContextRoutineState::Live) => true,
+            Some(EvalContextRoutineState::Mainline) | Some(EvalContextRoutineState::Dead) => false,
+            None => self.enclosing_routine_exists(),
+        }
+    }
+
     /// Compile a block with `eval_block_value`'s compiler context (routine
     /// scope, `$?PACKAGE`/`$?DISTRIBUTION`) without executing it. Pure
     /// compilation — touches no `env`, runs no user code — so the VM can call it
@@ -126,12 +140,16 @@ impl Interpreter {
         // routine being run — including an anonymous `sub`, which pushes a
         // block frame — so narrowing it would turn their `return` into a throw.
         let in_routine = if is_eval_unit {
-            self.enclosing_routine_exists()
+            self.eval_unit_in_routine()
         } else {
             !self.routine_stack.is_empty()
         };
         compiler.is_routine = in_routine;
         compiler.lexically_in_routine = in_routine;
+        // ADR-0037 §2.3: only meaningful together with `is_routine == false`
+        // — see the field's doc comment on `Compiler`.
+        compiler.eval_context_dead_routine = is_eval_unit
+            && self.pending_eval_context_routine == Some(EvalContextRoutineState::Dead);
         // Let a nested closure in this body recognize the enclosing routine's
         // sigilless parameters (`\attr`) as lexical captures rather than
         // barewords. The fresh compiler otherwise has no signature context.
@@ -215,7 +233,7 @@ impl Interpreter {
     /// keep them matching so the cache actually helps.
     fn carrier_compile_ctx_key(&self, is_eval_unit: bool) -> CarrierCompileCtxKey {
         let in_routine = if is_eval_unit {
-            self.enclosing_routine_exists()
+            self.eval_unit_in_routine()
         } else {
             !self.routine_stack.is_empty()
         };
@@ -236,6 +254,11 @@ impl Interpreter {
             sigilless: self.pending_eval_sigilless.clone(),
             placeholder_params: self.pending_eval_placeholder_params.clone(),
             distribution,
+            eval_context_routine: if is_eval_unit {
+                self.pending_eval_context_routine
+            } else {
+                None
+            },
         }
     }
 
