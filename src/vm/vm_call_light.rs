@@ -559,6 +559,28 @@ impl Interpreter {
         if matches!(val.view(), ValueView::Mixin(..)) {
             return val.isa_check(type_name);
         }
+        // A type object (an undefined value of the given type, e.g. the bare
+        // term `Int`) satisfies a smiley-less nominal type constraint: `Int
+        // $a` means `Int:_`, which accepts both `Int:D` and `Int:U`. Every
+        // `type_name` that reaches this function is guaranteed smiley-free —
+        // `is_fast_type_name` (the sole gate onto the light/positional-light
+        // fast call paths, `vm_call_eligibility.rs`) rejects a smiley-bearing
+        // constraint string like `"Int:D"` outright (it never equals a bare
+        // `"Int"`/`"Str"`/... name), so an explicit `:D`/`:U`/`:_` signature
+        // never reaches `fast_type_check` at all and keeps going through the
+        // full `bind_function_args_values` path, which enforces the smiley
+        // correctly. Only the true bare form reaches here, and it must accept
+        // the matching type object (`is { sub a(Int $a) { $a }; a Int }(),
+        // Int`, roast/S06-parameters/smiley.t). `Any`/`Mu`/`Cool` are handled
+        // by their own `=> true` arm below (they accept every value,
+        // defined or not, including a type object of any name) rather than
+        // this by-name match — a bare-word `Str` passed to an `Any $a` param
+        // must not be rejected just because `"Str" != "Any"`.
+        if let ValueView::Package(sym) = val.view()
+            && !matches!(type_name, "Any" | "Mu" | "Cool")
+        {
+            return sym.resolve() == type_name;
+        }
         match type_name {
             "Int" => matches!(val.view(), ValueView::Int(_) | ValueView::BigInt(_)),
             "Str" => matches!(val.view(), ValueView::Str(_)),

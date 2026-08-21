@@ -102,6 +102,37 @@ repeated calls, `state` accumulation, re-invocation, parameterized nested
 subs, and two block literals with same-named nested subs staying
 independent).
 
+## A latent type-check bug this fix exposed (also fixed here)
+
+Landing this fix routes block-nested-sub calls through the light/positional-
+light call fast paths (`vm_call_light.rs`, `vm_call_light_typed.rs`) for the
+first time, which turned up a genuinely pre-existing bug those paths never
+exercised for this shape before: `Interpreter::fast_type_check` matched a
+bare (smiley-less) type constraint like `Int` only against a DEFINED value
+of the concrete Rust variant (`ValueView::Int`) — never a `ValueView::Package`
+type object. A bare `Int $a` parameter means `Int:_` in Raku (accepting both
+`Int:D` and `Int:U`), so `sub a(Int $a) { $a }; a Int` incorrectly threw
+`Type check failed in binding $a: expected Int, got Package` instead of
+accepting the type object. This is exactly what CI's `make roast` caught on
+`roast/S06-parameters/smiley.t` (`is { sub a(Int $a) { $a }; a Int }(), Int`)
+— confirmed reproducing on `main` too, for the equivalent FILE-SCOPE shape
+(`sub a(Int $a) { $a }` at top level already reached the light-call path);
+it was invisible for a block-nested sub only because that shape never
+reached the fast path until this PR.
+
+Fixed by making `fast_type_check` also accept a `Package` type-object value
+whose name matches the constraint, gated to the type names it actually
+special-cases (`Int`/`Str`/`Num`/`Bool`/`Rat`) — `Any`/`Mu`/`Cool` keep their
+own unconditional `=> true` arm, since they must accept a type object of ANY
+name, not just their own. This is safe for every caller of
+`fast_type_check`: `is_fast_type_name` (the sole eligibility gate onto the
+light/positional-light fast paths, `vm_call_eligibility.rs`) rejects a
+smiley-bearing constraint string like `"Int:D"` outright — it never equals a
+bare `"Int"`/`"Str"`/... name — so an explicit `:D`/`:U`/`:_` signature never
+reaches `fast_type_check` at all and keeps going through the full
+`bind_function_args_values` path, which already enforces the smiley
+correctly. Pinned by `t/light-call-bare-type-accepts-type-object.t`.
+
 ## Why this mattered beyond the immediate speedup
 
 This was the named prerequisite for
