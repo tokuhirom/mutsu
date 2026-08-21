@@ -1,6 +1,6 @@
 # ADR-0049: `Nil` decays to the *container's* default at the element store, and stops being a hole sentinel
 
-- **Status**: Accepted (Slices 0-2 implemented; see "Implementation status" below)
+- **Status**: Accepted (Slices 0-3 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0040](0040-array-hash-elements-are-itemized-at-the-store.md) (the same Raku model —
@@ -625,12 +625,70 @@ Slices 0-2 landed:
   `t/nil-any-identity.t`, `t/is-eqv.t`, `t/array-slice-oob.t`, `t/pair-subscript-exists.t`,
   `t/uninit-scalar-any.t`, `t/typecheck-expected-nil.t`, `t/shared-var-nil-redeclared-mask.t`) all pass
   unchanged; no whitelisted roast file references a `Nil` array/hash literal at all (confirming §1.8).
-- **Next**: slice 3 (retire the narrow assignment-site fixups and unify onto `typed_container_default`;
-  note row 27 already dies correctly, so slice 3's own acceptance bar is now "no regression", not "make
-  it die"), slice 4 (mutation sites), slice 5 (retire the `Nil` hole sentinel, plus the two `todo` rows
+- **Slice 3** (retire the narrow assignment-site fixups and unify the ladders): the two `nil_elems_to_any`
+  list-assign fixups (`vm_var_assign_set_local.rs`, `vm_var_assign_local.rs`) and the three
+  `vm_helpers_lazy.rs`/`vm_call_method_mut_ops.rs` groups (five more call sites, nine total) are gone,
+  along with `nil_elems_to_any` itself (`src/runtime/utils/coerce_containers.rs`). A new module,
+  `src/vm/vm_var_assign_nil_decay.rs`, replaces them with three shared helpers:
+  - `Interpreter::assign_store_nil_default(name, container)` -- the store-time default for a whole-
+    container (list-)assign, computed BEFORE the container's own type metadata is necessarily tagged
+    onto it (`tag_container_metadata`/`coerce_typed_container_assignment` run later in the same opcode).
+    It tries the container's own already-embedded state first (the same two checks
+    `typed_container_default` itself starts with: an explicit `is default(...)` value, then declared
+    element-type metadata), and only when the container carries neither falls back to the *target
+    variable's* own declared `is default(...)` / element-type constraint -- the same ADR-0042 side
+    table this opcode is about to embed as the container's metadata a few lines later anyway, so
+    consulting it here does not reintroduce the retired mechanism, it just answers the question earlier.
+  - `Interpreter::decay_nil_elements_for_var_assign(name, value)` -- the whole-array-value fixup itself,
+    built on `assign_store_nil_default`.
+  - `Interpreter::decay_nil_vec_elements(items)` -- the `Vec<Value>`-based counterpart for call sites
+    that build a raw item list rather than an already-tagged container (lazy-list array-context
+    reification, and the untyped-only `push`/`append`/`unshift` fast path in
+    `vm_call_method_mut_ops.rs`, which bails to the slow path for any typed/metadata-tagged target
+    before reaching this call). It reuses `decay_nil_container_elements` (the slice 2 helper) via a
+    throwaway untyped-array wrapper instead of re-deriving "untyped real Array defaults to `Any`" a
+    third time.
+
+  **The `var_type_constraint(name)` gate is dropped**, as ADR-0042 (§5 open question 3) anticipated: the
+  fixup used to skip typed arrays entirely (leaving their `Nil` elements for the separate, still-present
+  per-element ladder in `coerce_typed_array_elements`/`coerce_typed_container_assignment`,
+  `vm_var_assign_typed.rs:322`/`:425`, to handle downstream). It now decays a typed declaration's `Nil`
+  elements too, to the *same* value that downstream ladder would otherwise have produced (verified by
+  direct comparison of the two computations) -- so by the time `coerce_typed_array_elements` runs,
+  `item.is_nil()` is already false for every element this fixup touched, and that ladder's own `Nil`
+  branch becomes correctly unreachable for this caller while staying necessary, unchanged, for its OTHER
+  callers (write-through reassignment through a shared cell, and shaped-array sub-array recursion, which
+  do not go through the new fixup). This is a genuine, measured "no regression" outcome, not an
+  assumption: `my Int @a = 1, Nil, 3` still produces `Array[Int].new(1, Int, 3)` (I12), a bound
+  write-through (`my Int @a; my @b := @a; @b = 1, Nil, 3`) still produces the same, and
+  `my Int:D @a = 1, Nil, 3` still dies -- with a message that now says `expected Int:D but got Int (Int)`
+  instead of the old `expected Int:D but got Nil (Nil)`, which is a strict *improvement*: real raku's own
+  message is `expected Int:D but got Int (Int) (perhaps Nil was assigned to a :D which had no default?)`,
+  confirmed by direct comparison with `raku -e`. Row 27/28 stay green (they already turned green in
+  slice 2, per the "Bonus" note above; this slice's acceptance bar was correctly "no regression", not
+  "make it die").
+
+  The other named hand-rolled ladders (`vm_var_assign_index_named.rs:691`, `vm_data_push_ops.rs:9`,
+  `methods_mut_dispatch.rs:718`, `methods_mut_method_lvalue.rs:851`/`:926`/`:1226`/`:1423`, and the
+  `coerce_typed_array_elements`/`coerce_typed_container_assignment` pair itself) are deliberately left
+  in place for this slice: each was measured to already be correct and independently exercised by other
+  callers this slice's two fixups do not cover (typed-array element assign with its own type-check
+  ladder, `push`/`unshift`'s per-call arity/native-fill handling, write-through reassignment, shaped
+  recursion, `:D`-definiteness death). Collapsing them onto `assign_store_nil_default` as well is left
+  as a smaller, separately-landable follow-up rather than forced into this slice at the risk of losing
+  a working, subtly different piece of logic (e.g. the definiteness death message) for a purely
+  cosmetic unification.
+
+  **Verification**: `cargo clippy -- -D warnings` and `cargo fmt --check` clean; the full local `make
+  test` (including the slice-0 regression net named above) and a targeted roast sweep of every
+  whitelisted `S02-types`/`S09-typed-arrays` array/hash/nil file (19 files, 4795 subtests) all pass;
+  `t/nil-element-store-decay.t` rows 27/28 stay live (non-`todo`) and green -- rows 25 and 29 stay
+  `todo`, unchanged, deferred to slice 5 as originally planned.
+
+- **Next**: slice 4 (mutation sites), slice 5 (retire the `Nil` hole sentinel, plus the two `todo` rows
   above), and slice 6 (sweep, close out, `git mv` the originating `todo/deep/` finding to `news/`).
 
 ---
 
-*This ADR is Accepted for slices 0-2. If the mechanism judgment for later slices changes, supersede
+*This ADR is Accepted for slices 0-3. If the mechanism judgment for later slices changes, supersede
 rather than rewriting.*

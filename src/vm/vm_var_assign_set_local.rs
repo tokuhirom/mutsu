@@ -944,9 +944,8 @@ impl Interpreter {
                         if list.preserve_lazy_on_array_assign() {
                             Value::lazy_list(crate::gc::Gc::new(list.with_array_context()))
                         } else {
-                            Value::real_array(crate::runtime::utils::nil_elems_to_any(
-                                self.force_lazy_list_vm(&list)?,
-                            ))
+                            let forced = self.force_lazy_list_vm(&list)?;
+                            Value::real_array(self.decay_nil_vec_elements(forced))
                         }
                     }
                     // An `IO::Handle.lines`/`.words` Seq (ADR-0034's
@@ -972,23 +971,16 @@ impl Interpreter {
                     }
                 }
             };
-            // An untyped `@` assignment resets Nil elements to Any (their
-            // fresh containers' default; `my @a = (1,2)[1,2]` is `[2, Any]`).
-            // Typed arrays keep Nil here — the typed element coercion below
-            // converts it to the element type object instead. Binds keep the
-            // source values untouched.
-            if !is_bind
-                && loan_env!(self, var_type_constraint(name)).is_none()
-                && let ValueView::Array(items, kind) = assigned.view()
-                && kind.is_real_array()
-                && items.iter().any(Value::is_nil)
-            {
-                // Clone the ArrayData so shape/default/type metadata survive;
-                // only the items are rewritten.
-                let mut data = (**items).clone();
-                let old_items = data.take_items();
-                *data.items_mut() = crate::runtime::utils::nil_elems_to_any(old_items);
-                assigned = Value::array_with_kind(crate::gc::Gc::new(data), kind);
+            // An `@` (list-)assignment resets Nil elements to the target
+            // container's own default (ADR-0049 slice 3: `Interpreter::
+            // assign_store_nil_default`, which is typed_container_default-
+            // based and consults the declared element type/`is default(...)`
+            // when the container itself is not yet metadata-tagged) --
+            // `my @a = (1,2)[1,2]` is `[2, Any]`, `my Int @a = 1, Nil, 3` is
+            // `Array[Int].new(1, Int, 3)`. Binds keep the source values
+            // untouched.
+            if !is_bind {
+                assigned = self.decay_nil_elements_for_var_assign(name, assigned);
             }
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
             // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
