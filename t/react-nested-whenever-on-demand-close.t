@@ -18,7 +18,7 @@ use Test;
 # 5s backstop keeps a genuine regression (closing never fires) failing cleanly
 # with closed=0 rather than hanging.
 
-plan 3;
+plan 4;
 
 # Async body: closing fires per tap, incrementing the captured lexical.
 {
@@ -50,6 +50,41 @@ plan 3;
         whenever Promise.in(5) { done }
     }
     ok $closed, "sync on-demand closing fires from a nested whenever (closed=$closed)";
+}
+
+# Regression: `closing` must fire PROMPTLY per tap, not batched together only
+# at react-loop teardown (the bug fixed alongside this test — see
+# news/2026-08/supply-on-demand-closing-callback-prompt.md). The subtests
+# above only assert the *eventual* value of `$closed` is truthy, which the
+# 5s backstop and `done if $closed` made pass even when every `closing`
+# fired as one batch right as the backstop tore the react down (the actual
+# bug shape: mutsu deferred every pending on-demand tap's `closing` callback
+# until `run_react_close_callbacks` ran once at loop exit, instead of firing
+# each one as its own tap's `on_demand_done` promise resolved). Use a much
+# longer backstop than any single on-demand tap/close cycle should ever need,
+# with an EARLIER checkpoint that asserts `$closed` is already nonzero: with
+# the bug, `$closed` stays 0 until the checkpoint's own `done` tears the react
+# down (so `closing` never gets a chance to run before the assertion), making
+# this fail reliably; fixed, a tap's `start { emit; done }` producer and its
+# `closing` callback complete within milliseconds, well inside the checkpoint
+# window.
+{
+    my $closed = 0;
+    my $sod = Supply.on-demand:
+        -> $s { start { $s.emit(42); $s.done; } },
+        closing => { $closed++ };
+    my $checkpoint-closed = -1;
+    react {
+        whenever Supply.interval(0.02) {
+            whenever $sod { }
+        }
+        whenever Promise.in(2) {
+            $checkpoint-closed = $closed;
+            done;
+        }
+    }
+    ok $checkpoint-closed > 0,
+        "closing fires promptly, well before a long backstop (closed=$checkpoint-closed at the 2s checkpoint)";
 }
 
 # A bare `whenever $sup { }` statement must NOT clobber `$sup` with its Tap: the
