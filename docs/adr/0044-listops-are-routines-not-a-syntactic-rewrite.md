@@ -262,7 +262,7 @@ pinning D2's fast path against accidental regression to the slow form.
 
 ## 8. Implementation status
 
-**D1 shipped 2026-08-22** (PR #TODO). `push`/`pop`/`shift`/`unshift`/
+**D1 shipped 2026-08-22** (PR #6830). `push`/`pop`/`shift`/`unshift`/
 `append`/`prepend`/`splice` now have a native function-form implementation
 (`src/runtime/listop_functions.rs::try_call_listop_function`), reached from
 `call_function_fallback` before the pure-value `native_function` table (the
