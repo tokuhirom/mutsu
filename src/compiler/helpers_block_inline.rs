@@ -197,6 +197,16 @@ impl Compiler {
                             // Genuine source `{ ... }` is a callframe.
                             self.compile_bare_block_inline(inner);
                         } else {
+                            // `stmt` is a `SyntheticBlock` here (the other arm
+                            // of this match) — a parser wrapper, not a real
+                            // lexical scope (its direct, non-tail dispatch in
+                            // `compile_stmt` inlines with no push/pop at all).
+                            // Tell the recursive `compile_block_inline`'s own
+                            // push not to reset dynamic-var read tracking, so
+                            // an earlier read in THIS enclosing block is still
+                            // visible to the wrapped declaration's own
+                            // X::Dynamic::Postdeclaration check.
+                            self.next_dynamic_scope_inline_transparent = true;
                             self.compile_block_inline(inner);
                         }
                         self.pop_dynamic_scope_lexical(saved);
@@ -266,6 +276,16 @@ impl Compiler {
                         ..
                     } => {
                         // my $x = expr in block-final position: declare and return value
+                        // A dynamic ($*x) declaration here still needs the same
+                        // X::Dynamic::Package / X::Dynamic::Postdeclaration checks
+                        // as the ordinary (non-tail) `Stmt::VarDecl` compile arm —
+                        // this is a separate, hand-inlined compile path (needed so
+                        // a block-final declaration yields its value), not a
+                        // reason to silently skip them.
+                        if self.check_dynamic_var_decl_errors(name) {
+                            self.pop_dynamic_scope_lexical(saved);
+                            return;
+                        }
                         // Record for an enclosing scope-isolating do-block.
                         self.record_block_decl(name);
                         let is_dynamic = *ast_is_dynamic || self.var_is_dynamic(name);
