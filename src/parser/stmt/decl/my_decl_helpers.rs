@@ -224,38 +224,12 @@ fn parse_fallback_type_constraint(rest: &str) -> Option<(&str, Option<String>)> 
 }
 
 /// Check for invalid type smileys (e.g. Int:foo).
+///
+/// Shares the parameter parser's implementation so a declaration and a
+/// signature agree on what counts as a smiley — in particular that the colon
+/// inside `Array[Str:D]` is the *inner* type's, not the outer one's.
 pub(super) fn check_invalid_type_smiley(type_constraint: &Option<String>) -> Result<(), PError> {
-    if let Some(tc) = type_constraint
-        && let Some(colon_pos) = tc.rfind(':')
-        && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
-    {
-        let smiley = &tc[colon_pos + 1..];
-        if !smiley.is_empty()
-            && smiley != "D"
-            && smiley != "U"
-            && smiley != "_"
-            && smiley.chars().next().is_some_and(|c| c.is_alphabetic())
-        {
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("name".to_string(), Value::str(smiley.to_string()));
-            attrs.insert(
-                "message".to_string(),
-                Value::str(format!(
-                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
-                    smiley
-                )),
-            );
-            let ex = Value::make_instance(Symbol::intern("X::InvalidTypeSmiley"), attrs);
-            return Err(PError::fatal_with_exception(
-                format!(
-                    "Invalid type smiley ':{}' used, only ':D', ':U' and ':_' are allowed",
-                    smiley
-                ),
-                Box::new(ex),
-            ));
-        }
-    }
-    Ok(())
+    crate::parser::stmt::sub_param::check_invalid_type_smiley(type_constraint)
 }
 
 /// Parse `my <Type> constant <name> = <expr>`.

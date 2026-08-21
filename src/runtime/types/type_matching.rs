@@ -214,6 +214,14 @@ impl Interpreter {
         source_constraint: Option<&str>,
     ) -> bool {
         let resolved_constraint = self.resolved_type_capture_name(constraint);
+        // An object hash declares value and key type together
+        // (`my Bool:D %k{Str}` stores the constraint `Bool:D{Str}`), but only
+        // the value type takes part in an `Associative[T]` parameter check —
+        // the key type is a separate constraint the parameter does not name.
+        // Leaving it attached made every object hash fail to bind to a typed
+        // `%h` parameter (`Config::TOML`'s `has Bool:D %!key{Array:D}`).
+        let source_constraint =
+            source_constraint.map(|s| crate::runtime::types::split_object_hash_constraint(s).0);
         if let Some(source_name) = source_name {
             if source_name.starts_with('@') && name.starts_with('%') {
                 return false;

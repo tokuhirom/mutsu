@@ -1,4 +1,4 @@
-# Vendor and bundle `Config::TOML` once the bare-adverb parser gap is fixed
+# Vendor and bundle `Config::TOML` once its remaining core blockers are fixed
 
 ## What this is
 
@@ -11,20 +11,30 @@ is made, but the module does not run on mutsu yet, so there is nothing to
 vendor or gate today.
 
 This ticket is the **follow-up mechanical step** — vendoring + wiring it up
-as an actual battery — once its blocker clears. It is intentionally separate
-from the blocker itself so the parser fix
-(`todo/tickets/token-method-bare-colon-adverb-name-not-supported.md`) isn't
-scoped to also cover packaging/docs/CI work.
+as an actual battery — once its blockers clear. It is intentionally separate
+from the blockers themselves so none of those interpreter fixes is scoped to
+also cover packaging/docs/CI work.
 
 ## Blocked on
 
-`todo/tickets/token-method-bare-colon-adverb-name-not-supported.md` — until
-that lands, `Config::TOML`'s upstream suite is 0/17 under mutsu, so there is
-nothing here to verify yet. **Do not start this ticket before that one is
-merged and `Config::TOML` + `Crane`'s suites have been re-run to confirm they
-now pass** (or at least pass enough files to be worth a per-file whitelist,
-the same way `CBOR::Simple`/`Log::Timeline` ship as "Sufficient for Cro" with
-partial coverage).
+The original blocker (bare-identifier adverb declaration names) landed on
+2026-08-22, so `Config::TOML` now loads and its grammar parses correctly. It is
+still 0/19 at the file level; `docs/batteries/toml.md`'s **remaining work
+list** carries the current blockers, largest first:
+
+1. `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` —
+   `Crane.set` silently does nothing, so `from-toml` returns `{}`. Nothing in
+   `Config::TOML` can produce a result until this lands.
+2. `todo/tickets/ordered-alternation-loser-branch-code-block-fires.md` — any
+   TOML document containing a `\n`/`\"`/`\\` escape dies.
+3. `todo/tickets/push-with-slip-arg-in-sink-context.md`.
+4. Assorted un-bisected per-assertion failures (see the record).
+
+**Do not start this ticket before those are merged and `Config::TOML` +
+`Crane`'s suites have been re-run to confirm they now pass** (or at least pass
+enough files to be worth a per-file whitelist, the same way
+`CBOR::Simple`/`Log::Timeline` ship as "Sufficient for Cro" with partial
+coverage).
 
 ## Steps (once unblocked)
 
@@ -36,7 +46,7 @@ finished record and PR:
 1. **Re-run the survey** to get current pass counts: fetch both dists fresh
    (`docs/batteries/toml.md`'s provenance table has the exact upstream URLs
    and pinned versions/commits) and run their suites under `raku` and a
-   release `target/release/mutsu` build. Confirm which of the 17
+   release `target/release/mutsu` build. Confirm which of the 19
    `Config::TOML` files (plus `Crane`'s own ~15 `.rakutest` files under
    `t/`) actually pass now — the parser fix may not clear 100% on the first
    try.
@@ -60,7 +70,7 @@ finished record and PR:
    (or equivalent) round-trips.
 6. **Update `docs/batteries/toml.md`**: flip the status line from "Selected,
    not yet bundled" to "Working" (or "Sufficient for X" / a partial-pass
-   note if the whitelist isn't 17/17), fill in the actual commit hashes in
+   note if the whitelist isn't 19/19), fill in the actual commit hashes in
    the provenance table, add the vendor-recipe `rsync` commands.
 7. **Update `BATTERIES.md` §7**'s TOML row: change `Kind` from
    `**Selected, not yet bundled**` to `Adopted`, and rewrite the `Status`
@@ -76,4 +86,4 @@ finished record and PR:
 
 No design decision is needed — the candidate, its license, and the vendoring
 recipe are all already fully decided and documented in `docs/batteries/toml.md`.
-This is pure mechanical follow-through once its one blocking bug is fixed.
+This is pure mechanical follow-through once its blocking bugs are fixed.

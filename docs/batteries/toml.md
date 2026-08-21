@@ -16,8 +16,16 @@ Procedure: [selection-method.md](selection-method.md).
 survey's real output is therefore a work list, exactly as
 [selection-method.md §5](selection-method.md#5-expect-the-answer-to-be-fix-mutsu-first)
 predicts. `Config::TOML` won the field on criteria, but shipping it means
-fixing the mutsu bug it exposes first — see
+fixing the mutsu bugs it exposes first — see
 [Why it currently fails on mutsu](#why-it-currently-fails-on-mutsu) below.
+
+**Progress, 2026-08-22:** the original blocker (bare-identifier adverb
+declaration names) is fixed —
+[`news/2026-08/bare-adverb-declaration-names.md`](../../news/2026-08/bare-adverb-declaration-names.md).
+`Config::TOML` now **loads**, its grammar parses documents correctly, and its
+19 upstream files run to real per-assertion results instead of failing to
+compile. It is still 0/19 at the file level; the work list below is what
+remains.
 
 ```raku
 use Config::TOML;
@@ -31,7 +39,7 @@ Enumerated from the local REA + fez indices (14,834 dist names), filtered on
 
 | Candidate | Version | Released | License | auth | Runtime deps | Dependents¹ | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`Config::TOML`** (+`Crane`) | 0.1.3 / 0.1.2 | 2024-11-12 | Unlicense / Unlicense | `zef:raku-community-modules` (both) | 1 (`Crane`, itself 0-dep) | 0 / 1 (`Crane`←`Config::TOML`) | **17/17** | **0/17** |
+| **`Config::TOML`** (+`Crane`) | 0.1.3 / 0.1.2 | 2024-11-12 | Unlicense / Unlicense | `zef:raku-community-modules` (both) | 1 (`Crane`, itself 0-dep) | 0 / 1 (`Crane`←`Config::TOML`) | **19/19** | **0/19**³ |
 | `TOML` | 3 | 2021-05-01 | Artistic-2.0 | `zef:tony-o` | **0** | **7** (highest — `AI::Gator`, `Clu`, `Hey`, `LLM::DWIM`, `TooLoo`, `Zeco`, `App::SerializerPerf`) | 5/5 | **0/5** |
 | `TOML::Thumb` | 0.2 | 2021-07-26 | MIT | `zef:JRaspass` | **0** | 0 | ~clean² | **0/2** |
 | `Config::Parser::toml` | 1.0.4 | 2023-08-29 | **AGPL-3.0-only** | `zef:tyil` | 2 (`Config::TOML`, `Config`) | — | — | — |
@@ -42,6 +50,10 @@ candidate, same methodology as [templates.md](templates.md).
 ² 194 assertions across `valid.t`/`invalid.t`; 18 are the upstream author's own
 `# TODO 'not yet implemented'` markers (non-fatal under TAP), everything else
 passes.
+³ The first survey recorded "17"; a re-count on 2026-08-22 found 19
+`.rakutest` files (`api` 1, `dumper` 1, `exceptions` 2, `grammar` 4,
+`grammar-actions` 4, `special-cases` 7). `Crane`'s own suite is 15 files, of
+which mutsu passes 3.
 
 ## Ruled out before measuring
 
@@ -97,7 +109,7 @@ dist with 0 dependents, versus `Config::TOML` (+ its own dependency `Crane`)
 both being `auth<zef:raku-community-modules>` — the curated org already behind
 most of this bundle's other Adopted entries (`HTTP::HPACK`,
 `IO::Path::ChildSecure`, `JSON::JWT`, `Cro::*`, `DBIish`, ...). `Config::TOML`
-also ships by far the most thorough upstream suite of the field (17 files vs.
+also ships by far the most thorough upstream suite of the field (19 files vs.
 2), giving the eventual battery-testsuite gate much more real coverage.
 Keep `TOML::Thumb`'s ticket open regardless — its gap is general (any module
 defining a `Dateish`-compatible type hits it) and worth fixing on its own
@@ -105,32 +117,38 @@ merits.
 
 ## Why it currently fails on mutsu
 
-All 17 of `Config::TOML`'s upstream test files fail to load. The apparent
-first symptom is a confusing, mis-line-numbered parse error:
+### Fixed: bare-identifier adverb declaration names (2026-08-22)
 
-```
-===SORRY!=== Error while compiling t/special-cases/04-string-literal-keys.rakutest
-expected statement: expected use statement or import statement or no statement or need statement or unit statement or ...
-at t/special-cases/04-string-literal-keys.rakutest:28
-```
+Originally all of `Config::TOML`'s upstream test files failed to **load**, with
+a confusing, mis-line-numbered parse error pointing at a line inside
+`Config::TOML::Parser::Actions.rakumod` rather than the test file. Root cause:
+`::Actions` and `::Grammar` declare dozens of `method`/`token` multi-dispatch
+variants named with a **bare identifier adverb** (`method
+string-basic-char:common (...)`, `token gap:spacer {...}` — 48 such methods in
+`Actions.rakumod` alone), as opposed to the familiar `NAME:sym<literal>`
+spelling, which was all mutsu recognized.
 
-— but line 28 does not exist meaningfully in that 59-line test file; it is
-actually line 28 of `Config::TOML::Parser::Actions.rakumod`, reached via `use`
-at compile time. **Root cause, fully bisected**:
-`Config::TOML::Parser::Actions` and `::Grammar` declare dozens of
-`method`/`token` **multi-dispatch variants named with a bare identifier
-adverb** (`method string-basic-char:common (...)`, `token gap:spacer {...}`,
-`token string:basic {...}` — 48 such methods in `Actions.rakumod` alone, plus
-a matching set of `token`s in `Grammar.rakumod`), as opposed to the more
-familiar `NAME:sym<literal>` spelling. mutsu's parser does not recognize this
-bare-adverb spelling — filed as
-`todo/tickets/token-method-bare-colon-adverb-name-not-supported.md`, with two
-standalone minimal repros (one for `method`, one for `token` inside a
-`grammar`) that reproduce independently of `Config::TOML` entirely. This is a
-**general parser gap**, not TOML-specific — fixing it is a real interpreter
-improvement per [BATTERIES.md §1](../../BATTERIES.md#1-adoption-policy--community-first-adopt-as-is)
-rung 2 ("grow mutsu's core, not the library"), and is the entire blocker for
-this slot.
+Fixed across the parser, proto-variant resolution and grammar-action dispatch,
+along with two gaps found on the way (`my Array[Str:D] @k` mis-flagged as an
+invalid type smiley; an object hash never binding to a typed `%h` parameter) —
+see [`news/2026-08/bare-adverb-declaration-names.md`](../../news/2026-08/bare-adverb-declaration-names.md).
+This was a **general parser gap**, not TOML-specific, so fixing it was rung-2
+work per [BATTERIES.md §1](../../BATTERIES.md#1-adoption-policy--community-first-adopt-as-is).
+
+### Remaining work list
+
+Measured 2026-08-22 against a release build, running each suite from its own
+dist directory:
+
+| # | Gap | Filed as | Blocks |
+| --- | --- | --- | --- |
+| 1 | **`is rw` routines do not return an lvalue.** The caller re-interprets the callee's AST tail in its *own* frame, so an element reached through a parameter is unreachable. `Crane.set(%h, :path[...], :value(...))` therefore silently does nothing, and `from-toml` returns `{}` for a document its grammar parsed correctly. | `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` | `Crane` 12/15, and every `Config::TOML` file that builds a result |
+| 2 | **A `\|\|` alternation runs the losing branch's code block.** `[ <escape> \|\| . { die ... } ]` throws even when `<escape>` matched, so every TOML document containing an escape dies with "bad string escape sequence". | `todo/tickets/ordered-alternation-loser-branch-code-block-fires.md` | `grammar/04`, `grammar-actions/04`, `special-cases/06` |
+| 3 | **`push(@a, 1, \|@rest)` in sink context** resolves to "Unknown call: push". | `todo/tickets/push-with-slip-arg-in-sink-context.md` | `special-cases/02`, `special-cases/03` |
+| 4 | Assorted per-assertion failures in `grammar/01-02`, `grammar-actions/01-02`, `exceptions/01-02`, `dumper/01` (the last one a `multi to-toml` candidate-selection mismatch: `Calling to-toml(Str) will never work with declared signature (Associative:D $container, %opts)`). Not yet bisected. | — | the rest |
+
+Items 1-3 are all general interpreter gaps with standalone repros that do not
+mention TOML.
 
 ## Provenance (for when the blocker clears)
 
@@ -163,12 +181,16 @@ cleanly (no provisional-exception caveat needed, unlike `Encode`).
 
 ## Next steps
 
-1. Land `todo/tickets/token-method-bare-colon-adverb-name-not-supported.md`.
-2. Re-run `Config::TOML` + `Crane`'s upstream suites (fetch per the REA
+1. **Land item 1 of the work list** —
+   `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md`. It
+   is the largest by far and the only one that needs design; nothing in
+   `Config::TOML` can produce a result until `Crane.set` works.
+2. Land items 2 and 3 (both small, both with standalone repros).
+3. Re-run `Config::TOML` + `Crane`'s upstream suites (fetch per the REA
    `source-url`s above, or from a fresh `tmp/toml-survey/` per
-   [selection-method.md](selection-method.md)'s procedure) and see how much
-   of 0/17 clears.
-3. If it reaches a workable state, vendor per
+   [selection-method.md](selection-method.md)'s procedure) and bisect whatever
+   of item 4 is left.
+4. If it reaches a workable state, vendor per
    [BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution), add the
    `batteries.lock` entries, run `scripts/battery-testsuite.sh --update`, and
    promote this record's status line + the [bundle index](../../BATTERIES.md#7-bundle-index)

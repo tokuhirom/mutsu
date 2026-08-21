@@ -23,16 +23,28 @@ pub(crate) fn next_decl_order() -> u64 {
 }
 
 /// True when `rest` (the portion of a `token_defs` key AFTER the proto's
-/// fully-qualified name) begins a proto-regex variant adverb. Both the explicit
-/// `:sym<int>` / `:sym«int»` form and its `:<int>` / `:«int»` shorthand register
-/// a candidate under the proto — they differ only in that the shorthand does not
-/// auto-match a `<sym>` literal. A resolver that recognized only `:sym<` dropped
-/// every `token element:<int> {...}` candidate (YAMLish's `Schema::JSON`).
+/// fully-qualified name) begins a proto-regex variant adverb. Three spellings
+/// register a candidate under the proto:
+///
+/// | spelling | binds `<sym>`? |
+/// | --- | --- |
+/// | `:sym<int>` / `:sym«int»` | yes |
+/// | `:<int>` / `:«int»` (shorthand) | no |
+/// | `:int` (bare identifier adverb) | no |
+///
+/// A resolver that recognized only `:sym<` dropped every `token element:<int>
+/// {...}` candidate (YAMLish's `Schema::JSON`); one that additionally missed
+/// the bare form dropped every `token gap:spacer {...}` candidate
+/// (`Config::TOML`'s grammar, which names all of its alternatives that way).
+///
+/// `::` is a package separator, never an adverb, so it must not count.
 pub(crate) fn is_proto_variant_suffix(rest: &str) -> bool {
-    rest.starts_with(":sym<")
-        || rest.starts_with(":sym\u{ab}")
-        || rest.starts_with(":<")
-        || rest.starts_with(":\u{ab}")
+    let Some(after) = rest.strip_prefix(':') else {
+        return false;
+    };
+    after.starts_with('<')
+        || after.starts_with('\u{ab}')
+        || after.starts_with(|c: char| c.is_alphabetic() || c == '_')
 }
 
 impl Interpreter {
