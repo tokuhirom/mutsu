@@ -214,6 +214,28 @@ impl Compiler {
         self.code.emit(OpCode::Die);
     }
 
+    /// Compile a `Stmt::SyntheticBlock`'s already-flattened inner statements
+    /// inline, transparently to dynamic-var read tracking.
+    ///
+    /// A `Stmt::SyntheticBlock` is a parser wrapper (e.g. the `[MarkReadonly,
+    /// VarDecl]` shape of a `:=` bind, a sigilless-readonly mark, a bound
+    /// array-len marker, or a destructuring collector) -- never a real Raku
+    /// lexical scope. Its direct, non-tail dispatch in `compile_stmt` already
+    /// inlines its statements with no scope push/pop at all; a tail-position
+    /// dispatch site that recurses into `compile_block_inline` to get
+    /// "declare and yield the value" semantics must therefore tell that
+    /// recursive call's own `push_dynamic_scope_lexical` not to reset
+    /// `accessed_dynamic_vars`, or an earlier dynamic-var read in the
+    /// enclosing (real) block becomes invisible to the wrapped declaration's
+    /// own `X::Dynamic::Postdeclaration` check. Every call site that inlines a
+    /// `SyntheticBlock` in tail/expression position should go through this
+    /// helper rather than calling `compile_block_inline` directly, so a
+    /// future call site cannot silently reintroduce that gap.
+    pub(super) fn compile_synthetic_block_inline(&mut self, inner: &[Stmt]) {
+        self.next_dynamic_scope_inline_transparent = true;
+        self.compile_block_inline(inner);
+    }
+
     /// Check a dynamic-variable declaration (`my $*x` / `my $*x := ...`) for the
     /// two compile-time errors that apply to it -- X::Dynamic::Package (a
     /// package-like name) and X::Dynamic::Postdeclaration (the SAME name was

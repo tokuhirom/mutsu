@@ -73,9 +73,8 @@ impl Compiler {
                         binding_var,
                         *is_statement_modifier,
                     ),
-                    Stmt::Block(inner) | Stmt::SyntheticBlock(inner) => {
-                        self.compile_block_inline(inner)
-                    }
+                    Stmt::Block(inner) => self.compile_block_inline(inner),
+                    Stmt::SyntheticBlock(inner) => self.compile_synthetic_block_inline(inner),
                     Stmt::VarDecl { name, .. } => {
                         self.compile_stmt(stmt);
                         // VarDecl returns the variable value (like Raku)

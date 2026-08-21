@@ -4314,8 +4314,19 @@ impl Compiler {
             // A statement `given` nets exactly one stack value (see
             // `exec_given_op`), which IS the block value here.
             Stmt::Given { .. } => self.compile_stmt(stmt),
-            Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
+            Stmt::Block(body) => {
                 self.compile_block_inline(body);
+            }
+            Stmt::SyntheticBlock(body) => {
+                // A parser wrapper (e.g. a tail `my $*x := ...` bind used as
+                // the last statement of a phaser-carrying block or a `let`
+                // block), not a real lexical scope -- see
+                // `compile_synthetic_block_inline`. The callers here
+                // (`compile_phaser_block_scope`, the `let`-block path in
+                // `Stmt::Block`'s own compile arm) do not push their own
+                // dynamic-var scope, so this statement shares the enclosing
+                // block's scope and must stay transparent to it.
+                self.compile_synthetic_block_inline(body);
             }
             Stmt::VarDecl { name, .. } => {
                 let var_name = name.clone();

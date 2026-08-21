@@ -719,10 +719,10 @@ impl Compiler {
                     matches!(s, Stmt::MarkSigillessReadonly(_) | Stmt::MarkSigilless(_))
                 }) =>
             {
-                self.compile_block_inline(inner);
+                self.compile_synthetic_block_inline(inner);
             }
             Stmt::SyntheticBlock(inner) if inner.iter().any(|s| matches!(s, Stmt::MarkBind)) => {
-                self.compile_block_inline(inner);
+                self.compile_synthetic_block_inline(inner);
             }
             // A `my @x := LIST` / `my %h := ...` declaration used in expression
             // position (e.g. `+my @x := 1,2,3` or `plan +my @x := ...`). Its
@@ -741,7 +741,7 @@ impl Compiler {
                     )
                 }) =>
             {
-                self.compile_block_inline(inner);
+                self.compile_synthetic_block_inline(inner);
             }
             // A scalar bind to a readonly RHS used in expression position
             // (`f(my $c := "lit")`): the synthetic block is
@@ -786,7 +786,7 @@ impl Compiler {
                 if matches!(inner.first(), Some(Stmt::VarDecl { name, .. })
                     if name == "@__destructure_tmp__" || name == "%__destructure_tmp__") =>
             {
-                self.compile_block_inline(inner);
+                self.compile_synthetic_block_inline(inner);
             }
             Stmt::SyntheticBlock(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);

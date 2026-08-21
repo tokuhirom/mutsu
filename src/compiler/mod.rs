@@ -3186,7 +3186,15 @@ impl Compiler {
                             if matches!(stmt, Stmt::Block(_)) {
                                 self.compile_bare_block_inline(body);
                             } else {
-                                self.compile_block_inline(body);
+                                // `stmt` is a `SyntheticBlock` here (e.g. the
+                                // parser's wrapper for a tail `my $*x := ...`
+                                // bind) -- a compiler wrapper, not a real
+                                // lexical scope. Use the transparent helper so
+                                // an earlier dynamic-var read anywhere in this
+                                // mainline is still visible to the wrapped
+                                // declaration's own X::Dynamic::Postdeclaration
+                                // check.
+                                self.compile_synthetic_block_inline(body);
                             }
                             self.code.emit(OpCode::SetTopic);
                             continue;
