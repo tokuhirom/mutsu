@@ -1,6 +1,6 @@
 # ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (P1 landed; P2-P5 not started)
 - Date: 2026-08-20
 - Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
   (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`)
@@ -276,11 +276,39 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
 
 ## Implementation phases
 
-1. **Oracle + walk unification (no behaviour change).** Add
-   `placeholder_body_kind`, populate it with mutsu's *current* behaviour, and
-   rewrite the three walks to consult it. CI must be green with zero
-   observable change. This isolates the mechanical refactor from the semantic
-   one.
+1. **Oracle + walk unification (no behaviour change). LANDED (PR #6796,
+   2026-08-21).** Added `placeholder_body_kind`/`placeholder_body_kind_expr`
+   (`src/ast.rs`) and rewrote `collect_ph_stmt_shallow`/
+   `collect_ph_expr_shallow`, `placeholder_order.rs`'s `order_check_stmt`/
+   `order_check_expr`/`check_bare_var_stmt`/`check_bare_var_expr`, and
+   `collect_unattached_ph_stmt`'s `For`-modifier check to consult it, moving
+   the scattered per-arm comments into the oracle's doc comments. Verified
+   zero behaviour change via `make test` (only pre-existing, environment-
+   specific failure: `t/compunit-can-install.t` test 4, unrelated) and a
+   targeted run of every `t/*placeholder*.t` file.
+   - **`collect_unattached_ph_stmt`/`collect_unattached_ph_expr` stayed
+     narrower than the oracle on purpose.** They are a deliberately
+     conservative subset detector (documented "false negatives are safe")
+     that, unlike the other three walks, never descends an `If`'s branches
+     (even for a statement modifier) or a `While`/`When`/`Loop`/`React`/etc.
+     body at all — only `For`'s modifier check already had a body-descend
+     decision to replace with an oracle lookup. Extending it to the full
+     table is left to a later phase; doing so in Phase 1 would have newly
+     detected placeholders this walk has never looked for, which is an
+     observable behaviour change.
+   - **`Expr::DoBlock` is classified `Transparent`, not `NoSignature`, despite
+     `do {}` already rejecting a stray placeholder at runtime.** That
+     rejection is a wholly separate, unconditional check in
+     `compile_do_block_expr`, which exempts a placeholder already "attached"
+     to the *enclosing* block's signature — and that attachment only exists
+     because the shallow walk treats `DoBlock` as transparent: the parser's
+     chained-comparison desugar (`0 <= $^p <= 5`) wraps `$^p` in a synthetic
+     `DoBlock`, so `where`/`subset` predicates written that way
+     (`t/subset-where-placeholder-chain.t`; broke Cro::Core's `Cro::Port`
+     when tried) rely on the leak. See the long note on
+     `PlaceholderBodyKind::NoSignature` in `src/ast.rs` for the full
+     explanation. Giving `do {}` a real `NoSignature` classification is left
+     to whichever later phase untangles this interaction.
 2. **Rejecting set.** Flip `loop`/`try`/`react`/`once`/`default`/phasers/
    statement prefixes/`module` to `NoSignature`, reusing
    `placeholder_scope_error("block", ph)`. Expect battery/roast fallout here.
