@@ -11,6 +11,15 @@ ADR-0013 is now closed with a required Miri gate and a call-site audit; ADR-0016
 `Match` invariant has an observable counter; and ADR-0019 has turned rev11's top design
 item into an explicit 51-slice migration, with 14 slices merged. §7 removes completed
 work and reorders only the current tasks by dependency and actionability.**
+**rev13: 2026-08-21 — re-verified against HEAD, 65 commits after the 2026-08-20 addendum.
+The ADR count grew from 20 to 58 (0021-0057 added); §8 now reviews all of them. The
+§1.1/§7 claim that `registration_class_decl.rs` still tree-walks MOP protocol calls was
+found stale — ADR-0019 D5/D6 (closed 2026-08-08/09) split it to 276 lines and confirmed
+the user-HOW protocol reads the finished registry, not raw `Stmt`. The bundled-module
+count grew 22→36 dists (Cro, Digest, Slangify/Slang-Tuxic and others). ADR-0020's shared
+worker pool, already recorded as resolved in §0/§7, was found still described as "no
+thread pool at all" in §2.3 — a self-contradiction now fixed. Hygiene metrics refreshed
+throughout (§5, §6).**
 
 Method:
 - subsystem-level close reading, re-verified per claim on the live tree
@@ -41,11 +50,14 @@ Overall assessment as of rev12:
   and the 62-site aliasing audit found no live violation. ADR-0013 is closed; the narrow
   cross-thread race remains explicitly deferred to frozen layer 3c (§2.1).
 - **Two subsystems that did not exist in rev10 are now load-bearing**: a **bundled-module
-  layer** (`modules/`, 22 vendored upstream dists + `vendor/zef`, gated by a release-time
-  upstream-test-suite run) and a **user-facing MOP** (`EXPORTHOW::DECLARE` declarator
-  registry + HOW-driven class registration, `runtime/metamodel.rs`). Both are described in
-  §1.8/§1.9 — and both push load onto the one subsystem that is still tree-walking
-  (declaration registration, §1.1).
+  layer** (`modules/`, 36 vendored upstream dists as of rev13 (rev12: 22) + `vendor/zef`,
+  gated by a release-time upstream-test-suite run) and a **user-facing MOP**
+  (`EXPORTHOW::DECLARE` declarator registry + HOW-driven class registration,
+  `runtime/metamodel.rs`). Both are described in §1.8/§1.9. **Correction (rev13):** rev12's
+  claim that both "push load onto the one subsystem that is still tree-walking (declaration
+  registration, §1.1)" is stale — ADR-0019 D5/D6 (closed 2026-08-08/09) found the user-HOW
+  MOP protocol reads the finished registry after native registration, not raw `Stmt`, and
+  split the walker itself down to 276 lines. See §1.1.
 - **The two representation campaigns are landed, with only optional or deliberate residue.**
   ADR-0016 (span-based captures + lazy `Match`) landed all five phases in four days at the
   end of July and corrected five real compatibility bugs on the way; its `view()`-forcing
@@ -58,10 +70,10 @@ Overall assessment as of rev12:
   interpreter-only `bench-fib` (0.98). Per PLAN's 2026-07-16 priority reset, perf is polish;
   this revision therefore ranks architectural items by **debt shape and dependency**, not by
   profile share.
-- **Hygiene trends keep worsening**: files >500 lines 239→300→**302**, >1000
-  62→80→**83**, `runtime/mod.rs` 2470→2495→**2700**, `unwrap/expect/panic!/
-  unreachable!` 1789→1908→**1920**, and `.clone()` 9056→10192→**10283**. The
-  `#[allow(` count improved slightly, 178→**176**, but it does not change the overall slope.
+- **Hygiene trends keep worsening**: files >500 lines 239→300→302→**336**, >1000
+  62→80→83→**100**, `runtime/mod.rs` 2470→2495→2700→**3263**, `unwrap/expect/panic!/
+  unreachable!` 1789→1908→1920→**2227**, and `.clone()` 9056→10192→10283→**10726**. The
+  `#[allow(` count also rose again, 178→176→**210**, reversing rev12's brief improvement.
 
 None of the remaining issues is of the "the basic design is broken" kind. The shape of the
 debt has changed, though: the soundness and representation campaigns are closed, and as of
@@ -74,10 +86,14 @@ residue, now tracked as independent tickets rather than inside the ADR. **ADR-00
 role membership) also landed its mechanism and data (Slices 1-3, 2026-08-17/18)**: `X::` ancestry
 is now registered as role composition through the existing composed-role registry, not folded
 into single-inheritance `parents`/`mro`, and 357/373 real rakudo `Exception` subtypes match
-byte-for-byte (§7). The active center moves to the still-missing batteries-adoption-policy
-decision, plus ADR-0029's own deferred measurement slice. (The other "missing decision" this
-document used to track, a shared worker pool, is no longer missing: ADR-0020 was written and
-accepted, all three implementation slices landed 2026-08-05 — found while updating §8 below.)
+byte-for-byte (§7). **ADR-0029's Status is now `Accepted`** (rev13 correction: this document's
+2026-08-18 addendum recorded it as still `Proposed` pending Slice 4; the ADR itself has since
+moved to Accepted with Slice 4 still tracked as open follow-up). The active center moves to the
+still-missing batteries-adoption-policy decision. (The other "missing decision" this document
+used to track, a shared worker pool, is no longer missing: ADR-0020 was written and accepted,
+all three implementation slices landed 2026-08-05 — found while updating §8 below. **rev13
+also found §2.3 had not been updated to match**, still describing "no thread pool at all";
+fixed there.) **Since rev12, 37 more ADRs were written (0021-0057)**; §8 now reviews all of them.
 
 Where to look first:
 - §1: what architectural work remains (§1.8-§1.10 are new)
@@ -101,11 +117,17 @@ hits — see the ADR's completion-gate section for the full closure record (G1-G
 What is left is deliberately non-gating residue, each tracked as its own ticket rather than
 inside the ADR:
 
-- **`legacy_body` adapters and the class/role registration walker**
-  (`runtime/registration_class_decl.rs`, 2927 lines) still tree-walk MOP protocol calls
-  (`declare_drive_how_protocol` driving `new_type`/`add_method`/`compose`) — declaration
-  *registration*, not body execution, which is fully compiled. This is the largest remaining
-  tree-walk surface and the one most likely to keep growing with future MOP features (§1.9).
+- **(rev13 correction) The class/role registration walker is no longer the tree-walk
+  surface rev12 described.** `runtime/registration_class_decl.rs` is now 276 lines, down
+  from the ~2,500-line single function ADR-0019 D0 split; the body walk lives in
+  `registration_class_body*.rs` (~2,161 lines across 5 files) and reads a compile-time
+  `body_plan: Vec<ClassBodyOp>`, not raw statements (ADR-0019 D6). `declare_drive_how_protocol`
+  itself lives in `runtime/metamodel.rs:377`, invoked from the VM opcode handler
+  `vm/vm_typedecl_ops.rs:522`. ADR-0019 D5 (closed 2026-08-08/09) specifically reviewed this
+  and found the user-HOW MOP protocol (`new_type`/`add_method`/`compose`) runs entirely
+  *after* native registration and reads the finished registry — it never walks a raw `Stmt`.
+  §1.9's "bolted onto the tree-walking registration path" framing (below) predates this
+  finding and should be read with this correction.
 - **Native/builtin method introspection fidelity** (F1/F2, closed 2026-08-20): user-method
   `.^methods`/`.^can`/method MRO views are now derived from the canonical table (no longer
   hand-maintained, closing most of §4 item 1 below), and `.^lookup`/`.^find_method` now return the
@@ -117,9 +139,8 @@ inside the ADR:
 - **E2's exact-handler-ID catalog** (giving every native entry a static type×method row) is
   open cleanup, no longer gating dispatch correctness — `native_call_unmodeled` is a
   monitoring signal, not a precondition. Tracked in `todo/deep/adr0019-e2-e4-resolver-core.md`.
-- **D2c-5** (collapsing three near-duplicated default-evaluation env-setup shapes) is optional
-  de-duplication with no correctness impact. Tracked in
-  `todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`.
+- **D2c-5** (collapsing three near-duplicated default-evaluation env-setup shapes) has landed
+  (`news/2026-08/adr0019-d2c5-collapse-default-eval-env-setup.md`); the ticket file is gone.
 - **Module-sub OTF compile gate** (`def_is_otf_compilable_module_single`,
   `vm/vm_call_func_ops.rs:1991`): unchanged since rev10, outside ADR-0019's scope. The
   residual exclusions are mechanism-level — `state`, sigilless `\x` params,
@@ -185,6 +206,16 @@ not the grammar. It does not change the slang verdict: user-defined grammar/toke
 switching remains future work, and the registry is deliberately not a general slang
 mechanism.
 
+**New since rev12: ADR-0026 "slang activation" (Accepted, 2026-08-11)** adds a narrower,
+working mechanism alongside the declarator registry — a compile-time `use` effect that
+recognizes specific grammar-mixin overrides (seeded from `Slang::Tuxic`'s three rules) and
+maps them onto hand-implemented parser modes, rather than executing Rakudo-internal token
+bodies (explicitly rejected in the ADR's own §4). This unblocked bundling `Slangify`/
+`Slang-Tuxic` verbatim and, downstream, the Text::CSV battery
+(completed 2026-08-13, PR #6360). It does not overturn the "no true slang stack" verdict
+above — there is still no general grammar-rebinding mechanism — but it is a concrete,
+working step in that direction and belongs in this section.
+
 ### 1.7 RakuAST model layer — read+write, no second engine
 
 `src/rakuast/` (5 files, ~3960 lines) converts the internal `Stmt`/`Expr` tree to a RakuAST
@@ -200,13 +231,16 @@ demotes it relative to rev10.
 
 ### 1.8 Bundled-module layer (new since rev10) — the batteries architecture
 
-`modules/` holds **22 vendored upstream dists** (Base64, Crypt-Random, DateTime-Parse,
-DBIish, Encode, File-Directory-Tree, File-Temp, HTTP-HPACK, HTTP-Status, HTTP-UserAgent,
-IO-Path-ChildSecure, IO-Socket-SSL, MIME-Base64, NativeHelpers-Blob, NativeLibs, OO-Monitors,
-OpenSSL, Rakudo-Core, Template-Mustache, Test-Util-ServerPort, URI, YAMLish), plus
-`vendor/zef`. Module resolution has a documented precedence chain (`use lib` → `-I` →
-`MUTSULIB` → the `mzef` site repo → bundled batteries), and a release-time gate runs each
-battery's **upstream** test suite (`scripts/battery-testsuite.sh`, `batteries.lock`).
+`modules/` holds **36 vendored upstream dists as of rev13** (rev12: 22 — Base64,
+Crypt-Random, DateTime-Parse, DBIish, Encode, File-Directory-Tree, File-Temp, HTTP-HPACK,
+HTTP-Status, HTTP-UserAgent, IO-Path-ChildSecure, IO-Socket-SSL, MIME-Base64,
+NativeHelpers-Blob, NativeLibs, OO-Monitors, OpenSSL, Rakudo-Core, Template-Mustache,
+Test-Util-ServerPort, URI, YAMLish; 14 added since — CBOR-Simple, Cro-Core, Cro-HTTP,
+Cro-TLS, Digest, Digest-HMAC, IO-Socket-Async-SSL, JSON-JWT, JSON-Tiny, Log-Timeline,
+Slangify, Slang-Tuxic, Text-CSV, TinyFloats), plus `vendor/zef`. Module resolution has a
+documented precedence chain (`use lib` → `-I` → `MUTSULIB` → the `mzef` site repo →
+bundled batteries), and a release-time gate runs each battery's **upstream** test suite
+(`scripts/battery-testsuite.sh`, `batteries.lock`).
 
 Architecturally this is a policy decision with teeth (BATTERIES.md): **a module is grown into
 by fixing the interpreter (rung 2), never reimplemented natively (rung 3)** — banned by user
@@ -235,13 +269,20 @@ retired.
 
 Two structural observations:
 
-1. **It is bolted onto the tree-walking registration path** (§1.1). The user protocol is
-   driven from inside `register_class_decl`, so MOP breadth and §1.1's compilation debt are
-   now coupled: each new HOW metamethod is another AST-walking special case.
-2. **B2b's "custom HOW inheritance is campaign-sized" verdict is partly obsolete.** PLAN
-   §B2b still describes HOW subclassing as unbuilt; the OO::Monitors campaign built a
-   meaningful part of it. What remains unbuilt is the NQP/QAST/slang layer Test::Async needs,
-   which is a *different* claim. PLAN §B2b should be re-scoped, not simply left deferred.
+1. **(rev13 correction) It is *not* bolted onto a tree-walking registration path.** §1.1
+   found the user-HOW protocol reads the finished registry after native registration, never
+   a raw `Stmt` — ADR-0019 D5 closed this specifically. The more precise framing: the user
+   protocol is driven from inside a plan-driven, mostly-compiled registration path whose
+   `body_plan` walk (`registration_class_body*.rs`) is still imperative Rust, not bytecode —
+   so MOP breadth still couples to that walker's shape, just not in the AST-evaluation sense
+   rev12 described.
+2. **(rev13 correction) The PLAN §B2b reference is now dangling.** PLAN.md has since been
+   reorganized (it is deliberately kept as a slim outline, not a progress log) and no longer
+   contains a "B2b" section or any custom-HOW / Test::Async text to re-scope. The
+   substantive point survives independently: the
+   OO::Monitors campaign built a meaningful part of custom HOW subclassing; what remains
+   unbuilt is the NQP/QAST/slang layer a module like Test::Async would need, which is a
+   different, larger claim than "HOW subclassing is unbuilt."
 
 ### 1.10 Representation campaigns — complete, with optional residue
 
@@ -310,14 +351,22 @@ be silent.
 - **`Proc::Async` stress segfault** (`todo/deep/procasync-stress-segv.md`) —
   `roast/S17-procasync/stress.t` segfaults rarely, CI-only so far. A segfault is categorically
   worse than a failing assertion and should not sit in a `todo/` file indefinitely.
-- **The WASM build traps** on `start` / `Channel` instead of degrading
-  (`todo/deep/wasm-start-and-channel-trap.md`).
+- **(rev13: resolved, removed)** The WASM `start`/`Channel` trap
+  (`todo/deep/wasm-start-and-channel-trap.md`) was fixed 2026-08-14 (`62ea1e3e4`) by a
+  cooperative single-thread scheduler (`wasm_sched.rs`, `thread_compat.rs`, PR #5317); the
+  todo file is gone.
 - **Recursive start/await hang** (deterministic) and **Supply detached-worker panics are
   swallowed** (QUIT propagation unimplemented) — both unchanged since rev10.
-- **No thread pool at all**: 20 `spawn_user_thread` sites, each reserving 256 MiB
-  (`runtime/builtins_system.rs:9`). PLAN §6 measured the consequences (50 idle `cue(:every)`
-  timers → 52 threads / +16.4 GB VmSize). The decision this needs — what `await` does to a
-  pooled worker, given mutsu has no continuations — is still an **unwritten Proposed ADR**.
+- **(rev13 correction) Thread pool landed**: ADR-0020 (Accepted, all slices merged
+  2026-08-05) is already recorded as resolved in §0/§7, but this bullet had not been updated
+  to match. Raw `spawn_user_thread` call sites dropped from 20 to 8 (`slang_activation.rs`,
+  `worker_pool.rs`, `supply_promise.rs`, `methods_collection_ops/socket_thread.rs`); `start`,
+  one-shot `cue`, `cue(:every)`, supply emitters, promise-waiter dispatch, and hyper/race
+  batch workers now go through `worker_pool::submit`/`submit_joinable`, fixing the
+  52-thread/+16.4 GB `cue(:every)` blowup PLAN §6 measured (down to 4 threads / 761 MB). The
+  `await`-on-pooled-worker question is answered in ADR-0020 §2 (elastic pool, blocking
+  `await` retained) — it is not an unwritten ADR. `runtime/slang_activation.rs:57` remains
+  a `spawn_user_thread` site outside the pool (not yet tracked as a separate ticket).
 
 ### 2.4 The env-writeback cluster — resolved by the fused campaign
 
@@ -351,9 +400,11 @@ work, not blockers for the slot-addressed design.
 
 ### 3.1 Statement/expression dual compilation of control constructs
 
-Unchanged: `compiler/helpers_do_expr.rs` (476 lines, 6 `compile_do_*` entry points)
-duplicates `stmt.rs` logic for do/if/for/while/loop in expression position, including a
-21-field `ForLoopSpec` construction maintained twice. Fix remains one value-returning pass.
+Unchanged in shape, grown in size: `compiler/helpers_do_expr.rs` (609 lines as of rev13,
+rev12: 476; 6 `compile_do_*` entry points, unchanged count) duplicates `stmt.rs` logic for
+do/if/for/while/loop in expression position, including a `ForLoopSpec` construction
+(`opcode.rs:194`, now 27 fields, rev12: 21) maintained twice. Fix remains one
+value-returning pass.
 
 ### 3.2 Sub declaration registered twice
 
@@ -374,9 +425,9 @@ still call into this resolver from multiple call sites rather than one funnel
 `run_instance_method`/`run_instance_method_celled` in `runtime/class_dispatch.rs:52,90`,
 `native_method_{0,1,2}arg` in `builtins/`), but all of them resolve through the same
 candidate-sequence logic rather than independently re-walking the MRO. Same-name string
-matches stay scattered — `"elems"` appears in **33 files** (rev10: 8+) — a cosmetic/lookup
-surface issue, not a second dispatch mechanism. `runtime/methods_call_dispatch.rs` is now
-3875 lines.
+matches stay scattered — `"elems"` appears in **35 files** (rev12: 33; rev10: 8+) — a
+cosmetic/lookup surface issue, not a second dispatch mechanism.
+`runtime/methods_call_dispatch.rs` is now **4082 lines** (rev12: 3875/3886).
 
 What remains is the E2 exact-handler-ID catalog (giving every native entry a static row
 instead of the arity-cascade fallback, `todo/deep/adr0019-e2-e4-resolver-core.md`) and the last
@@ -392,14 +443,17 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
 1. **User-method `.^methods`/`.^can`/method MRO views are now derived** from the canonical
    `Registry::method_entries[(owner, name)].user_candidates` table (ADR-0019 F1/F2, closed
    2026-08-20) — no longer hand-maintained for user-declared types, and `.^lookup`/`.^find_method`
-   return the same `Method` `Instance` shape those readers build. **Native/builtin
-   method metadata stays a hand-maintained shortcut**: `builtins/builtin_type_methods.rs` (960
-   lines, rev10: 874) centralizes the native candidate-name universe, guarded by structural
-   tests plus `t/can-methods-drift.t`; per-method fidelity gaps (native `.package` on multi
-   dispatchers, synthesized-not-exact `.signature`) remain open, deliberately as a reactive
-   per-case slice rather than an upfront sweep — tracked in ADR-0019's F1 box
-   (`news/2026-08/adr0019-f1-f2-introspection-closeout.md`). The growth rate matters now
-   that §1.9 lets user code introspect through the same surface.
+   return the same `Method` `Instance` shape those readers build. **(rev13 update)
+   Native/builtin method introspection moved, not disappeared, one layer down**: ADR-0019
+   F3 retired `builtin_type_methods.rs`'s hand-maintained per-type name slices — the file
+   shrank to 407 lines (rev12: 960), now reading names off `native_method_row::RAW_ROWS`'s
+   `INTROSPECTABLE`-flagged rows. The hand-maintained candidate-name universe now actually
+   lives in `builtins/native_method_row_table.rs` (1525 lines, ~340 literal rows), still
+   guarded by structural tests plus `t/can-methods-drift.t`; per-method fidelity gaps
+   (native `.package` on multi dispatchers, synthesized-not-exact `.signature`) remain open,
+   deliberately as a reactive per-case slice rather than an upfront sweep — tracked in
+   ADR-0019's F1 box (`news/2026-08/adr0019-f1-f2-introspection-closeout.md`). The growth
+   rate matters now that §1.9 lets user code introspect through the same surface.
 2. **Parser grammar relaxations for roast** (minor, unchanged): `is List` type-ish traits,
    the Test::Assuming colonpair, and the `throws-like` trailing-`)` special form.
 
@@ -414,28 +468,33 @@ No test-specific hardcoded outputs found (re-checked). Two derivation shortcuts 
   `todo/deep/deferred-seq-materialization-destroys-the-original.md`.
 - **Env**: COW `Arc<FxHashMap<Symbol,Value>>` with a scoped parent-overlay chain capped at
   `MAX_OVERLAY_DEPTH=16` (`env.rs:318`). The structural remainder is §1.3's blanket.
-- **`.clone()` ≈ 10283** (rev11: 10192, rev10: 9056): each is an 8-byte NaN-box copy plus a refcount for
-  container tags, so the unit cost is low, but the growth is a code-shape signal, not just a
-  perf one.
-- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 1920** and **`#[allow(` 176**.
-  PLAN §8.3's "mutsu must never Rust-panic on any input" goal is in tension with a metric
-  that has risen every revision.
+- **`.clone()` ≈ 10726** (rev12: 10283, rev11: 10192, rev10: 9056): each is an 8-byte
+  NaN-box copy plus a refcount for container tags, so the unit cost is low, but the growth
+  is a code-shape signal, not just a perf one.
+- **`unwrap`/`expect`/`panic!`/`unreachable!` ≈ 2227** (rev12: 1920) and **`#[allow(` 210**
+  (rev12: 176). PLAN §8.3's "mutsu must never Rust-panic on any input" goal is in tension
+  with a metric that has risen every revision.
 - Allocation-failure aborts on user-sized allocations remain guarded via `try_reserve`.
 
 ---
 
 ## 6. Repository hygiene
 
-- **500-line rule**: **83 files >1000 lines, 302 files >500** (rev11: 80 / 300;
-  rev10: 62 / 239). Total `src/` is ~434k lines. Largest: `opcode.rs` 5349,
-  `vm/vm_exec_dispatch.rs` 4710, `runtime/methods_call_dispatch.rs` 3886,
-  `compiler/stmt.rs` 3848, `runtime/regex_parse_core.rs` 3698,
-  `vm/vm_var_assign_index_named.rs` 3570, `parser/expr/postfix/loop_.rs` 3297,
-  `runtime/registration_class_decl.rs` 2927. Giant dispatch matches remain intentional
-  exceptions; the other seven are not. `runtime/mod.rs` is **2700** lines (rev7 1932 → rev8
-  2118 → rev9 2309 → rev10 2470 → rev11 2495) — still growing after five reviews.
-  The rule as written ("split immediately") is not being followed, so either the rule or the
-  practice should change deliberately rather than by drift.
+- **500-line rule**: **100 files >1000 lines, 336 files >500** (rev12: 83 / 302; rev11: 80 /
+  300; rev10: 62 / 239). Total `src/` is ~480k lines (rev12: ~434k). Largest as of rev13:
+  `opcode.rs` 7443, `vm/vm_exec_dispatch.rs` 5086, `compiler/stmt.rs` 4451,
+  `runtime/methods_call_dispatch.rs` 4082, `runtime/regex_parse_core.rs` 4049,
+  `vm/vm_var_assign_index_named.rs` 3809, `compiler/mod.rs` 3423,
+  `parser/expr/postfix/loop_.rs` 3399, `runtime/mod.rs` 3263. **`runtime/registration_class_decl.rs`
+  is no longer in this list — it was split to 276 lines by ADR-0019 D0-D9** (the walk moved
+  into `registration_class_validate.rs`/`registration_class_compose*.rs`/
+  `registration_class_body*.rs`, ~6000 lines combined across those files); this row was
+  rev12's example of "the next walker due for deletion" and should not be cited as still
+  outstanding (see §1.1, §7 item 4). Giant dispatch matches remain intentional exceptions;
+  the rest are not. `runtime/mod.rs` is **3263** lines (rev7 1932 → rev8 2118 → rev9 2309 →
+  rev10 2470 → rev11 2495 → rev12 2700) — still growing after six reviews. The rule as
+  written ("split immediately") is not being followed, so either the rule or the practice
+  should change deliberately rather than by drift.
 - The stale `value/aliased_mut.rs` unsoundness header was corrected with ADR-0013's closure.
   Comment references to the retired `MUTSU_SHADOW_SLOTS` opt-in gate remain cleanup targets.
 
@@ -457,9 +516,9 @@ The ranking rule, stated so it can be argued with:
    makes the Proc::Async SIGSEGV P0; without one, blind local loops have already been measured
    as unproductive.
 3. **Make hygiene a completion gate on the subsystem being replaced.** File splitting without
-   deleting a model is churn; the ADR-0019 registration walker
-   (`runtime/registration_class_decl.rs`, §1.1) is the next concrete case once a future MOP
-   feature forces it open.
+   deleting a model is churn; rev12's example (the ADR-0019 `registration_class_decl.rs`
+   walker) has since actually been split (§1.1) — the next concrete case is whichever
+   oversized file a future MOP/dispatch feature next forces open.
 4. Feature breadth with no downstream consumer remains last.
 
 **Exception role/type registration** (`todo/deep/exception-class-hierarchy-is-mostly-unregistered.md`,
@@ -482,34 +541,50 @@ doing so contradicts the ADR's own acceptance criterion 1 as globally worded.)* 
 unreachable-as-written acceptance criterion 3, are itemised as R1-R4 in the owning ticket. What
 is **not** done is ADR-0029's own Slice 4 (re-running the honest measurement sweep under the
 vendored real `Test` module) — that is blocked on the separate, still-open
-`todo/deep/vendor-real-test-module.md`, so the ADR's Status stays `Proposed` and its owning
-todo/deep ticket stays open until that sweep is actually runnable. Note that Slice 4's designated
-*role-only* probe has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and
-passes 101/101, so the sweep is all that remains of it.
+`todo/deep/vendor-real-test-module.md`. **rev13 correction:** the ADR's Status is now
+`Accepted` (verified `docs/adr/0029-*.md:3`), not `Proposed` as this document's 2026-08-18
+addendum recorded — the owning todo/deep ticket stays open pending Slice 4, but that no
+longer gates the ADR's own Status field. Note that Slice 4's designated *role-only* probe
+has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and passes
+101/101, so the sweep is all that remains of it.
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
 | 2 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices. |
 | 3 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
-| 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 2700 lines and the >500/>1000 populations reached 302/83. `registration_class_decl.rs` (2927 lines, §1.1) is the next walker due for deletion once a MOP feature forces it open; touched oversized files should be split when ownership boundaries become clear. A standalone line-moving campaign is not the priority. |
+| 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 3263 lines and the >500/>1000 populations reached 336/100. The `registration_class_decl.rs` walker this row used to point at has already been split (ADR-0019 D0-D9, §1.1); touched oversized files should be split when ownership boundaries become clear as the next one is forced open. A standalone line-moving campaign is not the priority. |
 | 5 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
 Explicitly **not** ranked as current architecture work: completed ADR-0013/0015-P3b/0016/0018/
 0019/0020/0029 (mechanism+data) campaigns; optional ADR-0015 P3c; ADR-0016's deliberately
 deferred eager replay carriers; roast whitelist chasing; and perf levers with no goal-item
 consumer. They become candidates only when new evidence or a real downstream dependency
-changes that premise.
+changes that premise. **New since rev12 (see §8 for the full survey of ADRs 0021-0057)**:
+the unified-dispatch line ADR-0019 started continues through **ADR-0047** (type identity is
+a declaration site; P1/P2 landed) and **ADR-0051** (type ancestry has one oracle; P1/P3/P4
+landed, verified via commit `aedd720e0`) — both partially implemented, not yet complete, but
+worth tracking alongside ADR-0019/0029 as the same architectural thread rather than as new
+unrelated work.
 
 ---
 
-## 8. ADR ledger review (new in rev11; refreshed in rev12)
+## 8. ADR ledger review (new in rev11; refreshed in rev12; extended to all 58 ADRs in rev13)
 
-Reviewed all 19 ADRs against the tree. The decisions themselves hold up — no ADR was found
+Reviewed all ADRs against the tree — 20 in rev12 (0001-0020), extended in rev13 to cover
+the 38 written since (0021-0057). The decisions themselves hold up — no ADR was found
 to be *wrong*. The systematic problem is that **an ADR's recorded status drifts from what
 shipped**, because implementation progress is reported in `news/` and PLAN.md but not folded
 back into the ADR that owns the decision. That defeats the ADR's stated purpose (preserving
-the judgment context) for anyone who reads the ADR first.
+the judgment context) for anyone who reads the ADR first. **rev13 also found the reverse
+problem in this ledger itself**: its own 0029 row recorded a `Proposed` status that the ADR
+had since moved past (see below), and its "no thread pool" §2.3 bullet contradicted its own
+already-correct §0/§7 text about ADR-0020. Both are fixed in this revision. **A companion
+fix, done in the same pass**: `docs/adr/README.md`'s own index table had drifted behind the
+ADR bodies on 17 rows (0019, 0025, 0026, 0028, 0031-0033, 0036-0037, 0039, 0042, 0046-0049,
+0051, 0054) — every Status column was re-read against each ADR's own current Status line and
+corrected; ADR-0026 itself also gained the "Outcome" section its own Status line pointed at
+but did not have.
 
 The rev11 corrections remain valid; rev12 adds the closure/progress deltas below:
 
@@ -524,15 +599,61 @@ The rev11 corrections remain valid; rev12 adds the closure/progress deltas below
 | 0018 slot-addressed lexical capture | Added after rev11 to own the env-writeback/lexical-slot fused campaign. | Accepted and implemented; it replaces rev11's completed roadmap rows rather than remaining a current task. |
 | 0019 compiled declarations and unified dispatch | Added after rev11 to own §1.1/§3.3/§4-1 as one phased migration. | **Accepted/Implemented (2026-08-17).** All four completion gates (G1-G4) closed; the ADR's own execution checklist remains the historical record. Deliberately non-gating residue (native-method introspection fidelity, the E2 handler-ID catalog, D2c-5) now lives in independent tickets, not the ADR. |
 | 0020 shared worker pool | New (2026-08-05), not previously in this ledger; found while adding the ADR-0029 row below and cross-checking §7's stale "write the worker-pool ADR" roadmap row. | **Accepted, all three implementation slices landed 2026-08-05.** Superseded and removed the §7 roadmap row and the §8 "missing ADR" call-out that both still described it as undecided; the ADR's own text is the historical record, not re-audited further here. |
-| 0029 X:: exception role membership | New (2026-08-17), covered here rather than left drifting immediately. | **Status: Proposed; Slices 1-3 (mechanism + data landing) shipped 2026-08-17/18** (#6590/#6591/#6595, §7 roadmap note above). Slice 4 (the honest re-measurement sweep under the vendored real `Test` module) is blocked on the separate, still-open `todo/deep/vendor-real-test-module.md` — Status intentionally stays `Proposed` rather than being flipped to `Accepted` ahead of that. |
+| 0029 X:: exception role membership | New (2026-08-17), covered here rather than left drifting immediately. **rev13: this ledger's own row was itself stale** — it recorded `Status: Proposed` through the 2026-08-18 addendum, but the ADR itself has since moved to `Accepted`. | **Status: Accepted (verified `docs/adr/0029-*.md:3`); Slices 1-3 (mechanism + data landing) shipped 2026-08-17/18** (#6590/#6591/#6595, §7 roadmap note above). Slice 4 (the honest re-measurement sweep under the vendored real `Test` module) remains blocked on the separate, still-open `todo/deep/vendor-real-test-module.md`, tracked as open follow-up rather than gating the ADR's Status. |
 | 0003, 0004, 0005, 0006, 0009, 0010, 0012, 0014, 0017 | Accurate; 0004 and 0009 already carry closing addenda. | No change. |
 | 0002 | Historical gate record; still accurate. | No change. |
 
-**Not reviewed in this pass:** ADRs 0021-0028 (`0021-argument-namedness-is-a-call-site-property.md`
-through `0028-supply-schedule-on-deferred-tap-delivery.md`) were all written after rev12's
-"19 ADRs" count and are not yet folded into this ledger. A future revision should re-run this
-section's method (read every ADR's Status line against the tree) rather than trust this
-addendum's partial coverage.
+### rev13 addition: ADRs 0021-0057 (2026-08-21)
+
+The 38 ADRs written since rev12, surveyed against the tree for the first time. Most check
+out; the notable drift is **0026** (Status text never updated after implementation landed)
+and a handful of `docs/adr/README.md` index rows lagging their own ADR bodies (out of scope
+for this file, noted above).
+
+| ADR | Status(recorded) / reality | Drift/comment |
+|---|---|---|
+| 0021 argument namedness is a call-site property | Accepted; P1-P4 shipped, P5 perf follow-up open. | No change. |
+| 0022 regex alternation LTM shares one ranking mechanism | Accepted; all 5 slices merged. | No change. |
+| 0023 binding provenance / spawn capture | Accepted; implemented. | No change. |
+| 0024 mainline lexicals for named subs | Accepted; implemented. | No change. |
+| 0025 captured scalar cells are value-kind-blind | Slice 1 implemented; Slice 2 closed 2026-08-20 as already-resolved by existing machinery; Slice 3 planned. | No ANALYSIS.md action; `docs/adr/README.md`'s index still says "slices 2-3 planned" (out of scope here). |
+| 0026 slang activation architecture | **Fixed in this pass.** The Status line read "implementation to start as its own campaign" with no Outcome section, though `news/2026-08/slang-activation-machinery.md` (4 PRs) showed the full campaign landed 2026-08-11/12. | Added an "Outcome" section to the ADR itself and updated its Status line to "Accepted, implemented" — this time fixed directly rather than just flagged, since it's a one-paragraph correction. |
+| 0027 loop-frozen value capture cascade | Accepted; Slice 1 implemented, Slice 2 audited with no gaps found, Slice 3 is a documentation-only item (not a code gap). | No change. |
+| 0028 supply schedule-on deferred tap delivery | Accepted; Slice 1 implemented + Cro-verified 2026-08-13, Slice 2 audited (2 fixes, 1 spun into a new ticket). | No change; `docs/adr/README.md` index still says "Proposed" (out of scope here). |
+| 0029 X:: exception role membership | See dedicated row above (rev12 table) — status corrected to Accepted in this revision. | — |
+| 0030 native array decode cache | Accepted; fully implemented. | No change. |
+| 0031 supply quit ownership / cold source tapping | Implemented; Slice 1+2 landed 2026-08-19, Slice 3 closed as a retired ticket. | No change. |
+| 0032 WrapVarRef container capture | Partially implemented; Slice 1+2 landed 2026-08-19 (one documented deliberate deviation), Slice 3 open. | No change. |
+| 0033 Whatever priming leaf/scope | Phase 1 shipped 2026-08-19, Phase 2 shipped 2026-08-20, Phases 3-4 not started. | No change. |
+| 0034 Seq reification in-place | Accepted; all 5 phases implemented. | No change. |
+| 0035 method calls observe caller frames | Accepted; Slices 1-3 implemented. | No change. |
+| 0036 element-container pairs from subscripts | Partially implemented; Slices 1-2 landed 2026-08-20, Slices 3-4 open. | No change. |
+| 0037 EVAL context frame owns return target | Partially implemented; Slice 1 landed 2026-08-20 (`vm/vm_call_light.rs`), Slices 2-4 open. | No change. |
+| 0038 Seq cache returns a List | Accepted; phases 1-4 implemented. | No change. |
+| 0039 container lexicals resolve lexically | Slice 1 landed 2026-08-20; Slice 2 next. | No change. |
+| 0040 array/hash elements are itemized at the store | Proposed; design complete, not implemented. | No change. |
+| 0041 sub hoisting vs. compile-time name visibility | Proposed; investigation only. | No change. |
+| 0042 type constraints belong to the container | Slice 1 landed 2026-08-20; Slices 2-3 not started. | No change. |
+| 0043 scheduled-delivery hop belongs to the tapped Supply | Decision 1 landed (category-1 derived operators fixed); Decision 2 deliberately deferred. | No change. |
+| 0044 listops are routines, not a syntactic rewrite | Proposed; design complete, not implemented. | No change. |
+| 0045 for-loop parameters bind the element container | Proposed; design complete, not implemented. | No change. |
+| 0046 proto/token LTM shares one ranking mechanism | Slice 1 landed 2026-08-20; Slices 2-5 next. | No change. |
+| 0047 type identity is a declaration site, not a registry name | P1/P2 landed (PR #6757); P3/P4 not started. | Identity-resolution counterpart to ADR-0029/0051 — cross-linked from §7. |
+| 0048 placeholder scope is a block-invocation contract | Accepted; P1 landed, P2-P5 not started. | No change — "Accepted" records the decision, not full rollout. |
+| 0049 Nil decays to the container default at the element store | Accepted; Slices 0-2 implemented. | No change. |
+| 0050 block/routine-ness is a definition-site property | Proposed; design complete, not implemented. Its split-off small ticket (the `nextsame` tail-call fix, `news/2026-08/nextsame-tail-call-real-return-signal.md`) already shipped, but that is not this ADR's main decision — easy to conflate. | No change to Status. |
+| 0051 type ancestry has one oracle and an unresolved method throws | Accepted; P1/P3/P4 landed (verified `aedd720e0`, `news/2026-08/adr0051-cool-only-gate-p3-p4.md`), P2/P5 not started. | Continuation of the ADR-0019 unified-dispatch line; cross-linked from §7. |
+| 0052 a `when`/`default` clause produces its value on the stack | Proposed; design complete, not implemented. Split-off ticket already shipped (same caveat as 0050). | No change to Status. |
+| 0053 `do whenever` produces a Tap on the stack | Proposed; design complete, not implemented. | No change. |
+| 0054 argument-list interpolation is a call-site property | Accepted; Slices 1-2 implemented, Slices 3-6 remain. | No change. |
+| 0055 closure free vars resolve to their own binding | Proposed; design complete, not implemented (renumbered after a collision with 0054). | No change. |
+| 0056 NativeCall types: display-only qualification | **Accepted (implemented)** — verified in `builtins/builtin_type_catalog.rs`, `runtime/cstruct_layout.rs`. | No change. |
+| 0057 `.VAR` reflection identity is the shared cell's address | **Accepted (implemented)** — verified in `runtime/runtime_var_meta.rs`. | No change. |
+
+**Not reviewed in this pass:** none — all 58 ADRs (0001-0057) are now covered by this
+ledger across the rev12 and rev13 tables, and `docs/adr/README.md`'s index was swept to
+match in the same pass. A future revision should re-run this section's method end to end
+rather than assume no further drift.
 
 One **missing** ADR remains worth writing, and is listed here rather than drafted unilaterally:
 
@@ -567,3 +688,21 @@ three implementation slices landed 2026-08-05 — the §7 roadmap's stale "write
 §8's "missing ADR" call-out for it were removed to match. The same pass found ADRs 0021-0028
 also exist and are not yet covered by §8's ledger — flagged there, not investigated as part of
 this addendum. No other section was re-verified.*
+*rev13 (2026-08-21): full re-verification pass via 4 parallel agents (ADR ledger 0021-0038,
+ADR ledger 0039-0057, §1 architecture, §2-§7). Corrected drift found: §1.1/§1.9/§7's claim
+that `runtime/registration_class_decl.rs` still tree-walks MOP protocol calls was stale —
+ADR-0019 D5/D6 (closed 2026-08-08/09) split it to 276 lines and confirmed the user-HOW
+protocol reads the finished registry, not raw `Stmt`; §1.6 gained ADR-0026's slang-activation
+mechanism (previously undocumented here); §1.8's module count corrected 22→36; §2.3's stale
+"no thread pool at all" bullet (contradicting this document's own §0/§7) was rewritten to
+describe ADR-0020 as landed, and its resolved WASM-trap bullet was removed; §4 item 1 was
+corrected to describe where native-method introspection data actually lives now
+(`native_method_row_table.rs`, not the shrunk `builtin_type_methods.rs`); §8's own 0029 row
+was corrected from `Proposed` to `Accepted` (the ledger itself had drifted); all 38 ADRs
+written since rev12 (0021-0057) were surveyed for the first time. `docs/adr/README.md`'s
+index was also swept and corrected on 17 rows to match each ADR's own current Status line,
+and ADR-0026 itself gained a missing "Outcome" section and an updated Status line (it had
+been the one real ADR-body drift found: Status text never updated after its campaign
+landed). Hygiene metrics (§0, §5, §6) and file-size citations (§3.1, §3.3) refreshed
+throughout. §7's roadmap item 4 example was corrected to match §1.1, and ADR-0047/0051 were
+noted as the unified-dispatch line's continuation. No section was left unchecked this time.*

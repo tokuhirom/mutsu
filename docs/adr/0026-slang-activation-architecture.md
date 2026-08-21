@@ -1,7 +1,8 @@
 # ADR-0026: Slang activation — bundle Slangify + Slang::Tuxic verbatim, map recognized grammar-mixin overrides onto parser modes
 
-- Status: Accepted (2026-08-11 — approved by tokuhirom same day; implementation
-  to start as its own campaign, slices in dependency order §2.1 → §2.2 → §2.3 → §2.4)
+- Status: Accepted, implemented (approved 2026-08-11; the full campaign —
+  §2.1 → §2.2 → §2.3 → §2.4, in dependency order — landed as four PRs across
+  2026-08-11/12; see "Outcome" below)
 - Date: 2026-08-11
 - Deciders: tokuhirom, Claude
 - Related: [BATTERIES.md](../../BATTERIES.md) §1 (rung 2: grow the interpreter
@@ -10,6 +11,33 @@
   follows), CLAUDE.md "Raku's context-dependent parsing (slangs)",
   [docs/batteries/csv.md](../batteries/csv.md) (the CSV campaign this unblocks)
 - Addresses: `todo/deep/text-csv-needs-slang-tuxic-support.md`
+
+## Outcome (2026-08-12)
+
+The campaign landed as four PRs across two days
+(`news/2026-08/slang-activation-machinery.md`):
+
+- **#6273** — parser slang modes (§2.3): unit-scoped `SlangModes` state gating
+  spaced identifier calls and spaced methodops, plus the recognized-override
+  map (rule name → mode, unknown rule → hard error).
+- **#6274** — a regex scanner fix (prerequisite): a character class nested in
+  a lookaround desynced quote/angle tracking, which blocked Tuxic's own
+  `methodop` token from parsing at all. General fix, rakudo-verified.
+- **#6275** — Slangify-style inner `&EXPORT` (prerequisite, §1.2): an
+  `&EXPORT` a module imports from another module's EXPORT map becomes that
+  module's own EXPORT for its importers, matching Slangify's registration
+  mechanism.
+- The activation slice (§2.1 + §2.2 + §2.4): `use X` where X's source
+  directly `use`s Slangify runs X's whole load in a fresh interpreter on a
+  fresh thread with a compile-time `$*LANG` bound; Slangify's inner EXPORT
+  runs verbatim and `define_slang` maps the roles' declared token names onto
+  the §2.3 parser modes.
+
+The upstream `Slang-Tuxic` test suite passes 8/8 (gated), and this unblocked
+the Text::CSV battery (`docs/batteries/csv.md`, completed 2026-08-13). Slangify's
+own upstream test activates a fixture slang overriding `identifier`/`name` —
+those rules were not initially in the map and failed loudly per this ADR's
+design; since resolved (`news/2026-08/slang-piersing-identifier-name-overrides.md`).
 
 ## 1. Context
 
