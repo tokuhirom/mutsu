@@ -231,10 +231,15 @@ impl Interpreter {
         // *inside this call's own body* also needs the `thread_param_shadow_vars`
         // companion mark (a bare `thread_redeclared_vars` mask alone still lets
         // `clone_for_thread_excluding` force-publish the parameter's shadowed
-        // value over an unrelated caller's live entry of the same bare name);
-        // unmasked again at every return path below (search
-        // `unmask_thread_redeclared_params`).
-        let masked_params = self.mask_thread_redeclared_params(cf.param_defs.iter());
+        // value over an unrelated caller's live entry of the same bare name).
+        // RAII (`ThreadParamMaskGuard`,
+        // `todo/tickets/thread-param-mask-leaks-on-panic-unwind.md`): restores
+        // the mask on drop -- including on a Rust panic unwind through the
+        // body loop below -- rather than the manual
+        // `unmask_thread_redeclared_params` call this replaced, which a panic
+        // unwind would skip entirely.
+        let thread_param_mask_guard =
+            crate::vm::vm_call_state_guard::ThreadParamMaskGuard::new(self, cf.param_defs.iter());
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.
@@ -488,8 +493,12 @@ impl Interpreter {
 
         // Restore bare-name shared-store visibility for this call's own
         // parameter names now that the call is over (see
-        // `mask_thread_redeclared_params`).
-        self.unmask_thread_redeclared_params(&masked_params);
+        // `mask_thread_redeclared_params`). Explicit drop (not left to fall
+        // out of scope) so it happens at exactly the point the old manual
+        // `unmask_thread_redeclared_params` call ran; on a Rust panic mid-loop
+        // above, the guard's `Drop` still runs during unwind even though this
+        // line is never reached.
+        drop(thread_param_mask_guard);
 
         // Sync state variables back to persistent storage.
         // Read from env first (methods like push update env directly),

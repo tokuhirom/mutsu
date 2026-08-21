@@ -2020,7 +2020,9 @@ impl Interpreter {
                 .iter()
                 .any(|(_, key)| key.contains_str(&format!("::{}@", name)));
             if !is_state {
-                self.thread_redeclared_vars.insert(name.to_string());
+                self.thread_redeclared_vars
+                    .borrow_mut()
+                    .insert(name.to_string());
                 // The initializer has not run yet, so neither this frame's slot
                 // nor `env` holds the new binding. Mark the window so a spawn
                 // performed BY the initializer cannot unmask the name and let the

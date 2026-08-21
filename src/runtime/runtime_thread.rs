@@ -290,9 +290,9 @@ impl Interpreter {
                 // the call that bound it, not "the rest of this block", so a
                 // nested spawn inside that call must not overwrite an unrelated
                 // caller's live entry for the same bare name.
-                if self.thread_redeclared_vars.contains(&key)
+                if self.thread_redeclared_vars.borrow().contains(&key)
                     && !self.thread_decl_in_flight.contains(&key)
-                    && !self.thread_param_shadow_vars.contains(&key)
+                    && !self.thread_param_shadow_vars.borrow().contains(&key)
                 {
                     shared.declare(&key, val.clone());
                     seed_inserts += 1;
@@ -349,10 +349,10 @@ impl Interpreter {
         // the caller's unrelated value back over the parameter for the
         // remainder of the call. Explicit `unmask_thread_redeclared_params` at
         // the call's return is the only thing that ever clears it.
-        self.thread_redeclared_vars.retain(|n| {
+        self.thread_redeclared_vars.borrow_mut().retain(|n| {
             captured_scalars.contains(n.trim_start_matches('$'))
                 || self.thread_decl_in_flight.contains(n)
-                || self.thread_param_shadow_vars.contains(n)
+                || self.thread_param_shadow_vars.borrow().contains(n)
         });
         let mut cloned_handles = HashMap::new();
         let handles_guard = self.io_handles();
@@ -589,11 +589,13 @@ impl Interpreter {
             // sequential-calls.md`). The mask must instead survive for as
             // long as the CHILD's own body runs, independent of the parent's
             // lifetime.
-            thread_redeclared_vars: captured_scalars
-                .iter()
-                .cloned()
-                .chain(self.thread_param_shadow_vars.iter().cloned())
-                .collect(),
+            thread_redeclared_vars: Box::new(std::cell::RefCell::new(
+                captured_scalars
+                    .iter()
+                    .cloned()
+                    .chain(self.thread_param_shadow_vars.borrow().iter().cloned())
+                    .collect(),
+            )),
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
@@ -601,7 +603,9 @@ impl Interpreter {
             // parent's currently-active parameter shadows (see the
             // `thread_redeclared_vars` comment above) — its own subsequent
             // parameter bindings union in as they run.
-            thread_param_shadow_vars: self.thread_param_shadow_vars.clone(),
+            thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
+                self.thread_param_shadow_vars.borrow().clone(),
+            )),
             // The child re-binds its own env-bound parameters if it runs any.
             param_bound_aggregates: std::collections::HashMap::new(),
             suppress_shared_publish: false,

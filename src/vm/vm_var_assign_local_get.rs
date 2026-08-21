@@ -265,7 +265,7 @@ impl Interpreter {
             // exactly this set; without the same gate here the read resurrects the
             // foreign value (`my $x := f()` yielding Nil would see the other
             // scope's `$x`).
-            if !self.thread_redeclared_vars.contains(name)
+            if !self.thread_redeclared_vars.borrow().contains(name)
                 && let Some(shared_val) = self.get_shared_var(name)
             {
                 self.stack.push(shared_val);

@@ -883,8 +883,8 @@ impl Interpreter {
                 // disconnecting this binding from every alias — replace it
                 // (no-op when the name was never snapshotted).
                 if self.shared_vars_active {
-                    self.thread_redeclared_vars.remove(name);
-                    self.thread_redeclared_vars.remove(bare);
+                    self.thread_redeclared_vars.borrow_mut().remove(name);
+                    self.thread_redeclared_vars.borrow_mut().remove(bare);
                     self.set_shared_var(bare, container.clone());
                 }
                 return match container.view() {

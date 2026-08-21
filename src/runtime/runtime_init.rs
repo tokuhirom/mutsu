@@ -2885,9 +2885,13 @@ impl Interpreter {
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),
             state_vars: HashMap::new(),
-            thread_redeclared_vars: std::collections::HashSet::new(),
+            thread_redeclared_vars: Box::new(std::cell::RefCell::new(
+                std::collections::HashSet::new(),
+            )),
             thread_decl_in_flight: std::collections::HashSet::new(),
-            thread_param_shadow_vars: std::collections::HashSet::new(),
+            thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
+                std::collections::HashSet::new(),
+            )),
             param_bound_aggregates: std::collections::HashMap::new(),
             suppress_shared_publish: false,
             type_body_written_lexicals: std::collections::HashSet::new(),
