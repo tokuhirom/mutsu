@@ -1,6 +1,6 @@
 # ADR-0044: Core listops are *routines*, not a syntactic rewrite — give `push`/`pop`/`splice`/… a callable core candidate
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (D1 shipped 2026-08-22; D2 needed no code change — see §8; D3 remains a recorded non-goal)
 - Date: 2026-08-20
 - Related: [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md)
   (the unified-dispatch direction this ADR is an instance of),
@@ -262,6 +262,50 @@ pinning D2's fast path against accidental regression to the slow form.
 
 ## 8. Implementation status
 
-Not started. D1 is self-contained and is the correct first slice; D2 is a
-one-line precondition restatement that must land with it; D3 is a recorded
-non-goal pending ADR-0036/ADR-0040.
+**D1 shipped 2026-08-22** (PR #TODO). `push`/`pop`/`shift`/`unshift`/
+`append`/`prepend`/`splice` now have a native function-form implementation
+(`src/runtime/listop_functions.rs::try_call_listop_function`), reached from
+`call_function_fallback` before the pure-value `native_function` table (the
+seven names have no entry there — their core behavior was purely the
+compiler rewrite). It delegates to the already-correct
+`call_method_mut_with_values`, using the call site's own source variable
+name from `pending_call_arg_sources` when available (so typed-array
+constraints, shared/thread-array bookkeeping, and container-ref cells behave
+identically to the compiled fast path) or a synthetic temp env binding
+otherwise — a real `Array` argument mutates in place either way, because its
+`Gc<ArrayData>` is shared by identity, not copied.
+
+Confirmed fixed against real `raku` output: §2.1 (local `multi` coexistence,
+`t/listop-multi-extends-core.t`), §2.2 (imported `multi` coexistence,
+`t/listop-imported-multi-extends-core.t` + `t/lib/ListopMultiExtendsCore.rakumod`),
+and §2.3 (`&push`/`&splice`/captured routine values as genuine callables,
+including the silent-no-op, `t/listop-as-code-value.t`). Along the way, a
+second silent-no-op was found and fixed: `call_function`'s
+`"push" | "unshift" | "append" | "prepend"` arm (reached only via
+`call_sub_value` -> `call_function` for a routine value) unconditionally
+returned `Ok(Value::NIL)` for a non-empty argument list instead of doing
+anything — it now routes through `call_function_fallback` like every other
+path into D1's native implementation.
+
+**D2 needed no code change.** `Compiler::user_listop_shadows` and the
+parser's `is_imported_function`/`is_user_declared_sub` veto already had
+exactly the "no competing candidate visible" precondition this ADR restates
+— the bug was always that the veto's *target* (the core candidate) was
+unreachable once tripped, not the veto's condition. `push(@a, 1)` with no
+competing candidate still compiles to `ArrayPush` (push's dedicated fast-path
+opcode; `pop`/`shift`/`unshift`/`append`/`prepend`/`splice` compile to
+`CallMethodMut`), pinned by `tests/adr0044_listop_fast_path.rs`. Performance
+on that hot path is unchanged, as designed.
+
+**D3 remains a recorded non-goal**, pending ADR-0036/ADR-0040's element
+containers: `push(@a[2], ...)` / `push($obj.attr, ...)` under a competing
+user/imported `multi` now fails loudly (an ordinary method-dispatch error,
+since the synthetic temp binding sees a non-Array value) instead of silently
+misbehaving, matching the consequence this ADR already accepted in §4.
+
+Not pursued: alternative B (registering the seven as ranked multi-dispatch
+candidates for correct narrowness resolution between core and
+user/imported candidates) — D1's fall-through ordering (user/imported
+candidates first, native routine last) gives the right answer for every case
+in the verification plan and the repro corpus; B remains available as a
+strict refinement if a real narrowness-ambiguity case turns up.
