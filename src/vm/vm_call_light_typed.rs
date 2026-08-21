@@ -38,11 +38,7 @@ impl Interpreter {
         // al.) so a caller's pending `:=` mark does not leak into this
         // callee's own vardecl/store opcodes -- restored on every exit path,
         // including a Rust panic unwind through the body loop below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         self.record_cf_deprecation(cf);
         // Eligibility (`is_light_call_eligible`) guarantees at least one named
         // param, which is exactly when the plan is precomputed. A hand-built

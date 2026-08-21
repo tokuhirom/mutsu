@@ -28,11 +28,7 @@ impl Interpreter {
         // al.) so a caller's pending `:=` mark does not leak into this
         // callee's own vardecl/store opcodes -- restored on every exit path,
         // including a Rust panic unwind through the body loop below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         if callsite_line.is_some() {
             loan_env!(self, set_pending_callsite_line(callsite_line));
@@ -276,12 +272,8 @@ impl Interpreter {
         // RAII (`StateScopeGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores `state_scope_id` on drop, including on a Rust panic
         // unwind through the body loop below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let state_scope_guard = callable_id.map(|id| unsafe {
-            crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id))
-        });
+        let state_scope_guard = callable_id
+            .map(|id| crate::vm::vm_call_state_guard::StateScopeGuard::new(self, Some(id)));
         // Load persisted state variable values
         for (slot, key) in &cf.code.state_locals {
             let scoped_key = self.scoped_state_key(*key);
@@ -298,11 +290,10 @@ impl Interpreter {
         // RAII (`WhenMatchedGuard`, `todo/deep/panic-unwind-leaks-side-channel-call-state.md`):
         // restores `when_matched` on drop, including on a Rust panic unwind
         // through the body loop below.
-        // SAFETY: see the `state_scope_guard` construction above.
         let when_matched_guard = cf
             .code
             .is_routine
-            .then(|| unsafe { crate::vm::vm_call_state_guard::WhenMatchedGuard::new(self, false) });
+            .then(|| crate::vm::vm_call_state_guard::WhenMatchedGuard::new(self, false));
         // Body-internal env_dirty (from nested calls) concerns the callee env,
         // which the return merge reconciles; reset so the post-merge value
         // reflects only what was actually written back to the caller.

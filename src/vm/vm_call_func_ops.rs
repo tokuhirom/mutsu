@@ -2150,7 +2150,7 @@ impl Interpreter {
         // `RegisterDecl` keys, not the caller's unrelated table.
         let fns = shared.compiled_fns.as_deref().unwrap_or(compiled_fns);
         let result = self.call_compiled_function_named(shared, args, fns, pkg, name);
-        self.state_scope_id = saved_scope;
+        self.state_scope_id.set(saved_scope);
         result
     }
 

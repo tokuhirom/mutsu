@@ -629,11 +629,11 @@ impl Interpreter {
             if is_container {
                 let key = format!("__mutsu_bound_decont::{}", name);
                 self.env_mut().insert(key, Value::TRUE);
-                self.bound_decont_active = true;
+                self.bound_decont_active.set(true);
                 return;
             }
         }
-        if self.bound_decont_active {
+        if self.bound_decont_active.get() {
             let key = format!("__mutsu_bound_decont::{}", name);
             self.env_mut().remove(&key);
         }

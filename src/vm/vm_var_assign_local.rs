@@ -25,8 +25,8 @@ impl Interpreter {
         // value on the stack (assignment is an expression). No-op when the source
         // does not deref to an Array/Hash (a plain `$x = $y` stays a copy).
         let array_share_source = self.array_share_source.take();
-        if self.array_share_context {
-            self.array_share_context = false;
+        if self.array_share_context.get() {
+            self.array_share_context.set(false);
             if let Some(src) = array_share_source {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if val.with_deref(|v| matches!(v.view(), ValueView::Array(..) | ValueView::Hash(_)))

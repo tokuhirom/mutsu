@@ -75,9 +75,19 @@ classify() {
 # the `Gc` primitive; `src/value/**` is every container representation that
 # takes an aliased in-place write. The workflow and this classifier count too --
 # a change to either must re-run the thing it controls.
+#
+# `src/vm/vm_call_state_guard.rs` is also explicitly listed: it is the ONE file
+# outside `src/gc/**`/`src/value/**` that hand-rolls raw-pointer aliasing
+# (RAII guards reaching `Interpreter` state across a live call boundary) and
+# was the site of a real Stacked-Borrows UB bug that slipped through review
+# TWICE because this gate did not cover it -- it was only caught when an
+# unrelated `src/value/**` PR happened to trip the gate against the already-
+# merged bug. Gate it explicitly so a regression here is never silently
+# unverified again.
 is_gc_value_path() {
   case "$1" in
     src/gc/*|src/value/*) return 0 ;;
+    src/vm/vm_call_state_guard.rs) return 0 ;;
     .github/workflows/ci.yml|scripts/ci-docs-only.sh) return 0 ;;
     *) return 1 ;;
   esac
@@ -177,6 +187,7 @@ self_test() {
   check_gc true  'gc among others'       src/vm/vm.rs src/gc/collect.rs
   check_gc true  'the workflow itself'   .github/workflows/ci.yml
   check_gc true  'this classifier'       scripts/ci-docs-only.sh
+  check_gc true  'call-state-guard file' src/vm/vm_call_state_guard.rs
   check_gc true  'empty diff'            ''
   check_gc false 'unrelated src'         src/vm/vm.rs src/parser/mod.rs
   check_gc false 'docs only'             PLAN.md docs/adr/0013-x.md

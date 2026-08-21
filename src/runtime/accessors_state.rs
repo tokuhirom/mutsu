@@ -484,11 +484,11 @@ impl Interpreter {
     }
 
     pub(crate) fn when_matched(&self) -> bool {
-        self.when_matched
+        self.when_matched.get()
     }
 
-    pub(crate) fn set_when_matched(&mut self, v: bool) {
-        self.when_matched = v;
+    pub(crate) fn set_when_matched(&self, v: bool) {
+        self.when_matched.set(v);
     }
 
     pub(crate) fn is_role(&self, name: &str) -> bool {

@@ -138,11 +138,7 @@ impl Interpreter {
         // nested-run save/restore -- isolate the "mark context" one-shot
         // flag family so a caller's pending `:=` mark does not leak into the
         // protect block's own vardecl/store opcodes.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Save/swap stack and locals for the block
         let mut saved_locals = std::mem::take(&mut self.locals);
         let saved_stack = std::mem::take(&mut self.stack);

@@ -206,7 +206,7 @@ impl Interpreter {
         // preserving the tied instance, instead of overwriting the slot with a
         // plain Hash/Array. Gated on `!vardecl_context` so a fresh declaration
         // (`my %h = ...`) is untouched.
-        if !self.vardecl_context
+        if !self.vardecl_context.get()
             && let Some(()) = self.maybe_tied_store_reassign(code, idx as usize)?
         {
             return Ok(());
@@ -240,21 +240,22 @@ impl Interpreter {
         // closures are boxed precisely at their creation op, so reusing that set
         // here would over-box unrelated same-named locals (same-named `my` locals
         // share one slot) and break e.g. `let`-restore in a sibling block.
-        let box_decl = self.vardecl_context
+        let box_decl = self.vardecl_context.get()
             && (!code.needs_cell_named_sub.is_empty()
                 || !code.needs_cell_ref_capture_slots.is_empty());
         // An `our sub` declared in a bare block captures this local but outlives the
         // block (it lives in the package registry, with no closure env). Box the
         // local AND persist the cell so a call after the block reads the live value.
-        let box_decl_our = self.vardecl_context && !code.needs_cell_escaping_our_sub.is_empty();
+        let box_decl_our =
+            self.vardecl_context.get() && !code.needs_cell_escaping_our_sub.is_empty();
         // Container-descriptor naming (`@kh.VAR.name`): a plain `my @x`/`my %h`
         // declaration stamps the variable name into the fresh container below,
         // after the store. A `:=` bind keeps the bound container's original
         // name (rakudo first-name-wins), so detect the bind shape up front —
         // the flags are consumed inside the inner handler.
-        let stamp_decl_name = self.vardecl_context
-            && !self.bind_context
-            && !self.scalar_bind_context
+        let stamp_decl_name = self.vardecl_context.get()
+            && !self.bind_context.get()
+            && !self.scalar_bind_context.get()
             && !matches!(
                 self.stack.last().map(Value::view),
                 Some(ValueView::VarRef { .. })
@@ -349,23 +350,23 @@ impl Interpreter {
             )));
         }
         let (mut raw_popped, bind_source) = Self::extract_varref_binding(raw_popped);
-        let is_bind = self.bind_context || bind_source.is_some();
-        let is_rebind = self.rebind_context;
-        let is_constant = self.constant_context;
-        let has_explicit_initializer = self.explicit_initializer_context;
-        let is_vardecl = self.vardecl_context;
+        let is_bind = self.bind_context.get() || bind_source.is_some();
+        let is_rebind = self.rebind_context.get();
+        let is_constant = self.constant_context.get();
+        let has_explicit_initializer = self.explicit_initializer_context.get();
+        let is_vardecl = self.vardecl_context.get();
         let is_shaped_decl = self.shaped_decl_context;
-        let scalar_bind = self.scalar_bind_context;
-        let param_raw_bind = self.param_raw_bind_context;
-        let array_share = self.array_share_context;
-        self.bind_context = false;
-        self.scalar_bind_context = false;
-        self.param_raw_bind_context = false;
-        self.rebind_context = false;
-        self.constant_context = false;
-        self.array_share_context = false;
-        self.explicit_initializer_context = false;
-        self.vardecl_context = false;
+        let scalar_bind = self.scalar_bind_context.get();
+        let param_raw_bind = self.param_raw_bind_context.get();
+        let array_share = self.array_share_context.get();
+        self.bind_context.set(false);
+        self.scalar_bind_context.set(false);
+        self.param_raw_bind_context.set(false);
+        self.rebind_context.set(false);
+        self.constant_context.set(false);
+        self.array_share_context.set(false);
+        self.explicit_initializer_context.set(false);
+        self.vardecl_context.set(false);
         self.shaped_decl_context = false;
         // A `Seq.new($iterator)` stores its iterator deferred (empty backing vec).
         // Assigning it to an `@`/`%` container reifies the Seq (raku list

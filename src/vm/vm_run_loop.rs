@@ -330,20 +330,21 @@ impl Interpreter {
         let saved_transliterate = self.transliterate_in_smartmatch;
         let saved_substitution = self.substitution_in_smartmatch;
         let saved_method_dispatch_pure = self.method_dispatch_pure;
-        let saved_bind_context = self.bind_context;
-        let saved_scalar_bind_context = self.scalar_bind_context;
-        let saved_bound_decont_active = self.bound_decont_active;
-        let saved_rebind_context = self.rebind_context;
-        let saved_constant_context = self.constant_context;
-        let saved_array_share_context = self.array_share_context;
+        let saved_bind_context = self.bind_context.get();
+        let saved_scalar_bind_context = self.scalar_bind_context.get();
+        let saved_bound_decont_active = self.bound_decont_active.get();
+        let saved_rebind_context = self.rebind_context.get();
+        let saved_constant_context = self.constant_context.get();
+        let saved_array_share_context = self.array_share_context.get();
         let saved_array_share_source = self.array_share_source.take();
-        let saved_explicit_initializer_context = self.explicit_initializer_context;
-        let saved_vardecl_context = self.vardecl_context;
+        let saved_explicit_initializer_context = self.explicit_initializer_context.get();
+        let saved_vardecl_context = self.vardecl_context.get();
         let saved_loop_cond_active = self.loop_cond_active;
         let saved_state_scope_id = self.state_scope_id.take();
         // A fallback-dispatched routine body hands its registration clone id
         // across this register reset (see `pending_nested_state_scope`).
-        self.state_scope_id = self.pending_nested_state_scope.take();
+        self.state_scope_id
+            .set(self.pending_nested_state_scope.take());
         let saved_gather_for_loop_resume = self.gather_for_loop_resume.take();
         let saved_rw_map_topic_capture = self.rw_map_topic_capture.take();
         // `current_code` is the raw address of the *caller's* live `CompiledCode`
@@ -366,16 +367,16 @@ impl Interpreter {
         self.substitution_in_smartmatch = false;
         self.method_dispatch_pure = false;
         self.container_ref_reversed = false;
-        self.bind_context = false;
-        self.scalar_bind_context = false;
-        self.bound_decont_active = false;
-        self.rebind_context = false;
+        self.bind_context.set(false);
+        self.scalar_bind_context.set(false);
+        self.bound_decont_active.set(false);
+        self.rebind_context.set(false);
         self.accessor_ref_pending = false;
-        self.constant_context = false;
-        self.array_share_context = false;
-        self.array_share_source = None;
-        self.explicit_initializer_context = false;
-        self.vardecl_context = false;
+        self.constant_context.set(false);
+        self.array_share_context.set(false);
+        self.array_share_source.set(None);
+        self.explicit_initializer_context.set(false);
+        self.vardecl_context.set(false);
         self.loop_cond_active = false;
         self.nested_run_depth += 1;
 
@@ -409,17 +410,18 @@ impl Interpreter {
         self.transliterate_in_smartmatch = saved_transliterate;
         self.substitution_in_smartmatch = saved_substitution;
         self.method_dispatch_pure = saved_method_dispatch_pure;
-        self.bind_context = saved_bind_context;
-        self.scalar_bind_context = saved_scalar_bind_context;
-        self.bound_decont_active = saved_bound_decont_active;
-        self.rebind_context = saved_rebind_context;
-        self.constant_context = saved_constant_context;
-        self.array_share_context = saved_array_share_context;
-        self.array_share_source = saved_array_share_source;
-        self.explicit_initializer_context = saved_explicit_initializer_context;
-        self.vardecl_context = saved_vardecl_context;
+        self.bind_context.set(saved_bind_context);
+        self.scalar_bind_context.set(saved_scalar_bind_context);
+        self.bound_decont_active.set(saved_bound_decont_active);
+        self.rebind_context.set(saved_rebind_context);
+        self.constant_context.set(saved_constant_context);
+        self.array_share_context.set(saved_array_share_context);
+        self.array_share_source.set(saved_array_share_source);
+        self.explicit_initializer_context
+            .set(saved_explicit_initializer_context);
+        self.vardecl_context.set(saved_vardecl_context);
         self.loop_cond_active = saved_loop_cond_active;
-        self.state_scope_id = saved_state_scope_id;
+        self.state_scope_id.set(saved_state_scope_id);
         self.gather_for_loop_resume = saved_gather_for_loop_resume;
         self.rw_map_topic_capture = saved_rw_map_topic_capture;
         self.current_code = saved_current_code;
@@ -565,7 +567,7 @@ impl Interpreter {
     /// (including the JIT shims, see `vm_jit_helpers::{set_local,
     /// set_local_decl}`), so this must be free.
     pub(crate) fn scoped_state_key(&self, key: Symbol) -> (Symbol, Option<u64>) {
-        (key, self.state_scope_id)
+        (key, self.state_scope_id.get())
     }
 
     // Both loaders/syncers resolve the key through `scoped_state_key`, matching

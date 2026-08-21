@@ -74,11 +74,7 @@ impl Interpreter {
         // `vm_run_loop.rs`'s nested-run save/restore -- isolate the "mark
         // context" one-shot flag family so a caller's pending `:=` mark does
         // not leak into the gather body's own vardecl/store opcodes.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Save current Interpreter state
         crate::vm::vm_stats::record_clone_env();
         let saved_env = self.clone_env();
@@ -95,14 +91,14 @@ impl Interpreter {
         // clone per `gather` evaluation): install its id so `state`
         // declarations in the body cannot collide with a sibling gather's
         // separately-compiled (ip-identical) body.
-        let saved_state_scope = self.state_scope_id;
+        let saved_state_scope = self.state_scope_id.get();
         let gather_scope_id = list
             .coroutine
             .as_ref()
             .map(|m| m.lock().unwrap().state_scope_id)
             .unwrap_or(0);
         if gather_scope_id != 0 {
-            self.state_scope_id = Some(gather_scope_id);
+            self.state_scope_id.set(Some(gather_scope_id));
         }
 
         // Determine starting IP and locals from coroutine state or fresh start
@@ -296,7 +292,7 @@ impl Interpreter {
         self.record_eager_block_free_var_writeback(cc.as_ref(), &[]);
 
         // Restore Interpreter state
-        self.state_scope_id = saved_state_scope;
+        self.state_scope_id.set(saved_state_scope);
         self.locals = saved_locals;
         self.stack = saved_stack;
         self.upvalues = saved_upvalues;

@@ -180,11 +180,7 @@ impl Interpreter {
         // including a Rust panic unwind through the body loop below. Also
         // covers the junction-autothreading recursive re-entry below (each
         // level gets its own isolated flag family).
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // One-shot: consumed here so a nested call inside the body does not
         // inherit the carrier's raw-binding-error request.
         let suppress_bind_enhance = std::mem::take(&mut self.suppress_binding_error_enhance);
@@ -308,11 +304,8 @@ impl Interpreter {
         // through the body loop below -- a manual `self.state_scope_id =
         // saved;` statement near this function's end would be skipped by an
         // unwind.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
         let state_scope_guard =
-            unsafe { crate::vm::vm_call_state_guard::StateScopeGuard::new(self, new_state_scope) };
+            crate::vm::vm_call_state_guard::StateScopeGuard::new(self, new_state_scope);
 
         loan_env!(self, inject_pending_callsite_line());
 
