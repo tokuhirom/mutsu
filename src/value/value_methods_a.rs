@@ -442,6 +442,30 @@ impl Value {
             // `gc_contents_mut`. No borrow into the map is live across the write.
             let hd = unsafe { crate::value::gc_contents_mut(&hash_arc) };
             Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(arc.clone()));
+            inner.clone_from(val);
+            return;
+        }
+        // A cell whose CONTENTS is itself a `ContainerRef` is a nested-cell
+        // shape: a `:=` bind reused a shared cell but the alias's own
+        // pre-bind storage slot (its ADR-0024 mainline/closure capture cell)
+        // still merely CONTAINS that shared cell rather than BEING it (see
+        // `news/2026-08/bind-alias-reverse-write-through-nested-cell.md`).
+        // A later PLAIN VALUE write through the alias must write THROUGH to
+        // the nested cell, not overwrite the wrapper -- otherwise the write
+        // silently severs the alias link the bind established and the
+        // source variable never observes it. Peel through any further
+        // nesting recursively. A write of a fresh `ContainerRef` (`val`
+        // itself is one) is a REBIND of this slot to a different cell -- that
+        // legitimately replaces the wrapper's contents, so it falls through
+        // to the plain `clone_from` below unchanged.
+        if !matches!(val.view(), ValueView::ContainerRef(_))
+            && let ValueView::ContainerRef(nested) = inner.view()
+            && !crate::gc::Gc::ptr_eq(&nested, arc)
+        {
+            let nested = nested.clone();
+            drop(inner);
+            Self::store_through_cell(&nested, val);
+            return;
         }
         inner.clone_from(val);
     }

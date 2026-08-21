@@ -1429,28 +1429,14 @@ impl Interpreter {
                             self.locals[source_idx] = container.clone();
                             self.flush_local_to_env(code, source_idx);
                         }
-                        // Propagate to saved call frames (env AND locals)
-                        for frame in self.call_frames.iter_mut().rev() {
-                            // `code.locals` is this frame's slot layout, not the
-                            // parent's; only write a parent frame's `saved_locals`
-                            // when that frame owns the source lexical (its saved env
-                            // holds the name), else the callee slot index clobbers an
-                            // unrelated same-index local.
-                            if frame.saved_env.contains_key_own_tier(&resolved_source) {
-                                frame
-                                    .saved_env
-                                    .insert(resolved_source.clone(), container.clone());
-                                // Also update saved locals so a later restore doesn't
-                                // overwrite the ContainerRef with a stale plain value.
-                                for (i, local_name) in code.locals.iter().enumerate() {
-                                    if local_name == &resolved_source
-                                        && i < frame.saved_locals.len()
-                                    {
-                                        frame.saved_locals[i] = container.clone();
-                                    }
-                                }
-                            }
-                        }
+                        // Propagate to saved call frames (env AND locals) so
+                        // the binding survives method returns (env restore)
+                        // instead of reverting to a stale value. See
+                        // `propagate_bind_to_ancestor_frames`'s doc comment
+                        // for why the `saved_locals` half of this is a no-op
+                        // outside same-function recursion, and what actually
+                        // carries the binding in the general case.
+                        self.propagate_bind_to_ancestor_frames(&resolved_source, code, &container);
                         // Persist ContainerRef in our_vars for `our` variables.
                         // Store under both the bare name and any existing
                         // package-qualified variants (e.g., "K::x" for bare "x")
