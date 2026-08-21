@@ -416,7 +416,9 @@ Unchanged in shape, grown in size: `compiler/helpers_do_expr.rs` (609 lines as o
 rev12: 476; 6 `compile_do_*` entry points, unchanged count) duplicates `stmt.rs` logic for
 do/if/for/while/loop in expression position, including a `ForLoopSpec` construction
 (`opcode.rs:194`, now 27 fields, rev12: 21) maintained twice. Fix remains one
-value-returning pass.
+value-returning pass. Filed as
+[`todo/deep/unify-statement-expression-control-construct-compilation.md`](todo/deep/unify-statement-expression-control-construct-compilation.md)
+(2026-08-21).
 
 ### 3.2 Sub declaration registered twice
 
@@ -564,7 +566,7 @@ has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
 | 2 | **Supply panic propagation and parser panic-zero debt** (§2.3, PLAN §5) | correctness debt | Two concrete, actionable gaps: Supply detached-worker panics are silently swallowed instead of reaching QUIT (`PLAN.md` §5, unchecked), and `unwrap`/`expect`/`panic!`/`unreachable!` usage keeps rising every revision (§5: 1920→2227) against PLAN §8.3's "must never Rust-panic on any input" goal. |
-| 3 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
+| 3 | **Unify statement/expression compilation of control constructs** (§3.1, [`todo/deep/unify-statement-expression-control-construct-compilation.md`](todo/deep/unify-statement-expression-control-construct-compilation.md)) | design cleanup | The duplicated `do`/`if`/loop compilation is real and growing (`helpers_do_expr.rs` 476→609 lines, `ForLoopSpec` 21→27 fields), not bounded and stable as previously stated. Opcode leftovers remain measurement-gated, not bundled into this task. |
 | 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 3263 lines and the >500/>1000 populations reached 336/100. The `registration_class_decl.rs` walker this row used to point at has already been split (ADR-0019 D0-D9, §1.1); touched oversized files should be split when ownership boundaries become clear as the next one is forced open. A standalone line-moving campaign is not the priority. |
 | 5 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
 
