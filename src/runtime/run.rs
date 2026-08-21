@@ -176,6 +176,58 @@ role GLOBAL::IO::Socket {
 }
 "#;
 
+/// `trait_mod:<does>` — CORE.setting's callable form of the `does` mixin
+/// operator, with the same three overloads Rakudo's `SETTING::src/core.c/
+/// traits.rakumod` declares (verified against real `raku`: calling it with a
+/// user-declared colliding candidate raises `X::Multi::Ambiguous` there, which
+/// is only possible if the builtin genuinely exists as a multi candidate). It
+/// is not a Raku builtin listed in `Language/perl-func.rakudoc` (trait_mod
+/// subs never are — see `trait_mod:<is>`'s own absence from that list), but it
+/// IS a real always-present CORE.setting sub, unlike the NativeCall preludes
+/// above which are opt-in module surface. It has to be injected the same way
+/// (real Raku source, registered through the ordinary multi-sub path) rather
+/// than as native Rust dispatch logic, specifically so that a user's own
+/// colliding `multi sub trait_mod:<does>` candidate is compared against this
+/// one by the SAME `choose_best_matching_candidate` narrowness/ambiguity
+/// engine real multi-dispatch uses — a native fallback tier is tried only
+/// when no compiled candidate matches at all, so it can never collide.
+///
+/// Each candidate delegates to the `__mutsu_trait_mod_does_apply` primitive
+/// (`vm::vm_trait_mod_does_ops`), which performs the actual mixin via the same
+/// `vm_does_values` the `does` operator uses, and — for the `Variable:D`
+/// overload — resolves the reflected variable's live value by name and
+/// writes the mixed result back into it (see `does the mixin propagate back`
+/// in `vm_var_trait_ops::exec_apply_var_trait_op`, which arms the existing
+/// `trait_mod_writeback_key`/`value` relay the same way the Routine-`is`-trait
+/// case already does).
+///
+/// The first (class-level) overload is written `Mu $doee, Mu $role` rather
+/// than Rakudo's `Mu:U $doee, Mu:U $role`: mutsu's multi-dispatch narrowness
+/// ranking (`dispatch_candidates::candidate_specificity_rank_for_args`)
+/// treats ANY smiley'd constraint as "meaningfully typed" even when the base
+/// type is the universal `Mu`/`Any` — unlike Rakudo, which ranks a bare `Mu`
+/// and a `Mu:U` as equally unconstrained for narrowness purposes. Keeping the
+/// smiley here would make this candidate strictly outrank an untyped
+/// user-declared `(Mu \v, Mu \r)` candidate of the same arity instead of
+/// tying with it, silently swallowing the ambiguity real Raku reports (see
+/// the repro in `t/trait-mod-does-callable.t`). The cost is that this
+/// fallback overload now also accepts a *defined* first argument that isn't
+/// `Variable:D`/`Attribute:D`-shaped (Rakudo's `:U` would reject that with a
+/// "no candidate" error instead) — an acceptable, documented narrowing of
+/// fidelity given nothing in scope calls this overload with such an
+/// argument; `apply_trait_mod_does` just performs a plain value mixin for it.
+pub(super) const TRAIT_MOD_DOES_PRELUDE: &str = r#"
+multi sub trait_mod:<does>(Variable:D \v, Mu:U $role) is export {
+    __mutsu_trait_mod_does_apply(v, $role);
+}
+multi sub trait_mod:<does>(Attribute:D $a, Mu:U $role) is export {
+    __mutsu_trait_mod_does_apply($a, $role);
+}
+multi sub trait_mod:<does>(Mu $doee, Mu $role) is export {
+    __mutsu_trait_mod_does_apply($doee, $role);
+}
+"#;
+
 impl Interpreter {
     /// Populate `$=pod` and the declarator doc-comment table (what `.WHY`
     /// reads) from the program source.
@@ -411,6 +463,7 @@ impl Interpreter {
         Self::inject_nativecall_prelude(&preprocessed, &mut stmts);
         Self::inject_nativecall_subs_prelude(&preprocessed, &mut stmts);
         Self::inject_iosocket_prelude(&preprocessed, &mut stmts);
+        Self::inject_trait_mod_does_prelude(&preprocessed, &mut stmts);
         let (_pre_ph, enter_ph, success_ph, failure_ph, _post_ph, body_main) =
             self.split_block_phasers(&stmts);
         // Register END phasers eagerly (before VM execution) so they run

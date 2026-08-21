@@ -1478,13 +1478,20 @@ impl Interpreter {
             }
             (ValueView::Mixin(..), ValueView::Str(key)) => {
                 let default = self.typed_container_default(&target);
-                let result = self
-                    .try_compiled_method_or_interpret(
-                        target.clone(),
-                        "AT-KEY",
-                        vec![Value::str_arc(key.clone())],
-                    )
-                    .unwrap_or(Value::NIL);
+                // Propagate a genuine exception thrown by a mixed-in role's
+                // `AT-KEY` override (e.g. `Hash::Restricted`'s `nono(...)`
+                // die for a disallowed key) instead of swallowing it into
+                // `Nil` — that swallowing previously made every subscript on
+                // a role-restricted Hash silently succeed with `Nil` rather
+                // than dying, defeating the whole restriction. An `AT-KEY`
+                // that legitimately returns `Nil` (a missing key on a plain
+                // Mixin with no restriction) is unaffected: `?` only
+                // short-circuits on `Err`, not on an `Ok(Value::NIL)`.
+                let result = self.try_compiled_method_or_interpret(
+                    target.clone(),
+                    "AT-KEY",
+                    vec![Value::str_arc(key.clone())],
+                )?;
                 if result.is_nil() { default } else { result }
             }
             (ValueView::Mixin(inner, _), ValueView::Int(i)) => {
