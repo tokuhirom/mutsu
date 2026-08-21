@@ -225,6 +225,7 @@ impl Interpreter {
                 | "wordcase"
                 | "chars"
                 | "codes"
+                | "bytes"
                 | "chomp"
                 | "chop"
                 | "trim"
