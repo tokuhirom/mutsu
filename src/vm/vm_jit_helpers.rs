@@ -161,8 +161,8 @@ pub(super) unsafe extern "C" fn set_local_decl(
     explicit_init: u32,
 ) -> u32 {
     let (interp, code) = unsafe { (&mut *interp, &*code) };
-    interp.explicit_initializer_context = explicit_init != 0;
-    interp.vardecl_context = true;
+    interp.explicit_initializer_context.set(explicit_init != 0);
+    interp.vardecl_context.set(true);
     panic_boundary(|| match interp.exec_set_local_op(code, idx) {
         Ok(()) => {
             interp.publish_state_local(code, idx);

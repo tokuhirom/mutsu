@@ -840,29 +840,29 @@ impl Interpreter {
             }
             OpCode::SetGlobalRaw(name_idx) | OpCode::SetGlobal(name_idx) => {
                 let raw_mode = matches!(code.ops[*ip], OpCode::SetGlobalRaw(_));
-                let is_bind_ctx = self.bind_context;
-                let is_rebind = self.rebind_context;
-                self.bind_context = false;
+                let is_bind_ctx = self.bind_context.get();
+                let is_rebind = self.rebind_context.get();
+                self.bind_context.set(false);
                 // Consume the scalar-bind marker here too: a topic bind
                 // (`$_ := $d`) compiles MarkScalarBindContext + SetGlobal, so
                 // without this the flag leaks into the NEXT SetLocal (e.g. a
                 // following `my $a = 0`), which would spuriously treat it as a
                 // value-bind and mark it readonly.
-                let was_scalar_bind = self.scalar_bind_context;
-                self.scalar_bind_context = false;
+                let was_scalar_bind = self.scalar_bind_context.get();
+                self.scalar_bind_context.set(false);
                 // A sigilless-target bind (`-> \v` loop-param bind stmts):
                 // skip itemization only, no other bind semantics.
-                let was_param_raw_bind = self.param_raw_bind_context;
-                self.param_raw_bind_context = false;
+                let was_param_raw_bind = self.param_raw_bind_context.get();
+                self.param_raw_bind_context.set(false);
                 // Slice 2a: `our $n = @z` / a global scalar target reaches SetGlobal,
                 // not SetLocal/AssignExpr. Consume the array-share flag here (the
                 // global copies for now — reference sharing for globals is Slice 2d)
                 // so it cannot leak into the next SetLocal.
-                self.array_share_context = false;
-                self.array_share_source = None;
+                self.array_share_context.set(false);
+                self.array_share_source.set(None);
                 // Only clear rebind_context if this is actually a binding operation
                 if is_rebind {
-                    self.rebind_context = false;
+                    self.rebind_context.set(false);
                 }
                 let name_str = match code.constants[*name_idx as usize].as_str() {
                     Some(s) => s,
@@ -1029,7 +1029,7 @@ impl Interpreter {
                 // writing its own module-level lexical as undeclared. It is
                 // declared; the write below goes to the same store.
                 if self.strict_mode
-                    && !self.vardecl_context
+                    && !self.vardecl_context.get()
                     && !is_attr_twigil
                     && !is_internal_temp
                     && !name.contains("::")
@@ -1078,7 +1078,7 @@ impl Interpreter {
                 // (Text::IO::String's `print` declaring `my Str $str` while
                 // called from `new (Str $str!)`.)
                 if !raw_mode && !is_bind_ctx && !is_bound_container {
-                    if self.vardecl_context {
+                    if self.vardecl_context.get() {
                         self.unmark_readonly(&name);
                     } else {
                         self.check_readonly_for_modify(&name)?;
@@ -1515,7 +1515,7 @@ impl Interpreter {
                 // the OTHER `expr_declared_syms`-based protections (capture
                 // filter, free-var-write drain) ever run for it — this check is
                 // the one that does.
-                let fresh_binding_decl = self.vardecl_context
+                let fresh_binding_decl = self.vardecl_context.get()
                     && code.expr_declared_syms.contains(&Symbol::intern(&name));
                 // Write through ContainerRef: update inner value for env-based variables.
                 // Return early to avoid overwriting the ContainerRef in env with a plain value.
@@ -1615,8 +1615,8 @@ impl Interpreter {
                 // position (`push @a2, my @o = $_`) must NOT reuse the previous
                 // iteration's container — each `my` is a fresh array, so a value
                 // captured by an earlier iteration keeps its own contents.
-                let sg_is_vardecl = self.vardecl_context;
-                self.vardecl_context = false;
+                let sg_is_vardecl = self.vardecl_context.get();
+                self.vardecl_context.set(false);
                 if sg_is_vardecl
                     && !is_bind_ctx
                     && !is_rebind
@@ -2008,7 +2008,7 @@ impl Interpreter {
                 // scalar was bound (`:=`) to a Positional. A bound scalar is not
                 // a Scalar container, so its value must flatten on `@`-assignment.
                 let val = self.stack.pop().unwrap_or(Value::NIL);
-                let is_bound_decont = if self.bound_decont_active {
+                let is_bound_decont = if self.bound_decont_active.get() {
                     let var_name = code.constants[*name_idx as usize].as_str().unwrap_or("");
                     let key = format!("__mutsu_bound_decont::{}", var_name);
                     matches!(
@@ -2090,19 +2090,19 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MarkBindContext => {
-                self.bind_context = true;
+                self.bind_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkParamRawBindContext => {
-                self.param_raw_bind_context = true;
+                self.param_raw_bind_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkScalarBindContext => {
-                self.scalar_bind_context = true;
+                self.scalar_bind_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkRebindContext => {
-                self.rebind_context = true;
+                self.rebind_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkAccessorRefContext => {
@@ -2110,8 +2110,9 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MarkArrayShareSource(name_idx) => {
-                self.array_share_context = true;
-                self.array_share_source = Some(Self::const_str(code, *name_idx).to_string());
+                self.array_share_context.set(true);
+                self.array_share_source
+                    .set(Some(Self::const_str(code, *name_idx).to_string()));
                 *ip += 1;
             }
             OpCode::MarkElementShare => {
@@ -2119,15 +2120,15 @@ impl Interpreter {
                 *ip += 1;
             }
             OpCode::MarkConstantContext => {
-                self.constant_context = true;
+                self.constant_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkExplicitInitializerContext => {
-                self.explicit_initializer_context = true;
+                self.explicit_initializer_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkVarDeclContext => {
-                self.vardecl_context = true;
+                self.vardecl_context.set(true);
                 *ip += 1;
             }
             OpCode::MarkShapedDeclContext => {
@@ -4844,8 +4845,8 @@ impl Interpreter {
                 // MarkVarDeclContext; SetLocal` (ADR-0006 §2.3): set the very
                 // flags those markers set, then run the identical SetLocal body
                 // (which reads and clears them).
-                self.explicit_initializer_context = *explicit_init;
-                self.vardecl_context = true;
+                self.explicit_initializer_context.set(*explicit_init);
+                self.vardecl_context.set(true);
                 self.exec_set_local_op(code, *slot)?;
                 self.publish_state_local(code, *slot);
                 *ip += 1;

@@ -134,11 +134,7 @@ impl Interpreter {
         // and which already isolates this flag family) -- isolate it here so
         // a caller's pending `:=` mark does not leak into the thunk's own
         // vardecl/store opcodes across the `n` repeated runs below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Save env keys that the thunk captures
         let touched_keys: Vec<String> = data.env.keys().map(|k| k.resolve()).collect();
         let saved: Vec<(String, Option<Value>)> = touched_keys

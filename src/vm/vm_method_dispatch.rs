@@ -31,11 +31,7 @@ impl Interpreter {
         // al.) so a caller's pending `:=` mark does not leak into this
         // method's own vardecl/store opcodes -- restored on every exit path,
         // including a Rust panic unwind through the body loop below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Check for `is DEPRECATED` trait on the method
         if let Some(ref msg) = method_def.deprecated_message {
             let cl = Some(self.cur_source_line);
@@ -816,7 +812,7 @@ impl Interpreter {
             let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
-        self.state_scope_id = saved_state_scope;
+        self.state_scope_id.set(saved_state_scope);
 
         // `Some` only when a `:=`-bound attribute was recovered beyond the raw
         // cell contents (`reconcile_attrs`); the common exit stays `None` = the
@@ -1324,11 +1320,7 @@ impl Interpreter {
         // al.) so a caller's pending `:=` mark does not leak into this
         // method's own vardecl/store opcodes -- restored on every exit path,
         // including a Rust panic unwind through the body loop below.
-        // SAFETY: this function holds a single exclusive `&mut self` borrow
-        // for its entire body and the guard never escapes it (module-level
-        // invariant in `vm_call_state_guard`).
-        let _mark_context_guard =
-            unsafe { crate::vm::vm_call_state_guard::MarkContextGuard::new(self) };
+        let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         if let Some(ref msg) = method_def.deprecated_message {
             loan_env!(
                 self,
@@ -1803,7 +1795,7 @@ impl Interpreter {
             let scoped_key = self.scoped_state_key(*key);
             loan_env!(self, set_state_var(scoped_key, val));
         }
-        self.state_scope_id = saved_state_scope;
+        self.state_scope_id.set(saved_state_scope);
 
         if !can_skip_merge {
             // Non-can_skip_merge: AssignExpr may have written attribute values to

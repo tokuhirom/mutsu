@@ -51,9 +51,9 @@ impl Interpreter {
             .and_then(|v| v.as_int())
             .filter(|i| *i != 0)
             .map(|i| i as u64);
-        let saved = self.state_scope_id;
+        let saved = self.state_scope_id.get();
         if id.is_some() {
-            self.state_scope_id = id;
+            self.state_scope_id.set(id);
         }
         Some(saved)
     }
@@ -61,7 +61,7 @@ impl Interpreter {
     /// Restore the scope saved by [`Self::enter_routine_state_scope`].
     pub(super) fn leave_routine_state_scope(&mut self, saved: Option<Option<u64>>) {
         if let Some(prev) = saved {
-            self.state_scope_id = prev;
+            self.state_scope_id.set(prev);
         }
     }
 
