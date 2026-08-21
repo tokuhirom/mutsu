@@ -21,9 +21,11 @@ mod sigil_context;
 
 // pub(super) re-exports — visible within crate::parser::primary and its submodules
 pub(crate) use angle_words::angle_words_subscript_index_expr;
-pub(super) use angle_words::{
-    angle_list, double_angle_list, find_nested_angle_close_pub, french_quote_list,
-};
+// `angle_list` is `pub(crate)` (not `pub(super)`) because declarator
+// trait-argument sugar (`is TraitName<a b>`, in `parser::stmt::decl`) reuses
+// it to parse the `<...>` word-list argument.
+pub(crate) use angle_words::angle_list;
+pub(super) use angle_words::{double_angle_list, find_nested_angle_close_pub, french_quote_list};
 pub(crate) use array::fail_goal_error_at;
 pub(super) use array::{array_literal, percent_hash_literal};
 pub(super) use paren::paren_expr;
