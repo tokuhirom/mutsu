@@ -277,6 +277,16 @@ impl Interpreter {
             if !matches!(val.view(), ValueView::Nil | ValueView::Package(_)) {
                 val = loan_env!(self, try_coerce_value_for_constraint(&constraint, val))?;
             }
+            // Wrap native integer values / truncate native num32 values on
+            // assignment, matching the statement-form `SetLocal` path
+            // (`vm_var_assign_set_local.rs`). This expression-context path
+            // (`my $x = EXPR` used as a call argument, e.g.
+            // `nqp::iseq_n($_, (my num32 $num32 = $_))`) previously skipped
+            // this call entirely, so an inline `my num32 $x = ...`
+            // declaration never actually narrowed to float32 precision —
+            // exactly the shape `CBOR::Simple`'s float encoder uses to decide
+            // whether a `Num` safely round-trips through a 4-byte CBOR float.
+            val = Self::wrap_native_int_by_constraint(&constraint, val)?;
         } else {
             // Untyped scalar: assigning Nil resets it to the default type
             // object Any (the reset guard is a no-op for `@`/`%` containers).
@@ -721,6 +731,24 @@ impl Interpreter {
         use num_traits::ToPrimitive;
 
         let (base, _) = crate::runtime::types::strip_type_smiley(constraint);
+        // A native `num32` scalar truncates to IEEE-754 single precision on
+        // every store, immediately — `my num32 $x = 1.1` loses precision at
+        // the assignment itself, not just later when something coerces it.
+        // This matters beyond display: `CBOR::Simple`'s float encoder decides
+        // "can this Num shrink to a 4-byte CBOR float?" by writing into a
+        // `num32` temporary and checking `$_ == $num32` for a lossless
+        // round-trip. Without truncation here that check was always true
+        // (mutsu stored the value at full f64 width, untouched), so every
+        // double got wrongly encoded as a 4-byte float — corrupting the
+        // output for any value not exactly representable in float32 (e.g.
+        // `-4.1e0`, `1e300`). `num64` needs no truncation: it is already
+        // mutsu's native `Num` storage width.
+        if base == "num32" {
+            return Ok(match val.view() {
+                ValueView::Num(f) => Value::num(f as f32 as f64),
+                _ => val,
+            });
+        }
         if !native_types::is_native_int_type(base) {
             return Ok(val);
         }

@@ -89,6 +89,16 @@ impl Interpreter {
         let parametric_builtin = matches!(
             name,
             "Array"
+                // Lowercase `array` (the native shaped/typed array declarator
+                // used as a term, e.g. `array[int32]`) accepts `[T]` too — but
+                // only the compile-time-literal spelling was special-cased
+                // (the compiler synthesizes the `array[T]` type name
+                // directly); a runtime/dynamic index expression
+                // (`array[$cond ?? int8 !! uint8]`, RFC 8746 typed-array
+                // decoding in `CBOR::Simple`) fell through to this generic
+                // Package-indexing path, which didn't know `array` was
+                // parametric, and threw X::NotParametric.
+                | "array"
                 | "Hash"
                 | "Map"
                 | "List"

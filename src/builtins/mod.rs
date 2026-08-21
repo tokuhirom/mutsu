@@ -197,6 +197,25 @@ fn normalize_builtin_encoding_label(name: &str) -> Option<String> {
     Some(normalized.to_string())
 }
 
+/// The exact wording MoarVM raises for a byte-addressed buffer read past the
+/// end (`nqp::readuint`/`readint`/`readnum`, and the `Buf`/`Blob`
+/// `.read-uint*`/`.read-int*`/`.read-num*` methods that are implemented in
+/// terms of the same underlying MoarVM op). MoarVM-op-based decoders
+/// (`CBOR::Simple` among them) match this message by PREFIX in their own
+/// `CATCH { when /^ 'MVMArray: read_buf out of bounds' / { ... } }` to turn
+/// a truncated-input read into their own typed exception; mutsu's previous
+/// wording for each of these call sites didn't share any common prefix with
+/// this (or with each other), so that `when` never matched and the raw
+/// low-level error always leaked out instead. `start` is always 0 here
+/// (mutsu does not model a sliced/offset buffer VIEW distinct from its
+/// backing storage, unlike MoarVM's `start`/`elems` pair), and `count` is
+/// the requested read size in bytes — the CATCH regex only checks the
+/// prefix, so the trailing numbers are cosmetic/diagnostic, not
+/// contract-bearing, but kept in the same shape for a faithful message.
+pub(crate) fn mvm_array_read_buf_oob_message(offset: usize, elems: usize, count: usize) -> String {
+    format!("MVMArray: read_buf out of bounds offset {offset} start 0 elems {elems} count {count}")
+}
+
 fn utf8_line_col(prefix: &[u8]) -> (usize, usize) {
     let s = std::str::from_utf8(prefix).unwrap_or("");
     let (mut line, mut col) = (1usize, 1usize);
@@ -347,8 +366,15 @@ fn decode_buf_target_bytes(target: &Value, encoding_name: &str) -> Option<Vec<u8
         return None;
     }
     let cn = class_name.resolve();
-    // buf16 / Buf[uint16] / utf16 store 16-bit code units; expand each to 2 bytes
-    let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
+    // buf16 / blob16 / Buf[uint16] / Blob[uint16] / utf16 all store 16-bit
+    // code units; expand each to 2 bytes. `buf_elem_width` recognizes every
+    // spelling (it just checks the class name for "16"/"32"/"64"), unlike an
+    // explicit name list which previously missed the capitalized `Blob`
+    // family (`blob16.new(...).decode('utf-16')` silently truncated each
+    // 16-bit code unit to its low byte before this fix, corrupting any
+    // surrogate pair — `CBOR::Simple`'s `01-basic.rakutest` test 53 hit
+    // exactly this via `blob16.new(0xd800, 0xdd51).decode('utf-16')`).
+    let is_wide = crate::value::value_buf::buf_elem_width(&cn) == 2;
     if is_wide {
         let items = crate::value::value_buf::buf_elems_in(&map).unwrap_or_default();
         let use_be = encoding_name == "utf-16be";
@@ -383,7 +409,10 @@ pub(crate) fn decode_buf_method(
     }
 
     let cn = class_name.resolve();
-    let default_encoding = if cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]" {
+    // See the matching `is_wide` comment in `decode_buf_target_bytes` above:
+    // `buf_elem_width` catches every 16-bit spelling, including `Blob[uint16]`
+    // (`blob16`), which this explicit name list previously missed.
+    let default_encoding = if crate::value::value_buf::buf_elem_width(&cn) == 2 {
         "utf-16"
     } else {
         "utf-8"

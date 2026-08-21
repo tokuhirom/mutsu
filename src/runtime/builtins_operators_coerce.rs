@@ -20,6 +20,19 @@ impl Interpreter {
         if let Some(items) = value.as_list_items() {
             return Ok(Value::int(items.len() as i64));
         }
+        // An enum VALUE (e.g. `CBOR_Tag_Invalid_8Byte` from `enum CBORMinMax
+        // (... => 18446744073709551615, ...)`) numifies to its underlying
+        // value, matching Raku's `Enumeration` role — `$n == SomeEnumValue`
+        // must compare numerically, not fall through the generic same-variant
+        // check below (which sees `Int`/`BigInt` vs `Enum` as different
+        // variants and numifies both to `f64`, losing precision for values
+        // outside f64's exact-integer range — `CBOR::Simple`'s malformed-tag
+        // detection compares a decoded `u64::MAX` tag number against exactly
+        // such an enum constant). Recurse in case the underlying value is
+        // itself something this function further coerces (e.g. an Instance).
+        if let ValueView::Enum { value: ev, .. } = value.view() {
+            return self.coerce_infix_operand_numeric(ev.to_value());
+        }
         if !matches!(value.view(), ValueView::Instance { .. }) {
             return Ok(value);
         }

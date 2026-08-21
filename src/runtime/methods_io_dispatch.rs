@@ -185,7 +185,13 @@ impl Interpreter {
             && crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
         {
             let cn = class_name.resolve();
-            let is_wide = cn == "utf16" || cn == "buf16" || cn == "Buf[uint16]";
+            // `buf_elem_width` recognizes every 16-bit spelling (`buf16`,
+            // `blob16`, `Buf[uint16]`, `Blob[uint16]`, `utf16`) by checking
+            // the class name for "16", unlike this previous explicit name
+            // list, which missed the capitalized `Blob[uint16]` produced by
+            // `blob16.new(...)` — see the matching fix + comment in
+            // `builtins::decode_buf_target_bytes`.
+            let is_wide = crate::value::value_buf::buf_elem_width(&cn) == 2;
             let default_encoding = if is_wide { "utf-16" } else { "utf-8" };
             let encoding = args
                 .iter()

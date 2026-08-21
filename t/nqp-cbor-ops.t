@@ -9,7 +9,7 @@ use Test;
 # Runs under raku too — which also pins that mutsu's constant values and
 # flag decoding match MoarVM's.
 
-plan 17;
+plan 20;
 
 # constants + bit ops (the CBOR flag idiom)
 my int $be16 = nqp::bitor_i(nqp::const::BINARY_SIZE_16_BIT, BigEndian);
@@ -36,6 +36,22 @@ is $sum, 10, 'nqp::while/nqp::stmts loop';
 # istype
 is nqp::istype("x", Str), 1, 'istype Str';
 is nqp::istype(42, Str), 0, 'istype negative';
+# `Nil` used as the TYPE argument is a bare value (not a `Package("Nil")`
+# type object like other builtin types), which CBOR::Simple's absent-value
+# encoding relies on (`nqp::istype($_, Nil)` on an array element bound to
+# Nil via BIND-POS). Regression for a gap where this always answered 0.
+my @with-nil = ['a', 'b'];
+@with-nil.BIND-POS(1, Nil);
+is nqp::istype(@with-nil[1], Nil), 1, 'istype against Nil type argument';
+is nqp::istype(@with-nil[0], Nil), 0, 'istype against Nil type argument, negative';
+
+# A raw enum value passed as a `writeuint` argument writes its underlying
+# numeric value, not silently 0 (CBOR::Simple's Date tag encoding does
+# exactly this: `nqp::writeuint($buf, $pos, CBOR_Tag_Date_Integer, $ne8)`).
+enum TagNum (SomeTag => 100);
+my $tagbuf := buf8.new(0, 0);
+nqp::writeuint($tagbuf, 0, SomeTag, nqp::bitor_i(nqp::const::BINARY_SIZE_8_BIT, NativeEndian));
+is-deeply $tagbuf, buf8.new(100, 0), 'writeuint with a raw enum value argument';
 
 # buffer read/write (the CBOR hot path). NB: bound, not assigned — rakudo's
 # nqp ops reject a Scalar-containerized buffer, and CBOR::Simple binds too.
