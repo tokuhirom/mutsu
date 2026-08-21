@@ -160,6 +160,22 @@ impl Interpreter {
                 if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
                     return Ok(Value::package(Symbol::intern(&allo)));
                 }
+                // NOTE: this reports the SHARED base type's `.WHAT` (e.g. plain
+                // `Hash`), not a distinct per-composition anonymous type object
+                // the way Rakudo's real metamodel does. A tempting "fix" is to
+                // wrap the base `.WHAT` in a `Mixin` that reuses this value's
+                // own `overrides` Gc handle, so a later `.^set_name` on the
+                // `.WHAT` (e.g. `Hash::Restricted`'s
+                // `v.var.WHAT.^set_name(...)`) is visible back on this value.
+                // That was tried and reverted: it broke
+                // `roast/S14-roles/instantiation.t` ("Punned role classes have
+                // the same .WHAT") — two independently-`.new()`-ed instances of
+                // the same punned role each carry their OWN `overrides` map (per
+                // instance attribute/mixin storage), so reusing it as the type
+                // identity makes `$obj.WHAT === $obj2.WHAT` false when it must
+                // be true. The correct fix needs a composition-keyed (base type
+                // + role set), not instance-keyed, anonymous type object cache —
+                // see todo/deep/mixin-what-identity-not-per-composition.md.
                 return self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.clone());
             }
             ValueView::Proxy {
@@ -662,10 +678,27 @@ impl Interpreter {
     pub(super) fn dispatch_caret_name(&self, target: &Value) -> Result<Value, RuntimeError> {
         Ok(Value::str(match target.view() {
             ValueView::Package(name) => {
-                crate::value::user_facing_type_name(&name.resolve()).to_string()
+                let resolved = name.resolve();
+                // `.^set_name` on a user-declared class's own `Package` value
+                // persists a display-name override in `type_metadata` (see
+                // `dispatch_classhow_method`'s "set_name" handler); a plain
+                // `.^name` fast path must consult it too, or the rename never
+                // becomes visible. Builtin types never get an entry here (the
+                // write side refuses to write one), so this lookup is a no-op
+                // for them.
+                self.type_metadata
+                    .get(&resolved)
+                    .and_then(|m| m.get("__set_name__"))
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| crate::value::user_facing_type_name(&resolved).to_string())
             }
             ValueView::Instance { class_name, .. } => {
-                crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+                let resolved = class_name.resolve();
+                self.type_metadata
+                    .get(&resolved)
+                    .and_then(|m| m.get("__set_name__"))
+                    .map(Value::to_string_value)
+                    .unwrap_or_else(|| crate::value::user_facing_type_name(&resolved).to_string())
             }
             // An enum VALUE names its enum type (`Bob.^name` is `Names`), not the
             // underlying storage type — `value_type_name` reports "Int" for the
@@ -678,6 +711,20 @@ impl Interpreter {
                 } else {
                     n
                 }
+            }
+            // `.^set_name` called directly on a role-mixed value (see
+            // `dispatch_classhow_method`'s "set_name" handler) writes a
+            // display-name override onto the shared `overrides` map of its
+            // `Mixin` representation, in place (`t/metamodel-set-name.t`'s
+            // `Foo.new but role {...}` scenario). The fast `.^name` path must
+            // consult it before falling back to the synthesized
+            // `Base+{Role,...}` name. (This does NOT cover
+            // `Hash::Restricted`'s `v.var.WHAT.^set_name(...)` — `.WHAT`
+            // returns a different value with its own `overrides`; see
+            // `dispatch_what`'s `ValueView::Mixin` arm above and
+            // `todo/deep/mixin-what-identity-not-per-composition.md`.)
+            ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_type_name__") => {
+                overrides["__mutsu_type_name__"].to_string_value()
             }
             ValueView::Mixin(inner, _) => match inner.as_ref().view() {
                 ValueView::Instance { class_name, .. } => {
