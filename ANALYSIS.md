@@ -355,8 +355,20 @@ be silent.
   (`todo/deep/wasm-start-and-channel-trap.md`) was fixed 2026-08-14 (`62ea1e3e4`) by a
   cooperative single-thread scheduler (`wasm_sched.rs`, `thread_compat.rs`, PR #5317); the
   todo file is gone.
-- **Recursive start/await hang** (deterministic) and **Supply detached-worker panics are
-  swallowed** (QUIT propagation unimplemented) — both unchanged since rev10.
+- **Supply detached-worker panics are swallowed** (QUIT propagation unimplemented) — unchanged
+  since rev10, still open (`PLAN.md`'s §5 checkbox is unchecked, and no propagation path was found
+  in `src/runtime/native_supply_methods.rs` on re-check).
+- **(correction, 2026-08-21) "Recursive start/await hang" — resolved, remove from the open list.**
+  This row previously claimed the hang was "unchanged since rev10"; that is stale. The underlying
+  bug (`clone_for_thread` seeding a flat name-keyed `shared_vars` map that cannot represent two
+  concurrently-live same-name bindings — exactly what a recursive frame chain needs) was fixed
+  2026-07-30 by PR #5564 ("recursion through a start block returned silently wrong answers"),
+  pinned by `t/recursive-start-await.t` (8/8 passing). Re-verified directly: re-running the
+  original hang repro, `docs/probes/pool-recursive-start.raku`, now matches raku's documented
+  expected output on every case, including the two-branch `fib` recursion that used to hang at
+  exit 124. The fix appears to be an unremarked side effect of §2.4's env-writeback campaign,
+  which replaced the same flat name-keyed `shared_vars` mechanism with slot-addressed locals and
+  cell-shared captures — the mechanism this bullet blamed no longer exists.
 - **(rev13 correction) Thread pool landed**: ADR-0020 (Accepted, all slices merged
   2026-08-05) is already recorded as resolved in §0/§7, but this bullet had not been updated
   to match. Raw `spawn_user_thread` call sites dropped from 20 to 8 (`slang_activation.rs`,
@@ -551,7 +563,7 @@ has since expired: `roast/S02-literals/quoting-unicode.t` is now whitelisted and
 | # | Item | Kind | Why here |
 |---|------|------|----------|
 | 1 | **Write the batteries adoption-policy ADR, then follow the Cro/mzef compatibility frontier** (§1.8) | policy / product architecture | The project's main goal depends on the costly-to-reverse rule “vendor upstream verbatim; grow mutsu; no new native providers,” but the decision and exceptions live only in `BATTERIES.md`/`CLAUDE.md`. Preserve that boundary first; then let real downstream failures choose interpreter work. |
-| 2 | **Crash and panic-zero response lane** (§2.3, PLAN §6) | conditional P0 robustness | A fresh Proc::Async crash report preempts the roadmap immediately; the single historical CI SIGSEGV is otherwise evidence-starved and did not reproduce in 22 local runs. Supply panic propagation, deterministic hangs, and parser panic-zero work remain actionable correctness slices. |
+| 2 | **Supply panic propagation and parser panic-zero debt** (§2.3, PLAN §5) | correctness debt | Two concrete, actionable gaps: Supply detached-worker panics are silently swallowed instead of reaching QUIT (`PLAN.md` §5, unchecked), and `unwrap`/`expect`/`panic!`/`unreachable!` usage keeps rising every revision (§5: 1920→2227) against PLAN §8.3's "must never Rust-panic on any input" goal. |
 | 3 | **Unify statement/expression compilation of control constructs** (§3.1) | design cleanup | The duplicated `do`/`if`/loop compilation is real but bounded and stable. Opcode leftovers remain measurement-gated, not bundled into this task. |
 | 4 | **Pay hygiene debt through the work above** (§5, §6) | completion discipline | `runtime/mod.rs` reached 3263 lines and the >500/>1000 populations reached 336/100. The `registration_class_decl.rs` walker this row used to point at has already been split (ADR-0019 D0-D9, §1.1); touched oversized files should be split when ownership boundaries become clear as the next one is forced open. A standalone line-moving campaign is not the priority. |
 | 5 | **RakuAST completion** (`todo/deep/rakuast-remaining.md`, ADR-0011 Phase 6) | demand-driven feature | No whitelisted roast file or bundled battery consumes the remaining forms or macros. Pick a slice only when a real downstream use case supplies acceptance tests. |
