@@ -922,8 +922,25 @@ impl Interpreter {
             return false;
         };
         let cn = class_name.as_str();
-        self.has_user_method_including_role(cn, "STORE")
-            && (self.class_does_role(cn, "Associative") || self.class_does_role(cn, "Positional"))
+        // A native-inheritance `is Hash`/`is Map` subclass ties through the
+        // native storage-delegation `STORE` (`vm_hash_subclass_delegate.rs`),
+        // not a user-declared `STORE` method — mirrors the same native-MRO
+        // carve-out the `%`-sigil declaration-time tie gate
+        // (`vm_var_trait_ops.rs`) uses. Without this, a LATER `%h = ...`
+        // reassignment on an `is Hash` subclass instance fell through to the
+        // plain-Hash coercion, clobbering the instance's class identity even
+        // though the declaration itself tied it correctly. Scoped to
+        // Associative (not also `is Array`/`is List`, which already had a
+        // working reassignment path before this delegation subsystem
+        // existed) to avoid changing established Array-subclass behavior.
+        let native_hash_subclass = self
+            .mro_readonly(cn)
+            .iter()
+            .any(|n| Self::is_associative_base(n));
+        native_hash_subclass
+            || (self.has_user_method_including_role(cn, "STORE")
+                && (self.class_does_role(cn, "Associative")
+                    || self.class_does_role(cn, "Positional")))
     }
 
     /// The type name behind a candidate tied container. A tie declared with a

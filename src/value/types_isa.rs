@@ -365,6 +365,10 @@ impl Value {
                         | ValueView::Capture { .. }
                 ) || matches!(
                     self.view(),
+                    ValueView::Instance { attributes, .. }
+                        if attributes.contains_key("__mutsu_hash_storage")
+                ) || matches!(
+                    self.view(),
                     ValueView::Package(name)
                         if matches!(
                             name.resolve().as_str(),

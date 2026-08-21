@@ -755,6 +755,29 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // `$h1{"a"} = 1` / `$h1{"a"} := $x` on an `is Hash`/`is Map` subclass
+        // instance held in a scalar: delegate through ASSIGN-KEY/BIND-KEY on
+        // the backing `__mutsu_hash_storage`, instead of falling through to
+        // the plain-Hash coercion further below (which would REPLACE the
+        // instance with a fresh Hash, losing its class identity — the
+        // Associative twin of the positional block above).
+        if !is_positional
+            && let Some(inst) = self.env().get(&var_name).cloned()
+            && matches!(inst.view(), ValueView::Instance { .. })
+        {
+            let key_val = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            let method = if bind_mode { "BIND-KEY" } else { "ASSIGN-KEY" };
+            let delegate_args = [key_val, val.clone()];
+            if let Some(result) =
+                self.try_hash_storage_delegate_mut(&var_name, &inst, method, &delegate_args)
+            {
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
         // Map containers are immutable - prevent assignment and binding to keys.
         // A `constant %M = (a => 1)` is now a Map (declared_type "Map"), but its
         // element assignment must die with the VALUE-level X::Assignment::RO
@@ -3784,6 +3807,92 @@ impl Interpreter {
                     self.env_mut().insert(fq, val.clone());
                 }
                 self.stack.push(val);
+            }
+            // An `is Hash`/`is Map` subclass instance reached via a
+            // STACK-COMPUTED target (`$obj.method.attr<key> = val` — a method
+            // call chain, not a named variable, so `IndexAssignExprNamed`'s
+            // dedicated `__mutsu_hash_storage` block above never sees this
+            // site). Mutate the backing storage IN PLACE through the shared
+            // attribute cell (mirrors the `ValueView::Hash` arm's
+            // `gc_contents_mut` aliasing above, one level deeper): `target`
+            // here shares the SAME `Gc<InstanceAttrs>` identity as whatever
+            // attribute this value came from (a plain object-typed accessor
+            // does not copy), so this needs no name to write back through —
+            // unlike the named-variable path, which writes into `self.env`.
+            // Without this arm the write silently vanished into the
+            // catch-all below (`Template::Mustache`'s `Logger.routines` is a
+            // real-world instance of exactly this shape:
+            // `$m.logger.routines<Warn> = &die`).
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_hash_storage") =>
+            {
+                let stored = match &bind_cell {
+                    Some((_, cell)) => Value::container_ref(cell.clone()),
+                    None => val.clone(),
+                };
+                attributes.with_attr_mut("__mutsu_hash_storage", |storage| {
+                    storage.with_hash_mut(|gc| {
+                        Value::hash_insert_through(
+                            &mut crate::value::gc_data_mut(gc).map,
+                            key.clone(),
+                            stored,
+                        );
+                    });
+                });
+                if let Some((Some(src), cell)) = &bind_cell {
+                    let cell_val = Value::container_ref(cell.clone());
+                    self.set_env_with_main_alias(src, cell_val.clone());
+                    self.update_local_if_exists(code, src, &cell_val);
+                }
+                self.stack.push(val);
+            }
+            // The Positional twin of the Associative arm just above: an
+            // `is Array`/`is List` subclass instance reached via a
+            // STACK-COMPUTED target (`$obj.method.attr[i] = val`). Found
+            // (pre-existing, not introduced by the Hash delegation work
+            // above) while triaging the Associative regression; fixed the
+            // same way for the same reason — same in-place-through-the-
+            // shared-cell rationale.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_array_storage") =>
+            {
+                if let Ok(i) = key.parse::<usize>() {
+                    attributes.with_attr_mut("__mutsu_array_storage", |storage| {
+                        let (mut items, kind) = match storage.view() {
+                            ValueView::Array(items, kind) => ((**items).clone(), kind),
+                            _ => (
+                                crate::value::ArrayData::new(Vec::new()),
+                                crate::value::ArrayKind::Array,
+                            ),
+                        };
+                        if i >= items.items().len() {
+                            items.items_mut().resize(
+                                i + 1,
+                                Value::package(crate::symbol::Symbol::intern("Any")),
+                            );
+                        }
+                        match &bind_cell {
+                            Some((_, cell)) => {
+                                items.items_mut()[i] = Value::container_ref(cell.clone())
+                            }
+                            None => {
+                                Value::assign_element_slot(&mut items.items_mut()[i], val.clone())
+                            }
+                        }
+                        *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
+                    });
+                    if let Some((Some(src), cell)) = &bind_cell {
+                        let cell_val = Value::container_ref(cell.clone());
+                        self.set_env_with_main_alias(src, cell_val.clone());
+                        self.update_local_if_exists(code, src, &cell_val);
+                    }
+                }
+                let result = if idx_is_single_element {
+                    Self::itemize_value(val)
+                } else {
+                    val
+                };
+                self.stack.push(result);
             }
             _ => {
                 // A `:=` bind of a positional/associative element requires a

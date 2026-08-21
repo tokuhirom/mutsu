@@ -524,6 +524,12 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
             if let Some(storage) = attributes.as_map().get("__mutsu_array_storage") {
                 return value_to_list(storage);
             }
+            // An `is Hash`/`is Map` subclass instance is Associative: in list
+            // context it flattens to its backing storage's pairs (`$h.list`,
+            // `for $h { ... }`), mirroring the Array/List arm above.
+            if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage") {
+                return value_to_list(storage);
+            }
             vec![val.clone()]
         }
         // Nil is a single scalar item in list context (e.g. `for Nil { }` does

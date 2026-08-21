@@ -288,6 +288,20 @@ pub(crate) fn gist_value(value: &Value) -> String {
                     .unwrap_or_else(|| crate::value::Value::real_array(Vec::new())),
             )
         }
+        // An `is Hash`/`is Map` subclass instance gists as its backing hash
+        // entries (`Bar.new(a=>1).gist` → `{a => 1}`), not the generic
+        // `Class.new` — mirrors the `is Array` arm above.
+        ValueView::Instance { attributes, .. }
+            if attributes.contains_key("__mutsu_hash_storage") =>
+        {
+            gist_value(
+                &attributes
+                    .as_map()
+                    .get("__mutsu_hash_storage")
+                    .cloned()
+                    .unwrap_or_else(|| crate::value::Value::hash(std::collections::HashMap::new())),
+            )
+        }
         // `$(...)` itemized container: `.gist` never shows the itemization sigil,
         // so it gists exactly like its inner value (`${a=>1}.gist` → `{a => 1}`).
         ValueView::Scalar(inner) => gist_value(inner),

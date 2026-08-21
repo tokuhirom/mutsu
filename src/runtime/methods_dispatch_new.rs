@@ -508,6 +508,38 @@ impl Interpreter {
                 attributes.insert("__mutsu_array_storage", storage);
             }
         }
+        // Hash-subclass construction: an `is Hash`/`is Map` subclass reaches
+        // the base `Hash.new(a => 1, b => 2)` semantics through
+        // `nextwith(|%values)` in its own `new`, which lands here as `bless`
+        // with named (Pair) args. Those pairs become the hash's own key/value
+        // storage (which Associative methods on the instance delegate to),
+        // mirroring the Array/List block above. A pair naming a DECLARED
+        // attribute is left as a real attribute instead (already inserted
+        // above) and excluded from storage.
+        if self
+            .class_mro(cn_resolved)
+            .iter()
+            .any(|n| *n == "Hash" || *n == "Map")
+        {
+            let declared: std::collections::HashSet<&str> =
+                plan.class_attrs.iter().map(|a| a.name.as_str()).collect();
+            let hash_pairs: Vec<Value> = args
+                .iter()
+                .filter(
+                    |a| matches!(a.view(), ValueView::Pair(k, _) if !declared.contains(k.as_str())),
+                )
+                .cloned()
+                .collect();
+            if !hash_pairs.is_empty() || !attributes.contains_key("__mutsu_hash_storage") {
+                for pair in &hash_pairs {
+                    if let ValueView::Pair(k, _) = pair.view() {
+                        attributes.remove(k.as_str());
+                    }
+                }
+                let storage = self.associative_base_storage(cn_resolved, hash_pairs);
+                attributes.insert("__mutsu_hash_storage", storage);
+            }
+        }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
         self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
         // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared

@@ -82,7 +82,9 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if !attributes.contains_key("__mutsu_array_storage") => {
+                } if !attributes.contains_key("__mutsu_array_storage")
+                    && !attributes.contains_key("__mutsu_hash_storage") =>
+                {
                     Some(class_name.as_str().to_string())
                 }
                 _ => None,

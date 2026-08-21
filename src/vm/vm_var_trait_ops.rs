@@ -503,7 +503,18 @@ impl Interpreter {
                 || self.registry().roles.contains_key(&trait_name))
             && (self.class_does_role(&trait_name, "Associative")
                 || self.has_user_method_including_role(&trait_name, "STORE")
-                || self.has_user_method_including_role(&trait_name, "AT-KEY"))
+                || self.has_user_method_including_role(&trait_name, "AT-KEY")
+                // `class Bar is Hash {}` (or `is Map`): a native-inheritance
+                // Associative subclass, not a role composition or a
+                // hand-written AT-KEY/STORE tie. Mirrors the `@`-sigil gate's
+                // `class_mro(...).any(|n| n == "Array")` check above — without
+                // this, `my %h is Bar = ...` fell through to the generic
+                // `trait_mod:<is>` handler, which does not bless a real `Bar`
+                // instance (`.^name` wrongly stayed `Hash`).
+                || self
+                    .class_mro(&trait_name)
+                    .iter()
+                    .any(|n| n == "Hash" || n == "Map"))
         {
             if has_arg {
                 self.stack.pop();

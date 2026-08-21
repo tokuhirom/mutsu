@@ -1637,6 +1637,16 @@ impl Interpreter {
                         // Fall through to normal dispatch if delegation failed
                     }
                 }
+                // Hash-subclass instance delegation (non-mut path): the
+                // Associative twin of the Array-subclass delegation just
+                // above. See `vm_hash_subclass_delegate.rs`.
+                if !skip_native
+                    && let Some(result) = self.try_hash_storage_delegate(&target, method_sym, &args)
+                {
+                    crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "native");
+                    self.stack.push(result?);
+                    return Ok(());
+                }
                 // Nil method fallback: in Raku, calling most methods on Nil returns Nil.
                 // Certain mutating methods throw exceptions.
                 // This must be in the Interpreter path (not the interpreter's call_method_with_values)

@@ -166,6 +166,7 @@ mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
 mod vm_for_loop_lazy;
 mod vm_given_when_ops;
+mod vm_hash_subclass_delegate;
 mod vm_helpers;
 mod vm_helpers_junction;
 mod vm_helpers_lazy;

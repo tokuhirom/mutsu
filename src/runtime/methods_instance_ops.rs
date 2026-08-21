@@ -86,6 +86,9 @@ impl Interpreter {
         if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }
+        if let Some(storage) = attributes.as_map().get("__mutsu_hash_storage").cloned() {
+            return Some(self.call_method_with_values(storage, method, vec![]));
+        }
         if class_name == Symbol::intern("ObjAt") || class_name == Symbol::intern("ValueObjAt") {
             let which = attributes
                 .as_map()

@@ -322,6 +322,30 @@ impl Interpreter {
             }
             _ => idx,
         };
+        // An `is Hash`/`is Map` subclass instance (`$h<k>:delete`): delegate
+        // DELETE-KEY to the backing `__mutsu_hash_storage` directly, ahead of
+        // the `declares`-gated block below (which only recognizes a
+        // user-DECLARED DELETE-KEY method — our native storage delegation
+        // isn't a registered `MethodDef`, so it would otherwise silently fall
+        // through here, `$h<k>:delete` a no-op). `try_hash_storage_delegate_mut`
+        // itself defers to a real user override when the class declares one.
+        if let Some(target) = self.env().get(&var_name).cloned()
+            && let ValueView::Instance { attributes, .. } = target.view()
+            && attributes.contains_key("__mutsu_hash_storage")
+        {
+            let idx_arg = match idx.view() {
+                ValueView::Array(items, _) if items.len() == 1 => items[0].clone(),
+                ValueView::Seq(items) if items.len() == 1 => items[0].clone(),
+                ValueView::Slip(items) if items.len() == 1 => items[0].clone(),
+                _ => idx.clone(),
+            };
+            if let Some(result) =
+                self.try_hash_storage_delegate_mut(&var_name, &target, "DELETE-KEY", &[idx_arg])
+            {
+                self.stack.push(result?);
+                return Ok(());
+            }
+        }
         // A user-defined Positional/Associative object (`$q[1]:delete` /
         // `$q<k>:delete`) dispatches the raku subscript protocol
         // (DELETE-POS/DELETE-KEY). The opcode does not carry the subscript
