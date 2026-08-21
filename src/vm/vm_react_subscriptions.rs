@@ -134,6 +134,15 @@ impl Interpreter {
                         if let Some(sid) = react_subs[key].emitter_supplier_id {
                             crate::runtime::native_methods::supplier_done(sid);
                         }
+                        // Supply.on-demand(..., closing => { ... }): fire this
+                        // subscription's own `closing` callbacks promptly, right
+                        // when its source actually signals done, instead of
+                        // deferring them to react-loop teardown (`take` drains
+                        // the list so the final catch-all `run_react_close_callbacks`
+                        // does not refire them).
+                        for cb in std::mem::take(&mut react_subs[key].close_callbacks) {
+                            let _ = self.call_react_callback(&cb, Vec::new());
+                        }
                     }
                     SinkEvent::Quit(error) => {
                         let mut handled = false;
@@ -488,6 +497,14 @@ impl Interpreter {
                     // subscription's QUIT phasers rather than its LAST ones.
                     if done_promise.status() == "Broken" {
                         let reason = done_promise.result_blocking();
+                        // Supply.on-demand(..., closing => { ... }): `closing`
+                        // fires when the tap closes, including when it closes
+                        // via an unhandled `quit`/die in the on-demand body's
+                        // producer — fire it promptly here, not deferred to
+                        // react-loop teardown.
+                        for close_cb in std::mem::take(&mut sub.close_callbacks) {
+                            let _ = self.call_react_callback(&close_cb, Vec::new());
+                        }
                         let mut handled = false;
                         for quit_cb in sub.quit_callbacks.clone() {
                             self.call_supply_quit_handler(quit_cb, reason.clone())?;
@@ -524,6 +541,20 @@ impl Interpreter {
                     }
                     for callback in &sub.last_callbacks {
                         match self.call_react_callback(&callback.clone(), Vec::new()) {
+                            Err(e) if e.is_react_done() => break 'react_loop,
+                            other => {
+                                other?;
+                            }
+                        }
+                    }
+                    // Supply.on-demand(..., closing => { ... }): fire this
+                    // tap's `closing` callback promptly, right when its
+                    // producer actually signals done, instead of batching it
+                    // with every other pending `closing` callback at
+                    // react-loop teardown (the bug this fixes: see
+                    // news/2026-08/supply-on-demand-closing-callback-prompt.md).
+                    for close_cb in std::mem::take(&mut sub.close_callbacks) {
+                        match self.call_react_callback(&close_cb, Vec::new()) {
                             Err(e) if e.is_react_done() => break 'react_loop,
                             other => {
                                 other?;
@@ -572,9 +603,11 @@ impl Interpreter {
                 }
                 if react_subs[si].receiver.is_none() {
                     // A source-less subscription normally exists only to carry
-                    // close callbacks (fired by `run_react_close_callbacks`
-                    // regardless of `done`), so it can be marked done right
-                    // away. One that also carries `quit_callbacks` (the
+                    // close callbacks, fired promptly by the `on_demand_done`
+                    // check just above once its promise actually resolves (with
+                    // `run_react_close_callbacks` at loop exit as a catch-all
+                    // for one whose promise never settles before the react
+                    // ends). One that also carries `quit_callbacks` (the
                     // `emitter_supplier_id`-owning subscription's own QUIT
                     // phasers, see the `SinkEvent::Done`/die handling above)
                     // must instead wait for its `on_demand_done` promise to
@@ -584,11 +617,19 @@ impl Interpreter {
                     // of one carrying `last_callbacks` with no source of its
                     // own (`register_nested_on_demand_source`'s shadow
                     // subscription for a nested `whenever <derived-supply> {
-                    // ...; LAST {...} }`): marking it done here — before
-                    // `on_demand_done` resolves — would orphan its LAST
-                    // phasers, which only the check above ever fires.
+                    // ...; LAST {...} }`), or one carrying `close_callbacks`
+                    // (a `Supply.on-demand(..., closing => { ... })` tap whose
+                    // async body has not completed yet, see
+                    // `build_react_subscriptions`'s on-demand branch): marking
+                    // it done here — before `on_demand_done` resolves — would
+                    // skip straight past this subscription on every later
+                    // iteration (the `sub.done` guard at the top of this loop),
+                    // so its LAST phasers / `closing` callback would only ever
+                    // fire via the loop-exit catch-all instead of promptly when
+                    // the promise settles.
                     let awaiting_on_demand_done = react_subs[si].on_demand_done.is_some()
-                        && !react_subs[si].last_callbacks.is_empty();
+                        && (!react_subs[si].last_callbacks.is_empty()
+                            || !react_subs[si].close_callbacks.is_empty());
                     if react_subs[si].quit_callbacks.is_empty() && !awaiting_on_demand_done {
                         react_subs[si].done = true;
                     }
