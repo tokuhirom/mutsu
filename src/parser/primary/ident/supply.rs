@@ -15,7 +15,24 @@ pub(crate) fn supply_method_call(body: Vec<Stmt>) -> Expr {
     // `X::Placeholder::Block`, instead of building the on-demand Lambda
     // (which would otherwise silently let `$^c` read `Any` at runtime, since
     // nothing ever binds it).
-    if !crate::ast::collect_unattached_placeholders(&body).is_empty() {
+    //
+    // `%_` (a method's implicit `*%_` for leftover named args) is exempted
+    // from this parse-time check even outside a method: a legitimate
+    // `supply { ...; %_ ... }` inside a method body (e.g. DBIish-style
+    // `method connect-or-skip { supply { ...|%_... } }`) must still build the
+    // real on-demand Lambda, not degrade to an eagerly-run `DoBlock` that
+    // breaks `supply`'s async semantics. Whether `%_` is genuinely valid here
+    // depends on `self.lexically_in_method`, which does not exist yet at
+    // parse time -- `compile_do_block_expr`'s own `%_`-in-method check is the
+    // real enforcement for the (rare) non-method case where this exemption is
+    // too permissive, since a stray `Expr::DoBlock` produced by *this* check
+    // for a genuine `$^`/`@_` placeholder still reaches that check normally.
+    // `@_` is NOT exempted here -- only a METHOD gets an implicit `*%_`,
+    // never `*@_`.
+    if crate::ast::collect_unattached_placeholders(&body)
+        .into_iter()
+        .any(|ph| ph != "%_")
+    {
         return Expr::DoBlock { body, label: None };
     }
     // Each `supply { ... }` block gets a UNIQUE emitter variable name. The

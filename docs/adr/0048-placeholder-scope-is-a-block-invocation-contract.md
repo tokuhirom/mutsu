@@ -338,6 +338,47 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
      the roast file staying whitelisted and a new case in
      `t/placeholder-scope-rejecting.t` asserting `repeat` still *accepts* a
      placeholder.
+   - **A method's implicit `*%_` (leftover named args) must stay usable
+     inside a nested `NoSignature` block, and the first CI run of this PR
+     broke exactly that.** `t/placeholder-named-in-method-do.t` already pins
+     that `%_` is valid anywhere in a method body, including nested in a
+     signature-less `do {}` — `compile_do_block_expr` has always exempted
+     `self.lexically_in_method && ph == "%_"` from its stray-placeholder
+     check. `Compiler::emit_block_placeholder_die` (the helper this phase
+     reuses for every other `NoSignature` construct) had no such exemption,
+     so `try {}`/`loop {}`/... newly rejected a legitimate `%_` inside a
+     method. This broke every DBIish battery test at once: `DBIish::
+     CommonTesting.connect-or-skip` (a method) calls `DBIish.connect(
+     $driver-name, |%_)` inside a `try {}`, so the bundled-library gate's
+     "Bundled-library test suites" CI job failed with every DBIish backend
+     collapsing to `ok=2/109` (including SQLite, which needs no live
+     server — proving it was not a service-availability issue) and the gate
+     reporting `REGRESSION` against the whitelist for every whitelisted
+     DBIish file. Root-caused by reproducing locally: `%_`/`@^`/`$^` weren't
+     even considered during the original `roast`/`modules`/`vendor` scan
+     above, because that scan only grepped for the caret sigil forms
+     (`$^`/`@^`/`%^`) — it missed the *implicit slurpy* placeholder forms
+     (`@_`/`%_`), which `collect_unattached_placeholders` also recognizes.
+     Fixed by adding the same `lexically_in_method && ph == "%_"` exemption
+     to `emit_block_placeholder_die` itself (so every call site gets it for
+     free), plus a parallel exemption in `supply_method_call`
+     (`src/parser/primary/ident/supply.rs`), which checks
+     `collect_unattached_placeholders` directly at *parse* time (no
+     `Compiler`/`lexically_in_method` available yet) rather than through the
+     shared helper — that one exempts `%_` unconditionally rather than only
+     inside a method, a deliberate (documented in that file) narrower gap:
+     `supply { %_ }` outside a method should reject per `raku` but no longer
+     does, versus the alternative of `supply { %_ }` inside a method
+     wrongly degrading into an eagerly-run `DoBlock` and breaking `supply`'s
+     async semantics. `@_` is not exempted anywhere (only a method gets an
+     implicit `*%_`, never `*@_`). Pinned by four new cases in
+     `t/placeholder-scope-rejecting.t` (method-context `%_` accepted inside
+     `try`/`loop`/`supply`, and non-method-context `%_` inside `try` still
+     rejecting) and by re-running the DBIish/SQLite battery files locally
+     (`44-sqlite-memory.rakutest` 108/109 — matching the pre-existing
+     baseline — and `25-mysql-common.rakutest`/`34-pg-types.rakutest`
+     gracefully SKIPping all subtests again, both previously collapsed to
+     `ok=2/109`).
    - **The oracle change alone was not sufficient.** `placeholder_body_kind`/
      `placeholder_body_kind_expr` reclassifying these to `NoSignature` only
      changes what the *shallow walks* (parameter collection, order/redeclare

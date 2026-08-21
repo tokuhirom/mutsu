@@ -1,6 +1,6 @@
 use Test;
 
-plan 22;
+plan 26;
 
 # ADR-0048 Phase 2: constructs whose body may NOT take a signature.
 # `raku` gives the exact same `X::Placeholder::Block` for all of these
@@ -93,3 +93,50 @@ throws-like 'sink { $^c }', X::Placeholder::Block,
 
 throws-like 'my $x = lazy { $^c; 1 }; $x[0]', X::Placeholder::Block,
     'lazy {} rejects a placeholder';
+
+# A method always carries an implicit `*%_` (leftover named args), so `%_` is
+# a valid lexical ANYWHERE in the method body -- including directly inside a
+# nested NoSignature block, not just `do {}` (see
+# t/placeholder-named-in-method-do.t for the do{}-specific pin). This
+# regressed during ADR-0048 Phase 2 development: DBIish's
+# `DBIish::CommonTesting.connect-or-skip` calls
+# `DBIish.connect($driver-name, |%_)` inside a `try {}`, and an
+# over-broad rejection there took down every DBIish battery test (`ok=2/109`
+# across every backend, including SQLite which needs no live server) --
+# caught by re-running the bundled-library gate locally before pushing.
+{
+    class MethodPH {
+        method m {
+            my $r;
+            try { $r = %_.elems; 1 }
+            $r;
+        }
+    }
+    is MethodPH.new.m(a => 1, b => 2), 2,
+        '%_ inside try {} still works when lexically in a method (try)';
+}
+{
+    class MethodPH2 {
+        method m {
+            my $r;
+            loop { $r = %_.elems; last }
+            $r;
+        }
+    }
+    is MethodPH2.new.m(a => 1, b => 2, c => 3), 3,
+        '%_ inside loop {} still works when lexically in a method (loop)';
+}
+{
+    class MethodPH3 {
+        method m {
+            supply { emit %_.elems; done }
+        }
+    }
+    my $got;
+    react { whenever MethodPH3.new.m(a => 1, b => 2) -> $n { $got = $n } }
+    is $got, 2, '%_ inside supply {} still works when lexically in a method (supply)';
+}
+# `%_` is NOT exempted outside a method -- only a METHOD gets an implicit
+# `*%_`, never a plain `sub`.
+throws-like 'sub f { try { %_ } }; f(a => 1)', X::Placeholder::Block,
+    '%_ inside try {} in a plain sub (not a method) still rejects';
