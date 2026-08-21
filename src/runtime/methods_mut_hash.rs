@@ -99,6 +99,10 @@ impl Interpreter {
         value: Value,
         is_push: bool,
     ) {
+        // ADR-0040 slice 1: itemize the value at the store, same as a plain
+        // `%h<k> = v` element assign (`%h.push('a' => [1,2]); %h<a>.raku` is
+        // `$[1, 2]` in raku, not `[1, 2]`).
+        let value = value.itemize_for_element_store();
         if let Some(existing) = hash.get(&key) {
             let new_val = match existing.view() {
                 ValueView::Array(arr, ..) => {

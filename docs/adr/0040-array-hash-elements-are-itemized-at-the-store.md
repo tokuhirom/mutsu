@@ -1,6 +1,6 @@
 # ADR-0040: Array and Hash elements are itemized at the *store*, not compensated at the read
 
-- **Status**: Proposed (design complete; implementation not started)
+- **Status**: Accepted (Slices 0-1 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0013](0013-container-interior-mutability-cellvalue.md) §5 open question 3 / §7 (the
@@ -477,5 +477,105 @@ approximates each separately. Recorded here so a future reader can see the whole
 
 ---
 
-*This ADR is Proposed. If the mechanism judgment changes later, supersede it rather than rewriting
-it.*
+## 8. Implementation status (2026-08-21)
+
+Slices 0-1 landed in full, including every mutation-site shape named in §2/§4's Slice 1
+description (element assign, autovivification — both single- and nested-level — and
+`push`/`unshift`/`append`/`prepend`/`splice` for a real `Array` or `Hash`).
+
+- **Slice 0** (acceptance oracle): `t/element-store-itemization.t` — the full §1.3 divergence
+  matrix (rows 01-25, dual-oracled against `raku`), the §1.6 agreeing-source rows, the §2.3 arity
+  invariants (`push(1,2)` / `append((5,4))` stay 2 bare elements), the §2 negatives
+  (`Pair`/`Set`/`Int` elements stay unwrapped), a native-array safety check, and a dedicated
+  section for every mutation-site shape this slice fixes: single-index element assign
+  (rows 19-22), the hash equivalent (`%h<k> = [1,2]`), `unshift`/`prepend`/multi-arg `push`, nested
+  array/hash autovivification (`@a[5][0] = 1`, `%h<a><b> = 1`), `Hash.push`, and reference-shared
+  push (`@a.push(@b)`) including that `@b` read directly stays bare while `@a[0]` is itemized, and
+  that a later mutation of `@b` still propagates through the shared cell. 46 assertions total; rows
+  01-18, 23 (construction-site itemization, Slice 2) and 24 (`.VAR` reflection, Slice 3) stay
+  `todo`-marked.
+
+- **Slice 1** (the mutation sites), in two composed layers:
+
+  1. **`Interpreter::itemize_value`** (`src/vm/vm_run_loop.rs:942`), the pre-existing narrower
+     sibling of `Value::item()` already shipped for the bind-side half (`itemize_scalar_store`, same
+     shape — it rewrites `Array`/`Hash`/`Seq`/`Mixin` in place, leaving every scalar `ValueView`
+     discriminant byte-identical), is applied at the dozens of individual per-element leaf-store
+     sites inside the ~3200-line `vm_var_assign_index_named.rs` machinery (both fast paths in
+     `src/vm/vm_var_assign_element.rs`, `native_store_val`'s computation, `hash_insert_through`
+     calls, and the "autovivify a fresh Nil/missing container" branches) and at every push/append/
+     unshift/prepend fast-path per-element store (`src/vm/vm_data_push_ops.rs`'s `ArrayPush` opcode,
+     and the second, independent fast path `try_native_array_mut`/`native_array_storage_mut` in
+     `src/vm/vm_call_method_mut_ops.rs` that serves the multi-arg/captured-closure call shapes
+     `unshift` reaches exclusively — `unshift` has no dedicated VM opcode).
+  2. **`Value::itemize_for_element_store`** (`src/value/value_methods_a.rs`), a new sibling gated on
+     the ADR's own §2 "What" list (`Array`, `Hash`, `Seq`, and every `Range` shape — the one kind
+     `itemize_value` does not cover, since nothing needed it for the bind-side half), delegates to
+     `Value::item()` for those kinds and is a no-op otherwise. Used at the sites discovered/added
+     during implementation that were not already covered by (1): the single hook at the top of
+     `exec_index_assign_expr_named_op_seeded` (gated on a plain `Int`/`Str` index, so a slice
+     assign's whole RHS list is never itemized as one unit); the two nested-autovivification
+     construction sites in `exec_index_assign_expr_nested_op`
+     (`vm_var_assign_index_named.rs`, both the array-outer and hash-outer arms); `hash_push_insert`
+     (`src/runtime/methods_mut_hash.rs`, the `Hash.push`/`.append` chokepoint); `flatten_append_args`
+     (`src/runtime/mod.rs`, the one-arg-rule choke point shared by ~13 append/prepend call sites) and
+     `normalize_push_unshift_args`/`normalize_push_args_for_copy` (`src/runtime/methods_mut.rs`,
+     `src/runtime/methods_call_helpers.rs` — see the reversal note below); and the discrete-element
+     branch of `splice`'s replacement-argument loop (`src/runtime/methods_mut_dispatch.rs`).
+
+  Both helpers apply itemization strictly *after* each site's own one-arg-rule/Slip-flattening
+  decision, never before — `push(1,2)` still adds two bare elements, `append((5,4))` still flattens
+  to two bare elements, and only the per-element result is itemized (§2 part 3, verified by the
+  arity-invariant rows).
+
+**The reversal `normalize_push_unshift_args`/`normalize_push_args_for_copy` needed** (§2 part 3's
+"one counter-current"): both used to *strip* an incoming `Scalar` wrapper / itemized-`Array` kind on
+the way into `push`/`unshift`, because under the old read-side-compensated model any incoming
+itemization was a leftover to discard before storing. Under the store-side model that is exactly
+backwards, so both now itemize the final per-element value instead of stripping it.
+
+**Nested autovivification (`@a[5][0] = 1`, `%h<a><b> = 1`) is covered.** The freshly-autovivified
+intermediate container itself becomes a real stored element of the outer array/hash, so it itemizes
+the same way any other element store does — `@a[5].raku` is `$[1]` and `%h<a>.raku` is `${:b(1)}`,
+matching raku. Deeper (3+-level) chained assignment
+(`exec_index_assign_deep_nested_op`/`exec_index_assign_generic_op`) was not separately audited; no
+acceptance row exercises it, and it is left for a follow-up slice if a gap surfaces.
+
+**Reference-shared push (`@a.push(@b)`) needed a representation choice, not just a hook call.**
+Naively itemizing the *cell's* contents (flipping the shared `ArrayData`'s own `ArrayKind` tag) was
+tried first and is wrong: `@a[0]` and `@b` share the exact same `ContainerRef` cell, so mutating the
+cell's own kind tag makes `@b` itself (read directly, not through the pushed element) also render
+itemized — contradicting raku, where `@b.raku` stays bare while `@a[0].raku` is `$[1, 2]`. The fix
+instead wraps the `ContainerRef` *itself* in an outer `Value::Scalar` (`Value::container_ref(cell)
+.item()`, in `src/vm/vm_data_push_ops.rs`'s `value_source_idx` branch) — the same "wrap anything
+that is not Array/Hash in a Scalar" arm `Value::item()` already has, so the shared cell's own content
+is untouched and only the pushed element's own wrapper carries the itemization. This introduced a
+new `Value::Scalar(Box(ContainerRef(_)))` shape that the pre-existing method-dispatch decontainerize
+step (`src/vm/vm_call_method_ops.rs`, `exec_call_method_op_impl`) did not know about — it only
+recognized a *bare* `ContainerRef` invocant — so `@a[0].elems` (and every other non-rendering method)
+initially regressed to `1` instead of decontainerizing through to the aliased array's real element
+count (caught by the pre-existing `t/native-callmethod-push.t` and `t/push-array-reference.t`, not by
+this ADR's own pin file). Fixed by widening that same decont step to also see through a
+`Scalar`-wrapped `ContainerRef`, **except** for `raku`/`gist`/`perl` (mirroring the pre-existing `VAR`
+exception for a bare `ContainerRef`) — those three must keep the `Scalar` wrapper intact, since the
+itemization they need to render lives only in that outer wrapper.
+
+**A pre-existing, unrelated `splice` arity bug was found and filed separately, not fixed here**
+(`todo/tickets/splice-multi-arg-array-incorrectly-flattens.md`): `splice`'s replacement-argument
+handling flattens *every* `Array`/`List` argument unconditionally, where raku only flattens an
+`Array`/`List` argument when it is the sole replacement argument (the same one-arg rule
+`push`/`append`/`unshift`/`prepend` already implement correctly). This ADR's itemization hook is
+applied to whatever `splice` already decides to keep as one element (which correctly reaches a
+discrete `Range` argument, pinned in the acceptance test) without touching that unrelated flattening
+decision, to keep this PR's blast radius scoped to itemization.
+
+**Verification**: `cargo clippy -- -D warnings` and `cargo fmt --check` clean. Full local `t/` suite
+(3322 files) passes unchanged. Targeted whitelisted roast batches — `S32-array/*` (all 21
+whitelisted files, including `push`/`unshift`/`splice`/`create`/`delete*`/`multislice-6e`),
+`S32-hash/*` (all 17 whitelisted files), `S09-typed-arrays/*` (9 files, including the native/shaped
+variants), and `S02-types/{array,array_extending,array_ref,assigning-refs,autovivification,
+flattening,hash,hash_ref,list,multi_dimensional_array}.t` — all pass unchanged.
+
+---
+
+*If the mechanism judgment changes later, supersede this ADR rather than rewriting it.*

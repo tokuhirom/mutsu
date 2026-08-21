@@ -391,6 +391,35 @@ impl Value {
         }
     }
 
+    /// ADR-0040: itemize a value about to be stored into a real `Array`/
+    /// `Hash` element, for the value kinds whose "one-item-ness" is actually
+    /// observable there — `Array`, `List` (both the `ValueView::Array`
+    /// variant, discriminated by `ArrayKind`), `Hash`, `Seq`, and every
+    /// `Range` shape. Every other kind (`Int`, `Str`, `Pair`, `Set`, `Bag`,
+    /// `Mix`, `Nil`, `Bool`, instances, …) is returned unchanged.
+    ///
+    /// `Value::item()` itself would ALSO wrap those other kinds in a
+    /// `Scalar` box — behaviorally a no-op (the renderer/flattening
+    /// chokepoints already treat a Scalar-wrapped scalar identically to the
+    /// bare value: `docs/adr/0040-array-hash-elements-are-itemized-at-the-store.md`
+    /// §1.4/§2), but calling it unconditionally on every stored element
+    /// would heap-allocate a `Box` for every plain `Int`/`Str` array/hash
+    /// element — a real cost on this hot per-element store path. Gating on
+    /// kind here keeps the fix to the value kinds the ADR actually measured.
+    pub fn itemize_for_element_store(self) -> Value {
+        match self.view() {
+            ValueView::Array(..)
+            | ValueView::Hash(_)
+            | ValueView::Seq(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. } => self.item(),
+            _ => self,
+        }
+    }
+
     /// Read through a `ContainerRef` and apply `f` to the inner value WITHOUT
     /// cloning it. Non-ContainerRef values are passed to `f` as-is. This is the
     /// canonical non-cloning ContainerRef-read chokepoint (the ContainerRef axis of
