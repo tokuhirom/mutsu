@@ -383,9 +383,17 @@ impl Interpreter {
         }
 
         // Mark parameters as readonly (eligibility excludes `is rw/copy/raw`
-        // traits, so every param is immutable). Save the existing readonly
-        // state to restore after the call.
-        let saved_readonly = self.enter_readonly_frame();
+        // traits, so every param is immutable).
+        //
+        // RAII (`ReadonlyFrameGuard`,
+        // `news/2026-08/readonly-param-mark-panic-unwind-raii-guard.md`):
+        // this fast path bypasses `push_call_frame`, so the readonly scope
+        // opened here is invisible to `recover_call_frames_after_panic` -- a
+        // plain `exit_readonly_frame` statement near this function's end
+        // would be skipped by a Rust panic unwinding through the body loop
+        // below, permanently leaving the parameter's bare name readonly. The
+        // guard closes the scope on every exit path, including that unwind.
+        let _readonly_guard = crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(self);
         // A routine gets a fresh, writable `$_` — clear any readonly mark leaked
         // from the caller's topic (see vm_call_light.rs for the full rationale);
         // the param loop below re-marks `_` for an explicit `$_` param.
@@ -593,8 +601,7 @@ impl Interpreter {
         self.active_loop_param_names = saved_active_loop_param_names;
         self.block_declared_vars = saved_block_declared_vars;
 
-        // Restore readonly vars
-        self.exit_readonly_frame(saved_readonly);
+        // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
         // Restore the caller env, merging the overlay (the callee's own writes)
         // back: a write to a captured outer variable (not a declared local /

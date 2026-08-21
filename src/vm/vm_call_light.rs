@@ -156,7 +156,16 @@ impl Interpreter {
             }
         }
 
-        let saved_readonly = self.enter_readonly_frame();
+        // RAII (`ReadonlyFrameGuard`,
+        // `news/2026-08/readonly-param-mark-panic-unwind-raii-guard.md`):
+        // this fast path bypasses `push_call_frame`, so the readonly scope
+        // opened for this call's parameters is invisible to
+        // `recover_call_frames_after_panic` -- a plain `exit_readonly_frame`
+        // statement near this function's end would be skipped by a Rust
+        // panic unwinding through the body loop below, permanently leaving
+        // the parameter's bare name readonly. The guard closes the scope on
+        // every exit path, including that unwind.
+        let _readonly_guard = crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(self);
         // A routine gets a fresh, writable `$_` — it does NOT inherit the
         // caller's topic, so a caller `given`/`with`/`for` that marked `_`
         // readonly (a literal/read-only topic) must not leak that mark into this
@@ -181,7 +190,7 @@ impl Interpreter {
                 if let Some(ref tc) = cf.param_defs[param_idx].type_constraint
                     && !Self::fast_type_check(&val, tc)
                 {
-                    self.exit_readonly_frame(saved_readonly);
+                    // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
                     match caller_env {
                         Some(caller_env) => self.set_env(caller_env),
                         // Reused frame: drop every by-name write made since
@@ -407,7 +416,7 @@ impl Interpreter {
         self.loop_local_saved_env = saved_loop_local_saved_env;
         self.active_loop_param_names = saved_active_loop_param_names;
         self.block_declared_vars = saved_block_declared_vars;
-        self.exit_readonly_frame(saved_readonly);
+        // (Readonly scope closed by `_readonly_guard`'s `Drop`.)
 
         // Restore the caller env and merge the overlay (the callee's own writes)
         // back: a write to a captured outer variable (not a declared local of

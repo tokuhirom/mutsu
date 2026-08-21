@@ -350,6 +350,84 @@ impl Drop for ThreadParamMaskGuard {
     }
 }
 
+/// RAII guard restoring [`Interpreter`]'s readonly-parameter marking on drop
+/// -- including when a Rust panic unwinds through the guarded call. See
+/// `news/2026-08/readonly-param-mark-panic-unwind-raii-guard.md` for the bug
+/// this closes (the sibling of `ThreadParamMaskGuard`'s fix, for a
+/// completely separate backing mechanism) and
+/// `Interpreter::enter_readonly_frame`/`exit_readonly_frame` for the
+/// journal/scope-sentinel design this guard makes panic-safe.
+///
+/// `call_compiled_function_positional_light` (`vm_call_light.rs`) and its
+/// typed cousin (`vm_call_light_typed.rs`) open a readonly scope with
+/// `enter_readonly_frame()` and closed it with a plain, sequential
+/// `exit_readonly_frame(mark)` call near the function's end -- unlike
+/// `call_compiled_function_named_inner`, this fast path bypasses
+/// `push_call_frame` entirely (see that function's own doc comments), so the
+/// scope was never registered on `call_frames` and `recover_call_frames_after_panic`
+/// (the `catch_unwind` boundary's rollback) could not reach it. A Rust panic
+/// raised inside the callee's body (e.g. an arithmetic overflow indexing an
+/// array) unwound straight past the `exit_readonly_frame` call, permanently
+/// leaving the parameter's bare name marked readonly in `Interpreter::readonly_vars`
+/// -- corrupting any later, completely unrelated same-named lexical.
+///
+/// Like [`ThreadParamMaskGuard`], the readonly journal's rollback (see
+/// [`crate::runtime::replay_readonly_undo`]) mutates a whole journal/set, not
+/// a single scalar, so this guard follows the same two-`RefCell`-plus-`Cell`
+/// shape: `readonly_vars`/`readonly_undo` are boxed as `RefCell` (not `Copy`,
+/// so `Cell`'s get/set API doesn't fit), `readonly_frames` as a plain `Cell<u32>`.
+pub(crate) struct ReadonlyFrameGuard {
+    /// Raw pointer into `readonly_vars`'s OWN `Box` allocation -- never a
+    /// pointer to `Interpreter` itself.
+    vars_cell: *const std::cell::RefCell<crate::runtime::ReadonlySet>,
+    /// Raw pointer into `readonly_undo`'s OWN `Box` allocation.
+    undo_cell: *const std::cell::RefCell<Vec<crate::runtime::ReadonlyUndo>>,
+    /// Raw pointer into `readonly_frames`'s OWN `Box` allocation.
+    frames_cell: *const Cell<u32>,
+    /// The rollback mark returned by `enter_readonly_frame` (an index into
+    /// the undo journal, not a scalar value to restore).
+    mark: usize,
+}
+
+impl ReadonlyFrameGuard {
+    /// Opens a readonly scope (via `enter_readonly_frame`) and returns a
+    /// guard that closes it (via `replay_readonly_undo`) on drop.
+    pub(crate) fn new(interp: &mut Interpreter) -> Self {
+        let mark = interp.enter_readonly_frame();
+        ReadonlyFrameGuard {
+            vars_cell: &*interp.readonly_vars
+                as *const std::cell::RefCell<crate::runtime::ReadonlySet>,
+            undo_cell: &*interp.readonly_undo
+                as *const std::cell::RefCell<Vec<crate::runtime::ReadonlyUndo>>,
+            frames_cell: &*interp.readonly_frames as *const Cell<u32>,
+            mark,
+        }
+    }
+}
+
+impl Drop for ReadonlyFrameGuard {
+    fn drop(&mut self) {
+        // SAFETY: `vars_cell`/`undo_cell`/`frames_cell` were taken from those
+        // fields' own `Box` allocations at construction (see the module
+        // doc's "v3" section); those allocations outlive the guard and never
+        // move (the `Box`es are not reassigned while the guard is alive --
+        // `take_readonly_state`/`restore_readonly_state`, the only other
+        // mutators of these fields' identity, swap the boxed CONTENTS in
+        // place rather than the `Box`es themselves, precisely so a guard like
+        // this one stays valid across them). This never forms a reference to
+        // `Interpreter` itself, so it is unaffected by any `&mut self` calls
+        // made elsewhere while the guard was alive.
+        unsafe {
+            crate::runtime::replay_readonly_undo(
+                &*self.vars_cell,
+                &*self.undo_cell,
+                &*self.frames_cell,
+                self.mark,
+            );
+        }
+    }
+}
+
 impl Drop for MarkContextGuard {
     fn drop(&mut self) {
         // SAFETY: see the module doc's "v3" section -- each pointer was taken
