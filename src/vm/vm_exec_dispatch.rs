@@ -1429,14 +1429,13 @@ impl Interpreter {
                             self.locals[source_idx] = container.clone();
                             self.flush_local_to_env(code, source_idx);
                         }
-                        // Propagate to saved call frames (env AND locals) so
-                        // the binding survives method returns (env restore)
-                        // instead of reverting to a stale value. See
+                        // Propagate to saved call frame envs so the binding
+                        // survives method returns (env restore) instead of
+                        // reverting to a stale value. See
                         // `propagate_bind_to_ancestor_frames`'s doc comment
-                        // for why the `saved_locals` half of this is a no-op
-                        // outside same-function recursion, and what actually
-                        // carries the binding in the general case.
-                        self.propagate_bind_to_ancestor_frames(&resolved_source, code, &container);
+                        // for what actually carries the binding across the
+                        // call chain.
+                        self.propagate_bind_to_ancestor_frames(&resolved_source, &container);
                         // Persist ContainerRef in our_vars for `our` variables.
                         // Store under both the bare name and any existing
                         // package-qualified variants (e.g., "K::x" for bare "x")
