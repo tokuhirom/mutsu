@@ -2783,17 +2783,28 @@ impl Interpreter {
         // metadata-tagged target, so the result is always the untyped `Any`
         // default -- exactly what the old hardcoded `nil_elems_to_any` call
         // produced here, now sourced from the one shared decay helper.
+        // ADR-0040 slice 1: itemize per element, after the one-arg-rule
+        // flattening decision (and after Nil-decay), so a single pushed
+        // aggregate becomes one itemized element.
         let mut precomputed_args = match method {
             // `@a.push`/`.unshift` compile to `ArrayPush`/(unshift opcode)
             // only for a single-arg call on a *local* array; the
             // captured-closure and multi-arg forms reach here as
             // `CallMethodMut`. Mirror the opcode's env-bound branch
             // (`normalize_push_unshift_args` then extend/insert).
-            "push" | "unshift" => Some(self.decay_nil_vec_elements(
-                crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec()),
-            )),
+            "push" | "unshift" => Some(
+                self.decay_nil_vec_elements(
+                    crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec()),
+                )
+                .into_iter()
+                .map(Self::itemize_value)
+                .collect::<Vec<_>>(),
+            ),
             "append" | "prepend" => Some(
-                self.decay_nil_vec_elements(crate::runtime::flatten_append_args(args.to_vec())),
+                self.decay_nil_vec_elements(crate::runtime::flatten_append_args(args.to_vec()))
+                    .into_iter()
+                    .map(Self::itemize_value)
+                    .collect::<Vec<_>>(),
             ),
             _ => None,
         };
@@ -2922,9 +2933,14 @@ impl Interpreter {
                 return None;
             }
             Some(match method {
+                // ADR-0040 slice 1: itemize per element, after the
+                // one-arg-rule flattening decision.
                 "push" => {
                     let norm =
-                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
+                            .into_iter()
+                            .map(crate::runtime::Interpreter::itemize_value)
+                            .collect::<Vec<_>>();
                     crate::gc::Gc::make_mut(arc_items).extend(norm);
                     Value::array_with_kind(
                         crate::gc::Gc::clone(arc_items),
@@ -2932,7 +2948,10 @@ impl Interpreter {
                     )
                 }
                 "append" => {
-                    let flat = crate::runtime::flatten_append_args(args.to_vec());
+                    let flat = crate::runtime::flatten_append_args(args.to_vec())
+                        .into_iter()
+                        .map(crate::runtime::Interpreter::itemize_value)
+                        .collect::<Vec<_>>();
                     crate::gc::Gc::make_mut(arc_items).extend(flat);
                     Value::array_with_kind(
                         crate::gc::Gc::clone(arc_items),
@@ -2941,7 +2960,10 @@ impl Interpreter {
                 }
                 "unshift" => {
                     let norm =
-                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec());
+                        crate::runtime::Interpreter::normalize_push_unshift_args(args.to_vec())
+                            .into_iter()
+                            .map(crate::runtime::Interpreter::itemize_value)
+                            .collect::<Vec<_>>();
                     let items = crate::gc::Gc::make_mut(arc_items);
                     for (i, v) in norm.into_iter().enumerate() {
                         items.insert(i, v);
@@ -2952,7 +2974,10 @@ impl Interpreter {
                     )
                 }
                 "prepend" => {
-                    let flat = crate::runtime::flatten_append_args(args.to_vec());
+                    let flat = crate::runtime::flatten_append_args(args.to_vec())
+                        .into_iter()
+                        .map(crate::runtime::Interpreter::itemize_value)
+                        .collect::<Vec<_>>();
                     let items = crate::gc::Gc::make_mut(arc_items);
                     for (i, v) in flat.into_iter().enumerate() {
                         items.insert(i, v);

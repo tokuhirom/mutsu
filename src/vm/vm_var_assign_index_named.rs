@@ -1883,7 +1883,10 @@ impl Interpreter {
                 }
                 // Native integer arrays store the wrapped value (`-1` -> `255` in a
                 // uint8 array); the assignment expression still yields the original.
-                let native_store_val = self.wrap_native_int_for_var(&var_name, val.clone());
+                // ADR-0040 slice 1: itemize after native-wrapping (a no-op for a
+                // native scalar; itemize_value only touches Array/Hash/Seq/Mixin).
+                let native_store_val =
+                    Self::itemize_value(self.wrap_native_int_for_var(&var_name, val.clone()));
                 // Resolve GenericRange with WhateverCode endpoints (e.g. @a[*-4 .. *-1] = ...)
                 let resolved_idx;
                 let idx_for_slice = if let ValueView::GenericRange { .. } = idx.view() {
@@ -2203,9 +2206,16 @@ impl Interpreter {
                             } else if elem_is_value_share {
                                 // Slice 2b: replace the `=`-shared cell rather than
                                 // write through it, so the source stays unaffected.
-                                hd.map.insert(key.clone(), val.clone());
+                                // ADR-0040 slice 1: itemize the stored value.
+                                hd.map
+                                    .insert(key.clone(), Self::itemize_value(val.clone()));
                             } else {
-                                Value::hash_insert_through(&mut hd.map, key.clone(), val.clone());
+                                // ADR-0040 slice 1: itemize the stored value.
+                                Value::hash_insert_through(
+                                    &mut hd.map,
+                                    key.clone(),
+                                    Self::itemize_value(val.clone()),
+                                );
                             }
                             // For object hashes, store the original key object in
                             // the embedded `original_keys` map (COW-stable). Skip
@@ -2450,11 +2460,12 @@ impl Interpreter {
                             && let Some(i) = Self::index_to_usize(&idx)
                         {
                             let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
-                            arr[i] = val.clone();
+                            // ADR-0040 slice 1: itemize the stored value.
+                            arr[i] = Self::itemize_value(val.clone());
                             *container = Value::real_array_initialized_at(arr, i);
                         } else {
                             let mut hash = std::collections::HashMap::new();
-                            hash.insert(key.clone(), val.clone());
+                            hash.insert(key.clone(), Self::itemize_value(val.clone()));
                             let mut hash_val = Value::hash(hash);
                             if use_which {
                                 let mut orig = HashMap::new();
@@ -2470,12 +2481,13 @@ impl Interpreter {
                         && let Some(i) = Self::index_to_usize(&idx)
                     {
                         let mut arr = vec![Value::package(Symbol::intern("Any")); i + 1];
-                        arr[i] = val.clone();
+                        // ADR-0040 slice 1: itemize the stored value.
+                        arr[i] = Self::itemize_value(val.clone());
                         self.env_mut()
                             .insert(var_name.clone(), Value::real_array_initialized_at(arr, i));
                     } else {
                         let mut hash = std::collections::HashMap::new();
-                        hash.insert(key.clone(), val.clone());
+                        hash.insert(key.clone(), Self::itemize_value(val.clone()));
                         let mut hash_val = Value::hash(hash);
                         if use_which {
                             let mut orig = HashMap::new();
@@ -3006,11 +3018,17 @@ impl Interpreter {
                         ValueView::Array(..) | ValueView::Hash(..) | ValueView::ContainerRef(_)
                     );
                     if needs_viv {
-                        arr[inner_i] = if outer_positional {
+                        // ADR-0040 slice 1: the freshly-autovivified intermediate
+                        // container itself becomes a real stored element of
+                        // `arr`, so it itemizes just like any other Array/Hash
+                        // element store (`@a[5][0] = 1` autovivifies `@a[5]`,
+                        // and `@a[5].raku` is `$[1]` in raku, not `[1]`).
+                        arr[inner_i] = (if outer_positional {
                             Value::real_array(Vec::new())
                         } else {
                             Value::hash(std::collections::HashMap::new())
-                        };
+                        })
+                        .itemize_for_element_store();
                     }
                     // A bound element holds a shared cell: write through it so the
                     // mutation reaches the aliased container (`@h[i] := @inner;
@@ -3079,12 +3097,15 @@ impl Interpreter {
                         unsafe { crate::value::gc_contents_mut(outer_hash) };
                     // Vivify the missing entry as Array if the OUTER (second) subscript
                     // is positional (e.g. `%h<key>[42] = ...`), otherwise as Hash.
+                    // ADR-0040 slice 1: itemized at the store, same as the
+                    // array-outer-container arm above.
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
-                        if outer_positional {
+                        (if outer_positional {
                             Value::real_array(Vec::new())
                         } else {
                             Value::hash(std::collections::HashMap::new())
-                        }
+                        })
+                        .itemize_for_element_store()
                     });
                     Self::assign_into_nested_container(inner_val, &outer_key, val.clone())?;
                     Ok(())

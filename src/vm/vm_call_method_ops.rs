@@ -570,20 +570,42 @@ impl Interpreter {
         // is the one introspection method that wants the container itself, and
         // `^name`/`WHAT` right after a `.VAR` report the container type (raku:
         // `$obj.attr.VAR.^name` is "Scalar", not the inner value's type).
-        let target = if matches!(target.view(), ValueView::ContainerRef(_)) && method != "VAR" {
-            if args.is_empty() && matches!(method, "^name" | "WHAT") {
-                crate::vm::vm_stats::record_dispatch_entry_intercept(
-                    "callmethod",
-                    "containerref-scalar-meta",
-                );
-                self.stack.push(if method == "^name" {
-                    Value::str("Scalar".to_string())
-                } else {
-                    Value::package(crate::symbol::Symbol::intern("Scalar"))
-                });
-                return Ok(());
+        let target = if method != "VAR" {
+            match target.view() {
+                ValueView::ContainerRef(_) => {
+                    if args.is_empty() && matches!(method, "^name" | "WHAT") {
+                        crate::vm::vm_stats::record_dispatch_entry_intercept(
+                            "callmethod",
+                            "containerref-scalar-meta",
+                        );
+                        self.stack.push(if method == "^name" {
+                            Value::str("Scalar".to_string())
+                        } else {
+                            Value::package(crate::symbol::Symbol::intern("Scalar"))
+                        });
+                        return Ok(());
+                    }
+                    target.deref_container()
+                }
+                // ADR-0040 slice 1: a reference-pushed element
+                // (`@a.push(@b)`; `@a[0]` is `$`-itemized around a shared
+                // `ContainerRef` alias, i.e. `Scalar(ContainerRef(cell))`)
+                // is transparent to MOST method dispatch the same way a bare
+                // `ContainerRef` is — `@a[0].elems` must see `@b`'s live
+                // element count, not treat the wrapper as one item. But
+                // unlike the bare-`ContainerRef` case above, the itemization
+                // itself lives ONLY in this outer `Scalar` — stripping it
+                // before a renderer (`raku`/`gist`/`perl`) runs would lose
+                // the very `$` the wrapper exists to produce, so those three
+                // keep the Scalar wrapper intact (mirrors the `VAR`
+                // exception above).
+                ValueView::Scalar(inner)
+                    if inner.is_container_ref() && !matches!(method, "raku" | "gist" | "perl") =>
+                {
+                    inner.deref_container()
+                }
+                _ => target,
             }
-            target.deref_container()
         } else {
             target
         };

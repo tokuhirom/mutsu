@@ -85,9 +85,11 @@ impl Interpreter {
         // Commit: pop idx then val and write through the shared cell.
         let idx = self.stack.pop().unwrap();
         let val = self.stack.pop().unwrap();
+        // ADR-0040 slice 1: a real Hash element is a Scalar container, so an
+        // aggregate stored into it itemizes (`%h{$k} = [1,2]` -> `$[1, 2]`).
         match loan_env!(
             self,
-            assign_hash_elem_to_shared_var(&var_name, key, val.clone())
+            assign_hash_elem_to_shared_var(&var_name, key, Self::itemize_value(val.clone()))
         ) {
             Some(_) => {
                 self.stack.push(val);
@@ -169,9 +171,10 @@ impl Interpreter {
         // Commit: pop idx then val and write through the shared cell.
         let idx_val = self.stack.pop().unwrap();
         let val = self.stack.pop().unwrap();
+        // ADR-0040 slice 1: same itemize-at-store as the hash twin above.
         match loan_env!(
             self,
-            assign_array_elem_to_shared_var(&var_name, idx, val.clone())
+            assign_array_elem_to_shared_var(&var_name, idx, Self::itemize_value(val.clone()))
         ) {
             Some(_) => {
                 self.stack.push(val);
@@ -350,10 +353,13 @@ impl Interpreter {
                 }
                 if let Some(entry) = self.env_mut().get_mut(var_name) {
                     entry.with_hash_mut(|hash| {
+                        // ADR-0040 slice 1: itemize the stored value, not the
+                        // rvalue pushed below (that push is a pre-existing,
+                        // separate scalar-context-itemization concern).
                         Value::hash_insert_through(
                             &mut crate::gc::Gc::make_mut(hash).map,
                             key.clone(),
-                            val.clone(),
+                            Self::itemize_value(val.clone()),
                         );
                     });
                 }
@@ -417,7 +423,8 @@ impl Interpreter {
                 let val = self.stack.pop().unwrap();
                 let key = idx.to_string_value();
                 let mut map = std::collections::HashMap::new();
-                map.insert(key.clone(), val.clone());
+                // ADR-0040 slice 1: itemize the stored value.
+                map.insert(key.clone(), Self::itemize_value(val.clone()));
                 self.env_mut()
                     .insert(var_name.to_string(), Value::hash(map));
                 // Sync OS environment when %*ENV is modified
@@ -511,6 +518,32 @@ impl Interpreter {
         // A lazy `@`-array must reify its prefix before an element assignment
         // (`@a[i] = v`) — the assign machinery needs a materialized backing. (L2)
         self.reify_lazy_array_slot(Self::const_str(code, name_idx))?;
+        // ADR-0040 slice 1: itemize the rvalue BEFORE any of the fast/slow
+        // dispatch paths below run, so every element-assign destination (the
+        // shared-var fast paths, the plain-hash fast path, and the full slow
+        // path in vm_var_assign_index_named.rs) stores the same already-
+        // itemized value — a single hook rather than patching each of the
+        // dozens of `items_mut()[i] = ...` sites those paths contain.
+        // Gated on a plain `Int`/`Str` index — the same "simple single
+        // index" shape `elem_share_mark` below already tests — because a
+        // complex index (`Array`/`Range`/`Junction`/`Whatever`/`Slip`/...)
+        // may be a SLICE assignment (`@a[0,1] = (1,2),(3,4)`), whose
+        // per-target element needs its OWN store-time itemization applied
+        // deeper in the slow path, not a single itemization of the whole
+        // RHS list here.
+        {
+            let stack_len = self.stack.len();
+            if stack_len >= 2
+                && matches!(
+                    self.stack[stack_len - 1].view(),
+                    ValueView::Int(_) | ValueView::Str(_)
+                )
+            {
+                let slot = &mut self.stack[stack_len - 2];
+                let old = std::mem::replace(slot, Value::NIL);
+                *slot = old.itemize_for_element_store();
+            }
+        }
         // Slice 2b: `@aoa[i] = @row` / `%h<k> = @row` was compiled as a `:=` bind
         // (so the bind machinery installs a shared `ContainerRef` cell and
         // promotes the source) plus a `MarkElementShare` flag. Capture which

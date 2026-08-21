@@ -60,8 +60,16 @@ pub(crate) fn phaser_prepost_error(is_pre: bool, condition: &str) -> RuntimeErro
 /// Flatten arguments for `append` using Raku's "one-arg rule":
 /// if exactly one non-itemized Array/List argument is passed, its elements
 /// are flattened into the result. With multiple arguments, each is appended as-is.
+///
+/// ADR-0040 slice 1: the returned `Vec<Value>` is the final, post-flattening
+/// per-element list for every call site (~13 of them) that extends a real
+/// Array with it, so each element is itemized here — after the one-arg-rule
+/// decision above, never before it (an itemized single Array argument must
+/// stay itemized and NOT flatten: `!kind.is_itemized()` already guards that;
+/// a flattened element that is itself an aggregate, e.g.
+/// `@x.append(([1,2],[3,4]))`, itemizes too, matching raku).
 pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
-    if args.len() == 1 {
+    let flattened = if args.len() == 1 {
         match args[0].view() {
             ValueView::Array(vals, kind) if !kind.is_itemized() => vals.to_vec(),
             ValueView::Seq(vals) => vals.to_vec(),
@@ -84,7 +92,11 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
         }
     } else {
         args
-    }
+    };
+    flattened
+        .into_iter()
+        .map(Value::itemize_for_element_store)
+        .collect()
 }
 
 /// Split a string by commas while respecting bracket/paren depth.

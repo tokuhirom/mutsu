@@ -93,9 +93,14 @@ impl Interpreter {
                     ValueView::Array(..)
                 );
                 if is_cell_array {
-                    let items = match val.view() {
-                        ValueView::Slip(items) => items.to_vec(),
-                        _ => vec![val],
+                    // ADR-0040 slice 1: itemize per element, after Slip
+                    // expansion, so arity is unaffected and only the stored
+                    // value gains the Scalar-container property.
+                    let items: Vec<Value> = match val.view() {
+                        ValueView::Slip(items) => {
+                            items.iter().cloned().map(Self::itemize_value).collect()
+                        }
+                        _ => vec![Self::itemize_value(val)],
                     };
                     let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
                     (*guard).with_array_mut(|arc, _| {
@@ -129,9 +134,12 @@ impl Interpreter {
                 && !self.container_name_is_redeclared(target_name)
                 && (self.is_thread_clone() || self.array_name_is_shared(target_name))
             {
-                let items = match val.view() {
-                    ValueView::Slip(items) => items.to_vec(),
-                    _ => vec![val],
+                // ADR-0040 slice 1: itemize per element, after Slip expansion.
+                let items: Vec<Value> = match val.view() {
+                    ValueView::Slip(items) => {
+                        items.iter().cloned().map(Self::itemize_value).collect()
+                    }
+                    _ => vec![Self::itemize_value(val)],
                 };
                 let result = self.shared_array_extend(target_name, items, false);
                 self.stack.push(result);
@@ -186,7 +194,16 @@ impl Interpreter {
                 self.update_local_if_exists(code, &src_name, &cell_val);
                 cell
             });
-            val = Value::container_ref(cell);
+            // ADR-0040 slice 1: the pushed ELEMENT (read back via `@a[i]`)
+            // is itemized -- `@a.push(@b); @a[0].raku` is `$[1, 2]` in
+            // raku, not `[1, 2]` -- even though `@b` read directly stays
+            // bare (`@b.raku` is `[1, 2]`). Wrapping the shared `ContainerRef`
+            // itself in an outer `Scalar` (rather than flipping the cell's
+            // own inner `ArrayKind`) keeps the two readers independent: the
+            // cell's content is untouched, so `@b`'s own binding (which
+            // reads the bare `ContainerRef` directly) is unaffected, while
+            // `@a[i]`'s element holds the Scalar-wrapped alias.
+            val = Value::container_ref(cell).item();
         }
 
         // Empty (empty Slip) means nothing to push -- return the array as-is.
@@ -236,14 +253,15 @@ impl Interpreter {
                 // Container identity (§3): write through the shared backing
                 // node so by-value holders of the same array observe the push.
                 let mut val_slot = Some(val);
+                // ADR-0040 slice 1: itemize per element, after Slip expansion.
                 let pushed = inner
                     .with_array_inplace(|data, _| {
                         let val = val_slot.take().expect("push value present");
                         match val.view() {
-                            ValueView::Slip(slip_items) => {
-                                data.items_mut().extend(slip_items.iter().cloned())
-                            }
-                            _ => data.items_mut().push(val),
+                            ValueView::Slip(slip_items) => data
+                                .items_mut()
+                                .extend(slip_items.iter().cloned().map(Self::itemize_value)),
+                            _ => data.items_mut().push(Self::itemize_value(val)),
                         }
                     })
                     .is_some();
@@ -267,15 +285,16 @@ impl Interpreter {
         // Container identity (§3): append through the shared backing node —
         // no COW, no local-slot zeroing dance — so every by-value holder of
         // the same array (a `(0, @a)` capture, an element) sees the push.
+        // ADR-0040 slice 1: itemize per element, after Slip expansion.
         let target = self.env().get(target_name).cloned();
         let pushed = target.as_ref().and_then(|v| {
             v.with_array_inplace(|data, _| {
                 let val = val_slot.take().expect("push value present");
                 match val.view() {
-                    ValueView::Slip(slip_items) => {
-                        data.items_mut().extend(slip_items.iter().cloned())
-                    }
-                    _ => data.items_mut().push(val),
+                    ValueView::Slip(slip_items) => data
+                        .items_mut()
+                        .extend(slip_items.iter().cloned().map(Self::itemize_value)),
+                    _ => data.items_mut().push(Self::itemize_value(val)),
                 }
             })
         });
@@ -285,8 +304,14 @@ impl Interpreter {
                 let val = val_slot.take().expect("push value present");
                 // Auto-vivify: create new array
                 let arr = match val.view() {
-                    ValueView::Slip(slip_items) => Value::real_array(slip_items.to_vec()),
-                    _ => Value::real_array(vec![val]),
+                    ValueView::Slip(slip_items) => Value::real_array(
+                        slip_items
+                            .iter()
+                            .cloned()
+                            .map(Self::itemize_value)
+                            .collect(),
+                    ),
+                    _ => Value::real_array(vec![Self::itemize_value(val)]),
                 };
                 self.env_mut().insert(target_name.to_string(), arr.clone());
                 arr

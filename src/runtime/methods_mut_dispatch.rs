@@ -764,6 +764,13 @@ impl Interpreter {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
                     let normalized_args = nil_to_elem_default(self, normalized_args);
+                    // ADR-0040 slice 1: itemize per element, after the
+                    // one-arg-rule flattening decision, so a single pushed
+                    // aggregate becomes one itemized element.
+                    let normalized_args: Vec<Value> = normalized_args
+                        .into_iter()
+                        .map(Self::itemize_value)
+                        .collect();
                     let result = self.push_to_shared_var(&key, normalized_args, &target);
                     self.reattach_array_type_metadata(&key, &saved_meta);
                     return Ok(result);
@@ -780,6 +787,10 @@ impl Interpreter {
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
                     let flat_values = nil_to_elem_default(self, flat_values);
+                    // ADR-0040 slice 1: itemize per element, after the
+                    // one-arg-rule flattening decision.
+                    let flat_values: Vec<Value> =
+                        flat_values.into_iter().map(Self::itemize_value).collect();
                     // ADR-0039 slice 1: `key` may be a compunit unit-lexical
                     // `@`/`%` (module file-scope, or a mainline named sub's
                     // captured free variable), whose authoritative storage is a
@@ -823,6 +834,12 @@ impl Interpreter {
                     let normalized_args = Self::normalize_push_unshift_args(args);
                     self.check_container_element_types(&key, &target, &normalized_args)?;
                     let normalized_args = nil_to_elem_default(self, normalized_args);
+                    // ADR-0040 slice 1: itemize per element, after the
+                    // one-arg-rule flattening decision.
+                    let normalized_args: Vec<Value> = normalized_args
+                        .into_iter()
+                        .map(Self::itemize_value)
+                        .collect();
                     // ADR-0039 slice 1: see the twin comment on the `append`
                     // arm above — `env_root_descended_mut` is required here for
                     // the same reason.
@@ -858,6 +875,10 @@ impl Interpreter {
                     );
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
+                    // ADR-0040 slice 1: itemize per element, after the
+                    // one-arg-rule flattening decision.
+                    let flat_values: Vec<Value> =
+                        flat_values.into_iter().map(Self::itemize_value).collect();
                     // ADR-0039 slice 1: see the twin comment on the `append`
                     // arm above.
                     let result = if let Some(slot) = self.env_root_descended_mut(&key)
@@ -1030,7 +1051,18 @@ impl Interpreter {
                                 ValueView::Array(arr, ..) => {
                                     new_items.extend(arr.iter().cloned());
                                 }
-                                _ => new_items.push(arg.clone()),
+                                // ADR-0040 slice 1: a replacement arg kept
+                                // whole (not flattened above) becomes one
+                                // stored element, itemized like any other
+                                // element store. NOTE: the Array arm above
+                                // has a pre-existing, unrelated arity bug —
+                                // see todo/tickets/splice-multi-arg-array-
+                                // incorrectly-flattens.md — this only
+                                // itemizes whatever this function already
+                                // decides to keep as one element (e.g. a
+                                // Range discrete arg, which is unaffected by
+                                // that bug).
+                                _ => new_items.push(arg.clone().itemize_for_element_store()),
                             }
                         }
                         let removed: Vec<Value> = items.drain(start..end).collect();

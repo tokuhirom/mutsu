@@ -247,10 +247,15 @@ impl Interpreter {
         };
         match method {
             "push" | "append" | "unshift" | "prepend" => {
+                // ADR-0040 slice 1: itemize per element, after the
+                // one-arg-rule flattening decision.
                 let vals: Vec<Value> = match method {
                     "push" | "unshift" => Self::normalize_push_args_for_copy(args),
                     _ => flatten_append_args(args),
-                };
+                }
+                .into_iter()
+                .map(Self::itemize_value)
+                .collect();
                 let front = matches!(method, "unshift" | "prepend");
                 target.with_array_inplace(|data, _| {
                     if front {
@@ -343,17 +348,13 @@ impl Interpreter {
     }
 
     /// Normalize push/unshift arguments (unwrap Scalar containers, deitemize).
+    /// ADR-0040 slice 1: the by-value-invocant push/unshift counterpart of
+    /// `Interpreter::normalize_push_unshift_args` (`methods_mut.rs`) — same
+    /// reversal, same reason: itemize the stored element instead of
+    /// stripping an incoming itemization.
     pub(super) fn normalize_push_args_for_copy(args: Vec<Value>) -> Vec<Value> {
         args.into_iter()
-            .map(|arg| {
-                // Unwrap a Scalar container; Array (itemized or not) and all other
-                // values pass through unchanged.
-                if let ValueView::Scalar(inner) = arg.view() {
-                    inner.clone()
-                } else {
-                    arg
-                }
-            })
+            .map(Value::itemize_for_element_store)
             .collect()
     }
 

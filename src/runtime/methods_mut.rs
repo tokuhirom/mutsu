@@ -174,29 +174,26 @@ impl Interpreter {
         }
     }
 
+    /// ADR-0040 slice 1: this used to STRIP an incoming Scalar wrapper /
+    /// itemized-Array kind on the way into push/unshift, because mutsu did
+    /// not itemize at the store and any incoming itemization was thus a
+    /// leftover to discard. Under the store-side model that is exactly
+    /// backwards: an aggregate handed to push/unshift as a single element
+    /// (the one-arg rule) must become the STORED element's itemization, so
+    /// this now itemizes instead of stripping — the one counter-current the
+    /// ADR names (§2 part 3).
     fn normalize_push_unshift_arg(arg: Value) -> Value {
-        match arg.view() {
-            ValueView::Scalar(inner) => inner.clone(),
-            ValueView::Array(items, kind) if kind.is_itemized() => {
-                Value::array_with_kind(items.clone(), kind.decontainerize())
-            }
-            _ => arg,
-        }
+        arg.itemize_for_element_store()
     }
 
     pub(crate) fn normalize_push_unshift_args(args: Vec<Value>) -> Vec<Value> {
-        let needs_normalize = args.iter().any(|arg| match arg.view() {
-            ValueView::Scalar(_) => true,
-            ValueView::Array(_, kind) => kind.is_itemized(),
-            ValueView::Slip(_) => true,
-            _ => false,
-        });
-        if !needs_normalize {
-            return args;
-        }
         args.into_iter()
             .flat_map(|arg| match arg.view() {
-                ValueView::Slip(items) => items.to_vec(),
+                ValueView::Slip(items) => items
+                    .iter()
+                    .cloned()
+                    .map(Self::normalize_push_unshift_arg)
+                    .collect::<Vec<_>>(),
                 _ => vec![Self::normalize_push_unshift_arg(arg)],
             })
             .collect()

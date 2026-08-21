@@ -538,6 +538,28 @@ pub(crate) fn value_to_list(val: &Value) -> Vec<Value> {
     }
 }
 
+/// Decompose a method-call RECEIVER into its own elements, ignoring the
+/// receiver's own itemization (a `Scalar` wrapper, an itemized `ArrayKind`,
+/// or a hash's itemized flag). `value_to_list`'s itemization checks answer
+/// "does this value flatten when it is an ELEMENT of some other container"
+/// (ADR-0040) — a different question from "what are MY OWN elements",
+/// which is what `.pick`/`.roll`/`.hyper`/`.race`/etc. need when `val` is
+/// the receiver they were called on. Reusing `value_to_list` unmodified for
+/// that purpose silently "rolls"/"picks" the whole itemized value instead
+/// of one of its elements (e.g. `%h<a>.roll` on a nested-autovivified,
+/// itemized `%h<a>` returned the Hash itself instead of a random Pair).
+pub(crate) fn value_to_list_for_receiver(val: &Value) -> Vec<Value> {
+    let bare = val.descalarize();
+    let bare = match bare.view() {
+        ValueView::Array(items, kind) if kind.is_itemized() => {
+            Value::array_with_kind(items.clone(), kind.decontainerize())
+        }
+        ValueView::Hash(_) if bare.hash_is_itemized() => bare.clone().with_hash_itemized(false),
+        _ => bare.clone(),
+    };
+    value_to_list(&bare)
+}
+
 /// True when a subscript range dimension has no usable finite end: `1..*` /
 /// `1^..Inf` style (a Whatever end lowers to `Inf`, and an integer-range end of
 /// `i64::MAX` is the same thing forced through an int range). Expanding such a
