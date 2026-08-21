@@ -163,6 +163,29 @@ impl Interpreter {
         // (e.g., a cross-scope `:=` binding was established during a function/method
         // call and propagated back to env but not to locals), adopt the ContainerRef.
         // Skip for type objects and complex values that should not be replaced.
+        //
+        // Overlay-only lookup (`overlay_get`/`overlay_get_sym`), NOT `get`/`get_sym`:
+        // this frame's own local slot must never adopt a same-named ANCESTOR call
+        // frame's container. `call_compiled_function_positional_light` (and the
+        // other scoped-env call paths) chain the callee's env as a *scoped child*
+        // of the live caller env for perf (no per-call flatten/clone); when a
+        // recursive call's own by-name env mirror is skipped for this param
+        // (`needs_env_sync` false — the common case for a plain scalar param only
+        // ever read via its slot), a plain `get`/`get_sym` here falls through the
+        // parent chain and can find the CALLER's own same-named variable instead —
+        // e.g. a recursive `sub rec($n) { my @v = ($n,); ... rec($n - 1) ... }`
+        // where the trailing-comma list literal boxes `$n`'s slot into a shared
+        // `ContainerRef` (so `@v`'s element aliases `$n`'s container) and mirrors
+        // it into env: the callee's fresh `$n = 0` binding got silently replaced
+        // by the caller's own boxed `$n` cell (still holding `1`), which never
+        // decremented — an Raku-level infinite recursion that overflowed the
+        // native Rust stack (`todo/deep/recursive-sub-trailing-comma-array-
+        // literal-of-own-param-stack-overflow.md`). `overlay_get`/`overlay_get_sym`
+        // read only this frame's own overlay (still enough for the *intended*
+        // same-call-frame propagation case in the comment above, since a plain
+        // function/method body runs under a single env tier — nested blocks do
+        // not push their own `scoped_child`), so an ancestor frame's container can
+        // never be picked up here.
         if !self.locals[idx].is_container_ref()
             // A lazy Match counts as an Instance here — probed by tag so this
             // per-GetLocal check cannot materialize it.
@@ -177,10 +200,10 @@ impl Interpreter {
             )
             // Probe via the pre-interned Symbol (this read runs on every
             // GetLocal — a by-name lookup would re-intern per read).
-            && let Some(env_hit) = code
-                .locals_sym
-                .get(idx)
-                .map_or_else(|| self.env().get(name), |sym| self.env().get_sym(*sym))
+            && let Some(env_hit) = code.locals_sym.get(idx).map_or_else(
+                || self.env().overlay_get(name),
+                |sym| self.env().overlay_get_sym(*sym),
+            )
             && let Some(arc) = match env_hit.view() {
                 ValueView::ContainerRef(arc) => Some(arc.clone()),
                 _ => None,
