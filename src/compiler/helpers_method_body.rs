@@ -188,13 +188,7 @@ impl Compiler {
         is_lexical: bool,
         decl_id: u64,
     ) -> String {
-        let base_package: &str = if self.current_package.contains("::&") {
-            self.enclosing_package
-                .as_deref()
-                .unwrap_or(&self.current_package)
-        } else {
-            &self.current_package
-        };
+        let base_package: &str = self.runtime_current_package();
         let qualified = if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
         } else if base_package == "GLOBAL"
@@ -236,13 +230,7 @@ impl Compiler {
     /// that starts with the current package prefix. Uses the same
     /// state-scope `enclosing_package` fallback.
     pub(super) fn qualified_role_decl_name(&self, resolved_name: &str) -> String {
-        let base_package: &str = if self.current_package.contains("::&") {
-            self.enclosing_package
-                .as_deref()
-                .unwrap_or(&self.current_package)
-        } else {
-            &self.current_package
-        };
+        let base_package: &str = self.runtime_current_package();
         if let Some(stripped) = resolved_name.strip_prefix("GLOBAL::") {
             stripped.to_string()
         } else if resolved_name.contains("::")

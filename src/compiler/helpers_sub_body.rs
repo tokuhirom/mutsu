@@ -463,12 +463,29 @@ impl Compiler {
         }
 
         let fingerprint = crate::ast::function_body_fingerprint(params, param_defs, body);
+        // The package component of this sub's `compiled_fns` key must match
+        // what the interpreter's `current_package()` actually is when the
+        // corresponding `RegisterDecl`/call executes at runtime — i.e. the
+        // REAL enclosing package, not `self.current_package` (which, while
+        // compiling a sub declared directly inside a closure/block body, is
+        // the synthetic `Pkg::&<closure>/N` state-scope pseudo-package the
+        // closure's OWN body compile is running under). A block/closure never
+        // pushes that synthetic name as the runtime current package (see
+        // `runtime_current_package`'s doc comment), so a key built from it
+        // could never be reconstructed by a runtime lookup that starts from
+        // the real package (`Interpreter::bare_name_packages`,
+        // `find_compiled_function`) — every call to such a sub fell through
+        // the slow resolution ladder instead of the cached compiled-function
+        // fast path
+        // (`news/2026-08/nested-sub-in-block-otf-recompile-fixed.md`).
+        // Owned (not borrowed): `self.import_compiled_functions` below needs
+        // `&mut self`, which would otherwise conflict with a borrow of
+        // `self.current_package`/`self.enclosing_package` still alive at
+        // `package: key_package` further down.
+        let key_package = self.runtime_current_package().to_string();
         // Include arity and fingerprint in key to avoid collisions between
         // same-named subs with different bodies in different scopes.
-        let fingerprinted_key = format!(
-            "{}::{}/{}#{:x}",
-            self.current_package, name, arity, fingerprint
-        );
+        let fingerprinted_key = format!("{}::{}/{}#{:x}", key_package, name, arity, fingerprint);
         let key = if multi {
             let type_sig: Vec<String> = param_defs
                 .iter()
@@ -477,7 +494,7 @@ impl Compiler {
                 .collect();
             let by_signature = format!(
                 "{}::{}{}",
-                self.current_package,
+                key_package,
                 name,
                 if !type_sig.is_empty() {
                     format!("/{}:{}", arity, type_sig.join(","))
@@ -533,8 +550,8 @@ impl Compiler {
             declared_locals: None,
             param_name_syms: Vec::new(),
             // The declaring package, matching the package component of this
-            // function's `compiled_fns` key (built from `self.current_package`).
-            package: self.current_package.clone(),
+            // function's `compiled_fns` key (built from `key_package` above).
+            package: key_package,
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
         };
