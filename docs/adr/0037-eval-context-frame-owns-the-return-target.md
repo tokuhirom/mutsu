@@ -440,7 +440,7 @@ the push/pop is a plain `Vec<RoutineFrame>` operation with no `Env` clone, as
 §4 predicted. A bench-CI-measured wall-clock verdict (the §4 guard) is
 pending the next `bench-history.tsv` row past this change's merge commit.
 
-**Slices 2-3 landed (2026-08-21, PR #6821).** Slice 2:
+**Slices 2-3 landed (2026-08-21, PR #6828).** Slice 2:
 `caller_frame_enclosing_routine()` (`src/runtime/accessors_stack.rs`) walks
 `routine_stack` from `caller_frame_package`'s same frame down past any block
 frames to the nearest actual routine, and the `CALLER::`/`CALLERS::` stamp
