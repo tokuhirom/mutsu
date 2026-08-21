@@ -733,6 +733,28 @@ impl Interpreter {
                     let cl = crate::runtime::Interpreter::peek_callsite_line(&popped);
                     if cl.is_some() {
                         loan_env!(self, set_pending_callsite_line(cl));
+                    } else {
+                        // `is_fast_call_eligible` requires a completely empty
+                        // signature (`cf.params.is_empty() && cf.param_defs.is_empty()`),
+                        // so any popped value that is NOT the synthetic
+                        // callsite-line marker is a genuine over-supplied
+                        // positional argument (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
+                        // Raise the same "Too many positionals passed"
+                        // wording the general binder produces
+                        // (binding_signature.rs) -- several call sites
+                        // pattern-match on this exact message.
+                        return Err(RuntimeError::typed(
+                            "X::TypeCheck::Argument",
+                            Self::type_check_argument_attrs(
+                                name_str,
+                                &cf.param_defs,
+                                &popped,
+                                format!(
+                                    "Too many positionals passed; expected 0 arguments but got {}",
+                                    popped.len()
+                                ),
+                            ),
+                        ));
                     }
                 }
                 let result =

@@ -48,6 +48,26 @@ impl Interpreter {
                 Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
             ));
         }
+        // `is_positional_light_call_eligible` guarantees no slurpy/optional
+        // param exists on this signature, so a surplus argument is always an
+        // arity error, never a legitimate slurpy catch-all
+        // (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
+        // Report it the same way the general binder does
+        // (`binding_signature.rs`'s "Too many positionals passed" check) --
+        // several call sites pattern-match on this exact message.
+        if actual_count > positional_count {
+            let msg = format!(
+                "Too many positionals passed; expected {} arguments but got {}",
+                positional_count, actual_count
+            );
+            if is_module_call {
+                self.module_call_depth -= 1;
+            }
+            return Err(RuntimeError::typed(
+                "X::TypeCheck::Argument",
+                Self::type_check_argument_attrs(func_name, &cf.param_defs, args, msg),
+            ));
+        }
 
         let saved_locals = std::mem::take(&mut self.locals);
         // Isolate the caller's loop-body-local declaration scope (mirrors
