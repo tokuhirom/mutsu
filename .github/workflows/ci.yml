@@ -150,10 +150,25 @@ jobs:
       - name: TAP tests (prove t/)
         # Via the wrapper (not a bare `timeout 30 <bin>`) so t/ gets the same
         # per-file timeout + flaky-quarantine handling as roast.
-        run: prove -e 'scripts/run-t-test.sh' t/
+        #
+        # `-j4` matches the roast step below (and the ubuntu-latest core
+        # count): this suite ran fully serial and took ~6.5 min against
+        # roast's ~2.5 min at -j4 despite having 3200+ files vs roast's 246,
+        # almost entirely idle-serial overhead. `--merge` folds each test's
+        # stderr into its stdout so a panic stays attached to its own test
+        # under interleaved `-j` output, same reasoning as the roast step.
+        #
+        # MUTSU_T_TIMEOUT bumped 30 -> 45: a local repro of this change found
+        # t/cro-http-battery.t (Cro::HTTP + Cro::TLS + JSON::JWT, ~5s
+        # standalone) occasionally pushed past 30s under -j4 CPU contention
+        # from 3300 concurrently-running files, timing out once in a handful
+        # of full-suite runs. Per docs/flaky-test-policy.md §3 ("wall-clock
+        # sensitivity ... prefer raising the budget ... a precise fix"),
+        # widen the budget rather than quarantining a real (if heavy) test.
+        run: prove -j4 --merge -e 'scripts/run-t-test.sh' t/
         env:
           MUTSU_BIN: target/debug/mutsu
-          MUTSU_T_TIMEOUT: "30"
+          MUTSU_T_TIMEOUT: "45"
 
       - name: Site snippets still produce their documented output
         # Every code sample shipped on the site (landing highlights +
