@@ -1162,6 +1162,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     closure_seq: None,
                     walk_pending: None,
                     cat_pull: None,
+                    array_context: false,
+                    list_context: false,
+                    cached_no_sink: false,
                 };
                 return Some(Ok(Value::lazy_list(crate::gc::Gc::new(ll))));
             }
@@ -1185,11 +1188,9 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
             // Forcing here would defeat e.g. `(my $l = $cat.lines).cache` whose
             // later `$l[2,3]` must reflect mid-iteration attribute changes.
             if let ValueView::LazyList(ll) = target.view()
-                && (ll.is_genuinely_lazy() || ll.is_cat_pull())
+                && let Some(result) = ll.cache_lazy_view()
             {
-                return Some(Ok(Value::lazy_list(crate::gc::Gc::new(
-                    ll.with_cached_no_sink().with_list_context(),
-                ))));
+                return Some(Ok(result));
             }
             // An already-reified Positional caches as itself: `@a.cache` is
             // `@a` (an Array, not a List view of it). A method result is

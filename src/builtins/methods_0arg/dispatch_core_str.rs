@@ -163,6 +163,9 @@ pub(super) fn dispatch(
                                 .cat_pull
                                 .as_ref()
                                 .map(|c| std::sync::Mutex::new(c.lock().unwrap().clone())),
+                            array_context: list.array_context,
+                            list_context: list.list_context,
+                            cached_no_sink: list.cached_no_sink,
                         },
                     )))));
                 }
@@ -210,6 +213,9 @@ pub(super) fn dispatch(
                     closure_seq: None,
                     walk_pending: None,
                     cat_pull: None,
+                    array_context: false,
+                    list_context: false,
+                    cached_no_sink: false,
                 },
             )))))
         }

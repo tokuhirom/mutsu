@@ -1,6 +1,6 @@
 # ADR-0038: `.cache` returns a `List`, and the Seq/List view is a property of the value — read through one oracle
 
-- **Status**: Accepted — implemented (phases 1-3 landed together; phase 4 optional cleanup deferred, see `todo/tickets/collapse-lazylist-cache-copies.md`)
+- **Status**: Accepted — implemented (phases 1-3 landed together; phase 4 cleanup landed separately, see `news/2026-08/collapse-lazylist-cache-copies.md`)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0034](0034-seq-reification-is-in-place-and-distinct-from-consumption.md) (gave `Seq` a real body and split reify from consume — this ADR fills the gap that `.cache`'s *return type* was never in its scope), [ADR-0030](0030-native-array-decode-cache-interior-mutability.md) (the `SyncUnsafeCell` primitive `SeqBody` already uses), [ADR-0019](0019-compiled-declarations-and-unified-method-dispatch.md) (the "one dispatch entry" ambition this ADR applies to type-name answering)

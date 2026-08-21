@@ -175,6 +175,9 @@ impl Interpreter {
                 closure_seq: None,
                 walk_pending: None,
                 cat_pull: None,
+                array_context: false,
+                list_context: false,
+                cached_no_sink: false,
             };
             let val = Value::lazy_list(crate::gc::Gc::new(list));
             self.stack.push(val);
