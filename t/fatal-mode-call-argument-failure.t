@@ -11,7 +11,7 @@ use Test;
 # etc. each need their own check. See
 # todo/tickets/fatal-mode-does-not-explode-failure-in-call-arguments.md.
 
-plan 10;
+plan 11;
 
 # 1. The ticket's minimal repro: a Failure as one positional argument
 #    explodes before the callee's body ever runs.
@@ -124,3 +124,19 @@ sub require_symbol_lookup_failure_is_exempt() {
 }
 is require_symbol_lookup_failure_is_exempt(), 'hello from the ResInner resources',
     'require ::("Sym") is exempt from the call-argument fatal-mode explosion';
+
+# 11. `defined EXPR` is also exempt (pinned by roast/S04-exceptions/fail.t
+#     "use fatal respects defined"): it answers a plain Bool without
+#     exploding, alongside the operator forms `//`, `||`, `&&`, `if`,
+#     `unless`, `??!!`, `?`, `so`, `!`, `not` (which never reach this check
+#     at all -- they compile to dedicated opcodes, not a call). A first
+#     version of this fix exploded `defined it-will-fail()` too, breaking
+#     that roast subtest.
+sub defined_on_failure_is_exempt() {
+    use fatal;
+    sub it-will-fail() { fail "oops" }
+    my $x = defined it-will-fail();
+    return $x;
+}
+is defined_on_failure_is_exempt(), False,
+    'defined EXPR is exempt from the call-argument fatal-mode explosion';

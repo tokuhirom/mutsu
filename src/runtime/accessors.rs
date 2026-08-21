@@ -276,18 +276,30 @@ impl Interpreter {
     /// already explodes while the composite is built, long before it becomes
     /// one of this call's `arity` values, so there is no double-firing.
     ///
-    /// `require EXPR` is exempt: unlike an ordinary sub call, `require` is a
-    /// special form in real Raku, not subject to this rule. `require
-    /// ::("Foo")` legitimately evaluates its argument to an unhandled "No
-    /// such symbol" Failure when `Foo` hasn't been loaded yet -- `require`'s
-    /// own implementation inspects that Failure to derive the module name to
-    /// load (`missing_symbol_name_from_failure` in
-    /// `builtins_system_require.rs`, the shape `HTTP::UserAgent`-style
-    /// lazy-`require` loaders use). Verified against real `raku`: `use
-    /// fatal; require ::("Foo");` does not explode, while the same Failure
-    /// value passed to an ordinary `sub f($x) {...}` does. `name` is the
-    /// resolved callee name (pass `""` for a call with no static name, e.g.
-    /// a method or `CallOnValue` dispatch, which can never be `require`).
+    /// A handful of callee names are exempt: unlike an ordinary sub call,
+    /// real Raku does not explode a Failure argument passed to these, even
+    /// under `use fatal` (verified against real `raku` for each):
+    ///
+    /// - `require EXPR` -- a special form. `require ::("Foo")` legitimately
+    ///   evaluates its argument to an unhandled "No such symbol" Failure when
+    ///   `Foo` hasn't been loaded yet -- `require`'s own implementation
+    ///   inspects that Failure to derive the module name to load
+    ///   (`missing_symbol_name_from_failure` in `builtins_system_require.rs`,
+    ///   the shape `HTTP::UserAgent`-style lazy-`require` loaders use).
+    /// - `defined EXPR` -- `roast/S04-exceptions/fail.t` "use fatal respects
+    ///   defined" pins this: `defined it-will-fail()` answers `False`
+    ///   without exploding, alongside the *operator* forms `//`, `||`, `&&`,
+    ///   `if`/`unless`, `??!!`, `?`, `so`, `!`, `not` (which never reach this
+    ///   check at all -- they compile to dedicated opcodes, not a call).
+    ///   Note this is `defined` specifically, not a blanket "any
+    ///   definedness/Bool-testing function": `so(EXPR)` and `not(EXPR)`
+    ///   called as ordinary functions (parenthesized call syntax, as opposed
+    ///   to the `so`/`not` *operator* forms) DO explode in real Raku, so they
+    ///   are deliberately not exempted here.
+    ///
+    /// `name` is the resolved callee name (pass `""` for a call with no
+    /// static name, e.g. a method or `CallOnValue` dispatch, which can never
+    /// match either of these).
     ///
     /// Delegates to `explode_if_fatal_failure_in_composite`, which is gated
     /// on `self.fatal_mode` first, so the common (non-fatal) case pays only a
@@ -297,7 +309,7 @@ impl Interpreter {
         name: &str,
         arity: usize,
     ) -> Result<(), RuntimeError> {
-        if !self.fatal_mode || name == "require" {
+        if !self.fatal_mode || matches!(name, "require" | "defined") {
             return Ok(());
         }
         let start = self.stack.len().saturating_sub(arity);
