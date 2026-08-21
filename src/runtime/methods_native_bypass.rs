@@ -479,6 +479,7 @@ impl Interpreter {
             Symbol::intern(method),
             native_shape,
             super::resolution_sequence::MethodVisibility::Public,
+            super::resolution_sequence::RoleFallback::Disabled,
         );
         let native_binding_owner = seq.candidates.iter().find_map(|c| match c {
             ResolvedCandidate::NativeCallBinding { owner } => Some(owner.as_str().to_string()),
@@ -740,6 +741,7 @@ mod tests {
             Symbol::intern("bar"),
             super::resolution_sequence::NativeCallShape::new(0, false),
             super::resolution_sequence::MethodVisibility::Public,
+            super::resolution_sequence::RoleFallback::Disabled,
         );
         assert!(
             seq.candidates.is_empty(),
