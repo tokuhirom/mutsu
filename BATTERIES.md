@@ -65,6 +65,14 @@ this order:
 - **Proven behaviour on mutsu** — does it load and run today, or how far is it?
   A candidate that already `use`s cleanly beats a "better" one that needs a
   multi-session core campaign just to load.
+- **Maintainer stewardship** — a distribution published under
+  `auth<zef:raku-community-modules>` is preferred among otherwise-comparable
+  candidates: that org is a curated, actively-maintained home for ecosystem
+  modules (already the source of `HTTP::HPACK`, `IO::Path::ChildSecure`,
+  `JSON::JWT`, `Cro::*`, `DBIish`, and others in this bundle), so a module
+  living there is less likely to be a single-author dead project. It is a
+  tiebreaker, not a hard gate — do not let it override a real license or
+  "proven behaviour on mutsu" problem.
 - **API fit and idiom** — a clean, Raku-idiomatic public API that downstream
   code (and other batteries) can build on.
 - **Use-case coverage** — the guiding yardstick is **"a small web blog can be
@@ -274,6 +282,7 @@ make a real `https://` request using nothing but the shipped binary.
 | Web framework | `Cro::HTTP` v0.8.13 + `Cro::Core` v0.8.10 + `Cro::TLS` v0.8.10 (`zef:cro`) | Adopted | Artistic-2.0 | **Working** — vendored + zero-config `use`; the complete upstream suites pass against the bundled copy, matching raku (Cro::Core 9/9, Cro::HTTP 35/35, Cro::TLS included). The de facto ecosystem standard (61 dependents); chosen over Humming-Bird/Air/Web::App/6 others by a measured survey. HTTP/1.1, HTTP/2, WebSocket, routing, middleware, sessions, and auth all work — see the record for what remains (a real listening-socket TLS gap and two logging-library gaps, both in supporting dependencies, not Cro itself) | [cro-http.md](docs/batteries/cro-http.md) |
 | Slang activation | `Slangify` (`zef:lizmat`) + `Slang::Tuxic` (`zef:raku-community-modules`) | Bundled (verbatim) | Artistic-2.0 ×2 | **Working** — the upstream modules run verbatim (ADR-0026): a `use` of a slang-activating module executes it at parse time in a sub-interpreter with a compile-time `$*LANG`; Slangify's inner `&EXPORT` and its `define_slang` registration run for real, and the overridden grammar-rule names map onto parser modes (unknown rule = hard error). `Slang::Tuxic`'s upstream suite passes 8/8 (gated); Slangify's own test needs the `identifier`/`name` overrides (not yet in the map, fails loudly). Unblocks the `Text::CSV` campaign | [slang-tuxic.md](docs/batteries/slang-tuxic.md) |
 | Database (SQLite) | `DBIish` (`zef:raku-community-modules`) + `NativeLibs` + `NativeHelpers::Blob` | Adopted | BSD-2-Clause / Artistic-2.0 / Artistic-2.0 | **Working** — vendored + zero-config `use`; a real SQLite database can be opened, queried, and written to. 5 of 9 generic/SQLite upstream test files pass cleanly (gated); 4 remain partially blocked on a missing `Any.Int`/`.Num`/`Str.Buf` coercion family — see the record. Full upstream parity already holds against live PostgreSQL/MySQL (not gated — needs a server). Needs system `libsqlite3` at runtime | [database.md](docs/batteries/database.md) |
+| TOML config parser/writer | `Config::TOML` v0.1.3 + `Crane` v0.1.2 (both `zef:raku-community-modules`) | **Selected, not yet bundled** | Unlicense ×2 | Won the field (license, 0-net-dep chain, maintainer stewardship, richest upstream suite: 17 files) over `TOML` (7 dependents but requires raw `nqp::` op support — out of scope) and `TOML::Thumb` (single narrow blocker, runner-up). Currently 0/17 under mutsu: blocked on one general parser gap, `todo/tickets/token-method-bare-colon-adverb-name-not-supported.md` (bare-identifier `token`/`method` multi-dispatch names, e.g. `token gap:spacer {...}`) | [toml.md](docs/batteries/toml.md) |
 
 Other modules with a proven working record (Template::Mustache, HTTP::Parser,
 HTTP::Server::Tiny, NativeCall MVP, the Zef CLI) are tracked in `PLAN.md` §1 and

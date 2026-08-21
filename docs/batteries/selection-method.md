@@ -50,14 +50,18 @@ For each candidate collect, in this order:
 | --- | --- | --- |
 | License | `META6.json` `license`, cross-checked against a shipped `LICENSE`/`LICENCE` and the README | hard gate |
 | Runtime deps | `depends` (note: a `{test => …}` structure means **zero** runtime deps) | §2's second criterion; a 0-dep dist is dramatically cheaper to bundle |
-| Version + release date | `rea.json` `version` / `release-date` | is it maintained, or abandoned in 2018? |
+| **Version + release date** | `rea.json` `version` / `release-date` | is it maintained, or abandoned years ago? **Always state this explicitly in the record's final decision, not just the metrics table** — a stale release is a leading indicator of deeper problems, not just neglect: the TOML survey (`docs/batteries/toml.md`) found the one candidate last released in 2021 (5 years old) was also the one written directly against raw `nqp::` ops, a coding style essentially unseen in current-era modules and a near-guaranteed mutsu parser/interpreter gap. Check the age *before* spending time on the mutsu run, since it predicts where the mutsu run is likely to fail. |
+| **Maintainer org** | the `auth<...>` field of `dist` / the dist name in `rea.json` | per BATTERIES.md §2, `auth<zef:raku-community-modules>` is a preference tiebreaker among otherwise-comparable candidates — that org is a curated, actively-maintained home, distinct from a single-author dist that may be unmaintained. Note it in the record even when it doesn't change the winner. |
 | **Dependents** | count dists in the index whose `depends` names it | ecosystem standing — far better evidence than stars or opinion |
 | raku result | run its own suite under `raku` | the baseline |
 | **mutsu result** | run its own suite under mutsu | the actual decision input |
 
 The dependents count is the one people skip and it is often decisive: for the
 template slot it separated `Template::Mustache` (11 dependents, incl. `Bailador`,
-`Documentable`, `Pod::To::HTML`) from candidates with 0.
+`Documentable`, `Pod::To::HTML`) from candidates with 0. Do not let a high
+dependents count alone win the slot, though — the TOML survey's highest-dependents
+candidate (7 dependents) was also its oldest and its only one requiring raw
+`nqp::` support, so "proven behaviour on mutsu" still overrode it.
 
 ## 3. Run both suites
 
