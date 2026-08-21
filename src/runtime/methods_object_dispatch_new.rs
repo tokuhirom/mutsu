@@ -1789,6 +1789,16 @@ impl Interpreter {
                 };
                 let mut deferred_defaults: Vec<super::attr_build_defaults::DeferredAttrDefault> =
                     Vec::new();
+                // S1: a plain (non-`|`) Slip is ONE argument, even an empty
+                // one -- Mu.new's "positional args were passed" rejection
+                // below must fire for `Foo.new(Empty)` exactly as it does for
+                // any other bare positional value, even though the SAME
+                // Slip flattens to zero elements in `positional_ctor_args`
+                // (S4, for an Array/List-derived subclass's slurpy backing
+                // storage). Tracked separately so the empty-Slip case can't
+                // silently skip the rejection just because it contributed no
+                // elements to the flattened list.
+                let mut saw_bare_positional_arg = false;
                 for val in &args {
                     match val.view() {
                         ValueView::Pair(k, v) => {
@@ -1844,14 +1854,42 @@ impl Interpreter {
                                 attrs.insert(*attr, value.clone());
                             }
                         }
+                        // ADR-0054 S4: a `Slip` value always flattens into a
+                        // slurpy positional list context, regardless of
+                        // call-site `|` syntax -- this is Mu.new's default
+                        // constructor, which for an `is Array`/`is List`
+                        // subclass without its own `new` (e.g. Cro::HTTP's
+                        // `Cro::HTTP::MultiValue is List`) treats
+                        // `positional_ctor_args` as that subclass's `*@values`
+                        // slurpy backing storage below. An ordinary
+                        // (non-`|`) Slip-valued arg here (e.g.
+                        // `MultiValue.new($existing.Slip, $p.value)`) must
+                        // still flatten, mirroring `builtin_map`/
+                        // `builtin_grep`. `saw_bare_positional_arg` (S1) is
+                        // set regardless of how many elements the Slip
+                        // flattens into, so an EMPTY Slip still counts as one
+                        // positional argument for the rejection check below
+                        // (`Foo.new(Empty)` errors in raku exactly like
+                        // `Foo.new(42)` does), even though it contributes zero
+                        // elements to an Array/List subclass's backing store.
+                        ValueView::Slip(items) => {
+                            saw_bare_positional_arg = true;
+                            positional_ctor_args.extend(items.iter().cloned());
+                        }
                         _ => {
+                            saw_bare_positional_arg = true;
                             positional_ctor_args.push(val.clone());
                         }
                     }
                 }
                 // Mu.new only accepts named arguments. If positional args
-                // were passed and this is not a subclass that accepts them, reject.
-                if !positional_ctor_args.is_empty() {
+                // were passed and this is not a subclass that accepts them,
+                // reject -- keyed on `saw_bare_positional_arg` rather than
+                // `positional_ctor_args.is_empty()` so a bare `Empty` (S1: one
+                // argument, even though it flattens to zero elements) still
+                // triggers the rejection, matching raku's
+                // `Foo.new(Empty)` -> "only takes named arguments".
+                if saw_bare_positional_arg {
                     // Check if this class composes Baggy/Setty role;
                     // if so, redirect to Bag-like construction
                     let cn = class_name.resolve();

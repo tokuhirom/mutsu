@@ -42,7 +42,21 @@ impl Interpreter {
                 Self::value_to_list(arg)
             }
         } else {
-            args.to_vec()
+            // ADR-0054 S4: a `Slip` value always flattens into a slurpy
+            // positional list context, regardless of call-site `|` syntax --
+            // see the identical note in `builtin_map`/`builtin_grep`
+            // (`src/runtime/builtins_collection_mapgrep.rs`). `Bag.new`/
+            // `Set.new`/`Mix.new` (and any `does Baggy`/`does Setty` class
+            // without its own `new`, via `construct_baggy_instance`) bind
+            // their elements through this same multi-arg path, so an
+            // ordinary (non-`|`) Slip argument here (e.g.
+            // `Bag.new($existing.Slip, 4)`) must still flatten.
+            args.iter()
+                .flat_map(|a| match a.view() {
+                    ValueView::Slip(items) => items.iter().cloned().collect::<Vec<_>>(),
+                    _ => vec![a.clone()],
+                })
+                .collect()
         }
     }
 

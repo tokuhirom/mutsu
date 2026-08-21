@@ -498,10 +498,27 @@ impl Interpreter {
             .iter()
             .any(|n| *n == "Array" || *n == "List")
         {
+            // ADR-0054 S4: a `Slip` value always flattens into a slurpy
+            // positional list context, regardless of call-site `|` syntax.
+            // `nextwith(|@values)` already spreads at the call site, but a
+            // plain (non-`|`) Slip-valued arg reaching `bless` directly
+            // (e.g. `self.bless($existing.Slip)`) must still flatten here,
+            // mirroring `builtin_map`/`builtin_grep`.
             let elems: Vec<Value> = args
                 .iter()
-                .filter(|a| !a.is_string_pair_value())
-                .cloned()
+                .flat_map(|a| -> Vec<Value> {
+                    if let ValueView::Slip(items) = a.view() {
+                        items
+                            .iter()
+                            .filter(|i| !i.is_string_pair_value())
+                            .cloned()
+                            .collect()
+                    } else if !a.is_string_pair_value() {
+                        vec![a.clone()]
+                    } else {
+                        vec![]
+                    }
+                })
                 .collect();
             if !elems.is_empty() || !attributes.contains_key("__mutsu_array_storage") {
                 let storage = self.positional_base_storage(cn_resolved, elems);
