@@ -1607,19 +1607,31 @@ fn collect_unattached_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
         }
         // Control-flow headers are evaluated in the current scope, but their
         // bodies are signature-capable blocks -> do NOT descend into bodies.
+        //
+        // Unlike `collect_ph_stmt_shallow`, this is a deliberately NARROWER,
+        // conservative walk (see the module-level doc above: "False
+        // negatives are safe"): it never descends an `If`/`While`/`When`/
+        // `Given` body at all, even for an `If`/`Given` statement modifier
+        // where `collect_ph_stmt_shallow` (and `placeholder_body_kind`)
+        // would say `Transparent`. Only `For`'s modifier form below is
+        // oracle-driven, because it is the only construct where this walk
+        // already had a body-descend decision to make; extending the same
+        // treatment to `If`/`Given` (or to non-modifier While/When/Loop/
+        // React/etc. bodies that `placeholder_body_kind` classifies
+        // `Transparent`) would newly detect placeholders this function has
+        // never looked for, which is an observable behaviour change
+        // (ADR-0048 Phase 1 must not make one) — left for a later phase.
         Stmt::If { cond, .. } | Stmt::While { cond, .. } | Stmt::When { cond, .. } => {
             collect_unattached_ph_expr(cond, out)
         }
-        Stmt::For {
-            iterable,
-            body,
-            is_statement_modifier,
-            ..
-        } => {
+        Stmt::For { iterable, body, .. } => {
             collect_unattached_ph_expr(iterable, out);
             // A `for` statement modifier is not a block — its body runs in the
             // enclosing scope, so a placeholder there is unattached here too.
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     collect_unattached_ph_stmt(s, out);
                 }
@@ -2222,6 +2234,175 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
     }
 }
 
+/// ADR-0048 D2: how much of a construct's own argument supply a `$^name`
+/// placeholder inside it can see.
+///
+/// `ArgSupply` is only meaningful when the construct is `Signature`-capable
+/// (see [`PlaceholderBodyKind`]); it names *what value* the construct hands
+/// its body when it invokes it. Not every variant is exercised yet — ADR-0048
+/// Phase 1 only *classifies* existing constructs (`Condition`, `Elements`,
+/// `Topic`, `CallerArgs`); `ConditionAfterFirstPass` (repeat's first pass) and
+/// `None` (zero-arg bodies like `when`/bare `{}`) are reserved for the later
+/// phases that actually bind them (D3/D4).
+#[allow(dead_code)] // ConditionAfterFirstPass/None: reserved for Phase 2+ (D3/D4)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ArgSupply {
+    /// The enclosing block's own arguments (routine bodies, closure values).
+    CallerArgs,
+    /// One argument: the raw (un-boolified) condition value.
+    Condition,
+    /// One argument: `Mu` on the first pass, then the condition value.
+    ConditionAfterFirstPass,
+    /// One argument: the topic.
+    Topic,
+    /// N arguments per iteration, N = the body's own placeholder count.
+    Elements,
+    /// Zero arguments.
+    None,
+}
+
+/// ADR-0048 D2: classifies whether a construct's `{ ... }` body may carry a
+/// placeholder-derived signature of its own, and if so what it is supplied
+/// with. This is the single table consulted by every placeholder-scope walk
+/// (`collect_ph_stmt_shallow`/`collect_ph_expr_shallow` below,
+/// `order_check_stmt`/`order_check_expr`/`check_bare_var_stmt`/
+/// `check_bare_var_expr` in `placeholder_order.rs`, and the `For`-modifier
+/// case in `collect_unattached_ph_stmt`) instead of each independently
+/// re-deriving the same descend-or-stop decision — see
+/// `docs/adr/0048-placeholder-scope-is-a-block-invocation-contract.md`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlaceholderBodyKind {
+    /// No block of its own: descend, placeholders belong to the enclosing
+    /// scope. Covers statement MODIFIERS (`if`/`for`/`given` with
+    /// `is_statement_modifier: true`, which have no block at all — mirroring
+    /// the `For`/`Given` modifier rule below), and also `while`/`loop`/
+    /// `react`/bare `{}`-family statements/`when`/WhateverCode closures,
+    /// which mutsu currently (WRONGLY, per ADR-0048's raku audit) treats the
+    /// same way: they leak their placeholders to the enclosing scope instead
+    /// of raising `X::Placeholder::Block` or binding their own arity. Phase 1
+    /// is a pure refactor of the existing (partly wrong) behaviour into one
+    /// table; the wrong entries are corrected by ADR-0048's later phases, not
+    /// here.
+    Transparent,
+    /// A boundary that takes a signature; the construct supplies `ArgSupply`
+    /// when it invokes its body. `if`/`elsif`/`unless`/`with`/`without`
+    /// (non-modifier) supply the raw condition (`ArgSupply::Condition`);
+    /// `for` (non-modifier) supplies one N-tuple of elements per iteration
+    /// (`ArgSupply::Elements`); `given`/`with` (non-modifier) and `whenever`
+    /// supply the topic/emitted value (`ArgSupply::Topic`); real closures
+    /// (`sub {}`/`-> {}`/named subs) supply the caller's own arguments
+    /// (`ArgSupply::CallerArgs`). Only the *first* placeholder is currently
+    /// bound at each of these sites (a second placeholder falls through to
+    /// the enclosing scope instead of raising raku's arity error) — ADR-0048
+    /// D3 fixes that binding in a later phase; Phase 1 only records the
+    /// classification.
+    Signature(ArgSupply),
+    /// A boundary that may not take a signature at all: a placeholder used
+    /// directly inside it is `X::Placeholder::Block`. No construct classifies
+    /// as this in Phase 1 (see the `DoBlock` note below); ADR-0048 Phase 2
+    /// moves `do {}` and more constructs (`loop`, `try`, `react`, `once`,
+    /// `default`, phasers, statement prefixes, `module`) into this variant,
+    /// reusing the `placeholder_scope_error("block", ph)` helper `do {}`'s
+    /// existing (separately-implemented) rejection already uses.
+    ///
+    /// `do {}` (`Expr::DoBlock`) is *not* classified `NoSignature` here even
+    /// though it already rejects a stray placeholder at runtime: that
+    /// rejection is implemented by a wholly separate, unconditional check in
+    /// `compile_do_block_expr` (`collect_unattached_placeholders` on the
+    /// do-block's own body), which exempts a placeholder already "attached"
+    /// as the *enclosing* block's own parameter. That attachment is only
+    /// possible because THIS shallow walk treats `DoBlock` as `Transparent`
+    /// — the parser's chained-comparison desugar
+    /// (`src/parser/expr/precedence/chain_cmp.rs`) wraps `0 <= $^p <= 5`'s
+    /// placeholder in a synthetic `DoBlock`, so a `where`/`subset` predicate
+    /// written that way relies on `$^p` leaking through it to become the
+    /// enclosing block's own placeholder parameter (pinned by
+    /// `t/subset-where-placeholder-chain.t`; broke Cro::Core's `Cro::Port`
+    /// when tried). Reclassifying `DoBlock` as `NoSignature` here would stop
+    /// that leak and make every such chained comparison in a placeholder
+    /// block newly reject with `X::Placeholder::Block` — a real behaviour
+    /// change Phase 1 must not make. Untangling this is left to whichever
+    /// later phase gives `do {}` a real `NoSignature` classification.
+    NoSignature,
+}
+
+/// ADR-0048 D2 oracle for `Stmt`. See [`PlaceholderBodyKind`] for the
+/// per-variant rationale (moved here from the individual match arms below,
+/// per the ADR: "move them, do not duplicate them").
+pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
+    match stmt {
+        Stmt::Label { stmt, .. } => placeholder_body_kind(stmt),
+        Stmt::If {
+            is_statement_modifier: true,
+            ..
+        } => PlaceholderBodyKind::Transparent,
+        Stmt::If { .. } => PlaceholderBodyKind::Signature(ArgSupply::Condition),
+        Stmt::While { .. } => PlaceholderBodyKind::Transparent,
+        Stmt::For {
+            is_statement_modifier: true,
+            ..
+        } => PlaceholderBodyKind::Transparent,
+        Stmt::For { .. } => PlaceholderBodyKind::Signature(ArgSupply::Elements),
+        Stmt::Loop { .. } | Stmt::React { .. } => PlaceholderBodyKind::Transparent,
+        // The `whenever` body is its own block scope, supplied the emitted
+        // value (aliased as the topic) — but mutsu's shallow walks never
+        // descend into it today (only the `supply` header is collected in
+        // this scope), so this classification's practical effect in Phase 1
+        // is identical to `NoSignature`: a boundary, body not visited here.
+        Stmt::Whenever { .. } => PlaceholderBodyKind::Signature(ArgSupply::Topic),
+        Stmt::Block(_)
+        | Stmt::SyntheticBlock(_)
+        | Stmt::Default(_)
+        | Stmt::Catch(_)
+        | Stmt::Control(_)
+        | Stmt::RoleDecl { .. }
+        | Stmt::Phaser { .. }
+        | Stmt::When { .. } => PlaceholderBodyKind::Transparent,
+        Stmt::Given {
+            is_statement_modifier: true,
+            ..
+        } => PlaceholderBodyKind::Transparent,
+        Stmt::Given { .. } => PlaceholderBodyKind::Signature(ArgSupply::Topic),
+        // Every other `Stmt` kind has no body visited by the shallow walks
+        // today: real routine/method/class/package bodies are collected by
+        // their own dedicated compile-time pass, never by this shallow one.
+        _ => PlaceholderBodyKind::NoSignature,
+    }
+}
+
+/// ADR-0048 D2 oracle for `Expr` (the sibling of [`placeholder_body_kind`]
+/// for expression-position bodies: closures, `Try`, `Gather`, `DoBlock`,
+/// phasers-as-expressions).
+pub(crate) fn placeholder_body_kind_expr(expr: &Expr) -> PlaceholderBodyKind {
+    match expr {
+        // A WhateverCode (`*`-derived) closure owns only its `*`-derived
+        // params, not `$^name` placeholders, which belong to the nearest
+        // enclosing *explicit* block — so it is transparent here.
+        Expr::AnonSubParams {
+            is_whatever_code: true,
+            ..
+        }
+        | Expr::Lambda {
+            is_whatever_code: true,
+            ..
+        } => PlaceholderBodyKind::Transparent,
+        // A real closure (`sub {}`/`-> {}`/an already-signatured block)
+        // supplies the caller's own arguments; it is its own placeholder
+        // scope already, so the shallow walks never need to look inside it.
+        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
+            PlaceholderBodyKind::Signature(ArgSupply::CallerArgs)
+        }
+        Expr::Block(_) | Expr::Gather(_) => PlaceholderBodyKind::Transparent,
+        // Not `NoSignature` — see the long note on `PlaceholderBodyKind::NoSignature`
+        // above: the chained-comparison desugar's synthetic `DoBlock` relies
+        // on this leak to attach `$^p` to the enclosing block.
+        Expr::DoBlock { .. } => PlaceholderBodyKind::Transparent,
+        Expr::Try { .. } => PlaceholderBodyKind::Transparent,
+        Expr::PhaserExpr { .. } | Expr::Once { .. } => PlaceholderBodyKind::Transparent,
+        _ => PlaceholderBodyKind::NoSignature,
+    }
+}
+
 /// Shallow version of collect_ph_stmt: skips AnonSub/AnonSubParams/Lambda
 /// closures so their placeholders are not attributed to the outer block.
 fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
@@ -2258,74 +2439,57 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
             cond,
             then_branch,
             else_branch,
-            is_statement_modifier,
             ..
         } => {
-            // The `if` condition is evaluated in THIS block's scope, so a
-            // placeholder there (`if $^a { ... }`) is this block's parameter. The
-            // then/else branches are their OWN `{}` block scopes, so a placeholder
-            // inside them (`if 42 { $^a }`) belongs to the if-block and binds the
-            // condition value — it is NOT this block's parameter (matches Raku;
-            // see the If placeholder handling in compile_if_value). So we do NOT
-            // descend into the branches here.
-            //
-            // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER has no block
-            // of its own — `$^a if $^n` and `$^a with $^n` both evaluate the
-            // modified statement in the ENCLOSING scope (`sub f { $^a if $^n }`
-            // binds `$^a` to the sub's own first placeholder argument, mirroring
-            // the `For`/`Given` modifier arms above), so its placeholders must be
-            // collected here too. `with`/`without` desugar to this synthetic
-            // `If` (see `parser::stmt::modifier`), so this also fixes the
-            // shadowing bug reported for those.
+            // The header is always evaluated in THIS block's scope (see the
+            // oracle's `Signature(Condition)` doc); the branches only join
+            // this scope when the oracle says `Transparent` (statement
+            // modifiers — see the oracle's `Transparent` doc).
             collect_ph_expr_shallow(cond, out);
-            if *is_statement_modifier {
-                for s in then_branch {
-                    collect_ph_stmt_shallow(s, out);
-                }
-                for s in else_branch {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in then_branch.iter().chain(else_branch.iter()) {
                     collect_ph_stmt_shallow(s, out);
                 }
             }
         }
         Stmt::While { cond, body, .. } => {
             collect_ph_expr_shallow(cond, out);
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
-        Stmt::For {
-            iterable,
-            body,
-            is_statement_modifier,
-            ..
-        } => {
-            // A `for` BLOCK body is its own placeholder scope: with no explicit
-            // loop signature its placeholders become the loop's parameters (see
-            // parser::stmt::control::for_loops), so they must not also be claimed
-            // by the enclosing block/sub. Only the iterable is in this scope.
-            //
-            // A `for` STATEMENT MODIFIER has no block: `$^b.push($_) for @list`
-            // evaluates its body in the enclosing scope, so `$^b` is the
-            // *enclosing* block's parameter (`{ say $^b for 1, 2 }` called with
-            // 42 prints "42" twice). Descend in that case.
+        Stmt::For { iterable, body, .. } => {
             collect_ph_expr_shallow(iterable, out);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     collect_ph_stmt_shallow(s, out);
                 }
             }
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Stmt::Whenever { supply, .. } => {
-            // A whenever body is its own block scope: a placeholder inside it
-            // (`whenever $ch { %^content.kv }`) is the WHENEVER block's
-            // parameter (bound to the emitted value), not the enclosing
-            // block's — attributing it here would give e.g. the surrounding
-            // `start {}` block a phantom arity-1 signature.
+            // Only the `supply` header is in this scope — see the oracle's
+            // `Whenever` doc for why the body is never descended here.
             collect_ph_expr_shallow(supply, out);
         }
         Stmt::Block(body)
@@ -2334,33 +2498,31 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
         | Stmt::Catch(body)
         | Stmt::Control(body)
         | Stmt::RoleDecl { body, .. } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Stmt::Phaser { body, .. } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier,
-        } => {
-            // The topic is evaluated in THIS block's scope, but the given/with
-            // BLOCK body is its OWN `{}` block scope: a placeholder inside it is
-            // the given-block's parameter, bound to the topic (`with 2 { $^a }`
-            // is 2, not the enclosing block's argument) — mirrors the If arm.
-            //
-            // A `given` STATEMENT MODIFIER has no block, so its body runs in the
-            // enclosing scope and its placeholders are the enclosing routine's
-            // parameters — exactly the For arm's modifier rule. Digest::SHA3's
-            // `sub ROL64 { ($^a +> (64 - $_) +| $a +< $_) % (1 +< 64) given $^n%64 }`
-            // otherwise came out with the single parameter `$^n`, so `$^a` read
-            // the topic instead of the first argument.
+        Stmt::Given { topic, body, .. } => {
             collect_ph_expr_shallow(topic, out);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     collect_ph_stmt_shallow(s, out);
                 }
@@ -2368,8 +2530,13 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
         }
         Stmt::When { cond, body } => {
             collect_ph_expr_shallow(cond, out);
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Stmt::Let { value, index, .. } => {
@@ -2547,48 +2714,64 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         // at this (pre-compile) stage a curry is still an un-expanded
         // `WhateverCurry` marker, so descend into its body directly instead.
         Expr::WhateverCurry(inner) => collect_ph_expr_shallow(inner, out),
-        Expr::AnonSubParams {
-            body,
-            is_whatever_code: true,
-            ..
-        }
-        | Expr::Lambda {
-            body,
-            is_whatever_code: true,
-            ..
-        } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
-        // Stop at real closure boundaries: these define their own placeholder scope.
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
+        // Stop at a real closure boundary: it defines its own placeholder scope.
+        Expr::AnonSub { .. } => {}
         Expr::Block(stmts) | Expr::Gather(stmts) => {
-            for s in stmts {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in stmts {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Expr::DoBlock { body, .. } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Expr::DoStmt(stmt) => {
             collect_ph_stmt_shallow(stmt, out);
         }
         Expr::Try { body, catch } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
-            }
-            if let Some(c) = catch {
-                for s in c {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
                     collect_ph_stmt_shallow(s, out);
+                }
+                if let Some(c) = catch {
+                    for s in c {
+                        collect_ph_stmt_shallow(s, out);
+                    }
                 }
             }
         }
         Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
-            for s in body {
-                collect_ph_stmt_shallow(s, out);
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    collect_ph_stmt_shallow(s, out);
+                }
             }
         }
         Expr::Reduction { expr, .. }

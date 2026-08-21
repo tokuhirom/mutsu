@@ -20,7 +20,9 @@
 //! scope-boundary decisions exactly, just checking for one target variable
 //! name instead of collecting the vec of a block's own placeholders.
 
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::{
+    CallArg, Expr, PlaceholderBodyKind, Stmt, placeholder_body_kind, placeholder_body_kind_expr,
+};
 
 /// Check if a bare variable reference (`$name` or `$name = ...`) appears
 /// before the corresponding placeholder variable (`$^name`) in statement
@@ -159,39 +161,48 @@ fn check_bare_var_stmt(stmt: &Stmt, var_name: &str, found: &mut bool) {
                 }
             }
         }
-        // The condition is evaluated in THIS scope; the branches are their
-        // OWN `{}` block scope (mirrors `collect_ph_stmt_shallow`'s If arm).
+        // The header is always checked in THIS scope; from `While` on below,
+        // the body joins this scope exactly when the ADR-0048 oracle says
+        // `Transparent` — see `placeholder_body_kind` in `ast.rs` for the
+        // full table. `If`'s body is a deliberate, pre-existing exception:
+        // unlike `collect_ph_stmt_shallow`, this walk never descends an
+        // `If`'s branches even for a statement modifier, so it is left
+        // exactly as before rather than driven by the oracle.
         Stmt::If { cond, .. } => check_bare_var_expr(cond, var_name, found),
         Stmt::While { cond, body, .. } => {
             check_bare_var_expr(cond, var_name, found);
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
-        // A `for` statement MODIFIER is not a block: its body runs in this
-        // scope. A `for` BLOCK owns its own placeholder scope: only the
-        // iterable is checked here.
-        Stmt::For {
-            iterable,
-            body,
-            is_statement_modifier,
-            ..
-        } => {
+        Stmt::For { iterable, body, .. } => {
             check_bare_var_expr(iterable, var_name, found);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     check_bare_var_stmt(s, var_name, found);
                 }
             }
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
-        // A `whenever` body is its own block scope (mirrors
-        // `collect_ph_stmt_shallow`'s Whenever arm): only the supply source
-        // is checked here.
+        // Only the supply source is checked here — see `placeholder_body_kind`'s
+        // `Whenever` doc for why the body is never descended in this walk.
         Stmt::Whenever { supply, .. } => check_bare_var_expr(supply, var_name, found),
         Stmt::Block(body)
         | Stmt::SyntheticBlock(body)
@@ -199,25 +210,31 @@ fn check_bare_var_stmt(stmt: &Stmt, var_name: &str, found: &mut bool) {
         | Stmt::Catch(body)
         | Stmt::Control(body)
         | Stmt::RoleDecl { body, .. } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
         Stmt::Phaser { body, .. } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
-        // The topic is evaluated in THIS scope; the given/with BLOCK body is
-        // its own `{}` block scope unless this is a statement modifier
-        // (mirrors `collect_ph_stmt_shallow`'s Given arm).
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier,
-        } => {
+        Stmt::Given { topic, body, .. } => {
             check_bare_var_expr(topic, var_name, found);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     check_bare_var_stmt(s, var_name, found);
                 }
@@ -225,8 +242,13 @@ fn check_bare_var_stmt(stmt: &Stmt, var_name: &str, found: &mut bool) {
         }
         Stmt::When { cond, body } => {
             check_bare_var_expr(cond, var_name, found);
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
         Stmt::Let { value, index, .. } => {
@@ -364,46 +386,62 @@ fn check_bare_var_expr(expr: &Expr, var_name: &str, found: &mut bool) {
         // curry is still an un-expanded `WhateverCurry` marker, not a built
         // `AnonSubParams`/`Lambda`, so descend into its body directly.
         Expr::WhateverCurry(body) => check_bare_var_expr(body, var_name, found),
-        Expr::AnonSubParams {
-            body,
-            is_whatever_code: true,
-            ..
-        }
-        | Expr::Lambda {
-            body,
-            is_whatever_code: true,
-            ..
-        } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
-            }
-        }
-        // Real closure boundaries: stop, they own their own scope.
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
-        Expr::Block(stmts) | Expr::Gather(stmts) => {
-            for s in stmts {
-                check_bare_var_stmt(s, var_name, found);
-            }
-        }
-        Expr::DoBlock { body, .. } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
-            }
-        }
-        Expr::DoStmt(stmt) => check_bare_var_stmt(stmt, var_name, found),
-        Expr::Try { body, catch } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
-            }
-            if let Some(c) = catch {
-                for s in c {
+        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
                     check_bare_var_stmt(s, var_name, found);
                 }
             }
         }
+        // Real closure boundary: stop, it owns its own scope.
+        Expr::AnonSub { .. } => {}
+        Expr::Block(stmts) | Expr::Gather(stmts) => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in stmts {
+                    check_bare_var_stmt(s, var_name, found);
+                }
+            }
+        }
+        Expr::DoBlock { body, .. } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
+            }
+        }
+        Expr::DoStmt(stmt) => check_bare_var_stmt(stmt, var_name, found),
+        Expr::Try { body, catch } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
+                if let Some(c) = catch {
+                    for s in c {
+                        check_bare_var_stmt(s, var_name, found);
+                    }
+                }
+            }
+        }
         Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
-            for s in body {
-                check_bare_var_stmt(s, var_name, found);
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    check_bare_var_stmt(s, var_name, found);
+                }
             }
         }
         Expr::Reduction { expr, .. }
@@ -474,29 +512,44 @@ fn order_check_stmt(stmt: &Stmt, state: &mut OrderState) {
                 }
             }
         }
+        // `If`'s body is a deliberate, pre-existing exception: unlike
+        // `collect_ph_stmt_shallow`, this walk never descends an `If`'s
+        // branches even for a statement modifier (mirrors
+        // `check_bare_var_stmt`'s same exception), so it is left as-is
+        // rather than driven by the oracle. Every other arm below joins the
+        // body to this scope exactly when `placeholder_body_kind` (ast.rs,
+        // ADR-0048) says `Transparent`.
         Stmt::If { cond, .. } => order_check_expr(cond, state),
         Stmt::While { cond, body, .. } => {
             order_check_expr(cond, state);
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
-        Stmt::For {
-            iterable,
-            body,
-            is_statement_modifier,
-            ..
-        } => {
+        Stmt::For { iterable, body, .. } => {
             order_check_expr(iterable, state);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     order_check_stmt(s, state);
                 }
             }
         }
         Stmt::Loop { body, .. } | Stmt::React { body } => {
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
         Stmt::Whenever { supply, .. } => order_check_expr(supply, state),
@@ -506,22 +559,31 @@ fn order_check_stmt(stmt: &Stmt, state: &mut OrderState) {
         | Stmt::Catch(body)
         | Stmt::Control(body)
         | Stmt::RoleDecl { body, .. } => {
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
         Stmt::Phaser { body, .. } => {
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
-        Stmt::Given {
-            topic,
-            body,
-            is_statement_modifier,
-        } => {
+        Stmt::Given { topic, body, .. } => {
             order_check_expr(topic, state);
-            if *is_statement_modifier {
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
                 for s in body {
                     order_check_stmt(s, state);
                 }
@@ -529,8 +591,13 @@ fn order_check_stmt(stmt: &Stmt, state: &mut OrderState) {
         }
         Stmt::When { cond, body } => {
             order_check_expr(cond, state);
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind(stmt),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
         Stmt::Let { value, index, .. } => {
@@ -664,45 +731,61 @@ fn order_check_expr(expr: &Expr, state: &mut OrderState) {
         // way as an already-built WhateverCode (see `check_bare_var_expr`
         // above for the matching rationale).
         Expr::WhateverCurry(body) => order_check_expr(body, state),
-        Expr::AnonSubParams {
-            body,
-            is_whatever_code: true,
-            ..
-        }
-        | Expr::Lambda {
-            body,
-            is_whatever_code: true,
-            ..
-        } => {
-            for s in body {
-                order_check_stmt(s, state);
-            }
-        }
-        Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {}
-        Expr::Block(stmts) | Expr::Gather(stmts) => {
-            for s in stmts {
-                order_check_stmt(s, state);
-            }
-        }
-        Expr::DoBlock { body, .. } => {
-            for s in body {
-                order_check_stmt(s, state);
-            }
-        }
-        Expr::DoStmt(stmt) => order_check_stmt(stmt, state),
-        Expr::Try { body, catch } => {
-            for s in body {
-                order_check_stmt(s, state);
-            }
-            if let Some(c) = catch {
-                for s in c {
+        Expr::AnonSubParams { body, .. } | Expr::Lambda { body, .. } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
                     order_check_stmt(s, state);
                 }
             }
         }
+        Expr::AnonSub { .. } => {}
+        Expr::Block(stmts) | Expr::Gather(stmts) => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in stmts {
+                    order_check_stmt(s, state);
+                }
+            }
+        }
+        Expr::DoBlock { body, .. } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
+            }
+        }
+        Expr::DoStmt(stmt) => order_check_stmt(stmt, state),
+        Expr::Try { body, catch } => {
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
+                if let Some(c) = catch {
+                    for s in c {
+                        order_check_stmt(s, state);
+                    }
+                }
+            }
+        }
         Expr::PhaserExpr { body, .. } | Expr::Once { body } => {
-            for s in body {
-                order_check_stmt(s, state);
+            if matches!(
+                placeholder_body_kind_expr(expr),
+                PlaceholderBodyKind::Transparent
+            ) {
+                for s in body {
+                    order_check_stmt(s, state);
+                }
             }
         }
         Expr::Reduction { expr, .. }
