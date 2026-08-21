@@ -134,6 +134,30 @@ impl Interpreter {
         "GLOBAL".to_string()
     }
 
+    /// `package::name` of the routine that dynamically encloses the frame
+    /// `CALLER::` names — walking down past any *block* frames (a bare
+    /// `{ ... }`, a `for` body, a closure) starting at `caller_frame_package`'s
+    /// same frame (`routine_stack[len - 2]`) to the nearest actual routine
+    /// (`is_block == false`). `None` when no routine encloses it at all: the
+    /// frame `CALLER::` names is the mainline, or (with fewer than two frames
+    /// live) there is no caller frame to walk from in the first place.
+    ///
+    /// This is ADR-0037 §2.2's control-flow identity, stamped onto the
+    /// pseudo-stash alongside the package so `EVAL ..., context => $ctx` can
+    /// later classify the snippet's `return` (§2.3) instead of only naming
+    /// its package (`caller_frame_package`, `stamp_stash_origin_package`).
+    pub(crate) fn caller_frame_enclosing_routine(&self) -> Option<String> {
+        let len = self.routine_stack.len();
+        if len < 2 {
+            return None;
+        }
+        self.routine_stack[..len - 1]
+            .iter()
+            .rev()
+            .find(|f| !f.is_block)
+            .map(|f| format!("{}::{}", f.package, f.name))
+    }
+
     /// The file the code currently executing was *defined* in — the module path
     /// for a routine that came from a `use`d module, the script otherwise.
     ///

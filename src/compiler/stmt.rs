@@ -2868,8 +2868,10 @@ impl Compiler {
                 if self.is_routine {
                     self.code.emit(OpCode::Return);
                 } else {
-                    self.code
-                        .emit(OpCode::ReturnFromNonRoutine(self.lexically_in_routine));
+                    self.code.emit(OpCode::ReturnFromNonRoutine(
+                        self.lexically_in_routine,
+                        self.eval_context_dead_routine,
+                    ));
                 }
             }
             Stmt::Die(expr) => {

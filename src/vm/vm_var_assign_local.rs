@@ -452,8 +452,10 @@ impl Interpreter {
             // needs the package of the frame it was taken from — which is gone
             // by the time EVAL runs. Record it on the value itself.
             let origin = self.caller_frame_package();
+            let origin_routine = self.caller_frame_enclosing_routine();
             let stash = loan_env!(self, package_stash_value(kind));
             Self::stamp_stash_origin_package(&stash, &origin);
+            Self::stamp_stash_origin_routine(&stash, origin_routine.as_deref());
             self.stack.push(stash);
             return;
         }

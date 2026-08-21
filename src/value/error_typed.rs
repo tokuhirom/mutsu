@@ -380,9 +380,28 @@ impl RuntimeError {
         Self::typed("X::Syntax::Malformed", attrs)
     }
 
-    /// X::ControlFlow::Return - Return outside of routine
+    /// X::ControlFlow::Return - Return outside of routine.
+    ///
+    /// rakudo uses two different wordings depending on whether a routine ever
+    /// dynamically enclosed the `return` at all. Verified against `raku`
+    /// (ADR-0037 §1.1(c)): a `return` with *no* lexically-enclosing routine
+    /// (`out_of_dynamic_scope == false`) reports "Attempt to return outside of
+    /// any Routine"; a `return` whose lexical target routine WAS on the
+    /// dynamic call stack at some point but is not anymore
+    /// (`out_of_dynamic_scope == true` — a signal that escaped every frame, or
+    /// an `EVAL ..., context => $ctx` whose `$ctx` names a routine that has
+    /// already returned) reports the fuller "Attempt to return outside of
+    /// immediately-enclosing Routine (i.e. `return` execution is outside the
+    /// dynamic scope of the Routine where `return` was used)".
     pub(crate) fn controlflow_return(out_of_dynamic_scope: bool) -> Self {
-        let msg = "Attempt to return outside of any Routine".to_string();
+        let msg = if out_of_dynamic_scope {
+            "Attempt to return outside of immediately-enclosing Routine (i.e. \
+             `return` execution is outside the dynamic scope of the Routine \
+             where `return` was used)"
+                .to_string()
+        } else {
+            "Attempt to return outside of any Routine".to_string()
+        };
         let mut attrs = HashMap::new();
         attrs.insert("message".to_string(), Value::str(msg.clone()));
         attrs.insert(

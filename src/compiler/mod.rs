@@ -1252,6 +1252,15 @@ pub(crate) struct Compiler {
     /// Used to decide whether `return` in a non-routine block should perform
     /// a non-local return (via CX::Return) or throw X::ControlFlow::Return.
     pub(crate) lexically_in_routine: bool,
+    /// ADR-0037 §2.3: set only for an EVAL unit whose `context => $ctx` named
+    /// a routine that had already exited the dynamic call stack when the
+    /// `EVAL` ran (decided once, at EVAL entry, by `builtin_eval`). Only
+    /// meaningful together with `is_routine == false` — it makes the emitted
+    /// `ReturnFromNonRoutine` throw `X::ControlFlow::Return` with
+    /// `out-of-dynamic-scope` set and rakudo's fuller wording, instead of the
+    /// plain "no routine at all" message, matching raku's dead-context
+    /// probe (ADR-0037 §1.1(c)).
+    pub(crate) eval_context_dead_routine: bool,
     /// Whether we are directly compiling the body statements of a plain
     /// `Stmt::Block` that emits `OpCode::BlockScope` (see the `Stmt::Block`
     /// arm in `stmt.rs`). That opcode snapshots `env` before the body and
@@ -1552,6 +1561,7 @@ impl Compiler {
             callframe_block_depth: 0,
             is_routine: false,
             lexically_in_routine: false,
+            eval_context_dead_routine: false,
             lexically_in_block: false,
             lexically_in_method: false,
             bind_vardecl: false,

@@ -158,6 +158,31 @@ type ProtectBlockCacheEntry = (
 );
 type ProtectBlockCache = HashMap<u64, ProtectBlockCacheEntry>;
 
+/// ADR-0037 §2.3: how `EVAL ..., context => $ctx`'s `return` classifies,
+/// derived once at EVAL entry from the routine identity `CALLER::` stamped
+/// on `$ctx` (`Interpreter::eval_context_routine`). Liveness is decided at
+/// entry rather than at each `return`, because the snippet runs synchronously
+/// inside the `EVAL` call so no frame below it can disappear in between (see
+/// the ADR's §2.3 rationale).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum EvalContextRoutineState {
+    /// `$ctx` named a mainline (no routine dynamically encloses the captured
+    /// frame): the snippet's `return` throws `X::ControlFlow::Return` right
+    /// at the `return` site, matching raku's §1.1(a) probe.
+    Mainline,
+    /// `$ctx` named a routine that is still live on the dynamic call stack:
+    /// an enclosing routine exists, same as the ambient (no-`context`)
+    /// classification. Targeting *that specific* frame past any intervening
+    /// routines (raku's §1.1(b) probe) is ADR-0037 Slice 4, not implemented
+    /// by this classification alone.
+    Live,
+    /// `$ctx` named a routine that has already exited the dynamic call
+    /// stack: throws `X::ControlFlow::Return` right at the `return` site,
+    /// with `out-of-dynamic-scope` set and rakudo's fuller wording, matching
+    /// raku's §1.1(c) probe.
+    Dead,
+}
+
 /// The ambient interpreter state `compile_block_value_opts` folds into a
 /// fresh `Compiler` before compiling a carrier block's body (`is_routine`/
 /// `lexically_in_routine`, the enclosing package scope, sigilless/placeholder
@@ -182,6 +207,14 @@ struct CarrierCompileCtxKey {
     sigilless: Vec<String>,
     placeholder_params: Vec<String>,
     distribution: Option<Value>,
+    /// ADR-0037 §2.3's classification (only ever set when `is_eval_unit`),
+    /// which affects the compiled bytecode beyond what `in_routine` alone
+    /// captures: a `Mainline` and a `Dead` classification both compile
+    /// `in_routine == false`, but a `Dead` unit's `return` additionally
+    /// carries the out-of-dynamic-scope wording (`Compiler::
+    /// eval_context_dead_routine`). Must stay in the key or the cache could
+    /// serve a unit compiled under the wrong classification.
+    eval_context_routine: Option<EvalContextRoutineState>,
 }
 
 /// Per-`SubData.id` cache of `(context, compiled)` pairs for
@@ -1426,6 +1459,17 @@ pub struct Interpreter {
     /// bound in env, seeded into `compile_block_value_opts`'s fresh compiler
     /// so its stray-placeholder checks know they are attached.
     pending_eval_placeholder_params: Vec<String>,
+    /// ADR-0037 §2.3: how `EVAL ..., context => $ctx` should classify the
+    /// snippet's `return`, computed once by `builtin_eval` from `$ctx`'s
+    /// stamped routine identity (`Interpreter::eval_context_routine`) and
+    /// consumed by `compile_block_value_opts`/`carrier_compile_ctx_key` while
+    /// compiling the EVAL unit's mainline. `None` means either no `context`
+    /// argument was passed at all, or it carried no routine identity — both
+    /// leave the ambient `enclosing_routine_exists()`-driven classification
+    /// unchanged. Saved/restored around the `EVAL` call (mirrors
+    /// `pending_eval_sigilless`), since a nested EVAL sets and restores its
+    /// own.
+    pending_eval_context_routine: Option<EvalContextRoutineState>,
     /// Set right before the interpret path evaluates the body of a `supply { … }`
     /// block, and consumed by the very next `eval_block_value_inner` so the
     /// freshly compiled chunk carries `CompiledCode::is_supply_block_body`.

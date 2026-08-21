@@ -40,6 +40,15 @@ impl Interpreter {
     /// `EVAL $code, context => $stash` reads it back (`eval_context_package`).
     pub(crate) const STASH_ORIGIN_PACKAGE_ATTR: &str = "__mutsu_origin_package";
 
+    /// Attribute a pseudo-stash carries to remember the *control-flow*
+    /// identity (`package::name`) of the routine that dynamically encloses the
+    /// frame the stash was taken from — ADR-0037 §2.2. Same invisibility
+    /// convention as `STASH_ORIGIN_PACKAGE_ATTR`: an attribute, not a
+    /// `symbols` member, so `.keys`/`.gist` never see it. Absent (not
+    /// inserted at all) when the captured frame is a mainline, which
+    /// `eval_context_routine` treats identically to "key not found".
+    pub(crate) const STASH_ORIGIN_ROUTINE_ATTR: &str = "__mutsu_origin_routine";
+
     /// Stamp `origin` onto a pseudo-stash value. `CALLER::` names the frame that
     /// was current *where the stash was taken*, which is not recoverable later:
     /// `Test.rakumod` writes `my $ctx = CALLER::` in `throws-like` and uses it
@@ -49,6 +58,23 @@ impl Interpreter {
         if let ValueView::Instance { attributes, .. } = stash.view() {
             attributes.insert(
                 Self::STASH_ORIGIN_PACKAGE_ATTR.to_string(),
+                Value::str(origin.to_string()),
+            );
+        }
+    }
+
+    /// Stamp the frame's control-flow identity (see
+    /// `caller_frame_enclosing_routine`) onto a pseudo-stash value, beside the
+    /// package `stamp_stash_origin_package` already records. `None` (a
+    /// mainline frame) stamps nothing, matching how `eval_context_routine`
+    /// reads a missing attribute back as "no enclosing routine".
+    pub(crate) fn stamp_stash_origin_routine(stash: &Value, origin: Option<&str>) {
+        let Some(origin) = origin else {
+            return;
+        };
+        if let ValueView::Instance { attributes, .. } = stash.view() {
+            attributes.insert(
+                Self::STASH_ORIGIN_ROUTINE_ATTR.to_string(),
                 Value::str(origin.to_string()),
             );
         }
@@ -75,6 +101,26 @@ impl Interpreter {
             ValueView::Package(sym) => {
                 let name = sym.resolve().to_string();
                 (!Self::is_pseudo_package_name(&name)).then_some(name)
+            }
+            _ => None,
+        }
+    }
+
+    /// The `package::name` of the routine an `EVAL ..., context => $ctx`'s
+    /// `return` should be classified against (ADR-0037 §2.3), or `None` when
+    /// the context says nothing about one — either it is not a stamped
+    /// pseudo-stash at all, or `CALLER::` was captured from a mainline (no
+    /// enclosing routine; see `stamp_stash_origin_routine`).
+    pub(crate) fn eval_context_routine(ctx: &Value) -> Option<String> {
+        match ctx.view() {
+            ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } if class_name == "Stash" => {
+                let map = attributes.as_map();
+                map.get(Self::STASH_ORIGIN_ROUTINE_ATTR)
+                    .map(|v| v.to_string_value())
             }
             _ => None,
         }

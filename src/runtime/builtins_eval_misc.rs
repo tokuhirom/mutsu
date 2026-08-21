@@ -319,23 +319,68 @@ impl Interpreter {
         // caller and not after whichever module called EVAL. Without this a
         // `throws-like 'class Foo { ... }', X::...` written against the real
         // `Test` module reports `Test::Foo`.
-        let saved_package = Self::named_value(args, "context")
-            .and_then(|ctx| Self::eval_context_package(&ctx))
+        let context_arg = Self::named_value(args, "context");
+        let saved_package = context_arg
+            .as_ref()
+            .and_then(Self::eval_context_package)
             .map(|pkg| {
                 let saved = self.current_package();
                 self.set_current_package(pkg);
                 saved
             });
+        // ADR-0037 §2.3: classify what the snippet's `return` should do from
+        // `$ctx`'s stamped routine identity (§2.2), once, here at EVAL entry
+        // -- not at the `return` itself, since the snippet runs synchronously
+        // inside this call so no frame below it can disappear in between.
+        // `None` (no `context` argument at all) leaves
+        // `compile_block_value_opts`'s ambient classification untouched.
+        let saved_context_routine = context_arg.as_ref().map(|ctx| {
+            let state = self.classify_eval_context_routine(ctx);
+            self.pending_eval_context_routine.replace(state)
+        });
         let check_only = Self::named_value(args, "check").is_some_and(|v| v.truthy());
         let result = if check_only {
             self.eval_eval_string_check_only(&code)
         } else {
             self.eval_eval_string(&code)
         };
+        if let Some(saved) = saved_context_routine {
+            self.pending_eval_context_routine = saved;
+        }
         if let Some(saved) = saved_package {
             self.set_current_package(saved);
         }
         result
+    }
+
+    /// ADR-0037 §2.3: classify `ctx`'s (an `EVAL ..., context => $ctx`
+    /// argument) routine identity into what the EVAL unit's `return` should
+    /// do. `Mainline` both when `ctx` carries no routine identity at all
+    /// (`eval_context_routine` returns `None` — either `ctx` is not a stamped
+    /// pseudo-stash, or `CALLER::` named the mainline) and when it does but
+    /// no live frame matches it (checked against `Dead` below only when a key
+    /// IS present, so this covers the "not a frame-derived context" case,
+    /// e.g. `context => SomePackage`, exactly like a bare package name has no
+    /// dynamic-scope identity of its own).
+    ///
+    /// Liveness is a walk of `routine_stack` comparing `package::name`
+    /// against the recorded key -- sound only because ADR-0037 Slice 1 made
+    /// every sub dispatch path push a routine frame; a re-entrant same-named
+    /// routine is indistinguishable by that key and resolves to the
+    /// innermost live frame, matching `return`'s own lexical semantics.
+    fn classify_eval_context_routine(&self, ctx: &Value) -> EvalContextRoutineState {
+        let Some(key) = Self::eval_context_routine(ctx) else {
+            return EvalContextRoutineState::Mainline;
+        };
+        let live = self
+            .routine_stack
+            .iter()
+            .any(|f| !f.is_block && format!("{}::{}", f.package, f.name) == key);
+        if live {
+            EvalContextRoutineState::Live
+        } else {
+            EvalContextRoutineState::Dead
+        }
     }
 
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {

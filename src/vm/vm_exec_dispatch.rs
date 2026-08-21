@@ -4170,7 +4170,7 @@ impl Interpreter {
                 }
                 return Err(RuntimeError::return_signal(val));
             }
-            OpCode::ReturnFromNonRoutine(lexically_in_routine) => {
+            OpCode::ReturnFromNonRoutine(lexically_in_routine, out_of_dynamic_scope) => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 if *lexically_in_routine {
                     // Closure/block lexically inside a routine: propagate a
@@ -4181,10 +4181,12 @@ impl Interpreter {
                     // `X::ControlFlow::Return` with `out-of-dynamic-scope`.
                     return Err(RuntimeError::return_signal(val));
                 }
-                // No lexical routine at all (e.g. top-level `return`): throw
-                // X::ControlFlow::Return directly.
+                // No lexical routine at all (e.g. top-level `return`), or
+                // (ADR-0037 §2.3) an `EVAL ..., context => $ctx` whose `$ctx`
+                // named a routine that had already exited when the EVAL ran:
+                // throw X::ControlFlow::Return directly, right here.
                 let _ = val;
-                return Err(RuntimeError::controlflow_return(false));
+                return Err(RuntimeError::controlflow_return(*out_of_dynamic_scope));
             }
 
             // -- Environment variable access --
