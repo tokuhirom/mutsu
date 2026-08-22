@@ -363,6 +363,13 @@ impl Interpreter {
                 // of recording it for the reduce-time replay — recording it as
                 // well would execute it twice.
                 if !super::regex_helpers::code_block_defers_to_reduce(code) {
+                    // An earlier branch of the enclosing `||` already matched, so
+                    // raku's cursor never reaches this block. It always succeeds,
+                    // so skipping it leaves the branch's candidate ends unchanged
+                    // — see `SPECULATIVE_ALT_BRANCH`.
+                    if super::regex_helpers::SPECULATIVE_ALT_BRANCH.with(std::cell::Cell::get) {
+                        return Some((pos, RegexCaptures::default()));
+                    }
                     let (_value, writes) =
                         self.eval_regex_inline_code(code, current_caps, &matched_so_far, true);
                     // The block `die`d: fail the match so the engine unwinds; the

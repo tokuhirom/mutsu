@@ -228,14 +228,28 @@ impl Interpreter {
             // After pushing to LIFO: alt_0's highest-priority match is on top.
             let mut groups: Vec<Vec<(usize, RegexCaptures)>> = Vec::new();
             for alt in alternatives {
+                let earlier_matched = groups.iter().any(|g| !g.is_empty());
                 // Defer a side-effect-only alternative (`|| { die ... }`): once
                 // an earlier alternative matched, raku never reaches it, so
                 // running it here would fire its side effects spuriously.
-                if Self::is_pure_code_block_alt(alt) && groups.iter().any(|g| !g.is_empty()) {
+                if Self::is_pure_code_block_alt(alt) && earlier_matched {
                     groups.push(Vec::new());
                     continue;
                 }
-                let inner_matches = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+                // Same reasoning for a branch that merely *contains* a plain
+                // block (`|| . { die ... }`): its candidates are still needed for
+                // enclosing backtracking, but raku's cursor never reaches it, so
+                // its side effects must not fire. See `SPECULATIVE_ALT_BRANCH`.
+                let inner_matches = if earlier_matched {
+                    let flag = &super::regex_helpers::SPECULATIVE_ALT_BRANCH;
+                    let prev = flag.with(std::cell::Cell::get);
+                    flag.with(|f| f.set(true));
+                    let r = self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg);
+                    flag.with(|f| f.set(prev));
+                    r
+                } else {
+                    self.regex_match_ends_from_caps_in_pkg(alt, chars, pos, pkg)
+                };
                 // inner_matches is in HIGHEST FIRST order (per regex_match_ends_from_caps_in_pkg
                 // convention). Reverse to LOWEST FIRST for our return convention.
                 let mut group = Vec::new();
