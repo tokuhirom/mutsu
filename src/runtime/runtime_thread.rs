@@ -243,6 +243,22 @@ impl Interpreter {
             let mut seed_inserts: u64 = 0;
             // ADR-0039 §8.6 classification, collected while `self.env` is
             // borrowed by the walk and applied to `self` once it ends.
+            //
+            // Only the top-level interpreter classifies. On a WORKER thread the
+            // lane is not an optional publication channel that a container
+            // might or might not need — it is the storage: `push @a, ...`
+            // routes through `__mutsu_atomic_arr::` unconditionally when
+            // `is_thread_clone()` (`vm/vm_data_push_ops.rs`), precisely so
+            // concurrent appends serialize, and `shared_array_mutate` then
+            // drops the worker's own `env` copy so `make_mut` can work in
+            // place. Retiring an entry there would be withdrawing a deliberate
+            // mechanism's backing store mid-use (measured: it emptied worker A's
+            // accumulator in `t/sibling-thread-array-lane-scope.t`). It also
+            // buys nothing: a worker's lineage store is its own (ADR-0010), so
+            // its entries cannot outlive into an unrelated frame the way a
+            // root-store entry published by the main interpreter does — which
+            // is the collision §8.2 records.
+            let referenced_containers = referenced_containers.filter(|_| !self.is_thread_clone());
             let mut transient_marks: Vec<String> = Vec::new();
             let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {

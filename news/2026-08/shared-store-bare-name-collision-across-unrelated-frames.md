@@ -83,7 +83,20 @@ So lane entries now have a lifetime:
 - `sync_shared_vars_to_env` withdraws the marked entries (and their
   `__mutsu_atomic_*` twins, which reads prefer) at the tail of the drain, after
   everything the workers did has been merged back into `env` or written through
-  the owning unit-lexical cell.
+  the owning unit-lexical cell. It first *materializes* a dirty entry's live
+  value into the frame's own storage — once a mutation has routed through the
+  lane the atomic entry is the authoritative copy, the mutating thread
+  deliberately dropped its `env` copy, and the ordinary drain cannot restore it
+  because its dirty-key filter skips any name this lineage re-declared.
+- Only the **top-level** interpreter classifies. On a worker thread the lane is
+  not an optional publication channel — it is the storage: `push @a, ...` routes
+  through `__mutsu_atomic_arr::` unconditionally when `is_thread_clone()`
+  (`src/vm/vm_data_push_ops.rs`), precisely so concurrent appends serialize.
+  Retiring an entry there withdraws a deliberate mechanism's backing store
+  mid-use (measured: it emptied worker A's accumulator in
+  `t/sibling-thread-array-lane-scope.t`), and buys nothing — a worker's lineage
+  store is its own (ADR-0010), so its entries cannot outlive into an unrelated
+  frame the way a root-store entry from the main interpreter does.
 
 Withdrawing at the drain rather than declining to publish is the load-bearing
 choice, and it was arrived at by measurement.
