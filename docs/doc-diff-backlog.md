@@ -218,6 +218,136 @@ distinguish this from a real ordering bug. The existing nondet heuristic (skips
 output; improving that heuristic is a possible future harness enhancement, not tracked
 as a ticket here.
 
+Found in the 2026-08-22 batch-2 re-run of `regexes`/`traps`/`variables`/`control`/`list`/
+`IO::Path`/`Any`/`objects`/`Iterator`/`typesystem`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Language/control.rakudoc:526,537` | `do when COND { BLOCK }` used as an expression crashes / gives the wrong value | [control-do-when-expression-value.md](../todo/tickets/control-do-when-expression-value.md) |
+| `Language/control.rakudoc:717` | `race for` doesn't collect the loop's per-iteration results | [control-race-for-drops-results.md](../todo/tickets/control-race-for-drops-results.md) |
+| `Language/control.rakudoc:388` | `if`/`unless`/`while` block body rejects a pointy-block parameter | [control-if-unless-pointy-block-param.md](../todo/tickets/control-if-unless-pointy-block-param.md) |
+| `Language/control.rakudoc:854` | `default { }` cannot be used as a term nested inside an expression | [control-default-term-expression-position.md](../todo/tickets/control-default-term-expression-position.md) |
+| `Language/control.rakudoc:973` | `proceed` inside a bare block with a trailing `when` modifier doesn't skip the enclosing `when` | [control-nested-when-proceed-skip.md](../todo/tickets/control-nested-when-proceed-skip.md) |
+| `Language/control.rakudoc:1375` | `return-rw` doesn't return a mutable container | [control-return-rw-not-mutable.md](../todo/tickets/control-return-rw-not-mutable.md) |
+| `Language/control.rakudoc:263` | statement-modifier `if` mid-comma-list inside parens is a hard parse failure | [control-if-modifier-mid-comma-list-parse-fail.md](../todo/tickets/control-if-modifier-mid-comma-list-parse-fail.md) |
+| `Language/list.rakudoc:54` | a parenthesized `;`-separated statement list drops its trailing empty-statement element | [paren-statement-list-trailing-empty-element.md](../todo/tickets/paren-statement-list-trailing-empty-element.md) |
+| `Type/IO/Path.rakudoc:128,290,423` | `IO::Path::Win32` inconsistently normalizes `/` vs `\` separators | [iopath-win32-separator-normalization.md](../todo/tickets/iopath-win32-separator-normalization.md) |
+| `Type/IO/Path.rakudoc:561` | `~~ :w`/`:r`/`:x` smart-match ignores effective per-user permission (raw mode bits instead of `access()`) | [iopath-filetest-smartmatch-wrong-permission-check.md](../todo/tickets/iopath-filetest-smartmatch-wrong-permission-check.md) |
+
+**Excluded from this batch-2 re-run (already deferred/resolved/drift/false-positive):**
+- `Language/control.rakudoc` [1] (`{ block } or die;` not executing the block) — the
+  already-**Deferred** "`and`/`or`/`not` word-logical precedence" cluster, explicitly named for
+  `control.rakudoc`.
+- `Language/control.rakudoc` [7] — hash-iteration-order `raku-drift`, both sides nondeterministic.
+- `Language/control.rakudoc` [10] — `X::Multi::NoMatch` message text is shorter in mutsu but the
+  exception type/meaning match; cosmetic, not ticketed.
+- `Language/list.rakudoc` [1] tail (line 338, geometric sequence past i64 degrading to Float) —
+  the named **Deferred** "big-Int→Float degradation in geometric sequence generation past i64"
+  item.
+- `Language/list.rakudoc` [2] (line 707, `@cards.shape` with enum-valued dimensions) — bucketed
+  `raku-drift` (doc says "Deuce Deuce", raku prints "2 2"); mutsu's own `(*)` looks wrong too but
+  wasn't ticketed per the skip-drift instruction — worth a second look later.
+- `Type/IO/Path.rakudoc` [4] (line 509, `MAIN` sub recursively walking `.`) — mutsu times out;
+  inherently dependent on this checkout's file count (walks `target/`/`vendor/`/`.git/`), not a
+  clean minimal repro — flagged for awareness, not ticketed.
+- `Type/IO/Path.rakudoc` [6] (line 609, `$*EXECUTABLE.IO.s`) — `raku-drift` and
+  build-environment-dependent (binary size), not a bug.
+
+Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/objects.rakudoc` /
+`Type/Iterator.rakudoc` / `Language/typesystem.rakudoc`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Any.rakudoc:961` | `.categorize`/`.classify` into an untyped Hash mis-renders a non-Str bucket key when the source array holds class instances | [categorize-into-hash-instance-bool-key-corruption.md](../todo/tickets/categorize-into-hash-instance-bool-key-corruption.md) |
+| `Type/Any.rakudoc:1525` | `.snip` with multiple positional predicates silently drops all but the first | [snip-multiple-positional-matchers-dropped.md](../todo/tickets/snip-multiple-positional-matchers-dropped.md) |
+| `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
+| `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
+| `Language/objects.rakudoc:1067` | a user class `is Str` (or other native type) doesn't inherit native stringification | [str-subclass-loses-native-stringify.md](../todo/tickets/str-subclass-loses-native-stringify.md) |
+| `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
+| `Language/objects.rakudoc:1185` | attribute order in a `.new`/gist under multiple inheritance is wrong (deterministic, not hash-order noise) | [multi-inheritance-attribute-gist-order.md](../todo/tickets/multi-inheritance-attribute-gist-order.md) |
+| `Language/objects.rakudoc:1457` | `but`-mixing a role onto a `List` breaks its `Positional` binding | [list-but-role-loses-positional-binding.md](../todo/tickets/list-but-role-loses-positional-binding.md) |
+| `Language/objects.rakudoc:1526` | `is default(0 but role :: {...})` on a typed Hash drops the role mixin on the default value | [hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md) |
+| `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
+| `Language/objects.rakudoc:1397` | a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message | [parametric-role-self-referential-attribute-typecheck.md](../todo/tickets/parametric-role-self-referential-attribute-typecheck.md) |
+| `Language/typesystem.rakudoc:657` | a custom `.gist` on a role-mixed native value is skipped when gisted inside an array/list | [role-mixed-value-gist-skipped-in-array.md](../todo/tickets/role-mixed-value-gist-skipped-in-array.md) |
+| `Language/typesystem.rakudoc:846` | `enum ... does Role`'s overriding `ACCEPTS` is never dispatched by `~~`, plus a spurious `=>` warning | [enum-does-role-accepts-not-dispatched.md](../todo/tickets/enum-does-role-accepts-not-dispatched.md) |
+| `Language/typesystem.rakudoc:594` | a role's `.new` instance reports the wrong `.HOW` metaclass | [role-instance-how-wrong-metaclass.md](../todo/tickets/role-instance-how-wrong-metaclass.md) |
+| `Language/typesystem.rakudoc:611` | a forward-declared role stub used by another role is never upgraded to its real body | [forward-declared-role-stub-not-upgraded.md](../todo/tickets/forward-declared-role-stub-not-upgraded.md) |
+| `Language/typesystem.rakudoc:644` | a role parameter's `fail(...)` default expression is never evaluated/enforced | [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md) |
+
+Three of these ([list-but-role-loses-positional-binding.md](../todo/tickets/list-but-role-loses-positional-binding.md),
+[hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md),
+[role-mixed-value-gist-skipped-in-array.md](../todo/tickets/role-mixed-value-gist-skipped-in-array.md))
+share a hypothesis — a `but`/`does`-mixed value's role metadata not surviving a generic
+storage/dispatch path — noted cross-links in each ticket; investigate together and merge into
+one PR if a single fix site is found.
+
+**Excluded from this sub-batch (already deferred/resolved/drift/false-positive):**
+- `Type/Any.rakudoc` [2], [6]-[11] — hash/Set/Bag iteration-order/address `raku-drift`.
+- `Language/objects.rakudoc` [1], [2] — `raku-drift` (stale doc error-message wording).
+- `Type/Iterator.rakudoc` [1] — the **Deferred** "Custom `does Iterable`/`does Iterator`
+  protocol" cluster, explicitly named for this file.
+- `Type/Iterator.rakudoc` [2], [3], [5] — the **Deferred** lazy-list cluster's "`=:= IterationEnd`
+  container identity" and "IterationEnd's repr (it is a Str internally...)" residues.
+- `Type/Iterator.rakudoc` [4] — `raku-drift` (doc's stated OUTPUT no longer matches current raku
+  for the custom-iterator example).
+- `Language/typesystem.rakudoc` [3] — `raku-drift` (object hex-address text, inherently
+  non-reproducible).
+- `Language/typesystem.rakudoc` [6] — the exception *type* text is drift (`X::AdHoc` vs. real
+  raku's `X::Role::Instantiation`), but mutsu not throwing at all is real — filed as
+  [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md)
+  above.
+
+Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
+`Language/traps.rakudoc` / `Language/variables.rakudoc`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Language/regexes.rakudoc:1331` | `<!:Script<Name>>` negated Unicode-property lookahead doesn't stop the preceding quantifier's backtrack | [regex-script-lookahead-negation-wrong.md](../todo/tickets/regex-script-lookahead-negation-wrong.md) |
+| `Language/regexes.rakudoc:1349` | `<same>` builtin regex subrule is unimplemented | [regex-same-subrule-missing.md](../todo/tickets/regex-same-subrule-missing.md) |
+| `Language/regexes.rakudoc:1595` | a regex-embedded `:my $c = $/;` (self-referencing the in-progress match) fails to parse | [regex-embedded-my-decl-self-referential-slash.md](../todo/tickets/regex-embedded-my-decl-self-referential-slash.md) |
+| `Language/regexes.rakudoc:1602` | a regex-embedded `:my $c = ~$0;` captures an empty value instead of the current match text | [regex-embedded-my-decl-value-not-captured.md](../todo/tickets/regex-embedded-my-decl-value-not-captured.md) |
+| `Language/regexes.rakudoc:1612` | a regex-embedded `:our $var = ...;` doesn't write back to the package variable | [regex-our-declarator-writeback-missing.md](../todo/tickets/regex-our-declarator-writeback-missing.md) |
+| `Language/regexes.rakudoc:1966` | a subrule call with a block-literal argument (`<name: { ... }>`) fails entirely | [regex-subrule-block-argument-parse-fail.md](../todo/tickets/regex-subrule-block-argument-parse-fail.md) |
+| `Language/regexes.rakudoc:1543` | capture-group numbering across an alternation branch is wrong | [regex-capture-numbering-across-alternation.md](../todo/tickets/regex-capture-numbering-across-alternation.md) |
+| `Language/regexes.rakudoc:1587` | an embedded code block inside a quantified group doesn't persist its side effect on an outer `:my` variable | [regex-embedded-code-block-quantifier-scope.md](../todo/tickets/regex-embedded-code-block-quantifier-scope.md) |
+| `Language/regexes.rakudoc:1816` | `s///` replacement string doesn't interpolate named captures (`$<name>`) | [subst-named-capture-interpolation-in-replacement.md](../todo/tickets/subst-named-capture-interpolation-in-replacement.md) |
+| `Language/regexes.rakudoc:1823` | `s///` replacement over-escapes a literal `\:` | [subst-replacement-code-block-not-evaluated.md](../todo/tickets/subst-replacement-code-block-not-evaluated.md) |
+| `Language/regexes.rakudoc:2290` | `S:g/@(EXPR)/.../ ` doesn't interpolate an array as a regex alternation | [subst-array-interpolation-as-alternation.md](../todo/tickets/subst-array-interpolation-as-alternation.md) |
+| `Language/regexes.rakudoc:2623` | a custom grammar `ws` token override with `<!ww>` doesn't match per raku's boundary rules | [grammar-ws-boundary-and-vertical-whitespace.md](../todo/tickets/grammar-ws-boundary-and-vertical-whitespace.md) |
+| `Language/regexes.rakudoc:2684` | `m:st(...)` regex adverb (starting positions) is unsupported | [regex-st-adverb-unsupported.md](../todo/tickets/regex-st-adverb-unsupported.md) |
+| `Language/regexes.rakudoc:2892` | a grammar's `FAILGOAL` method isn't invoked when a goal-matching conjunction (`~`) fails | [grammar-failgoal-not-invoked.md](../todo/tickets/grammar-failgoal-not-invoked.md) |
+| `Language/regexes.rakudoc:2935` | `<~~>` recursive self-match returns the wrong (inner, not outer) nesting level | [regex-recursive-self-match-wrong-nesting-level.md](../todo/tickets/regex-recursive-self-match-wrong-nesting-level.md) |
+| `Language/traps.rakudoc:91` | `$++` inside a string-interpolated block doesn't reset per call the way raku's does | [dollar-plusplus-state-scope-in-interpolated-block.md](../todo/tickets/dollar-plusplus-state-scope-in-interpolated-block.md) |
+| `Language/traps.rakudoc:212` | `$.attr *= 2` inside a method throws `X::Assignment::RO` where current raku silently no-ops | [dollar-dot-attr-compound-assign-spurious-ro-error.md](../todo/tickets/dollar-dot-attr-compound-assign-spurious-ro-error.md) |
+| `Language/traps.rakudoc:1948` | `\|«@array` (flatten + hyper prefix combined) fails to parse | [flatten-hyper-prefix-parse-error.md](../todo/tickets/flatten-hyper-prefix-parse-error.md) |
+| `Language/traps.rakudoc:1067` | `for EXPR ~~ /regex/ { BLOCK }` executes `BLOCK` where raku produces no output | [for-loop-over-smartmatch-result-executes-unexpectedly.md](../todo/tickets/for-loop-over-smartmatch-result-executes-unexpectedly.md) |
+| `Language/traps.rakudoc:406`, `Language/variables.rakudoc:853` | a scalar's container isn't aliased when pushed into a collection without `.clone` — mutsu snapshots by value where raku aliases | [container-aliasing-not-preserved-into-collection.md](../todo/tickets/container-aliasing-not-preserved-into-collection.md) |
+| `Language/variables.rakudoc:1551` | `».&?BLOCK` (hyper-call with a block self-reference) dispatches an empty method name | [hyper-call-block-self-reference-empty-method.md](../todo/tickets/hyper-call-block-self-reference-empty-method.md) |
+| `Language/variables.rakudoc:134` | `my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift) | [paren-single-var-decl-var-scalar-name.md](../todo/tickets/paren-single-var-decl-var-scalar-name.md) |
+| `Language/variables.rakudoc:768` | `anon class`/`anon sub` with a non-ASCII name fails to parse; `anon sub NAME` also gists without the `&` sigil | [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md) |
+| `Language/variables.rakudoc:1765` | `$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification | [dollar-raku-wrong-metaclass-and-stringify.md](../todo/tickets/dollar-raku-wrong-metaclass-and-stringify.md) |
+| `Language/variables.rakudoc:318` | `$?FILE` reports the relative invocation path instead of an absolute path | [dollar-question-file-relative-not-absolute.md](../todo/tickets/dollar-question-file-relative-not-absolute.md) |
+
+**Excluded from this sub-batch (already deferred/resolved/drift/false-positive/environment):**
+- `Language/regexes.rakudoc` [3], [8] — `raku-drift`.
+- `Language/traps.rakudoc` [1], [2] — instances of the already-**Deferred** Nil-vs-Any identity
+  knot (`%h is default(Nil)` and `:= Nil` both render `(Any)` instead of `Nil`).
+- `Language/traps.rakudoc` [6] — Set iteration-order `raku-drift`.
+- `Language/variables.rakudoc` [1] — mutsu errors partway through a recursive `.` directory walk
+  (same shape as `Type/IO/Path.rakudoc` [4] from the earlier sub-batch); the real bug underneath
+  it (`».&?BLOCK` dispatching an empty method name) was isolated to a small non-environment-
+  dependent repro and filed as
+  [hyper-call-block-self-reference-empty-method.md](../todo/tickets/hyper-call-block-self-reference-empty-method.md).
+- `Language/variables.rakudoc` [3] — `$?FILE` reports mutsu's relative invocation path where raku
+  resolves to an absolute path; confirmed real, low-priority/cosmetic, filed as
+  [dollar-question-file-relative-not-absolute.md](../todo/tickets/dollar-question-file-relative-not-absolute.md).
+- `Language/variables.rakudoc` [6], [7], [9], [10] — `raku-drift` (`$*DISTRO`, `$*VM.config`,
+  `$*RAKU.compiler.version` are inherently environment/version-specific).
+- `Language/variables.rakudoc` [8] — `$*VM.precomp-ext`/`.precomp-target` report `mutsu`/`mutsu`
+  instead of raku's MoarVM-specific `moarvm`/`mbc`; this looks like an intentional identity
+  difference (mutsu isn't MoarVM), not a bug — not ticketed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
