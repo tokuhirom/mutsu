@@ -308,31 +308,6 @@ pub(crate) fn native_method_0arg(
     let method = method_sym.resolve();
     let method = method.as_str();
 
-    // Unicode's query methods are class methods over the Unicode data shipped
-    // with this runtime. `unicode-normalization` exports the authoritative
-    // version tuple for the tables mutsu actually uses.
-    if matches!(target.view(), ValueView::Package(name) if name == "Unicode") {
-        match method {
-            "version" => {
-                let (major, minor, patch) = unicode_normalization::UNICODE_VERSION;
-                let mut parts = vec![
-                    crate::value::VersionPart::Num(i64::from(major)),
-                    crate::value::VersionPart::Num(i64::from(minor)),
-                ];
-                // Rakudo renders Unicode 17.0.0 as `v17.0`: retain a patch
-                // component only when the Unicode data has a nonzero patch.
-                if patch != 0 {
-                    parts.push(crate::value::VersionPart::Num(i64::from(patch)));
-                }
-                return Some(Ok(Value::version(parts, false, false)));
-            }
-            // mutsu's strings use grapheme-aware Unicode handling throughout,
-            // so it provides the same NFG availability answer as MoarVM.
-            "NFG" => return Some(Ok(Value::TRUE)),
-            _ => {}
-        }
-    }
-
     // Lazy-Match scalar fast path: these arms are semantically identical to
     // the Match block far below, but answered here straight from the capture
     // node so the probe gauntlet in between (each a `view()`, which would
@@ -355,6 +330,41 @@ pub(crate) fn native_method_0arg(
             }
             "ast" | "made" => return Some(Ok(target.match_ast().unwrap_or(Value::NIL))),
             "Capture" | "clone" => return Some(Ok(target.clone())),
+            _ => {}
+        }
+    }
+
+    // Unicode's query methods are class methods over the Unicode data shipped
+    // with this runtime. `unicode-normalization` exports the authoritative
+    // version tuple for the tables mutsu actually uses.
+    //
+    // This check must come AFTER the lazy-Match fast path above: `target.view()`
+    // forces full materialization of a lazy Match, which is exactly what that
+    // fast path exists to avoid. By this point `target.is_lazy_match_value()`
+    // has already been ruled out (the fast path returned early for a lazy
+    // Match reaching one of its handled methods; for an unhandled method it
+    // falls through, but a lazy Match is never `ValueView::Package`, so calling
+    // `.view()` here is safe/cheap either way -- see the `Scalar` check right
+    // below, which relies on the same "lazy-Match case already handled above"
+    // invariant to call `target.view()` unconditionally too).
+    if matches!(target.view(), ValueView::Package(name) if name == "Unicode") {
+        match method {
+            "version" => {
+                let (major, minor, patch) = unicode_normalization::UNICODE_VERSION;
+                let mut parts = vec![
+                    crate::value::VersionPart::Num(i64::from(major)),
+                    crate::value::VersionPart::Num(i64::from(minor)),
+                ];
+                // Rakudo renders Unicode 17.0.0 as `v17.0`: retain a patch
+                // component only when the Unicode data has a nonzero patch.
+                if patch != 0 {
+                    parts.push(crate::value::VersionPart::Num(i64::from(patch)));
+                }
+                return Some(Ok(Value::version(parts, false, false)));
+            }
+            // mutsu's strings use grapheme-aware Unicode handling throughout,
+            // so it provides the same NFG availability answer as MoarVM.
+            "NFG" => return Some(Ok(Value::TRUE)),
             _ => {}
         }
     }
