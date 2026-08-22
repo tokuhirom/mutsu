@@ -21,6 +21,14 @@ minimal-repro reports), `progress.txt` (one stats line per file), `summary.txt`
 `summary.txt`, and the counts drop as fixes land — that is the visible progress
 signal.
 
+**When a finding is confirmed real (not raku-drift, not a harness false positive —
+see "Known harness false positive" below), file it as a ticket immediately** under
+`todo/tickets/<slug>.md` (or `todo/deep/` for high-blast-radius ones) per the root
+`CLAUDE.md` conventions, and add a row to [Ticketed](#ticketed-open--linked-to-todo)
+below linking the doc location to the ticket file. This is what keeps this backlog
+and the `todo/` queue in sync — a finding sitting only in a sweep report or only in a
+ticket file with no cross-link is easy to lose track of.
+
 The **raw output of the latest committed sweep** is checked in under
 [doc-diff-sweep/](doc-diff-sweep/) — read a per-file report there to get the minimal
 repros without re-running the sweep. Re-copy it (see that dir's `README.md`) whenever
@@ -52,6 +60,14 @@ doc) are version skew, not mutsu bugs — lowest priority.
 > (e.g. `syntax.rakudoc` reported 19 mismatches, only 3 real). Any pre-#4982 scan
 > numbers — and memory/notes calling a file "block-misalignment garbage" — are
 > unreliable; re-sweep instead.
+
+> **2026-08-22 partial re-check:** the 8 core `Type/` files (`Str`/`Array`/`List`/
+> `Hash`/`Num`/`Rat`/`Range`/`Map`) were re-run individually (not a full corpus sweep —
+> the survey table below is still the 2026-07-22 full-sweep snapshot and is stale for
+> these 8 rows specifically). High-signal divergences on this subset dropped from 50
+> (2026-07-18) to 12; see [Ticketed](#ticketed-open--linked-to-todo) for the 9 confirmed
+> findings now tracked as tickets. A full re-sweep to refresh the whole survey table is
+> still pending.
 
 ## Triaged
 
@@ -169,6 +185,38 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `(a=>0.1).Mix (+) (a=>0.02).Mix` remains `0.12000000000000001` — that needs the
   full exact-weight storage rework (the "FatRat-vs-Rat repr tag" class below), not
   a construction fix.
+
+### Ticketed (open — linked to todo/)
+Confirmed-real findings that have a filed ticket but are not yet fixed. Each row is the
+doc location the harness flagged plus the ticket that tracks it; when the ticket is
+resolved, move its content to `news/` (per `todo/README.md`) and delete the row here.
+
+Found in the 2026-08-22 re-run of the 8 core `Type/` files (`Str`/`Array`/`List`/`Hash`/
+`Num`/`Rat`/`Range`/`Map` — same set as the 2026-07-18 first run, which found 50
+high-signal divergences on this set; this re-run found 12, most of the difference being
+fixes that landed in between):
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Hash.rakudoc:65` | `WHAT {...}` (bare hash-literal block, no parens/var) misparses as two statements | [what-prefix-bare-hash-literal-block-arg.md](../todo/tickets/what-prefix-bare-hash-literal-block-arg.md) |
+| `Type/Hash.rakudoc:336` | `my %h .= push(pair)` should leave `%h` empty, mutsu keeps the pair | [hash-dot-assign-push-result.md](../todo/tickets/hash-dot-assign-push-result.md) |
+| `Type/List.rakudoc:219` | `(gather {...}).list.raku` keeps a spurious `.Seq` suffix when chained directly (no intermediate var) | [gather-chained-list-raku-seq-suffix.md](../todo/tickets/gather-chained-list-raku-seq-suffix.md) |
+| `Type/List.rakudoc:1207` | global `rotor()` routine (`v6.e.PREVIEW`) not implemented; the `.rotor` method already works | [rotor-global-routine-missing.md](../todo/tickets/rotor-global-routine-missing.md) |
+| `Type/Map.rakudoc:62` | `Map.new(a, 1, :b(2))` — bare colon-pair should bind as a named arg to `.new`, not a positional Pair | [map-new-bare-colonpair-named-arg.md](../todo/tickets/map-new-bare-colonpair-named-arg.md) |
+| `Type/Range.rakudoc:80` | `@arr[$range-var]` doesn't flatten into `for` iteration (literal `@arr[0..2]` does) | [array-subscript-range-var-list-context-slip.md](../todo/tickets/array-subscript-range-var-list-context-slip.md) |
+| `Type/Range.rakudoc:266` | `Range.int-bounds` method not implemented | [range-int-bounds-method-missing.md](../todo/tickets/range-int-bounds-method-missing.md) |
+| `Type/Range.rakudoc:284` | `Range.minmax` on excluded-end Range should throw `X::AdHoc`, mutsu returns bounds silently | [range-minmax-excluded-ends-should-throw.md](../todo/tickets/range-minmax-excluded-ends-should-throw.md) |
+| `Type/Str.rakudoc:647` | `.comb(:match)` (named-arg-only call) fails to dispatch at all; plain `.comb` and other arities work | [str-comb-named-arg-only-dispatch-missing.md](../todo/tickets/str-comb-named-arg-only-dispatch-missing.md) |
+
+**Known harness false positive (not ticketed):** `Hash.rakudoc:21`, `Map.rakudoc:18`,
+`Map.rakudoc:122` all flagged as `output-mismatch` on `.keys`/`.kv` iteration order.
+Verified 2026-08-22 that raku's own hash/Map key order is randomized per-process (8
+repeated single-line `raku -e` runs of the same `Map.rakudoc:122` example gave `(a b)`
+6/8 times and `(b a)` 2/8) — the harness's single-run oracle comparison can't
+distinguish this from a real ordering bug. The existing nondet heuristic (skips
+`rand`/`.pick`/`.roll`/`now`/`Supply`) doesn't cover bare `.keys`/`.kv`/hash-iteration
+output; improving that heuristic is a possible future harness enhancement, not tracked
+as a ticket here.
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
