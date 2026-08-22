@@ -3,7 +3,23 @@ use super::*;
 
 impl Value {
     /// Check if this value is an instance of the given type name (Raku `isa` operator).
+    ///
+    /// `.isa()` checks only the **nominal class hierarchy** (`.^mro`): it is
+    /// `False` for a role the value merely *does* (composes), even when an
+    /// ancestor class composes that role. `.does()` / `~~` / role-aware
+    /// smart-match are role-aware and must stay `True` for those roles — see
+    /// `does_check` below, which additionally consults `does_role_hierarchy`.
     pub(crate) fn isa_check(&self, type_name: &str) -> bool {
+        self.isa_or_does_check(type_name, false)
+    }
+
+    /// Shared implementation behind both `isa_check` (nominal-only,
+    /// `allow_roles = false`) and `does_check` (nominal-or-role,
+    /// `allow_roles = true`). Every wrapper-unwrapping early return threads
+    /// `allow_roles` through the recursive call so a wrapped value (Scalar,
+    /// ContainerRef, a forced LazyThunk, a HashEntryRef, a VarRef, or a Mixin's
+    /// inner value) resolves under the same semantics as the outer call.
+    fn isa_or_does_check(&self, type_name: &str, allow_roles: bool) -> bool {
         // For Instance/Package, extract name as owned String for later comparison
         let owned_name: Option<String> = match self.view() {
             ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
@@ -13,7 +29,7 @@ impl Value {
         // A `VarRef` is a transient binder wrapper, not a type of its own: it
         // answers as the variable's value.
         if let ValueView::VarRef { value, .. } = self.view() {
-            return value.isa_check(type_name);
+            return value.isa_or_does_check(type_name, allow_roles);
         }
         let my_type = match self.view() {
             ValueView::VarRef { .. } => unreachable!("unwrapped above"),
@@ -133,7 +149,7 @@ impl Value {
                     }
                     return false;
                 }
-                if inner.isa_check(type_name) {
+                if inner.isa_or_does_check(type_name, allow_roles) {
                     return true;
                 }
                 // Also check mixin type keys (e.g., allomorphic "Str" mixin)
@@ -149,19 +165,21 @@ impl Value {
             ValueView::CustomTypeInstance(d) => {
                 return d.type_name.resolve() == type_name;
             }
-            ValueView::Scalar(inner) => return inner.isa_check(type_name),
+            ValueView::Scalar(inner) => return inner.isa_or_does_check(type_name, allow_roles),
             ValueView::ContainerRef(_) => {
-                return self.with_deref(|inner| inner.isa_check(type_name));
+                return self.with_deref(|inner| inner.isa_or_does_check(type_name, allow_roles));
             }
             ValueView::LazyThunk(thunk_data) => {
                 let cache = thunk_data.cache.lock().unwrap();
                 if let Some(ref cached) = *cache {
-                    return cached.isa_check(type_name);
+                    return cached.isa_or_does_check(type_name, allow_roles);
                 }
                 "Scalar" // unforced lazy thunk
             }
             ValueView::HashEntryRef { .. } => {
-                return self.hash_entry_read().isa_check(type_name);
+                return self
+                    .hash_entry_read()
+                    .isa_or_does_check(type_name, allow_roles);
             }
         };
         if my_type == type_name {
@@ -218,7 +236,20 @@ impl Value {
         {
             return true;
         }
-        // Check type hierarchy
+        if allow_roles && self.does_role_hierarchy(type_name) {
+            return true;
+        }
+        self.isa_nominal_hierarchy(type_name)
+    }
+
+    /// Nominal class-hierarchy table for built-in/primitive value types —
+    /// real `.^mro` ancestors only, no roles. Consulted by `isa_check`
+    /// (directly) and by `does_check` (as the "or is a real ancestor" half of
+    /// `does = isa OR does-role`). Every entry here was verified against real
+    /// `raku -e 'say TYPE.^mro'` output; a role name that merely reads like a
+    /// supertype (e.g. `Numeric`, `Positional`, `Callable`) belongs in
+    /// `does_role_hierarchy` instead, not here.
+    fn isa_nominal_hierarchy(&self, type_name: &str) -> bool {
         match type_name {
             "Any" => true,
             "Mu" => true,
@@ -241,8 +272,12 @@ impl Value {
                         | ValueView::Hash(..)
                 ) || matches!(
                     self.view(),
+                    // Match.^mro is (Match Capture Cool Any Mu) — Cool is a real
+                    // ancestor of Match. Capture itself is NOT (Capture.^mro is
+                    // (Capture Any Mu), no Cool): `Capture.new.isa(Cool)` is
+                    // False in real raku, verified 2026-08-22.
                     ValueView::Instance { class_name, .. }
-                        if class_name == "Match" || class_name == "Capture"
+                        if class_name == "Match"
                 )
             }
             "Capture" => {
@@ -253,40 +288,18 @@ impl Value {
                             if class_name == "Match" || class_name == "Capture"
                     )
             }
-            "Numeric" => matches!(
-                self.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(_, _)
-                    | ValueView::FatRat(_, _)
-                    | ValueView::BigRat(_, _)
-                    | ValueView::Complex(_, _)
-            ),
-            "Real" => matches!(
-                self.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(_, _)
-                    | ValueView::FatRat(_, _)
-                    | ValueView::BigRat(_, _)
-            ),
-            "Rational" => matches!(
-                self.view(),
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
-            ),
-            "Dateish" => matches!(
-                self.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
-            ),
             "FatRat" => {
                 matches!(self.view(), ValueView::FatRat(_, _))
                     || (matches!(self.view(), ValueView::BigRat(_, _)) && self.is_bigfatrat())
             }
+            // Bool.^mro is (Bool Int Cool Any Mu) — Bool really does nominally
+            // extend Int in raku (`True.isa(Int)` is True).
             "Int" => matches!(self.view(), ValueView::Bool(_)),
-            "Stringy" => matches!(self.view(), ValueView::Str(_)),
-            "Block" | "Routine" | "Code" | "Callable" => {
+            // Block.^mro/Routine.^mro/Code.^mro are real class chains
+            // (Sub < Routine < Block < Code). `Callable` is the role they all
+            // compose (`Sub.isa(Callable)` is False, `.does(Callable)` is
+            // True) — see `does_role_hierarchy`.
+            "Block" | "Routine" | "Code" => {
                 matches!(
                     self.view(),
                     ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
@@ -329,14 +342,107 @@ impl Value {
             "RaceSeq" => {
                 matches!(self.view(), ValueView::RaceSeq(_))
             }
-            "Seq" | "List" => {
+            // List.^mro is (List Cool Any Mu); Array < List. A genuine forced
+            // `Seq` is its own `ValueView::Seq` and already answered by the
+            // `my_type == type_name` fast path above — HyperSeq/RaceSeq do
+            // NOT nominally descend from List or Seq (their `.^mro` is just
+            // (HyperSeq/RaceSeq Any Mu)), verified 2026-08-22.
+            "List" => {
                 matches!(
                     self.view(),
-                    ValueView::Array(..)
-                        | ValueView::LazyList(_)
-                        | ValueView::Slip(_)
-                        | ValueView::HyperSeq(_)
-                        | ValueView::RaceSeq(_)
+                    ValueView::Array(..) | ValueView::LazyList(_) | ValueView::Slip(_)
+                )
+            }
+            // Hash.^mro is (Hash Map Cool Any Mu) — Map is a real ancestor of
+            // Hash. Pair/Set/Bag/Mix/Capture do NOT nominally descend from Map
+            // (they only compose the Associative role): `(1=>2).isa(Map)` and
+            // `Set.new.isa(Map)` are both False in real raku, verified
+            // 2026-08-22 (`Associative` lives in `does_role_hierarchy`).
+            "Map" => {
+                matches!(self.view(), ValueView::Hash(..))
+                    || matches!(
+                        self.view(),
+                        ValueView::Instance { attributes, .. }
+                            if attributes.contains_key("__mutsu_hash_storage")
+                    )
+                    || matches!(
+                        self.view(),
+                        ValueView::Package(name)
+                            if matches!(name.resolve().as_str(), "Hash" | "Map")
+                    )
+            }
+            "ObjAt" => {
+                // ValueObjAt is a subclass of ObjAt
+                matches!(
+                    self.view(),
+                    ValueView::Instance { class_name, .. }
+                        if class_name == "ObjAt" || class_name == "ValueObjAt"
+                )
+            }
+            "Pod::Block" => matches!(
+                self.view(),
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Pod::Block"
+                        || class_name == "Pod::Block::Comment"
+                        || class_name == "Pod::Block::Para"
+                        || class_name == "Pod::Block::Named"
+                        || class_name == "Pod::Heading"
+                        || class_name == "Pod::Block::Table"
+                        || class_name == "Pod::Item"
+            ),
+            "Pod::Config" => matches!(
+                self.view(),
+                ValueView::Instance { class_name, .. }
+                    if class_name == "Pod::Config"
+            ),
+            _ => false,
+        }
+    }
+
+    /// Role table for built-in/primitive value types — role names a value
+    /// merely *does* (composes), NOT real `.^mro` ancestors. Consulted only by
+    /// `does_check` (`.does()` / `~~` / role-aware smart-match), never by
+    /// `isa_check`. The caller (`isa_or_does_check`) has already unwrapped
+    /// wrapper views (Scalar, ContainerRef, forced LazyThunk, HashEntryRef,
+    /// VarRef), so these arms match `self.view()` directly.
+    fn does_role_hierarchy(&self, role_name: &str) -> bool {
+        match role_name {
+            "Numeric" => matches!(
+                self.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::BigRat(_, _)
+                    | ValueView::Complex(_, _)
+            ),
+            "Real" => matches!(
+                self.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::BigRat(_, _)
+            ),
+            "Rational" => matches!(
+                self.view(),
+                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
+            ),
+            "Dateish" => matches!(
+                self.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
+            ),
+            "Stringy" => matches!(self.view(), ValueView::Str(_)),
+            "Callable" => {
+                matches!(
+                    self.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(name.resolve().as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
                 )
             }
             "Positional" => {
@@ -365,7 +471,11 @@ impl Value {
                         if attributes.contains_key("__mutsu_array_storage")
                 )
             }
-            "Map" | "Associative" => {
+            // `Map` is NOT here — it is a real class (nominal, `isa_nominal_hierarchy`
+            // handles it), unlike `Associative` which is the role Hash/Pair/Set/
+            // Bag/Mix/Capture all compose. `(1=>2).does(Map)` is False in real
+            // raku (verified 2026-08-22) even though `.does(Associative)` is True.
+            "Associative" => {
                 matches!(
                     self.view(),
                     ValueView::Hash(..)
@@ -395,30 +505,6 @@ impl Value {
                     | ValueView::Hash(..)
                     | ValueView::Seq(_)
             ),
-            "ObjAt" => {
-                // ValueObjAt is a subclass of ObjAt
-                matches!(
-                    self.view(),
-                    ValueView::Instance { class_name, .. }
-                        if class_name == "ObjAt" || class_name == "ValueObjAt"
-                )
-            }
-            "Pod::Block" => matches!(
-                self.view(),
-                ValueView::Instance { class_name, .. }
-                    if class_name == "Pod::Block"
-                        || class_name == "Pod::Block::Comment"
-                        || class_name == "Pod::Block::Para"
-                        || class_name == "Pod::Block::Named"
-                        || class_name == "Pod::Heading"
-                        || class_name == "Pod::Block::Table"
-                        || class_name == "Pod::Item"
-            ),
-            "Pod::Config" => matches!(
-                self.view(),
-                ValueView::Instance { class_name, .. }
-                    if class_name == "Pod::Config"
-            ),
             _ => false,
         }
     }
@@ -445,7 +531,8 @@ impl Value {
                 return true;
             }
         }
-        // Delegate to isa_check for other cases (roles are stored as parents)
-        self.isa_check(role_name)
+        // `does` is `isa OR does-role`: consult the nominal hierarchy too
+        // (e.g. `42.does(Cool)` is True in real raku), not just role names.
+        self.isa_or_does_check(role_name, true)
     }
 }
