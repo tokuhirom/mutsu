@@ -2753,6 +2753,7 @@ hand, not guessed:
   the next person does not re-discover it from scratch. A real fix would need
   the predicate to parse the TAP `# TODO` suffix rather than grep raw `not
   ok`, which is more than "capture exit status" and is follow-up work.
+  **Fixed 2026-08-23 — see the dated entry at the end of this file.**
 
 So the honest current count is **20 confirmed regressions when checked by
 hand** (the 18 the script now surfaces, plus the 2 masked by the TODO-line
@@ -2833,3 +2834,41 @@ module" above) before this session began; re-confirmed passing 5/5 under
 
 roast side not re-swept this session (unrelated to the fix; the priority list
 item 3 above still applies).
+
+## 2026-08-23: `test-module-sweep.sh`'s `passes()` predicate now understands TAP `# TODO`
+
+Fixed the narrow follow-up recorded above: `passes()` in
+`scripts/test-module-sweep.sh` scored a `not ok N ... # TODO ...` line the
+same as a genuine `not ok`, so a file whose *native*-provider baseline
+legitimately carries a `# TODO`-annotated failure (an expected failure, per
+standard TAP and mutsu's own `todo()` — see `raku-doc/doc/Type/Test.rakudoc`)
+was scored as "not passing" on the native side too. That masked a real
+regression on the real-Test side by dropping the file into "fail under both"
+instead of "regressed".
+
+`passes()` now treats `^not ok` lines as a genuine failure only when they lack
+a case-insensitive `# TODO` suffix:
+
+```sh
+grep -E '^not ok' "$out" | grep -qvi '#[[:space:]]*todo' && return 1
+```
+
+Verified against the two files this ticket named by hand (debug build, repo
+root):
+
+- `t/exits-ok.t`: native exits 0 with two legitimate TODO `not ok` lines (its
+  own negative-case tests 10 and 12) -> now scores as **passing**. Real
+  (`MUTSU_REAL_TEST=1`) exits 4 with `# You planned 13 tests, but ran 0` -> still
+  scores as **failing**. The file now correctly lands in "regressed", not
+  "fail under both".
+- `t/failure-sink-handled.t`: native exits 0 with one legitimate TODO `not ok`
+  (test 4) -> now scores as **passing**. Real exits 255 with `# You planned 4
+  tests, but ran 3` then `Unknown call: is-approx` -> still scores as
+  **failing**. Same reclassification.
+
+This is a `scripts/`-only test-harness fix; no interpreter code was touched.
+The 22-regression sweep count from the 2026-08-21 entry above should now read
+24 once someone re-runs the full sweep (the two previously-masked files
+surfacing), consistent with the "20 confirmed by hand" / "24 raw" figures
+already recorded there -- not re-run here to keep this change scoped to the
+predicate fix itself.

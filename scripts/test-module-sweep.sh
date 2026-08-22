@@ -54,11 +54,23 @@ ls t/*.t | xargs -P "$JOBS" -I{} bash -c 'run_one "$@"' _ {}
 # module's END-phaser plan check prints *only*
 # "# You planned N tests, but ran M" and exits 255 -- no "not ok", no
 # "Runtime error" -- so the text-only grep used to score that as a pass.
+#
+# A "not ok N ... # TODO ..." line is standard TAP for an *expected* failure
+# (see mutsu's own `todo()` in Test.rakumod / raku-doc/doc/Type/Test.rakudoc)
+# and must not be scored as a genuine regression -- prove and mutsu's own TAP
+# consumer (runtime/test_functions.rs) both tolerate it. Without this, a file
+# whose native-provider baseline legitimately contains a TODO `not ok` (e.g.
+# t/exits-ok.t, t/failure-sink-handled.t) is scored as "not passing" on the
+# native side too, so a real regression on the real-Test side gets hidden in
+# the "fail under both" bucket instead of surfacing in "regressed". See
+# todo/deep/vendor-real-test-module.md's 2026-08-22 follow-up.
 passes() {
     local out="$1" st="$2"
     [ "$(cat "$st" 2>/dev/null)" = "0" ] || return 1
-    ! grep -qE '^(not ok|Runtime error|Parse error|===SORRY)' "$out" \
-        && ! grep -q '^# You planned' "$out"
+    grep -qE '^(Runtime error|Parse error|===SORRY)' "$out" && return 1
+    grep -q '^# You planned' "$out" && return 1
+    grep -E '^not ok' "$out" | grep -qvi '#[[:space:]]*todo' && return 1
+    return 0
 }
 
 both=0 regressed=0 real_only=0 neither=0
