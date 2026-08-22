@@ -4019,6 +4019,20 @@ pub(crate) struct CompiledCode {
     /// declarations genuinely ARE that frame's lexicals and stay shared. Set
     /// during `compute_needs_env_sync`.
     pub(crate) is_supply_block_body: bool,
+    /// ADR-0037 Slice 4: for an `EVAL ..., context => $ctx` unit whose `$ctx`
+    /// named a *live* routine (`EvalContextRoutineState::Live(Some(id))`),
+    /// the resolved registration clone id (`Interpreter::registration_clone_id`)
+    /// of that routine. Set once, post-compile, by `compile_block_value_opts`
+    /// -- not an `OpCode::Return` payload, to keep `OpCode::Return` itself
+    /// payload-free (the `opcode_size_guard` test pins `size_of::<OpCode>()`).
+    /// `OpCode::Return`'s exec arm reads this straight off `code` and stamps
+    /// it onto the raised `RuntimeError::return_signal` as
+    /// `return_target_callable_id`, so the signal unwinds past any
+    /// intervening routine boundary to the one this id names (mirroring how
+    /// a bare block's `return` already inherits its captured
+    /// `__mutsu_callable_id`, see `vm_closure_dispatch.rs`). `None` for every
+    /// ordinary (non-EVAL, or EVAL-without-a-live-context-target) chunk.
+    pub(crate) eval_context_target_callable_id: Option<u64>,
     /// The generated emitter parameter of a `supply { … }` body
     /// (`__mutsu_supply_emitter_N`), interned. `Some` exactly when
     /// `is_supply_block_body`.
@@ -4369,6 +4383,7 @@ impl CompiledCode {
             env_consumer_slots: EnvConsumerSlots::default(),
             dup_named_locals: Vec::new(),
             is_supply_block_body: false,
+            eval_context_target_callable_id: None,
             supply_emitter_sym: None,
             inherited_owned_lexicals: Vec::new(),
             my_declared_sym: rustc_hash::FxHashSet::default(),

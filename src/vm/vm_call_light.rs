@@ -346,6 +346,28 @@ impl Interpreter {
                     break;
                 }
                 Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                    // Non-local return: if the signal targets a specific
+                    // callable, only catch it if this routine is the target
+                    // (mirrors `call_compiled_function_named`'s decline
+                    // check). This path skips the callable_id env-marker
+                    // insert other dispatch paths do (a documented perf
+                    // trade-off — see this fn's doc comment), so resolve it
+                    // lazily here, only when a signal actually carries a
+                    // target: the overwhelmingly common case (an ordinary
+                    // untargeted `return`) never pays this lookup. Without
+                    // this check, a targeted return (ADR-0037 Slice 4's
+                    // `EVAL ..., context => $ctx`, or a bare block's `return`
+                    // escaping toward an enclosing routine past this one) was
+                    // swallowed here unconditionally instead of propagating
+                    // to its actual target.
+                    if let Some(target_id) = e.return_target_callable_id() {
+                        let my_id = self.registration_clone_id(&cf.package, func_name);
+                        if my_id != Some(target_id) {
+                            loan_env!(self, restore_let_saves(let_mark));
+                            result = Err(e);
+                            break;
+                        }
+                    }
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);

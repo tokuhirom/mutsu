@@ -184,10 +184,17 @@ pub(crate) enum EvalContextRoutineState {
     Mainline,
     /// `$ctx` named a routine that is still live on the dynamic call stack:
     /// an enclosing routine exists, same as the ambient (no-`context`)
-    /// classification. Targeting *that specific* frame past any intervening
-    /// routines (raku's §1.1(b) probe) is ADR-0037 Slice 4, not implemented
-    /// by this classification alone.
-    Live,
+    /// classification. The payload is that routine's registration clone id
+    /// (`Interpreter::registration_clone_id`, the same identity space
+    /// `RuntimeError::return_target_callable_id` compares against) when one
+    /// resolves — `None` for a nameless routine frame (e.g. an anonymous sub
+    /// with no `__mutsu_callable_id` registration), which cannot be targeted
+    /// this way and falls back to the pre-Slice-4 first-boundary-catches
+    /// behavior. ADR-0037 Slice 4: when `Some`, `compile_block_value_opts`
+    /// bakes the id onto the compiled EVAL unit's `CompiledCode` so its
+    /// `Return` targets that specific frame past any intervening routines
+    /// (raku's §1.1(b) probe) instead of the first one encountered.
+    Live(Option<u64>),
     /// `$ctx` named a routine that has already exited the dynamic call
     /// stack: throws `X::ControlFlow::Return` right at the `return` site,
     /// with `out-of-dynamic-scope` set and rakudo's fuller wording, matching

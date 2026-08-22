@@ -256,7 +256,12 @@ impl Interpreter {
     /// performs the identical lookup keyed off an already-built `SubData`).
     /// `None` when `name` is empty or no registration record is visible from
     /// the current env.
-    fn registration_clone_id(&self, package: &str, name: &str) -> Option<u64> {
+    ///
+    /// `pub(crate)`: also used by `builtins_eval_misc::classify_eval_context_routine`
+    /// (ADR-0037 Slice 4) to resolve the target id for a live `EVAL ...,
+    /// context => $ctx` routine, from a `RoutineFrame`'s own `package`/`name`
+    /// rather than a `SubData`.
+    pub(crate) fn registration_clone_id(&self, package: &str, name: &str) -> Option<u64> {
         if name.is_empty() {
             return None;
         }

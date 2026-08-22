@@ -367,19 +367,33 @@ impl Interpreter {
     /// against the recorded key -- sound only because ADR-0037 Slice 1 made
     /// every sub dispatch path push a routine frame; a re-entrant same-named
     /// routine is indistinguishable by that key and resolves to the
-    /// innermost live frame, matching `return`'s own lexical semantics.
+    /// innermost live frame (searched from the top of the stack down),
+    /// matching `return`'s own lexical semantics.
+    ///
+    /// ADR-0037 Slice 4: when a live frame matches, also resolve its
+    /// registration clone id (`registration_clone_id`, keyed the same way
+    /// `RuntimeError::return_target_callable_id` is) so the caller can bake
+    /// it onto the compiled EVAL unit's `Return` and target that frame
+    /// specifically. `Live(None)` for a live frame with no resolvable id
+    /// (e.g. an anonymous routine, which never registers
+    /// `__mutsu_callable_id`) -- falls back to the pre-Slice-4 behavior of
+    /// the first routine boundary catching the signal.
     fn classify_eval_context_routine(&self, ctx: &Value) -> EvalContextRoutineState {
         let Some(key) = Self::eval_context_routine(ctx) else {
             return EvalContextRoutineState::Mainline;
         };
-        let live = self
+        let live_frame = self
             .routine_stack
             .iter()
-            .any(|f| !f.is_block && format!("{}::{}", f.package, f.name) == key);
-        if live {
-            EvalContextRoutineState::Live
-        } else {
-            EvalContextRoutineState::Dead
+            .rev()
+            .find(|f| !f.is_block && format!("{}::{}", f.package, f.name) == key);
+        match live_frame {
+            Some(frame) => {
+                let target_id =
+                    self.registration_clone_id(&frame.package.resolve(), &frame.name.resolve());
+                EvalContextRoutineState::Live(target_id)
+            }
+            None => EvalContextRoutineState::Dead,
         }
     }
 

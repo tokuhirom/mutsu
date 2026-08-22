@@ -93,7 +93,7 @@ impl Interpreter {
     /// returns from `f`).
     fn eval_unit_in_routine(&self) -> bool {
         match self.pending_eval_context_routine {
-            Some(EvalContextRoutineState::Live) => true,
+            Some(EvalContextRoutineState::Live(_)) => true,
             Some(EvalContextRoutineState::Mainline) | Some(EvalContextRoutineState::Dead) => false,
             None => self.enclosing_routine_exists(),
         }
@@ -171,7 +171,26 @@ impl Interpreter {
                 .get(&self.current_package())
                 .cloned()
         });
-        compiler.compile(body)
+        let (mut code, fns) = compiler.compile(body);
+        // ADR-0037 Slice 4: bake the resolved target callable id onto this
+        // unit's own `CompiledCode` (not a `Compiler` field, and not an
+        // `OpCode::Return` payload -- see the ADR's §5 Slice 4 note on the
+        // opcode size guard) so every `OpCode::Return` this chunk's own
+        // top-level statements emit targets the context routine specifically,
+        // past any intervening routine boundary, instead of being caught by
+        // the first one the signal reaches. A nested closure/sub compiled
+        // from *inside* this body gets its own fresh `Compiler`/`CompiledCode`
+        // (`compile_closure_body_with_routine_flag`) that never sees this
+        // field, so this only affects `return` written directly in the EVAL
+        // unit's own mainline -- exactly `EVAL`'s own compilation unit, not
+        // a routine the snippet itself declares.
+        if is_eval_unit
+            && let Some(EvalContextRoutineState::Live(Some(target_id))) =
+                self.pending_eval_context_routine
+        {
+            code.eval_context_target_callable_id = Some(target_id);
+        }
+        (code, fns)
     }
 
     pub(crate) fn eval_block_value(&mut self, body: &[Stmt]) -> Result<Value, RuntimeError> {

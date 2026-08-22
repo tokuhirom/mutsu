@@ -529,6 +529,20 @@ impl Interpreter {
             match step {
                 Ok(()) => {}
                 Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                    // Non-local return: if the signal targets a specific
+                    // callable, only catch it if this routine is the target
+                    // (mirrors `call_compiled_function_named`'s decline
+                    // check; see `vm_call_light.rs`'s twin for the full
+                    // rationale, including why this lookup is deferred to
+                    // only the rare targeted-signal case).
+                    if let Some(target_id) = e.return_target_callable_id() {
+                        let my_id = self.registration_clone_id(&cf.package, func_name);
+                        if my_id != Some(target_id) {
+                            loan_env!(self, restore_let_saves(let_mark));
+                            result = Err(e);
+                            break;
+                        }
+                    }
                     let ret_val = e.return_value.unwrap();
                     explicit_return = Some(ret_val.clone());
                     self.stack.truncate(saved_stack_depth);

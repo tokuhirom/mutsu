@@ -4170,7 +4170,17 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                return Err(RuntimeError::return_signal(val));
+                let mut err = RuntimeError::return_signal(val);
+                // ADR-0037 Slice 4: an EVAL unit whose `context => $ctx`
+                // named a live routine bakes that routine's id onto its own
+                // `CompiledCode` (`compile_block_value_opts`); stamp it here
+                // so the signal unwinds past any intervening routine
+                // boundary to the frame this id names, instead of being
+                // caught by the first one it reaches.
+                if let Some(target_id) = code.eval_context_target_callable_id {
+                    err.set_return_target_callable_id(Some(target_id));
+                }
+                return Err(err);
             }
             OpCode::ReturnFromNonRoutine(lexically_in_routine, out_of_dynamic_scope) => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
