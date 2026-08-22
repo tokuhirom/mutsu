@@ -311,10 +311,26 @@ impl Interpreter {
         // Collect the integer indices addressed by `idx` (scalar, slice, or
         // range) and drop them from the array's embedded `initialized` set so
         // the deleted slots are recognized as holes and can be trimmed.
+        //
+        // A zen/whatever slice (`@a[]:delete` / `@a[*]:delete`) addresses
+        // EVERY index but arrives here as a single `ValueView::Whatever`
+        // value, which `collect_usize_indices` cannot expand without knowing
+        // the array's length -- handle it separately below, inside the
+        // `with_array_mut` closure where the length is available. (ADR-0049
+        // slice 5: this used to be silently compensated for by
+        // `trim_trailing_array_holes`'s own now-removed inconsistency --
+        // treating `initialized == None` as an empty set rather than "every
+        // index present" made every trailing gap-marker element trim
+        // regardless of tracking. Folding that function onto the correct,
+        // canonical `ArrayData::hole_at` semantics exposed this as the real
+        // root cause instead.)
+        let is_whatever = matches!(idx.view(), ValueView::Whatever);
         let mut to_remove: Vec<usize> = Vec::new();
-        Self::collect_usize_indices(idx, &mut to_remove);
-        if to_remove.is_empty() {
-            return;
+        if !is_whatever {
+            Self::collect_usize_indices(idx, &mut to_remove);
+            if to_remove.is_empty() {
+                return;
+            }
         }
         if let Some(root) = self.env_root_descended_mut(var_name) {
             root.with_array_mut(|items, _| {
@@ -328,8 +344,13 @@ impl Interpreter {
                 // deleted slot's `:exists` == False (S02-types/array.t test 108).
                 let len = data.len();
                 let set = data.initialized.get_or_insert_with(|| (0..len).collect());
-                for i in to_remove {
-                    set.remove(&i);
+                if is_whatever {
+                    // Every index was addressed: none remain present.
+                    set.clear();
+                } else {
+                    for i in to_remove {
+                        set.remove(&i);
+                    }
                 }
             });
         }
@@ -353,10 +374,17 @@ impl Interpreter {
                     Self::collect_usize_indices(item, out);
                 }
             }
-            ValueView::Int(i) if i >= 0 => out.push(i as usize),
-            ValueView::Num(f) if f >= 0.0 => out.push(f as usize),
+            // ADR-0049 slice 5: delegate scalar conversion to the same
+            // `index_to_usize` every OTHER multi-dim/array index site uses
+            // (Int/Num/Rat/FatRat/BigRat, with a finite check) instead of a
+            // narrower ad-hoc Int/Num-only match with a string-parse
+            // fallback -- the old fallback silently dropped a `Rat` index
+            // (`1.5` in raku source is a `Rat`, not a `Num`; its
+            // `to_string_value()` is "1.5", which does not parse as a
+            // `usize`), so `@a[1.5]:delete` never recorded the deleted slot
+            // in `initialized` and a trailing hole was left untrimmed.
             _ => {
-                if let Ok(i) = idx.to_string_value().parse::<usize>() {
+                if let Some(i) = Self::index_to_usize(idx) {
                     out.push(i);
                 }
             }

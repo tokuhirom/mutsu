@@ -1537,7 +1537,20 @@ impl Interpreter {
                     } else {
                         args[0].to_string_value()
                     };
-                    let result = self.resolve_hash_entry(&map, &key);
+                    let raw = self.resolve_hash_entry(&map, &key);
+                    // ADR-0049 slice 5 (row 25): `resolve_hash_entry` returns
+                    // the raw `Value::NIL` absent-key sentinel with no
+                    // compensation of its own -- every OTHER hash-key reader
+                    // (`vm_var_index_ops.rs`) substitutes the container's own
+                    // default (`is default(...)` -> typed element type object
+                    // -> `Any`) when the key is missing; `AT-KEY` had none at
+                    // all, so `%h.AT-KEY("missing")` answered a bare `Nil`
+                    // instead of `(Any)`/`(Int)`/the declared default.
+                    let result = if raw.is_nil() {
+                        self.typed_container_default(inner_target)
+                    } else {
+                        raw
+                    };
                     crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "at-key");
                     self.stack.push(result);
                     return Ok(());
@@ -2754,9 +2767,23 @@ impl Interpreter {
         // silently rebuilt a detached array (`my @a; @a.push("n");
         // @a.append(...)` inside a `start` block lost the append). This path
         // does descend, via `env_root_descended_mut`.
+        //
+        // ADR-0049 slice 4: also bail on a container carrying its own
+        // `is default(...)` value. `decay_nil_vec_elements` below is
+        // deliberately untyped-only (always decays a Nil arg to plain `Any`)
+        // -- correct ONLY because this guard already routes every typed/
+        // metadata-tagged target to the richer interpreter path. Without this
+        // check an `is default(...)` array (which carries neither a type
+        // constraint nor `container_type_metadata`, a separate side channel)
+        // stayed on this fast path and silently stored a bare `Any` element
+        // instead of the container's own default: `my @a is default(42) =
+        // 1,2,3; @a.append(Nil)` stored `Any`, where both push (which has its
+        // own dedicated opcode/fast path, already routed through
+        // `assign_store_nil_default`) and real raku store `42`.
         if (self.shared_vars_active && !self.container_name_is_redeclared(target_name))
             || loan_env!(self, var_type_constraint(target_name)).is_some()
             || self.container_type_metadata(target).is_some()
+            || self.container_default(target).is_some()
         {
             return None;
         }

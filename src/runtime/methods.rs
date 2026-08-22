@@ -255,15 +255,29 @@ pub(crate) fn multidim_delete_pos(
     let Some(i) = pos_index(&indices[0]) else {
         return Err(RuntimeError::new("Cannot DELETE-POS with a negative index"));
     };
+    let old_len = items.len();
+    // Materialize the "all present" range (`None` means every in-range
+    // index exists) up front so the leaf-level delete below can correctly
+    // record the vacated slot as a hole -- `ArrayData::new` further down
+    // starts a brand-new node with no `initialized` set of its own.
+    let mut initialized = items.initialized.clone();
     let mut updated = items.to_vec();
     let deleted;
     if indices.len() == 1 {
         if i < updated.len() {
-            let old = std::mem::replace(&mut updated[i], Value::NIL);
+            // ADR-0049 slice 5: the vacated slot gets the standard
+            // `Package("Any")` gap marker instead of a raw `Value::NIL` --
+            // `Nil` is no longer a hole sentinel, only `initialized` is
+            // (mirrors the single-dimension `.DELETE-POS`,
+            // `array_delete_pos_value` in methods_subscript_protocol.rs).
+            let old = std::mem::replace(&mut updated[i], Value::package(Symbol::intern("Any")));
             deleted = match old.view() {
                 ValueView::Scalar(inner) => inner.clone(),
                 _ => old.clone(),
             };
+            initialized
+                .get_or_insert_with(|| (0..old_len).collect())
+                .remove(&i);
         } else {
             deleted = Value::NIL;
         }
@@ -278,12 +292,12 @@ pub(crate) fn multidim_delete_pos(
         }
         deleted = d;
     }
+    let mut data = crate::value::ArrayData::new(updated);
+    data.value_type = items.value_type.clone();
+    data.initialized = initialized;
     Ok((
         deleted,
-        Value::array_with_kind(
-            crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-            arr_kind,
-        ),
+        Value::array_with_kind(crate::gc::Gc::new(data), arr_kind),
     ))
 }
 

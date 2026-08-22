@@ -34,13 +34,11 @@ impl Interpreter {
     }
 
     /// Trim trailing "holes" from a named array variable after deletion.
-    /// A hole is either `Nil` (deleted slot) or an uninitialized
-    /// `Package("Any")` slot (auto-vivified gap).  Explicitly
-    /// assigned slots are tracked via `__mutsu_initialized_index::` metadata
-    /// and are NOT trimmed.
+    /// A hole is a deleted slot or an uninitialized `Package("Any")`/typed
+    /// gap marker — the same predicate `ArrayData::hole_at` implements.
+    /// Explicitly assigned slots are tracked via the array's own embedded
+    /// `initialized` set and are NOT trimmed.
     fn trim_trailing_array_holes(&mut self, var_name: &str) {
-        // Get the type constraint for typed arrays (e.g. "Int" for `my Int @a`)
-        let type_constraint = loan_env!(self, var_type_constraint(var_name)).unwrap_or_default();
         let env = self.env_mut();
         let Some(container) = env.get_mut(var_name) else {
             return;
@@ -56,28 +54,18 @@ impl Interpreter {
             }
             // Container identity (§3): trim through the shared backing node.
             let arr = crate::value::gc_data_mut(items);
-            // The explicitly-assigned indices travel with the array (embedded set).
-            let initialized = arr.initialized.clone().unwrap_or_default();
-            while let Some(last) = arr.last() {
+            // ADR-0049 slice 5: fold onto `ArrayData::hole_at`'s embedded
+            // `value_type`/`initialized` -- this used to open-code its own
+            // copy of the predicate, consulting the name-keyed
+            // `var_type_constraint(var_name)` side table (ADR-0042's target
+            // for retirement) instead of the array's own embedded
+            // `value_type`, which could diverge for a bound/aliased array
+            // whose name carries no constraint of its own.
+            while !arr.is_empty() && arr.hole_at(arr.len() - 1) {
                 let idx = arr.len() - 1;
-                let is_hole = match last.view() {
-                    ValueView::Nil => true,
-                    ValueView::Package(name) if name == "Any" => !initialized.contains(&idx),
-                    // For typed arrays (e.g. `my Int @a`), the type object is also a hole
-                    ValueView::Package(name)
-                        if !type_constraint.is_empty() && name == type_constraint.as_str() =>
-                    {
-                        !initialized.contains(&idx)
-                    }
-                    _ => false,
-                };
-                if is_hole {
-                    arr.pop();
-                    if let Some(s) = arr.initialized.as_mut() {
-                        s.remove(&idx);
-                    }
-                } else {
-                    break;
+                arr.pop();
+                if let Some(s) = arr.initialized.as_mut() {
+                    s.remove(&idx);
                 }
             }
         });

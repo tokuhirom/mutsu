@@ -85,10 +85,24 @@ impl Interpreter {
             if index >= data.items().len() {
                 return Value::NIL;
             }
-            let old = std::mem::replace(&mut data.items_mut()[index], Value::NIL);
-            if let Some(initialized) = data.initialized.as_mut() {
-                initialized.remove(&index);
-            }
+            // ADR-0049 slice 5: the vacated slot gets the standard
+            // `Package("Any")` gap marker, not a raw `Value::NIL` -- `Nil` is
+            // no longer a hole sentinel, only `ArrayData::initialized` (which
+            // is already correctly cleared for `index` below) is. The RETURN
+            // value (the element's old content, handed back to the caller as
+            // `.DELETE-POS`'s result) is unaffected -- only the slot left
+            // behind changes.
+            let gap_marker = Self::native_fill_for_constraint(data.value_type.as_deref());
+            let old_len = data.items().len();
+            let old = std::mem::replace(&mut data.items_mut()[index], gap_marker);
+            // Materialize the "all present" range (`None` means every
+            // in-range index exists) before removing `index`, so a
+            // previously bulk-constructed array (`initialized == None`)
+            // correctly records the vacated slot as a hole instead of the
+            // removal being a silent no-op on a nonexistent set.
+            data.initialized
+                .get_or_insert_with(|| (0..old_len).collect())
+                .remove(&index);
             while !data.items().is_empty() && data.hole_at(data.items().len() - 1) {
                 let last = data.items().len() - 1;
                 data.items_mut().pop();

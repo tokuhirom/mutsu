@@ -442,15 +442,16 @@ pub(crate) fn itemize_scalar_repr(v: &Value, base: String) -> String {
 }
 
 fn raku_value_as_element(v: &Value) -> String {
-    // A real array (`@`-sigiled) element is a Scalar container, so it can never
-    // actually hold Nil: assigning Nil reverts it to the element type's default,
-    // which for an untyped array is `Any`. A freshly-declared shaped array
-    // (`my @a[2,2]`) fills its cells with Nil for the same reason, so render
-    // such a cell as `Any` rather than `Nil`. (Typed arrays store the element
-    // type object in their cells, so they never reach this branch.)
-    if v.is_nil() {
-        return "Any".to_string();
-    }
+    // A real array (`@`-sigiled) element is a Scalar container, so it can
+    // never actually hold `Nil`: ADR-0049 decays a stored `Nil` to the
+    // container's own default (`Any` for an untyped array) at the element
+    // STORE, everywhere a value is written into a real array -- literal
+    // construction, assignment, autovivification, push/append/unshift/
+    // prepend/splice. This used to compensate for that here at render time
+    // instead (the renderer-shortcut half of the "Nil is a hole sentinel"
+    // collision the ADR retires); it is unreachable now that the invariant
+    // holds at the store, and `t/nil-element-store-decay.t` pins the store
+    // side (not this render-side compensator, which is deleted).
     match v.view() {
         ValueView::Array(items, kind) => {
             let decontainerized = match kind {

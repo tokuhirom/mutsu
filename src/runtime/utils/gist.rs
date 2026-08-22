@@ -150,12 +150,15 @@ pub(crate) fn gist_value(value: &Value) -> String {
                 };
             }
             // A real array's (`@`-sigiled) elements are Scalar containers, so a
-            // cell can never hold Nil: assigning Nil reverts it to the element
-            // type default (`Any` for untyped), and a shaped array fills unused
-            // cells the same way. Gist such a cell as the type object `(Any)`.
-            // Nested real arrays recurse through this same arm, so their cells
-            // are handled too; a List/Seq keeps a genuine Nil (its own arm).
-            let is_real = kind.is_real_array();
+            // cell can never hold `Nil` -- ADR-0049 decays a stored `Nil` to
+            // the container's own default (`Any` for untyped) at the element
+            // STORE, everywhere a value is written into a real array. This
+            // used to compensate for that here at gist time instead (the
+            // render-side half of the "Nil is a hole sentinel" collision the
+            // ADR retires); it is unreachable now that the invariant holds at
+            // the store, so plain `gist_value` is correct for every element,
+            // real-array or not. A List/Seq keeps a genuine Nil (its own arm
+            // in `gist_value` handles that directly).
             // Shaped arrays join their rows with a newline (`say my @a[2,2]`
             // prints one row per line), matching the fast-path gist.
             let sep = if kind == crate::value::ArrayKind::Shaped
@@ -167,17 +170,7 @@ pub(crate) fn gist_value(value: &Value) -> String {
             } else {
                 " "
             };
-            let inner = items
-                .iter()
-                .map(|v| {
-                    if is_real && v.is_nil() {
-                        "(Any)".to_string()
-                    } else {
-                        gist_value(v)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(sep);
+            let inner = items.iter().map(gist_value).collect::<Vec<_>>().join(sep);
             SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
             match kind {
                 crate::value::ArrayKind::Array
