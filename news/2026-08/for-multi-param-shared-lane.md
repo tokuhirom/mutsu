@@ -44,7 +44,7 @@ Found while chasing Cro's `t/http-session-inmemory.rakutest`, where
 overwriting the `$i` of the test's own `for 1..5 -> $i` request loop, so all
 five requests reported "Visit 4". The remaining failures on that file no longer
 involve the store at all — they arrive through the `env` axis, and
-`todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md` records
-the re-measurement.
+`news/2026-08/shared-store-bare-name-collision-across-unrelated-frames.md`
+records the re-measurement and the container-lane fix that closed it.
 
 Pinned by `t/for-multi-param-shared-lane.t`.

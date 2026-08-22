@@ -1,15 +1,19 @@
 # ADR-0039: `@`/`%` lexicals must resolve lexically — retiring by-name container resolution, and correcting the "container write-back is structurally different" premise
 
-- Status: Slice 1 (§4.1) landed 2026-08-20. Slice 2 (§4.2 — containers resolve by
-  slot/upvalue, not by name, retiring the by-name path at the compiler) is next.
+- Status: Slice 1 (§4.1) landed 2026-08-20. §8.3's "third `@`/`%` sigil skip"
+  landed 2026-08-22 (see §8.6), closing the cross-thread axis. Slice 2 (§4.2 —
+  containers resolve by slot/upvalue, not by name, retiring the by-name path at
+  the compiler) is next, and is now purely a mechanism-deletion slice (§8.4
+  point 3) rather than a correctness one.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
   ADR-0025 (cell boxing must be value-kind-blind — slice 3 defers `@`/`%`),
   ADR-0010 (cross-thread lexical sharing scope — the `__mutsu_atomic_*` lanes)
 - Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`,
-  `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
-  (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20)
+  `news/2026-08/shared-store-bare-name-collision-across-unrelated-frames.md`
+  (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20;
+  closed 2026-08-22, see §8.6)
 
 ## 1. Context
 
@@ -446,8 +450,10 @@ acceptance measure.
 
 ## 8. Addendum (2026-08-20): the cross-thread-store axis is the same bug
 
-This section folds `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
-into this ADR. It adds no new *decision* — §4's decision already covers it —
+This section folds the deep ticket
+`shared-store-bare-name-collision-across-unrelated-frames` (now retired to
+`news/2026-08/`) into this ADR. It adds no new *decision* — §4's decision
+already covers it —
 but it adds evidence, a third sigil skip to lift, an exclusion §4.1's list
 misses, and one requirement slice 2 would otherwise get wrong. It is an
 amendment to a `Proposed`, unimplemented design, not a revision of a decided
@@ -603,3 +609,74 @@ and any thread-using program with two same-named containers hits it. Treat §8.2
 (a) and (b) as acceptance pins for §6 alongside the module and mainline
 matrices, and keep the deep ticket open until slice 2 lands — slice 1 alone does
 not close it, because §8.2's containers are routine-local, not file-scope.
+
+(Superseded 2026-08-22 by §8.6: the deep ticket closed there instead, because
+§8.3's own mechanism turned out to be liftable without waiting for slice 2. The
+acceptance pins moved to `t/thread-uncaptured-container-lane.t`.)
+
+### 8.6 What landed (2026-08-22): the third sigil skip, lifted with the container lane's polarity
+
+§8.3 named the mechanism precisely — `block_captured_scalars`
+(`runtime/runtime_thread.rs`) `continue`s on `@`/`%`/`&` while scanning a
+spawned block's free variables, so the container half of that analysis is
+simply thrown away — and §8.4 point 4 concluded that no discipline applied to
+the *store* can fix §8.2 (a), because the callee's `my @items` runs **before**
+the process's first spawn: there is no `thread_redeclared_vars` mask to keep,
+re-key, or scope. Both observations point at the same place, and it is not the
+store's keying. It is that **the spawn published a binding the spawned block
+could not possibly reach.**
+
+So the skip is lifted, and the recovered information is used with the polarity
+the container lane actually has:
+
+- `block_referenced_containers` (new) collects the plain-lexical `@`/`%` names
+  in the spawned block's `free_var_syms` / `free_var_writes` /
+  `free_var_container_writes`. Those sets already fold up nested closures
+  (`compute_free_vars`, "Fold nested closures"), so `start { start { @a.push(1) } }`
+  keeps `@a`. It returns `Option`: `None` for the block-less
+  `clone_for_thread` entry point (supply drivers, `.then`, socket/proc readers),
+  which therefore behaves exactly as before.
+- `clone_for_thread_excluding` takes that set and **does not seed** a
+  plain-lexical container the block never names, and **keeps** such a
+  container's existing `thread_redeclared_vars` mask across the spawn instead of
+  dropping it. The retain clause matters for the composite shape: an outer
+  binding already on the lane, plus a callee that re-declares the name and
+  spawns something unrelated — without it the unmask would hand the callee's
+  fresh `my @items` straight to the caller's live entry.
+
+**Why the polarity is inverted relative to scalars, and why that is not an
+inconsistency.** For a scalar, membership in `block_captured_scalars` means
+"the closure machinery owns this per binding, so keep it OFF the lane" — the
+lane is a *competing* mechanism there, and PLAN.md §6 removed the duplication.
+A container has no such per-binding home (`box_captured_lexicals` declines to
+box `@`/`%` — that is ADR-0025 slice 3's deferral), so for containers the lane
+is not a competitor but *the* sharing mechanism. The same predicate therefore
+reads the other way: a container the block names belongs on the lane, and one
+it never names does not.
+
+**Why an indirectly-reached container needs no entry.** A container a block
+touches only through a routine it calls (`start { inner('x') }` where
+`sub inner { @acc.push(...) }`) is not in the block's free-var set, and is
+deliberately not tracked. It does not need to be: container mutation is
+write-through-the-shared-node (§2 / ADR-0013 §7) and the child's env clone holds
+the same `Gc`, so the worker's push is visible without any store entry; and when
+a directly-nested named sub mutates the container, the declaration site has
+already boxed it into a shared `ContainerRef` cell
+(`box_decl_local_container_cell`, `docs/captured-outer-cell-sharing.md` §7.2).
+Both indirect shapes are pinned in `t/thread-uncaptured-container-lane.t`.
+
+**Relation to §8.4.** Point 1 is respected: §8.2 (b)'s non-slurpy `@`/`%`
+parameter is fixed without touching `mask_thread_redeclared_params` — the
+parameter is simply never published, so it needs no mask. Point 2's drain
+requirement does not arise, because the lane is *preserved* for every container
+the block names, so the writeback path that requirement protects is unchanged.
+Point 3 is untouched and still belongs to slice 2. Point 4 is respected: nothing
+is re-keyed.
+
+**What this does not do.** Container scoping is still dynamic in the compiler:
+`Expr::ArrayVar` still emits a bare `GetArrayVar(name)` (§1.3), and the four
+by-name mechanisms in §8.4 point 3 are still there. Slice 2 remains the end
+state — but it is now a *deletion* slice, not a correctness one. This section
+records why the correctness half could be closed first: the defect §8.2
+measured is not that containers resolve by name, it is that a name resolved
+against an entry no live binding ever asked to publish.
