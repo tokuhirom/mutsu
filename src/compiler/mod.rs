@@ -1275,6 +1275,18 @@ pub(crate) struct Compiler {
     /// directly inside one of those keeps using the unscoped opcode; a
     /// plain block nested inside any of them still gets its own
     /// `BlockScope` and sets this flag again for its own body.
+    ///
+    /// Also set for the two other body kinds whose env the VM restores on exit,
+    /// via `compile_block_local_branch` / `compile_scope_restored_loop_body`:
+    /// an `if`/`unless`/`else` branch that declares a block-local `my`
+    /// (`OpCode::BlockLocalScope`) and every loop body
+    /// (`while`/`until`/C-style `loop`/`repeat`/`for`, whose opcodes bracket the
+    /// body with `push_loop_local_scope`/`pop_loop_local_scope`). Both restore a
+    /// declaration's `__mutsu_type::` metadata to its pre-body state — see
+    /// `Interpreter::save_type_meta_for_scope_exit` — which is exactly the
+    /// guarantee this flag stands for. Inside a routine these bodies were
+    /// already scoped through `is_routine`/`lexically_in_routine`; the flag is
+    /// what extends it to the same shapes at mainline.
     pub(crate) lexically_in_block: bool,
     /// Whether the enclosing routine is a `method` (or submethod). A method
     /// always carries an implicit `*%_` / `*@_` slurpy, so the legacy argument

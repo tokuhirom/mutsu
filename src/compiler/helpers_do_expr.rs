@@ -248,7 +248,12 @@ impl Compiler {
         // per loop statement — its `state` persists across iterations (see
         // `loop_body_is_sole_block`).
         self.suppress_loop_block_state_reset = Self::loop_body_is_sole_block(body);
-        self.compile_stmts_value(body);
+        // The `ForLoop` opcode brackets this body with
+        // `push_loop_local_scope`/`pop_loop_local_scope` just like the statement
+        // loop forms, so a `my TYPE $x` here is env-restored on exit and can use
+        // the env-only scoped constraint opcode (see
+        // `compile_scope_restored_loop_body`).
+        self.compile_scope_restored_body_value(body);
     }
 
     /// Compile `do for` expression: like a for loop but collects each iteration result.

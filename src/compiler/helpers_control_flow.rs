@@ -485,8 +485,33 @@ impl Compiler {
         });
         // `succeed_boundary: true` already absorbs the succeed at exactly this
         // level, so the body does not need its own `SucceedBarrier`.
-        self.compile_body_with_implicit_try_inner(stmts);
+        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try_inner(stmts));
         self.code.patch_block_local_body_end(idx);
+    }
+
+    /// Compile a loop body (`while`/`until`/C-style `loop`/`repeat`/`for`) as a
+    /// scope whose env is restored on exit. The loop opcodes bracket the body
+    /// with `push_loop_local_scope`/`pop_loop_local_scope`, which is exactly the
+    /// env-restore guarantee `lexically_in_block` stands for, so a `my TYPE $x`
+    /// here can use the env-only `SetVarTypeScoped` instead of also writing the
+    /// process-global `var_type_constraints` map.
+    pub(super) fn compile_scope_restored_loop_body(&mut self, stmts: &[Stmt]) {
+        self.in_scope_restored_body(|c| c.compile_body_with_implicit_try(stmts));
+    }
+
+    /// [`Self::compile_scope_restored_loop_body`] for a value-collecting loop
+    /// body (the `for` expression form), which compiles through
+    /// `compile_stmts_value` instead.
+    pub(super) fn compile_scope_restored_body_value(&mut self, stmts: &[Stmt]) {
+        self.in_scope_restored_body(|c| c.compile_stmts_value(stmts));
+    }
+
+    /// Run `f` with `lexically_in_block` set, restoring the previous value
+    /// afterwards. See that field's doc comment for what the flag promises.
+    fn in_scope_restored_body(&mut self, f: impl FnOnce(&mut Self)) {
+        let saved = std::mem::replace(&mut self.lexically_in_block, true);
+        f(self);
+        self.lexically_in_block = saved;
     }
 
     /// Emit the branch a compile-time-constant `if` condition selected, with no
