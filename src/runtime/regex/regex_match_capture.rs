@@ -1,8 +1,8 @@
 use super::super::unicode::check_unicode_property;
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, is_word_char, matches_named_builtin,
-    merge_regex_captures,
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, alternation_capture_slots, is_word_char,
+    matches_named_builtin, merge_regex_captures,
 };
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
@@ -156,10 +156,12 @@ impl Interpreter {
                 // branch on a tie — no index needs to travel alongside the
                 // key). Replaces the old "longest end wins" rule.
                 let mut best: Option<((usize, usize), usize, RegexCaptures)> = None;
+                let capture_slots = alternation_capture_slots(alternatives);
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
+                        inner_caps.positional.resize(capture_slots, PosSlot::nil());
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
@@ -207,10 +209,12 @@ impl Interpreter {
                     let best = self.ltm_seqalt_best(alternatives, chars, pos, pkg);
                     return Some(best);
                 }
+                let capture_slots = alternation_capture_slots(alternatives);
                 for alt in alternatives {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
+                        inner_caps.positional.resize(capture_slots, PosSlot::nil());
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
