@@ -47,9 +47,9 @@ pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.
 pub(in crate::parser) use stmtlist::partial_parse_skips;
-pub(in crate::parser) use stmtlist::stmt_list_pub;
 use stmtlist::{block, routine_block};
 pub(super) use stmtlist::{block_inner, stmt_list_partial};
+pub(in crate::parser) use stmtlist::{stmt_list_pub, stmt_list_with_lines_pub};
 
 // Re-export the thin public-accessor shims moved to `pub_shims`, all at their
 // original `pub(super)` visibility (consumed by `primary`/`expr`).

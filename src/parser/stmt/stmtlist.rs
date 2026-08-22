@@ -48,6 +48,11 @@ pub(crate) fn stmt_list_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
     stmt_list_with_mode(input, false, false)
 }
 
+/// Parse a nested statement list while retaining source-line markers.
+pub(in crate::parser) fn stmt_list_with_lines_pub(input: &str) -> PResult<'_, Vec<Stmt>> {
+    stmt_list_with_mode(input, false, true)
+}
+
 /// Parse statements in best-effort mode: return all successfully parsed
 /// statements even if a parse error is encountered partway through.
 /// When a statement fails to parse, skip forward to the next statement
