@@ -74,7 +74,10 @@ container-producing mode a `:=` bind RHS already uses
 - a **missing hash key** yields the deferred `HashEntryRef` token — no entry is
   created, so a routine used as a *getter* does not vivify, while a write
   walk-creates the whole path. This is exactly the autovivification Crane's
-  recursive descent needs.
+  recursive descent needs. (Item 1 below generalized that token: its path steps
+  now record whether each subscript was positional, so the walk-create makes an
+  `Array` where an index addresses one, and an already-promoted-but-empty
+  element cell can anchor a path too.)
 
 Container mode also propagates into the **arguments of a nested call inside the
 operand** (the `rw_return_operand` compiler flag). `return-rw in(container{@steps[0]},
@@ -208,13 +211,16 @@ The `todo/deep` ticket described this ADR's subject as the single remaining
 blocker for the TOML battery. Measuring the suites after the fix shows it was
 one of several; the rest are separable:
 
-1. **The deferred vivification token is hash-only.** `HashEntryRef` is a
-   `Gc<HashData>` root plus a `Vec<String>` key path, so a positional step in a
-   deferred chain (`return-rw container[@steps[0]]` on a not-yet-existent
-   container — Crane's `Positional` candidates) vivifies a `Hash` keyed `"0"`
-   instead of an `Array`. This is the array analogue of what this ADR fixed for
-   hashes and is the largest remaining item. Filed as
-   `todo/deep/deferred-vivification-token-is-hash-only.md`.
+1. ~~**The deferred vivification token is hash-only.**~~ **FIXED** —
+   `news/2026-08/deferred-vivification-path-steps-are-typed.md`. The token's
+   path steps are typed (`EntryStep::Key` / `EntryStep::Index`, fed by a new
+   `is_positional` field on `IndexAutovivifyLazy`/`…Terminal`), so the
+   walk-create builds the container the *next* step asks for; its root is an
+   `EntryRoot` — a hash, or the shared cell an empty array element was already
+   promoted to. `hash_entry_terminal` returns a located `EntryTerminal` slot
+   whose `insert` reuses the ordinary element chokepoints, and the read-only
+   `hash_entry_locate` replaced `=:=`'s hand-rolled walk. Crane's `Positional`
+   candidates work; its suite is 280 → 283 passing subtests (`t/in.rakutest` 9 → 12).
 2. **`X::Crane::PositionalIndexInvalid` is not raised** by `Crane::Utils`'
    classifier multis, and **WhateverCode indices** (`*-0`) do not survive a
    path-addressing descent. Both are recorded in `docs/batteries/toml.md`'s

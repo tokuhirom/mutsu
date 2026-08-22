@@ -114,7 +114,10 @@ impl Value {
             // A hash-entry lvalue reference holds a strong `Gc<HashData>` node
             // (the hash it indexes into); yield it so a cycle routed through a
             // stored entry-ref is still reached.
-            ValueView::HashEntryRef { hash, .. } => visit(&hash.erased()),
+            ValueView::HashEntryRef { root, .. } => match root {
+                crate::value::EntryRoot::Hash(hash) => visit(&hash.erased()),
+                crate::value::EntryRoot::Cell(cell) => visit(&cell.erased()),
+            },
 
             // Non-node wrappers that own/share `Value`s: recurse so a `Gc` node
             // nested inside is reached. `Box`-owned wrappers recurse
@@ -877,8 +880,23 @@ mod tests {
         // so a cycle routed through a stored entry-ref is reachable.
         let hash = crate::gc::Gc::new(HashData::default());
         let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
-            hash,
-            path: vec!["k".to_string()],
+            root: crate::value::EntryRoot::Hash(hash),
+            path: vec![crate::value::EntryStep::Key("k".to_string())],
+            eager: false,
+        });
+        assert_eq!(gc_trace_node_count(&value), 1);
+    }
+
+    #[test]
+    fn hash_entry_ref_traces_a_cell_root() {
+        // The other `EntryRoot`: a token anchored on the shared cell an empty
+        // array element was promoted to. It holds a strong `Gc<Mutex<Value>>`,
+        // so gc_trace must yield that node too, or a cycle routed through a
+        // deferred element bind is under-collected.
+        let cell = crate::gc::Gc::new(Mutex::new(Value::NIL));
+        let value = Value::from_repr(crate::value::ValueRepr::HashEntryRef {
+            root: crate::value::EntryRoot::Cell(cell),
+            path: vec![crate::value::EntryStep::Index(0)],
             eager: false,
         });
         assert_eq!(gc_trace_node_count(&value), 1);

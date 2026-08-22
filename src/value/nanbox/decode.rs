@@ -180,7 +180,7 @@ unsafe fn decode_kind(kind: Kind, bits: u64) -> ValueRepr {
         Kind::HashEntryRef => {
             let h = Arc::unwrap_or_clone(unsafe { take_arc::<HashEntryRefBox>(bits) });
             ValueRepr::HashEntryRef {
-                hash: h.hash,
+                root: h.root,
                 path: h.path,
                 eager: h.eager,
             }

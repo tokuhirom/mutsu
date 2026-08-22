@@ -465,12 +465,9 @@ impl Value {
     pub(crate) fn store_through_cell(arc: &crate::gc::Gc<Mutex<Value>>, val: &Value) {
         let mut inner = arc.lock().unwrap();
         if matches!(inner.view(), ValueView::HashEntryRef { .. })
-            && let Some((hash_arc, key)) = inner.hash_entry_terminal()
+            && let Some(terminal) = inner.hash_entry_terminal()
         {
-            // SAFETY: aliased in-place mutation of a shared container; see
-            // `gc_contents_mut`. No borrow into the map is live across the write.
-            let hd = unsafe { crate::value::gc_contents_mut(&hash_arc) };
-            Value::hash_insert_through(&mut hd.map, key, Value::ContainerRef(arc.clone()));
+            terminal.insert(Value::ContainerRef(arc.clone()));
             inner.clone_from(val);
             return;
         }
@@ -588,8 +585,8 @@ impl Value {
             // whose reads see through to the plain entry value (`is raw`
             // reduce lvalue descent).
             Some(Value::from_repr(ValueRepr::HashEntryRef {
-                hash: arc.clone(),
-                path: vec![key.to_string()],
+                root: crate::value::EntryRoot::Hash(arc.clone()),
+                path: vec![crate::value::EntryStep::Key(key.to_string())],
                 eager: true,
             }))
         } else {
@@ -678,8 +675,8 @@ impl Value {
                     Some(Value::ContainerRef(cell))
                 }
                 None => Some(Value::from_repr(ValueRepr::HashEntryRef {
-                    hash: arc.clone(),
-                    path: vec![key.to_string()],
+                    root: crate::value::EntryRoot::Hash(arc.clone()),
+                    path: vec![crate::value::EntryStep::Key(key.to_string())],
                     eager: false,
                 })),
             }
@@ -722,59 +719,21 @@ impl Value {
     /// through to the plain entry value — its entry was created with the
     /// token, so path existence IS the connection.
     pub fn hash_entry_read(&self) -> Value {
-        let ValueView::HashEntryRef { hash, path, eager } = self.view() else {
-            return self.clone();
+        let eager = match self.view() {
+            ValueView::HashEntryRef { eager, .. } => eager,
+            _ => return self.clone(),
         };
         let any = || Value::Package(crate::symbol::Symbol::intern("Any"));
-        let mut cur = hash.clone();
-        for k in &path[..path.len() - 1] {
-            let ptr = crate::gc::Gc::as_ptr(&cur);
-            match unsafe { (*ptr).get(k.as_str()) }.map(Value::view) {
-                Some(ValueView::Hash(inner)) => cur = inner.clone(),
-                _ => return any(),
-            }
-        }
-        let last = path.last().unwrap();
-        let ptr = crate::gc::Gc::as_ptr(&cur);
-        let entry = unsafe { (*ptr).get(last.as_str()) };
-        match entry.map(Value::view) {
-            Some(ValueView::ContainerRef(cell)) => {
-                cell.lock().unwrap_or_else(|e| e.into_inner()).clone()
-            }
-            Some(_) if eager => entry.expect("entry is Some in this arm").clone(),
+        // A path whose intermediate levels are missing (or are not the
+        // container kind their step addresses) has no terminal yet — the
+        // deferred bind reads as `Any` without creating anything.
+        let Some(entry) = self.hash_entry_locate().and_then(|t| t.peek()) else {
+            return any();
+        };
+        match entry.view() {
+            ValueView::ContainerRef(cell) => cell.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+            _ if eager => entry.clone(),
             _ => any(),
         }
-    }
-
-    /// Walk-CREATE the intermediate hashes of a `HashEntryRef`'s `path` and
-    /// return the `(terminal hash Arc, terminal key)` so the caller can insert.
-    /// Missing/non-hash intermediate levels are replaced with fresh empty hashes
-    /// (interior mutation, so all holders of the shared Arc observe them).
-    pub(crate) fn hash_entry_terminal(&self) -> Option<(Gc<HashData>, String)> {
-        let ValueView::HashEntryRef { hash, path, .. } = self.view() else {
-            return None;
-        };
-        let mut cur = hash.clone();
-        for k in &path[..path.len() - 1] {
-            // SAFETY: aliased in-place mutation of a shared hash; see
-            // `gc_contents_mut`. No borrow into the map is live across the write.
-            let next = {
-                let data = unsafe { gc_contents_mut(&cur) };
-                match data.map.get(k).map(Value::view) {
-                    Some(ValueView::Hash(inner)) => inner.clone(),
-                    _ => {
-                        let new_hash = Value::hash(HashMap::new());
-                        let arc = match new_hash.view() {
-                            ValueView::Hash(a) => a.clone(),
-                            _ => unreachable!(),
-                        };
-                        Value::hash_insert_through(&mut data.map, k.clone(), new_hash);
-                        arc
-                    }
-                }
-            };
-            cur = next;
-        }
-        Some((cur, path.last().unwrap().clone()))
     }
 }

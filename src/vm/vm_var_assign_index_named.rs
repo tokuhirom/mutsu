@@ -2607,8 +2607,9 @@ impl Interpreter {
                     if new_ptr != old_ptr {
                         for local in self.locals.iter_mut() {
                             // Only update refs that pointed to the OLD container.
-                            local.with_hash_entry_ref_mut(|hash, _| {
-                                if crate::gc::Gc::as_ptr(hash) as usize == old_ptr
+                            local.with_hash_entry_ref_mut(|root, _| {
+                                if let crate::value::EntryRoot::Hash(hash) = root
+                                    && crate::gc::Gc::as_ptr(hash) as usize == old_ptr
                                     && let ValueView::Hash(new_arc) = container.view()
                                 {
                                     *hash = new_arc.clone();
@@ -2786,6 +2787,16 @@ impl Interpreter {
         outer_positional: bool,
         inner_positional: bool,
     ) -> Result<(), RuntimeError> {
+        // A target variable still holding a deferred vivification token has no
+        // container at either level yet; walk-create the whole chain instead of
+        // resolving the token to `Any` and dropping the write.
+        if let Some(result) = self.try_deferred_token_index_assign(
+            code,
+            name_idx,
+            &[inner_positional, outer_positional],
+        ) {
+            return result;
+        }
         let var_name = Self::const_str(code, name_idx).to_string();
         let native_fill = {
             let tc = loan_env!(self, var_type_constraint(&var_name));
@@ -3279,6 +3290,19 @@ impl Interpreter {
         depth: u32,
         positional_flags_idx: u32,
     ) -> Result<(), RuntimeError> {
+        // As in the two-level op: a deferred token target has no container at
+        // any level, so walk-create the whole chain from the token's path.
+        let flags_for_token: Vec<bool> = match code.constants[positional_flags_idx as usize].view()
+        {
+            ValueView::Array(arr, _) => arr.items().iter().map(|v| v.truthy()).collect(),
+            _ => Vec::new(),
+        };
+        if !flags_for_token.is_empty()
+            && let Some(result) =
+                self.try_deferred_token_index_assign(code, name_idx, &flags_for_token)
+        {
+            return result;
+        }
         let var_name = Self::const_str(code, name_idx).to_string();
         let native_fill = {
             let tc = loan_env!(self, var_type_constraint(&var_name));

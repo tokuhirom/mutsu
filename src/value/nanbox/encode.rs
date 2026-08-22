@@ -224,9 +224,9 @@ impl NanBox {
                 pack_gc(Kind::ContainerRef, cell)
             }
             ValueRepr::LazyThunk(t) => pack_arc(Kind::LazyThunk, t),
-            ValueRepr::HashEntryRef { hash, path, eager } => pack_arc(
+            ValueRepr::HashEntryRef { root, path, eager } => pack_arc(
                 Kind::HashEntryRef,
-                Arc::new(HashEntryRefBox { hash, path, eager }),
+                Arc::new(HashEntryRefBox { root, path, eager }),
             ),
         };
         NanBox(word)

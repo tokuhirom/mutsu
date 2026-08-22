@@ -421,9 +421,9 @@ impl Compiler {
         let use_autovivify = self.scalar_bind_autovivify;
         let is_terminal = use_autovivify && self.bind_terminal;
         let lazy_op = if is_terminal {
-            OpCode::IndexAutovivifyLazyTerminal
+            OpCode::IndexAutovivifyLazyTerminal { is_positional }
         } else {
-            OpCode::IndexAutovivifyLazy
+            OpCode::IndexAutovivifyLazy { is_positional }
         };
         let saved_terminal = self.bind_terminal;
         self.bind_terminal = false; // inner `target` indices are intermediate
