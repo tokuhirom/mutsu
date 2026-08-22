@@ -603,21 +603,15 @@ pub(crate) fn native_method_0arg(
                 return Some(Ok(Value::str(rendered)));
             }
         }
-        // A `.^set_name`-renamed anonymous mixin reports its friendly name for
-        // `.^name` (e.g. `Foo.new but role {...}` then `.^set_name('X')` — used
-        // by zef's plugin loader). Without this the caret-name would delegate to
-        // the inner value and report the un-renamed base type.
-        if method == "^name"
-            && let Some(name_val) = mixins.get("__mutsu_type_name__")
-        {
-            return Some(Ok(name_val.clone()));
-        }
-        // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports its base type
-        // with a `+{Role,...}` suffix (`Int+{Foo::Bar}`). Without this, `^name`
-        // delegates to the inner value below and drops the mixed-in role names.
-        if method == "^name" && crate::value::role_mixin_suffix(mixins).is_some() {
-            return Some(Ok(Value::str(crate::value::what_type_name(target))));
-        }
+        // `^name` on a role-mixed value is deliberately NOT fast-pathed here
+        // (ADR-0060): a rename can live on the composition-keyed shared
+        // `.WHAT` node instead of this instance's own `overrides` (e.g.
+        // `Hash::Restricted`'s `v.var.WHAT.^set_name(...)`), and this
+        // function has no interpreter access to consult that cache. Falling
+        // through to `None` (via the `inner` delegation below, which finds
+        // no arm for `"^name"` either) reaches `dispatch_caret_name`/
+        // `dispatch_classhow_method`'s `"name"` handler, both of which
+        // resolve the composition cache correctly.
         // `.clone` on a mixed-in value must PRESERVE the mixin: `(5 but False).clone`
         // stays `Int+{...}` (Bool=False), and a Match — which is modelled as a
         // string carrying its match state as a mixin — must stay a Match. Delegating

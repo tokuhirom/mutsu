@@ -129,6 +129,98 @@ pub(crate) fn role_mixin_suffix_excluding(
     Some(names.join(","))
 }
 
+/// Build the stable composition key for a role-mixed value's `.WHAT` identity
+/// (ADR-0060): the base type name plus the sorted set of
+/// `(role_name, role_id, typeargs)` triples this `Mixin`'s `overrides`
+/// records for genuine composition markers (`__mutsu_role__*` and the
+/// `__mutsu_role_id__*`/`__mutsu_role_typeargs__*` data recorded alongside
+/// each). Two `Mixin` values compose to the identical key iff they mix the
+/// exact same role declarations (by declaration-site identity, not by name
+/// — `role_id` disambiguates two distinct `my role A {}` sharing a name,
+/// mirroring ADR-0047's "declaration site, not registry name" principle)
+/// with the same type arguments onto the same base type.
+///
+/// Deliberately EXCLUDES: `__mutsu_attr__*` (per-instance role-attribute
+/// values — two differently-initialized instances of the same role must
+/// still share one `.WHAT`), `__mutsu_type_name__` (the mutable
+/// `.^set_name` target — state ON the cache entry this key looks up, not
+/// part of the key itself), `__mutsu_role_seq__*` (a per-application-order
+/// bookkeeping stamp that differs even between two instances of the exact
+/// same composition — including it in the key was tried and broke
+/// `roast/S14-roles/instantiation.t`'s punned-role identity invariant, see
+/// ADR-0060), `__mutsu_role_param__*` (derived from data already captured
+/// by typeargs), and every other non-composition key this flat map can
+/// carry (`__mutsu_var_target`, `__mutsu_how_target`, `__mutsu_topic_ro__`,
+/// the allomorph `"Str"` key, `__mutsu_language_revision`, ...).
+pub(crate) fn mixin_composition_key(
+    base_type_name: &str,
+    mixins: &std::collections::HashMap<String, Value>,
+) -> String {
+    let mut parts: Vec<String> = mixins
+        .keys()
+        .filter_map(|k| k.strip_prefix("__mutsu_role__"))
+        .map(|role_name| {
+            let role_id = mixins
+                .get(&format!("__mutsu_role_id__{role_name}"))
+                .map(Value::to_string_value)
+                .unwrap_or_default();
+            let typeargs = mixins
+                .get(&format!("__mutsu_role_typeargs__{role_name}"))
+                .map(|v| match v.view() {
+                    ValueView::Array(items, _) => items
+                        .items()
+                        .iter()
+                        .map(what_type_name)
+                        .collect::<Vec<_>>()
+                        .join(","),
+                    _ => v.to_string_value(),
+                })
+                .unwrap_or_default();
+            // NUL/SOH are not valid in a role name, base type name, or
+            // typearg display string, so they are safe field/entry
+            // separators for a key that must not collide across differently
+            // -split components.
+            format!("{role_name}\u{0}{role_id}\u{0}{typeargs}")
+        })
+        .collect();
+    // HashMap iteration order is non-deterministic; sort for a stable key.
+    parts.sort_unstable();
+    format!("{base_type_name}\u{1}{}", parts.join("\u{1}"))
+}
+
+/// Filter a `Mixin` value's `overrides` down to just the composition-
+/// defining markers (`__mutsu_role__*`, `__mutsu_role_id__*`,
+/// `__mutsu_role_typeargs__*`, `__mutsu_role_param__*`) — the subset that
+/// belongs on the shared, composition-keyed `.WHAT` type object
+/// ([`mixin_composition_key`]'s cache entry, ADR-0060) when it is first
+/// created. Populating the fresh entry with these markers (rather than
+/// leaving it empty) does double duty: `.^name`/`what_type_name` on the
+/// `.WHAT` value itself can synthesize the right `Base+{Role,...}` display
+/// without any extra lookup, and two DIFFERENT compositions get
+/// content-different overrides maps (rather than two structurally-equal
+/// empty maps), which matters because `values_identical`'s `Mixin` arm
+/// (`src/runtime/utils/shaped.rs`) compares overrides by content, not by
+/// `Gc` pointer.
+///
+/// Drops per-instance data: `__mutsu_attr__*` (role-attribute values),
+/// `__mutsu_role_seq__*` (per-application-order bookkeeping),
+/// `__mutsu_type_name__` (the mutable `.^set_name` target — written later,
+/// in place, onto the cache entry itself), and any other bookkeeping key.
+pub(crate) fn filter_composition_markers(
+    mixins: &std::collections::HashMap<String, Value>,
+) -> std::collections::HashMap<String, Value> {
+    mixins
+        .iter()
+        .filter(|(k, _)| {
+            k.starts_with("__mutsu_role__")
+                || k.starts_with("__mutsu_role_id__")
+                || k.starts_with("__mutsu_role_typeargs__")
+                || k.starts_with("__mutsu_role_param__")
+        })
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect()
+}
+
 /// Return the allomorphic type name for a Mixin value, if it is allomorphic.
 /// An allomorphic Mixin has a "Str" key and a numeric inner value.
 pub(crate) fn allomorph_type_name(
