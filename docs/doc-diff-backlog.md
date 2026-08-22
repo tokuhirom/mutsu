@@ -765,6 +765,49 @@ Found in the 2026-08-22 batch-6 re-run of `Label`/`IO::Spec::Win32`/`Pair`/`Attr
   type 'Match'`, upgraded from the ticket's originally-recorded "silently wrong match" symptom) —
   ticket updated with this finding rather than re-filed.
 
+Found in the 2026-08-22 batch-6 re-run of `js-nutshell`/`IO::Spec::Unix`/`py-nutshell`/
+`X::AdHoc`/`Metamodel::Trusting`/`X::Proc::Async::CharsOrBytes`/`Iterable`/
+`statement-prefixes`/`exceptions`/`Metamodel::Stashing`/`optut`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Language/js-nutshell.rakudoc:384` | a user `multi prefix:<++>($a) is default {...}` wins the dispatch tie against the builtin `++`, where raku keeps the builtin | [multi-is-default-loses-to-user-candidate-over-builtin.md](../todo/tickets/multi-is-default-loses-to-user-candidate-over-builtin.md) |
+| `Language/js-nutshell.rakudoc:613` | `next`/`last LABEL` inside a labeled `repeat {} while` loop throws `X::ControlFlow` instead of being caught | [labeled-next-last-in-repeat-while-loop-throws.md](../todo/tickets/labeled-next-last-in-repeat-while-loop-throws.md) |
+| `Type/IO/Spec/Unix.rakudoc:230,291` | `IO::Spec::Unix.split`/`.splitpath` mishandle all-slash, empty, and bare-`.` path inputs | [iospec-unix-split-splitpath-edge-cases-wrong.md](../todo/tickets/iospec-unix-split-splitpath-edge-cases-wrong.md) |
+| `Language/py-nutshell.rakudoc:541` | `{ BLOCK } for LIST` (bare block as a `for` statement-modifier operand) parses as an uncalled closure term instead of being invoked per iteration with `$_` | [bare-block-for-statement-modifier-not-invoked-as-loop-body.md](../todo/tickets/bare-block-for-statement-modifier-not-invoked-as-loop-body.md) |
+| `Type/X/AdHoc.rakudoc:56` | `X::AdHoc.from-slurpy(...)` class method is entirely unimplemented | [xadhoc-from-slurpy-method-missing.md](../todo/tickets/xadhoc-from-slurpy-method-missing.md) |
+| `Type/X/AdHoc.rakudoc:20` | `$!.backtrace` after a `try` block reports the `try` statement's own line, not the `die`'s actual line | [backtrace-reports-try-line-not-throw-site-line.md](../todo/tickets/backtrace-reports-try-line-not-throw-site-line.md) |
+| `Type/Metamodel/Trusting.rakudoc:18,54` | the `trusts` trait is not honored by private-method dispatch, and `.^trusts` reflection is unimplemented | [metamodel-trusting-trait-and-reflection-unimplemented.md](../todo/tickets/metamodel-trusting-trait-and-reflection-unimplemented.md) |
+| `Type/X/Proc/Async/CharsOrBytes.rakudoc:14` | `X::Proc::Async::CharsOrBytes.Str` returns the bare type name instead of the descriptive message | [procasync-charsorbytes-exception-str-shows-typename.md](../todo/tickets/procasync-charsorbytes-exception-str-shows-typename.md) |
+| `Language/statement-prefixes.rakudoc:32` | `my @array = lazy { LIST-EXPR }` stores an unforceable `lazy(...)` placeholder element; `.eager` never forces/flattens it | [lazy-block-prefix-array-assign-never-forces.md](../todo/tickets/lazy-block-prefix-array-assign-never-forces.md) |
+| `Language/exceptions.rakudoc:428` | `.resume` on a `die`-based exception raised inside a nested sub does not resume execution at the `die`'s call site | [resume-does-not-return-to-die-call-site-in-nested-sub.md](../todo/deep/resume-does-not-return-to-die-call-site-in-nested-sub.md) |
+| `Language/optut.rakudoc:12` | a user-defined `circumfix:<...>` operator with a Unicode-letter delimiter (e.g. `α ... ω`) fails to parse at the call site | [custom-circumfix-unicode-delimiter-call-parse-fail.md](../todo/tickets/custom-circumfix-unicode-delimiter-call-parse-fail.md) |
+
+**Related finding (not a new ticket):** `Type/Metamodel/Stashing.rakudoc:45` — a custom
+metaclass composing `does Metamodel::Naming does Metamodel::Stashing` fails with
+`X::InvalidType: Invalid typename 'Metamodel::Naming'` before its class body is even
+considered. Added as a "Related finding" section to the existing
+[direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md)
+deep ticket, since it's the same "script type creation directly through
+`Metamodel::*`" territory as that ticket's own finding.
+
+**Excluded from this batch-6 sub-run:**
+- `Language/js-nutshell.rakudoc` [2] (line 562, `my Str %letters{Str}` iteration order)
+  — the documented known harness false positive (hash/typed-hash iteration order is
+  nondeterministic per-process in real raku too).
+- `Type/IO/Spec/Unix.rakudoc` [1] (line 99, `$*SPEC.curupdir` block gist/pointer) and
+  [2] (line 201, `$*CWD`-relative `.rel2abs` outputs) — both `raku-drift-from-doc`:
+  the harness's checkout path (`$*CWD`) and the block's own gist address are
+  inherently environment-dependent, not stable doc `# OUTPUT` values.
+- `Language/py-nutshell.rakudoc` [1] (line 387, `%elem-for-symbol.kv` iteration order)
+  — the documented known harness false positive (hash iteration order).
+- `Type/Iterable.rakudoc` [1] (line 52, `(1..10).iterator.say`) — raku's internal
+  `Iterator` implementation class names (e.g. `Rakudo::Iterator::IntRange`) are a
+  Rakudo-internal implementation detail with no cross-implementation stability
+  guarantee (mutsu has a single generic `Iterator` value type rather than a zoo of
+  per-shape internal subclasses); treated the same as the documented hex-address
+  exclusion — non-actionable, not ticketed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
