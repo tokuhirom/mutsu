@@ -734,6 +734,27 @@ impl Interpreter {
             last_value: seed,
             emitter_supplier_id: Some(emitter_supplier_id),
         };
+        // Register the supplier sinks NOW, on the calling thread, before this
+        // coercion returns its Planned promise. Rakudo's `Supply.Promise` taps
+        // the supply synchronously — only event *processing* is asynchronous —
+        // so a producer may run `emit`/`done` the moment the coercion returns.
+        // Deferring the registration to the spawned drive thread raced it: the
+        // producer's `Supplier."done"` dispatch ends in `supplier_reset`, which
+        // wipes the buffered values AND the done flag, so a sink registered
+        // after that replays an empty, not-done state and the loop waits out
+        // its whole deadline (t/promise-supply-coercion-async-drive.t test 3,
+        // 5/20 failures under 16x CPU oversubscription; 0/20 with this).
+        // Registered sinks survive `supplier_reset`, and the waker queue
+        // buffers every event pushed before the drive loop starts draining.
+        let waker = crate::value::waker::ReactWaker::new();
+        let sink_regs = {
+            let regs: Vec<(u64, usize)> = react_subs
+                .iter()
+                .enumerate()
+                .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
+                .collect();
+            crate::runtime::native_methods::supplier_sinks_register_batch(&regs, &waker)
+        };
         let mut thread_interp = self.clone_for_thread_for_block(&on_demand_cb);
         // Hand any stream consumer(s) `register_nested_on_demand_source`
         // registered above (on `self`, the calling thread) over to the
@@ -752,27 +773,39 @@ impl Interpreter {
             // handling); its `Result` here only carries Rust-level plumbing
             // errors that have nowhere else to go now that the caller has
             // already returned, so there is nothing to propagate.
-            let _ = thread_interp.drive_react_subscriptions(react_subs, policy);
+            let _ = thread_interp
+                .drive_react_subscriptions_prewired(react_subs, policy, waker, sink_regs);
         });
         Ok(())
     }
 
-    /// Bridge to the relocated VM-side drive loop for callers that only hold
-    /// `&mut Interpreter` (the `await $supply` / `$supply.Promise` path). The
-    /// drive loop now lives on `impl VM` (see `vm/vm_react_loop.rs`) so that
-    /// `whenever`-body dispatch can run compiled bytecode; the VM owns the
-    /// `Interpreter` by value, so we hand it over via the established
-    /// `mem::take` / `VM::new` / `into_interpreter` dance, run the loop, and take
-    /// the interpreter back. State (`supply_emit_buffer`, the supplier
-    /// registries are process-global) is preserved across the round trip.
-    pub(crate) fn drive_react_subscriptions(
+    /// Bridge to the relocated VM-side drive loop for the one caller that only
+    /// holds `&mut Interpreter` (the `await $supply` / `$supply.Promise`
+    /// path's spawned drive thread). The drive loop lives on the VM side (see
+    /// `vm/vm_react_subscriptions.rs`) so `whenever`-body dispatch can run
+    /// compiled bytecode; `with_nested_registers` runs it with fresh execution
+    /// registers in place (CP-3 collapse of the old `mem::take` / `VM::new`
+    /// dance). State (`supply_emit_buffer`, the supplier registries are
+    /// process-global) is preserved across the round trip.
+    ///
+    /// The supplier sinks (`waker`, `sink_regs`) were already registered on
+    /// the spawning thread (see `supply_promise_on_demand`): the loop reuses
+    /// them instead of registering its own — late, after a producer may
+    /// already have `done`-and-reset the supplier state.
+    pub(crate) fn drive_react_subscriptions_prewired(
         &mut self,
         react_subs: Vec<crate::runtime::subtest::ReactSubscription>,
         policy: crate::runtime::subtest::SupplyDrivePolicy,
+        waker: crate::value::waker::ReactWaker,
+        sink_regs: Vec<(u64, u64)>,
     ) -> Result<(), RuntimeError> {
-        // CP-3 collapse: run the react drive loop with fresh execution registers
-        // in place instead of the `mem::take(self)` + `VM::new` sub-VM.
-        self.with_nested_registers(|vm| vm.drive_react_subscriptions_nested(react_subs, policy))
+        self.with_nested_registers(|vm| {
+            vm.drive_react_subscriptions_nested_prewired(
+                react_subs,
+                policy,
+                Some((waker, sink_regs)),
+            )
+        })
     }
 
     /// Drive a `whenever` body over an already-materialized list of source

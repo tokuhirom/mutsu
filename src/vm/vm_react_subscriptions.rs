@@ -209,13 +209,32 @@ impl Interpreter {
         react_subs: Vec<ReactSubscription>,
         policy: SupplyDrivePolicy,
     ) -> Result<(), RuntimeError> {
+        self.drive_react_subscriptions_nested_prewired(react_subs, policy, None)
+    }
+
+    /// [`Self::drive_react_subscriptions_nested`] with optionally pre-registered
+    /// supplier sinks. A caller that defers the drive loop to a spawned thread
+    /// (`supply_promise_on_demand`) must register the sinks on the *calling*
+    /// thread before it returns — a producer that runs `emit`/`done` between the
+    /// coercion returning and the spawned thread starting would otherwise have
+    /// its terminal `done` dispatch `supplier_reset` the buffered state away
+    /// before the late sink registration could replay it, leaving the promise
+    /// `Planned` forever (t/promise-supply-coercion-async-drive.t test 3 under
+    /// CPU oversubscription). Registered sinks survive `supplier_reset`, and the
+    /// waker queue buffers every pushed event until the loop drains it.
+    pub(crate) fn drive_react_subscriptions_nested_prewired(
+        &mut self,
+        react_subs: Vec<ReactSubscription>,
+        policy: SupplyDrivePolicy,
+        prewired: Option<(ReactWaker, Vec<(u64, u64)>)>,
+    ) -> Result<(), RuntimeError> {
         // Mark the drive loop active so a `whenever` that taps an on-demand
         // supply from inside a running react routes the supply's
         // `closing => { ... }` callbacks to this (main) thread via
         // `pending_tap_closes`, rather than firing them on an async body's
         // worker thread (see `native_supply_mut_methods` tap on-demand path).
         self.react_active += 1;
-        let result = self.drive_react_subscriptions_inner(react_subs, policy);
+        let result = self.drive_react_subscriptions_inner(react_subs, policy, prewired);
         self.react_active -= 1;
         // Fire any close callbacks whose emitter completed but was not drained
         // in-loop (e.g. the final tap's emitter finishing as the react ended).
@@ -255,8 +274,16 @@ impl Interpreter {
         &mut self,
         mut react_subs: Vec<ReactSubscription>,
         policy: SupplyDrivePolicy,
+        prewired: Option<(ReactWaker, Vec<(u64, u64)>)>,
     ) -> Result<(), RuntimeError> {
         if react_subs.is_empty() {
+            // Defensive: a prewired caller never passes an empty subscription
+            // list, but if one did, its sinks must not leak.
+            if let Some((_, sink_regs)) = prewired {
+                for (sid, sink_id) in sink_regs {
+                    supplier_sink_unregister(sid, sink_id);
+                }
+            }
             if let SupplyDrivePolicy::Promise {
                 promise,
                 last_value,
@@ -269,19 +296,28 @@ impl Interpreter {
             return Ok(());
         }
 
-        let waker = ReactWaker::new();
         // Supplier-backed subscriptions: register push sinks in one batch so
         // any already-buffered values across sibling derived supplies (e.g. two
         // `whenever $s.grep(...)`) replay merged in true emit order, not one
         // supplier's whole buffer at a time (PLAN.md 8.19). Registering them
         // one at a time would interleave-lose the order when a producer thread
         // races ahead of this registration and buffers values first.
-        let regs: Vec<(u64, usize)> = react_subs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
-            .collect();
-        let mut sink_regs: Vec<(u64, u64)> = supplier_sinks_register_batch(&regs, &waker);
+        //
+        // A prewired caller already did this on the thread that built the
+        // subscriptions (see `drive_react_subscriptions_nested_prewired`).
+        let (waker, mut sink_regs): (ReactWaker, Vec<(u64, u64)>) = match prewired {
+            Some((waker, sink_regs)) => (waker, sink_regs),
+            None => {
+                let waker = ReactWaker::new();
+                let regs: Vec<(u64, usize)> = react_subs
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, sub)| sub.supplier_id.map(|sid| (sid, i)))
+                    .collect();
+                let sink_regs = supplier_sinks_register_batch(&regs, &waker);
+                (waker, sink_regs)
+            }
+        };
         // Promise / channel / mpsc-receiver sources still deliver their
         // payloads through the existing receiver / poll paths, but wake the
         // loop instantly instead of waiting out the idle cap.
