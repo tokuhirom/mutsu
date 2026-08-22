@@ -28,20 +28,20 @@ use Test;
 # guards in that file (see
 # news/2026-08/readonly-param-mark-panic-unwind-raii-guard.md).
 
-plan 1;
+plan 2;
 
 # The ticket's exact repro -- a panicking callee's own parameter must not
 # leave a completely unrelated, same-named OUTER lexical stuck readonly.
 #
-# This only asserts that the write no longer THROWS (the readonly-mark
-# symptom this ticket is about) -- not that `$desc` ends up holding
-# 'outer-updated'. The positional-light fast call path
-# (`call_compiled_function_positional_light`) also fails to restore
-# `self.locals`/`self.env` on this same panic unwind (a separate,
-# pre-existing bug unrelated to readonly marking: `$desc` reads back as the
-# panicking callee's own argument value, `999`, even on a version of mutsu
-# with this ticket's fix applied) -- see
-# todo/deep/light-call-locals-env-leak-on-panic-unwind.md.
+# This asserts both that the write no longer THROWS (the readonly-mark
+# symptom this ticket is about) and that `$desc` still holds its own,
+# untouched value. The positional-light fast call path
+# (`call_compiled_function_positional_light`) used to also fail to restore
+# `self.locals`/`self.env` on this same panic unwind -- a separate,
+# pre-existing bug unrelated to readonly marking, fixed via a local
+# `catch_unwind` around the body loop; see
+# t/light-call-state-leak-on-panic-unwind.t and
+# news/2026-08/light-call-state-leak-on-panic-unwind.md.
 {
     sub victim($desc) {
         my @a;
@@ -52,4 +52,6 @@ plan 1;
     try { victim(999) };
     lives-ok { $desc = 'outer-updated' },
         'an unrelated outer lexical sharing a panicking parameter name is still writable';
+    is $desc, 'outer-updated',
+        'the write after the lives-ok block actually took effect on the real outer lexical';
 }
