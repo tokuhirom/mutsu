@@ -1,6 +1,10 @@
 # ADR-0046: Proto-token dispatch shares the one LTM ranking mechanism, and interpolation provenance covers arrays and token bodies
 
-- **Status**: Partially implemented. **Slice 1 (array/regex-object
+- **Status**: **Implemented (all five slices landed; Slice 4-5 on 2026-08-22).**
+  Every row of §2.1, §2.2 and §2.3 now answers as `raku` does, on both proto
+  dispatch mechanisms, and the headline repro in §5 flips. The per-slice history
+  below is kept for the implementation notes each one accumulated.
+  **Slice 1 (array/regex-object
   interpolation provenance, §4 item 1) landed 2026-08-20**: the three
   `push_regex_interpolated_alternation` call sites (`@name`, `@$var`,
   `@(...)`) and `array_var_alternation_atom` (`<@var>` / `<?@var>` /
@@ -9,10 +13,10 @@
   unconditional marking (§2.1 probe S). Pin: `t/regex-ltm-interpolation-provenance.t`
   (all 8 probes I/J/K/L/M/Q/R/S, dual-oracle verified against `raku`). A
   latent bug this fix unmasked (fixing `array`'s own quantifier-separator
-  interpolation, and a pre-existing, unrelated named-subrule-call LTM
-  over-crediting gap) was fixed/documented in the same slice — see
-  `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`
-  for the latter, left for Slices 3/4.
+  interpolation, and a pre-existing, unrelated LTM over-crediting gap) was
+  fixed/documented in the same slice — the latter was deferred to Slices 3/4 and
+  is written up in
+  `news/2026-08/subtracted-char-class-terminates-ltm-prefix.md`.
   **Slices 2 and 3 landed 2026-08-22**: `interpolate_bound_regex_scalars` now
   marks its substitutions (`scalar` row of §2.2 green on mechanism 1), and
   mechanism 1 (`eval_token_call_values_at`) ranks via the shared
@@ -25,8 +29,15 @@
   wrote `$x` into the live env and changed what `inner` interpolated (stale
   `todo` in `t/regex-inline-code-block.t` removed). Pins:
   `t/regex-ltm-proto-dispatch.t`, `t/regex-ltm-interpolation-provenance.t`
-  probes T/U. **Slices 4-5 (mechanism 3 rank-then-match, ledger) are next.**
-- **Context**: `todo/deep/proto-token-ltm-and-interpolation-provenance.md` (renamed from
+  probes T/U.
+  **Slices 4 and 5 landed 2026-08-22**: the nested-`<name>` proto loop is
+  rank-then-match, so mechanism 3 measures a declarative prefix at last and a
+  losing candidate no longer runs; three corrections it forced (`<sym>` as a
+  named capture, subtracted char classes terminating the prefix, and the
+  `||`-epsilon `(None, false)` filter unsoundness) are in §4 item 4. Both
+  originating `todo/deep` files were retired to `news/2026-08/`.
+- **Context**: the originating finding is now
+  `news/2026-08/proto-token-ltm-one-ranking-mechanism.md` (it started life as
   `ltm-inline-unbounded-quantifier-vs-array-tie.md`, whose recorded root cause this ADR
   corrects). Builds directly on [ADR-0009](0009-regex-code-assertion-execution-model.md)
   (`LTM_DECLARATIVE_MODE`, "measuring a candidate must never execute it") and
@@ -278,7 +289,7 @@ to unify onto.
      into future Slice 3/4 work) a pre-existing, unrelated LTM gap where a bare
      named-subrule call with an unbounded quantifier and no internal stopper wrongly gets
      full/greedy ranking credit — see
-     `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`;
+     `news/2026-08/subtracted-char-class-terminates-ltm-prefix.md`;
      `t/grammar-body-my-lexical-scope.t` test 5 was reshaped to stop depending on it.
 2. **Slice 2 — bound/token-body scalar provenance (landed 2026-08-22)** (Decision 2 item 2).
    Pin: the `scalar` row of §2.2 as a grammar test (`t/regex-ltm-interpolation-provenance.t`
@@ -305,9 +316,10 @@ to unify onto.
      Validated against `raku`: reversing two proto candidates whose only
      difference is a leading `:my` flips the winner, i.e. their prefixes tie, so
      a declarator neither consumes nor terminates.
-4. **Slice 4 — mechanism 3 restructured to rank-then-match** (Decision 1, the semantic
+4. **Slice 4 — mechanism 3 restructured to rank-then-match (landed 2026-08-22)**
+   (Decision 1, the semantic
    change). Pin: the `code` / `ws` / `litlen` rows of §2.2 in their nested-`<val>` form,
-   plus §2.3's side-effect assertion. This is the high-blast-radius slice: every grammar
+   plus §2.3's side-effect assertion — all in `t/regex-ltm-proto-dispatch.t`. This is the high-blast-radius slice: every grammar
    in the test suite and every battery (Cro, YAMLish, JSON::Tiny, the vendored Rakudo-Core
    modules) dispatches nested proto tokens through it. Expect a red CI round and fix
    forward; do not split it into smaller gates that leave two rankings live at once.
@@ -323,9 +335,45 @@ to unify onto.
      (`regex_match_atom.rs:553`) still gives each candidate only its greedy end, so
      backtracking into a *shorter* end of the winning proto candidate is unavailable — the
      proto twin of the gap ADR-0022 Slice 3 closed for `|`. Left as-is; no probe currently
-     demands it.
-5. **Slice 5 — ledger** — retire `todo/deep/proto-token-ltm-and-interpolation-provenance.md`
-   to `news/2026-08/`, and record the outcome in this ADR's Status line.
+     demands it. Rakudo agrees on the observable half: it does NOT backtrack into a
+     lower-ranked proto candidate when what *follows* the subrule call fails
+     (`token TOP { <v> 'd' }` over `v:sym<long> { 'abcd' }` / `v:sym<short> { 'abc' }`
+     on `"abcd"` answers no-match in `raku`), so "rank, then commit to the first
+     candidate that matches" is the correct shape, not a compromise.
+   - **Three corrections Slice 4 forced, each validated against `raku` first:**
+     (a) `<sym>` is a *named capture* of the literal in Rakudo, not a bare literal
+     splice. `instantiate_token_pattern` spliced the escaped text directly, which both
+     lost the `$<sym>` capture and — because ADR-0022 §4.3 has a capture group end the
+     leading-literal region — handed the candidate a `litlen` tie-break credit Rakudo
+     does not give it. It now emits `$<sym>=[…]` (and `[…]` for `<.sym>`), via a scanner
+     that skips an occurrence preceded by `$` so the substitution is idempotent.
+     (b) A character class written with set **subtraction** (`<[\x1F..\xFF] - [;]>`,
+     `<+alpha - [q]>`, `<-[;] - [q]>`) terminates the declarative prefix: Rakudo has no
+     single NFA edge for "this set minus that set". Every subtraction-free class
+     participates normally. The rule is about the class's *written structure*, not its
+     resulting character set, and is independent of any quantifier. **This supersedes
+     the root cause the `named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit`
+     ticket recorded** (retired to
+     `news/2026-08/subtracted-char-class-terminates-ltm-prefix.md`, which carries the
+     corrected rule):
+     its "unbounded quantifier reached through a named subrule" theory was wrong — the
+     subrule is transparent, and the same shape written inline diverges identically.
+     Implementing it fixed that ticket, which Slice 4 had otherwise made *decisive*
+     (`t/grammar-body-my-lexical-scope.t` had been reshaped around it and is now
+     restored to its strong form).
+     (c) `LTM_SEQALT_EPSILON`: the `X || Y` epsilon bypass (§4.2) lets a measurement
+     continue past the group at the group's *start* position, so an atom after the group
+     is measured against text the real match would have consumed. It can therefore fail
+     and drive the whole measurement to `None` even though the candidate matches — which
+     made the new `(None, false)` filter drop Cro::Uri's
+     `regex host:sym<IPv6address> { '[' <( <.IPv6address> )> ']' }`. A separate
+     thread-local now marks such a measurement as unsound to *filter* on without
+     truncating the measured prefix the way `LTM_PREFIX_TERMINATED` does. The
+     bundled-battery gate caught this; roast did not.
+5. **Slice 5 — ledger (landed 2026-08-22)** — retired both originating `todo/deep`
+   files to `news/2026-08/proto-token-ltm-one-ranking-mechanism.md` and
+   `news/2026-08/subtracted-char-class-terminates-ltm-prefix.md`, and recorded the
+   outcome in this ADR's Status line.
 
 ## 5. Acceptance matrix
 
@@ -347,8 +395,8 @@ grammar G {
 say G.parse('x; Foo=Strict', :actions(A.new))<val>[0].made;   # raku: OTHER; mutsu today: KNOWN
 ```
 
-needs Slice 1 (so `@opts` stops `known`'s prefix at 4) *and* Slice 4 (so the nested
-`<val>` dispatch ranks by prefix at all) to flip.
+needed Slice 1 (so `@opts` stops `known`'s prefix at 4) *and* Slice 4 (so the nested
+`<val>` dispatch ranks by prefix at all) to flip. Both landed; it answers `OTHER`.
 
 ## 6. Consequences
 
@@ -357,8 +405,14 @@ needs Slice 1 (so `@opts` stops `known`'s prefix at 4) *and* Slice 4 (so the nes
   dispatch, which is where most grammars actually dispatch protos (§2.3).
 - Mechanism 3 gets cheaper, not more expensive (N measurements + 1 real match, versus N
   real matches today).
-- `declarative_prefix_match_len`'s string-based measurement path goes away, removing the
-  last duplicate of the measurement primitive.
-- No roast test currently pins any of §2.2/§2.3 — the acceptance suite has to be written
-  from these probes. That is also why the divergence survived ADR-0009 and ADR-0022:
-  `protoregex.t` reaches only mechanism 1.
+- `declarative_prefix_match_len` survives only as a fallback for a candidate whose
+  source does not parse, plus the "anchored single subrule" ranking loop in
+  `regex_match_public.rs` — the last two users of the string-based path.
+- No roast test pinned any of §2.2/§2.3 — the acceptance suite was written from these
+  probes (`t/regex-ltm-proto-dispatch.t`, 35 assertions, dual-oracle verified). That is
+  also why the divergence survived ADR-0009 and ADR-0022: `protoregex.t` reaches only
+  mechanism 1.
+- **The bundled-battery gate is not optional for LTM work.** Slice 4's `||`-epsilon
+  unsoundness passed the full `t/` suite *and* all 1436 whitelisted roast files, and was
+  caught only by `scripts/battery-testsuite.sh` (Cro::Core's `uri.rakutest`). Run it
+  locally before pushing any ranking change.

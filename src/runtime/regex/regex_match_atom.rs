@@ -555,30 +555,89 @@ impl Interpreter {
                 // best_raw: raw inner matches for the best iteration, HIGHEST FIRST.
                 let mut best_raw: Vec<(usize, RegexCaptures)> = Vec::new();
 
+                let has_proto = candidates.iter().any(|(_, _, sym)| sym.is_some());
+                // Left-recursion escape hatch for the rank-then-match path — see
+                // the `seed_was_consulted` handling below.
+                let mut lr_match_all = false;
+
                 loop {
                     // Evaluate all candidates' patterns directly (unwrapped).
                     let mut raw_out: Vec<(usize, RegexCaptures)> = Vec::new();
-                    let mut has_proto = false;
 
-                    for (parsed, sub_pkg, sym_key) in candidates.iter() {
-                        if sym_key.is_some() {
-                            has_proto = true;
-                        }
-                        let all_matches =
-                            self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
-                        // all_matches: HIGHEST FIRST.
-                        let matches_to_use: Vec<_> = if sym_key.is_some() {
-                            all_matches.into_iter().take(1).collect()
-                        } else {
-                            all_matches
-                        };
-                        // Preserve sym_key in each match so build_named_candidates_from_inner
-                        // can set subcap.sym correctly for action method dispatch.
-                        for (end, mut caps) in matches_to_use {
-                            if sym_key.is_some() {
-                                caps.sym = sym_key.clone();
+                    if has_proto && !lr_match_all {
+                        // ADR-0046 Decision 1: rank the proto candidates by
+                        // MEASUREMENT, then match only the winner. Ranking runs
+                        // under `LTM_DECLARATIVE_MODE`, so it executes nothing
+                        // (ADR-0009) — which is what keeps a losing candidate's
+                        // `{ … }` blocks and action methods from firing (ADR-0046
+                        // §2.3). This is the same `(prefix_len, litlen, decl
+                        // order)` triple `|` alternation and the `:rule<...>`
+                        // proto entry point rank by; declaration order comes free
+                        // from a stable sort over `candidates`, which is already
+                        // in declaration order.
+                        let mut ranked: Vec<(usize, (usize, usize))> = Vec::new();
+                        for (idx, (parsed, sub_pkg, _)) in candidates.iter().enumerate() {
+                            let (plen, stopped) =
+                                self.ltm_prefix_len_at(parsed, chars, pos, sub_pkg);
+                            // ADR-0022 §4.1's contract: `(None, false)` is a sound
+                            // "this candidate cannot match here" verdict and may
+                            // filter; `(None, true)` only means the measurement was
+                            // cut short, so the candidate is kept, ranked at 0.
+                            if plen.is_none() && !stopped {
+                                continue;
                             }
-                            raw_out.push((end, caps));
+                            let mut seen = std::collections::HashSet::new();
+                            let litlen =
+                                self.ltm_litlen_at(parsed, chars, pos, sub_pkg, &mut seen, 0);
+                            ranked.push((idx, (plen.unwrap_or(0), litlen)));
+                        }
+                        ranked.sort_by_key(|(_, rank)| std::cmp::Reverse(*rank));
+                        // Attempt the ranked candidates in order and stop at the
+                        // first that actually matches — Rakudo tries the NFA's
+                        // fates in order and commits to the first that succeeds,
+                        // without backtracking into a later fate when what FOLLOWS
+                        // the subrule call fails (verified against `raku`).
+                        for (idx, _) in ranked {
+                            let (parsed, sub_pkg, sym_key) = &candidates[idx];
+                            let sym_key = sym_key.clone();
+                            let all_matches =
+                                self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
+                            if all_matches.is_empty() {
+                                continue;
+                            }
+                            // A proto candidate contributes only its greedy end
+                            // (see ADR-0046 §4's "residual not closed" note).
+                            let matches_to_use: Vec<_> = if sym_key.is_some() {
+                                all_matches.into_iter().take(1).collect()
+                            } else {
+                                all_matches
+                            };
+                            for (end, mut caps) in matches_to_use {
+                                if sym_key.is_some() {
+                                    caps.sym = sym_key.clone();
+                                }
+                                raw_out.push((end, caps));
+                            }
+                            break;
+                        }
+                    } else {
+                        for (parsed, sub_pkg, sym_key) in candidates.iter() {
+                            let all_matches =
+                                self.regex_match_ends_from_caps_in_pkg(parsed, chars, pos, sub_pkg);
+                            // all_matches: HIGHEST FIRST.
+                            let matches_to_use: Vec<_> = if sym_key.is_some() {
+                                all_matches.into_iter().take(1).collect()
+                            } else {
+                                all_matches
+                            };
+                            // Preserve sym_key in each match so build_named_candidates_from_inner
+                            // can set subcap.sym correctly for action method dispatch.
+                            for (end, mut caps) in matches_to_use {
+                                if sym_key.is_some() {
+                                    caps.sym = sym_key.clone();
+                                }
+                                raw_out.push((end, caps));
+                            }
                         }
                     }
 
@@ -628,6 +687,18 @@ impl Interpreter {
                     if !seed_was_consulted {
                         best_raw = deduped_raw;
                         break;
+                    }
+
+                    // Left-recursive at this key. ADR-0046 Slice 4: the
+                    // growing-seed loop discovers re-entry by *evaluating*
+                    // candidates, so a candidate the rank-then-match path skipped
+                    // could hide a left-recursive re-entry and make the seed stop
+                    // growing early. Fall back to evaluating the full candidate
+                    // set for as long as this activation lives, and redo the
+                    // current iteration under that rule before judging growth.
+                    if !lr_match_all {
+                        lr_match_all = true;
+                        continue;
                     }
 
                     if new_max > best_inner_max {

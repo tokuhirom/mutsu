@@ -159,10 +159,15 @@ impl Interpreter {
         // measured while an outer measurement is still live.
         let saved_mode = super::regex_helpers::LTM_DECLARATIVE_MODE.replace(true);
         let saved_terminated = super::regex_helpers::LTM_PREFIX_TERMINATED.replace(false);
+        let saved_epsilon = super::regex_helpers::LTM_SEQALT_EPSILON.replace(false);
         let result = self.regex_match_len_at_start(pattern, text);
-        let stopped_at_code_atom = super::regex_helpers::LTM_PREFIX_TERMINATED.get();
+        // A `||` epsilon bypass makes a `None` unsound to filter on, same as a
+        // code atom — see `LTM_SEQALT_EPSILON`.
+        let stopped_at_code_atom = super::regex_helpers::LTM_PREFIX_TERMINATED.get()
+            || super::regex_helpers::LTM_SEQALT_EPSILON.get();
         super::regex_helpers::LTM_DECLARATIVE_MODE.set(saved_mode);
         super::regex_helpers::LTM_PREFIX_TERMINATED.set(saved_terminated);
+        super::regex_helpers::LTM_SEQALT_EPSILON.set(saved_epsilon);
         (result, stopped_at_code_atom)
     }
 
@@ -174,9 +179,58 @@ impl Interpreter {
             return pattern.to_string();
         };
         let escaped = Self::regex_escape_literal(&sym);
-        pattern
-            .replace("<.sym>", &escaped)
-            .replace("<sym>", &escaped)
+        // `<sym>` is a *named capture* of the literal in Rakudo
+        // (`QAST::Regex(:rxtype<subcapture>, :name<sym>, literal)`), not a bare
+        // literal splice. Two things follow, both of which a bare splice got
+        // wrong: the match must expose `$<sym>`, and — since ADR-0022 §4.3 has a
+        // capture group END the leading-literal region — the expansion must NOT
+        // earn its candidate any `litlen` tie-break credit. Validated against
+        // `raku`: with `token v:sym<cc> { <-[/]>+ }` declared first, a sibling
+        // `token v:sym<ab> { 'ab' }` wins the prefix tie on litlen but
+        // `token v:sym<ab> { <sym> }` does not (it ties and loses on declaration
+        // order). Wrapping in a group also makes `<sym>+` quantify the whole
+        // symbol rather than only its last character.
+        // `<.sym>` is the non-capturing form, so it keeps litlen credit.
+        Self::replace_sym_assertions(pattern, &escaped)
+    }
+
+    /// Replace the `<sym>` / `<.sym>` assertions in `pattern`, skipping an
+    /// occurrence that is preceded by `$` — that is the *name* half of a
+    /// `$<sym>=[...]` named capture, not an assertion. Skipping it keeps this
+    /// substitution idempotent (its own `<sym>` capture output survives a second
+    /// pass unharmed) and lets a hand-written `$<sym>=[...]` through, as Rakudo
+    /// does.
+    fn replace_sym_assertions(pattern: &str, escaped: &str) -> String {
+        let mut out = String::with_capacity(pattern.len());
+        let mut rest = pattern;
+        while let Some(idx) = rest
+            .find("<sym>")
+            .into_iter()
+            .chain(rest.find("<.sym>"))
+            .min()
+        {
+            let dotted = rest[idx..].starts_with("<.sym>");
+            let tag_len = if dotted {
+                "<.sym>".len()
+            } else {
+                "<sym>".len()
+            };
+            out.push_str(&rest[..idx]);
+            if rest[..idx].ends_with('$') {
+                out.push_str(&rest[idx..idx + tag_len]);
+            } else if dotted {
+                out.push('[');
+                out.push_str(escaped);
+                out.push(']');
+            } else {
+                out.push_str("$<sym>=[");
+                out.push_str(escaped);
+                out.push(']');
+            }
+            rest = &rest[idx + tag_len..];
+        }
+        out.push_str(rest);
+        out
     }
 
     pub(crate) fn token_pattern_from_def(def: &FunctionDef) -> Option<String> {
