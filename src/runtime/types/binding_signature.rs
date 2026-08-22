@@ -370,7 +370,8 @@ impl Interpreter {
                 } else {
                     pd.name.clone()
                 };
-                let got = crate::runtime::value_type_name(&value);
+                let got = crate::runtime::utils::value_type_display_name(&value);
+                let got = got.as_str();
                 // A subset failure is a *constraint* failure in raku:
                 // "Constraint type check failed in binding to
                 // parameter '$x'; expected Even but got Int (3)".

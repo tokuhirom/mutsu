@@ -1211,12 +1211,21 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             }
         }
         // Type smileys: TypeName:U, TypeName:D, TypeName:_
+        //
+        // Lowercase native type names (`int:D`, `array:U`, `num64:_`) carry a
+        // smiley in Rakudo too, but they cannot be admitted by the same
+        // "starts uppercase" rule: an arbitrary lowercase identifier followed
+        // by `:D...` is normally a colonpair adverb (`foo:Debug`). So they are
+        // gated on the native-type name set *and* on the smiley not being the
+        // prefix of a longer adverb name.
         if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
             && !r[2..].starts_with('<')
-            && full_name
+            && (full_name
                 .chars()
                 .next()
                 .is_some_and(|c| c.is_ascii_uppercase())
+                || (crate::runtime::native_types::is_native_type_name(&full_name)
+                    && !r[2..].starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')))
         {
             let smiley = &r[..2];
             full_name.push_str(smiley);

@@ -81,7 +81,7 @@ This is deliberately the *load-time* half of the problem. `BODY_OF` and
 `pointer-to()`, which hand C the address of a container's element buffer, need
 that buffer to be a stable native allocation — mutsu copies into a temporary one
 per call — and that is a value-representation change with its own design work.
-It is written up in `todo/deep/nativehelpers-blob-moarvm-guts.md`.
+It is written up in `news/2026-08/nativehelpers-blob-parity-gaps-closed.md`.
 
 Pinned by `t/nativecall-sizeof-pointer-where.t`, which passes identically under
 `raku`.

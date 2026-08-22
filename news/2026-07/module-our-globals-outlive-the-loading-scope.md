@@ -61,7 +61,7 @@ already computed a few lines further down for exactly this kind of stripping.
 
 `01-basic`'s remaining three failures are all the `mysql` driver, and it is
 gated on the deferred
-[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../../todo/deep/nativehelpers-blob-moarvm-guts.md)
+[`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`](../2026-08/nativehelpers-blob-parity-gaps-closed.md)
 work rather than on anything new: `DBDish::mysql::StatementHandle` uses
 `BPointer(...)`, which is `NativeHelpers::Blob`'s `pointer-to` and needs
 `BODY_OF` — the address of a container's element buffer, stable across calls.

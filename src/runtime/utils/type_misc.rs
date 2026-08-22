@@ -167,6 +167,25 @@ pub(crate) fn value_type_name(value: &Value) -> &'static str {
     }
 }
 
+/// The type name to *show the user* in a type-check error.
+///
+/// [`value_type_name`] answers a `&'static str` drawn from the `Value` tag
+/// alone, so a native `array[T]` collapses to `"Array"` there. That is fine for
+/// the tag-level checks it feeds, but it makes an error read "expected Array,
+/// got Array" when an `Array` parameter rejects a native array (they are
+/// distinct types — `array`'s MRO is `array, Cool, Any, Mu`). The declared type
+/// travels embedded in the array's own backing data, so recovering it here
+/// needs no interpreter.
+pub(crate) fn value_type_display_name(value: &Value) -> String {
+    if let ValueView::Array(items, _) = value.view()
+        && let Some(declared) = items.declared_type.as_deref()
+        && (declared == "array" || declared.starts_with("array["))
+    {
+        return declared.to_string();
+    }
+    value_type_name(value).to_string()
+}
+
 pub(crate) fn is_chain_comparison_op(op: &str) -> bool {
     matches!(
         op,

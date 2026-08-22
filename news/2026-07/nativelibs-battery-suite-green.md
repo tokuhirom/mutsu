@@ -179,7 +179,7 @@ the same wall: a `CArray[T]` constructed from Raku has no C storage, so its
 `.REPR` is `P6opaque` and it has no address to `nativecast` from. That is
 **ADR-0015 P3** (native-backed Raku-side `CArray[T]` / `array[T]`), a designed but
 unstarted phase — see
-[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../../todo/deep/nativehelpers-blob-moarvm-guts.md),
+[`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`](../2026-08/nativehelpers-blob-parity-gaps-closed.md),
 which now records exactly which files and subtests it gates. `02-cstruct.t` is
 not whitelistable at all: raku itself fails two of its tests here.
 

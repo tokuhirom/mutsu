@@ -16,15 +16,13 @@
   (`src/runtime/types/type_matching.rs`, pinned by `t/bare-array-type-match.t`). **P0–P3b are now
   fully landed. Only P3c (reference-element `CArray[Str]`/`CArray[Pointer]`, parity polish with no
   bundled consumer, documented as intentional in `docs/nativecall-repr-bodies.md`) remains open.**
-  Two smaller, unrelated parity gaps found alongside the P3b fix are tracked separately:
-  [todo/tickets/lowercase-native-type-smiley-term-position.md](../../todo/tickets/lowercase-native-type-smiley-term-position.md)
-  (a `:D`/`:U` smiley on a lowercase native type name in *term* position, e.g. `array:D`, `int:D`)
-  and
-  [todo/tickets/native-array-smartmatch-array-parity.md](../../todo/tickets/native-array-smartmatch-array-parity.md)
-  (`array[T] ~~ Array` over-reports `True`; deferred until a consumer needs it).**
+  Two smaller, unrelated parity gaps found alongside the P3b fix are **also fixed now**
+  (2026-08-22, [news/2026-08/nativehelpers-blob-parity-gaps-closed.md](../../news/2026-08/nativehelpers-blob-parity-gaps-closed.md)):
+  a `:D`/`:U` smiley on a lowercase native type name in *term* position (`array:D`, `int:D`) parses,
+  and a native `array[T]` no longer over-reports `~~ Array` / `.isa(Array)` as `True`.**
 - **Date**: 2026-07-27
 - **Deciders**: tokuhirom, Claude
-- **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (non-moving GC — what makes a stable address possible at all; the container type filter this ADR extends), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (interior mutability — the write path into a shared container node), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing — a new container kind must fit the existing tag scheme), [todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md) (the finding this ADR answers), [todo/tickets/dbiish-blockers.md](../../todo/tickets/dbiish-blockers.md) ⑨, PLAN.md §1 B1 (database battery) / §1 B4 (NativeCall remainder)
+- **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md) (non-moving GC — what makes a stable address possible at all; the container type filter this ADR extends), [ADR-0013](0013-container-interior-mutability-cellvalue.md) (interior mutability — the write path into a shared container node), [ADR-0005](0005-nanbox-representation-encoding.md) (NaN-boxing — a new container kind must fit the existing tag scheme), [news/2026-08/nativehelpers-blob-parity-gaps-closed.md](../../news/2026-08/nativehelpers-blob-parity-gaps-closed.md) (the finding this ADR answers, now closed out), [todo/tickets/dbiish-blockers.md](../../todo/tickets/dbiish-blockers.md) ⑨, PLAN.md §1 B1 (database battery) / §1 B4 (NativeCall remainder)
 
 > This ADR decides **how mutsu hands C a pointer into a Raku container's element
 > storage** — the capability behind `NativeHelpers::Blob`'s `pointer-to` /
@@ -73,7 +71,7 @@ left is the half that needs real storage.
 
 Measured 2026-07-27, debug build of `main`, both interpreters on the same input.
 The two probes are kept in
-[todo/deep/nativehelpers-blob-moarvm-guts.md](../../todo/deep/nativehelpers-blob-moarvm-guts.md#measuring-the-remaining-gaps-yourself):
+[news/2026-08/nativehelpers-blob-parity-gaps-closed.md](../../news/2026-08/nativehelpers-blob-parity-gaps-closed.md#re-measuring-the-battery):
 
 | contract | raku | mutsu today |
 | --- | --- | --- |

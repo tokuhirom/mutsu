@@ -7,7 +7,7 @@ use Test;
 # fresh ArrayData (dropping the metadata), turning `array[int]` into a bare
 # `Array` and breaking `.WHAT` / `.raku` / shaped `:delete`-dies behaviour.
 
-plan 9;
+plan 10;
 
 # --- .raku format ---------------------------------------------------------
 my int @r1[4] = 1, 2, 3, 4;
@@ -22,7 +22,10 @@ is @r2.raku, 'array[int].new(:shape(2, 2), [1, 2], [3, 4])', '2-D int .raku';
 # --- type/shape preserved through a mutating for loop ---------------------
 my int @f[4] = 10, 15, 12, 16;
 $_++ for @f;
-ok @f ~~ Array, 'for-loop: still an array';
+# `array` and `Array` are distinct types in raku, so the "still an array"
+# contract for a native shaped array is `~~ array`.
+ok @f ~~ array, 'for-loop: still a native array';
+nok @f ~~ Array, 'for-loop: a native array is not an Array';
 is @f.WHAT.^name, 'array[int]', 'for-loop preserves array[int] type';
 is @f.raku, 'array[int].new(:shape(4,), [11, 16, 13, 17])', 'for-loop preserves .raku form';
 # a shaped array still rejects :delete after a mutating for loop

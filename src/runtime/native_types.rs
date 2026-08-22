@@ -69,6 +69,17 @@ pub(crate) fn is_native_array_element_type(name: &str) -> bool {
     is_native_int_type(name) || matches!(name, "num" | "num32" | "num64" | "str")
 }
 
+/// Whether `name` spells a *lowercase* native type in term position — the set
+/// that Rakudo also lets carry a type smiley (`int:D`, `array:U`, `num64:_`).
+///
+/// This is the element-type set plus `array` itself. It exists so the parser
+/// can accept a smiley after a lowercase native type name; every other
+/// lowercase identifier followed by `:D...` stays an ordinary colonpair adverb
+/// (`foo:Debug`).
+pub(crate) fn is_native_type_name(name: &str) -> bool {
+    is_native_array_element_type(name) || name == "array"
+}
+
 /// Bool `does Int`, so it unboxes to its integer value (True=1, False=0) when
 /// stored in or bound to a native integer slot -- matching raku (`my int $x =
 /// 3 >= 2` -> 1, `sub f(int $x); f(True)` -> 1). Any non-Bool value passes

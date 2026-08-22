@@ -36,6 +36,18 @@ impl Value {
                 }
             }
             ValueView::Complex(_, _) => "Complex",
+            // A native `array[T]` is a *distinct* type from `Array`: its MRO is
+            // `array, Cool, Any, Mu`, so `.isa(array)` is True and
+            // `.isa(Array)` is False (raku parity). Mirrors the `Map` arm below,
+            // which reads the same embedded `declared_type`.
+            ValueView::Array(ref items, ..)
+                if items
+                    .declared_type
+                    .as_deref()
+                    .is_some_and(|d| d == "array" || d.starts_with("array[")) =>
+            {
+                "array"
+            }
             ValueView::Array(..) | ValueView::LazyList(_) => "Array",
             ValueView::Seq(_) => "Seq",
             ValueView::HyperSeq(_) => "HyperSeq",
