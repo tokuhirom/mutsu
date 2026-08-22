@@ -80,6 +80,14 @@ impl PosSlot {
             ..Default::default()
         }
     }
+
+    /// A capture number reserved by a non-matching alternation branch.
+    pub(crate) fn nil() -> Self {
+        PosSlot {
+            nil: true,
+            ..Default::default()
+        }
+    }
 }
 
 /// One named capture's entries (ADR-0016 P4) — the collapse of the three

@@ -1017,6 +1017,16 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     }
 }
 
+/// The positional-capture width reserved by an alternation.  Capture numbers
+/// after an alternation follow its widest branch, so a shorter winning branch
+/// must contribute Nil slots for the captures it did not take.
+pub(super) fn alternation_capture_slots(alts: &[RegexPattern]) -> usize {
+    alts.iter()
+        .map(count_pattern_capture_groups)
+        .max()
+        .unwrap_or(0)
+}
+
 /// Whether matching `atom` involves an alternation whose branches can have
 /// different lengths — the case where a greedy quantifier (`*`/`+`/`**`) must be
 /// able to backtrack into a *shorter* per-iteration choice to satisfy a later
