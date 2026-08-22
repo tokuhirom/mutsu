@@ -6,7 +6,9 @@
   (re-verified reproducing on `main` @ `b1a9bb8a5`, 2026-08-20; the
   investigation widened the finding well past the ticket's `andthen` repro —
   see §2). One small independent defect turned up on the way and became
-  `todo/tickets/fast-binder-skips-too-many-positionals-check.md`.
+  `todo/tickets/fast-binder-skips-too-many-positionals-check.md`. Retired to
+  [news/2026-08/adr-0054-argument-list-interpolation-is-a-call-site-property.md](../../news/2026-08/adr-0054-argument-list-interpolation-is-a-call-site-property.md)
+  once all six slices landed.
 - Related: [ADR-0021](0021-argument-namedness-is-a-call-site-property.md) —
   the *same* decision for the sibling property. ADR-0021 established
   "named-ness is decided by call-site syntax, never by the value" and fixed it
