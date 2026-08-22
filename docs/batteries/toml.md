@@ -142,7 +142,7 @@ dist directory:
 
 | # | Gap | Filed as | Blocks |
 | --- | --- | --- | --- |
-| 1 | **`is rw` routines do not return an lvalue.** The caller re-interprets the callee's AST tail in its *own* frame, so an element reached through a parameter is unreachable. `Crane.set(%h, :path[...], :value(...))` therefore silently does nothing, and `from-toml` returns `{}` for a document its grammar parsed correctly. | `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` | `Crane` 12/15, and every `Config::TOML` file that builds a result |
+| 1 | ~~**`is rw` routines do not return an lvalue.**~~ **FIXED for the hash half** — ADR-0059, `news/2026-08/is-rw-routines-return-a-container.md`. An `is rw` routine now returns a container and the assignment writes through it, so `Crane.set(%h, :path["a","b"], :value(1))` produces `{:a(${:b(1)})}` like raku (Crane subtests 263→280 ok). Residue, all Crane-side: (a) the deferred vivification token is hash-only, so Crane's `Positional` candidates vivify a `Hash` keyed `"0"` where an `Array` belongs (filed); (b) `X::Crane::PositionalIndexInvalid` is not raised by `Crane::Utils`' classifier multis; (c) WhateverCode (`*-0`) indices do not survive the descent. | `todo/deep/deferred-vivification-token-is-hash-only.md` (a); (b)/(c) un-bisected | `Crane` 12/15 (array paths), and every `Config::TOML` file that builds a result |
 | 2 | ~~**A `\|\|` alternation runs the losing branch's code block.**~~ **FIXED** — `news/2026-08/ordered-alternation-loser-branch-code-block.md`. `\n`, `\"` and `\\` now parse. Residue: the 8-hex `\UXXXXXXXX` form still reports "bad string escape sequence 「U」" although `token escape:sym<U> { <sym> <hex> ** 8 }` matches in isolation — a narrower, un-bisected candidate-selection problem. | — | `grammar/04`, `grammar-actions/04` |
 | 3 | ~~**`push(@a, 1, \|@rest)` in sink context** resolves to "Unknown call: push".~~ **FIXED** — `news/2026-08/listop-slip-arg-sink-context.md`. | — | — |
 | 4 | Assorted per-assertion failures in `grammar/01-02`, `grammar-actions/01-02`, `exceptions/01-02`, `dumper/01` (the last one a `multi to-toml` candidate-selection mismatch: `Calling to-toml(Str) will never work with declared signature (Associative:D $container, %opts)`). Not yet bisected. | — | the rest |
@@ -189,10 +189,10 @@ cleanly (no provisional-exception caveat needed, unlike `Encode`).
 
 ## Next steps
 
-1. **Land item 1 of the work list** —
-   `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md`. It
-   is the largest by far and the only one that needs design; nothing in
-   `Config::TOML` can produce a result until `Crane.set` works.
+1. **Land the residue of item 1** —
+   `todo/deep/deferred-vivification-token-is-hash-only.md`. The `is rw` lvalue
+   return itself landed (ADR-0059), so `Crane.set` works for hash paths; what
+   remains is the array twin of the same mechanism.
 2. ~~Land items 2 and 3~~ — both landed 2026-08-22. Item 2 left one residue
    (the 8-hex `\U` escape) worth bisecting alongside item 4.
 3. Re-run `Config::TOML` + `Crane`'s upstream suites (fetch per the REA

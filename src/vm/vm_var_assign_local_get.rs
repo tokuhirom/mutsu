@@ -75,6 +75,25 @@ impl Interpreter {
         code: &CompiledCode,
         idx: u32,
     ) -> Result<(), RuntimeError> {
+        self.exec_get_local_op_inner(code, idx, false)
+    }
+
+    /// `OpCode::GetLocalDeferred`: `GetLocal` that keeps a deferred
+    /// `HashEntryRef` bind token unresolved (see the opcode's doc).
+    pub(super) fn exec_get_local_deferred_op(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        self.exec_get_local_op_inner(code, idx, true)
+    }
+
+    fn exec_get_local_op_inner(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+        keep_deferred_entry: bool,
+    ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
         // Borrow the name from the compiled code (it is independent of `self`),
@@ -253,7 +272,11 @@ impl Interpreter {
         // doesn't exist). The raw local slot is unchanged, so a later write still
         // materializes it; `=:=` reads the raw slot via GetLocalRaw.
         if val.is_hash_entry_ref_value() {
-            self.stack.push(val.hash_entry_read());
+            if keep_deferred_entry {
+                self.stack.push(val);
+            } else {
+                self.stack.push(val.hash_entry_read());
+            }
             return Ok(());
         }
         // Force lazy thunks transparently on access. Both this and the

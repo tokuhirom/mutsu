@@ -365,6 +365,7 @@ pub(crate) mod json;
 mod listop_functions;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
+mod lvalue_container_return;
 mod main_args;
 mod match_target;
 mod metamodel;

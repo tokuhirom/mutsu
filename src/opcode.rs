@@ -597,6 +597,20 @@ pub(crate) enum OpCode {
     /// Like GetLocal but does NOT resolve HashEntryRef values.
     /// Used by `=:=` to compare raw container references.
     GetLocalRaw(u32),
+    /// The subscript-chain read of a local: the full `GetLocal` resolution
+    /// (binding aliases, shared/atomic storage, env container adoption, lazy
+    /// thunks, `ContainerRef` deref) EXCEPT that a deferred `HashEntryRef` bind
+    /// token is pushed as-is instead of being resolved to its current value.
+    ///
+    /// Emitted for the target of a subscript compiled in container mode (a `:=`
+    /// bind RHS, or a `return-rw` operand): `my $x := %h<a>; my $y := $x<b>` and
+    /// `sub f(\c) is rw { return-rw c<b> }` called with a not-yet-existent
+    /// `%h<a>` both need the token itself, so `IndexAutovivifyLazy` can extend
+    /// its path and the eventual write autovivifies the whole chain. Resolving
+    /// it to `Any` (what a value read correctly does) severs the chain.
+    /// Unlike `GetLocalRaw` this keeps the env fallback, which a method frame's
+    /// parameter slot depends on.
+    GetLocalDeferred(u32),
     SetLocal(u32),
     /// `SetLocal` fused with the declaration markers that always precede it in a
     /// `my $x = <expr>` (ADR-0006 §2.3 peephole): `MarkExplicitInitializerContext`

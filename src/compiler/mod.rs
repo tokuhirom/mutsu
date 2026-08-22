@@ -1304,6 +1304,20 @@ pub(crate) struct Compiler {
     /// to a cell. Cleared while compiling the inner `target` so only the outermost
     /// index is terminal.
     bind_terminal: bool,
+    /// ADR-0059: when true we are compiling the operand of `return-rw`, i.e. an
+    /// expression that denotes a *storage location* the routine is handing to
+    /// its caller, not a value. Every subscript on the path to that location is
+    /// therefore part of the lvalue chain and must yield the element's
+    /// container: the top-level one (so `return-rw c<a>` returns the element
+    /// cell) and any that appears as an ARGUMENT of a nested call
+    /// (`return-rw in(container{@steps[0]}, @steps[1..*])` — Crane's recursive
+    /// descent, where the argument must alias the real sub-container so the
+    /// eventual leaf write lands in the caller's structure and each level
+    /// autovivifies). Distinct from `scalar_bind_autovivify`, which must NOT
+    /// change call-argument compilation (a call nested in a `:=` RHS keeps the
+    /// ordinary `is rw` writeback machinery — see `bind_target_direct`).
+    /// Cleared while compiling a closure body, which is a fresh routine.
+    rw_return_operand: bool,
     /// When true, the *immediate* upcoming `compile_call_arg` call compiles a
     /// `:=` bind/rebind target (`my $x := @a[$i]`), not a genuine function-call
     /// argument. `compile_call_arg` reads this once at entry and clears it
@@ -1568,6 +1582,7 @@ impl Compiler {
             whenever_bind_target: false,
             scalar_bind_autovivify: false,
             bind_terminal: false,
+            rw_return_operand: false,
             bind_target_direct: false,
             mint_named_pair: false,
             constant_vars: std::collections::HashSet::new(),

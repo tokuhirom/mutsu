@@ -3,6 +3,59 @@ use crate::ast::{CallArg, make_anon_sub};
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Compile the single operand of `return-rw` so that it yields a *container*
+    /// rather than a decontainerized value.
+    ///
+    /// An `is rw` routine's contract is that it hands its caller something
+    /// writable; `sub g(\c) is rw { return-rw c<a> }; g(%h) = 1` must write the
+    /// element of the caller's `%h`. A subscript is therefore compiled in the
+    /// same container-producing mode a `:=` bind RHS uses
+    /// (`scalar_bind_autovivify` + `bind_terminal`), which promotes the element
+    /// to its shared `ContainerRef` cell (or hands back a deferred
+    /// `HashEntryRef` for a not-yet-existent hash key, so the eventual write
+    /// autovivifies the path). `assign_lvalue_container` at the call site writes
+    /// through whichever of those comes back.
+    ///
+    /// Every other operand shape (a bare variable in particular) compiles
+    /// unchanged: a variable tail already resolves in the caller's frame
+    /// through the legacy name-based path, and forcing a container there would
+    /// change what an ordinary `my $v = g()` read observes.
+    pub(super) fn compile_return_rw_arg(&mut self, arg: &Expr) {
+        let saved_rw = self.rw_return_operand;
+        self.rw_return_operand = true;
+        match arg {
+            Expr::Index { .. } | Expr::MultiDimIndex { .. } => {
+                let saved_av = self.scalar_bind_autovivify;
+                let saved_terminal = self.bind_terminal;
+                self.scalar_bind_autovivify = true;
+                self.bind_terminal = true;
+                self.compile_expr(arg);
+                self.scalar_bind_autovivify = saved_av;
+                self.bind_terminal = saved_terminal;
+            }
+            _ => self.compile_expr(arg),
+        }
+        self.rw_return_operand = saved_rw;
+    }
+
+    /// Compile a subscript call argument as the element's container, for the
+    /// lvalue chain of a `return-rw` operand (see `rw_return_operand`). This is
+    /// the single-dimension twin of the `MultiDimIndexBindRef` argument path
+    /// above: the element is promoted to its shared `ContainerRef` cell (a
+    /// missing hash key yields the deferred `HashEntryRef` token instead, so a
+    /// read is still non-vivifying), and a `\raw` / `is rw` parameter binds that
+    /// container rather than a value snapshot. Without it the recursive descent
+    /// of a path-addressing routine writes into a detached copy.
+    fn compile_rw_chain_index_arg(&mut self, arg: &Expr) {
+        let saved_av = self.scalar_bind_autovivify;
+        let saved_terminal = self.bind_terminal;
+        self.scalar_bind_autovivify = true;
+        self.bind_terminal = true;
+        self.compile_expr(arg);
+        self.scalar_bind_autovivify = saved_av;
+        self.bind_terminal = saved_terminal;
+    }
+
     pub(super) fn is_normalized_stmt_call_name(name: &str) -> bool {
         matches!(
             name,
@@ -282,6 +335,13 @@ impl Compiler {
             }
             self.code
                 .emit(OpCode::MultiDimIndexBindRef(dimensions.len() as u32));
+            return;
+        }
+        // Inside a `return-rw` operand a single-dimension subscript argument is
+        // part of the lvalue chain and must alias the element's container, the
+        // same way the multi-dim form above always does.
+        if self.rw_return_operand && matches!(arg, Expr::Index { .. }) {
+            self.compile_rw_chain_index_arg(arg);
             return;
         }
         // A call argument's value is normally passed to the callee, not stored
