@@ -37,6 +37,18 @@ assertion inside the custom `ws` itself is misbehaving, causing the whole `ws` t
   user-defined `ws` token is looked up and invoked between atoms in a `rule`
 - `<!ww>` word-boundary assertion implementation
 
+## Update (2026-08-22, batch-6 re-run)
+
+Re-verified on current `main`: the repro above no longer just returns `False` for every case — it
+now **crashes** on the very first `.parse` call with `No such method 'ww' for invocant of type
+'Match'` (i.e. `<!ww>` inside the custom `ws` token dispatches `.ww` as a method call rather than
+recognizing it as the builtin word-boundary assertion). Same root cause area, but the failure mode
+regressed from "silently wrong match" to "hard crash, aborts the whole program" — re-found
+independently via `raku-doc/doc/Language/regexes-best-practices.rakudoc:163`'s `IniFormat`
+grammar example (`token ws { <!ww> \h* }`), which crashes identically. This confirms the bug isn't
+specific to the original repro's particular grammar/pattern — any custom `ws` token override using
+`<!ww>` hits it.
+
 ## Suggested next step
 
 Isolate further: does a *plain* custom `ws { \h* }` (no `<!ww>`) already work for the `rule TOP {

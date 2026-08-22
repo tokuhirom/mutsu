@@ -719,6 +719,52 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
 - `Type/Bag.rakudoc` [1] (line 53, `.keys.raku`/`.values.raku` element order) — Bag/hash
   iteration-order `raku-drift`/nondeterminism, the documented known harness false positive.
 
+Found in the 2026-08-22 batch-6 re-run of `Label`/`IO::Spec::Win32`/`Pair`/`Attribute`/`Unicode`/
+`X::Proc::Async::MustBeStarted`/`Proc`/`traits`/`glossary`/`Metamodel::Versioning`/
+`regexes-best-practices`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Label.rakudoc:87,101,120` | a hyphenated loop label (`MY-LABEL:`) is never recognized by `next`/`last`/`redo`, silently downgrading them to their unconditional/unlabeled form (and hanging forever for a mis-parsed `redo`) | [loop-label-name-rejects-hyphens.md](../todo/tickets/loop-label-name-rejects-hyphens.md) |
+| `Type/Pair.rakudoc:61` | `.raku` on a `Hash` populated via slurpy `*%h` named-arg binding doesn't abbreviate `Bool::True`-valued pairs to `:key` the way real raku does | [slurpy-hash-named-arg-raku-boolean-shorthand-missing.md](../todo/tickets/slurpy-hash-named-arg-raku-boolean-shorthand-missing.md) |
+| `Type/Attribute.rakudoc:58` | `has @.attr is default(V) is rw` — assigning `Nil` resets the array to `[Any]` instead of `[V]` | [array-attribute-default-not-applied-on-nil-assign.md](../todo/tickets/array-attribute-default-not-applied-on-nil-assign.md) |
+| `Type/Unicode.rakudoc:27,37` | the built-in `Unicode` type object doesn't exist at all; the bareword resolves to a plain `Str` | [unicode-type-object-missing.md](../todo/tickets/unicode-type-object-missing.md) |
+| `Type/X/Proc/Async/MustBeStarted.rakudoc:14` | `X::Proc::Async::MustBeStarted.Str` returns the bare class name instead of the "Process must be started first..." message | [x-proc-async-mustbestarted-str-not-message.md](../todo/tickets/x-proc-async-mustbestarted-str-not-message.md) |
+| `Language/traits.rakudoc:42` | a class-scoped `my $.counter` (dot-twigil'd `my` variable, not a `has` attribute) doesn't persist mutations across method calls | [class-scoped-my-dot-attribute-doesnt-persist.md](../todo/tickets/class-scoped-my-dot-attribute-doesnt-persist.md) |
+| `Language/glossary.rakudoc:1024` | `Pod::FormattingCode.raku` prints only the bare class name, omitting `type`/`meta`/`config`/`contents` | [pod-formattingcode-raku-missing-attributes.md](../todo/tickets/pod-formattingcode-raku-missing-attributes.md) |
+| `Type/Metamodel/Versioning.rakudoc:27` | `.^set_ver`/`.^set_auth`/`.^set_api` are unimplemented on `Perl6::Metamodel::ClassHOW` | [metamodel-classhow-set-ver-auth-api-missing.md](../todo/tickets/metamodel-classhow-set-ver-auth-api-missing.md) |
+
+**Excluded from this batch-6 sub-run (already deferred/resolved/drift/false-positive/duplicate):**
+- `Type/IO/Spec/Win32.rakudoc` [1] (line 162, `.rel2abs`) and [4] (line 126, `.join`) —
+  `raku-drift-from-doc` (both compare against the doc's stated Windows-style `# OUTPUT`, but the
+  running environment's actual `$*CWD` is this Linux checkout's path).
+- `Type/IO/Spec/Win32.rakudoc` [2] (line 190, `.split`) and [3] (line 251, `.splitpath`) — mutsu
+  mis-assigns/mis-normalizes path components (e.g. `.split('/foo/')` gives `"\\"` as the directory
+  component where raku gives `"/"`; `.splitpath('.')` swaps the dirname/filename slots) — same
+  Win32-path-component-computation root cause as the already-open
+  [iopath-win32-separator-normalization.md](../todo/tickets/iopath-win32-separator-normalization.md)
+  (itself filed from this same `Type/IO/Spec/Win32.rakudoc` file per its own text), not re-filed as
+  a separate ticket.
+- `Type/Attribute.rakudoc` [2] (line 186, `is built(:bind)` + `my Foo:D $foo .= new: ...`) — the
+  crash is the already-filed
+  [lexical-typed-var-dot-equals-init-fails.md](../todo/tickets/lexical-typed-var-dot-equals-init-fails.md)
+  (`my Type:D $var .= new;` fails to strip the `:D` smiley before building the `.=` call target);
+  confirmed with the minimal two-line repro (`class Foo {}; my Foo:D $foo .= new;`) — not re-filed.
+- `Type/Attribute.rakudoc` [3] (line 418, `.?DEPRECATED`) — `raku-drift-from-doc` (mutsu prints
+  nothing for either `with` block; not investigated further since it's bucketed as drift by the
+  harness).
+- `Type/Proc.rakudoc:140` (`shell(...)` inside a `temp $*OUT` block) — narrowed to the simpler,
+  already-filed
+  [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md)
+  (`shell()`'s spawned child process's stdout is lost even with **no** `$*OUT` redirection at all
+  — confirmed with `shell("raku some-file-that-says-42.raku")` alone); not re-filed.
+- `Language/regexes-best-practices.rakudoc:163` (`token ws { <!ww> \h* }` inside a grammar) —
+  matches the already-open
+  [grammar-ws-boundary-and-vertical-whitespace.md](../todo/tickets/grammar-ws-boundary-and-vertical-whitespace.md),
+  whose repro now also crashes identically on current `main` (`No such method 'ww' for invocant of
+  type 'Match'`, upgraded from the ticket's originally-recorded "silently wrong match" symptom) —
+  ticket updated with this finding rather than re-filed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
