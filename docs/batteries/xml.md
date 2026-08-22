@@ -16,44 +16,58 @@ reading alone — the same rule that disqualified `CSV::Parser` in [csv.md](csv.
 
 ## A note on the no-native-dependency rule
 
-Like the compression slot ([compression.md](compression.md)), a native/C dependency is
-**not** an automatic disqualifier here (same user decision, restated for this slot): a
-NativeCall binding to `libxml2` is architecturally the same shape as the already-bundled
-`OpenSSL`/`DBIish`. `libxml2` (both the runtime `.so` and the `/usr/include/libxml2` dev
-headers) is present on this survey machine (`ldconfig -p | grep -i libxml` shows
-`libxml2.so.2`/`libxml2.so`; `xml2-config --version` reports `2.9.14`), so a native
-candidate's build step was actually exercised, not just assumed. That said, a healthy
-pure-Raku candidate is preferred when one exists, since it avoids the system-library
-runtime dependency entirely — and this slot turned out to have exactly that.
+**The general preference is still zero external dependencies — a native/C dependency is
+tolerated here, not preferred.** Like the compression slot ([compression.md](compression.md)),
+a NativeCall binding to a standard system library is not an automatic disqualifier for
+this slot (same user decision, restated here): architecturally it's the same shape as
+the already-bundled `OpenSSL`/`DBIish`, and `libxml2` (both the runtime `.so` and the
+`/usr/include/libxml2` dev headers) is present on this survey machine (`ldconfig -p
+| grep -i libxml` shows `libxml2.so.2`/`libxml2.so`; `xml2-config --version` reports
+`2.9.14`), so a native candidate's build step was actually exercised here, not just
+assumed. But every dependency — native or pure-Raku — is a promise that someone else
+keeps a piece of the stack maintained and secure on our behalf, and a *native* system
+dependency adds a second promise on top: that the library stays installed, buildable,
+and ABI-compatible across every platform mutsu ships for. All else being close, fewer
+dependencies — and especially no hard runtime dependency on an external system
+library — is simply the better outcome, independent of how any specific library's
+maintenance has gone. A healthy pure-Raku candidate is therefore preferred over a
+native-bound one whenever one exists and is otherwise competitive, and this slot turned
+out to have exactly that.
 
-### `libxml2` upstream has a real sustainability history worth weighing (added 2026-08-22)
+### One concrete illustration: `libxml2`'s 2025 maintainer transition (added 2026-08-22)
 
-BATTERIES.md §6's "native system libraries ride the OS" reasoning assumes a healthy
-upstream is there to produce the fixes that distro security teams then backport — that
-assumption briefly did not hold for `libxml2` itself, independent of anything in the
-`LibXML` Raku binding:
+The general point above is not hypothetical — `libxml2`'s recent history is a real
+example of the kind of tail risk a native dependency can carry, worth recording here
+even though the specific situation has since stabilized:
 
-- As of mid-2025, `libxml2` (despite being embedded in browsers, most Linux
-  distributions, and a huge share of XML-processing infrastructure worldwide) was
-  maintained by essentially one unpaid volunteer, Nick Wellnhofer, and had received only
-  ~$17,000 in total project donations (~$10,000 of it from Google) — see
-  [the LWN coverage](https://lwn.net/Articles/1025971/) and
-  [Socket's summary](https://socket.dev/blog/libxml2-maintainer-ends-embargoed-vulnerability-reports).
-- On 2025-09-15, Wellnhofer announced he was stepping down as maintainer, citing
-  security-report triage alone costing "several hours each week" — unsustainable
-  unpaid volunteer work ([source](https://androidexperto.com/libxml2-becomes-officially-unmaintained-after-maintainer-steps-down/)).
-- The project did not stay unmaintained: on 2025-12-09 two new maintainers (Daniel
-  Garcia Moreno, Iván Chavero) took over, and releases have continued into 2026
-  (2.15.2 on 2026-03-03, 2.15.3 on 2026-04-16) — so this is a recovered, not an
-  ongoing, crisis. But it demonstrates the risk was real, not hypothetical: a
-  library this widely relied upon ran for years as a single-person bus-factor
-  operation before anyone else stepped in.
+- As of mid-2025, `libxml2` — despite being embedded in browsers, most Linux
+  distributions, and a large share of the world's XML-processing infrastructure — was
+  kept in production shape largely by the sustained volunteer work of one maintainer,
+  Nick Wellnhofer. Total project donations were modest relative to how widely the
+  library is relied upon (~$17,000, per [LWN's coverage](https://lwn.net/Articles/1025971/)
+  and [Socket's summary](https://socket.dev/blog/libxml2-maintainer-ends-embargoed-vulnerability-reports)).
+  That gap between how much a project is used and how much support it receives is a
+  broad, structural problem across open-source infrastructure — not a reflection on
+  `libxml2` or its maintainer.
+- In September 2025, Wellnhofer stepped back from the maintainer role after years of
+  stewardship, citing the volume of security-report triage as more than sustained
+  unpaid volunteer time could cover
+  ([his own announcement](https://discourse.gnome.org/t/stepping-down-as-libxml2-maintainer/31398);
+  also covered by [LWN](https://lwn.net/Articles/1038478/)). Depending on any one person
+  that heavily is exactly the single-point-of-failure shape the general preference above
+  is meant to guard against — for any dependency, not this one in particular.
+- The project did not stay without maintainers: in December 2025 two new maintainers
+  (Daniel Garcia Moreno, Iván Chavero) took over, and releases have continued into 2026
+  (2.15.2 in March, 2.15.3 in April) — so as of this survey (per contemporaneous reports)
+  `libxml2` has active stewardship again, and this reads as a resolved episode rather
+  than a live concern.
 
-This does not disqualify `LibXML` outright — the OS-patches-the-native-library
-mechanism (§6) still applies once upstream ships a fix, and a new maintainer team is now
-in place. But it is a genuine point in `XML`'s favor in the head-to-head: `XML` is pure
-Raku with **zero** runtime dependencies, so it carries none of this transitive
-system-library sustainability risk at all. Weigh this alongside the dependents-count
+None of this disqualifies `LibXML` — the OS-patches-the-native-library mechanism
+(BATTERIES.md §6) still applies once upstream ships a fix, and a new maintainer team is
+in place. But it's a concrete data point for the dependency-minimization preference
+above: `XML` is pure Raku with **zero** runtime dependencies — once vendored, any fix it
+needs can be made in-tree, with no external system library that must stay maintained,
+installed, and ABI-compatible out of our reach. Weigh this alongside the dependents-count
 signal (45 vs. 7) when deciding which candidate to prioritize fixing/bundling first.
 
 ## The field
@@ -296,30 +310,28 @@ its own general, now-filed interpreter bugs:
    independently worth doing for its own sake (silently losing a method is a worse
    failure mode than erroring loudly).
 2. **`LibXML` is the stronger candidate on feature completeness and native-library
-   soundness, with one caveat** — it is the most actively maintained *Raku binding*
-   repository found in this entire survey (last push 2026-06-10, the same day as this
-   survey's `rea.json` version), has the deepest test suite by far (723 assertions vs
-   `XML`'s 149), and its native shim built and ran cleanly against the system `libxml2`
-   with zero native-side problems. It is blocked purely by a role/parser interaction bug
-   that prevents `use LibXML;` from completing at all — fixing it is a single,
-   well-isolated parser fix, not an architectural gap. **The caveat**: `libxml2` itself
-   (the underlying C library, not the Raku binding) had a real sustainability crisis as
-   recently as 2025 — see "`libxml2` upstream has a real sustainability history worth
-   weighing" above. It has since gained new maintainers and resumed releases, so this is
-   a recovered risk, not a live blocker, but it is a genuine mark against `LibXML` in the
-   comparison that `XML`'s zero-dependency, pure-Raku design simply does not carry.
+   soundness, with one tradeoff to weigh** — it is the most actively maintained *Raku
+   binding* repository found in this entire survey (last push 2026-06-10, the same day
+   as this survey's `rea.json` version), has the deepest test suite by far (723
+   assertions vs `XML`'s 149), and its native shim built and ran cleanly against the
+   system `libxml2` with zero native-side problems. It is blocked purely by a
+   role/parser interaction bug that prevents `use LibXML;` from completing at all —
+   fixing it is a single, well-isolated parser fix, not an architectural gap. **The
+   tradeoff**: choosing `LibXML` means taking on a hard runtime dependency on the
+   underlying `libxml2` C library (not a comment on the Raku binding itself) — per the
+   general dependency-minimization preference above, a real (if currently well-managed)
+   cost that `XML`'s zero-dependency, pure-Raku design simply doesn't carry.
 3. **No candidate is bundle-ready today**, and this survey's real output is the four
    filed bugs above rather than a winner — the same "expect the answer to be 'fix mutsu
    first'" outcome selection-method.md documents as normal for this project's current
    stage (see the template and compression surveys for precedent). Given `XML`'s much
-   larger ecosystem footprint (45 vs 7 dependents), its zero-dependency, pure-Raku
-   nature (no system-library runtime dependency to carry forward, and none of
-   `libxml2`'s sustainability history), it is both the more valuable of the two to
-   prioritize fixing first *and* the safer long-term bet if only one gets bundled.
-   `LibXML`'s blocker looks like the cheaper fix of the two in isolation, so a future
-   session might still reasonably pick it up first purely on lever size — but that
-   should be a conscious tradeoff against the maintenance-risk point above, not a
-   default.
+   larger ecosystem footprint (45 vs 7 dependents) and its zero-dependency, pure-Raku
+   nature — no system-library runtime dependency to carry forward — it is both the more
+   valuable of the two to prioritize fixing first *and* the safer long-term bet if only
+   one gets bundled. `LibXML`'s blocker looks like the cheaper fix of the two in
+   isolation, so a future session might still reasonably pick it up first purely on
+   lever size — but that should be a conscious tradeoff against the dependency-weight
+   point above, not a default.
 4. `XML::Writer` (generate-only, 2/2 on mutsu) is a possible generate-only stopgap in
    the same shape `CSV::Parser` was for CSV — **not recommended** for the same reason:
    this slot's own criterion requires both directions, and bundling a half-solution now
