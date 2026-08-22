@@ -628,6 +628,54 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
   [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md),
   not a separate bug; not re-filed.
 
+Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamodel::Documenting`/
+`Baggy`/`CallFrame`/`Slip`/`Buf`/`math`/`X::TypeCheck::Splice`/`HyperWhatever`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Routine.rakudoc:29` | `&?ROUTINE.^name` inside a `submethod` reports `Method` instead of `Submethod` | [routine-submethod-routine-name-wrong.md](../todo/tickets/routine-submethod-routine-name-wrong.md) |
+| `Type/Routine.rakudoc:144` | `is cached` (`use experimental :cached`) doesn't memoize — every call re-executes the body | [is-cached-trait-not-caching.md](../todo/tickets/is-cached-trait-not-caching.md) |
+| `Type/Routine.rakudoc:231` | `sub ... is rw` returning an array/hash element as the implicit last statement doesn't produce a mutable container back to the caller (broad blast radius — narrowed to a 3-line minimal repro) | [is-rw-sub-implicit-return-element-not-mutable.md](../todo/deep/is-rw-sub-implicit-return-element-not-mutable.md) |
+| `Language/signatures.rakudoc:849` | single-argument-rule slurpy parameter (`+name`) always yields a plain `Array` instead of `List`/passing a `Seq` through unchanged | [single-arg-rule-slurpy-type-wrong.md](../todo/tickets/single-arg-rule-slurpy-type-wrong.md) |
+| `Language/signatures.rakudoc:1151,1159` | a sigilless parameter with an attached sub-signature (`\p(Int, Str)`) fails to parse; the sigiled equivalent (`@p (Int, Str)`) already works | [sigilless-param-sub-signature-parse-fails.md](../todo/tickets/sigilless-param-sub-signature-parse-fails.md) |
+| `Type/Cool.rakudoc:932` | `(0..0x1FFFF).sort(*.uniname.chars)` is ~18x slower than raku and times out under the harness's 10s budget (correct result, just too slow) | [uniname-sort-performance-gap.md](../todo/tickets/uniname-sort-performance-gap.md) |
+| `Type/Cool.rakudoc:1416` | `"foo".Rat` should return a `Failure` (matching `"foo".Num`'s error behavior); mutsu silently returns `Rat` `0` | [str-rat-coercion-should-fail.md](../todo/tickets/str-rat-coercion-should-fail.md) |
+| `Type/Metamodel/Documenting.rakudoc:30` | manual `Metamodel::ClassHOW.new_type`/`.compose` construction: `.HOW.set_why` after `.HOW.compose` fails with "Cannot modify an immutable ... type object" | [metamodel-how-set-why-after-compose-immutable.md](../todo/tickets/metamodel-how-set-why-after-compose-immutable.md) |
+| `Type/Baggy.rakudoc:197` | `classify-list` with an array mapper renders an out-of-range key as `Nil` instead of `(Any)` (plain `.classify` with a block mapper already gets this right) | [classify-list-array-mapper-out-of-range-shows-nil.md](../todo/tickets/classify-list-array-mapper-out-of-range-shows-nil.md) |
+| `Type/Slip.rakudoc:57` | `take \|($a, $b)` over-flattens like `.Slip`, instead of bundling the unpacked args into one `take`d `List` item | [take-pipe-slip-over-flattens.md](../todo/tickets/take-pipe-slip-over-flattens.md) |
+| `Type/Buf.rakudoc:84` | `subbuf-rw($buf, from, len) = value` (bare function-call form) silently doesn't mutate; the method-call form (`$buf.subbuf-rw(from, len) = value`) already works | [subbuf-rw-function-form-lvalue-not-mutating.md](../todo/tickets/subbuf-rw-function-form-lvalue-not-mutating.md) |
+| `Type/HyperWhatever.rakudoc:41` | `(**²)` — HyperWhatever (`**`) immediately followed by a postfix power operator — fails to parse; the single-`Whatever` equivalent (`*²`) already works | [hyperwhatever-postfix-power-parse-fails.md](../todo/tickets/hyperwhatever-postfix-power-parse-fails.md) |
+
+**Excluded from this batch-5 sub-run:**
+- `Type/Metamodel/Documenting.rakudoc` [1] (line 16, `#\|[...]`/`#=[...]` class-level declarator
+  comments, `say Documented.WHY`) — duplicate of the already-filed
+  `todo/tickets/pod-why-declarator-object-not-stringified.md` (same root cause: `Pod::Block::
+  Declarator`'s `.Str`/`.gist` isn't implemented; that ticket's repro uses a `sub`, this one a
+  `class`, but both hit the identical `Pod::Block::Declarator.new` gist fallback).
+- `Type/Baggy.rakudoc` [1], [4] (lines 43/355, `.grab`/`.hash` type-parameterization) —
+  `raku-drift-from-doc`: raku's own current output no longer matches the doc's `# OUTPUT` text
+  (floating precision / `Hash[UInt,Mu,Any]` vs the doc's stale `Hash[Any,Any]`), lower priority.
+- `Type/Baggy.rakudoc` [3] (line 293, `bag <eggs spam spam spam>; .kv`) — known Bag/Baggy
+  iteration-order false positive: verified non-determinism directly (3 fresh `raku` runs of the
+  identical program in this session all returned `(eggs 1 spam 3)`, which itself already
+  disagrees with the doc-diff harness's earlier-captured `(spam 3 eggs 1)` for the same command
+  in the same session — confirming per-process hash-seed nondeterminism, not a mutsu bug).
+- `Type/CallFrame.rakudoc` [1] (line 76, statement-form `FIRST $frame = callframe; ...; say
+  $frame.code()`) — matches the file's own already-documented Deferred residue exactly (`Code.new`
+  vs mutsu's `(Block)`; see the "CallFrame frame modeling" entry above).
+- `Type/CallFrame.rakudoc` [2] (line 122, `$frame.my<$the-answer>`) — `raku-drift-from-doc`: raku's
+  actual output is `(LoweredAwayLexical)`, not the doc's stale `42`.
+- `Language/math.rakudoc` [1] (line 185, golden-ratio continued-fraction `1 + 1 / * ... *` indexed
+  at `@phis[200]`) — narrowed the failure to `@phis[N]` returning `(Any)` for `N` somewhere in
+  `30..35` (works through at least `N=30`, fails by `N=35`), which is exactly where the
+  self-referential Rat/FatRat continued-fraction's numerator/denominator would first need
+  bigint magnitude beyond `i64` — matches the already-**Deferred** Lazy-list cluster's "big-Int→
+  Float degradation in geometric sequence generation past i64" residue.
+- `Type/X/TypeCheck/Splice.rakudoc` [1] (line 30, `use experimental :macros; macro an-ast {
+  quasi { 'yes AST' } }`) — matches the already-tracked deep `macro`/`quasi`/unquote design work
+  in `todo/deep/rakuast-remaining.md`'s "Macros" section (same cluster already excluded for
+  `Language/experimental.rakudoc` in the batch-3 sub-run above); not re-ticketed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
