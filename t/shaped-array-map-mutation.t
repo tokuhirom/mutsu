@@ -9,7 +9,7 @@ use Test;
 #     record the `$_` mutation for the rw-map writeback, so only `*=`/`/=`
 #     (whose LHS desugars through a `defined`-ternary, skipping fusion) worked.
 
-plan 12;
+plan 13;
 
 # native int shaped, compound *= (ternary-LHS form)
 my int @i[4] = 10, 15, 12, 16;
@@ -33,7 +33,10 @@ is @s.join(","), "ax,bx,cx", "str shaped: map(\$_ ~= ...) persists";
 
 # shape and element type are preserved
 is @i.shape, (4,), "int shaped: shape preserved after map";
-ok @i ~~ Array, "int shaped: still an array after map";
+# `array` and `Array` are distinct types in raku (`array`'s MRO is
+# `array, Cool, Any, Mu`), so the "still an array" contract is `~~ array`.
+ok @i ~~ array, "int shaped: still a native array after map";
+nok @i ~~ Array, "int shaped: a native array is not an Array";
 
 # a non-mutating map must NOT change the source
 my int @n[3] = 1, 2, 3;

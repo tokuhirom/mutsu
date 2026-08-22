@@ -65,4 +65,4 @@ the delegation path.
 
 With this, `DBIish`'s `t/06-types.rakutest` passes 12/12 and the battery reaches
 raku parity on 8 of its 9 generic/SQLite files; the last one, `01-basic`, waits
-on `BODY_OF` (`todo/deep/nativehelpers-blob-moarvm-guts.md`).
+on `BODY_OF` (`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`).

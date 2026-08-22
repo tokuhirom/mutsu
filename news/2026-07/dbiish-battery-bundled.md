@@ -231,7 +231,7 @@ The *rest* of that module — `BODY_OF` / `pointer-to()`, which hand C the addre
 of a container's element buffer — needs a stable native allocation behind
 `Blob`/`array`/`CArray`, i.e. a value-representation change with its own design
 work. That half stays in
-[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md);
+[`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`](../2026-08/nativehelpers-blob-parity-gaps-closed.md);
 `DBDish::SQLite` only uses `blob-from-pointer`, which does not go through it.
 
 **Cleared: `cannon-name` itself — FIXED 2026-07-26.** It had nothing to do with
@@ -349,7 +349,7 @@ Not a new bug so much as a pointer to the deferred deep item.
 `DBDish::mysql::StatementHandle` uses `BPointer(...)`, which is
 `NativeHelpers::Blob`'s `pointer-to` and needs `BODY_OF` — the address of a
 container's element buffer, stable across calls. That is
-[`todo/deep/nativehelpers-blob-moarvm-guts.md`](../deep/nativehelpers-blob-moarvm-guts.md),
+[`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`](../2026-08/nativehelpers-blob-parity-gaps-closed.md),
 whose ADR is now written and accepted:
 [ADR-0015](../../docs/adr/0015-native-backed-container-storage-and-repr-bodies.md)
 (P0 = two small NativeCall fixes, P1 = bodies over handles, P2/P3 = native-backed

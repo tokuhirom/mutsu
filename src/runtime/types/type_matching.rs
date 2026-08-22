@@ -620,6 +620,23 @@ impl Interpreter {
         {
             return true;
         }
+        // Raku parity, the mirror of the arm above: `array` and `Array` are
+        // *distinct* types (`array`'s MRO is `array, Cool, Any, Mu` — it does
+        // `Positional`/`Iterable`/`Cool`, but it is not an `Array`), so a
+        // native `array[T]` must answer False to an `Array` constraint even
+        // though mutsu represents it as a `Value::Array`. Only the `Array`
+        // name is narrowed here; `Positional`, `Iterable`, `Cool` and `Any`
+        // keep matching through the generic tail exactly as raku reports them.
+        if (constraint == "Array" || constraint.starts_with("Array["))
+            && matches!(value.view(), ValueView::Array(..))
+            && self.container_type_metadata(value).is_some_and(|m| {
+                m.declared_type
+                    .as_deref()
+                    .is_some_and(|d| d == "array" || d.starts_with("array["))
+            })
+        {
+            return false;
+        }
         if let Some((base, inner)) = Self::parse_generic_constraint(constraint) {
             match base {
                 "array" => {

@@ -35,9 +35,8 @@ selectable, closing ADR-0015 P3b in full. Pinned by `t/bare-array-type-match.t`,
 which also exercises the real `pointer-to($native_array)` call end-to-end
 against the bundled battery.
 
-Two small, unrelated parity gaps were found alongside this fix and are
-tracked separately in `todo/deep/nativehelpers-blob-moarvm-guts.md` (kept at
-that path because several other documents link to it): a `:D`/`:U` smiley on
-a lowercase native type name in term position (`array:D`, `int:D`) fails to
-parse, and a native `array[T]` still smartmatches `Array` as `True` when raku
-says `False` (deferred — no bundled consumer depends on the distinction yet).
+Two small, unrelated parity gaps were found alongside this fix -- a `:D`/`:U`
+smiley on a lowercase native type name in term position (`array:D`, `int:D`)
+failed to parse, and a native `array[T]` still smartmatched `Array` as `True`
+where raku says `False`. Both were fixed on 2026-08-22; see
+`news/2026-08/nativehelpers-blob-parity-gaps-closed.md`.

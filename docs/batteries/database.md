@@ -201,8 +201,8 @@ In order:
    Array/Hash rw-attribute indexing gap.
 
 `NativeHelpers::Blob`'s `BODY_OF` / `pointer-to()` — handing C the address of a
-container's element buffer — is a separate, *not yet solved* value-representation
-question, kept in `todo/deep/nativehelpers-blob-moarvm-guts.md`.
+container's element buffer — is a separate value-representation question, solved
+since (ADR-0015; see `news/2026-08/nativehelpers-blob-parity-gaps-closed.md`).
 `DBDish::SQLite` does not go through it, so it did not block this bundling.
 
 ## Vendoring recipe
