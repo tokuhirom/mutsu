@@ -766,6 +766,44 @@ impl Interpreter {
             } else {
                 format!("__mutsu_atomic_hash::{key}")
             };
+            // Retiring the entry must not retire the DATA. Once a mutation has
+            // routed through the lane, the `__mutsu_atomic_*` entry is the
+            // authoritative copy and the mutating thread deliberately dropped
+            // its own `env` copy (`shared_array_mutate`) so `make_mut` could
+            // work in place. Worse, the ordinary drain above cannot restore it:
+            // its dirty-key filter skips any name this lineage re-declared, and
+            // a worker's own `my @a` is exactly that. So materialize the live
+            // value back into this frame's own storage first — through the
+            // owning unit-lexical cell or a `:=`-bound cell when there is one,
+            // so every alias keeps observing it, exactly as
+            // `shared_array_mutate`'s own non-thread-clone writeback does.
+            //
+            // Only when the key is dirty: a clean entry is just the copy the
+            // spawn seeded, so there is nothing to preserve, and writing it
+            // back would be actively wrong for a name whose declaration is
+            // still in flight or whose parameter shadow is live (there the
+            // seed took the OUTER binding's value on purpose).
+            let dirty = self
+                .shared_vars_dirty
+                .read()
+                .ok()
+                .is_some_and(|d| d.contains(&key));
+            if dirty
+                && let Some(val) = self
+                    .shared_vars
+                    .get(&atomic_key)
+                    .or_else(|| self.shared_vars.get(&key))
+            {
+                if let Some(cell) = self.unit_lexical_container_cell(&key) {
+                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
+                } else if let Some(ValueView::ContainerRef(cell)) =
+                    self.env.get(&key).map(Value::view)
+                {
+                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
+                } else {
+                    self.env.insert(key.clone(), val);
+                }
+            }
             self.shared_vars.remove(&atomic_key);
             self.shared_vars.remove(&key);
         }
