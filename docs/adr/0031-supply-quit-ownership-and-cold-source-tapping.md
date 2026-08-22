@@ -2,7 +2,9 @@
 
 - Status: Implemented — Slice 1 (Decision A, quit ownership) and Slice 2
   (Decision B, `supply_get_values` tap-and-drain) shipped 2026-08-19; Slice 3
-  (retire the ticket) done in the same session. See "Outcome" below.
+  (retire the ticket) done in the same session; Slice 4 (Decision A extended to
+  the b3 chained-tap branch, closing the multi-level quit-propagation gap
+  Slice 2 surfaced) shipped 2026-08-22. See "Outcome" below.
 - Date: 2026-08-19
 - Related: [ADR-0008](0008-push-based-supply-event-delivery.md) (the sink/waker
   primitives the drain in Decision B rides on), [ADR-0028](0028-supply-schedule-on-deferred-tap-delivery.md)
@@ -469,11 +471,12 @@ did not anticipate:
 while writing regression coverage, a source quit through **two or more
 levels** of chained on-demand `whenever` sources was found not to propagate
 — reproducible via plain `.tap()` alone, present before this PR, and
-unrelated to `supply_get_values`. See
-`todo/deep/nested-on-demand-whenever-quit-propagation-gap.md`. Slice 2 makes
-its *symptom* worse for `.list`/`.wait` specifically (a fast-but-silently-wrong
-answer becomes a bounded 30s wait), which is exactly why that ticket exists
-now instead of being deferred quietly.
+unrelated to `supply_get_values`. Tracked at the time as
+`todo/deep/nested-on-demand-whenever-quit-propagation-gap.md`; **closed
+2026-08-22, see Slice 4 below**. Slice 2 made its *symptom* worse for
+`.list`/`.wait` specifically (a fast-but-silently-wrong answer becomes a
+bounded 30s wait), which is exactly why that ticket was filed then instead of
+being deferred quietly.
 
 Tests: `t/supply-cold-whenever-live-inner-drain.t` (new — probe5 case E via
 `.list`/`.wait`/`.sort`, a static-source regression pin, and the `.head`
@@ -493,3 +496,47 @@ tracked (quit ownership, Slice 1; the replay-drops-a-live-inner-subscription
 Defect B, Slice 2) are now fixed. The multi-level quit-propagation gap found
 while verifying Slice 2 is tracked separately (see above), since it is a
 distinct root cause outside this ADR's original scope.
+
+### Slice 4 — Decision A extended to the b3 chained-tap branch, shipped 2026-08-22
+
+The multi-level gap above turned out to need no new decision: it is Decision
+A applied to the one branch Slice 1 could not reach from `call_supply_tap`.
+Slice 1 covered a `whenever` **body** die and a supplier-backed source's own
+`.quit()`; a source that is itself an on-demand `supply { ... }` block was
+still uncovered, because b3 registered a `quit =>` on the inner tap only when
+the `whenever` declared a `QUIT` phaser of its own (`quit_cbs.first()`). With
+no phaser there was no registration at all, and the one-hop
+`take_supplier_quit_callbacks_via_group` lookup therefore found nothing to
+drain.
+
+b3 now registers a quit callback **unconditionally**, symmetrically with the
+`done_chain` it already registers unconditionally, and what it registers is a
+new `__SupplyQuitForwarder`
+(`src/runtime/native_methods/supply_quit_forwarder.rs`): a real synthesized
+callable in the `__ScheduledTapPump` / `__SupplyCollector` idiom (empty-env
+`SubData`, body = one `MethodCall` on a literal internal instance) that
+carries the enclosing block's `emitter_supplier_id` plus the `whenever`'s own
+`QUIT` phasers. On invocation it runs the phasers under the `QuitOutcome`
+protocol and then either completes the block with `done` (handled) or quits
+the block's emitter through the canonical `Supplier."quit"` (unhandled).
+
+Two design points worth recording:
+
+- **A callable, not a marker Instance.** The first implementation used an
+  `Instance` marker unwrapped inside `Interpreter::call_supply_quit_handler`.
+  That covers most delivery sites but not all — `run_supply_act_loop`
+  (`native_methods/encoding.rs`) invokes a tap's quit callback through a bare
+  `call_sub_value`, where a marker would have been a hard error. The
+  synthesized-callable form is dispatchable everywhere by construction, which
+  is the difference between "correct on the paths we enumerated" and "correct
+  by construction".
+- **Transitivity falls out, no chain walk needed.** The ticket expected either
+  a transitive serialize-group walk or a per-level re-derivation. The
+  re-derivation is enough on its own: each level's tap installs its own
+  forwarder pointing at its own emitter, and quitting that emitter is exactly
+  what the next level up is subscribed to. Depth is unbounded.
+
+Pinned by `t/supply-nested-on-demand-quit-propagation.t` (two levels, three
+levels, a handling `QUIT` phaser at a chained level, the unchanged
+single-level path, and the `.list` shape), which passes verbatim under
+`raku`.
