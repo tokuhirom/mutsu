@@ -35,6 +35,16 @@ pub(crate) fn set_eval_user_sub_preseed(names: Vec<String>) {
     });
 }
 
+/// Set type names (classes, roles, enums, subsets, grammars) to re-register
+/// after a scope reset, so an EVAL'd snippet sees the calling unit's types as
+/// declared. Without this the nested parse believes every user type is
+/// undeclared, which the `when`-matcher gobbled-block check reads as an error.
+pub(crate) fn set_eval_user_type_preseed(names: Vec<String>) {
+    EVAL_USER_TYPE_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
+    });
+}
+
 /// Check if a name was declared as a user sub in any enclosing scope.
 pub(crate) fn is_user_declared_sub(name: &str) -> bool {
     SCOPES.with(|s| {
@@ -164,6 +174,33 @@ pub(crate) fn register_user_enum_value(name: &str) {
             .expect("scope stack should never be empty");
         outermost.user_enum_values.insert(name.to_string());
     });
+}
+
+/// Register a sigilless value term (`constant FOO = ...`, `my \foo = ...`) a
+/// `use`d module declares. Registered in the **outermost** scope for the same
+/// reason as an enum value: a `use`d module's constants must stay visible for
+/// the rest of the importing file.
+pub(crate) fn register_imported_value_term(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let outermost = scopes
+            .first_mut()
+            .expect("scope stack should never be empty");
+        outermost.imported_value_terms.insert(name.to_string());
+    });
+}
+
+/// Whether `name` names a sigilless value term imported from a scanned module.
+/// Such a name is a complete nullary term, so it can never be the routine call
+/// that the `when`-matcher gobbled-block check is looking for.
+pub(crate) fn is_imported_value_term(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.imported_value_terms.contains(name))
+    })
 }
 
 /// Whether `name` is a value of a user-declared enum — the user-declared twin of

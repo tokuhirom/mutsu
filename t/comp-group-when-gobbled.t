@@ -1,11 +1,13 @@
 use Test;
 
-# An undeclared bareword in the reserved X::/CX:: exception namespaces, used as a
-# `when` matcher and immediately followed by a block, is treated by raku as a
-# function call gobbling the block. This leaves `when` without its required block
-# and produces an X::Comp::Group bundling an X::Syntax::BlockGobbled sorrow (with
-# `.what` naming the function) and an X::Syntax::Missing (block) panic.
+# An undeclared bareword used as a `when` matcher and immediately followed by a
+# block is treated by raku as a function call gobbling the block. This leaves
+# `when` without its required block and produces an X::Comp::Group bundling an
+# X::Syntax::BlockGobbled sorrow (with `.what` naming the function) and an
+# X::Syntax::Missing (block) panic.
 # https://github.com/Raku/old-issue-tracker/issues/1076
+# The X::/CX:: cases below are the reserved exception namespaces; the general
+# case is pinned by t/when-undeclared-type-gobbles-block.t.
 
 throws-like 'CATCH { when X::Y {} }', X::Comp::Group,
     sorrows => sub (@s) { @s[0] ~~ X::Syntax::BlockGobbled && @s[0].what ~~ /'X::Y'/ },
@@ -41,7 +43,8 @@ my $warned = False;
 }
 ok $warned, 'CX::Warn in CONTROL handler still matches';
 
-# Non-X::/CX:: barewords are left alone (enum-qualified values, etc.).
+# A package-qualified enum value is a complete term, not a routine call: the
+# head names the declared enum type and the tail one of its values.
 enum Day <Mon Tue Wed>;
 my $day = "no";
 given Mon {

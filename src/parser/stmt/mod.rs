@@ -46,6 +46,7 @@ use idents::{ident, qualified_ident, starts_unit_class_role_grammar, var_name};
 pub(super) use idents::{keyword, parse_raku_ident};
 
 // Re-export the block/statement-list parsers moved to `stmtlist`.
+pub(in crate::parser) use stmtlist::partial_parse_skips;
 pub(in crate::parser) use stmtlist::stmt_list_pub;
 use stmtlist::{block, routine_block};
 pub(super) use stmtlist::{block_inner, stmt_list_partial};
@@ -102,6 +103,10 @@ pub(super) fn set_eval_operator_assoc_preseed(assoc: std::collections::HashMap<S
 
 pub(super) fn set_eval_imported_function_preseed(names: Vec<String>) {
     simple::set_eval_imported_function_preseed(names);
+}
+
+pub(super) fn set_eval_user_type_preseed(names: Vec<String>) {
+    simple::set_eval_user_type_preseed(names);
 }
 
 pub(super) fn set_eval_user_sub_preseed(names: Vec<String>) {

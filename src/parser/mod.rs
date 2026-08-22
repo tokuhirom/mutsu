@@ -547,6 +547,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     operator_assoc: &std::collections::HashMap<String, String>,
     imported_function_names: &[String],
     user_sub_names: &[String],
+    user_type_names: &[String],
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // Set pre-seed operators before calling parse_program.
     // parse_program will call reset_user_subs, then we re-register after.
@@ -554,6 +555,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_operator_assoc_preseed(operator_assoc.clone());
     stmt::set_eval_imported_function_preseed(imported_function_names.to_vec());
     stmt::set_eval_user_sub_preseed(user_sub_names.to_vec());
+    stmt::set_eval_user_type_preseed(user_type_names.to_vec());
     // EVAL'd code is compiled under the *calling* unit's language revision, not
     // the 6.d default a fresh compilation unit gets (rakudo: `use v6.e.PREVIEW;
     // EVAL 'sprintf("%#x", -256)'` is `-0x100`). Seed the nested parse with it and
@@ -570,6 +572,7 @@ pub(crate) fn parse_program_with_operators_and_user_subs(
     stmt::set_eval_operator_assoc_preseed(std::collections::HashMap::new());
     stmt::set_eval_imported_function_preseed(Vec::new());
     stmt::set_eval_user_sub_preseed(Vec::new());
+    stmt::set_eval_user_type_preseed(Vec::new());
     stmt::set_eval_language_version_preseed(None);
     stmt::simple::set_current_language_version(&saved_language_version);
     result

@@ -68,7 +68,13 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
                 rest = r;
             }
             Err(_) => {
-                // Skip to next statement boundary and continue.
+                // Skip to next statement boundary and continue. Whatever was
+                // skipped is missing from the result, declarations included, so
+                // record it: a consumer that reasons about what a source file
+                // does NOT declare (the module-export scan feeding the
+                // `when`-matcher gobbled-block check) must know its view is
+                // partial rather than exhaustive.
+                note_partial_parse_skip();
                 match skip_to_next_statement(r) {
                     Some(next) => rest = next,
                     None => break,
@@ -77,6 +83,24 @@ pub(crate) fn stmt_list_partial(input: &str) -> (Vec<Stmt>, Option<String>) {
         }
     }
     (stmts, None)
+}
+
+thread_local! {
+    /// Number of statements [`stmt_list_partial`] has skipped over, across every
+    /// best-effort parse in this thread. Only differences matter — see
+    /// [`partial_parse_skips`].
+    static PARTIAL_PARSE_SKIPS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+fn note_partial_parse_skip() {
+    PARTIAL_PARSE_SKIPS.with(|c| c.set(c.get() + 1));
+}
+
+/// A monotonically increasing count of statements dropped by best-effort
+/// parsing. Sample it before and after a [`stmt_list_partial`]-backed parse; an
+/// increase means that parse did not see the whole source.
+pub(crate) fn partial_parse_skips() -> u64 {
+    PARTIAL_PARSE_SKIPS.with(|c| c.get())
 }
 
 /// Advance past the current unparseable statement by tracking brace/paren

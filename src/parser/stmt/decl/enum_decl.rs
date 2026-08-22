@@ -283,6 +283,12 @@ pub(super) fn parse_enum_decl_body_with_type(
 ) -> PResult<'_, Stmt> {
     let (rest, name_str) = qualified_ident(input)?;
     let name = Symbol::intern(&name_str);
+    // An enum's *name* is a type, exactly like a class or role name. Register
+    // it as one so a bareword `Day` (or the `Day::Mon` value spelling, whose
+    // head must resolve to the enum type) is recognized as declared — the
+    // module-scan harvest already collects enum names this way for imported
+    // enums; this is the same for the file being parsed.
+    super::super::simple::register_user_type(&name_str);
     let (rest, _) = ws(rest)?;
 
     // Parse `is <trait>` clauses (e.g., `is export`)

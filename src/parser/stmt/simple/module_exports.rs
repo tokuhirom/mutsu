@@ -12,10 +12,27 @@ struct ModuleScanResult {
     exports: Vec<InlineModuleExport>,
     type_names: Vec<String>,
     enum_values: Vec<String>,
+    /// Sigilless value terms the module declares: `constant SQLT_NUM is export
+    /// = 2;`, `my \foo = ...`. Harvested from the scan's own scope stack, the
+    /// same way `enum_values` is, because the parser records them as term
+    /// symbols while parsing the declaration rather than in the AST node.
+    ///
+    /// Without these an imported constant looks like an undeclared bareword to
+    /// the `when`-matcher gobbled-block check, which then rejects valid code —
+    /// DBDish::Oracle::StatementHandle's `when SQLT_NUM { ... }`, whose
+    /// `SQLT_NUM` is a `constant ... is export` in the sibling
+    /// DBDish::Oracle::Native.
+    value_terms: Vec<String>,
     /// EXPORTHOW::DECLARE declarator keywords the module exports, as
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
     declare_keywords: Vec<(String, String)>,
+    /// Whether this module's own scan left the parse-time type index
+    /// incomplete (it imported something that could not be resolved and
+    /// scanned). Replayed into the importer on a cache hit, exactly like
+    /// `type_names`: an importer whose dependency has an unscannable
+    /// dependency does not have a complete view either.
+    type_index_incomplete: bool,
     /// Whether the module's own source directly `use`s Slangify — the
     /// ADR-0026 gate for parse-time slang activation: a `use` of such a
     /// module must execute it at parse time so its slang registration can
@@ -45,6 +62,48 @@ thread_local! {
     /// parsing each, which 5x'd the CI TAP suite before this record existed.
     static LAST_USE_SCAN_ACTIVATES_SLANG: RefCell<Option<(String, bool)>> =
         const { RefCell::new(None) };
+    /// Set when this compilation unit imported a module the parser could not
+    /// resolve to a file and scan, so the parse-time type index does not
+    /// cover every name the unit can legally see. Diagnostics that conclude
+    /// "this name is declared nowhere" — see `when_stmt`'s gobbled-block
+    /// check — must stay silent while it is set, or they reject valid code
+    /// whose type merely came from an unscannable module (an `inst#`
+    /// installed repository, a `require`, a module absent from this
+    /// environment).
+    static TYPE_INDEX_INCOMPLETE: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Record that a `use`/`need`/`require` could not be resolved and scanned, so
+/// the parse-time type index for this unit is not exhaustive.
+pub(crate) fn note_type_index_incomplete() {
+    TYPE_INDEX_INCOMPLETE.with(|c| c.set(true));
+}
+
+/// Whether the parse-time type index covers every name this unit can see.
+pub(crate) fn type_index_is_complete() -> bool {
+    TYPE_INDEX_INCOMPLETE.with(|c| !c.get())
+}
+
+/// Clear the flag, returning its previous value. Called at parse start
+/// (`reset_user_subs`) and around a nested module scan, whose own imports must
+/// be attributed to the module rather than leaking into the importer until the
+/// scan result is replayed.
+pub(crate) fn take_type_index_incomplete() -> bool {
+    TYPE_INDEX_INCOMPLETE.with(|c| c.replace(false))
+}
+
+/// Modules that resolve to no source file yet leave the type index complete:
+/// core pragmas (lowercase by convention) and the handful of uppercase
+/// pragma-like names and native providers mutsu implements in Rust. Anything
+/// else that fails to resolve is a real module whose types we cannot see.
+fn import_is_pragma_like(module: &str) -> bool {
+    if module.starts_with(|c: char| !c.is_ascii_uppercase()) {
+        return true;
+    }
+    matches!(
+        module,
+        "MONKEY" | "MONKEY-SEE-NO-EVAL" | "MONKEY-TYPING" | "MONKEY-GUTS" | "NativeCall"
+    )
 }
 
 fn record_use_scan_outcome(module: &str, activates: bool) {
@@ -122,11 +181,19 @@ pub(crate) fn register_module_exports(module: &str) {
         for (keyword, how_type) in &scan.declare_keywords {
             register_declare_keyword(keyword, how_type);
         }
+    } else if !import_is_pragma_like(module) {
+        note_type_index_incomplete();
     }
 }
 
 /// Replay a scan's declared type/enum names into the importer's current scope.
 fn apply_scan_types(scan: &ModuleScanResult) {
+    // A dependency whose own type index was incomplete makes the importer's
+    // incomplete too. Replayed here (not only at scan time) so a cache hit,
+    // which skips the nested parse entirely, still propagates it.
+    if scan.type_index_incomplete {
+        note_type_index_incomplete();
+    }
     for name in &scan.type_names {
         // The names are already fully composed; a `use` that appears inside
         // a package block must not compose them a second time.
@@ -138,6 +205,11 @@ fn apply_scan_types(scan: &ModuleScanResult) {
     // `!!` (see `is_user_declared_enum_value`).
     for name in &scan.enum_values {
         register_user_enum_value(name);
+    }
+    // An exported `constant` is a complete nullary term wherever the importer
+    // can see it, exactly like an enum value.
+    for name in &scan.value_terms {
+        register_imported_value_term(name);
     }
 }
 
@@ -281,6 +353,8 @@ pub(crate) fn register_module_type_names(module: &str) {
     });
     if let Some(scan) = scan {
         apply_scan_types(&scan);
+    } else if !import_is_pragma_like(module) {
+        note_type_index_incomplete();
     }
 }
 
@@ -403,7 +477,24 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // be recognized as re-raising the same warning rather than a new one.
     // See `add_parse_warning` / `todo/tickets/module-parse-warning-reported-twice.md`.
     let saved_source_file = set_parser_source_file(Some(path.to_string()));
+    // The nested parse's own unresolvable imports belong to *this* module, not
+    // to the importer: park the importer's flag, and hand the module's back
+    // through `ModuleScanResult` so `apply_scan_types` replays it on every
+    // importer — cache hits included.
+    let saved_type_index_incomplete = take_type_index_incomplete();
+    let skips_before = super::super::partial_parse_skips();
     let (stmts, _) = crate::parser::parse_program_partial(source);
+    // A best-effort parse silently drops every statement it cannot parse — a
+    // `class`/`constant` among them. The names in such a statement are missing
+    // from this scan, so the importer's view of the module is partial and it
+    // must not conclude "declared nowhere" about anything.
+    if super::super::partial_parse_skips() != skips_before {
+        note_type_index_incomplete();
+    }
+    let type_index_incomplete = take_type_index_incomplete();
+    if saved_type_index_incomplete {
+        note_type_index_incomplete();
+    }
     set_parser_source_file(saved_source_file);
     // A `package X::Foo { }` block installs its contents into GLOBAL, so the
     // types it declares are visible to whoever loads the module — including
@@ -426,6 +517,25 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
             .iter()
             .flat_map(|scope| scope.user_enum_values.iter().cloned())
             .collect()
+    });
+    // The module's `constant`s (and any it re-exports from a module it used).
+    // The parser registers these as `TermBinding::Value` term symbols while
+    // parsing the declaration, so — unlike a type name — there is no AST node
+    // to walk; the scan's own scope stack is the record. Callable term symbols
+    // (`sub term:<foo>`) are excluded: those really can take arguments.
+    let mut value_terms: Vec<String> = SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let own = scopes.iter().flat_map(|scope| {
+            scope
+                .term_symbols
+                .iter()
+                .filter(|(_, binding)| matches!(binding, TermBinding::Value(_)))
+                .map(|(symbol, _)| symbol.clone())
+        });
+        let transitive = scopes
+            .iter()
+            .flat_map(|scope| scope.imported_value_terms.iter().cloned());
+        own.chain(transitive).collect()
     });
     // Restore scopes, package path, and language version
     SCOPES.with(|s| {
@@ -451,6 +561,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     collect_module_type_names(&stmts, &mut type_names);
     let mut enum_values: Vec<String> = transitive_enum_values;
     collect_module_enum_values(&stmts, &mut enum_values);
+    collect_module_constant_names(&stmts, &mut value_terms);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     collect_exported_subs(&stmts, &mut exports);
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
@@ -476,7 +587,9 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         exports: result,
         type_names,
         enum_values,
+        value_terms,
         declare_keywords,
+        type_index_incomplete,
         uses_slangify,
     }
 }
@@ -534,6 +647,35 @@ fn collect_exporthow_declare(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
     }
 }
 
+/// Collect the names of `constant` declarations at any nesting depth.
+///
+/// The scope-stack harvest in `scan_module_source` only sees constants that are
+/// still in scope when the module's parse ends, so a `constant` declared inside
+/// a `class`/`role`/`package` body — whose scope has been popped by then — needs
+/// the AST walk. Only the bare name is collected: that is the spelling an
+/// importer writes for an `is export` constant, and the qualified spelling is
+/// matched on its last segment.
+fn collect_module_constant_names(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                // Sigiled constants (`constant $x = 1`) are not barewords.
+                if !name.is_empty() && !name.starts_with(['$', '@', '%', '&']) {
+                    out.push(name.clone());
+                }
+            }
+            Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::Package { body, .. } => collect_module_constant_names(body, out),
+            _ => {}
+        }
+    }
+}
+
 /// Recursively collect the names of type declarations (class/role/enum/grammar)
 /// found in a parsed module's statement list. Descends into `package`/`module`/
 /// `grammar` bodies (whose members are `our`-scoped) so nested type names are
@@ -571,42 +713,76 @@ fn collect_module_enum_values(stmts: &[Stmt], out: &mut Vec<String>) {
 /// A nested declaration is installed under its composed name, so both spellings
 /// are collected: the literal one (visible inside the declaring body) and
 /// `<prefix>::<name>` (how the importer must spell it).
+///
+/// A `unit` declarator (`unit module Foo;`, `unit class Foo;`) parses to a
+/// declaration with an *empty* body followed by its contents as siblings, so
+/// the prefix it establishes has to be carried forward across the rest of the
+/// statement list rather than descended into. Without that, a nested
+/// `class Part` under `unit module Cro::HTTP::Body;` is only ever harvested as
+/// `MultiPartFormData::Part`, never as the
+/// `Cro::HTTP::Body::MultiPartFormData::Part` spelling an importer writes.
 fn collect_module_type_names_under(stmts: &[Stmt], prefix: &str, out: &mut Vec<String>) {
-    let compose = |name: &str| {
-        if prefix.is_empty() {
-            name.to_string()
-        } else {
-            format!("{}::{}", prefix, name)
-        }
-    };
+    let mut prefix = prefix.to_string();
     for stmt in stmts {
         match stmt {
             Stmt::EnumDecl { name, .. } => {
                 let name = name.resolve();
-                out.push(compose(&name));
+                out.push(compose_type_name(&prefix, &name));
                 out.push(name);
             }
-            Stmt::ClassDecl { name, body, .. } | Stmt::RoleDecl { name, body, .. } => {
+            Stmt::ClassDecl {
+                name,
+                body,
+                is_unit,
+                ..
+            } => {
                 let name = name.resolve();
-                let composed = compose(&name);
+                let composed = compose_type_name(&prefix, &name);
+                collect_module_type_names_under(body, &composed, out);
+                out.push(composed.clone());
+                out.push(name);
+                if *is_unit {
+                    prefix = composed;
+                }
+            }
+            Stmt::RoleDecl { name, body, .. } => {
+                let name = name.resolve();
+                let composed = compose_type_name(&prefix, &name);
                 collect_module_type_names_under(body, &composed, out);
                 out.push(composed);
                 out.push(name);
             }
-            Stmt::Package { name, body, .. } => {
+            Stmt::Package {
+                name,
+                body,
+                is_unit,
+                ..
+            } => {
                 // `grammar Foo { ... }` is a Package with kind Grammar; its name
                 // is itself a type. `module`/`package` names are namespaces, but
                 // registering them is harmless and covers grammar declarations.
                 let name = name.resolve();
                 // `GLOBAL` is a pseudo-package: `package GLOBAL::X::Foo` installs
                 // `X::Foo`, so it must not appear in the composed name.
-                let composed = compose(name.strip_prefix("GLOBAL::").unwrap_or(&name));
+                let composed =
+                    compose_type_name(&prefix, name.strip_prefix("GLOBAL::").unwrap_or(&name));
                 collect_module_type_names_under(body, &composed, out);
-                out.push(composed);
+                out.push(composed.clone());
                 out.push(name);
+                if *is_unit {
+                    prefix = composed;
+                }
             }
             _ => {}
         }
+    }
+}
+
+fn compose_type_name(prefix: &str, name: &str) -> String {
+    if prefix.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{}", prefix, name)
     }
 }
 
