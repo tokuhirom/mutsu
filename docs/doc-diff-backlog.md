@@ -501,6 +501,36 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
   examples use live filesystem-watching (`IO::Notification.watch-path`), which is inherently
   timing/environment-dependent and not a clean minimal repro; not ticketed.
 
+Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
+`Metamodel::ParametricRoleGroupHOW`/`Formatter`/`X::Cannot::Empty`/`Exception`/
+`nativetypes`/`Compiler`/`IO::ArgFiles`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Code.rakudoc:166,175,195` | `.line`/`.file` reflection methods missing on `Sub`/`Method` | [code-line-file-reflection-missing-on-sub-method.md](../todo/tickets/code-line-file-reflection-missing-on-sub-method.md) |
+| `Type/Code.rakudoc:81` | `$:name` named-placeholder variable fails to interpolate inside a double-quoted string (bare form already works) | [named-placeholder-var-interpolation-in-string-fails.md](../todo/tickets/named-placeholder-var-interpolation-in-string-fails.md) |
+| `Type/DateTime.rakudoc:137` | a `DateTime` day-range-check throws the generic `X::OutOfRange` instead of the already-registered, more specific `X::Temporal::OutOfRange` | [datetime-day-out-of-range-uses-generic-outofrange.md](../todo/tickets/datetime-day-out-of-range-uses-generic-outofrange.md) |
+| `Type/DateTime.rakudoc:281,302` | `.julian-date`/`.modified-julian-date` return `Num` (float noise) instead of an exact `Rat` | [datetime-julian-date-returns-num-not-rat.md](../todo/tickets/datetime-julian-date-returns-num-not-rat.md) |
+| `Language/perl-func.rakudoc:2281` | `but`-mixing a role onto an `Array` silently drops the mixin entirely (`.^name` shows plain `Array`, no role methods attached) | [array-but-role-mixin-dropped-join-flatten.md](../todo/tickets/array-but-role-mixin-dropped-join-flatten.md) |
+| `Language/perl-func.rakudoc:2310` | a role-mixed `.sink` method is never invoked when the value is used in sink context | [role-mixed-sink-method-not-invoked-in-sink-context.md](../todo/tickets/role-mixed-sink-method-not-invoked-in-sink-context.md) |
+| `Type/Metamodel/ParametricRoleGroupHOW.rakudoc:21` | an anonymous *parametric* `role Name[...] {...}` literal is misparsed as an expression term — refines [anon-role-expression-term-parse-fail.md](../todo/tickets/anon-role-expression-term-parse-fail.md) above: re-verified that the parameterless `(role NAME {...})` form it also lists already parses fine on its own, it's specifically the `[...]` parametric signature that breaks | [parametric-role-literal-as-expression-term-misparsed.md](../todo/tickets/parametric-role-literal-as-expression-term-misparsed.md) |
+| `Type/Metamodel/ParametricRoleGroupHOW.rakudoc:27` | `Metamodel::ParametricRoleHOW.new_type(...)` reports `.HOW` as `ClassHOW` instead of the specific metaclass it was called on — same finding as [metamodel-parametricrolehow-new-type-wrong-how.md](../todo/tickets/metamodel-parametricrolehow-new-type-wrong-how.md) above | (duplicate of the row above; cross-referenced from [direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md), not re-filed) |
+| `Type/Formatter.rakudoc:16,32` | `Formatter.new(FORMAT_STRING)` is unimplemented | [formatter-new-unimplemented.md](../todo/tickets/formatter-new-unimplemented.md) |
+| `Type/X/Cannot/Empty.rakudoc:15` | `X::Cannot::Empty.new(:action, :what).message` returns an empty string instead of formatting "Cannot ACTION from an empty WHAT" | [x-cannot-empty-message-not-formatted.md](../todo/tickets/x-cannot-empty-message-not-formatted.md) |
+| `Type/Exception.rakudoc:78` | `.backtrace.full` joins its frame lines without newlines (all frames run together on one line) | [backtrace-full-frames-not-newline-separated.md](../todo/tickets/backtrace-full-frames-not-newline-separated.md) |
+| `Language/nativetypes.rakudoc:172` | `Pointer[T].raku` uses a bare type-parameter name and a named-arg constructor call instead of raku's fully-qualified positional form | [nativecall-pointer-raku-format-mismatch.md](../todo/tickets/nativecall-pointer-raku-format-mismatch.md) |
+| `Type/Compiler.rakudoc:58` | `$*RAKU.compiler.verbose-config` is unimplemented (low priority — the real output is exhaustively MoarVM-build-specific) | [compiler-verbose-config-unimplemented.md](../todo/tickets/compiler-verbose-config-unimplemented.md) |
+| `Type/IO/ArgFiles.rakudoc:34` | `$*ARGFILES.eof`/`.get` loops forever instead of terminating once stdin is exhausted (no file args given) | [argfiles-eof-infinite-loop-on-empty-stdin.md](../todo/tickets/argfiles-eof-infinite-loop-on-empty-stdin.md) |
+
+**Excluded from this batch-4 sub-run:**
+- `Type/Code.rakudoc` [3], [4] (lines 140, 153) — `raku-drift` (object hex-address
+  text in `#`(Block|...)`/`#`(Sub|...)` gist output, inherently non-reproducible).
+- `Type/Compiler.rakudoc` [1] (line 13, `$*RAKU.compiler`) — `raku-drift` and
+  environment-dependent (compiler name/version string), same shape as the already-
+  excluded `$*RAKU.compiler.version`/`$*VM.config` findings above; mutsu correctly
+  reports its own identity (`mutsu (0.1.0)`) rather than impersonating rakudo, which
+  is intentional, not a bug.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:

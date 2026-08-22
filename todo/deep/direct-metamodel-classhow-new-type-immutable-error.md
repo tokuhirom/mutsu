@@ -69,3 +69,21 @@ type creation directly through `Metamodel::*` calls (as opposed to only via `cla
   check whether it eagerly registers the class/binds the name as a side effect, and
   whether that should instead be deferred until an explicit `.^compose` (matching
   Rakudo's model of "mutable until composed").
+
+## Related finding: `new_type` ignores which `Metamodel::*HOW` was called (2026-08-22, doc-diff batch-4)
+
+`src/runtime/methods_instance_ops.rs` (~line 2138) dispatches `.new_type` generically
+for *any* `Metamodel::*` package name
+(`matches!(target.view(), ValueView::Package(n) if n.resolve().starts_with("Metamodel::"))`)
+— it always registers a plain empty class and returns a bare `Package` value,
+regardless of which specific metaclass (`ClassHOW`, `ParametricRoleHOW`,
+`ParametricRoleGroupHOW`, ...) was actually invoked. This means the resulting type
+object's `.HOW` always introspects as `ClassHOW`-shaped, even when the caller asked
+for a different metaclass. Confirmed independently via
+`Type/Metamodel/ParametricRoleGroupHOW.rakudoc:27` (`Metamodel::ParametricRoleHOW.new_type(...)`
+also reports `.HOW` as `ClassHOW`) — same root cause and same generic `new_type`
+handler as the already-filed
+[metamodel-parametricrolehow-new-type-wrong-how.md](../tickets/metamodel-parametricrolehow-new-type-wrong-how.md),
+which has the minimal repro; fixing `new_type` to actually respect (and record) which
+`Metamodel::*HOW` it was called on is likely a prerequisite for all three findings
+tracked across these two files, not just a message-text difference.
