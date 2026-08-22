@@ -83,6 +83,9 @@ fn bareword_names_known_term(name: &str) -> bool {
         || simple::is_user_declared_type(name)
         || simple::is_user_declared_value_term(name)
         || simple::is_user_declared_enum_value(name)
+        // A `constant FOO is export` in a `use`d module: a complete nullary
+        // term, harvested by the module scan.
+        || simple::is_imported_value_term(name)
         // A declared routine used as a matcher (`when foo { }`) really does
         // gobble the block in raku, but the message differs and the construct is
         // vanishingly rare; leaving it alone keeps this check to the case the
@@ -93,13 +96,15 @@ fn bareword_names_known_term(name: &str) -> bool {
     }
     // A package-qualified enum value: `when Day::Mon { }`,
     // `when HTTP::HPACK::Indexing::Indexed { }`. The head names the enum type
-    // and the last segment one of its values.
+    // (or, for a constant, the declaring package) and the last segment one of
+    // its values.
     if let Some((head, last)) = name.rsplit_once("::") {
         let head_is_type = simple::is_user_declared_type(head)
             || utils::is_known_type_constraint(head)
             || utils::is_known_compound_type(head);
-        let last_is_value =
-            simple::is_user_declared_enum_value(last) || utils::is_builtin_enum_value(last);
+        let last_is_value = simple::is_user_declared_enum_value(last)
+            || utils::is_builtin_enum_value(last)
+            || simple::is_imported_value_term(last);
         if head_is_type && last_is_value {
             return true;
         }

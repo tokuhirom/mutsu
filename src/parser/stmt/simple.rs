@@ -73,11 +73,11 @@ pub(in crate::parser) use module_exports::{
     register_module_exports, register_module_type_names, type_index_is_complete,
 };
 pub(in crate::parser) use pragma_preseed::{
-    current_attributes_pragma, is_user_declared_enum_value, is_user_declared_sub,
-    is_user_declared_type, push_package_path, register_user_enum_value, register_user_type,
-    register_user_type_verbatim, reset_package_path, set_attributes_pragma,
-    set_eval_imported_function_preseed, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
-    set_eval_user_sub_preseed, set_eval_user_type_preseed,
+    current_attributes_pragma, is_imported_value_term, is_user_declared_enum_value,
+    is_user_declared_sub, is_user_declared_type, push_package_path, register_imported_value_term,
+    register_user_enum_value, register_user_type, register_user_type_verbatim, reset_package_path,
+    set_attributes_pragma, set_eval_imported_function_preseed, set_eval_operator_assoc_preseed,
+    set_eval_operator_preseed, set_eval_user_sub_preseed, set_eval_user_type_preseed,
 };
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, lookup_custom_infix_precedence, lookup_postfix_precedence,
@@ -124,6 +124,14 @@ struct LexicalScope {
     /// which is what the `?? then !!` guard needs to know — the user-declared
     /// twin of `is_builtin_enum_value`.
     user_enum_values: HashSet<String>,
+    /// Sigilless value terms a `use`d module declares (`constant SQLT_NUM is
+    /// export = 2;`, `my \foo = ...`), harvested from the module scan. Like an
+    /// enum value these are complete nullary terms, so a bareword naming one is
+    /// not an undeclared name — which is all the `when`-matcher gobbled-block
+    /// check needs to know. Deliberately kept out of `term_symbols`: that table
+    /// steers real parse decisions (`match_user_declared_term_symbol`), and this
+    /// set only feeds a diagnostic.
+    imported_value_terms: HashSet<String>,
     /// `no worries` lexical pragma: when true, compiler "Potential difficulties"
     /// warnings (e.g. the empty-`<>` colonpair warning) are suppressed in this
     /// scope and any nested scopes (inherited via `push_scope`).

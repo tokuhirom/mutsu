@@ -12,6 +12,17 @@ struct ModuleScanResult {
     exports: Vec<InlineModuleExport>,
     type_names: Vec<String>,
     enum_values: Vec<String>,
+    /// Sigilless value terms the module declares: `constant SQLT_NUM is export
+    /// = 2;`, `my \foo = ...`. Harvested from the scan's own scope stack, the
+    /// same way `enum_values` is, because the parser records them as term
+    /// symbols while parsing the declaration rather than in the AST node.
+    ///
+    /// Without these an imported constant looks like an undeclared bareword to
+    /// the `when`-matcher gobbled-block check, which then rejects valid code —
+    /// DBDish::Oracle::StatementHandle's `when SQLT_NUM { ... }`, whose
+    /// `SQLT_NUM` is a `constant ... is export` in the sibling
+    /// DBDish::Oracle::Native.
+    value_terms: Vec<String>,
     /// EXPORTHOW::DECLARE declarator keywords the module exports, as
     /// `(keyword, HOW type name)` pairs. A `use` of the module makes each
     /// keyword parse as a class-like declarator for the rest of the unit.
@@ -194,6 +205,11 @@ fn apply_scan_types(scan: &ModuleScanResult) {
     // `!!` (see `is_user_declared_enum_value`).
     for name in &scan.enum_values {
         register_user_enum_value(name);
+    }
+    // An exported `constant` is a complete nullary term wherever the importer
+    // can see it, exactly like an enum value.
+    for name in &scan.value_terms {
+        register_imported_value_term(name);
     }
 }
 
@@ -466,7 +482,15 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     // through `ModuleScanResult` so `apply_scan_types` replays it on every
     // importer — cache hits included.
     let saved_type_index_incomplete = take_type_index_incomplete();
+    let skips_before = super::super::partial_parse_skips();
     let (stmts, _) = crate::parser::parse_program_partial(source);
+    // A best-effort parse silently drops every statement it cannot parse — a
+    // `class`/`constant` among them. The names in such a statement are missing
+    // from this scan, so the importer's view of the module is partial and it
+    // must not conclude "declared nowhere" about anything.
+    if super::super::partial_parse_skips() != skips_before {
+        note_type_index_incomplete();
+    }
     let type_index_incomplete = take_type_index_incomplete();
     if saved_type_index_incomplete {
         note_type_index_incomplete();
@@ -494,6 +518,25 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
             .flat_map(|scope| scope.user_enum_values.iter().cloned())
             .collect()
     });
+    // The module's `constant`s (and any it re-exports from a module it used).
+    // The parser registers these as `TermBinding::Value` term symbols while
+    // parsing the declaration, so — unlike a type name — there is no AST node
+    // to walk; the scan's own scope stack is the record. Callable term symbols
+    // (`sub term:<foo>`) are excluded: those really can take arguments.
+    let mut value_terms: Vec<String> = SCOPES.with(|s| {
+        let scopes = s.borrow();
+        let own = scopes.iter().flat_map(|scope| {
+            scope
+                .term_symbols
+                .iter()
+                .filter(|(_, binding)| matches!(binding, TermBinding::Value(_)))
+                .map(|(symbol, _)| symbol.clone())
+        });
+        let transitive = scopes
+            .iter()
+            .flat_map(|scope| scope.imported_value_terms.iter().cloned());
+        own.chain(transitive).collect()
+    });
     // Restore scopes, package path, and language version
     SCOPES.with(|s| {
         *s.borrow_mut() = saved_scopes;
@@ -518,6 +561,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
     collect_module_type_names(&stmts, &mut type_names);
     let mut enum_values: Vec<String> = transitive_enum_values;
     collect_module_enum_values(&stmts, &mut enum_values);
+    collect_module_constant_names(&stmts, &mut value_terms);
     let mut exports: HashMap<String, InlineModuleExport> = HashMap::new();
     collect_exported_subs(&stmts, &mut exports);
     // Fallback scan for modules that use syntax not yet fully covered by parse_program_partial.
@@ -543,6 +587,7 @@ fn scan_module_source(source: &str, path: &str) -> ModuleScanResult {
         exports: result,
         type_names,
         enum_values,
+        value_terms,
         declare_keywords,
         type_index_incomplete,
         uses_slangify,
@@ -598,6 +643,35 @@ fn collect_exporthow_declare(stmts: &[Stmt], out: &mut Vec<(String, String)>) {
                     out.push((name.clone(), how_type.clone()));
                 }
             }
+        }
+    }
+}
+
+/// Collect the names of `constant` declarations at any nesting depth.
+///
+/// The scope-stack harvest in `scan_module_source` only sees constants that are
+/// still in scope when the module's parse ends, so a `constant` declared inside
+/// a `class`/`role`/`package` body — whose scope has been popped by then — needs
+/// the AST walk. Only the bare name is collected: that is the spelling an
+/// importer writes for an `is export` constant, and the qualified spelling is
+/// matched on its last segment.
+fn collect_module_constant_names(stmts: &[Stmt], out: &mut Vec<String>) {
+    for stmt in stmts {
+        match stmt {
+            Stmt::VarDecl {
+                name,
+                custom_traits,
+                ..
+            } if custom_traits.iter().any(|(t, _)| t == "__constant") => {
+                // Sigiled constants (`constant $x = 1`) are not barewords.
+                if !name.is_empty() && !name.starts_with(['$', '@', '%', '&']) {
+                    out.push(name.clone());
+                }
+            }
+            Stmt::ClassDecl { body, .. }
+            | Stmt::RoleDecl { body, .. }
+            | Stmt::Package { body, .. } => collect_module_constant_names(body, out),
+            _ => {}
         }
     }
 }

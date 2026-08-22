@@ -176,6 +176,33 @@ pub(crate) fn register_user_enum_value(name: &str) {
     });
 }
 
+/// Register a sigilless value term (`constant FOO = ...`, `my \foo = ...`) a
+/// `use`d module declares. Registered in the **outermost** scope for the same
+/// reason as an enum value: a `use`d module's constants must stay visible for
+/// the rest of the importing file.
+pub(crate) fn register_imported_value_term(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let outermost = scopes
+            .first_mut()
+            .expect("scope stack should never be empty");
+        outermost.imported_value_terms.insert(name.to_string());
+    });
+}
+
+/// Whether `name` names a sigilless value term imported from a scanned module.
+/// Such a name is a complete nullary term, so it can never be the routine call
+/// that the `when`-matcher gobbled-block check is looking for.
+pub(crate) fn is_imported_value_term(name: &str) -> bool {
+    SCOPES.with(|s| {
+        let scopes = s.borrow();
+        scopes
+            .iter()
+            .rev()
+            .any(|scope| scope.imported_value_terms.contains(name))
+    })
+}
+
 /// Whether `name` is a value of a user-declared enum — the user-declared twin of
 /// [`is_builtin_enum_value`](crate::runtime::utils::is_builtin_enum_value).
 ///

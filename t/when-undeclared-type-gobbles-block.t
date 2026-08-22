@@ -69,6 +69,17 @@ given Mon {
 }
 is $enum-value, "matched", 'package-qualified enum value still matches';
 
+# Must still parse: a `constant` exported by a `use`d module. This is the
+# DBDish::Oracle::StatementHandle case (`when SQLT_NUM { }`, where SQLT_NUM is a
+# `constant ... is export` in the sibling DBDish::Oracle::Native) -- the module
+# scan has to harvest constants, not only type and enum names.
+my $constant = "no";
+given 7 {
+    when MATCHER_CONSTANT { $constant = "matched" }
+    default               { $constant = "default" }
+}
+is $constant, "matched", 'constant imported from a module still matches';
+
 # Must still parse: a type smiley binds to a type name, so it can never be a
 # routine call gobbling the block.
 my $smiley = "no";
