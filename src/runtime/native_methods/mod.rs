@@ -18,6 +18,7 @@ pub(crate) mod state_supplier_merge;
 mod state_supply_collector;
 pub(crate) mod supply_channel;
 mod supply_collector;
+mod supply_quit_forwarder;
 mod system;
 
 // Re-export public items from state submodules so that
@@ -375,6 +376,7 @@ impl Interpreter {
                 | "Tap"
                 | "__ScheduledTapPump"
                 | "__SupplyCollector"
+                | "__SupplyQuitForwarder"
                 | "ThreadPoolScheduler"
                 | "CurrentThreadScheduler"
                 | "FakeScheduler"
@@ -417,6 +419,7 @@ impl Interpreter {
                             | "Tap"
                             | "__ScheduledTapPump"
                             | "__SupplyCollector"
+                            | "__SupplyQuitForwarder"
                             | "ThreadPoolScheduler"
                             | "CurrentThreadScheduler"
                             | "FakeScheduler"
@@ -469,6 +472,7 @@ impl Interpreter {
             "Tap" => self.native_tap(attributes, method),
             "__ScheduledTapPump" => self.native_scheduled_tap_pump(attributes, method, args),
             "__SupplyCollector" => self.native_supply_collector(attributes, method, args),
+            "__SupplyQuitForwarder" => self.native_supply_quit_forwarder(attributes, method, args),
             "ThreadPoolScheduler" => self.native_scheduler(attributes, method, args, false),
             "CurrentThreadScheduler" => self.native_scheduler(attributes, method, args, true),
             "FakeScheduler" => self.native_fake_scheduler(attributes, method, args),

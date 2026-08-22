@@ -808,9 +808,29 @@ impl Interpreter {
                                         Self::make_supply_done_chain(done_chain),
                                     )),
                                 }
-                                if let Some(q) = quit_cbs.first() {
-                                    tap_args.push(Value::pair("quit".to_string(), q.clone()));
-                                }
+                                // The inner tap's quit is registered
+                                // UNCONDITIONALLY, exactly like `done_chain`
+                                // above: an unhandled quit from a chained
+                                // on-demand source terminates the enclosing
+                                // supply block, whether or not this
+                                // `whenever` declared a `QUIT` phaser of its
+                                // own. Passing only `quit_cbs.first()` (the
+                                // phaser, when there was one) left a block
+                                // with no `QUIT` phaser with no quit route at
+                                // all, so a quit two or more levels down was
+                                // silently swallowed and the pipeline never
+                                // completed at all. The forwarder carries the
+                                // phasers and this block's emitter, so it can
+                                // run the full `QuitOutcome` protocol before
+                                // deciding between done and quit — see
+                                // `native_methods::supply_quit_forwarder`.
+                                tap_args.push(Value::pair(
+                                    "quit".to_string(),
+                                    Self::build_supply_quit_forwarder(
+                                        emitter_supplier_id,
+                                        quit_cbs,
+                                    ),
+                                ));
                                 // The inner Tap is threaded into the outer Tap
                                 // handle (`upstream_taps`) so closing the outer
                                 // tap tears down a still-live inner pipeline.

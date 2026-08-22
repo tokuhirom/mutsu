@@ -501,6 +501,28 @@ impl Interpreter {
             },
         );
         classes.insert(
+            "__SupplyQuitForwarder".to_string(),
+            ClassDef {
+                parents: Vec::new(),
+                attributes: Vec::new(),
+                // The `quit =>` callback a `whenever` on a chained on-demand
+                // source hands to the inner tap, so an unhandled source quit
+                // terminates the enclosing supply block (ADR-0031 Decision A)
+                // — see `native_methods::supply_quit_forwarder`.
+                native_methods: ["__mutsu_supply_forward_quit"]
+                    .iter()
+                    .map(|s| s.to_string())
+                    .collect(),
+                mro: sym_mro(&["__SupplyQuitForwarder"]),
+                attribute_types: HashMap::new(),
+                attribute_smileys: HashMap::new(),
+                attribute_built: HashMap::new(),
+                wildcard_handles: Vec::new(),
+                alias_attributes: HashSet::new(),
+                class_level_attrs: HashMap::new(),
+            },
+        );
+        classes.insert(
             "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),
