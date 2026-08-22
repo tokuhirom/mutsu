@@ -188,7 +188,6 @@ cost and keeps perf work from interleaving with correctness fixes above.
 | [bare-failure-sink-is-consumption-time-not-creation-time](tickets/bare-failure-sink-is-consumption-time-not-creation-time.md) | Architecturally large (raku decides fatal-vs-soft at Failure *construction*, stamped per-instance; mutsu decides at ~33 scattered consumption sites with zero knowledge of `fatal_mode`). Confirmed pre-existing, narrow practical trigger — not blocking anything in progress. |
 | [adr0019-d10-precompute-stub-and-swallow-flags](tickets/adr0019-d10-precompute-stub-and-swallow-flags.md) ⚡ | Zero-behavior-change polish. Its own text: "do opportunistically if touching these files for another reason, otherwise skip." |
 | [adr0019-d2c5-collapse-default-eval-env-setup](tickets/adr0019-d2c5-collapse-default-eval-env-setup.md) | Explicitly optional in the ADR-0019 checklist. Pure de-duplication (3 near-identical env-setup shapes), no missing feature. Gated on raku-verifying one special case first. |
-| [adr0019-method-body-compile-dedup-remnants](tickets/adr0019-method-body-compile-dedup-remnants.md) | Low priority; one of its two items may already be dead code post the Phase E dispatch-resolver unification — confirm reachability before touching. |
 
 ---
 

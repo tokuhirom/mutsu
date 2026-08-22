@@ -308,6 +308,9 @@ impl Interpreter {
             // distinguishing EVAL re-definitions from normal re-execution
             // (e.g., anonymous classes in loops, augment) requires tracking
             // compilation unit boundaries.
+            let is_hoisted_shell = custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__hoisted");
             let deferred_traits = loan_env!(
                 self,
                 register_class_decl(
@@ -330,9 +333,7 @@ impl Interpreter {
                         parent_pre_args: &parent_pre_args,
                         compiled_fns,
                         body_plan,
-                        is_hoisted_shell: custom_traits
-                            .iter()
-                            .any(|(trait_name, _)| trait_name == "__hoisted"),
+                        is_hoisted_shell,
                     },
                 )
             )?;
@@ -353,8 +354,24 @@ impl Interpreter {
             if let Some(err) = self.check_class_native_readonly_param_errors(&storage_name) {
                 return Err(err);
             }
-            // Compile method bodies to bytecode for the fast path
-            self.compile_class_methods(&storage_name);
+            // Compile method bodies to bytecode for the fast path.
+            //
+            // A `__hoisted` forward-reference shell (`hoist_type_decl_shells`)
+            // is skipped: its `CompiledMethodDecl`s all carry
+            // `compiled_routine_key: None` (`add_class_decl_plan` computes
+            // `package_name: None` for a shell), so this pass would compile
+            // every method body from scratch through
+            // `compile_method_def_in_place_with_dist` — and the whole
+            // `MethodDef` set it fills in is discarded wholesale moments later,
+            // when the real, source-position declaration re-registers the class
+            // from its own (properly keyed) plan. The compiled code was never
+            // read in between, making the compile 100% wasted work. If a
+            // forward reference does call a method on the shell-registered type
+            // before the real declaration runs, `populate_uncompiled_method`
+            // compiles that one body on demand.
+            if !is_hoisted_shell {
+                self.compile_class_methods(&storage_name);
+            }
             // Register the class name in the lexical env so that
             // ::("ClassName") indirect lookups can find it in the current scope.
             // The bare name resolves to the (possibly mangled) storage name so
@@ -771,8 +788,19 @@ impl Interpreter {
             }
             // Store language revision metadata from the version captured at parse time
             self.store_language_revision_from_version(&qualified_name, language_version);
-            // Compile role method bodies to bytecode
-            self.compile_role_methods(&qualified_name);
+            // Compile role method bodies to bytecode. A `__hoisted`
+            // forward-reference shell is skipped for the same reason the class
+            // side skips it (see `exec_register_class_op`): `add_role_decl_plan`
+            // leaves every `compiled_routine_key` `None` for a shell, so this
+            // pass would compile every body from scratch only for the real,
+            // source-position declaration to replace the whole `MethodDef` set
+            // moments later.
+            if !custom_traits
+                .iter()
+                .any(|(trait_name, _)| trait_name == "__hoisted")
+            {
+                self.compile_role_methods(&qualified_name);
+            }
             // See `exec_register_class_op`: a declaration does not set the topic.
             self.env_mut().insert(
                 qualified_name.clone(),
