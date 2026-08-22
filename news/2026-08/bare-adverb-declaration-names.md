@@ -25,6 +25,13 @@ bare form failed in three separate places, all of which are now fixed:
    the `sub`/`method` side needed the parser change. Operator-category bases
    (`infix`, `prefix`, …) are excluded, so `X::Syntax::Extension::Category`
    diagnostics are unchanged.)
+
+   The space in `bar:common ($x)` is significant: a `(` *immediately* after the
+   adverb makes it a colon pair with a value, which raku reads as adverb
+   `common => $x` (and duly complains that `$x` is undeclared). This name parser
+   is shared with `require`, so a bare-adverb rule that consumed across the
+   parenthesis swallowed `require InnerModule:file($name)`'s adverb into the
+   module name — caught by `roast/S11-modules/require.t`.
 2. **Proto-variant resolution.** `is_proto_variant_suffix` matched only
    `:sym<`/`:sym«`/`:<`/`:«`, so `gap:spacer` was never collected as a
    candidate of proto `gap` and the parse failed with "No such method 'gap'".

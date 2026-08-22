@@ -281,7 +281,7 @@ pub(crate) fn parse_sub_name_inner(input: &str, allow_dispatch: bool) -> PResult
                         rest = r2;
                         continue;
                     }
-                } else if !base_is_operator_category {
+                } else if !base_is_operator_category && !r2.starts_with('(') {
                     // Bare-identifier adverb: `method string:basic ($/)`,
                     // `token gap:spacer {...}`. A legal multi-dispatch variant
                     // name in its own right — the adverb carries no value, so
@@ -289,6 +289,17 @@ pub(crate) fn parse_sub_name_inner(input: &str, allow_dispatch: bool) -> PResult
                     // accepts it on `sub`/`method`/`token`/`rule` alike, and
                     // `Config::TOML`'s grammar and Actions class name every one
                     // of their ~48 alternatives this way.
+                    //
+                    // A `(` immediately after the adverb makes it a colon pair
+                    // with a VALUE, not a bare adverb — raku reads
+                    // `method bar:common($x)` as adverb `common => $x` (and
+                    // duly complains that `$x` is undeclared), while
+                    // `method bar:common ($x)` is the bare adverb plus a
+                    // signature. The same spelling appears outside declarations
+                    // (`require InnerModule:file($name)`, whose name is parsed
+                    // by this function), so swallowing it here broke
+                    // `roast/S11-modules/require.t`. The space is significant:
+                    // do not consume across it.
                     name.push(':');
                     name.push_str(part);
                     rest = r2;

@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 9;
+plan 10;
 
 # A `token`/`rule`/`method` multi-dispatch variant may be named with a bare
 # identifier after the colon (`token gap:spacer {...}`), not just the familiar
@@ -57,5 +57,17 @@ is-deeply $m.made, {a => 1, b => 'two'}, 'action methods dispatch by bare-adverb
 # An actually-invalid smiley is still rejected.
 throws-like 'my Int:foo $x;', X::InvalidTypeSmiley,
     'an unknown smiley is still a compile-time error';
+
+# A `(` immediately after the adverb makes it a colon pair with a VALUE, not a
+# bare adverb — the space in `bar:common ($x)` is what separates the adverb
+# from a signature. This name parser is shared with `require`, so swallowing
+# `:file($path)` as part of the name broke `require Foo:file($path)`. Reaching
+# this test at all proves the file still parses; the `require` itself dies at
+# runtime because the module is not there.
+{
+    my $missing = 'tmp/no-such-module-for-bare-adverb-test.rakumod';
+    dies-ok { require Foo:file($missing) },
+        'Name:adverb($value) still parses as an adverbial pair, not a declaration name';
+}
 
 done-testing;
