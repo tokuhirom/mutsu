@@ -12,9 +12,20 @@
   interpolation, and a pre-existing, unrelated named-subrule-call LTM
   over-crediting gap) was fixed/documented in the same slice — see
   `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`
-  for the latter, left for Slices 3/4. **Slices 2-5 (bound/token-body scalar
-  provenance, mechanism unification, ledger) are next**, in the order §4
-  specifies.
+  for the latter, left for Slices 3/4.
+  **Slices 2 and 3 landed 2026-08-22**: `interpolate_bound_regex_scalars` now
+  marks its substitutions (`scalar` row of §2.2 green on mechanism 1), and
+  mechanism 1 (`eval_token_call_values_at`) ranks via the shared
+  `ltm_branch_rank_key` primitive, gaining the litlen tie-break (`litlen` row
+  green). Slice 3 also had to make `RegexAtom::VarDecl` a new
+  `LtmAtomMode::SkipZeroWidth` — zero-width, non-terminating, and *not
+  executed* — because the parsed-pattern measurement path no longer goes
+  through `regex_match_with_captures`'s string-level declarator strip; that
+  closed a real ADR-0009 leak where measuring `token TOP { :my $x = …; <inner> }`
+  wrote `$x` into the live env and changed what `inner` interpolated (stale
+  `todo` in `t/regex-inline-code-block.t` removed). Pins:
+  `t/regex-ltm-proto-dispatch.t`, `t/regex-ltm-interpolation-provenance.t`
+  probes T/U. **Slices 4-5 (mechanism 3 rank-then-match, ledger) are next.**
 - **Context**: `todo/deep/proto-token-ltm-and-interpolation-provenance.md` (renamed from
   `ltm-inline-unbounded-quantifier-vs-array-tie.md`, whose recorded root cause this ADR
   corrects). Builds directly on [ADR-0009](0009-regex-code-assertion-execution-model.md)
@@ -269,14 +280,31 @@ to unify onto.
      full/greedy ranking credit — see
      `todo/deep/named-subrule-unbounded-quantifier-wrongly-gets-greedy-ltm-credit.md`;
      `t/grammar-body-my-lexical-scope.t` test 5 was reshaped to stop depending on it.
-2. **Slice 2 — bound/token-body scalar provenance** (Decision 2 item 2). Pin: the `scalar`
-   row of §2.2 as a grammar test. Watch: `roast/S05-grammar/*`, `roast/S05-modifier/my.t`
+2. **Slice 2 — bound/token-body scalar provenance (landed 2026-08-22)** (Decision 2 item 2).
+   Pin: the `scalar` row of §2.2 as a grammar test (`t/regex-ltm-interpolation-provenance.t`
+   probes T and U, the second a `constant` negative control). Watch: `roast/S05-grammar/*`,
+   `roast/S05-modifier/my.t`
    (ADR-0022 Slice 5 already had to fix a `:our` fallback that depended on the measurement
    pass leaking a real `env` write — the same class of hidden dependency may exist for
-   token bodies).
-3. **Slice 3 — mechanism 1 onto `ltm_branch_rank_key`** (Decision 1, the easy half; adds
-   litlen). Pin: the `litlen` row of §2.2. Acceptance: `roast/S05-grammar/protoregex.t`
+   token bodies) — all stayed green.
+3. **Slice 3 — mechanism 1 onto `ltm_branch_rank_key` (landed 2026-08-22)** (Decision 1, the
+   easy half; adds litlen). Pin: the `litlen` row of §2.2, in
+   `t/regex-ltm-proto-dispatch.t`. Acceptance: `roast/S05-grammar/protoregex.t`
    (whitelisted) stays green — it is the existing regression net for this mechanism.
+   - **Implementation note beyond the plan:** `ltm_rank_token_candidate_source`
+     parses the candidate and measures it with `ltm_prefix_len_at` /
+     `ltm_litlen_at` directly, so it no longer passes through
+     `regex_match_with_captures` — and therefore no longer benefits from that
+     function's string-level "skip the leading `:my`/`:our`/`:constant`
+     declarators while measuring" guard (`regex_match_public.rs`). Measuring a
+     `RegexAtom::VarDecl` for real *executes* its initializer, which is exactly
+     the ADR-0009 violation that guard existed to prevent. The fix is at the
+     atom level instead: a new `LtmAtomMode::SkipZeroWidth` (zero-width, does
+     not terminate the prefix, never runs), which is strictly more general — it
+     also covers a declarator that is not at the very start of the source text.
+     Validated against `raku`: reversing two proto candidates whose only
+     difference is a leading `:my` flips the winner, i.e. their prefixes tie, so
+     a declarator neither consumes nor terminates.
 4. **Slice 4 — mechanism 3 restructured to rank-then-match** (Decision 1, the semantic
    change). Pin: the `code` / `ws` / `litlen` rows of §2.2 in their nested-`<val>` form,
    plus §2.3's side-effect assertion. This is the high-blast-radius slice: every grammar

@@ -196,6 +196,7 @@ impl Interpreter {
                     LTM_PREFIX_TERMINATED.with(|f| f.set(true));
                     return Some(best_end);
                 }
+                LtmAtomMode::SkipZeroWidth => return Some(pos),
                 LtmAtomMode::Normal => {}
             }
         }

@@ -156,38 +156,40 @@ impl Interpreter {
                 s.chars().skip(start_pos).collect::<String>()
             }
         });
-        // Collect all matching candidates with their declarative prefix match
-        // lengths. `declarative_prefix_match_len` is the ONLY trial match here:
-        // it stops at the candidate's first code block/assertion and never
-        // executes one, so measuring a candidate cannot duplicate its side
-        // effects (ADR-0009). For a candidate with no code atom it is a full
-        // match — which executes nothing — so the "does this candidate match at
-        // all?" filter is unchanged for those.
-        // (prefix_match_len, pattern, sym adverb of the candidate's def)
-        let mut candidates: Vec<(usize, String, Option<String>)> = Vec::new();
+        // Collect all matching candidates with their LTM rank key.
+        // `ltm_rank_token_candidate_source` (ADR-0046 Decision 1) is the ONLY
+        // trial match here: it measures under `LTM_DECLARATIVE_MODE`, stopping
+        // at the candidate's first code block/assertion and never executing
+        // one, so measuring a candidate cannot duplicate its side effects
+        // (ADR-0009). For a candidate with no code atom it is a full match —
+        // which executes nothing — so the "does this candidate match at all?"
+        // filter is unchanged for those. It is the same primitive
+        // `|`-alternation ranking uses (`ltm_branch_rank_key`), so this site
+        // now also gets ADR-0022's `litlen` tie-break.
+        // ((prefix_match_len, litlen), pattern, sym adverb of the candidate's def)
+        let mut candidates: Vec<((usize, usize), String, Option<String>)> = Vec::new();
         let mut rejected: Vec<String> = Vec::new();
         for def in defs {
             let sym = Self::extract_sym_adverb(&def.name.resolve());
             if let Some(pattern) = self.eval_token_def(&def, arg_values)? {
                 if let Some(ref text) = subject {
-                    match self.declarative_prefix_match_len(&pattern, text) {
-                        (Some(prefix_match_len), _) => {
-                            candidates.push((prefix_match_len, pattern, sym))
-                        }
+                    match self.ltm_rank_token_candidate_source(&pattern, text) {
+                        (Some(rank), _) => candidates.push((rank, pattern, sym)),
                         // Measurement stopped at a code atom, so it proves nothing
                         // about whether the candidate matches — keep it (ranked
                         // last) and let the real match decide.
-                        (None, true) => candidates.push((0, pattern, sym)),
+                        (None, true) => candidates.push(((0, 0), pattern, sym)),
                         // A fully declarative candidate that does not match at all.
                         (None, false) => rejected.push(pattern),
                     }
                 } else {
-                    candidates.push((0, pattern, sym));
+                    candidates.push(((0, 0), pattern, sym));
                 }
             }
         }
-        // Sort by declarative prefix match length (longest first). The sort is
-        // stable, so an LTM tie falls back to declaration order (as in Rakudo).
+        // Sort by (declarative prefix length, litlen), longest first. The sort
+        // is stable, so an LTM tie falls back to declaration order (as in
+        // Rakudo) — ADR-0022 §4.4's third and final tie-break.
         candidates.sort_by_key(|c| std::cmp::Reverse(c.0));
         if let Some((_, pattern, sym)) = candidates.into_iter().next() {
             return Ok(Some((pattern, sym)));

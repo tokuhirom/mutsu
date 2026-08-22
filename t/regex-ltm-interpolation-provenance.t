@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 16;
+plan 20;
 
 # ADR-0046 Slice 1: array- and regex-object-valued regex interpolation forms
 # (`@name`, `<@name>`, `@(...)`, `@$ref`, `<$var>` holding a Regex) terminate
@@ -75,4 +75,49 @@ plan 16;
     my $rx = rx/Strict/;
     ok "StrictX" ~~ / <$rx> 'X' | 'St' /, 'probe S: matches';
     is ~$/, 'St', 'probe S: <$rx> regex-value form terminates too';
+}
+
+# ---------------------------------------------------------------------------
+# ADR-0046 Slice 2: the *bound* interpolator (`interpolate_bound_regex_scalars`),
+# which renders grammar/token bodies, must mark its substitutions the same way.
+# Before this slice only the general-case `interpolate_regex_scalars` did, so a
+# `$var` inside a token body stayed indistinguishable from a hand-written
+# literal and wrongly extended the candidate's declarative LTM prefix.
+# Expectations verified against `raku`; see ADR-0046 §2.2's `scalar` row.
+
+class LTMActions {
+    method val:sym<known>($/) { make 'KNOWN' }
+    method val:sym<other>($/) { make 'OTHER' }
+}
+
+# Probe T: a `my` scalar interpolated into a token body terminates the prefix,
+# so `known`'s prefix stops at 4 ('Foo=') and `other`'s 10 wins outright.
+{
+    grammar BodyScalar {
+        my $opt = 'Strict';
+        proto token val {*}
+        token val:sym<known> { 'Foo=' $opt }
+        token val:sym<other> { <-[;]>+ }
+    }
+    my $m = BodyScalar.parse('Foo=Strict', :rule<val>, :actions(LTMActions.new));
+    ok $m, 'probe T: matches';
+    is $m.made, 'OTHER',
+        'probe T: a token body $var interpolation terminates the declarative prefix';
+}
+
+# Probe U: negative control -- a genuine `constant` IS inlined at compile time
+# by Rakudo, so it keeps participating and `known` (prefix 10, declared first)
+# wins the tie. This is the `$`-scalar exemption ADR-0022 Slice 5 established,
+# which has no `@`-array analogue (probe J above).
+{
+    grammar BodyConstant {
+        my constant $copt = 'Strict';
+        proto token val {*}
+        token val:sym<known> { 'Foo=' $copt }
+        token val:sym<other> { <-[;]>+ }
+    }
+    my $m = BodyConstant.parse('Foo=Strict', :rule<val>, :actions(LTMActions.new));
+    ok $m, 'probe U: matches';
+    is $m.made, 'KNOWN',
+        'probe U: a token body `constant` $var still participates (negative control)';
 }

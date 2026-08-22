@@ -145,7 +145,7 @@ impl Interpreter {
     /// `exec_set_local_op_inner`)? An ordinary `my`/`state`/param scalar
     /// answers `false` here even if it happens to never be reassigned:
     /// only a genuine `constant` is a Rakudo compile-time value.
-    fn is_compile_time_constant_scalar(&self, name: &str) -> bool {
+    pub(in crate::runtime) fn is_compile_time_constant_scalar(&self, name: &str) -> bool {
         self.env
             .get(&format!("__mutsu_constant_var::{name}"))
             .is_some()
