@@ -676,6 +676,49 @@ Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamod
   in `todo/deep/rakuast-remaining.md`'s "Macros" section (same cluster already excluded for
   `Language/experimental.rakudoc` in the batch-3 sub-run above); not re-ticketed.
 
+Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc`/`numerics`/
+`contexts`/`Sequence`/`Bag`/`haskell-to-p6`/`PositionalBindFailover`/`using-modules::code`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Test.rakudoc:323` | regex char class `<.-:letter-:digit>` (dot base + two chained `-` subtractions) matches everything instead of subtracting | [charclass-dot-base-chained-subtraction-broken.md](../todo/tickets/charclass-dot-base-chained-subtraction-broken.md) |
+| `Type/Test.rakudoc:400` | `.isa(Numeric)` (and other roles) wrongly returns `True` — `isa_check` conflates nominal class hierarchy with role composition | [isa-conflates-roles-with-nominal-supertypes.md](../todo/deep/isa-conflates-roles-with-nominal-supertypes.md) |
+| `Type/Test.rakudoc:586` | `throws-like`'s `message =>`/`gist =>` matchers are silently skipped when the thrown exception is `X::AdHoc` (e.g. from `fail`/`die` with a string) | [throws-like-message-matcher-skipped-for-adhoc-exception.md](../todo/tickets/throws-like-message-matcher-skipped-for-adhoc-exception.md) |
+| `Type/Metamodel/EnumHOW.rakudoc:139,148,157` | `EnumHOW` is missing `.^enum_values`/`.^enum_from_value` (No such method) and `.^elems` (deterministic stack overflow) | [enumhow-missing-enum-values-elems-enum-from-value.md](../todo/tickets/enumhow-missing-enum-values-elems-enum-from-value.md) |
+| `Type/Sub.rakudoc:19` | a user `sub Int(...)` wrongly shadows the built-in `Int(...)` type-coercion call syntax (only `&Int(...)` should reach it) | [user-sub-named-int-shadows-builtin-coercion-call.md](../todo/tickets/user-sub-named-int-shadows-builtin-coercion-call.md) |
+| `Type/Sub.rakudoc:78` | `is foo[1,2,3]` custom variable-trait bracket-argument sugar is misparsed as `is Set[Int]`-style type parameterization, folding the args into the (bogus) trait name | [variable-trait-bracket-argument-misparsed-as-type-param.md](../todo/tickets/variable-trait-bracket-argument-misparsed-as-type-param.md) |
+| `Language/ipc.rakudoc:14` | `run`/`shell` discard the child's stdout/stderr by default (`Stdio::null()`) instead of inheriting the parent's | [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md) |
+| `Language/numerics.rakudoc:353` | calling `.^name` on a `MAIN`-bound `IntStr` argument corrupts a later, unrelated `IntStr.new(...).^name` (reports `Str`) | [main-allomorph-arg-name-corrupts-later-intstr-new.md](../todo/tickets/main-allomorph-arg-name-corrupts-later-intstr-new.md) |
+| `Language/contexts.rakudoc:45` | a bare sub-CALL statement (`foo;`) returning a fresh custom-`.sink`-method instance never invokes `.sink` — the existing function-call-return gap noted in [role-mixed-sink-method-not-invoked-in-sink-context.md](../todo/tickets/role-mixed-sink-method-not-invoked-in-sink-context.md)'s target code | (not re-filed — see Excluded below) |
+| `Type/PositionalBindFailover.rakudoc:34` | `does PositionalBindFailover` fails with `X::InvalidType` — the role is missing from the `BUILTIN_PARENT_TYPES` allow-list | [positionalbindfailover-not-recognized-as-builtin-role.md](../todo/tickets/positionalbindfailover-not-recognized-as-builtin-role.md) |
+| `Language/using-modules/code.rakudoc:95` | a module's `EXPORT::DEFAULT` namespace isn't a real, symbolically-navigable package (`::("Test::EXPORT::DEFAULT::&ok")` fails) | [export-default-package-not-symbolically-navigable.md](../todo/deep/export-default-package-not-symbolically-navigable.md) |
+| `Language/haskell-to-p6.rakudoc:263` | `.signature` on a `proto` sub reports a generic `($arg0)` placeholder instead of the declared signature | [proto-sub-signature-reports-generic-placeholder.md](../todo/tickets/proto-sub-signature-reports-generic-placeholder.md) |
+
+**Excluded from this batch-5 sub-run:**
+- `Language/ipc.rakudoc` [1] (`run 'git', 'status';`) — the `git status` text itself is
+  environment-dependent (repo state), but the underlying reproducible defect (mutsu prints
+  no output at all, regardless of repo state) is the real finding, ticketed above as
+  `run-shell-discard-stdout-stderr-by-default.md`.
+- `Language/numerics.rakudoc` [2], [3], [4] (lines 595, 609, 751) — `raku-drift-from-doc`
+  (native-int wraparound, `uint8` array coercion, and atomic-increment counts in the doc's
+  `# OUTPUT` no longer match current `raku`'s own output).
+- `Language/contexts.rakudoc` [2] (line 130, `[~] [3, 5+6i, Set(<a b c>), ...]`) —
+  `raku-drift-from-doc` (the `Set`'s `.keys` iteration order in the reduced string differs
+  from the doc's `# OUTPUT`, and also varies run-to-run in real `raku` itself — the same
+  Set/Bag/hash iteration-order nondeterminism documented as a known harness false positive
+  above).
+- `Language/contexts.rakudoc` [1] (line 45, `return [<a b c>] does role { method sink {...} }`)
+  — see the ticket-column note above: this is the same `.sink`-in-sink-context gap already
+  filed as `role-mixed-sink-method-not-invoked-in-sink-context.md`, specifically its
+  documented "function-call return" residue (the `SinkPop` VM op's own code comment already
+  says a normal sub's fresh-instance return is conservatively not auto-sunk, pending
+  first-class container identity) — not re-filed as a separate ticket.
+- `Type/Sequence.rakudoc` [1] (line 69, `$s.eager` twice on a `lazy 1..5` — should throw
+  `X::Seq::Consumed` on the second call) — matches the already-**Deferred** Lazy-list
+  cluster's container-repr/reification-consumption residue.
+- `Type/Bag.rakudoc` [1] (line 53, `.keys.raku`/`.values.raku` element order) — Bag/hash
+  iteration-order `raku-drift`/nondeterminism, the documented known harness false positive.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
