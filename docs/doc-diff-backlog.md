@@ -586,6 +586,48 @@ Found in the 2026-08-22 batch-4 re-run of `operators`/`MixHash`/`Phaser::PrePost
   args, i.e. internal plumbing, not user-visible language behavior) added to the current Rakudo
   build after this doc was written — treated as raku-implementation-drift, not a mutsu bug.
 
+Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash`/`pod`/
+`containers`/`hashmap`/`Setty`/`Block`/`io-guide`/`Proxy`/`CompUnit::Repository::FileSystem`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Metamodel/Mixins.rakudoc:18,63` | `my Type:D $var .= new: ...;` fails — the `.=` implicit invocant keeps the `:D` definedness smiley baked into the type-name bareword | [dot-assign-target-keeps-definedness-smiley.md](../todo/tickets/dot-assign-target-keeps-definedness-smiley.md) |
+| `Type/Metamodel/Mixins.rakudoc:112` | `but`-mixing a role onto a class instance: `.^name` correctly shows `Foo+{Bar}`, but the default `.gist`/`say` output still shows plain `Foo.new` | [but-mixin-object-gist-missing-plus-suffix.md](../todo/tickets/but-mixin-object-gist-missing-plus-suffix.md) |
+| `Type/BagHash.rakudoc:112` | `.add`/`.remove` methods are unimplemented on `BagHash` (subscript-based mutation already works) | [baghash-add-remove-methods-missing.md](../todo/tickets/baghash-add-remove-methods-missing.md) |
+| `Language/pod.rakudoc:908` | `$=pod` items are plain `List`s wrapping a generic `Pod::Block::Named`, not the flattened `Pod::Heading`/`Pod::Block::Para` objects raku produces; `.contents` fails | [dollar-equals-pod-item-not-iterable-block-object.md](../todo/tickets/dollar-equals-pod-item-not-iterable-block-object.md) |
+| `Language/containers.rakudoc:137`, `Language/hashmap.rakudoc:504` | assigning to a readonly *binding* (a `:=`-bound literal, a `for`-loop var over readonly hash values) throws `X::Assignment::RO` where raku throws the generic `X::AdHoc` | [readonly-variable-assign-uses-ro-instead-of-adhoc.md](../todo/tickets/readonly-variable-assign-uses-ro-instead-of-adhoc.md) |
+| `Type/Block.rakudoc:17` | `.signature` of a bare `{;}` block (implicit `$_` parameter) gists as the garbled `($$_?)` instead of `(;; $_? is raw = OUTER::<$_>)` | [implicit-topic-block-signature-gist-wrong.md](../todo/tickets/implicit-topic-block-signature-gist-wrong.md) |
+| `Type/Proxy.rakudoc:17` | `my $x := sub-call-returning-Proxy();` loses the Proxy's writability (binding directly to a `Proxy.new(...)` literal, or plain assignment, both work) | [bind-proxy-from-sub-return-value-loses-writability.md](../todo/tickets/bind-proxy-from-sub-return-value-loses-writability.md) |
+| `Type/CompUnit/Repository/FileSystem.rakudoc:45` | `.files(name, :ver)` introspection method is unimplemented | [compunit-repository-filesystem-files-method-missing.md](../todo/tickets/compunit-repository-filesystem-files-method-missing.md) |
+
+**Excluded from this batch-5 sub-run (already deferred/resolved/drift/false-positive/duplicate):**
+- `Type/SetHash.rakudoc` [1], [2] (lines 88, 99, `.keys`/`.values` order after `.new`/`.SetHash`
+  coercion) — hash/SetHash iteration-order nondeterminism, the "Known harness false positive"
+  documented above the Ticketed section.
+- `Type/BagHash.rakudoc` [1], [2] (as bucketed: line 66 `output-mismatch`, lines 58/78/129
+  `raku-drift`) — the same hash/BagHash iteration-order nondeterminism; verified directly that 3
+  repeated `raku` runs of the identical `new-from-pairs` example gave `("b","c")` twice and
+  `("c","b")` once.
+- `Language/pod.rakudoc` [1] (line 170, `Magician.WHY`/`&duel.WHY.leading`/`.trailing`) —
+  duplicates the already-filed
+  [pod-why-declarator-object-not-stringified.md](../todo/tickets/pod-why-declarator-object-not-stringified.md)
+  (same root cause: `Pod::Block::Declarator`'s `.Str`/`.gist` isn't implemented, so both the
+  bare-stringify and the `.leading`/`.trailing` accessor symptoms trace to the same gap).
+- `Language/containers.rakudoc` [1], [3], [4], [5] — `raku-drift` (exception-message wording
+  drift, object-address/generated-variable-name text, and big-Int-seed-dependent `.raku` gist,
+  all version/environment-specific).
+- `Language/hashmap.rakudoc` [1] (line 444, `.kv` iteration order) — hash iteration-order
+  nondeterminism, the same known false positive.
+- `Type/Setty.rakudoc` [1] (line 112, `Set.new(1,2,3).keys`) — Set iteration-order
+  nondeterminism, the same known false positive.
+- `Language/io-guide.rakudoc` [1] (line 281, `temp $*OUT = open :w, $*SPEC.devnull;` not
+  redirecting `say`) — re-verified directly: `open :w, PATH` (named adverb before the
+  positional path) itself fails and returns a `Failure` in mutsu, which then gets assigned to
+  `$*OUT`, so `say` silently keeps writing to the original stdout — this is a downstream
+  consequence of the already-filed
+  [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md),
+  not a separate bug; not re-filed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
