@@ -281,7 +281,12 @@ impl Interpreter {
                 let escaped = s.replace('\\', "\\\\").replace('\'', "\\'");
                 Some(format!("'{escaped}'"))
             }
-            _ => None,
+            // Bound token parameters are evaluated before the token's code
+            // blocks run.  Reparse their ordinary Raku representation in the
+            // caller-side block so composite arguments (notably Pair/Hash and
+            // angle-word lists) retain their value instead of becoming an
+            // unresolved lexical.
+            _ => Some(crate::builtins::methods_0arg::raku_repr::raku_value(value)),
         }
     }
 
