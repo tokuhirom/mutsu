@@ -369,7 +369,10 @@ pub(crate) fn parse_block_body_routine(input: &str) -> PResult<'_, Vec<crate::as
     result
 }
 
-pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+fn parse_block_body_with_line_tracking(
+    input: &str,
+    emit_setline: bool,
+) -> PResult<'_, Vec<crate::ast::Stmt>> {
     let (r, _) = parse_char(input, '{')?;
     // Reject {YOU_ARE_HERE} outside of a setting (X::Syntax::Reserved)
     {
@@ -397,7 +400,11 @@ pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>
     }
     crate::parser::stmt::simple::push_scope();
     let result = (|| -> PResult<'_, Vec<crate::ast::Stmt>> {
-        let (r, mut stmts) = crate::parser::stmt::stmt_list_pub(r)?;
+        let (r, mut stmts) = if emit_setline {
+            crate::parser::stmt::stmt_list_with_lines_pub(r)?
+        } else {
+            crate::parser::stmt::stmt_list_pub(r)?
+        };
         let (r, _) = ws_inner(r);
         let (r, _) = parse_char(r, '}')?;
         crate::parser::stmt::simple::prepend_anon_state_decls(&mut stmts);
@@ -405,6 +412,19 @@ pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>
     })();
     crate::parser::stmt::simple::pop_scope();
     result
+}
+
+pub(crate) fn parse_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    parse_block_body_with_line_tracking(input, false)
+}
+
+/// Parse a block body with a source-line marker for each contained statement.
+///
+/// Most expression blocks inherit their enclosing statement's source line, but
+/// `try` captures exceptions raised by its body and must preserve the precise
+/// raise site in the resulting backtrace.
+pub(crate) fn parse_tracked_block_body(input: &str) -> PResult<'_, Vec<crate::ast::Stmt>> {
+    parse_block_body_with_line_tracking(input, true)
 }
 
 /// Whether any parameter -- including one nested in a destructuring sub-signature --

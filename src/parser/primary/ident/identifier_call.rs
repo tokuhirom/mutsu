@@ -25,6 +25,7 @@ use crate::parser::primary::ident::predicates::{
 use crate::parser::primary::ident::supply::supply_method_call;
 use crate::parser::primary::misc::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, parse_block_body, parse_block_body_routine,
+    parse_tracked_block_body,
 };
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
@@ -463,7 +464,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         "try" => {
             let (r, _) = ws(rest)?;
             if r.starts_with('{') {
-                let (r, body) = parse_block_body(r)?;
+                let (r, body) = parse_tracked_block_body(r)?;
                 return Ok((r, Expr::Try { body, catch: None }));
             }
             // try STMT — wrap the following statement in try.
