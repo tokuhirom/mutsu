@@ -127,7 +127,10 @@ Pinned by the seven new assertions in `t/bare-array-type-match.t`.
   `int`); `$a[0] = 7` on a native array dies with "expected array[uint8] but got
   Int" (the element check compares against the container's declared type, not
   its element type); `(Int:_).^name` keeps the `:_` where raku normalizes it
-  away; and a smiley type object has no `.ACCEPTS` method.
+  away; and a smiley type object has no `.ACCEPTS` method. All four are now
+  tracked as open findings in
+  [`todo/tickets/native-type-smiley-and-element-check-gaps.md`](../../todo/tickets/native-type-smiley-and-element-check-gaps.md)
+  with repros, rather than only as this paragraph.
 
 ## Relationship to `nativecall-cannot-be-vendored.md`
 
