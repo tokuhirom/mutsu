@@ -336,6 +336,16 @@ impl Interpreter {
                     return Ok(Value::package(Symbol::intern(of_type)));
                 }
             }
+            // `%`/`@` variables route their method calls through this mutable
+            // dispatch path. A statically composed container role keeps its
+            // type parameter on the class, not in the backing Hash/Array, so
+            // consult that metadata before the generic variable constraint.
+            if let ValueView::Instance { class_name, .. } = target.view()
+                && let Some(value_type) =
+                    self.composed_container_role_value_type(&class_name.resolve())
+            {
+                return Ok(Value::package(Symbol::intern(&value_type)));
+            }
             // Embedded metadata first: it travels with the value, so it stays
             // correct when a recursive call clobbers the name-keyed constraint
             // store (`my @ret := Array[T].new` re-bound in an inner frame).
