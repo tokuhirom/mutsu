@@ -437,11 +437,9 @@ impl Interpreter {
         let cond_start = *ip + 1;
         let body_start = spec.cond_end as usize;
         let loop_end = spec.body_end as usize;
-        let stack_base = if spec.collect {
-            Some(self.stack.len())
-        } else {
-            None
-        };
+        // ADR-0052 Slice 1: own a stack base and truncate to it at the end of
+        // every iteration, collecting or not (see `vm_for_loop_body.rs`).
+        let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
         // When resuming a gather coroutine that suspended inside this loop, the
@@ -520,13 +518,12 @@ impl Interpreter {
                                 self.env_mut().remove("_");
                             }
                         }
-                        if let Some(ref mut coll) = collected {
-                            let base = stack_base.unwrap();
-                            if self.stack.len() > base {
-                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
-                            }
-                            self.stack.truncate(base);
+                        if let Some(ref mut coll) = collected
+                            && self.stack.len() > stack_base
+                        {
+                            Self::collect_loop_value(coll, self.stack.pop().unwrap());
                         }
+                        self.stack.truncate(stack_base);
                         // Process pending DESTROY submethods at loop iteration boundaries,
                         // mimicking GC-like behavior so DESTROY fires during execution.
                         if let Err(e) = loan_env!(self, run_pending_instance_destroys()) {
@@ -536,6 +533,9 @@ impl Interpreter {
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        // A matched `when` abandons the body mid-range; drop what
+                        // it had pushed (ADR-0052 Slice 1).
+                        self.stack.truncate(stack_base);
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
@@ -546,6 +546,7 @@ impl Interpreter {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);
@@ -561,6 +562,7 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -571,9 +573,11 @@ impl Interpreter {
                         break 'while_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'while_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if let Some(saved_topic) = &topic_before_body {
                             if let Some(v) = saved_topic.clone() {
                                 self.env_mut().insert("_".to_string(), v);

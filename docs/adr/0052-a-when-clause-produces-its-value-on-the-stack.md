@@ -1,6 +1,6 @@
 # ADR-0052: A `when`/`default` clause produces its value on the stack, in both branches — retiring the succeed-signal and side-channel value paths
 
-- Status: Proposed (design complete; implementation not started)
+- Status: Accepted (Slice 1 implemented; Slices 2-4 open — see §7)
 - Date: 2026-08-20
 - Origin: `todo/deep/when-nonmatch-value-outside-map-grep.md` (re-verified
   reproducing on `main` @ `4c58b5f59`, 2026-08-20). The investigation for this
@@ -275,7 +275,7 @@ pins — `when-only-block-nonmatch-value.t`, `when-block-value-not-sunk.t`,
 `when-in-deferred-callback-created-inside-sub.t`, `junction-thread-when.t`,
 `comp-group-when-gobbled.t`, `rakuast-given-when.t` — plus full CI.
 
-### Slice 1 — stack-base discipline for the constructs that run a body
+### Slice 1 — stack-base discipline for the constructs that run a body — **DONE**
 
 - Every `is_succeed()` handler establishes a `stack_base` before running its
   range and truncates to it, mirroring `exec_given_op:224-232` / `:243-249`.
@@ -340,3 +340,60 @@ pins — `when-only-block-nonmatch-value.t`, `when-block-value-not-sunk.t`,
 - ADR-0049's `Nil`-to-container-default decay, which is what turns the
   §1.1(a) `do`-block probe's `Nil` into `Any`. Independent, and already
   designed.
+
+## 7. Implementation status
+
+### Slice 1 — shipped (2026-08-23)
+
+The §1.1(c) single-site defect landed ahead of the ADR as its own ticket
+(`bef233807`, `exec_do_given_expr_op`'s missing `truncate`, pinned by
+`t/given-expr-succeed-no-double-push.t`); Slice 1 then generalized it:
+
+- **Loops own an unconditional stack base.** `stack_base` in
+  `vm_for_loop_body.rs`, `vm_loop_cstyle_repeat.rs` (both the C-style and the
+  `repeat` loop), `vm_control_ops.rs`'s `while`, and both
+  `vm_for_loop_lazy.rs` variants stopped being `Option<usize>` gated on
+  `spec.collect` and became a plain `self.stack.len()` taken at loop entry;
+  every iteration-ending arm (`Ok`, `is_succeed`, `is_redo`, `is_next`,
+  `is_last`, `leave`) truncates to it, and the C-style loop also truncates
+  after its step range. `vm_for_loop_intrange.rs` — the sink-only int-range
+  fast path §1.2 named as establishing *no* base at all — gained one.
+  `leave`'s own pushed value is still pushed, after the truncation.
+- **The audit of the remaining `is_succeed()` consumers** (`grep -rn
+  'is_succeed()' src/`) found the rest already correct:
+  `exec_given_op`, `exec_do_block_expr_op`, `exec_succeed_barrier_op`,
+  `exec_block_local_branch`, the closure-call boundary
+  (`vm_closure_dispatch.rs`) and the CATCH handler each establish a base and
+  truncate; the `map`/`grep`/`first` fast paths run their bodies through
+  `run_reuse`, which clears the stack on entry; `vm_react_loop.rs` and
+  `methods_dispatch_match.rs`'s `THREAD` are call boundaries with no statement
+  range of their own; and `exec_when_op` / `exec_default_op` keeping the
+  body's value on the stack is the Slice 3 subject, not a leak.
+- **One further defect of the same shape was found and fixed**: the
+  CONTROL-handled branch of `exec_try_catch_op_inner` ran the handler's
+  statement range without returning to `saved_depth` afterwards, so a matching
+  `when` inside a CONTROL block left the handler body's value behind and it
+  became the enclosing block's value —
+  `my $x = do { last; CONTROL { when CX::Last { 7 } } }` was `7`, where raku
+  yields an undefined value. It now mirrors the normalization its `is_return`
+  sibling and the CATCH handler already performed (truncate, push `Nil`).
+
+Pin: `t/when-succeed-stack-base-discipline.t` (the ADR-named `given`-expression
+probes, one per loop flavour in both sink and collecting position, and the two
+CONTROL cases; 5 of its 16 assertions fail against the pre-change binary).
+Note for whoever writes the Slice 3 pins: a *sink*-position loop body with a
+top-level `when` is wrapped in a `SucceedBarrier`, which absorbs the signal
+before the loop op ever sees it, so the loop's own `is_succeed` arm is only
+reachable from the **collecting** form (`compile_stmts_value` emits no
+barrier) — and only a match on the *last* iteration leaves observable residue,
+since a following iteration's `Ok` arm truncated it away.
+
+Known still-wrong, and deliberately left to Slice 3: a *collecting* loop drops
+a matching iteration's value, because the succeed handlers still ignore it —
+`do for 1..3 { when 2 { "hit" }; "plain" }` has 3 elements in raku and 2 in
+mutsu. Slice 1 changes neither the count nor the values here; it only makes the
+abandoned iteration's stack residue go away.
+
+### Slices 2-4 — open
+
+Unchanged from §5.

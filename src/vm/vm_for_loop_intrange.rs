@@ -35,6 +35,12 @@ impl Interpreter {
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let was_topic_readonly = self.is_readonly("_");
+        // ADR-0052 Slice 1: this fast path only ever runs in sink position
+        // (`!spec.collect`, see `vm_for_loop_dispatch.rs`), so it used to
+        // establish no stack base at all and an iteration that abandoned its
+        // body mid-range leaked whatever it had pushed. Own a base and return
+        // to it at the end of every iteration.
+        let stack_base = self.stack.len();
 
         // Save the single named loop param (`for ... -> $x`) prior binding so it
         // does not leak past the loop into the enclosing scope. Without this, a
@@ -194,12 +200,15 @@ impl Interpreter {
                             &param_name,
                             (i - start) as usize,
                         );
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if param_name.is_none() {
                             self.set_loop_topic(topic_local, item.clone());
                         }
@@ -217,6 +226,7 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             self.set_loop_topic(topic_local, v.clone());
                             self.stack.push(v);
@@ -224,9 +234,11 @@ impl Interpreter {
                         break 'for_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e)

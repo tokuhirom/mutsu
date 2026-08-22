@@ -75,11 +75,9 @@ impl Interpreter {
         // whatever consumed the loop's result saw only the top one
         // (t/do-for-lazy-gather-collect.t; the historical symptom was "the
         // first iteration's value is dropped").
-        let stack_base = if spec.collect {
-            Some(self.stack.len())
-        } else {
-            None
-        };
+        // ADR-0052 Slice 1: the base is owned unconditionally and every
+        // iteration truncates back to it, collecting or not.
+        let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let mut idx: usize = start_idx;
         // Nested-resume entry: when the slot holds a state for a loop nested
@@ -143,20 +141,21 @@ impl Interpreter {
                 }
                 match body_res {
                     Ok(()) => {
-                        if let Some(ref mut coll) = collected {
-                            let base = stack_base.unwrap();
-                            if self.stack.len() > base {
-                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
-                            }
-                            // Drain any extra values pushed during this iteration.
-                            self.stack.truncate(base);
+                        if let Some(ref mut coll) = collected
+                            && self.stack.len() > stack_base
+                        {
+                            Self::collect_loop_value(coll, self.stack.pop().unwrap());
                         }
+                        // Drain any extra values pushed during this iteration.
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if param_name.is_none() {
                             self.set_loop_topic(topic_local, item.clone());
                         }
@@ -176,6 +175,7 @@ impl Interpreter {
                     {
                         // `LABEL.leave($v)`: the leave value joins the
                         // collection (mirrors the eager path).
+                        self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -187,9 +187,11 @@ impl Interpreter {
                         break 'for_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e)
@@ -314,11 +316,8 @@ impl Interpreter {
         let topic_local = saved_topic_local.as_ref().map(|(s, _)| *s);
         let saved_topic_source = self.topic_source_var.take();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
-        let stack_base = if spec.collect {
-            Some(self.stack.len())
-        } else {
-            None
-        };
+        // ADR-0052 Slice 1: unconditional base, truncated after every iteration.
+        let stack_base = self.stack.len();
 
         let mut line_index: i64 = 0;
 
@@ -397,20 +396,21 @@ impl Interpreter {
                 }
                 match body_res {
                     Ok(()) => {
-                        if let Some(ref mut coll) = collected {
-                            let base = stack_base.unwrap();
-                            if self.stack.len() > base {
-                                let val = self.stack.pop().unwrap();
-                                Self::collect_loop_value(coll, val);
-                            }
-                            self.stack.truncate(base);
+                        if let Some(ref mut coll) = collected
+                            && self.stack.len() > stack_base
+                        {
+                            let val = self.stack.pop().unwrap();
+                            Self::collect_loop_value(coll, val);
                         }
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if param_name.is_none() {
                             self.set_loop_topic(topic_local, item.clone());
                         }
@@ -423,9 +423,11 @@ impl Interpreter {
                         continue 'body_redo;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) => {
