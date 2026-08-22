@@ -376,6 +376,7 @@ impl Interpreter {
                 | "Failure"
                 | "Exception"
                 | "Order"
+                | "Unicode"
                 | "Uni"
                 | "NFC"
                 | "NFD"
