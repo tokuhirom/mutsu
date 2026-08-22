@@ -96,6 +96,71 @@ step 6:** converting `(1...*)`/closure-seq arrays at `@`-assign (gated on
 S32-array/create.t partial-reify surviving). Original plan kept below for
 reference.
 
+## L2c — bounded reify on element mutation (DONE 2026-08-22)
+
+**Problem.** `reify_lazy_array_slot` (the front-mutation reify chokepoint used
+by `@a[i] = v` and `@a[i]:delete`) unconditionally reified a fixed
+`MAX_ARRAY_EXPAND = 100_000`-element prefix and **collapsed the result to a
+plain `real_array`**, permanently dropping laziness — `@a.elems` stopped
+throwing `X::Cannot::Lazy` after any single-element mutation, and a geometric
+sequence (`1, 2, 4 ... Inf`, every element a bignum) paid ~666 MB / 1.2 s for a
+three-element write. raku reifies only up to the touched index and the array
+stays genuinely lazy afterward (`@a.is-lazy` stays `True`, `@a.elems` keeps
+throwing, `@a[10]` still reifies from the live source). See
+`todo/deep/lazy-array-element-assign-reifies-100k.md` (now closed) for the
+full before/after measurements.
+
+**Fix, in three parts:**
+
+1. **Bounded reify.** `reify_lazy_array_slot` now takes an optional
+   `touched_index`: both call sites (`vm_var_assign_element.rs`,
+   `vm_var_delete_ops.rs`) peek the (not-yet-popped) subscript off the VM
+   stack, and when it is a plain non-negative `Int` — the common
+   `@a[i] = v` / `@a[i]:delete` shape — pass `Some(i)` so the reify pulls
+   exactly `i + 1` elements instead of the historical 100k cap. A subscript
+   this peek can't cheaply resolve (a slice assign, a `WhateverCode` delete
+   index, ...) falls back to the 100k cap, unchanged from before this slice.
+2. **Stay lazy across the mutation.** The reified prefix is still installed as
+   a temporary `real_array` so the existing (LazyList-unaware) element-assign/
+   delete machinery — typed-array holes, shape metadata, `ContainerRef`
+   rewrap, and friends — runs completely unchanged. `restore_lazy_array_slot`
+   then rebuilds a `LazyList` around the mutated prefix and the ORIGINAL
+   `LazyList`'s `Gc` handle (the SAME live sequence spec / closure-seq state /
+   gather coroutine / ...), and writes it back into env — and into the
+   caller's local slot too, via `locals_set_by_name`; skipping the slot left
+   it holding the stale temporary Array, and a later per-statement
+   `locals`→`env` reconcile would silently clobber the restored `LazyList`
+   with it the next time the array was touched (e.g. by `.is-lazy`/`.gist`).
+   Only the mutated prefix is overwritten in the underlying `cache`; any
+   longer tail already pulled by an earlier out-of-range read (or an earlier
+   override further out) survives untouched. A trailing `:delete` hole is
+   also protected from `trim_trailing_array_holes`' usual shrink-on-trailing-
+   hole behavior (which is correct for a genuinely finite array, but wrong
+   here — the live tail continues past the hole, so the array must not
+   shrink).
+3. **Keep self-referential generation uncorrupted.** `SequenceSpec`
+   (arithmetic/geometric `...`) and closure-seq (`1, 1, * + * ... *`)
+   extension both compute their next element(s) from their own *prior*
+   elements. If extension read straight from `cache` after step 2 wrote a
+   user override into it, that override would corrupt every later term
+   (`@a[2] = 99` on `1,2,4...Inf` would make `@a[3]` compute from `99`
+   instead of the true `4`, giving `198` instead of raku's `8`). `LazyList`
+   therefore gained a second field, `generation_state`, mirroring `cache`'s
+   *length* at every extension step but holding the sequence's TRUE trailing
+   history, immune to any override. `extend_sequence_cache` and
+   `extend_closure_sequence` (`vm/vm_helpers_junction.rs`) now read/extend
+   `generation_state` to decide what comes next, then append only the
+   newly-generated tail to `cache` — never touching a position `cache`
+   already had, so an override there survives. Every other `LazyList` kind
+   (gather coroutine, map/grep pipe, cat-pull, WALK-pending, scan) already
+   keeps its own generator state independent of `cache` and needed no change.
+
+`t/lazy-array-assign-preserve.t` pins the observable behavior: `.is-lazy`
+stays `True` after both `@a[i] = v` and `@a[i]:delete`, `.elems` still throws
+`X::Cannot::Lazy`, a later out-of-range read still reifies further from the
+live source, and a `:delete`d slot renders as an `Any` hole without shrinking
+the array.
+
 ### Original plan (executed above)
 
 **Goal:** seed `infinite_int_range_to_lazy_array` with `[start]` instead of the

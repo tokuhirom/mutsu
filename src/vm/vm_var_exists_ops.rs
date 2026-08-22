@@ -699,6 +699,11 @@ impl Interpreter {
         // A lazy `@`-array (infinite source) is conceptually unbounded: any
         // non-negative index exists, without forcing the list (raku). Only the
         // plain `:exists` form (no :kv/:p adverbs) is special-cased here. (L2)
+        // A prior `@a[i]:delete` on this same array (L2c, bounded reify) keeps
+        // the array lazy afterward instead of collapsing it to a plain Array,
+        // so an index the general (non-lazy) path below would have marked
+        // deleted must still report `False` here rather than the blanket
+        // "any non-negative index exists" answer.
         if let ValueView::LazyList(ll) = target.view()
             && ll.in_array_context()
             && ll.is_genuinely_lazy()
@@ -707,7 +712,12 @@ impl Interpreter {
         {
             let vals: Vec<Value> = indices
                 .iter()
-                .map(|&i| Value::truth((i >= 0) ^ effective_negated))
+                .map(|&i| {
+                    let deleted = array_var_name
+                        .as_deref()
+                        .is_some_and(|n| self.is_deleted_index(n, i));
+                    Value::truth((i >= 0 && !deleted) ^ effective_negated)
+                })
                 .collect();
             self.stack.push(if vals.len() == 1 {
                 vals.into_iter().next().unwrap()

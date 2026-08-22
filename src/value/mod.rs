@@ -1948,6 +1948,23 @@ pub(crate) struct LazyList {
     pub(crate) body: Vec<Stmt>,
     pub(crate) env: Env,
     pub(crate) cache: Mutex<Option<Vec<Value>>>,
+    /// The sequence generator's OWN trailing history, kept separate from
+    /// `cache`. `cache` is the user-visible prefix and may hold an element
+    /// an `@`-array mutation (`@a[i] = v`, `@a[i]:delete`) overwrote in
+    /// place (`Interpreter::restore_lazy_array_slot`); `generation_state`
+    /// always holds the TRUE values the generator itself produced, so a
+    /// self-referential extension (`SequenceSpec::{Arithmetic,GeometricRat,
+    /// ..}` computing the next term from the previous one, or a closure-seq
+    /// generator reading its own trailing history) keeps computing from the
+    /// real prior elements instead of a value the user wrote over a display
+    /// slot (raku: `my @a = 1,2,4...Inf; @a[2]=99; @a[3]` is still `8`, not
+    /// derived from `99`). Grows in lockstep with `cache` (same length at
+    /// every extension step); only `cache` receives an override. `None` for
+    /// every LazyList kind that does not derive its next elements from its
+    /// own prior elements (gather coroutine, map/grep pipe, cat-pull,
+    /// WALK-pending, scan -- those already keep their generator state in
+    /// their own dedicated spec, untouched by a cache override).
+    pub(crate) generation_state: Mutex<Option<Vec<Value>>>,
     /// Pre-compiled bytecode for the gather body (used by VM-native forcing).
     pub(crate) compiled_code: Option<Arc<CompiledCode>>,
     /// Compiled functions associated with the compiled code.

@@ -17,6 +17,7 @@ impl Clone for LazyList {
             body: self.body.clone(),
             env: self.env.clone(),
             cache: Mutex::new(self.cache.lock().unwrap().clone()),
+            generation_state: Mutex::new(self.generation_state.lock().unwrap().clone()),
             compiled_code: self.compiled_code.clone(),
             compiled_fns: self.compiled_fns.clone(),
             elems_count: self.elems_count.clone(),

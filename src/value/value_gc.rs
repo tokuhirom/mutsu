@@ -276,6 +276,13 @@ impl Trace for LazyList {
                 v.gc_trace(visit);
             }
         }
+        if let Ok(gen_state) = self.generation_state.lock()
+            && let Some(items) = gen_state.as_ref()
+        {
+            for v in items {
+                v.gc_trace(visit);
+            }
+        }
         if let Some(n) = &self.elems_count {
             n.gc_trace(visit);
         }
@@ -289,6 +296,9 @@ impl Trace for LazyList {
         }
         if let Ok(mut cache) = self.cache.lock() {
             *cache = None;
+        }
+        if let Ok(mut gen_state) = self.generation_state.lock() {
+            *gen_state = None;
         }
         self.elems_count = None;
     }

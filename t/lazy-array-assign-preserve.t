@@ -5,7 +5,7 @@ use Test;
 # `@` array survives as a reify-on-demand lazy array, matching raku.
 # Found by the doc-diff sweep (Language/list.rakudoc [7], [1]).
 
-plan 12;
+plan 17;
 
 # Infinite sequence assigned directly.
 {
@@ -35,11 +35,24 @@ plan 12;
     is @lazy-array[3], 1331, 'elements still reify';
 }
 
-# Mutation semantics: partial reify and X::Cannot::Lazy.
+# Mutation semantics: bounded partial reify, and the array genuinely stays
+# lazy afterward (raku reifies only up to the touched index -- it does NOT
+# collapse the rest of an infinite source to a finite Array).
 {
     my @a = 1, 2, 4 ... Inf;
     @a[2] = 99;
+    ok @a.is-lazy, 'element assign does not collapse the array to a finite one';
     is-deeply @a[^4], (1, 2, 99, 8), 'element assign reifies a prefix, tail stays live';
+    is @a[10], 1024, 'a later out-of-range read still reifies further from the live source';
+    throws-like { @a.elems }, X::Cannot::Lazy,
+        '.elems still throws after mutation -- the tail is genuinely still lazy';
+}
+{
+    my @a = 1, 2, 4 ... Inf;
+    @a[2]:delete;
+    ok @a.is-lazy, ':delete does not collapse the array to a finite one';
+    is-deeply @a[^4], (1, 2, Any, 8),
+        ':delete leaves a hole at the touched index, tail stays live';
 }
 {
     my @a = 1, 2, 4 ... Inf;

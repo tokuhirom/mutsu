@@ -555,6 +555,7 @@ fn lazy_list_roundtrips_by_identity() {
         body: vec![],
         env: Env::new(),
         cache: Mutex::new(Some(vec![Value::int(1)])),
+        generation_state: Mutex::new(None),
         compiled_code: None,
         compiled_fns: None,
         elems_count: None,

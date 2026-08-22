@@ -1152,6 +1152,7 @@ pub(super) fn dispatch(target: &Value, method: &str) -> Option<Result<Value, Run
                     body: Vec::new(),
                     env: crate::env::Env::new(),
                     cache: std::sync::Mutex::new(None),
+                    generation_state: std::sync::Mutex::new(None),
                     compiled_code: None,
                     compiled_fns: None,
                     elems_count: Some(Value::bigint_arc(factorial)),

@@ -516,6 +516,16 @@ impl Interpreter {
         result
     }
 
+    /// Thin wrapper around [`Self::exec_index_assign_expr_named_op_seeded_inner`]:
+    /// a lazy `@`-array must reify a prefix before an element assignment
+    /// (`@a[i] = v`) — the assign machinery below needs a materialized
+    /// backing Array to write into. Peeking the (not-yet-popped) index off
+    /// the stack lets the reify bound itself to exactly the touched element
+    /// for the common simple-Int-subscript shape, instead of an unconditional
+    /// capped prefix; `restore_lazy_array_slot` afterwards rebuilds a
+    /// still-lazy value around the mutated prefix and the SAME live source,
+    /// so the array does not lose its infinite tail (L2, bounded reify
+    /// follow-up — see docs/lazy-arrays.md).
     fn exec_index_assign_expr_named_op_seeded(
         &mut self,
         code: &CompiledCode,
@@ -523,9 +533,31 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
-        // A lazy `@`-array must reify its prefix before an element assignment
-        // (`@a[i] = v`) — the assign machinery needs a materialized backing. (L2)
-        self.reify_lazy_array_slot(Self::const_str(code, name_idx))?;
+        let var_name = Self::const_str(code, name_idx).to_string();
+        let touched_index = self.stack.last().and_then(|idx| match idx.view() {
+            ValueView::Int(n) if n >= 0 => Some(n),
+            _ => None,
+        });
+        let lazy_source = self.reify_lazy_array_slot(&var_name, touched_index)?;
+        let result = self.exec_index_assign_expr_named_op_seeded_inner(
+            code,
+            name_idx,
+            is_positional,
+            target_slot,
+        );
+        if let Some(ll) = lazy_source {
+            self.restore_lazy_array_slot(code, &var_name, ll);
+        }
+        result
+    }
+
+    fn exec_index_assign_expr_named_op_seeded_inner(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        is_positional: bool,
+        target_slot: Option<u32>,
+    ) -> Result<(), RuntimeError> {
         // ADR-0040 slice 1: itemize the rvalue BEFORE any of the fast/slow
         // dispatch paths below run, so every element-assign destination (the
         // shared-var fast paths, the plain-hash fast path, and the full slow

@@ -617,6 +617,7 @@ impl Interpreter {
             body: Vec::new(),
             env,
             cache: std::sync::Mutex::new(None),
+            generation_state: std::sync::Mutex::new(None),
             compiled_code: None,
             compiled_fns: None,
             elems_count: None,
