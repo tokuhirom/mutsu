@@ -3,12 +3,46 @@ use crate::parser::parse_result::{PError, PResult};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
+/// Position of the smiley colon in a type constraint, if it has one.
+///
+/// Only a colon at bracket depth zero introduces the *type's own* smiley: in
+/// `Array[Str:D]` the colon belongs to the parameterisation's inner type, and
+/// the outer type has no smiley at all. Scanning with a plain `rfind(':')`
+/// mistook that inner one for the outer smiley and rejected `my Array[Str:D]
+/// @k` — a legal declaration used throughout `Config::TOML`.
+///
+/// `::` is a package separator, not a smiley.
+fn smiley_colon_pos(tc: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut found = None;
+    let mut prev_colon = false;
+    for (i, c) in tc.char_indices() {
+        match c {
+            '[' | '(' | '{' => depth += 1,
+            ']' | ')' | '}' => depth = (depth - 1).max(0),
+            ':' if depth == 0 => {
+                if prev_colon {
+                    // Second colon of `::` — and it also cancels the first,
+                    // which was recorded on the previous iteration.
+                    found = None;
+                } else {
+                    found = Some(i);
+                }
+                prev_colon = !prev_colon;
+                continue;
+            }
+            _ => {}
+        }
+        prev_colon = false;
+    }
+    found
+}
+
 /// Check for invalid type smileys (e.g. Int:foo) in a type constraint string.
 /// Valid smileys are :D, :U, and :_. Anything else raises X::InvalidTypeSmiley.
 pub(crate) fn check_invalid_type_smiley(type_constraint: &Option<String>) -> Result<(), PError> {
     if let Some(tc) = type_constraint
-        && let Some(colon_pos) = tc.rfind(':')
-        && (colon_pos == 0 || tc.as_bytes()[colon_pos - 1] != b':')
+        && let Some(colon_pos) = smiley_colon_pos(tc)
     {
         let after_colon = &tc[colon_pos + 1..];
         // Extract the smiley portion: only alphanumeric and underscore/hyphen chars

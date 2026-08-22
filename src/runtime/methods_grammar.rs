@@ -1034,6 +1034,55 @@ impl Interpreter {
         })
     }
 
+    /// The class an actions object dispatches its methods on, if it names one.
+    /// A stateless `:actions(Actions)` is often passed as the bare type object,
+    /// so a `Package` counts just as much as an `Instance`.
+    fn actions_class_name_of(actions: &Value) -> Option<String> {
+        match actions.view() {
+            ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
+            ValueView::Package(name) => Some(name.to_string()),
+            _ => None,
+        }
+    }
+
+    /// The action-method name the winning proto-regex variant dispatches to.
+    ///
+    /// The winning-variant marker records only the adverb's *value* (`num`),
+    /// which two different declaration spellings share:
+    ///
+    /// | declaration | action method |
+    /// | --- | --- |
+    /// | `token pair:sym<num>` | `method pair:sym<num>` |
+    /// | `token pair:num` (bare adverb) | `method pair:num` |
+    ///
+    /// So the name is recovered by asking the actions class which of the two it
+    /// actually declares, preferring the `:sym<...>` spelling (by far the more
+    /// common one, and the only one that binds a `<sym>` literal). With no
+    /// actions class to ask, the `:sym<...>` spelling is assumed.
+    fn variant_action_method_name(
+        &mut self,
+        actions_class: Option<&str>,
+        rule_name: &str,
+        sym_val: &str,
+    ) -> String {
+        let bracketed = if sym_val.contains('<') || sym_val.contains('>') {
+            format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}")
+        } else {
+            format!("{rule_name}:sym<{sym_val}>")
+        };
+        let Some(cn) = actions_class else {
+            return bracketed;
+        };
+        if self.has_user_method(cn, &bracketed) {
+            return bracketed;
+        }
+        let bare = format!("{rule_name}:{sym_val}");
+        if self.has_user_method(cn, &bare) {
+            return bare;
+        }
+        bracketed
+    }
+
     /// Walk the match tree bottom-up and invoke action methods on the actions object.
     pub(crate) fn invoke_grammar_actions(
         &mut self,
@@ -1047,13 +1096,7 @@ impl Interpreter {
         // skips the two attribute-map clones, the node rebuild, and the whole
         // env save/restore ceremony below, none of which can have any effect
         // for such a node.
-        let fmt_sym_method = |sym_val: &str| {
-            if sym_val.contains('<') || sym_val.contains('>') {
-                format!("{rule_name}:sym\u{ab}{sym_val}\u{bb}")
-            } else {
-                format!("{rule_name}:sym<{sym_val}>")
-            }
-        };
+        let actions_cn: Option<String> = Self::actions_class_name_of(actions);
         let leaf_sym_method: Option<String>;
         let is_actionless_candidate_leaf;
         if let Some((is_leaf, sym)) = match_obj.match_walk_peek() {
@@ -1061,7 +1104,8 @@ impl Interpreter {
             // node directly, so an actionless leaf is never materialized.
             is_actionless_candidate_leaf = is_leaf;
             leaf_sym_method = if is_leaf {
-                sym.as_deref().map(fmt_sym_method)
+                sym.as_deref()
+                    .map(|s| self.variant_action_method_name(actions_cn.as_deref(), rule_name, s))
             } else {
                 None
             };
@@ -1079,7 +1123,11 @@ impl Interpreter {
             if !has_named_children && !has_list_children && !has_silent {
                 is_actionless_candidate_leaf = true;
                 leaf_sym_method = match amap.get("sym_variant").map(Value::view) {
-                    Some(ValueView::Str(sym_val)) => Some(fmt_sym_method(&sym_val)),
+                    Some(ValueView::Str(sym_val)) => Some(self.variant_action_method_name(
+                        actions_cn.as_deref(),
+                        rule_name,
+                        &sym_val,
+                    )),
                     _ => None,
                 };
             } else {
@@ -1090,12 +1138,7 @@ impl Interpreter {
             return Ok(match_obj);
         }
         if is_actionless_candidate_leaf {
-            let actions_cn: Option<String> = match actions.view() {
-                ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
-                ValueView::Package(name) => Some(name.to_string()),
-                _ => None,
-            };
-            if let Some(cn) = actions_cn {
+            if let Some(cn) = actions_cn.clone() {
                 let sym_hit = leaf_sym_method
                     .as_deref()
                     .is_some_and(|s| self.has_user_method(&cn, s));
@@ -1255,27 +1298,21 @@ impl Interpreter {
         // does not change what user code observes.)
         {
             let no_own_action = {
-                let actions_cn: Option<String> = match actions.view() {
-                    ValueView::Instance { class_name, .. } => Some(class_name.to_string()),
-                    ValueView::Package(name) => Some(name.to_string()),
-                    _ => None,
-                };
-                match actions_cn {
+                match Self::actions_class_name_of(actions) {
                     None => false,
                     Some(cn) => {
-                        let sym_hit =
-                            match updated_attrs.as_map().get("sym_variant").map(Value::view) {
-                                Some(ValueView::Str(sym_val)) => {
-                                    let sym_name = if sym_val.contains('<') || sym_val.contains('>')
-                                    {
-                                        format!("{rule_name}:sym\u{ab}{}\u{bb}", &*sym_val)
-                                    } else {
-                                        format!("{rule_name}:sym<{}>", &*sym_val)
-                                    };
-                                    self.has_user_method(&cn, &sym_name)
-                                }
-                                _ => false,
-                            };
+                        let sym_hit = match updated_attrs
+                            .as_map()
+                            .get("sym_variant")
+                            .map(Value::view)
+                        {
+                            Some(ValueView::Str(sym_val)) => {
+                                let sym_name =
+                                    self.variant_action_method_name(Some(&cn), rule_name, &sym_val);
+                                self.has_user_method(&cn, &sym_name)
+                            }
+                            _ => false,
+                        };
                         !sym_hit && !self.has_user_method(&cn, rule_name)
                     }
                 }
@@ -1353,13 +1390,8 @@ impl Interpreter {
         let sym_method_name = if let Some(ValueView::Str(sym_val)) =
             updated_attrs.as_map().get("sym_variant").map(Value::view)
         {
-            // Use «» delimiters when the sym value contains '<' or '>'
-            // to match method names stored with French-quote delimiters
-            if sym_val.contains('<') || sym_val.contains('>') {
-                Some(format!("{rule_name}:sym\u{ab}{}\u{bb}", *sym_val))
-            } else {
-                Some(format!("{rule_name}:sym<{}>", *sym_val))
-            }
+            let cn = Self::actions_class_name_of(actions);
+            Some(self.variant_action_method_name(cn.as_deref(), rule_name, &sym_val))
         } else {
             None
         };

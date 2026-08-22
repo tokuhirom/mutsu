@@ -77,10 +77,24 @@ impl Interpreter {
             let end = rest.find('\u{bb}')?;
             return Some(rest[..end].to_string());
         }
-        let i = name.find(":<")?;
-        let rest = &name[i + 2..];
-        let end = rest.find('>')?;
-        Some(rest[..end].to_string())
+        if let Some(i) = name.find(":<") {
+            let rest = &name[i + 2..];
+            let end = rest.find('>')?;
+            return Some(rest[..end].to_string());
+        }
+        // Bare-identifier adverb (`token gap:spacer {...}`): the adverb name is
+        // itself the candidate identity. Look only inside the last `::` segment
+        // so a package-qualified proto name is not mistaken for an adverb.
+        let last_seg = name.rsplit("::").next()?;
+        let (_, adverb) = last_seg.split_once(':')?;
+        if adverb.is_empty()
+            || !adverb
+                .chars()
+                .all(|c| c.is_alphanumeric() || c == '_' || c == '-')
+        {
+            return None;
+        }
+        Some(adverb.to_string())
     }
 
     /// Check if a regex pattern's own token list has a bare code block `{}`.
