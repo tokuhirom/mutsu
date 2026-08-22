@@ -38,6 +38,11 @@ pub(super) enum LtmAtomMode<'a> {
     /// consuming (positive lookahead: `<?before X>` inlines `X` then stops),
     /// then terminate.
     TerminateAfter(&'a RegexPattern),
+    /// Zero-width success that must NOT run and must NOT stop the walk: the
+    /// atom consumes nothing and contributes nothing, and measurement keeps
+    /// going past it at full strength. Distinct from `Terminate`, which also
+    /// returns `pos` but declares everything after it non-declarative.
+    SkipZeroWidth,
 }
 
 /// Classify `atom` for LTM declarative-prefix measurement. Only meaningful
@@ -58,6 +63,17 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // literal; terminate (constants are inlined as literals before this
         // atom kind is ever produced, so they never reach here — see §2).
         RegexAtom::VarInterp(_) => LtmAtomMode::Terminate,
+        // `:my $x = …;` / `:our` / `:constant` — a zero-width *declaration*.
+        // Rakudo's NFA walks straight past it (validated: reordering two proto
+        // candidates whose only difference is a leading `:my` flips the winner
+        // purely by declaration order, i.e. their prefixes tie — ADR-0046
+        // Slice 3), so it neither consumes nor terminates. It must be skipped
+        // rather than measured normally, because the real `VarDecl` arm
+        // *evaluates* the initializer, and measuring must never execute
+        // (ADR-0009). This replaces the string-level declarator strip in
+        // `regex_match_with_captures`, which only saw a declarator sitting at
+        // the very start of a pattern's source text.
+        RegexAtom::VarDecl { .. } => LtmAtomMode::SkipZeroWidth,
         // `<{ code }>` — the interpolated pattern is not known without running
         // code, so it cannot participate in a declarative prefix.
         RegexAtom::ClosureInterpolation { .. } => LtmAtomMode::Terminate,
@@ -332,6 +348,42 @@ impl Interpreter {
         let mut seen = HashSet::new();
         let litlen = self.ltm_litlen_at(alt, chars, pos, pkg, &mut seen, 0);
         (plen.unwrap_or(0), litlen)
+    }
+
+    /// ADR-0046 Decision 1, mechanism 1: rank one proto-token candidate that is
+    /// still in *pattern-source* form, as `eval_token_call_values_at` (the
+    /// `:rule<...>` / outermost proto entry point) holds it.
+    ///
+    /// Parses the candidate once and delegates to the shared
+    /// [`Self::ltm_branch_rank_key`] primitive, so this call site gets ADR-0022's
+    /// `litlen` tie-break instead of ranking on `prefix_len` alone. Returns the
+    /// same `(rank, stopped)` contract as [`Self::ltm_prefix_len_at`]: a `None`
+    /// rank with `stopped == false` is a sound "cannot match here" verdict the
+    /// caller may filter on, while `stopped == true` means the measurement was
+    /// cut short and proves nothing.
+    ///
+    /// Falls back to the string-based `declarative_prefix_match_len` (with a
+    /// zero litlen) when the source does not parse — that path also covers the
+    /// `parse_anchored_single_subrule` shortcut, which only `regex_match_with_captures`
+    /// implements.
+    pub(in crate::runtime) fn ltm_rank_token_candidate_source(
+        &mut self,
+        pattern: &str,
+        text: &str,
+    ) -> (Option<(usize, usize)>, bool) {
+        let Some(parsed) = self.parse_regex(pattern) else {
+            let (plen, stopped) = self.declarative_prefix_match_len(pattern, text);
+            return (plen.map(|p| (p, 0)), stopped);
+        };
+        let chars: Vec<char> = text.chars().collect();
+        let pkg = self.current_package();
+        let (plen, stopped) = self.ltm_prefix_len_at(&parsed, &chars, 0, &pkg);
+        let Some(plen) = plen else {
+            return (None, stopped);
+        };
+        let mut seen = HashSet::new();
+        let litlen = self.ltm_litlen_at(&parsed, &chars, 0, &pkg, &mut seen, 0);
+        (Some((plen, litlen)), stopped)
     }
 
     /// [`Self::ltm_seqalt_candidates`] collapsed to the single longest

@@ -163,6 +163,9 @@ impl Interpreter {
                     LTM_PREFIX_TERMINATED.with(|f| f.set(true));
                     return vec![(best_end, RegexCaptures::default())];
                 }
+                LtmAtomMode::SkipZeroWidth => {
+                    return vec![(pos, RegexCaptures::default())];
+                }
                 LtmAtomMode::Normal => {}
             }
         }

@@ -57,11 +57,11 @@ ok ArgFromMy.parse("  a\n  a").defined, ':my lexical passed as a subrule argumen
         token TOP { :my $shared = 'zz'; <inner> }
         token inner { $shared }
     }
-    # Pre-existing gap (also fails before this change): the caller's `:my` keeps
-    # the subrule's own pre-substitution from resolving the outer lexical, so the
-    # subrule interpolates nothing at all. The important half — that the caller's
-    # VALUE does not leak in — holds either way.
-    todo 'caller :my suppresses the subrule\'s own outer-lexical substitution';
+    # Was a known gap until ADR-0046 Slice 3: LTM measurement of `TOP` ran the
+    # `:my` declarator for real, so `$shared = 'zz'` leaked into the env that
+    # `inner`'s own pre-substitution then read. `RegexAtom::VarDecl` is now
+    # skipped zero-width under `LTM_DECLARATIVE_MODE` (measuring must never
+    # execute — ADR-0009), so `inner` resolves the outer lexical again.
     ok NoLeakIntoSubrule.parse('q').defined,     'a subrule sees the outer lexical, not the caller regex\'s :my';
     nok NoLeakIntoSubrule.parse('zz').defined,   'the caller regex\'s :my value does not leak into the subrule';
 }

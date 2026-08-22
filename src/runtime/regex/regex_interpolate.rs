@@ -387,11 +387,32 @@ impl Interpreter {
                         .cloned()
                         .or_else(|| self.env.get(&format!("${name}")).cloned())
                     {
+                        // ADR-0046 Decision 2 item 2: a substitution made here is
+                        // a *runtime* interpolation, exactly like the general-case
+                        // `interpolate_regex_scalars` ones, so it must terminate
+                        // the candidate's declarative LTM prefix. Wrap the spliced
+                        // span in `NON_DECLARATIVE_INTERP_MARK` so the tokenizer
+                        // sets `RegexToken::from_runtime_interpolation` on every
+                        // atom it builds from it. Genuine `constant`s are exempt
+                        // (Rakudo inlines them at compile time — ADR-0022 §2), and
+                        // so is a `"..."` regex literal, whose own tokenizer arm
+                        // does not strip the mark (see the identical
+                        // `// TODO:` at `regex_parse_modifier.rs`).
+                        let is_const =
+                            crate::runtime::regex_parse::is_inside_double_quoted_regex_literal(
+                                &chars, start,
+                            ) || self.is_compile_time_constant_scalar(&name);
+                        if !is_const {
+                            out.push(Interpreter::NON_DECLARATIVE_INTERP_MARK);
+                        }
                         match value.view() {
                             ValueView::Regex(pat) => out.push_str(&pat),
                             _ => {
                                 out.push_str(&Self::regex_escape_literal(&value.to_string_value()))
                             }
+                        }
+                        if !is_const {
+                            out.push(Interpreter::NON_DECLARATIVE_INTERP_MARK);
                         }
                     } else {
                         out.extend(chars[start..end].iter());

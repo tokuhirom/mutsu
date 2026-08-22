@@ -77,6 +77,9 @@ impl Interpreter {
                     LTM_PREFIX_TERMINATED.with(|f| f.set(true));
                     return Some((best_end, RegexCaptures::default()));
                 }
+                LtmAtomMode::SkipZeroWidth => {
+                    return Some((pos, RegexCaptures::default()));
+                }
                 LtmAtomMode::Normal => {}
             }
         }
