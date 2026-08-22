@@ -18,6 +18,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
         let raw_constraint = Self::const_str(code, tc_idx).to_string();
+        self.save_type_meta_for_scope_exit(&name);
         // Empty constraint = CLEAR: an untyped expression-position
         // declaration dropping a stale same-named constraint (the
         // compiler never emits an empty string for a real type).
@@ -72,6 +73,47 @@ impl Interpreter {
         }
         *ip += 1;
         Ok(())
+    }
+
+    /// Record this name's PRE-declaration env-scoped constraint metadata
+    /// (`__mutsu_type::<name>`, `__mutsu_hash_key_type::<name>`) into the
+    /// innermost branch/loop-body scope, so `pop_loop_local_scope` puts it back
+    /// — or removes it — when that body exits.
+    ///
+    /// Without this, a typed declaration that SHADOWS an already-existing outer
+    /// binding of the same name leaks its constraint onto the outer variable:
+    /// `my $x; if True { my Str $x = "a" }; $x = 42` died with "expected Str".
+    /// `exec_block_local_scope_op`'s exit cleanup (ADR-0042 slice 1 step 4)
+    /// deliberately skips every name that already existed in `env` before the
+    /// branch — those are `pop_loop_local_scope`'s job — so a shadowing
+    /// declaration's metadata was never undone by anything; and loop bodies
+    /// (`while`/`until`/C-style `loop`/`repeat`/`for`) have no branch-exit
+    /// cleanup at all, so they leaked for fresh declarations too.
+    ///
+    /// The save must happen HERE, at the moment the constraint is about to be
+    /// overwritten, and not where `exec_set_local_op` records a shadowed
+    /// binding's value: the compiler emits the type-constraint op BEFORE the
+    /// declaration's own `SetLocalDecl` store, so by the time the store runs the
+    /// metadata has already been clobbered and there is nothing left to save.
+    /// (ADR-0042 §10 records a prototype that hooked the store instead and was
+    /// measured to have no effect — this ordering is why.)
+    ///
+    /// First write wins (`or_insert`), so a loop body that re-declares on every
+    /// iteration still restores the value from before the loop, matching how the
+    /// surrounding shadow-restore records a name once per scope.
+    fn save_type_meta_for_scope_exit(&mut self, name: &str) {
+        if self.loop_local_saved_env.is_empty() {
+            return;
+        }
+        for key in [
+            format!("__mutsu_type::{}", name),
+            format!("__mutsu_hash_key_type::{}", name),
+        ] {
+            let prev = self.env().get(&key).cloned();
+            if let Some(scope) = self.loop_local_saved_env.last_mut() {
+                scope.entry(key).or_insert(prev);
+            }
+        }
     }
 
     /// The value a Nil-valued typed scalar holds under constraint `constraint`:

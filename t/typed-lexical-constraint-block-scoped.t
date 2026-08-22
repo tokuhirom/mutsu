@@ -14,15 +14,12 @@ use Test;
 # (a typed `my` inside the branch, then a FRESH untyped `my` of the same name
 # declared after the branch exits) — see ADR-0042 slice 1 (step 4) and
 # t/typed-constraint-scope-matrix.t, which pins it (plus the ADR's container
-# matrix). `while`/`for`/C-style-loop bodies (no scope-boundary opcode at
-# all) remain unfixed for that same "fresh-after" shape in principle, though
-# no live fresh-after repro is known for them either (every one tried during
-# the ADR-0042 slice-1 session already passed). A SEPARATE, deeper "outer-first
-# shadow" shape (an outer variable declared BEFORE the inner typed shadow,
-# then reused after it exits) is unfixed for EVERY branch/loop construct
-# including if/unless/else — see
-# todo/deep/scoped-type-declaration-tags-the-shadowed-outer-value.md and
-# t/typed-constraint-shadow-leak-unfixed.t.
+# matrix). `while`/`for`/C-style-loop bodies have no scope-boundary opcode of
+# their own, but their `push_loop_local_scope`/`pop_loop_local_scope` bracket
+# now restores a declaration's `__mutsu_type::` metadata just the same (ADR-0042
+# §11). The "outer-first shadow" shape (an outer variable declared BEFORE the
+# inner typed shadow, then reused after it exits) is fixed for every branch and
+# loop construct and pinned by t/typed-constraint-shadow-scope.t.
 
 plan 7;
 

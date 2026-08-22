@@ -1,7 +1,8 @@
 # ADR-0042: A type constraint belongs to the container, not to a name — retiring the `var_type_constraints` side table
 
-- Status: Partially Implemented — Slice 1 landed 2026-08-20 (see §10). Slices 2
-  and 3 not started.
+- Status: Partially Implemented — Slice 1 landed 2026-08-20 (see §10); its
+  follow-on "outer-first shadow" finding fixed 2026-08-22 (see §11, which
+  supersedes part of §5.2/§6). Slices 2 and 3 not started.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline lexicals —
   the same by-name/lexical split for scalar *values*),
@@ -381,13 +382,59 @@ container gap. Pinned in `t/typed-constraint-scope-matrix.t` and
 (19 files, 4824 tests).
 
 **New finding, NOT fixed by slice 1 and NOT one of its four steps:** a
-DIFFERENT, deeper, pre-existing bug — present on `main` before slice 1 and
-unaffected by it — where a typed declaration that SHADOWS an already-existing
-outer binding of the same name (as opposed to being a fresh, non-shadowing
-declaration) corrupts the outer binding's own value in place, for BOTH
-scalars and containers, across EVERY branch/loop construct measured —
+DIFFERENT, pre-existing bug — present on `main` before slice 1 and unaffected
+by it — where a typed declaration that SHADOWS an already-existing outer
+binding of the same name (as opposed to being a fresh, non-shadowing
+declaration) leaks its constraint onto that outer binding, for BOTH scalars
+and containers, across EVERY branch/loop construct measured —
 `if`/`unless`/`else` are affected exactly as much as `while`/`loop`/`repeat`/
 `for`, contradicting this ADR's own §2.1 prediction that step 4 would fix the
-former. Root cause and fix direction: `todo/deep/scoped-type-declaration-tags-the-shadowed-outer-value.md`.
-Pinned (as expected-failing `# TODO` assertions) in
-`t/typed-constraint-shadow-leak-unfixed.t`.
+former. **Fixed 2026-08-22 — see §11.**
+
+## 11. The "outer-first shadow" shape (fixed 2026-08-22)
+
+§10's finding is closed. `news/2026-08/typed-declaration-shadow-scope-leak.md`
+has the full write-up; three things in this ADR were wrong and are corrected
+here.
+
+**It was a name-layer bug, not a value-layer one.** The ticket concluded that
+`tag_container_metadata`'s copy-on-write corrupts the shadowed outer
+container's own embedded metadata in place. The alias probe of §3 disproves
+that directly: after the leak, `my @z := @a; @z.push("x")` SUCCEEDS while
+`@a.push("x")` dies — enforcement a different name escapes is not coming from
+the container. The leak was the name-keyed `__mutsu_type::<name>` env entry
+throughout.
+
+**Why §10's prototype measured "no effect", and why that inference was wrong.**
+Extending `loop_local_saved_env` was the right mechanism in the wrong place.
+The compiler emits the type-constraint op BEFORE the declaration's own
+`SetLocalDecl` store, so hooking the store saves an already-clobbered value.
+The fix records the pre-declaration metadata inside `exec_set_var_type` itself
+(`Interpreter::save_type_meta_for_scope_exit`) — the one point where the old
+value is still readable — and lets the existing `pop_loop_local_scope` restore
+it. That one hook serves branches and every loop form, because all of them
+already bracket their body with `push_loop_local_scope`/`pop_loop_local_scope`.
+
+**§5.2's assignment of the remaining §2.1 rows is superseded.** Those rows
+(`while`, C-style `loop`, `repeat`, `for` bodies) do not need slice 2's
+cell-carried `of`, and §6's rejection of "keep extending `lexically_in_block`"
+rested on the premise that "each path has a different scope mechanism (or
+none)" — which the uniform `loop_local_saved_env` hook removes. With the VM
+restore in place, `lexically_in_block` is now set while compiling a
+`BlockLocalScope` branch body and every loop body, so a MAINLINE typed
+declaration in one uses the env-only scoped opcode instead of also writing the
+global map. Inside a routine this changes nothing (already scoped via
+`is_routine`); it is purely what extends the fix to mainline. `our`, `&`,
+dynamics, `__ANON_STATE__` and package-qualified names keep the both-store
+opcode, so the exclusions §5.1 relies on are untouched.
+
+**Residual, and it IS slice 2's.** A typed outer SCALAR still loses its
+constraint once any inner declaration of the same name — typed *or* untyped —
+has shadowed it in a branch/loop body. It reproduces identically before and
+after this fix and is scalar-only, precisely because a container carries its
+constraint on the value and a scalar has nowhere to put one (§3). Tracked in
+`todo/deep/shadowing-declaration-drops-the-outer-typed-scalar-constraint.md`
+and pinned as three `# TODO` rows in `t/typed-constraint-shadow-scope.t`.
+
+Pinned by `t/typed-constraint-shadow-scope.t` (35 `raku`-verified assertions,
+replacing the expected-failing `t/typed-constraint-shadow-leak-unfixed.t`).
