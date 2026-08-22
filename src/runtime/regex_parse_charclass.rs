@@ -319,6 +319,7 @@ impl Interpreter {
 
         // First part may be just [content] (implicitly positive) or +[content] or -[content]
         let mut first = true;
+        let mut parts = 0usize;
         while !remaining.is_empty() {
             let adding;
             if remaining.starts_with('+') {
@@ -339,6 +340,7 @@ impl Interpreter {
             first = false;
 
             if remaining.starts_with('[') {
+                parts += 1;
                 // Find the matching ']', handling backslash escapes
                 remaining = &remaining[1..]; // skip '['
                 let bracket_end = Self::find_bracket_end(remaining);
@@ -380,12 +382,26 @@ impl Interpreter {
                 items: positive_items,
                 negated: false,
             }))
-        } else if positive_items.is_empty() {
-            // Purely negated class: <-[aeiou]> = match anything NOT in [aeiou]
+        } else if positive_items.is_empty() && parts <= 1 {
+            // Purely negated single-part class: <-[aeiou]> = match anything NOT
+            // in [aeiou]. Kept as a plain `CharClass` because that is what it
+            // is: no set *subtraction* was written.
             Some(RegexAtom::CharClass(CharClass {
                 items: negative_items,
                 negated: true,
             }))
+        } else if positive_items.is_empty() {
+            // A multi-part all-negative class (`<-[;] - [q]>`) is a genuine set
+            // subtraction even though its result collapses to the same character
+            // set as `<-[;q]>`. Keep it as a `CompositeClass` (empty `positive`
+            // means "any character" to the matcher) so the distinction survives:
+            // Rakudo's NFA cannot encode a subtraction as one edge, so such a
+            // class terminates the declarative LTM prefix while the plain
+            // negated form participates (ADR-0046 Slice 4; see `ltm_atom_mode`).
+            Some(RegexAtom::CompositeClass {
+                positive: Vec::new(),
+                negative: negative_items,
+            })
         } else {
             Some(RegexAtom::CompositeClass {
                 positive: positive_items,

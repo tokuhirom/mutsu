@@ -45,4 +45,4 @@ ADR-0022 §6 deliberately left two gaps open, and neither belongs to this ticket
 Investigating this closeout also turned up the fact that ADR-0022's carve-out ("protoregex
 dispatch already ranks by declarative prefix and is NOT changed here; interpolated-`@array`
 alternation already approximates LTM and is not changed here") was wrong on both counts —
-see `todo/deep/proto-token-ltm-and-interpolation-provenance.md` and ADR-0046.
+see `news/2026-08/proto-token-ltm-one-ranking-mechanism.md` and ADR-0046.

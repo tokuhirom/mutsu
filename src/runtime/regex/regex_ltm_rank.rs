@@ -12,7 +12,9 @@
 //! only code atoms).
 
 use super::super::*;
-use super::regex_helpers::{LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, named_lookup_is_ws};
+use super::regex_helpers::{
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, LTM_SEQALT_EPSILON, named_lookup_is_ws,
+};
 use std::cell::Cell;
 use std::collections::HashSet;
 
@@ -77,6 +79,20 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         // `<{ code }>` — the interpolated pattern is not known without running
         // code, so it cannot participate in a declarative prefix.
         RegexAtom::ClosureInterpolation { .. } => LtmAtomMode::Terminate,
+        // A character class built with set SUBTRACTION (`<[\x1F..\xFF] - [;]>`,
+        // `<+alpha - [q]>`, `<-[;] - [q]>`): Rakudo's NFA has no single edge
+        // kind for "this set minus that set", so the class becomes a fate arc
+        // and terminates the declarative prefix — while every subtraction-free
+        // class (`<-[;]>`, `<[A..z]>`, `<+alpha>`, `\w`, `.`) participates
+        // normally. Validated against `raku` across all of those shapes; note
+        // the rule is about the class's *written structure*, not its resulting
+        // character set (`<-[;] - [q]>` terminates, the equivalent `<-[;q]>`
+        // does not) and not about the quantifier (a single unquantified
+        // subtracted class terminates too). A `CompositeClass` with an empty
+        // `negative` is a subtraction-free union and keeps participating.
+        RegexAtom::CompositeClass { negative, .. } if !negative.is_empty() => {
+            LtmAtomMode::Terminate
+        }
         // `&` / `&&` conjunction: no NFA method in Rakudo -> fate (terminate).
         RegexAtom::Conjunction(_) => LtmAtomMode::Terminate,
         RegexAtom::Lookaround {
@@ -124,10 +140,15 @@ impl Interpreter {
     ) -> (Option<usize>, bool) {
         let saved_mode = LTM_DECLARATIVE_MODE.with(|f| f.replace(true));
         let saved_terminated = LTM_PREFIX_TERMINATED.with(|f| f.replace(false));
+        let saved_epsilon = LTM_SEQALT_EPSILON.with(|f| f.replace(false));
         let ends = self.regex_match_ends_from_caps_in_pkg(pattern, chars, pos, pkg);
-        let stopped_at_non_declarative = LTM_PREFIX_TERMINATED.with(Cell::get);
+        // A `||` epsilon bypass anywhere in the walk makes a `None` unsound to
+        // filter on — see `LTM_SEQALT_EPSILON`.
+        let stopped_at_non_declarative =
+            LTM_PREFIX_TERMINATED.with(Cell::get) || LTM_SEQALT_EPSILON.with(Cell::get);
         LTM_DECLARATIVE_MODE.with(|f| f.set(saved_mode));
         LTM_PREFIX_TERMINATED.with(|f| f.set(saved_terminated));
+        LTM_SEQALT_EPSILON.with(|f| f.set(saved_epsilon));
         let max_end = ends.into_iter().map(|(end, _)| end).max();
         (max_end.map(|end| end - pos), stopped_at_non_declarative)
     }
@@ -153,6 +174,7 @@ impl Interpreter {
         pos: usize,
         pkg: &str,
     ) -> Vec<(usize, RegexCaptures)> {
+        LTM_SEQALT_EPSILON.with(|f| f.set(true));
         let mut out = vec![(pos, RegexCaptures::default())];
         if let Some(first) = alternatives.first() {
             let mut ends = self.regex_match_ends_from_caps_in_pkg(first, chars, pos, pkg);
@@ -397,6 +419,7 @@ impl Interpreter {
         pos: usize,
         pkg: &str,
     ) -> (usize, RegexCaptures) {
+        LTM_SEQALT_EPSILON.with(|f| f.set(true));
         let mut best: (usize, RegexCaptures) = (pos, RegexCaptures::default());
         if let Some(first) = alternatives.first() {
             for (end, mut inner_caps) in
@@ -554,16 +577,23 @@ mod tests {
         // match at all, but the epsilon bypass means the group still measures
         // as zero-width instead of poisoning the whole prefix to None.
         let (len, stopped) = measure(r"['doof' || 'food']", "food");
-        // Not stopped: SequentialAlternation's ε-bypass does not set
-        // TERMINATED itself, and nothing else in this pattern does either.
-        assert!(!stopped);
+        // `stopped` is the "do NOT filter on this result" flag. The ε-bypass
+        // continues the walk at the group's START position, so anything after
+        // the group is measured against text the real match would have
+        // consumed and can fail spuriously — the whole measurement is
+        // therefore unsound to filter on (ADR-0046 Slice 4,
+        // `LTM_SEQALT_EPSILON`). It does not truncate the measured length.
+        assert!(stopped);
         assert_eq!(len, Some(0));
     }
 
     #[test]
     fn sequential_alternation_measures_first_branch_when_it_matches() {
         let (len, stopped) = measure(r"['food' || 'doof']", "food");
-        assert!(!stopped);
+        // Unsound-to-filter for the same reason as the test above, even though
+        // the first branch matched: the ε alternative is still offered, so a
+        // later atom could have been measured at the wrong position.
+        assert!(stopped);
         assert_eq!(len, Some(4));
     }
 
@@ -572,7 +602,7 @@ mod tests {
         // A pattern that is ENTIRELY `X || Y` must still measure as Some(0)
         // (the epsilon), never None, even when no branch matches at all.
         let (len, stopped) = measure(r"['zzz' || 'yyy']", "food");
-        assert!(!stopped);
+        assert!(stopped); // unsound to filter on -- see the two tests above
         assert_eq!(len, Some(0));
     }
 

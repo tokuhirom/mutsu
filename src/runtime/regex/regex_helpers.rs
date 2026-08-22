@@ -26,6 +26,23 @@ thread_local! {
     /// `walk_tokens` checks it after every token and stops walking, so the
     /// termination propagates out through nested subrules.
     pub(crate) static LTM_PREFIX_TERMINATED: Cell<bool> = const { Cell::new(false) };
+    /// Set by the `SequentialAlternation` (`X || Y`) measurement when its
+    /// zero-width epsilon bypass was offered (ADR-0022 §4.2). It marks the
+    /// measurement's `None` result as UNSOUND to filter on, without truncating
+    /// the measured prefix the way `LTM_PREFIX_TERMINATED` does.
+    ///
+    /// Why the distinction matters: the epsilon lets the walk continue past a
+    /// `||` group whose first branch did not match, but it continues at the
+    /// group's *start* position, so every atom after the group is then measured
+    /// against text the real match would have consumed. Such an atom can fail
+    /// and drive the whole measurement to `None` even though the candidate
+    /// matches perfectly well — Cro::Uri's `regex host:sym<IPv6address>
+    /// { '[' <( <.IPv6address> )> ']' }`, whose `IPv6address` is one big `||`
+    /// chain, measured `None` and was wrongly dropped as "cannot match here".
+    /// Ranking on the (short) measured length is still fine; only the
+    /// `(None, false)` FILTER is unsound, which is exactly what this flag
+    /// suppresses (ADR-0046 Slice 4).
+    pub(crate) static LTM_SEQALT_EPSILON: Cell<bool> = const { Cell::new(false) };
     /// Code atoms are inert: not executed, and treated as a zero-width pass.
     ///
     /// Set around `longest_complete_prefix_end`, which re-matches the pattern
