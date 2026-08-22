@@ -448,6 +448,14 @@ where raku keeps it lazy until something consumes it, so a `die` inside the map 
 `LazyList`, not about **what** forcing does to a `Seq`. It is not fixed by this ADR and should not
 be bundled into it.
 
+**Follow-up (2026-08-22):** that scoped-out work is now
+[ADR-0058](0058-map-grep-produce-a-deferred-seq.md), which also corrects the
+mechanism named above: the cells do *not* go through `LazyList` at all — a
+finite `(1..3).map(...)` is evaluated **eagerly at the `.map` call**, so there is
+no deferred value whose force could be moved. ADR-0058's decision is to give
+`SeqSource` a `MapGrep` variant and let this ADR's own reify/consume split do the
+deferring.
+
 The relationship is worth recording, though: those cells are hard to fix today partly because
 deferring the force means the value gets touched later and *by more consumers*, and every extra
 touch is currently a chance to hit the destroy-on-materialize bug. Landing this ADR removes that
