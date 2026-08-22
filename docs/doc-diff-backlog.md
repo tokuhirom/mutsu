@@ -347,6 +347,49 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
   instead of raku's MoarVM-specific `moarvm`/`mbc`; this looks like an intentional identity
   difference (mutsu isn't MoarVM), not a bug — not ticketed.
 
+Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`independent-routines`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/IO/Handle.rakudoc:385` | global `lines(IO_object)` sub form doesn't open/read the file, just wraps the path arg | [lines-sub-form-io-object-not-read.md](../todo/tickets/lines-sub-form-io-object-not-read.md) |
+| `Type/IO/Handle.rakudoc:761` | `.open` stores the CWD-absolutized path instead of the path as given (`.Str`/`.path`) | [io-handle-open-stores-absolute-not-given-path.md](../todo/tickets/io-handle-open-stores-absolute-not-given-path.md) |
+| `Type/IO/Handle.rakudoc:959,1013` | custom `IO::Handle` subclasses overriding `WRITE`/`READ`/`EOF` are never dispatched to by native print/say/read | [custom-io-handle-write-read-not-dispatched.md](../todo/deep/custom-io-handle-write-read-not-dispatched.md) |
+| `Language/structures.rakudoc:233` | calling an undefined `Any`-typed value as a function throws instead of returning the args | [undefined-any-called-as-sub-throws.md](../todo/tickets/undefined-any-called-as-sub-throws.md) |
+| `Language/structures.rakudoc:258` | `but Associative[Int, Int]` (built-in parametric role) fails as "non-composable" | [builtin-parametric-role-mixin-not-composable.md](../todo/tickets/builtin-parametric-role-mixin-not-composable.md) |
+| `Language/structures.rakudoc:281` | `.sort` on a role-mixed (`but`) Hash returns the whole hash unsorted in a 1-element list | [role-mixed-hash-sort-method-dispatch-broken.md](../todo/tickets/role-mixed-hash-sort-method-dispatch-broken.md) |
+| `Language/structures.rakudoc:26`, `Language/mop.rakudoc:120` | `$(LIST).VAR.^name` reports `List` instead of `Scalar` (item contextualizer doesn't itemize) | [item-contextualized-list-var-name-not-scalar.md](../todo/tickets/item-contextualized-list-var-name-not-scalar.md) |
+| `Language/structures.rakudoc:458` | `$metadata.can($metadata, "uc")` returns `()` instead of `(uc uc)` when the invocant-arg is a `.HOW` | [metaclass-can-with-metaclass-as-invocant-arg-empty.md](../todo/tickets/metaclass-can-with-metaclass-as-invocant-arg-empty.md) |
+| `Language/mop.rakudoc:329` | a grammar's `method ^parameterize` + parametric role application stack-overflows | [grammar-metaclass-parameterize-stack-overflow.md](../todo/deep/grammar-metaclass-parameterize-stack-overflow.md) |
+| `Language/mop.rakudoc:34` | `constant NAME := Metamodel::ClassHOW.new_type(name => 'NAME')` immediately errors as "immutable" | [direct-metamodel-classhow-new-type-immutable-error.md](../todo/deep/direct-metamodel-classhow-new-type-immutable-error.md) |
+| `Language/mop.rakudoc:93` | `.HOW.^name` on a hash literal is missing the `+{<anon>}` mixin suffix | [how-gist-missing-anon-mixin-suffix.md](../todo/tickets/how-gist-missing-anon-mixin-suffix.md) |
+| `Type/independent-routines.rakudoc:110` | `EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg | [eval-dollar-question-file-not-synthesized.md](../todo/tickets/eval-dollar-question-file-not-synthesized.md) |
+| `Type/independent-routines.rakudoc:148` | `repl()` global routine is unimplemented (mutsu already has REPL machinery to reuse) | [repl-routine-unimplemented.md](../todo/tickets/repl-routine-unimplemented.md) |
+| `Type/independent-routines.rakudoc:473` | `open(:w, PATH)` — a named adverb before the positional path breaks argument parsing | [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md) |
+| `Type/independent-routines.rakudoc:687,692` | `.printf` method form is unimplemented on Str, and format directives don't autothread over a Junction | [printf-method-form-and-junction-autothread-missing.md](../todo/tickets/printf-method-form-and-junction-autothread-missing.md) |
+| `Type/independent-routines.rakudoc:1497` | `done VALUE` inside a `supply {}` block drops the value instead of emitting it first | [supply-done-value-drops-emit.md](../todo/tickets/supply-done-value-drops-emit.md) |
+| `Type/independent-routines.rakudoc:312` | hyper method call (`».method`) / `.map` on a `gather {...}` Seq returns empty instead of forcing it | [gather-hyper-method-call-empty-result.md](../todo/tickets/gather-hyper-method-call-empty-result.md) |
+
+**Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
+- `Type/IO/Handle.rakudoc` [385] itself was bucketed `raku-drift` by the harness (raku's own
+  `/proc/$*PID/statm` numbers are PID-dependent and don't match the doc's stated numbers), but the
+  *shape* of mutsu's output underneath that drift (wrapping the literal path instead of reading the
+  file at all) is a real, separate bug — filed above as
+  [lines-sub-form-io-object-not-read.md](../todo/tickets/lines-sub-form-io-object-not-read.md).
+- `Language/structures.rakudoc` [36], [45] (`.WHICH` addresses) — `raku-drift`, pointer values are
+  inherently non-reproducible.
+- `Language/structures.rakudoc` [95], [108] (`%hash.list[0]`, `<a b c d>.Hash.kv` ordering) — the
+  "Known harness false positive" hash/Set iteration-order nondeterminism documented above the
+  Ticketed section; both sides are randomized per-process in real raku too.
+- `Language/structures.rakudoc` [123] (`class SortedArray is Array { method iterator {...} }`) —
+  matches the already-**Deferred** Lazy-list cluster's explicitly-named residue: "the custom `does
+  Iterator` residue where an `is Array` subclass skips its user iterator (`__mutsu_array_storage`
+  guard in `vm_for_loop_dispatch.rs`)".
+- `Type/independent-routines.rakudoc` [1429] (`append %h, i => (1, 42)`) — bucketed `raku-drift`
+  because the doc's stated error text doesn't match raku's actual error text; mutsu also throws (a
+  different, generic "Unknown call: append" instead of a specific signature-mismatch error) — same
+  "exception type/meaning matches, message text differs" shape already excluded elsewhere in this
+  ledger (e.g. `Language/control.rakudoc` [10] above), not ticketed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
