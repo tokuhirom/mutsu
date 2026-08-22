@@ -2728,13 +2728,36 @@ impl Compiler {
                     .iter()
                     .all(|arg| matches!(arg, CallArg::Positional(_)));
 
+                // A slip argument does not stop the mutating-listop rewrite: it
+                // round-trips to the expression form as `|EXPR`
+                // (`Expr::Unary { op: Pipe }`), exactly what the expression
+                // parser produces for the value-position spelling. Without this
+                // `push(@a, 1, |@rest);` as a *statement* fell through to the
+                // generic `ExecCallPairs` dispatch, which has no `push` routine
+                // to resolve and died with "Unknown call: push" — while the same
+                // call in value position (`my $r = push(...)`) worked. Limited to
+                // the fixed listop set; an imported routine keeps the stricter
+                // positional-only condition.
+                let listop_slip_ok = matches!(
+                    name_str.as_str(),
+                    "push" | "unshift" | "append" | "prepend" | "splice"
+                ) && rewritten_args
+                    .iter()
+                    .all(|a| matches!(a, CallArg::Positional(_) | CallArg::Slip(_)));
+
                 // Normalize mutating/structural call statements through Expr::Call
                 // so they reuse call rewrites and method-based mutation paths.
-                if positional_only && Self::is_normalized_stmt_call_name(&name_str) {
+                if (positional_only || listop_slip_ok)
+                    && Self::is_normalized_stmt_call_name(&name_str)
+                {
                     let expr_args: Vec<Expr> = rewritten_args
                         .iter()
                         .filter_map(|arg| match arg {
                             CallArg::Positional(expr) => Some(expr.clone()),
+                            CallArg::Slip(expr) => Some(Expr::Unary {
+                                op: crate::token_kind::TokenKind::Pipe,
+                                expr: Box::new(expr.clone()),
+                            }),
                             _ => None,
                         })
                         .collect();

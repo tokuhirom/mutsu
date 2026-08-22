@@ -66,8 +66,9 @@ string-basic-char:common`, …), so the whole distribution failed to load. It no
 loads, and its upstream suite runs — reaching real per-assertion failures
 instead of 19 files that could not parse. The remaining gaps are filed
 separately (`todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md`
-is the large one; `todo/tickets/push-with-slip-arg-in-sink-context.md` and
-`todo/tickets/config-toml-remaining-suite-gaps.md` cover the rest).
+is the large one; the two smaller ones landed the same day — see
+`news/2026-08/ordered-alternation-loser-branch-code-block.md` and
+`news/2026-08/listop-slip-arg-sink-context.md`).
 
 The parsing gap is general, not TOML-specific: any grammar or actions class
 using this idiom — a natural way to name alternatives when there is no obvious

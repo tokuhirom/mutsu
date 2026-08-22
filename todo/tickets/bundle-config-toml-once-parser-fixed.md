@@ -25,10 +25,12 @@ list** carries the current blockers, largest first:
 1. `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` —
    `Crane.set` silently does nothing, so `from-toml` returns `{}`. Nothing in
    `Config::TOML` can produce a result until this lands.
-2. `todo/tickets/ordered-alternation-loser-branch-code-block-fires.md` — any
-   TOML document containing a `\n`/`\"`/`\\` escape dies.
-3. `todo/tickets/push-with-slip-arg-in-sink-context.md`.
-4. Assorted un-bisected per-assertion failures (see the record).
+2. ~~The `||`-alternation losing-branch code block~~ and ~~`push` with a slip
+   in sink context~~ both landed 2026-08-22
+   (`news/2026-08/ordered-alternation-loser-branch-code-block.md`,
+   `news/2026-08/listop-slip-arg-sink-context.md`). One residue: the 8-hex
+   `\UXXXXXXXX` escape still fails.
+3. Assorted un-bisected per-assertion failures (see the record).
 
 **Do not start this ticket before those are merged and `Config::TOML` +
 `Crane`'s suites have been re-run to confirm they now pass** (or at least pass

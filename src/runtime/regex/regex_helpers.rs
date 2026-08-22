@@ -37,6 +37,26 @@ thread_local! {
     /// probe wants the longest prefix the pattern's declarative skeleton accepts, so
     /// both kinds of code atom simply become no-ops.
     pub(crate) static CODE_ATOMS_INERT: Cell<bool> = const { Cell::new(false) };
+    /// A `||` branch is being evaluated only for the backtracking candidates it
+    /// *might* contribute: an earlier branch of the same ordered alternation
+    /// already matched, so rakudo's cursor never reaches this one.
+    ///
+    /// The matcher evaluates every branch of a `SequentialAlternation` eagerly —
+    /// it has to, because a later branch's candidate ends are what let an
+    /// enclosing pattern backtrack (`regex r { <?> || x <r> }` needs alt1's
+    /// candidates even though alt0's zero-width match always succeeds). But a
+    /// plain `{ … }` block is run inline, left-to-right, as the matcher reaches
+    /// it, so that eager evaluation fired the side effects of branches raku
+    /// never enters: `[ 'b' || . { die … } ]` died on input that `'b'` matched
+    /// (`Config::TOML`'s escape-sequence token, whose losing branch is exactly a
+    /// `die`).
+    ///
+    /// While set, a plain side-effect block becomes a zero-width no-op. Skipping
+    /// it cannot change whether the branch matches — such a block always
+    /// succeeds — so the candidate set is unchanged. `<?{ … }>` / `<!{ … }>`
+    /// assertions still run: their result decides whether the branch matches at
+    /// all, so suppressing them would silently change the candidates.
+    pub(crate) static SPECULATIVE_ALT_BRANCH: Cell<bool> = const { Cell::new(false) };
     /// Parse-scoped overlay of `$*` dynamic-variable values written by grammar
     /// action methods that run at *reduce time* (during matching). The regex
     /// match engine is `&self`, so an action's dyn-var write (e.g.

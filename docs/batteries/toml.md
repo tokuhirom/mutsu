@@ -143,12 +143,20 @@ dist directory:
 | # | Gap | Filed as | Blocks |
 | --- | --- | --- | --- |
 | 1 | **`is rw` routines do not return an lvalue.** The caller re-interprets the callee's AST tail in its *own* frame, so an element reached through a parameter is unreachable. `Crane.set(%h, :path[...], :value(...))` therefore silently does nothing, and `from-toml` returns `{}` for a document its grammar parsed correctly. | `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` | `Crane` 12/15, and every `Config::TOML` file that builds a result |
-| 2 | **A `\|\|` alternation runs the losing branch's code block.** `[ <escape> \|\| . { die ... } ]` throws even when `<escape>` matched, so every TOML document containing an escape dies with "bad string escape sequence". | `todo/tickets/ordered-alternation-loser-branch-code-block-fires.md` | `grammar/04`, `grammar-actions/04`, `special-cases/06` |
-| 3 | **`push(@a, 1, \|@rest)` in sink context** resolves to "Unknown call: push". | `todo/tickets/push-with-slip-arg-in-sink-context.md` | `special-cases/02`, `special-cases/03` |
+| 2 | ~~**A `\|\|` alternation runs the losing branch's code block.**~~ **FIXED** — `news/2026-08/ordered-alternation-loser-branch-code-block.md`. `\n`, `\"` and `\\` now parse. Residue: the 8-hex `\UXXXXXXXX` form still reports "bad string escape sequence 「U」" although `token escape:sym<U> { <sym> <hex> ** 8 }` matches in isolation — a narrower, un-bisected candidate-selection problem. | — | `grammar/04`, `grammar-actions/04` |
+| 3 | ~~**`push(@a, 1, \|@rest)` in sink context** resolves to "Unknown call: push".~~ **FIXED** — `news/2026-08/listop-slip-arg-sink-context.md`. | — | — |
 | 4 | Assorted per-assertion failures in `grammar/01-02`, `grammar-actions/01-02`, `exceptions/01-02`, `dumper/01` (the last one a `multi to-toml` candidate-selection mismatch: `Calling to-toml(Str) will never work with declared signature (Associative:D $container, %opts)`). Not yet bisected. | — | the rest |
 
-Items 1-3 are all general interpreter gaps with standalone repros that do not
-mention TOML.
+Item 1 is a general interpreter gap with standalone repros that do not mention
+TOML; so were items 2 and 3.
+
+**Re-measured after items 2 and 3 landed (2026-08-22):** still 0/19 at the file
+level, but the failure *shape* moved. `Unknown call: push` is gone, and the
+dominant remaining error across seven files is now `Sorry, table contains
+duplicate keys` — which is item 1 surfacing from a different direction: with
+`Crane.set` silently doing nothing and `Crane.exists` therefore answering from
+an empty container, `Config::TOML`'s own duplicate-key guard fires on every
+document. Item 1 really is the whole gate.
 
 ## Provenance (for when the blocker clears)
 
@@ -185,7 +193,8 @@ cleanly (no provisional-exception caveat needed, unlike `Encode`).
    `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md`. It
    is the largest by far and the only one that needs design; nothing in
    `Config::TOML` can produce a result until `Crane.set` works.
-2. Land items 2 and 3 (both small, both with standalone repros).
+2. ~~Land items 2 and 3~~ — both landed 2026-08-22. Item 2 left one residue
+   (the 8-hex `\U` escape) worth bisecting alongside item 4.
 3. Re-run `Config::TOML` + `Crane`'s upstream suites (fetch per the REA
    `source-url`s above, or from a fresh `tmp/toml-survey/` per
    [selection-method.md](selection-method.md)'s procedure) and bisect whatever
