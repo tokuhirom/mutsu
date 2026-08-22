@@ -520,10 +520,25 @@ impl Interpreter {
                         crate::value::ArrayKind::Array,
                     ),
                 };
-                if i >= items.items().len() {
-                    items.items_mut().resize(i + 1, Value::NIL);
+                let old_len = items.items().len();
+                if i >= old_len {
+                    // ADR-0049 slice 5: fill skipped slots with the standard
+                    // `Package("Any")` gap marker instead of a raw
+                    // `Value::NIL` -- `Nil` is no longer a hole sentinel,
+                    // only `ArrayData::initialized` is.
+                    items
+                        .items_mut()
+                        .resize(i + 1, Self::native_fill_for_constraint(None));
                 }
                 items.items_mut()[i] = new_val.clone();
+                // Materialize the "all present" range before recording `i`
+                // as present, so a skipped intermediate slot from the resize
+                // above is correctly left OUT and reads as a gap via
+                // `hole_at`.
+                items
+                    .initialized
+                    .get_or_insert_with(|| (0..old_len).collect())
+                    .insert(i);
                 *st = Value::array_with_kind(crate::gc::Gc::new(items), kind);
             });
             self.stack
@@ -646,9 +661,26 @@ impl Interpreter {
                 && let Some(arr_result) =
                     updated.with_array_mut(|arr, _kind| -> Result<(), RuntimeError> {
                         if let Ok(i) = key.parse::<usize>() {
-                            let a = crate::value::gc_data_mut(arr);
-                            Self::autoviv_resize(a, i + 1, Value::NIL)?;
-                            a[i] = new_val.clone();
+                            let data = crate::value::gc_data_mut(arr);
+                            let old_len = data.items().len();
+                            // ADR-0049 slice 5: fill skipped slots with the
+                            // standard `Package("Any")` gap marker instead of
+                            // a raw `Value::NIL` -- `Nil` is no longer a hole
+                            // sentinel, only `ArrayData::initialized` is.
+                            Self::autoviv_resize(
+                                data.items_mut(),
+                                i + 1,
+                                Self::native_fill_for_constraint(None),
+                            )?;
+                            data[i] = new_val.clone();
+                            // Materialize the "all present" range before
+                            // recording `i` as present, so a skipped
+                            // intermediate slot from the resize above is
+                            // correctly left OUT and reads as a gap via
+                            // `hole_at`.
+                            data.initialized
+                                .get_or_insert_with(|| (0..old_len).collect())
+                                .insert(i);
                         }
                         Ok(())
                     })

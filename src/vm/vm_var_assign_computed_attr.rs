@@ -32,9 +32,26 @@ impl Interpreter {
                 if let Some(i) = Self::index_to_usize(key) {
                     // SAFETY: aliased in-place mutation of a shared array; see
                     // `gc_contents_mut`.
-                    let v = unsafe { crate::value::gc_contents_mut(&arc) }.items_mut();
-                    Self::autoviv_resize(v, i + 1, Value::NIL)?;
-                    Value::assign_element_slot(&mut v[i], val);
+                    let data = unsafe { crate::value::gc_contents_mut(&arc) };
+                    let old_len = data.items().len();
+                    // ADR-0049 slice 5: fill skipped slots with the standard
+                    // `Package("Any")` gap marker (matching every other
+                    // autoviv-resize call site) instead of a raw `Value::NIL`
+                    // -- `Nil` is no longer a hole sentinel, only
+                    // `ArrayData::initialized` is.
+                    Self::autoviv_resize(
+                        data.items_mut(),
+                        i + 1,
+                        Self::native_fill_for_constraint(None),
+                    )?;
+                    Value::assign_element_slot(&mut data.items_mut()[i], val);
+                    // Materialize the "all present" range (`None` means every
+                    // in-range index exists) before recording `i` as present,
+                    // so a skipped intermediate slot from the resize above is
+                    // correctly left OUT and reads as a gap via `hole_at`.
+                    data.initialized
+                        .get_or_insert_with(|| (0..old_len).collect())
+                        .insert(i);
                 }
             }
             _ => {}

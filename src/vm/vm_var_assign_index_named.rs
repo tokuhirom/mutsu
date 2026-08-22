@@ -682,26 +682,28 @@ impl Interpreter {
             _ => (raw_val, false, Vec::new()),
         };
         // Assigning Nil to a container element resets it to its default:
-        // explicit `is default(...)` wins — name-keyed, or attached to the
-        // container itself (a `%h is raw` param loses the name metadata) —
-        // then the typed nominal type object, then Any for an untyped element
-        // (raku: `@a[0] = Nil; @a[0]` is Any). An `is default(Nil)` container
-        // genuinely stores Nil. A `:=` bind replaces the container, so Nil
-        // stays Nil there.
+        // ADR-0049 slice 4 -- routed through the same `assign_store_nil_default`
+        // helper slice 3 uses for whole-container (list-)assignment, so an
+        // element-assign and a list-assign to the same container agree on
+        // priority: the container's OWN embedded state (an explicit
+        // `is default(...)` value, then declared element-type metadata, which
+        // also covers a native element's zero fill) first -- this is what
+        // makes a bound alias (`my @a is default(42) = 1,2,3; my @b := @a;
+        // @b[1] = Nil`) see `@a`'s default even though `@b` has no name-keyed
+        // entry of its own -- and only when the container carries neither does
+        // it fall back to the target NAME's own declared default/constraint
+        // (raku: `@a[0] = Nil; @a[0]` is Any for a plain untyped element). An
+        // `is default(Nil)` container genuinely stores Nil. A `:=` bind
+        // replaces the container, so Nil stays Nil there.
         let val = if val.is_nil() && !bind_mode {
-            if let Some(default) = self.var_default(&var_name) {
-                default.clone()
-            } else if let Some(default) = self
-                .get_env_with_main_alias(&var_name)
-                .and_then(|t| self.container_default(&t))
-            {
-                default
-            } else if let Some(constraint) = loan_env!(self, var_type_constraint(&var_name)) {
-                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&constraint));
-                Value::package(Symbol::intern(&nominal))
-            } else {
-                Value::package(Symbol::intern("Any"))
-            }
+            let container = self.get_env_with_main_alias(&var_name).unwrap_or_else(|| {
+                if is_positional {
+                    Value::real_array(Vec::new())
+                } else {
+                    Value::hash(HashMap::new())
+                }
+            });
+            self.assign_store_nil_default(&var_name, &container)
         } else {
             val
         };
@@ -745,10 +747,25 @@ impl Interpreter {
                             crate::value::ArrayKind::Array,
                         ),
                     };
-                    if idx_u >= items.items().len() {
-                        items.items_mut().resize(idx_u + 1, Value::NIL);
+                    let old_len = items.items().len();
+                    if idx_u >= old_len {
+                        // ADR-0049 slice 5: fill skipped slots with the
+                        // standard `Package("Any")` gap marker instead of a
+                        // raw `Value::NIL` -- `Nil` is no longer a hole
+                        // sentinel, only `ArrayData::initialized` is.
+                        items
+                            .items_mut()
+                            .resize(idx_u + 1, Self::native_fill_for_constraint(None));
                     }
                     items.items_mut()[idx_u] = val.clone();
+                    // Materialize the "all present" range before recording
+                    // `idx_u` as present, so a skipped intermediate slot from
+                    // the resize above is correctly left OUT and reads as a
+                    // gap via `hole_at`.
+                    items
+                        .initialized
+                        .get_or_insert_with(|| (0..old_len).collect())
+                        .insert(idx_u);
                     *storage = Value::array_with_kind(crate::gc::Gc::new(items), kind);
                 });
                 self.stack.push(val);

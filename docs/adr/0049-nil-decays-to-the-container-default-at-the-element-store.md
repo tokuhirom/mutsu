@@ -1,6 +1,6 @@
 # ADR-0049: `Nil` decays to the *container's* default at the element store, and stops being a hole sentinel
 
-- **Status**: Accepted (Slices 0-3 implemented; see "Implementation status" below)
+- **Status**: Accepted (Slices 0-6 implemented; see "Implementation status" below)
 - **Date**: 2026-08-20
 - **Deciders**: tokuhirom, Claude
 - **Related**: [ADR-0040](0040-array-hash-elements-are-itemized-at-the-store.md) (the same Raku model —
@@ -685,10 +685,149 @@ Slices 0-2 landed:
   `t/nil-element-store-decay.t` rows 27/28 stay live (non-`todo`) and green -- rows 25 and 29 stay
   `todo`, unchanged, deferred to slice 5 as originally planned.
 
-- **Next**: slice 4 (mutation sites), slice 5 (retire the `Nil` hole sentinel, plus the two `todo` rows
-  above), and slice 6 (sweep, close out, `git mv` the originating `todo/deep/` finding to `news/`).
+- **Slice 4** (the mutation sites): unified the element-assign ladder
+  (`vm_var_assign_index_named.rs:684-707`, the two `__mutsu_array_storage` inc/dec and index-assign
+  fill sites in `vm_var_assign_post_incdec.rs`/`vm_var_assign_index_named.rs`) and the
+  push/append/unshift/prepend/splice mutators onto the shared `assign_store_nil_default` (element
+  assign) / `typed_container_default`-derived helper (mutators), replacing hand-rolled ladders that
+  either ignored `is default(...)` or reordered its priority relative to the container's own embedded
+  state.
+
+  The element-assign ladder used to check the target NAME's `var_default`/`var_type_constraint` before
+  the container's own embedded `is default(...)`/type metadata -- the reverse of ADR-0042's decision
+  that a container's own metadata should win. Switching to `assign_store_nil_default`'s
+  container-first order fixes a real, verified divergence: `my @a is default(42) = 1,2,3; my @b := @a;
+  @b[1] = Nil; @b[1]` now correctly reads `42` (the container's own default, reached through the bound
+  alias `@b`, which has no name-keyed entry of its own) -- confirmed identical to `raku -e`.
+
+  `push_nil_to_elem_default` (`vm_data_push_ops.rs`) only ever consulted the declared element TYPE
+  (`element_constraint_for`), never a container's `is default(...)` value -- `my @a is default(42) =
+  1,2,3; @a.push(Nil); @a.raku` stored `[1, 2, 3, Any]` where raku (and now mutsu) stores
+  `[1, 2, 3, 42]`. The same gap existed in the shared `nil_to_elem_default` closure
+  `methods_mut_dispatch.rs`'s slow-path `push`/`append`/`unshift` arms share; `prepend`'s arm was
+  additionally missing the call to it entirely (a plain `@a.prepend(Nil)` stored a raw, undecayed
+  `Nil`). Fixed all four to route through `assign_store_nil_default`.
+
+  A DEEPER bug surfaced while verifying `append`/`unshift`/`prepend` against real `raku`: for a
+  single-arg call these never reached the slow path above at all -- `try_native_array_mut`
+  (`vm_call_method_mut_ops.rs`) is a VM fast path that bails to the interpreter for any
+  typed/metadata-tagged target, but `is default(...)` is a SEPARATE side channel from
+  `container_type_metadata`, so an `is default(...)`-only container sailed through the fast path,
+  which routes its `Nil` decay through `decay_nil_vec_elements` -- deliberately untyped-only, by design,
+  precisely BECAUSE the function's own bail-out guard was believed to already exclude every container
+  that needs anything else. Added `self.container_default(target).is_some()` to that guard so an
+  `is default(...)` container now correctly falls through to the interpreter path that has the fix
+  above. `.splice`'s inserted `Nil` args were left decaying to plain `Any` regardless of the
+  container's default -- verified against real `raku` that this is intentional, unlike the other four
+  mutators: `my @a is default(42); @a.splice(1,0,Nil)` stores `Any` in raku too. `.splice` previously
+  stored a raw, undecayed `Nil` there (mutsu-only, since the target array itself was untyped in every
+  case tested); fixed the decay without adding the type-check `.splice` still lacks entirely (a
+  separate, pre-existing gap, recorded as `todo/tickets/splice-insert-not-type-checked.md`).
+
+- **Slice 5** (retire the `Nil` hole sentinel): converted the five `Value::NIL` fill sites named in
+  §1.6 to `Package("Any")` (`vm_var_assign_computed_attr.rs`'s `assign_into_computed_target`,
+  `vm_var_assign_index_named.rs`'s and `vm_var_assign_post_incdec.rs`'s `__mutsu_array_storage`
+  resize fills, and `coerce_to_hash`'s two odd-trailing-key/single-scalar inserts in
+  `coerce_containers.rs`) -- each is also now paired with the standard `initialized`-set
+  materialize-then-record pattern where the site autoviv-resizes an array (the ADR's own §5.1
+  recommendation: fill AND mark, not fill alone).
+
+  A sixth, unnamed `Value::NIL` fill site was found by direct code reading while implementing the
+  above and fixed the same way: `.DELETE-POS`'s array implementation
+  (`array_delete_pos_value`, `methods_subscript_protocol.rs`) and its multi-dimensional twin
+  (`multidim_delete_pos`, `methods.rs`) both wrote a raw `Nil` into the vacated slot as the delete
+  marker -- this is the SAME sentinel-collision pattern the ADR's decision retires, just not in the
+  §1.6 survey (that survey covered `autoviv_resize`/`resize` fill call sites, not delete-marker
+  writes). Both converted to `Package("Any")`, paired with correct `initialized` bookkeeping.
+
+  **Completeness probe (ADR §5 open question 1), run as specified:** a temporary `debug_assert!` was
+  added to `hole_at`'s `Some(ValueView::Nil) => true` arm, then the full local `t/` suite (31292
+  tests) and a broad roast sweep (`S02-types`, `S09-typed-arrays`, `S09-multidim`, `S32-array`,
+  `S32-hash` -- every whitelisted file in each) were run repeatedly under it. It fired three times,
+  each pointing at a genuine, independent bug -- not at gaps the §1.6 survey missed, but at
+  PRE-EXISTING logic bugs in the hole-tracking machinery that `hole_at`'s old, imprecise `Nil` arm had
+  been silently compensating for (an unconditional "yes, hole" answer needs no `initialized`
+  bookkeeping to be right, so nothing downstream of it had ever needed to be correct):
+
+  1. `unmark_initialized_indices`'s `collect_usize_indices` helper had no `ValueView::Whatever` arm, so
+     a zen/whatever-slice delete (`@a[]:delete`, `@a[*]:delete`) never recorded ANY of the deleted
+     indices in the array's `initialized` set. `trim_trailing_array_holes`'s OLD implementation
+     happened to still trim correctly by accident -- it treated `initialized == None` as an EMPTY set
+     (`unwrap_or_default()`) rather than "every index present" (`hole_at`'s actual, documented, correct
+     convention), so every trailing `Package("Any")` slot looked like a hole regardless of tracking.
+     Folding `trim_trailing_array_holes` onto `hole_at` (see below) uses the canonical convention and
+     exposed the real bug: `@a[]:exists:delete` on `1, 2, 3` left `[Any, Any, Any]` instead of
+     emptying to `[]`. Fixed by special-casing `Whatever` in `unmark_initialized_indices` to clear the
+     whole `initialized` set (every index was addressed).
+  2. The same `collect_usize_indices` helper's scalar fallback only matched `Int`/`Num`, falling back
+     to a string-parse of anything else -- silently dropping a `Rat` index (`1.5` in raku source is a
+     `Rat`, not a `Num`; `"1.5"` does not parse as a `usize`). `@a[1.5]:delete` on a 2-element array
+     therefore also never recorded the deletion, leaving an untrimmed trailing hole
+     (`[3, Any]` instead of raku's `[3]`). Fixed by delegating to the same robust `index_to_usize`
+     conversion (Int/Num/Rat/FatRat/BigRat, with a finite check) every OTHER multi-dim/array index site
+     already uses, instead of re-deriving a narrower one here.
+  3. `multidim_delete_pos`'s outer array rebuild (`Value::array_with_kind(Gc::new(ArrayData::new(updated)),
+     ...)`) discarded the source array's `value_type`/`initialized` metadata entirely (a fresh
+     `ArrayData::new` starts with `initialized = None`), so a genuinely-nested multi-index `.DELETE-POS`
+     (`@a.DELETE-POS(1, 2)` on a `[[1,2],[3,4]]`-shaped array) could never mark anything as a hole no
+     matter what marker was stored in the leaf. Fixed by threading `value_type` and a properly
+     materialized `initialized` set through the rebuild.
+
+  With all three fixed, the probe ran clean across every subsequent local `t/` and roast pass, and the
+  temporary `debug_assert!` was removed along with the `Nil` arm it guarded -- `ArrayData::initialized`
+  is now the sole hole discriminator, as decided.
+
+  **The three divergent hole predicates** (§1.6): `trim_trailing_array_holes`
+  (`vm_var_delete_ops.rs`) folded onto `arr.hole_at(i)` directly, which also fixes the name-keyed
+  `var_type_constraint(var_name)` vs. embedded `value_type` divergence the ADR flagged (a bound/aliased
+  array's own metadata now answers the question, matching ADR-0042's direction).
+  `builtins_multidim_ops.rs:415-419`'s `multidim_exists_adverb_multi` predicate was investigated and
+  deliberately left alone: folding it onto `hole_at` needs `(ArrayData, index)` context that its
+  shared `multidim_collect_leaves` leaf-collector does not carry today (only the extracted leaf VALUE),
+  and threading that through would touch its `Vec<(Vec<Value>, Value)>` output type and all six call
+  sites across `builtins_multidim_ops.rs` for a narrow benefit (only multidim + `Whatever`/list-index
+  `:exists` combined with a typed array or an explicitly-assigned `Any` value) with no roast coverage
+  found. Recorded as `todo/tickets/multidim-exists-adverb-blind-to-initialized-and-typed-holes.md`. The
+  fourth site the ADR named, the parameterized shaped `Array[T].new(:shape(...), :data(...))` marker
+  loss at `methods_object_dispatch_new.rs:1327`, was measured directly against real `raku` and found to
+  NOT reproduce: both `Array[Int].new(:shape(3))` and `Array[Int].new(:shape(3), :data(1,2))` report
+  `:exists` `True` for every cell in RAKU ITSELF (not just mutsu), for both a `:data`-seeded and an
+  unseeded shaped array. The ADR's claim of a divergence here was stale/incorrect by direct
+  measurement (per the project's `trap-todo-and-adr-root-cause-often-wrong` lesson) -- no fix was made,
+  and no ticket was filed since there is nothing to fix.
+
+  **Read-side `is_nil()` audit (§5.2, ADR open question 2):** row 25
+  (`%h.AT-KEY("missing")` returning the raw sentinel with no compensation) was fixed --
+  `vm_call_method_mut_ops.rs`'s `AT-KEY` fast path now substitutes `typed_container_default` when
+  `resolve_hash_entry` answers `Nil` for a missing key, mirroring every other hash-key reader in
+  `vm_var_index_ops.rs`. Row 29 (`resolve_array_entry`'s in-range-`Any`-substitution bug, already
+  root-caused and deliberately deferred in slice 2's status entry above) stays unfixed and `todo`-marked
+  in `t/nil-element-store-decay.t`, exactly as previously scoped -- it is a distinct read-chokepoint bug,
+  not a sentinel-retirement task. No other read-side `is_nil()` site was converted: per the ADR's own
+  recommendation, a site not positively provable as pure absent-key disambiguation was left alone
+  (a redundant default lookup costs nothing; removing a real rule is a regression).
+
+  **Verification**: `cargo clippy -- -D warnings` and `cargo fmt --check` clean; `cargo test --lib`
+  (868 tests) and the full local `t/` suite (31292 tests across 3353 files, including every named
+  regression pin) pass, run repeatedly across the debug-assertion probe rounds and once more after its
+  removal; every §1.3/§1.4 row was re-verified directly against `raku -e` one more time in slice 6
+  (below) and all but the still-`todo` row 29 agree; a targeted roast sweep of every whitelisted
+  `S02-types`, `S09-typed-arrays`, `S09-multidim`/`6.d/S09-multidim`, `S06-signature/multidimensional.t`,
+  `S09-subscript/multidim-assignment.t`, `S32-array`, and `S32-hash` file (61 files) passes.
+
+- **Slice 6** (sweep and close out): both renderer `Nil` shortcuts deleted --
+  `raku_value_as_element` (`raku_repr.rs`) no longer special-cases `v.is_nil()`, and `gist.rs`'s
+  real-array element loop no longer branches on `is_real && v.is_nil()`; both are unreachable dead
+  code after slices 1-5 (no real-array element can hold `Nil` any more), confirmed by the same
+  verification pass as slice 5 (nothing in `t/`/the roast sweep exercised the removed branches, and
+  `.raku`/`.gist` output for every §1.3/§1.4 row is unchanged). §1.3 and §1.4 were re-run one final
+  time directly against `raku -e`/mutsu one-liners (not just the pinned test file) as this slice's own
+  closing check; every row matches except the still-open row 29. `make roast` is delegated to CI per
+  usual policy -- not run locally for the full suite. `todo/deep/array-literal-nil-not-decayed-at-
+  construction.md`, the finding this ADR supersedes, is `git mv`'d to `news/2026-08/` as part of this
+  same change, rewritten as an accomplishment.
 
 ---
 
-*This ADR is Accepted for slices 0-3. If the mechanism judgment for later slices changes, supersede
-rather than rewriting.*
+*This ADR is Accepted for slices 0-6 (fully implemented). If the mechanism judgment changes for some
+future consequence of this decision, supersede rather than rewriting.*

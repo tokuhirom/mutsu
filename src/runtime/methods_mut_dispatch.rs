@@ -748,19 +748,22 @@ impl Interpreter {
                 _ => "Array".to_string(),
             };
             // Storing Nil into a fresh array element resets it to the element
-            // default: Any for untyped, the element type object for typed
-            // (`my Int @a; @a.push(Nil)` stores `Int`).
+            // default: `is default(...)` first, then the native element
+            // zero, then the declared element type object, else `Any` for
+            // untyped (`my Int @a; @a.push(Nil)` stores `Int`).
+            //
+            // ADR-0049 slice 4: routed through `assign_store_nil_default`
+            // (the same helper the element-assign ladder and the whole-
+            // container list-assign fixups already use) instead of a
+            // hand-rolled, type-constraint-only ladder — the old version
+            // ignored a container's own `is default(...)` value entirely, so
+            // `my @a is default(42) = 1,2,3; @a.push(Nil)` stored a bare
+            // `Any` element where raku stores `42` (confirmed with `raku -e`).
             let nil_to_elem_default = |slf: &mut Self, vals: Vec<Value>| -> Vec<Value> {
                 if !vals.iter().any(Value::is_nil) {
                     return vals;
                 }
-                let default = match slf.var_type_constraint(&key) {
-                    Some(c) => {
-                        let nominal = slf.nominal_type_object_name_for_constraint(&c);
-                        Value::package(crate::symbol::Symbol::intern(&nominal))
-                    }
-                    None => Value::package(crate::symbol::Symbol::intern("Any")),
-                };
+                let default = slf.assign_store_nil_default(&key, &target);
                 vals.into_iter()
                     .map(|v| if v.is_nil() { default.clone() } else { v })
                     .collect()
@@ -885,6 +888,13 @@ impl Interpreter {
                     );
                     let flat_values = flatten_append_args(args);
                     self.check_container_element_types(&key, &target, &flat_values)?;
+                    // ADR-0049 slice 4: decay a Nil replacement to the
+                    // container's default, exactly like push/append/unshift
+                    // above — `prepend` was the one array mutator missing
+                    // this call entirely, so `my @a is default(42);
+                    // @a.prepend(Nil)` stored a raw `Nil` element instead of
+                    // `42` (confirmed against real `raku`, which decays it).
+                    let flat_values = nil_to_elem_default(self, flat_values);
                     // ADR-0040 slice 1: itemize per element, after the
                     // one-arg-rule flattening decision.
                     let flat_values: Vec<Value> =
@@ -1072,6 +1082,25 @@ impl Interpreter {
                                 // decides to keep as one element (e.g. a
                                 // Range discrete arg, which is unaffected by
                                 // that bug).
+                                //
+                                // ADR-0049 slice 4: a `Nil` replacement arg
+                                // decays to plain `Any`, NOT the target
+                                // container's own `is default(...)` value —
+                                // confirmed against real `raku`: unlike
+                                // push/append/unshift/prepend (which all
+                                // decay to the container's default),
+                                // `@a is default(42); @a.splice(1,0,Nil)`
+                                // stores `Any`, not `42`. `.splice`'s
+                                // inserted args do not go through a declared-
+                                // element-type check at all in mutsu today
+                                // (a separate, pre-existing gap — real raku
+                                // dies with a type-check error inserting
+                                // `Nil`/`Any` into a typed array via splice;
+                                // see todo/tickets/splice-insert-not-type-
+                                // checked.md), so only the Nil-to-Any decay
+                                // itself is in this ADR's scope.
+                                _ if arg.is_nil() => new_items
+                                    .push(Value::package(crate::symbol::Symbol::intern("Any"))),
                                 _ => new_items.push(arg.clone().itemize_for_element_store()),
                             }
                         }

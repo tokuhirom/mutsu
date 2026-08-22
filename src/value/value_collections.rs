@@ -261,14 +261,21 @@ impl ArrayData {
 
     /// Whether index `i` is a hole (a deleted slot or an autovivification
     /// gap), as opposed to an explicitly-assigned element. The canonical
-    /// predicate mirrored by `:exists`/`:k`/`:p`: a literal `Nil` slot is a
-    /// deleted hole; a type-object slot (`Any`, or the element type of a
-    /// typed array) is a gap unless the embedded `initialized` set records
-    /// an explicit assignment (`None` means bulk-constructed — no gaps).
+    /// predicate mirrored by `:exists`/`:k`/`:p`: a type-object slot (`Any`,
+    /// or the element type of a typed array) is a gap unless the embedded
+    /// `initialized` set records an explicit assignment (`None` means
+    /// bulk-constructed — no gaps). ADR-0049 retired `Nil` as a second, less
+    /// precise hole sentinel: a real `Array` element is a `Scalar` container
+    /// and can never actually hold `Nil` (every element store decays a
+    /// stored `Nil` to the container's own default), so `initialized` is now
+    /// the SOLE hole discriminator. A completeness probe (a temporary
+    /// `debug_assert!` in the now-deleted `Some(ValueView::Nil) => ...` arm)
+    /// ran clean under the full local `t/` suite and a broad roast sweep
+    /// before this arm was removed -- see ADR-0049 §5 open question 1 and
+    /// §8's slice 5 entry.
     pub fn hole_at(&self, i: usize) -> bool {
         match self.items.get(i).map(Value::view) {
             None => true,
-            Some(crate::value::ValueView::Nil) => true,
             Some(crate::value::ValueView::Package(name)) => {
                 let is_gap_marker =
                     name == "Any" || self.value_type.as_deref().is_some_and(|t| name == t);

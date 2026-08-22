@@ -4,14 +4,24 @@ use crate::value::RuntimeError;
 
 impl Interpreter {
     /// Storing Nil into a fresh array element resets it to the element
-    /// default: Any for untyped arrays, the element type object for typed
-    /// (`my Int @a; @a.push(Nil)` stores `Int`). Slips convert per element.
+    /// default: `is default(...)` first, then the native element zero, then
+    /// the element type object for typed (`my Int @a; @a.push(Nil)` stores
+    /// `Int`), else `Any` for untyped. Slips convert per element.
     ///
-    /// ADR-0042 slice 1: reads the constraint via `element_constraint_for`,
-    /// which prefers the metadata embedded on the target array's own value
-    /// over the (scope-blind) name-keyed `var_type_constraints` map — the
-    /// same value-carrying accessor every other container mutation site in
-    /// this ADR routes through.
+    /// ADR-0049 slice 4: routed through `assign_store_nil_default` (the same
+    /// helper the element-assign ladder and the whole-container list-assign
+    /// fixups already use), so `push`/`append`/`unshift`/`prepend`/`splice`
+    /// agree with plain element assignment on which default a `Nil` decays
+    /// to — this used to only check the declared TYPE via
+    /// `element_constraint_for` (ADR-0042 slice 1's routing) and therefore
+    /// silently ignored a container's own `is default(...)` value, storing
+    /// the bare `Any` element instead: `my @a is default(42) = 1,2,3;
+    /// @a.push(Nil); @a.raku` stored `[1, 2, 3, Any]` where raku stores
+    /// `[1, 2, 3, 42]` (the read-side `@a[3]` already answered `42` before
+    /// this fix, via a DIFFERENT, unrelated read-chokepoint compensation for
+    /// in-range `Any` elements — see ADR-0049 §8's Row 29 follow-up note —
+    /// but `.raku`/`eqv`/`.List` all read the raw stored element, so the
+    /// mismatch was real and visible there).
     fn push_nil_to_elem_default(&mut self, target_name: &str, val: Value) -> Value {
         let has_nil = match val.view() {
             ValueView::Slip(items) => items.iter().any(Value::is_nil),
@@ -20,14 +30,12 @@ impl Interpreter {
         if !has_nil {
             return val;
         }
-        let target = self.env().get(target_name).cloned().unwrap_or(Value::NIL);
-        let default = match self.element_constraint_for(target_name, &target) {
-            Some(c) => {
-                let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&c));
-                Value::package(crate::symbol::Symbol::intern(&nominal))
-            }
-            None => Value::package(crate::symbol::Symbol::intern("Any")),
-        };
+        let target = self
+            .env()
+            .get(target_name)
+            .cloned()
+            .unwrap_or_else(|| Value::real_array(Vec::new()));
+        let default = self.assign_store_nil_default(target_name, &target);
         match val.view() {
             ValueView::Slip(items) => Value::slip(
                 items

@@ -91,14 +91,11 @@ is {a=>Nil}.pairs.head.value.WHAT, Any, 'row 23: {a=>Nil}.pairs.head.value.WHAT'
 # 24: a nested array-valued hash entry decays too (inside-out, same as row 15).
 ok {a=>[Nil]} eqv {a=>[Any]}, 'row 24: {a=>[Nil]} eqv {a=>[Any]}';
 
-# 25: TODO -- .AT-KEY on a genuinely-*missing* key still returns the raw
-# `Value::NIL` sentinel; this is the read-side compensator gap ADR-0049 SS1.6
-# assigns to slice 5 ("AT-KEY has no compensation at all").
-{
-    todo 'row 25: AT-KEY on a missing key has no compensation yet (ADR-0049 slice 5)';
-    my %row25;
-    is %row25.AT-KEY("missing").WHAT, Any, 'row 25: my %h; %h.AT-KEY("missing").WHAT';
-}
+# 25: .AT-KEY on a genuinely-*missing* key now goes through the same
+# container-default compensation every other hash-key reader already had
+# (ADR-0049 slice 5 -- AT-KEY previously had none at all).
+my %row25;
+is %row25.AT-KEY("missing").WHAT, Any, 'row 25: my %h; %h.AT-KEY("missing").WHAT';
 
 # 26: AT-KEY on a key that holds a *decayed* (not missing) value already works
 # from slices 1-2 -- the map genuinely contains Any now, so no missing-key

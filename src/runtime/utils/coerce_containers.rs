@@ -76,10 +76,17 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     if !matches!(key_val.view(), ValueView::Str(_)) {
                         original_keys.insert(str_key.clone(), key_val.clone());
                     }
+                    // ADR-0049 slice 5: an unpaired trailing key gets the
+                    // standard `Package("Any")` gap marker instead of a raw
+                    // `Value::NIL` -- `Nil` is no longer a hole sentinel.
+                    // (The separate divergence from raku's actual "Odd
+                    // number of elements" die here is unrelated and
+                    // out-of-scope -- see `decay_nil_hash_value`'s doc
+                    // comment above.)
                     let val = if i + 1 < flat.len() {
                         flat[i + 1].clone()
                     } else {
-                        Value::NIL
+                        Value::package(crate::symbol::Symbol::intern("Any"))
                     };
                     map.insert(str_key, val);
                     i += 2;
@@ -113,10 +120,12 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                     if !matches!(key_val.view(), ValueView::Str(_)) {
                         original_keys.insert(str_key.clone(), key_val.clone());
                     }
+                    // ADR-0049 slice 5: see the twin comment on the Array
+                    // arm above.
                     let val = if i + 1 < items.len() {
                         items[i + 1].clone()
                     } else {
-                        Value::NIL
+                        Value::package(crate::symbol::Symbol::intern("Any"))
                     };
                     map.insert(str_key, val);
                     i += 2;
@@ -240,8 +249,15 @@ pub(crate) fn coerce_to_hash(value: Value) -> Value {
                 .unwrap_or_else(|| Value::hash(HashMap::new()))
         }
         _ => {
+            // ADR-0049 slice 5: same rationale as the two odd-trailing-key
+            // arms above -- a single scalar coerced to a Hash with no paired
+            // value gets the standard `Package("Any")` gap marker instead of
+            // a raw `Value::NIL`.
             let mut map = HashMap::new();
-            map.insert(value.to_string_value(), Value::NIL);
+            map.insert(
+                value.to_string_value(),
+                Value::package(crate::symbol::Symbol::intern("Any")),
+            );
             Value::hash(map)
         }
     }
