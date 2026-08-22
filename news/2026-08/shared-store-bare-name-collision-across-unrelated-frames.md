@@ -1,11 +1,11 @@
 # Two unrelated frames no longer collide through the cross-thread container lane
 
-A spawn used to publish **every** live `@`/`%` lexical into the bare-name-keyed
-cross-thread store, including containers the spawned block could not possibly
-reach. The entry then outlived the frame that owned it, and any later frame with
-a same-named container resolved to it instead of to its own binding — a silent
-wrong value, fully deterministic, repeating on every call. `start`/`Promise`
-armed it; one `await start { 1 }` anywhere in the process was enough.
+A spawn publishes every live `@`/`%` lexical into the bare-name-keyed
+cross-thread store. The entry then outlived the frame that owned it, and any
+later frame with a same-named container resolved to it instead of to its own
+binding — a silent wrong value, fully deterministic, repeating on every call.
+`start`/`Promise` armed it; one `await start { 1 }` anywhere in the process was
+enough.
 
 ```raku
 sub work($tag) {
@@ -44,53 +44,66 @@ name, so re-key the store". Two thirds of that expired before it was worked:
   sibling spawns no longer see each other's lexicals.
 - **Scalars are clean.** Ten shapes were probed on `52631889f` and every one
   matched `raku`; the `thread_redeclared_vars` mask plus the Nil-gated `GetLocal`
-  pull cover the scalar lane.
+  pull cover the scalar lane. A scalar reads its slot and consults the store only
+  when the slot holds `Nil`; a container had no slot read at all, which is why
+  only `@`/`%` were left.
 - **Re-keying was rejected outright** (ADR-0039 §8.4 point 4): the surviving
   repro collides two frames of *one* thread inside *one* lineage, and the
   callee's `my @items` runs **before** the process's first spawn, so there is no
   mask to keep, re-key or scope. No discipline applied to the store can fix it.
 
-What was left was a single sigil, and it was not a store problem at all: the
-spawn published a binding nothing had asked to share.
+What was left was a single sigil, and it was not a *keying* problem: it was
+that a bare name cannot say which binding an entry belongs to.
 
 ## The fix
 
-ADR-0039 §8.3 had already named the mechanism — `block_captured_scalars`
-(`src/runtime/runtime_thread.rs`) `continue`s on `@`/`%`/`&` while scanning a
-spawned block's free variables, throwing the container half of that analysis
-away — and called it "a third instance of the `@`/`%` sigil skip". That skip is
-now lifted, and the recovered information used with the polarity the container
-lane actually has:
+The cross-thread store is keyed by bare name, so by itself it cannot tell "the
+container this frame is looking at" from "some other frame's container that
+happens to share the name". `container_name_is_redeclared`
+(`src/runtime/runtime_shared_vars.rs`) is the predicate all nine lane gates
+already consult for that question, and its old answer -- "was this name masked
+by a `my` since the last spawn?" -- is structurally incapable of covering the
+repros above:
 
-- `block_referenced_containers` collects the plain-lexical `@`/`%` names in the
-  spawned block's `free_var_syms` / `free_var_writes` /
-  `free_var_container_writes` (these already fold up nested closures, so
-  `start { start { @a.push(1) } }` keeps `@a`). It returns `Option`, and is
-  `None` for the block-less `clone_for_thread` entry point (supply drivers,
-  `.then`, socket and proc readers), which is therefore unchanged.
-- `clone_for_thread_excluding` **does not seed** a plain-lexical container the
-  block never names, and **keeps** such a container's existing
-  `thread_redeclared_vars` mask across the spawn rather than dropping it. The
-  retain half covers the composite shape — an outer binding already on the lane,
-  plus a callee that re-declares the name and spawns something unrelated —
-  where the unmask would otherwise hand the callee's fresh `my @items` straight
-  to the caller's live entry.
+- the mask is only ever populated while `shared_vars_active`, so the callee's
+  `my @items`, which runs *before* the process's first spawn, is never masked at
+  all; and
+- the mask is not scoped to the declaring frame, so even when it is set it is
+  dropped at the next spawn and outlives the frame when it is not.
 
-The polarity is inverted relative to scalars, and deliberately so. For a scalar,
-"the block captures it" means the closure machinery owns it per binding, so it
-is kept **off** the lane (the lane would be a competing, lossy second mechanism).
-A container has no per-binding home — `box_captured_lexicals` declines to box
-`@`/`%`, ADR-0025 slice 3's deferral — so for containers the lane *is* the
-sharing mechanism: a container the block names belongs on it, one it never names
-does not.
+It now also asks the containers themselves. Container mutation in mutsu is
+write-through-the-shared-node (ADR-0013 §7 / ADR-0039 §2), so a container's `Gc`
+node **is** its binding identity -- the same property slots would give, read off
+the value instead of the frame. `container_store_binding_is_foreign` resolves
+the name the way the frame would without the store (`unit_lexicals` first, then
+`env`) and compares its node against the store's base entry and its
+authoritative `__mutsu_atomic_*` copy. A match means the entry is about *this*
+binding and every lane preference is correct; no match means it belongs to
+another frame and this one stays local.
 
-A container reached only **indirectly** — by a routine the block calls rather
-than names — needs no lane entry either. Container mutation is
-write-through-the-shared-node (ADR-0013 §7 / ADR-0039 §2) and the child's env
-clone holds the same `Gc`, so a worker's push is visible without a store entry;
-and when a directly-nested named sub mutates the container, the declaration site
-has already boxed it into a shared `ContainerRef` cell
-(`box_decl_local_container_cell`).
+The test is conservative in the direction that preserves sharing: no live local
+binding, a non-container value, or a name absent from the store all answer "not
+foreign", leaving the previous behaviour exactly as it was. It is restricted to
+plain lexical names, so twigil'd, dynamic (`@*x`), attribute and `::`-qualified
+containers keep their own routes, and it only runs while `shared_vars_active`.
+
+### The approach it replaced, and why
+
+ADR-0039 §8.3 pointed at a "third `@`/`%` sigil skip": `block_captured_scalars`
+`continue`s on `@`/`%`/`&` while scanning a spawned block's free variables. The
+direct reading of that is to stop *publishing* a container the spawned block
+never names. That was tried first. It fixed both repros and left the entire rest
+of the `t/` suite green (3341 files) -- but broke exactly two shapes, both
+**indirect**: a worker whose block names only a routine
+(`await start { inner('x') }`) that pushes to an outer container. Those
+containers really are shared, and the name lane really is what carries them, so
+a static reachability analysis over the block's free variables is the wrong
+instrument: it cannot see through a call.
+
+The identity test needs no reachability analysis. In the indirect shapes the
+store's entry *is* the frame's own container, so it answers "not foreign" and
+the sharing stands; in the collision shapes it is a different container, so the
+frame stays local.
 
 ## Pins
 

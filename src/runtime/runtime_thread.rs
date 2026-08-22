@@ -114,75 +114,6 @@ impl Interpreter {
         out
     }
 
-    /// The plain-lexical `@`/`%` containers a spawned block's compiled subtree
-    /// actually names, or `None` when the spawn has no known block (the
-    /// block-less [`clone_for_thread`](Self::clone_for_thread) entry point,
-    /// where no such analysis exists and every live container keeps the name
-    /// lane exactly as before).
-    ///
-    /// ADR-0039 §8.3. The polarity here is the OPPOSITE of
-    /// [`block_captured_scalars`](Self::block_captured_scalars), and
-    /// deliberately so. A scalar the block captures already has a per-binding
-    /// home (a `box_captured_lexicals` cell, or a correctly frozen value), so
-    /// it is kept OUT of the name-keyed store. A container has no such
-    /// per-binding home — `box_captured_lexicals` declines to box `@`/`%` — so
-    /// for containers the name lane is the *sharing* mechanism, not a
-    /// competing one: a container the block NAMES belongs on the lane, and a
-    /// container it never names has no business entering it.
-    ///
-    /// Publishing every live container at every spawn is what made
-    /// `news/2026-08/shared-store-bare-name-collision-across-unrelated-frames.md`'s
-    /// repros fail. `sub work($tag) { my @items = ($tag,); await start { 1 };
-    /// @items.push(...) }` published the callee's own `my @items` under its
-    /// bare name because of a spawn that could not possibly reference it; the
-    /// entry then outlived the frame and every later read of an unrelated
-    /// caller's `@items` resolved to it. Nothing masks that: the callee's `my`
-    /// ran before the first spawn, so `thread_redeclared_vars` was empty at the
-    /// time, which is why §8.4 concluded that no keying discipline on the store
-    /// can fix it — only *not putting the binding there* can.
-    ///
-    /// `free_var_syms` already folds up the free variables of nested closures
-    /// (`compute_free_vars`, "Fold nested closures"), so `start { start {
-    /// @a.push(1) } }` keeps `@a`. A container reached only *indirectly* — by a
-    /// routine the block calls rather than names — is not in this set, and is
-    /// deliberately not tracked here: such a container is shared by container
-    /// identity instead (the child's env clone holds the same `Gc` node, and
-    /// container mutation is write-through-the-node per ADR-0013 §7 / ADR-0039
-    /// §2), and when a directly-nested named sub mutates it the declaration
-    /// site boxes it into a shared `ContainerRef` cell anyway
-    /// (`box_decl_local_container_cell`).
-    fn block_referenced_containers(block: &Value) -> Option<std::collections::HashSet<String>> {
-        let mut out = std::collections::HashSet::new();
-        if let ValueView::Sub(data) = block.view()
-            && let Some(cc) = data.compiled_code.as_ref()
-        {
-            for sym in cc
-                .free_var_syms
-                .iter()
-                .chain(cc.free_var_writes.iter())
-                .chain(cc.free_var_container_writes.iter())
-            {
-                let name = sym.resolve();
-                if name.starts_with(['@', '%']) {
-                    out.insert(name);
-                }
-            }
-            return Some(out);
-        }
-        None
-    }
-
-    /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.3 lane
-    /// restriction applies to. Twigil'd, dynamic and attribute containers
-    /// (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep their
-    /// existing routes — `@*x`/`%*x` in particular depend on the name lane for
-    /// their cross-thread propagation (see the aggregate-dynamic carve-out in
-    /// the seeding loop). The anonymous container slot names are excluded for
-    /// the same reason `collect_unit_lexical_names` excludes them.
-    fn lane_restricted_container_name(key: &str) -> bool {
-        Self::is_plain_lexical_name(key) && !key.contains("__ANON")
-    }
-
     /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
     /// set. Called at `RegisterClass` / `RegisterRole`, which always run before
     /// the type can be instantiated (and so before any of its methods can run).
@@ -199,11 +130,7 @@ impl Interpreter {
     /// excluded from the name-keyed shared store. See `block_captured_scalars`.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
         let captured = self.block_captured_scalars(block);
-        // ADR-0039 §8.3: the containers this block actually names are the only
-        // ones that belong on the name-keyed lane. See
-        // `block_referenced_containers`.
-        let containers = Self::block_referenced_containers(block);
-        self.clone_for_thread_excluding(&captured, containers.as_ref())
+        self.clone_for_thread_excluding(&captured)
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
@@ -211,13 +138,12 @@ impl Interpreter {
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
-        self.clone_for_thread_excluding(&std::collections::HashSet::new(), None)
+        self.clone_for_thread_excluding(&std::collections::HashSet::new())
     }
 
     fn clone_for_thread_excluding(
         &mut self,
         captured_scalars: &std::collections::HashSet<String>,
-        referenced_containers: Option<&std::collections::HashSet<String>>,
     ) -> Self {
         // A thread spawned BEFORE the first test call must still share the TAP
         // counter: the first `ok` of the whole program can run on the spawned
@@ -346,21 +272,6 @@ impl Interpreter {
                 {
                     continue;
                 }
-                // ADR-0039 §8.3: a plain-lexical `@`/`%` this block never names
-                // does not go on the name-keyed lane at all. Publishing it made
-                // the binding outlive its frame in a process-visible,
-                // bare-name-keyed store, where an unrelated frame's same-named
-                // container then resolved to it (`news/2026-08/shared-store-
-                // bare-name-collision-across-unrelated-frames.md`). See
-                // `block_referenced_containers` for why the polarity is the
-                // inverse of the captured-scalar skip above, and why an
-                // indirectly-reached container needs no entry here.
-                if let Some(refs) = referenced_containers
-                    && Self::lane_restricted_container_name(&key)
-                    && !refs.contains(&key)
-                {
-                    continue;
-                }
                 // Only seed if not already visible — an entry an earlier thread
                 // already updated must not be reset to this env's copy.
                 // EXCEPT names this thread re-declared: their entry (if any)
@@ -438,23 +349,10 @@ impl Interpreter {
         // the caller's unrelated value back over the parameter for the
         // remainder of the call. Explicit `unmask_thread_redeclared_params` at
         // the call's return is the only thing that ever clears it.
-        //
-        // ADR-0039 §8.3: the unmask is *paid for* by the force-seed above it
-        // ("its current value was force-seeded"). A plain-lexical container the
-        // spawned block never names was deliberately NOT seeded by the new skip
-        // above, so that premise does not hold for it and its mask has to
-        // survive — otherwise the very spawn that declined to publish the
-        // binding would still hand the name back to whatever stale entry an
-        // earlier frame left in the store. This only ever *keeps* an existing
-        // mask (`retain` cannot add one), so a genuinely shared container --
-        // never re-declared, hence never masked -- is untouched.
         self.thread_redeclared_vars.borrow_mut().retain(|n| {
             captured_scalars.contains(n.trim_start_matches('$'))
                 || self.thread_decl_in_flight.contains(n)
                 || self.thread_param_shadow_vars.borrow().contains(n)
-                || referenced_containers.is_some_and(|refs| {
-                    Self::lane_restricted_container_name(n) && !refs.contains(n)
-                })
         });
         let mut cloned_handles = HashMap::new();
         let handles_guard = self.io_handles();
