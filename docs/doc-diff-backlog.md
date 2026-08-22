@@ -808,6 +808,50 @@ deep ticket, since it's the same "script type creation directly through
   per-shape internal subclasses); treated the same as the documented hex-address
   exclusion — non-actionable, not ticketed.
 
+Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`functions`/
+`Metamodel::MethodContainer`/`faq`/`X::Str::Match::x`/`Real`/`Associative`/`grammar_tutorial`/
+`Method`/`unicode_entry`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Metamodel/DefiniteHOW.rakudoc:18,27,80` | a bare `Type:D`/`Type:U` term loses its definiteness constraint entirely — `.^name`, `~~`, and `.^base_type` all treat it as the plain unconstrained type | [definiteness-constrained-type-object-identity-lost.md](../todo/deep/definiteness-constrained-type-object-identity-lost.md) |
+| `Type/Junction.rakudoc:266` | `Junction.new("one", 1..6)` doesn't flatten a `Range` values-argument into individual elements, so `.Bool` is wrong | [junction-new-range-argument-not-flattened.md](../todo/tickets/junction-new-range-argument-not-flattened.md) |
+| `Type/Junction.rakudoc:205` | a self-referential `$j = any (gather $j».take)...` combined with a value-producing `when` in a helper sub crashes with a stack overflow | [junction-self-referential-gather-stack-overflow.md](../todo/tickets/junction-self-referential-gather-stack-overflow.md) |
+| `Language/functions.rakudoc:1291` | `nextsame` from a user subclass `.new` into a built-in `Version.new` doesn't reach the built-in constructor | [nextsame-into-builtin-version-new-broken.md](../todo/tickets/nextsame-into-builtin-version-new-broken.md) |
+| `Type/Metamodel/MethodContainer.rakudoc:15`, `Type/Method.rakudoc:18` | `method` literal invocant-declaration syntax is broken: a named invocant (`method ($x:) {...}`) never binds `$x`, and a type-only unnamed invocant (`method (List:D:) {...}`) is a hard parse error | [method-literal-invocant-declaration-syntax-broken.md](../todo/tickets/method-literal-invocant-declaration-syntax-broken.md) |
+| `Type/Metamodel/MethodContainer.rakudoc:40` | `.^methods(:all)` ignores the `:all` adverb — returns own methods only, same as the plain call | [metaclass-methods-all-flag-ignored.md](../todo/tickets/metaclass-methods-all-flag-ignored.md) |
+| `Type/Metamodel/MethodContainer.rakudoc:73` | `.^lookup("nonexistent")` returns `Nil` instead of the `Mu` type object | [classhow-lookup-missing-method-returns-nil-not-mu.md](../todo/tickets/classhow-lookup-missing-method-returns-nil-not-mu.md) |
+| `Language/faq.rakudoc:359` | a custom `postcircumfix:<[...]>` operator's `+@slurpy` args are wrong when called via subscript syntax, though the identical logic works fine as a plain sub call | [custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md](../todo/tickets/custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md) |
+| `Language/faq.rakudoc:1108` | repeated big-Int addition (growing-magnitude Fibonacci-style loop) is ~14x slower than raku, timing out under the harness budget at 100k iterations | [bigint-repeated-addition-performance-gap.md](../todo/tickets/bigint-repeated-addition-performance-gap.md) |
+| `Type/X/Str/Match/x.rakudoc:15` | `.match(pattern, :x(BAD_TYPE))` doesn't validate the `:x` adverb's value type, so `X::Str::Match::x` is never thrown | [str-match-x-adverb-type-not-validated.md](../todo/tickets/str-match-x-adverb-type-not-validated.md) |
+| `Type/Real.rakudoc:31` | adding two custom `Real`-subclass instances (via `.Bridge`) produces an exact `Rat` where raku produces an approximate `Num` | [real-subclass-generic-plus-produces-exact-rat-not-num.md](../todo/tickets/real-subclass-generic-plus-produces-exact-rat-not-num.md) |
+| `Type/Associative.rakudoc:53` | `.of` on a class statically `does`-ing a parametric `Associative[Cool,DateTime]` reports `(Mu)` instead of the declared value type `(Cool)` | [associative-of-static-does-parametric-role-wrong-value-type.md](../todo/tickets/associative-of-static-does-parametric-role-wrong-value-type.md) |
+| `Language/grammar_tutorial.rakudoc:679` | a grammar `rule` with multiple embedded code blocks and subrule calls executes them out of the declared left-to-right order | [grammar-rule-embedded-actions-execute-out-of-order.md](../todo/tickets/grammar-rule-embedded-actions-execute-out-of-order.md) |
+| `Language/unicode_entry.rakudoc:532` | nested Unicode "curly" double quotes (`“...“...”...”`) fail to parse — the lexer doesn't track nesting depth for this quote pair | [nested-unicode-curly-double-quotes-parse-fail.md](../todo/tickets/nested-unicode-curly-double-quotes-parse-fail.md) |
+
+**Excluded from this batch-6 sub-run (already deferred/resolved/drift/false-positive/duplicate):**
+- `Language/functions.rakudoc` [1] (line 1127, `&how-many.cando(...)` gist) — bucketed
+  `raku-drift` overall (the doc's stated candidate-signature format is stale), but re-verified
+  directly that mutsu's own gist of the returned `Sub`s is also wrong independent of that drift:
+  `(how-many how-many)` instead of raku's `(&how-many &how-many)`. This is the same root cause
+  (a `Sub`'s default stringify/gist drops the leading `&` sigil) already filed as
+  [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md)'s
+  second repro; not re-filed.
+- `Language/functions.rakudoc` [3] (line 720, `&infix:<XX>([1,(2,3)], [(4,5),6])`) — matches the
+  already-**Deferred**/deep "Array/Hash elements are stored bare — element reads lack
+  itemization" cluster (`todo/deep/element-itemization-lost-in-scalar-binding.md`, ADR-0040): the
+  nested `List` literal `(2,3)` inside the outer `Array` literal `[1,(2,3)]` loses its
+  itemization boundary, so the `X`-cross meta-op treats it as two separate elements instead of
+  one itemized `List` element.
+- `Type/Junction.rakudoc` [2], [3], [4] — `raku-drift-from-doc` (stale doc `# OUTPUT` text for
+  the string-concatenation-junction example, the `:exists` junction-key example, and the
+  `+any(...)` numeric-coercion-failure example's exception message format).
+- `Type/Method.rakudoc` [1] — the named-invocant repro (`method ($invocant: $param) {...}`) is
+  the same root cause as
+  [method-literal-invocant-declaration-syntax-broken.md](../todo/tickets/method-literal-invocant-declaration-syntax-broken.md)'s
+  Bug 1, and the type-only-invocant repro (`method (List:D:) {...}`) is that same ticket's Bug 2;
+  both folded into the one ticket above rather than being filed separately.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
