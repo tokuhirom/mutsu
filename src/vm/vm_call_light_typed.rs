@@ -508,68 +508,113 @@ impl Interpreter {
         if cf.code.is_routine {
             self.set_when_matched(false);
         }
-        // Execute the function body
-        let mut ip = 0;
-        let mut result = Ok(());
-        let mut explicit_return: Option<Value> = None;
-        let mut fail_bypass = false;
-        while ip < cf.code.ops.len() {
-            // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
-            // start, run the whole body natively when the chunk is hot and
-            // Tier A-compilable; the native outcome threads through the same
-            // match arms below.
-            let step = if ip == 0
-                && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
-            {
-                ip = cf.code.ops.len();
-                r
-            } else {
-                self.exec_one(&cf.code, &mut ip, compiled_fns)
-            };
-            match step {
-                Ok(()) => {}
-                Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
-                    // Non-local return: if the signal targets a specific
-                    // callable, only catch it if this routine is the target
-                    // (mirrors `call_compiled_function_named`'s decline
-                    // check; see `vm_call_light.rs`'s twin for the full
-                    // rationale, including why this lookup is deferred to
-                    // only the rare targeted-signal case).
-                    if let Some(target_id) = e.return_target_callable_id() {
-                        let my_id = self.registration_clone_id(&cf.package, func_name);
-                        if my_id != Some(target_id) {
-                            loan_env!(self, restore_let_saves(let_mark));
-                            result = Err(e);
-                            break;
+        // Execute the function body.
+        //
+        // Panic-unwind safety (mirrors `call_compiled_function_positional_light`
+        // in `vm_call_light.rs` -- see that function's matching comment for the
+        // full rationale): this fast path bypasses `push_call_frame`, so none of
+        // the caller-side state saved above (`self.locals`, `self.env`/
+        // `caller_env`, the loop/block-scope save sets, `when_matched`, pragmas,
+        // the current package/source line, and the routine-stack push above) is
+        // registered on any rollback list `recover_call_frames_after_panic`
+        // knows about. Catch a panic raised inside the body loop right here,
+        // restore every piece of that state exactly as the normal completion
+        // path below does, then resume the unwind. Zero cost on the
+        // non-panicking path. See
+        // `news/2026-08/light-call-state-leak-on-panic-unwind.md`.
+        let body_outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut ip = 0;
+            let mut result = Ok(());
+            let mut explicit_return: Option<Value> = None;
+            let mut fail_bypass = false;
+            while ip < cf.code.ops.len() {
+                // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
+                // start, run the whole body natively when the chunk is hot and
+                // Tier A-compilable; the native outcome threads through the same
+                // match arms below.
+                let step = if ip == 0
+                    && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
+                {
+                    ip = cf.code.ops.len();
+                    r
+                } else {
+                    self.exec_one(&cf.code, &mut ip, compiled_fns)
+                };
+                match step {
+                    Ok(()) => {}
+                    Err(e) if e.return_value.is_some() && !e.is_yield_signal() => {
+                        // Non-local return: if the signal targets a specific
+                        // callable, only catch it if this routine is the target
+                        // (mirrors `call_compiled_function_named`'s decline
+                        // check; see `vm_call_light.rs`'s twin for the full
+                        // rationale, including why this lookup is deferred to
+                        // only the rare targeted-signal case).
+                        if let Some(target_id) = e.return_target_callable_id() {
+                            let my_id = self.registration_clone_id(&cf.package, func_name);
+                            if my_id != Some(target_id) {
+                                loan_env!(self, restore_let_saves(let_mark));
+                                result = Err(e);
+                                break;
+                            }
                         }
+                        let ret_val = e.return_value.unwrap();
+                        explicit_return = Some(ret_val.clone());
+                        self.stack.truncate(saved_stack_depth);
+                        self.stack.push(ret_val);
+                        self.resolve_let_saves_on_success(let_mark, true);
+                        result = Ok(());
+                        break;
                     }
-                    let ret_val = e.return_value.unwrap();
-                    explicit_return = Some(ret_val.clone());
-                    self.stack.truncate(saved_stack_depth);
-                    self.stack.push(ret_val);
-                    self.resolve_let_saves_on_success(let_mark, true);
-                    result = Ok(());
-                    break;
+                    Err(e) if e.is_fail() => {
+                        fail_bypass = true;
+                        let failure = self.fail_error_to_failure_value(&e);
+                        loan_env!(self, restore_let_saves(let_mark));
+                        self.stack.truncate(saved_stack_depth);
+                        self.stack.push(failure);
+                        result = Ok(());
+                        break;
+                    }
+                    Err(e) => {
+                        loan_env!(self, restore_let_saves(let_mark));
+                        result = Err(e);
+                        break;
+                    }
                 }
-                Err(e) if e.is_fail() => {
-                    fail_bypass = true;
-                    let failure = self.fail_error_to_failure_value(&e);
-                    loan_env!(self, restore_let_saves(let_mark));
-                    self.stack.truncate(saved_stack_depth);
-                    self.stack.push(failure);
-                    result = Ok(());
-                    break;
-                }
-                Err(e) => {
-                    loan_env!(self, restore_let_saves(let_mark));
-                    result = Err(e);
+                if self.is_halted() {
                     break;
                 }
             }
-            if self.is_halted() {
-                break;
+            (result, explicit_return, fail_bypass)
+        }));
+        let (result, explicit_return, fail_bypass) = match body_outcome {
+            Ok(triple) => triple,
+            Err(panic_payload) => {
+                // Restore every piece of caller-side state this function
+                // manages outside RAII, mirroring the unconditional
+                // restoration below (see this block's doc comment above),
+                // before re-raising so `self` is coherent again by the time
+                // an enclosing `catch_unwind` boundary resumes the caller.
+                self.pop_routine();
+                if cf.code.is_routine {
+                    self.set_when_matched(saved_when_matched);
+                }
+                self.restore_pragma_state(saved_pragmas);
+                self.stack.truncate(saved_stack_depth.min(self.stack.len()));
+                self.cur_source_line = saved_line;
+                let used = std::mem::replace(&mut self.locals, saved_locals);
+                self.recycle_locals(used);
+                self.loop_local_vars = saved_loop_local_vars;
+                self.loop_local_saved_env = saved_loop_local_saved_env;
+                self.active_loop_param_names = saved_active_loop_param_names;
+                self.block_declared_vars = saved_block_declared_vars;
+                self.finish_light_env(cf, caller_env);
+                self.leave_routine_package(saved_package);
+                if is_module_call {
+                    self.module_call_depth -= 1;
+                }
+                std::panic::resume_unwind(panic_payload);
             }
-        }
+        };
 
         // Pop the routine frame pushed above -- see its push site for the
         // rationale. Paired unconditionally with the push: every loop exit
@@ -624,6 +669,61 @@ impl Interpreter {
         // per-key `modified_env_keys` save/restore.
         // `$!` is scoped per routine: the caller's value must survive the call
         // (a block, which shares its enclosing routine's `$!`, is excluded).
+        // Shared with the panic-recovery arm above via `finish_light_env` (see
+        // that method's doc comment) so a Rust panic mid-body cannot skip this
+        // merge and leave the caller's env permanently pointed at the callee's
+        // own overlay.
+        self.finish_light_env(cf, caller_env);
+        self.leave_routine_package(saved_package);
+
+        // Slice F (env<->locals coherence): record the captured-outer variables
+        // this body writes so the call-site op writes them straight through to the
+        // caller's local slots (see `call_compiled_function_positional_light`).
+        for sym in &cf.code.free_var_writes {
+            // A write to the callee compunit's own file-scope lexical is not a
+            // captured-outer write; replaying it would clobber the caller's
+            // same-named `my` (see `is_unit_lexical_of`). ADR-0024: same
+            // reasoning for a mainline named sub writing its own captured
+            // mainline lexical (see `call_compiled_function_named_inner`).
+            let fname = sym.resolve();
+            if fname != "_"
+                && fname != "@_"
+                && fname != "%_"
+                && !self.is_unit_lexical_of(&cf.package, &fname)
+                && !self.is_mainline_lexical_write(func_name, &fname)
+            {
+                self.pending_rw_writeback_sources.push(fname.to_string());
+            }
+        }
+
+        if is_module_call {
+            self.module_call_depth -= 1;
+        }
+        match result {
+            Ok(()) if fail_bypass => Ok(ret_val),
+            Ok(()) => {
+                if let Some(v) = explicit_return {
+                    Ok(v)
+                } else {
+                    Ok(ret_val)
+                }
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Merge the callee's env overlay back into the caller (or replay the
+    /// discard-only rollback for a reused frame), following the exact rules
+    /// `call_compiled_function_light_spec`'s normal completion path used to
+    /// apply inline. Factored out so the panic-unwind recovery arm in that
+    /// function can call the identical logic instead of duplicating it a
+    /// second time within the same function body -- see
+    /// `news/2026-08/light-call-state-leak-on-panic-unwind.md`. (Mirrors
+    /// `call_compiled_function_positional_light`'s
+    /// `finish_positional_light_env` in `vm_call_light.rs`; this cousin has
+    /// no `my_declared_enum_sym` check, matching that difference in the
+    /// original inline code.)
+    fn finish_light_env(&mut self, cf: &CompiledFunction, caller_env: Option<crate::env::Env>) {
         let bang_is_callee_private = cf.code.is_routine;
         match caller_env {
             Some(caller_env) => {
@@ -665,42 +765,6 @@ impl Interpreter {
                     });
                 }
             }
-        }
-        self.leave_routine_package(saved_package);
-
-        // Slice F (env<->locals coherence): record the captured-outer variables
-        // this body writes so the call-site op writes them straight through to the
-        // caller's local slots (see `call_compiled_function_positional_light`).
-        for sym in &cf.code.free_var_writes {
-            // A write to the callee compunit's own file-scope lexical is not a
-            // captured-outer write; replaying it would clobber the caller's
-            // same-named `my` (see `is_unit_lexical_of`). ADR-0024: same
-            // reasoning for a mainline named sub writing its own captured
-            // mainline lexical (see `call_compiled_function_named_inner`).
-            let fname = sym.resolve();
-            if fname != "_"
-                && fname != "@_"
-                && fname != "%_"
-                && !self.is_unit_lexical_of(&cf.package, &fname)
-                && !self.is_mainline_lexical_write(func_name, &fname)
-            {
-                self.pending_rw_writeback_sources.push(fname.to_string());
-            }
-        }
-
-        if is_module_call {
-            self.module_call_depth -= 1;
-        }
-        match result {
-            Ok(()) if fail_bypass => Ok(ret_val),
-            Ok(()) => {
-                if let Some(v) = explicit_return {
-                    Ok(v)
-                } else {
-                    Ok(ret_val)
-                }
-            }
-            Err(e) => Err(e),
         }
     }
 
