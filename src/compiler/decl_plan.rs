@@ -209,7 +209,11 @@ impl Compiler {
         // one D3-8b/c would install from (the shell's own `RegisterDecl` is
         // superseded at runtime by the real one) — mirrors the sub side,
         // where only the source-order site compiles the body. Skip the
-        // (otherwise-redundant) compile there.
+        // (otherwise-redundant) compile there. `exec_register_class_op`
+        // skips the shell's registration-time compile to match: with no
+        // keys to install from, that pass used to compile every body from
+        // scratch and then have the whole `MethodDef` set thrown away
+        // unread by the real declaration's registration.
         let is_hoisted_shell = custom_traits.iter().any(|(t, _)| t == "__hoisted");
         // ADR-0019 D3-8d: a class declared inside a sub/method/closure body
         // (e.g. `subtest "..." => { my class C { ... } }`) compiles under a
@@ -230,8 +234,13 @@ impl Compiler {
         // Class-body methods auto-detect a bare `@_` read the way
         // `class_body_method_decl` does (`apply_auto_positional_slurpy:
         // true`); `is_hidden` gates the implicit `*%_` the same way too.
-        let method_compiled_keys =
-            self.compile_method_body_keys(body, package_name.as_deref(), *is_hidden, true);
+        let method_compiled_keys = self.compile_method_body_keys(
+            body,
+            package_name.as_deref(),
+            *is_hidden,
+            true,
+            is_hoisted_shell,
+        );
         let body_plan = self.compile_class_body_plan(body, package_name.as_deref());
         self.code.add_class_decl_plan(
             stmt,
@@ -345,12 +354,22 @@ impl Compiler {
     /// name is computed (`method ::($n) {...}`) also stays `None` regardless
     /// of the package, mirroring D3-1's `method_name_chunks` fallback for
     /// the same case.
+    ///
+    /// This pass is also where a class/role body's outer-lexical WRITES are
+    /// harvested for `CompiledCode::type_body_written_lexicals`:
+    /// [`Self::compile_method_body`] records them as a byproduct of the one
+    /// compile it already does, and the methods it skips fall back to
+    /// [`Self::record_type_body_captures_uncompiled`]. `is_hoisted_shell`
+    /// suppresses even that fallback — the shell is superseded by the real,
+    /// source-position declaration, whose own pass records the identical set
+    /// into the same (per-`CompiledCode`) vec.
     fn compile_method_body_keys(
         &mut self,
         body: &[Stmt],
         package_name: Option<&str>,
         is_hidden: bool,
         apply_auto_positional_slurpy: bool,
+        is_hoisted_shell: bool,
     ) -> Vec<Option<Symbol>> {
         let flattened: Vec<&Stmt> = body
             .iter()
@@ -359,19 +378,13 @@ impl Compiler {
                 other => vec![other],
             })
             .collect();
-        let Some(package_name) = package_name else {
-            return flattened
-                .iter()
-                .filter(|stmt| matches!(stmt, Stmt::MethodDecl { .. }))
-                .map(|_| None)
-                .collect();
-        };
-        let package_name = package_name.to_string();
+        let package_name = package_name.map(str::to_string);
         let mut keys = Vec::new();
         for stmt in flattened {
             let Stmt::MethodDecl {
                 name,
                 name_expr,
+                params,
                 param_defs,
                 body,
                 is_rw,
@@ -381,20 +394,23 @@ impl Compiler {
             else {
                 continue;
             };
-            if name_expr.is_some() {
-                keys.push(None);
-                continue;
+            let key = match (&package_name, name_expr) {
+                (Some(package_name), None) => self.compile_method_body(
+                    package_name,
+                    &name.resolve(),
+                    param_defs,
+                    body,
+                    is_hidden,
+                    apply_auto_positional_slurpy,
+                    *is_rw,
+                    return_type.as_ref(),
+                ),
+                _ => None,
+            };
+            if key.is_none() && !is_hoisted_shell {
+                self.record_type_body_captures_uncompiled(params, param_defs, body);
             }
-            keys.push(self.compile_method_body(
-                &package_name,
-                &name.resolve(),
-                param_defs,
-                body,
-                is_hidden,
-                apply_auto_positional_slurpy,
-                *is_rw,
-                return_type.as_ref(),
-            ));
+            keys.push(key);
         }
         keys
     }
@@ -542,12 +558,19 @@ impl Compiler {
         } else {
             Some(self.qualified_role_decl_name(&name.resolve()))
         };
-        let method_compiled_keys =
-            self.compile_method_body_keys(body, package_name.as_deref(), false, false);
+        let method_compiled_keys = self.compile_method_body_keys(
+            body,
+            package_name.as_deref(),
+            false,
+            false,
+            is_hoisted_shell,
+        );
         // ADR-0019 D8-2: unlike `method_compiled_keys` above (whose
-        // `package_name`-gated skip is harmless — a hoisted shell's
-        // registration falls back to the registration-time compile path,
-        // which still resolves methods correctly), `deferred_body_ops` is
+        // `package_name`-gated skip is harmless — the shell registration
+        // installs uncompiled `MethodDef`s that the real declaration
+        // replaces, and the two on-demand compile nets
+        // `populate_uncompiled_method` / `run_resolved_method_celled` cover
+        // the narrow window in between), `deferred_body_ops` is
         // the ONLY source `run_role_body_for_composition`/
         // `run_composed_role_deferred_body` read since D8-2's consumer
         // cutover. A role's `__hoisted` shell is not a throwaway stub the

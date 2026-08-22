@@ -405,6 +405,20 @@ walkers wholesale is not possible before then.
   This closes ADR-0019's D3 box: no registration-time code matches a raw `Stmt::MethodDecl` (or
   re-scans its body) to decide what to install, outside the `stmt_pool`-fed augment walker's own
   one-shot construction and the private-access validator's generic body recursion.
+  **D3-10 (2026-08-22)** finished the "dropped to zero" claim above, which held only for a class
+  or role that is *not* hoisted. A `__hoisted` forward-reference shell has every
+  `compiled_routine_key` `None` by design, so `exec_register_class_op`/`exec_register_role_op`'s
+  unconditional `compile_class_methods`/`compile_role_methods` compiled every method body from
+  scratch and had the whole `MethodDef` set discarded unread when the real, source-position
+  declaration re-registered — 100% wasted work on essentially every OO file, since a `t/*.t`
+  opening with `use Test; plan N;` already trips the hoist. Both sites now skip that pass for a
+  shell (the on-demand `populate_uncompiled_method` /
+  `run_resolved_method_celled` nets cover the narrow window before the real declaration runs), and
+  the same slice merged `record_type_body_captures`'s second, analysis-only per-method compile
+  into `compile_method_body`'s existing one. Summed over the whole `t/` suite,
+  `method_body_runtime_compiles` fell 2376 -> 278 (the remainder is `augment`, parametric role
+  punning, proto-method redispatch, `EXPORTHOW` declarators — unrelated mechanisms). Details in
+  `news/2026-08/adr0019-type-decl-throwaway-method-compiles-eliminated.md`.
 - [x] **D4 — Compile class declaration-time expressions.** Cover computed names, traits, parent
   expressions, aliases, and deferred class bodies through re-entrant bytecode chunks. (Computed
   names and custom-trait arguments already landed with C5.)

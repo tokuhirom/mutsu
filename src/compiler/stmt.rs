@@ -4095,8 +4095,10 @@ impl Compiler {
                 }
                 // A method installed by RegisterClass outlives this frame and has
                 // no closure-creation op, so a frame lexical it writes must keep
-                // the name-keyed shared lane (see record_type_body_captures).
-                self.record_type_body_captures(body);
+                // the name-keyed shared lane. That set is harvested inside
+                // `add_class_decl_plan`'s own method-body compile pass (see
+                // `record_type_body_written_lexicals`), not by a separate
+                // analysis compile here.
                 // Pre-qualify the class name when compiling inside a
                 // `unit module`/`unit class` body so that the runtime
                 // registers it under the correct nested package
@@ -4110,9 +4112,10 @@ impl Compiler {
                 self.code.emit(OpCode::AugmentClass(idx));
             }
             Stmt::RoleDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
-            Stmt::RoleDecl { body, .. } => {
-                // Same as RegisterClass above: a role method has no creation op.
-                self.record_type_body_captures(body);
+            Stmt::RoleDecl { .. } => {
+                // Same as RegisterClass above: a role method has no creation op,
+                // and `add_role_decl_plan`'s method-body compile pass harvests
+                // the lexicals its methods write.
                 let stmt = self.qualify_decl_name(stmt);
                 let idx = self.add_role_decl_plan(&stmt);
                 self.code.emit(OpCode::RegisterDecl(idx));
