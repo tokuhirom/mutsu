@@ -203,6 +203,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
 fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
     let name = call_name_str(node)?;
     let (params, param_defs) = signature_positional_params(node)?;
+    let (return_type, custom_traits) = routine_return_type(node)?;
     // A Sub's `body` is the Blockoid directly (not a Block wrapping one).
     let body = lower(named_child_or_positional(named_child(node, "body")?)?)?;
     Ok(Stmt::SubDecl {
@@ -210,7 +211,7 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         name_expr: None,
         params,
         param_defs,
-        return_type: None,
+        return_type,
         associativity: None,
         precedence_trait: None,
         signature_alternates: Vec::new(),
@@ -222,8 +223,68 @@ fn lower_sub(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         export_tags: Vec::new(),
         is_test_assertion: false,
         supersede: false,
-        custom_traits: Vec::new(),
+        custom_traits,
     })
+}
+
+/// A routine's return type, from either spelling: `signature.returns` (the
+/// `-->` arrow) or a `traits => (Trait::Returns|Trait::Of(Type),)` entry. The
+/// trait spelling round-trips through the same `__return_via_*` marker the
+/// parser sets, so `EVAL` reproduces the source form the converter read.
+/// Declaring both is refused rather than silently collapsed.
+#[allow(clippy::type_complexity)]
+fn routine_return_type(
+    node: &RakuAstNode,
+) -> Result<(Option<String>, Vec<(String, Option<Expr>)>), RuntimeError> {
+    let arrow = match named_child(node, "signature") {
+        Ok(sig) => match sig.fields.iter().find(|f| f.name == Some("returns")) {
+            Some(f) => Some(simple_type_name(node, child_node(&f.value)?)?),
+            None => None,
+        },
+        Err(_) => None,
+    };
+    let mut via_trait = None;
+    if let Some(f) = node.fields.iter().find(|f| f.name == Some("traits")) {
+        let RakuAstFieldValue::List(items) = &f.value else {
+            return Err(unsupported(node));
+        };
+        for item in items {
+            let ValueView::RakuAst(t) = item.view() else {
+                return Err(unsupported(node));
+            };
+            let marker = match t.class {
+                RakuAstClass::TraitReturns => "__return_via_trait",
+                RakuAstClass::TraitOf => "__return_via_of",
+                _ => return Err(unsupported(node)),
+            };
+            if via_trait.is_some() {
+                return Err(unsupported(node));
+            }
+            via_trait = Some((
+                simple_type_name(node, named_child_or_positional(t)?)?,
+                marker,
+            ));
+        }
+    }
+    match (arrow, via_trait) {
+        (Some(t), None) => Ok((Some(t), Vec::new())),
+        (None, Some((t, marker))) => Ok((Some(t), vec![(marker.to_string(), None)])),
+        (None, None) => Ok((None, Vec::new())),
+        (Some(_), Some(_)) => Err(unsupported(node)),
+    }
+}
+
+/// The plain type name of a `Type::Simple` node. Richer type node kinds
+/// (definite / coercion / parameterised) are the coverage boundary, matching
+/// the parameter `type` handling above.
+fn simple_type_name(node: &RakuAstNode, type_node: &RakuAstNode) -> Result<String, RuntimeError> {
+    if type_node.class != RakuAstClass::TypeSimple {
+        return Err(unsupported(node));
+    }
+    match positional_leaf(named_child_or_positional(type_node)?)?.view() {
+        ValueView::Str(s) => Ok(s.to_string()),
+        _ => Err(unsupported(node)),
+    }
 }
 
 /// The positional scalar parameter names of a routine's `signature`, each with
@@ -722,6 +783,24 @@ fn lower_expr(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
                 is_bind: false,
             })
         }
+        // `@a >>+<< @b` -> the hyper operator, keeping both dwim flags.
+        RakuAstClass::ApplyInfix
+            if named_child(node, "infix")
+                .is_ok_and(|i| i.class == RakuAstClass::MetaInfixHyper) =>
+        {
+            let hyper = named_child(node, "infix")?;
+            let op_value = positional_leaf(named_child(hyper, "infix")?)?;
+            let ValueView::Str(op) = op_value.view() else {
+                return Err(unsupported(node));
+            };
+            Ok(Expr::HyperOp {
+                op: op.to_string(),
+                left: Box::new(lower_expr(named_child(node, "left")?)?),
+                right: Box::new(lower_expr(named_child(node, "right")?)?),
+                dwim_left: bool_field(hyper, "dwim-left")?,
+                dwim_right: bool_field(hyper, "dwim-right")?,
+            })
+        }
         RakuAstClass::ApplyInfix => {
             let left = lower_expr(named_child(node, "left")?)?;
             let right = lower_expr(named_child(node, "right")?)?;
@@ -815,6 +894,21 @@ fn infix_token(node: &RakuAstNode) -> Result<crate::token_kind::TokenKind, Runti
         return Err(unsupported(node));
     };
     crate::compiler::helpers_ops::op_name_to_token_kind(&s).ok_or_else(|| unsupported(node))
+}
+
+/// An optional boolean-valued named field (an omitted field is `False`, which
+/// is exactly how raku's gist elides a false `dwim-left` / `dwim-right`).
+fn bool_field(node: &RakuAstNode, name: &str) -> Result<bool, RuntimeError> {
+    match node.fields.iter().find(|f| f.name == Some(name)) {
+        None => Ok(false),
+        Some(f) => match &f.value {
+            RakuAstFieldValue::Node(v) => match v.view() {
+                ValueView::Bool(b) => Ok(b),
+                _ => Err(unsupported(node)),
+            },
+            _ => Err(unsupported(node)),
+        },
+    }
 }
 
 /// The value of a node's single positional (name-less) leaf field.

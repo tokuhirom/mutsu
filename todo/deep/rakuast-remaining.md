@@ -5,23 +5,72 @@ internal `Expr`/`Stmt` AST, not a frontend rewrite. The fixed design and phasing
 are in [ADR-0011](../../docs/adr/0011-rakuast-model-layer-and-phasing.md).
 Completed read, introspection, construction, and EVAL slices are recorded in
 [the July 2026 news](../../news/2026-07.md) and the individual
-`news/2026-07/rakuast-*.md` entries.
+`news/2026-07/rakuast-*.md` entries; the 2026-08 return-type / hyper-infix slice
+is [here](../../news/2026-08/rakuast-return-types-and-hyper-infix.md).
 
 ## Read-direction representation gaps
 
 Several source constructs are desugared or lose distinctions before the RakuAST
-conversion sees them:
+conversion sees them. Recovering these requires preserving the distinction in
+the parser/internal AST, not guessing during RakuAST conversion.
 
-- `.=` and compound assignment
-- hyper operators other than the supported hyper-method form
-- signature return types
-- anonymous subs with explicit signatures
-- `with` / `without`
-- grammar declarations
-- associative `%h{...}` versus `%h<...>` subscripts
+**Closed 2026-08-22** (both directions, pinned by `t/rakuast-return-type.t` and
+`t/rakuast-hyper-infix.t`):
 
-Recovering these requires preserving the distinction in the parser/internal AST,
-not guessing during RakuAST conversion.
+- *Signature return types on `sub` and pointy blocks.* `sub f(--> Int)` now
+  renders `Signature.returns`, `sub f() returns Int` renders
+  `traits => (Trait::Returns(...),)`, and `sub f() of Int` renders
+  `Trait::Of` — mutsu's internal AST already distinguished the two spellings
+  (a `__return_via_trait` marker in `custom_traits`), and the `of` form now
+  carries its own `__return_via_of` marker so the third node choice is not a
+  guess either. `EVAL` lowers all three back. A parameter-less signature
+  renders its empty parameter list as raku's `$( )` (mutsu printed a bare
+  multi-line `(\n)` before). Fixing the pointy-block case also fixed a real
+  runtime bug: a *single*-parameter pointy block parsed to `Expr::Lambda`,
+  which has nowhere to keep a return type, so `-> $x --> Int { "s" }`
+  silently returned a `Str` (pinned by `t/pointy-block-return-type.t`).
+- *Hyper infix operators.* `@a >>+<< @b` renders
+  `ApplyInfix(left, MetaInfix::Hyper([dwim-left,] infix, [dwim-right]), right)`
+  and lowers back. mutsu's `Expr::HyperOp` already kept the operator text and
+  both dwim flags, so this is a 1:1 mapping.
+
+Still open:
+
+- `.=` and compound assignment. `$x += 3` desugars to
+  `$x = MetaAssignIdentity(Zero)($x) + 3` (raku: `MetaInfix::Assign(Infix("+"))`)
+  and `$x .= Str` desugars to a plain `=` over a method call (raku:
+  `ApplyDottyInfix` + `DottyInfix::CallAssign`). Both need the parser to keep
+  the meta-operator instead of expanding it. ADR-0033 §2.5 already blocks the
+  `* += 1` Whatever autoprime path on the same missing `MetaInfix::Assign`.
+- Signature return types **on methods**. `method m(--> Int)` is still deferred:
+  `src/parser/stmt/sub_param/method_decl.rs` filters every `__`-prefixed marker
+  out of `MethodDecl.custom_traits`, so `-->` and `returns` are indistinguishable
+  there. Fixing it means either plumbing the spelling through a dedicated
+  `MethodDecl` field or keeping the marker and teaching the method trait-application
+  loop (`registration_class_body_method.rs`) to skip `__`-prefixed names.
+- The remaining hyper forms: hyper *prefix* (`-<<@a`, desugared to a
+  `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`, desugared to a
+  hyper `AT-POS` method call), hyper *function* infix (`>>[&f]<<`, raku's
+  `MetaInfix::Hyper(FunctionInfix)` — mutsu has `Expr::HyperFuncOp` and could map
+  it), and `@a<<.abs` (which mutsu's parser currently reads as a quote-words
+  subscript).
+- Anonymous subs with explicit signatures. `sub ($x) { }` and `-> $a, $b { }` are
+  both `Expr::AnonSubParams`, so the former renders as a `PointyBlock`. Needs a
+  distinguishing flag on that node (~73 construction sites).
+- `with` / `without`. Desugared at parse time into a `__with_tmp_N` temp var plus
+  an `if` on `.defined`, so there is no statement to map to
+  `Statement::With` / `Statement::Without`.
+- Grammar declarations. `grammar G { }` is a `Stmt::ClassDecl` with
+  `parents = ["Grammar"]`, so it hits the class-inheritance boundary instead of
+  producing `RakuAST::Grammar` + `TokenDeclaration` + the regex node tree.
+- Associative `%h{...}` versus `%h<...>` subscripts. Both are
+  `Expr::Index { is_positional: false }` with a `Literal(Str)` index, so the read
+  side cannot choose raku's `Postcircumfix::LiteralHashIndex` (a word-quoted
+  `QuotedString`) over `Postcircumfix::HashIndex` (a `SemiList`). This is the
+  single highest-impact remaining read gap — associative subscripts also block
+  the corresponding `EVAL` item below — but it needs a third state on
+  `Expr::Index` (or a `SubscriptKind` enum replacing `is_positional`), and that
+  field is touched at ~225 sites across the parser, compiler, and VM.
 
 ## Type-object introspection
 
@@ -40,6 +89,12 @@ Advanced parameter construction remains:
 
 These must validate, render, expose through introspection, and lower through
 `EVAL` consistently with the already-supported parameter forms.
+
+`RakuAST::Signature.new` accepts no `returns` argument yet, and
+`RakuAST::Trait::Returns` / `Trait::Of` are read-and-lower-only (the converter
+builds them, `EVAL` lowers them, but there is no `.new` constructor). Both are
+straightforward extensions of the existing per-class schema now that the node
+kinds exist.
 
 ## Lowering and EVAL
 

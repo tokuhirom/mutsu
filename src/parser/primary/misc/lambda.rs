@@ -234,6 +234,11 @@ fn arrow_lambda_inner(input: &str) -> PResult<'_, Expr> {
             body.insert(0, crate::ast::Stmt::SetLine(arrow_line));
         }
         let simple_single = first.traits.is_empty()
+            // `Expr::Lambda` has nowhere to keep a `--> T` return type, so the
+            // constraint would be silently dropped (`-> $x --> Int { "s" }`
+            // returned a Str instead of failing the return type check). Route
+            // such a block through the `AnonSubParams` path, which carries it.
+            && return_type.is_none()
             && first.shape_constraints.is_none()
             // A literal parameter (`-> 'about' { … }`) carries its constraint in
             // `literal_value`, which the name-only `Lambda` form cannot hold —

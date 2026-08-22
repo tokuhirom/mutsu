@@ -597,9 +597,30 @@ earlier ones.
   signature parameters carry an implicit `type => Type::Setting(Name.from-identifier("Any"))` that
   pointy-block parameters do not — the `signature`/`parameter`/`simple_parameter` helpers thread a
   `type_setting` flag to add it. Boundary (explicit `RuntimeError`): traits, `multi`, `is export`,
-  return types, operator subs (associativity/precedence), alternate signatures, and anonymous
+  operator subs (associativity/precedence), alternate signatures, and anonymous
   `sub { }` (deferred). Parameters reuse the slice-3 plain-positional boundary (typed/named/slurpy/
   `where`/… still error).
+- **Routine return types (2026-08-22, both directions).** raku models the two spellings with
+  different nodes and mutsu's internal AST keeps them apart, so the converter never guesses:
+  `sub f(--> Int)` → `signature => Signature(parameters => …, returns => Type::Simple(Name))`
+  (a parameter-less sub with a `-->` type therefore *does* emit a `signature`, whose empty
+  `parameters` renders as raku's itemized `$( )` — the renderer special-cases the empty list);
+  `sub f() returns Int` → `traits => (Trait::Returns(Type::Simple),)`; `sub f() of Int` →
+  `Trait::Of`. The `returns`/`of` distinction rides on the parser's `custom_traits` markers —
+  `returns` already set `__return_via_trait`, and `of` now sets its own `__return_via_of` (both
+  still mean "not a `-->` arrow" to `eval_check`'s undeclared-type classification). `EVAL` lowers
+  all three back to `SubDecl.return_type` plus the matching marker. Pointy blocks carry a `-->`
+  type the same way; this also fixed a **runtime** bug — a single-parameter pointy block parsed to
+  `Expr::Lambda`, which has no return-type field, so `-> $x --> Int { "s" }` silently returned a
+  `Str`. Such a block now takes the `AnonSubParams` path, which carries the constraint
+  (`t/pointy-block-return-type.t`). Enforcing it exposed a second, latent bug: the bare-block
+  closure arm (`MakeAnonSub`) kept a lexically captured `__mutsu_return_type`, so a `{ … }`
+  argument written inside a `--> T` routine enforced the *outer* type on its own value — the
+  `MakeLambda` / `MakeAnonSubParams` arms already dropped it, that one now does too
+  (`t/return-type-not-inherited-by-inner-block.t`). Still deferred: **methods** — `method_decl.rs` filters every
+  `__`-prefixed marker out of `MethodDecl.custom_traits`, so `-->` and `returns` are
+  indistinguishable there; and `returns X of Y` (mutsu folds it into one `X[Y]` type, raku keeps
+  one trait). Tests: `t/rakuast-return-type.t`.
 - **Anonymous parameter-less `sub { }` (Phase 2 slice 11).** `sub { ... }` with no signature
   (`Expr::AnonSub { is_block: false }`) → `RakuAST::Sub(body => Blockoid)` with no `name` field.
   Only the no-parameter form is handled: `sub ($x) { }` parses to `Expr::AnonSubParams`, which mutsu
@@ -633,8 +654,17 @@ earlier ones.
 - **Hyper method calls (Phase 2 slice 26).** `@a>>.abs` (`Expr::HyperMethodCall`) → `ApplyPostfix(
   operand, postfix => MetaPostfix::Hyper(Call::Method(...)))` — the inner `Call::Method` /
   `Call::QuotedMethod` is built by the same `method_call_postfix` helper as a plain method call, then
-  wrapped in a `MetaPostfix::Hyper`. Other hyper forms (`<<.m`, `>>.m<<`, hyper infix `>>+<<`) are
-  the boundary.
+  wrapped in a `MetaPostfix::Hyper`.
+- **Hyper infix operators (2026-08-22, both directions).** `@a >>+<< @b` (`Expr::HyperOp`) →
+  `ApplyInfix(left, infix => MetaInfix::Hyper([dwim-left => True,] infix => Infix(op),
+  [dwim-right => True]), right)`, and `EVAL` lowers it back. mutsu's `HyperOp` already stores the
+  operator text plus both dwim flags, so the mapping is 1:1; raku omits a dwim field whose value is
+  False, which the converter reproduces by simply not emitting it (and the lowerer reads a missing
+  field as False). Tests: `t/rakuast-hyper-infix.t`. Remaining hyper boundary: hyper *prefix*
+  (`-<<@a`, desugared to a `__mutsu_hyper_prefix` call), hyper *postcircumfix* (`@a>>[1]`,
+  desugared to a hyper `AT-POS` method call), hyper *function* infix (`>>[&f]<<`, raku's
+  `MetaInfix::Hyper(FunctionInfix)`; mutsu has `Expr::HyperFuncOp`), and `@a<<.abs` (which mutsu's
+  parser currently reads as a quote-words subscript).
 - **Reduction metaoperator (Phase 2 slice 25).** `[+] @a` (`Expr::Reduction`) → `Term::Reduce(
   triangle => False, infix => Infix("+"), args => ArgList(@a))`. The triangle form `[\+] @a`
   (mutsu stores its op as `"\+"`) sets `triangle => True` with the backslash stripped from the infix.

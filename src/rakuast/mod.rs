@@ -76,6 +76,8 @@ pub enum RakuAstClass {
     CallQuotedMethod,
     // Phase 2 slice 26: hyper method calls.
     MetaPostfixHyper,
+    // Hyper infix operators (`@a >>+<< @b`).
+    MetaInfixHyper,
     // Phase 2 slice 3: blocks & pointy blocks.
     Block,
     Blockoid,
@@ -104,6 +106,9 @@ pub enum RakuAstClass {
     TypeDefinedness,
     // Phase 2 slice 27: attribute build-time defaults.
     TraitWillBuild,
+    // Routine return types written as a trait (`sub f() returns Int` / `of Int`).
+    TraitReturns,
+    TraitOf,
     // Phase 2 slice 21: parameterised types (`Array[Int]`).
     TypeParameterized,
     // Phase 2 slice 29: coercion types (`Int()`).
@@ -191,6 +196,7 @@ impl RakuAstClass {
             CallMethod => "RakuAST::Call::Method",
             CallQuotedMethod => "RakuAST::Call::QuotedMethod",
             MetaPostfixHyper => "RakuAST::MetaPostfix::Hyper",
+            MetaInfixHyper => "RakuAST::MetaInfix::Hyper",
             Block => "RakuAST::Block",
             Blockoid => "RakuAST::Blockoid",
             PointyBlock => "RakuAST::PointyBlock",
@@ -209,6 +215,8 @@ impl RakuAstClass {
             TypeSimple => "RakuAST::Type::Simple",
             TypeDefinedness => "RakuAST::Type::Definedness",
             TraitWillBuild => "RakuAST::Trait::WillBuild",
+            TraitReturns => "RakuAST::Trait::Returns",
+            TraitOf => "RakuAST::Trait::Of",
             TypeParameterized => "RakuAST::Type::Parameterized",
             TypeCoercion => "RakuAST::Type::Coercion",
             Class => "RakuAST::Class",
@@ -432,6 +440,7 @@ fn is_registered_type_object(class_name: &str) -> bool {
             | "RakuAST::StatementModifier"
             | "RakuAST::StatementPrefix"
             | "RakuAST::MetaPostfix"
+            | "RakuAST::MetaInfix"
     ) {
         return true;
     }
@@ -464,6 +473,7 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::CallMethod,
     RakuAstClass::CallQuotedMethod,
     RakuAstClass::MetaPostfixHyper,
+    RakuAstClass::MetaInfixHyper,
     RakuAstClass::Block,
     RakuAstClass::Blockoid,
     RakuAstClass::PointyBlock,
@@ -482,6 +492,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TypeSimple,
     RakuAstClass::TypeDefinedness,
     RakuAstClass::TraitWillBuild,
+    RakuAstClass::TraitReturns,
+    RakuAstClass::TraitOf,
     RakuAstClass::TypeParameterized,
     RakuAstClass::TypeCoercion,
     RakuAstClass::Class,
@@ -934,6 +946,12 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
             return Some(field_to_value(&f.value));
         }
     }
+    // A declared-but-omitted boolean field reads as `False`: raku's gist elides
+    // `dwim-left` / `dwim-right` when they are false, but the accessors still
+    // answer.
+    if node.class == RakuAstClass::MetaInfixHyper && matches!(method, "dwim-left" | "dwim-right") {
+        return Some(Value::truth(false));
+    }
     if method == "statements" && matches!(node.class, RakuAstClass::StatementList) {
         let items = node
             .fields
@@ -954,6 +972,7 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         RakuAstClass::Blockoid => Some("statement-list"),
         RakuAstClass::InitializerAssign => Some("expression"),
         RakuAstClass::TypeSimple | RakuAstClass::TypeSetting => Some("name"),
+        RakuAstClass::TraitReturns | RakuAstClass::TraitOf => Some("type"),
         _ => None,
     };
     if positional_name == Some(method)
@@ -1050,8 +1069,10 @@ fn accessor_names(class: RakuAstClass) -> &'static [&'static str] {
         Postfix => &["operator"],
         Block => &["body"],
         Blockoid => &["statement-list"],
-        Sub => &["name", "signature", "body"],
-        Signature => &["parameters"],
+        Sub => &["name", "signature", "traits", "body"],
+        Signature => &["parameters", "returns"],
+        MetaInfixHyper => &["dwim-left", "infix", "dwim-right"],
+        TraitReturns | TraitOf => &["type"],
         Parameter => &[
             "type", "names", "target", "optional", "default", "where", "slurpy",
         ],
