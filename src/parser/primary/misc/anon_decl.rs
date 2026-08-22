@@ -199,6 +199,12 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     } else {
         return Err(PError::expected("'{' for anonymous role"));
     };
+    // An expression-position role declaration accepts the same parametric
+    // signature as a statement-level `role Name[...] { ... }`. Without this,
+    // the parser left `[...]` behind and backtracked to treating `role` as a
+    // bareword (then `Name` could be misread as a `Z` metaoperator).
+    let (rest, (type_params, type_param_defs)) =
+        crate::parser::stmt::class::parse_optional_role_type_params(rest)?;
     if !rest.starts_with('{') {
         return Err(PError::expected("'{' for anonymous role"));
     }
@@ -207,8 +213,8 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
         rest,
         Expr::DoStmt(Box::new(Stmt::RoleDecl {
             name: Symbol::intern(&name),
-            type_params: Vec::new(),
-            type_param_defs: Vec::new(),
+            type_params,
+            type_param_defs,
             is_export: false,
             export_tags: Vec::new(),
             body,
