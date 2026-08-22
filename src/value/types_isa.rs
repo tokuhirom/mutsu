@@ -84,8 +84,10 @@ impl Value {
             ValueView::Nil => "Nil",
             ValueView::Instance { .. } | ValueView::Package(_) => owned_name.as_deref().unwrap(),
             ValueView::Enum { enum_type, .. } => {
-                // Every enum value does the `Enumeration` role.
-                return type_name == "Enumeration" || enum_type.resolve() == type_name;
+                // Enum values nominally belong to their enum and the universal
+                // roots. `Enumeration` is a role, so it is handled by
+                // `does_check`, not by `.isa`.
+                return enum_type.resolve() == type_name || matches!(type_name, "Any" | "Mu");
             }
             ValueView::Sub(data) => match data.env.get("__mutsu_callable_type").map(Value::view) {
                 Some(ValueView::Str(kind)) if kind.as_str() == "Method" => "Method",
@@ -192,21 +194,6 @@ impl Value {
                 return true;
             }
         }
-        // The X::Await::Died role is mixed into the original exception when
-        // `await` observes a broken Promise (see `await_died_error`): the cause
-        // keeps its own class but also does X::Await::Died.
-        if type_name == "X::Await::Died"
-            && let ValueView::Instance { attributes, .. } = self.view()
-            && matches!(
-                attributes
-                    .as_map()
-                    .get("__mutsu_does_await_died")
-                    .map(Value::view),
-                Some(ValueView::Bool(true))
-            )
-        {
-            return true;
-        }
         // Perl6::Metamodel:: and Metamodel:: are equivalent namespaces
         if let Some(short) = my_type.strip_prefix("Perl6::")
             && short == type_name
@@ -218,7 +205,9 @@ impl Value {
         {
             return true;
         }
-        // Check type hierarchy
+        // Check the nominal class hierarchy. Role composition belongs solely in
+        // `does_check`: `.isa(Numeric)`, for example, is false for an Int even
+        // though Int does Numeric.
         match type_name {
             "Any" => true,
             "Mu" => true,
@@ -253,40 +242,12 @@ impl Value {
                             if class_name == "Match" || class_name == "Capture"
                     )
             }
-            "Numeric" => matches!(
-                self.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(_, _)
-                    | ValueView::FatRat(_, _)
-                    | ValueView::BigRat(_, _)
-                    | ValueView::Complex(_, _)
-            ),
-            "Real" => matches!(
-                self.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(_, _)
-                    | ValueView::FatRat(_, _)
-                    | ValueView::BigRat(_, _)
-            ),
-            "Rational" => matches!(
-                self.view(),
-                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
-            ),
-            "Dateish" => matches!(
-                self.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
-            ),
             "FatRat" => {
                 matches!(self.view(), ValueView::FatRat(_, _))
                     || (matches!(self.view(), ValueView::BigRat(_, _)) && self.is_bigfatrat())
             }
             "Int" => matches!(self.view(), ValueView::Bool(_)),
-            "Stringy" => matches!(self.view(), ValueView::Str(_)),
-            "Block" | "Routine" | "Code" | "Callable" => {
+            "Block" | "Routine" | "Code" => {
                 matches!(
                     self.view(),
                     ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
@@ -329,72 +290,17 @@ impl Value {
             "RaceSeq" => {
                 matches!(self.view(), ValueView::RaceSeq(_))
             }
-            "Seq" | "List" => {
+            "Seq" => matches!(self.view(), ValueView::Seq(_)),
+            "List" => {
                 matches!(
                     self.view(),
-                    ValueView::Array(..)
-                        | ValueView::LazyList(_)
-                        | ValueView::Slip(_)
-                        | ValueView::HyperSeq(_)
-                        | ValueView::RaceSeq(_)
+                    ValueView::Array(..) | ValueView::LazyList(_) | ValueView::Slip(_)
                 )
             }
-            "Positional" => {
-                matches!(
-                    self.view(),
-                    ValueView::Array(..)
-                        | ValueView::LazyList(_)
-                        | ValueView::HyperSeq(_)
-                        | ValueView::RaceSeq(_)
-                        | ValueView::Range(_, _)
-                        | ValueView::RangeExcl(_, _)
-                        | ValueView::RangeExclStart(_, _)
-                        | ValueView::RangeExclBoth(_, _)
-                        | ValueView::GenericRange { .. }
-                        | ValueView::Capture { .. }
-                ) || matches!(
-                    self.view(),
-                    ValueView::Package(name)
-                        if matches!(
-                            name.resolve().as_str(),
-                            "Array" | "List" | "Range" | "Buf" | "Blob" | "Capture"
-                        )
-                ) || matches!(
-                    self.view(),
-                    ValueView::Instance { attributes, .. }
-                        if attributes.contains_key("__mutsu_array_storage")
-                )
+            "Map" => {
+                matches!(self.view(), ValueView::Hash(..))
+                    || matches!(self.view(), ValueView::Package(name) if name == "Hash" || name == "Map")
             }
-            "Map" | "Associative" => {
-                matches!(
-                    self.view(),
-                    ValueView::Hash(..)
-                        | ValueView::Pair(_, _)
-                        | ValueView::ValuePair(_, _)
-                        | ValueView::Set(_, _)
-                        | ValueView::Bag(_, _)
-                        | ValueView::Mix(_, _)
-                        | ValueView::Capture { .. }
-                ) || matches!(
-                    self.view(),
-                    ValueView::Instance { attributes, .. }
-                        if attributes.contains_key("__mutsu_hash_storage")
-                ) || matches!(
-                    self.view(),
-                    ValueView::Package(name)
-                        if matches!(
-                            name.resolve().as_str(),
-                            "Hash" | "Map" | "Pair" | "Set" | "Bag" | "Mix" | "QuantHash" | "Capture"
-                        )
-                )
-            }
-            "Iterable" => matches!(
-                self.view(),
-                ValueView::Array(..)
-                    | ValueView::LazyList(_)
-                    | ValueView::Hash(..)
-                    | ValueView::Seq(_)
-            ),
             "ObjAt" => {
                 // ValueObjAt is a subclass of ObjAt
                 matches!(
@@ -432,7 +338,13 @@ impl Value {
             }
             return inner.does_check(role_name);
         }
-        // Check built-in role compositions
+        // Check built-in role compositions. Keep this distinct from the nominal
+        // hierarchy above: Raku roles are matched by `.does`/smartmatch, but do
+        // not appear in a value's `.isa` MRO.
+        if self.builtin_role_check(role_name) {
+            return true;
+        }
+        // Check special runtime role compositions.
         if role_name == "Encoding" {
             if let ValueView::Instance { class_name, .. } = self.view()
                 && class_name == "Encoding::Builtin"
@@ -445,7 +357,132 @@ impl Value {
                 return true;
             }
         }
-        // Delegate to isa_check for other cases (roles are stored as parents)
+        // `.does` also answers for concrete types and their nominal parents.
         self.isa_check(role_name)
+    }
+
+    fn builtin_role_check(&self, role_name: &str) -> bool {
+        match role_name {
+            "Numeric" => matches!(
+                self.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::BigRat(_, _)
+                    | ValueView::Complex(_, _)
+            ),
+            "Real" => matches!(
+                self.view(),
+                ValueView::Int(_)
+                    | ValueView::BigInt(_)
+                    | ValueView::Num(_)
+                    | ValueView::Rat(_, _)
+                    | ValueView::FatRat(_, _)
+                    | ValueView::BigRat(_, _)
+            ),
+            "Rational" => matches!(
+                self.view(),
+                ValueView::Rat(_, _) | ValueView::FatRat(_, _) | ValueView::BigRat(_, _)
+            ),
+            "Stringy" => matches!(self.view(), ValueView::Str(_)),
+            "Dateish" => matches!(
+                self.view(),
+                ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
+            ),
+            "Callable" => {
+                matches!(
+                    self.view(),
+                    ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. }
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(name.resolve().as_str(), "Sub" | "Routine" | "Method" | "Block" | "Code")
+                )
+            }
+            "Positional" => {
+                matches!(
+                    self.view(),
+                    ValueView::Array(..)
+                        | ValueView::LazyList(_)
+                        | ValueView::Slip(_)
+                        | ValueView::HyperSeq(_)
+                        | ValueView::RaceSeq(_)
+                        | ValueView::Range(_, _)
+                        | ValueView::RangeExcl(_, _)
+                        | ValueView::RangeExclStart(_, _)
+                        | ValueView::RangeExclBoth(_, _)
+                        | ValueView::GenericRange { .. }
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(name.resolve().as_str(), "Array" | "List" | "Range" | "Buf" | "Blob")
+                ) || matches!(
+                    self.view(),
+                    ValueView::Instance { attributes, .. }
+                        if attributes.contains_key("__mutsu_array_storage")
+                )
+            }
+            "Associative" => {
+                matches!(
+                    self.view(),
+                    ValueView::Hash(..)
+                        | ValueView::Pair(_, _)
+                        | ValueView::ValuePair(_, _)
+                        | ValueView::Set(_, _)
+                        | ValueView::Bag(_, _)
+                        | ValueView::Mix(_, _)
+                ) || matches!(
+                    self.view(),
+                    ValueView::Instance { attributes, .. }
+                        if attributes.contains_key("__mutsu_hash_storage")
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(
+                            name.resolve().as_str(),
+                            "Hash" | "Map" | "Pair" | "Set" | "Bag" | "Mix" | "QuantHash"
+                        )
+                )
+            }
+            "Iterable" => {
+                matches!(
+                    self.view(),
+                    ValueView::Array(..)
+                        | ValueView::LazyList(_)
+                        | ValueView::Slip(_)
+                        | ValueView::Hash(..)
+                        | ValueView::Seq(_)
+                        | ValueView::HyperSeq(_)
+                        | ValueView::RaceSeq(_)
+                        | ValueView::Range(_, _)
+                        | ValueView::RangeExcl(_, _)
+                        | ValueView::RangeExclStart(_, _)
+                        | ValueView::RangeExclBoth(_, _)
+                        | ValueView::GenericRange { .. }
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(
+                            name.resolve().as_str(),
+                            "Array" | "List" | "Hash" | "Map" | "Range" | "Seq" | "HyperSeq" | "RaceSeq"
+                        )
+                )
+            }
+            "Enumeration" => matches!(self.view(), ValueView::Enum { .. }),
+            "X::Await::Died" => matches!(
+                self.view(),
+                ValueView::Instance { attributes, .. }
+                    if matches!(
+                        attributes
+                            .as_map()
+                            .get("__mutsu_does_await_died")
+                            .map(Value::view),
+                        Some(ValueView::Bool(true))
+                    )
+            ),
+            _ => false,
+        }
     }
 }
