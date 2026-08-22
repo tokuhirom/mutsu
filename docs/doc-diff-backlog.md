@@ -390,6 +390,41 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
   "exception type/meaning matches, message text differs" shape already excluded elsewhere in this
   ledger (e.g. `Language/control.rakudoc` [10] above), not ticketed.
 
+Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nativecall`/
+`experimental`/`unicode`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Language/grammars.rakudoc:112,132` | `[+]`/`[-]` reduce meta-op silently gives `0` for Match/user-Numeric objects (arith ops bypass the numeric-coercion bridge `.reduce()`/binary `+` use) | [reduce-metaop-numeric-coercion-bypassed.md](../todo/tickets/reduce-metaop-numeric-coercion-bypassed.md) |
+| `Language/grammars.rakudoc:260` | `<sym>` named-capture inside a `token X:sym<...>` proto/multi-dispatch body isn't recorded on the Match | [grammar-sym-capture-not-in-match-hash.md](../todo/tickets/grammar-sym-capture-not-in-match-hash.md) |
+| `Language/grammars.rakudoc:387` | a grammar-embedded custom assertion method (`<.method>`) sees `self` as an uninstantiated type object | [grammar-embedded-custom-assertion-method-self-type-object.md](../todo/tickets/grammar-embedded-custom-assertion-method-self-type-object.md) |
+| `Language/grammars.rakudoc:289` | `.tail ~= ...` on a private class-attribute array silently no-ops instead of mutating the last element | [tail-lvalue-compound-assign-attribute-array-noop.md](../todo/tickets/tail-lvalue-compound-assign-attribute-array-noop.md) |
+| `Language/grammars.rakudoc:509` | a grammar rule with dynamic-variable parameters (`rule TOP ($*word, $*extra)`) + `.parse(..., :args(...))` fails entirely (harness mis-bucketed as drift) | [grammar-dynamic-rule-parameters-args-fail.md](../todo/tickets/grammar-dynamic-rule-parameters-args-fail.md) |
+| `Language/syntax.rakudoc:354,384` | adverbial-pair variable name syntax (`$var:adverb<value>`) is incomplete — quoted-identifier form is a hard parse error, interpolated adverb values don't resolve | [adverbial-pair-variable-name-syntax-incomplete.md](../todo/tickets/adverbial-pair-variable-name-syntax-incomplete.md) |
+| `Language/syntax.rakudoc:429` | `OUR::` pseudo-package doesn't expose file-scope `our`-declared package symbols | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
+| `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
+| `Type/Proc/Async.rakudoc:172,203` | `Proc::Async.new` shoves an unrecognized named arg (e.g. `:r`) into the spawned command's argv, corrupting it | [procasync-new-unknown-named-arg-leaks-into-argv.md](../todo/tickets/procasync-new-unknown-named-arg-leaks-into-argv.md) |
+| `Type/Proc/Async.rakudoc:102,110,233` | `Proc::Async` output is silently dropped instead of passed through when nobody `.tap`s the stdout/stderr Supply | [procasync-untapped-stdout-not-passthrough.md](../todo/tickets/procasync-untapped-stdout-not-passthrough.md) |
+| `Language/nativecall.rakudoc:1186` | `enum Name (a => 1; b => 2;)` — semicolon-separated variant list fails to parse as an enum at all (general parser bug, not NativeCall-specific) | [enum-semicolon-separated-variants-parse-fail.md](../todo/tickets/enum-semicolon-separated-variants-parse-fail.md) |
+| `Language/nativecall.rakudoc:598` | `Pointer[T].deref` method is missing (the FFI call itself succeeds) | [nativecall-pointer-deref-method-missing.md](../todo/tickets/nativecall-pointer-deref-method-missing.md) |
+| `Language/experimental.rakudoc:32` | `Buf`/`Blob.contents` method is missing | [buf-contents-method-missing.md](../todo/tickets/buf-contents-method-missing.md) |
+| `Language/experimental.rakudoc:144` | a user-defined custom infix's RHS operand fails to parse when followed by `??...!!` | [custom-infix-rhs-operand-rejects-ternary.md](../todo/tickets/custom-infix-rhs-operand-rejects-ternary.md) |
+| `Language/unicode.rakudoc:83,90` | `utf8-c8` decoding of an invalid byte uses a different synthetic private-use codepoint than raku | [utf8-c8-invalid-byte-codepoint-mismatch.md](../todo/tickets/utf8-c8-invalid-byte-codepoint-mismatch.md) |
+| `Language/unicode.rakudoc:190,212,224` | `\c[NAME]` fails to resolve Unicode NameAlias corrections and multi-codepoint named sequences | [c-bracket-character-name-lookup-gaps.md](../todo/tickets/c-bracket-character-name-lookup-gaps.md) |
+
+**Excluded from this batch-3 sub-run:**
+- `Language/syntax.rakudoc` [5] (line 763, `%(...)`hash-constructor `.keys.join`) — hash
+  iteration-order `raku-drift`, both sides nondeterministic (same known false positive as
+  the survey table's `Hash.rakudoc`/`Map.rakudoc` note above).
+- `Language/experimental.rakudoc` [2], [3], [4] (`use experimental :macros`, `macro`/`quasi`
+  examples) — the already-tracked deep `macro`/`quasi`/unquote design work in
+  `todo/deep/rakuast-remaining.md`'s "Macros" section; not re-ticketed here.
+- `Language/nativecall.rakudoc` [2] (the `getaddrinfo`/DNS CStruct example) — beyond the
+  parse-time `enum` bug ticketed above, this example also depends on a live DNS lookup
+  (`google.com`) and full `CStruct`/`nativecast` FFI plumbing; not a clean minimal repro on
+  its own and squarely within NativeCall's known, measured gaps
+  (`todo/deep/nativecall-cannot-be-vendored.md`) — not ticketed further.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
