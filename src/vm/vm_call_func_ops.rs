@@ -1993,8 +1993,31 @@ impl Interpreter {
             })
     }
 
-    /// Check if a function body contains constructs that require
-    /// the full interpreter path (class/role declarations, start blocks).
+    /// Check if a function body contains constructs that require the full
+    /// interpreter path — now only a top-level `class`/`role` declaration.
+    ///
+    /// A `start { … }` in the body used to force the interpreter here too, on
+    /// the theory that a spawned block needs the tree-walk path "for proper
+    /// thread spawning". That exclusion is gone (2026-08-22): `start` compiles
+    /// like any other call. Three facts made it indefensible:
+    ///
+    ///   - The single largest dispatch arm never consulted it. Ordinary module/
+    ///     dynamic single subs are gated by `def_is_otf_compilable_module_single`,
+    ///     which has admitted `start`-containing bodies since ADR-0019 C6e-2c —
+    ///     the compiled caller-env merge excludes the callee's own params
+    ///     (`routine_writeback_excluded_names`), so a recursive sub's param
+    ///     re-bind can no longer clobber a spawned closure's capture
+    ///     (t/start-body-param-compiled.t). Only the *multi* candidate, proto
+    ///     and builtin-shadow gates still saw this predicate, so identical
+    ///     bodies compiled or tree-walked purely by declaration form.
+    ///   - It only ever caught `start` in expression-statement position (or
+    ///     inside a call/method-call argument). `my $p = start { … };` is a
+    ///     `Stmt::VarDecl`, which this walk does not descend into at all, so the
+    ///     most common way to write a `start` block already compiled.
+    ///   - Removing it is behaviour-preserving in practice: the recursive
+    ///     multi/proto shapes the gate was protecting (fib, fan-out, a `Str`
+    ///     param read after an `await`) produce raku-identical results on the
+    ///     compiled path — pinned by t/start-multi-candidate-compiled.t.
     pub(crate) fn function_body_needs_interpreter(body: &[crate::ast::Stmt]) -> bool {
         use crate::ast::Stmt;
         for stmt in body {
@@ -2007,6 +2030,10 @@ impl Interpreter {
         false
     }
 
+    /// Recurse into expression positions that can *host statements* (a `do`
+    /// statement, a bare block, or either as a call/method-call argument), so a
+    /// `class`/`role` declaration nested there is still seen. No expression is
+    /// itself interpreter-coupled any more.
     fn expr_needs_interpreter(expr: &crate::ast::Expr) -> bool {
         use crate::ast::Expr;
         match expr {
@@ -2016,10 +2043,7 @@ impl Interpreter {
                 Self::expr_needs_interpreter(target)
                     || args.iter().any(Self::expr_needs_interpreter)
             }
-            Expr::Call { name, args } => {
-                // start blocks need the interpreter for proper thread spawning
-                name.resolve() == "start" || args.iter().any(Self::expr_needs_interpreter)
-            }
+            Expr::Call { args, .. } => args.iter().any(Self::expr_needs_interpreter),
             _ => false,
         }
     }
@@ -2044,7 +2068,11 @@ impl Interpreter {
     /// params (`routine_writeback_excluded_names`), so each invocation's binding
     /// stays isolated from the thread env the closure reads — verified by A/B
     /// (full `t/` + all whitelisted S17/S07-hyperrace/integration roast files,
-    /// zero failures; pinned by t/start-body-param-compiled.t).
+    /// zero failures; pinned by t/start-body-param-compiled.t). The *other*
+    /// gates (`def_is_otf_compilable`, `def_is_otf_compilable_multi_candidate`)
+    /// kept a blanket `start` exclusion until 2026-08-22, when it was dropped
+    /// from `function_body_needs_interpreter` for the same reason — see that
+    /// function's doc.
     ///
     /// A sigilless *scalar* (`\x`) param whose alias writeback crosses an `EVAL`
     /// boundary was also historically excluded (t/sigilless-params) — compiled-
