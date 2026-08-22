@@ -114,6 +114,53 @@ impl Interpreter {
         out
     }
 
+    /// The plain-lexical `@`/`%` containers a spawned block's compiled subtree
+    /// actually names, or `None` when the spawn has no known block (the
+    /// block-less [`clone_for_thread`](Self::clone_for_thread) entry point,
+    /// used by supply drivers, `.then`, socket and proc readers).
+    ///
+    /// ADR-0039 §8.6 uses this to decide *how long* a container's bare-name
+    /// lane entry is needed, NOT whether to create one. A container the block
+    /// names is genuinely shared and keeps the lane for good. A container it
+    /// never names still gets an entry — a routine the block *calls* may reach
+    /// it, which no analysis over the block's own free variables can see — but
+    /// that entry is marked transient and retired at the next cross-thread
+    /// drain. `free_var_syms` already folds up nested closures
+    /// (`compute_free_vars`, "Fold nested closures"), so
+    /// `start { start { @a.push(1) } }` keeps `@a` permanently.
+    fn block_referenced_containers(block: &Value) -> Option<std::collections::HashSet<String>> {
+        let mut out = std::collections::HashSet::new();
+        if let ValueView::Sub(data) = block.view()
+            && let Some(cc) = data.compiled_code.as_ref()
+        {
+            for sym in cc
+                .free_var_syms
+                .iter()
+                .chain(cc.free_var_writes.iter())
+                .chain(cc.free_var_container_writes.iter())
+            {
+                let name = sym.resolve();
+                if name.starts_with(['@', '%']) {
+                    out.insert(name);
+                }
+            }
+            return Some(out);
+        }
+        None
+    }
+
+    /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6
+    /// transient-lane rule applies to. Twigil'd, dynamic and attribute
+    /// containers (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep
+    /// their existing lifetimes — `@*x`/`%*x` in particular depend on a durable
+    /// name-lane entry for their cross-thread propagation (see the
+    /// aggregate-dynamic carve-out in the seeding loop). The anonymous
+    /// container slot names and `::`-qualified names are excluded for the same
+    /// reason `collect_unit_lexical_names` excludes them.
+    pub(crate) fn transient_lane_candidate(key: &str) -> bool {
+        Self::is_plain_lexical_name(key) && !key.contains("__ANON") && !key.contains("::")
+    }
+
     /// Union a frame's `type_body_written_lexicals` into the interpreter-wide
     /// set. Called at `RegisterClass` / `RegisterRole`, which always run before
     /// the type can be instantiated (and so before any of its methods can run).
@@ -130,7 +177,10 @@ impl Interpreter {
     /// excluded from the name-keyed shared store. See `block_captured_scalars`.
     pub(crate) fn clone_for_thread_for_block(&mut self, block: &Value) -> Self {
         let captured = self.block_captured_scalars(block);
-        self.clone_for_thread_excluding(&captured)
+        // ADR-0039 §8.6: which containers this block names decides whether its
+        // lane entry is durable or transient. See `block_referenced_containers`.
+        let containers = Self::block_referenced_containers(block);
+        self.clone_for_thread_excluding(&captured, containers.as_ref())
     }
 
     /// Create a lightweight clone of this interpreter for use in a spawned thread.
@@ -138,12 +188,13 @@ impl Interpreter {
     /// Array (`@`) and scalar (`$`) variables are shared between parent and child via `shared_vars`
     /// so that mutations are visible across threads.
     pub(crate) fn clone_for_thread(&mut self) -> Self {
-        self.clone_for_thread_excluding(&std::collections::HashSet::new())
+        self.clone_for_thread_excluding(&std::collections::HashSet::new(), None)
     }
 
     fn clone_for_thread_excluding(
         &mut self,
         captured_scalars: &std::collections::HashSet<String>,
+        referenced_containers: Option<&std::collections::HashSet<String>>,
     ) -> Self {
         // A thread spawned BEFORE the first test call must still share the TAP
         // counter: the first `ok` of the whole program can run on the spawned
@@ -190,6 +241,10 @@ impl Interpreter {
             // locally and recorded once per spawn (one atomic add per counter).
             let mut seed_keys_walked: u64 = 0;
             let mut seed_inserts: u64 = 0;
+            // ADR-0039 §8.6 classification, collected while `self.env` is
+            // borrowed by the walk and applied to `self` once it ends.
+            let mut transient_marks: Vec<String> = Vec::new();
+            let mut transient_unmarks: Vec<String> = Vec::new();
             for (key, val) in &self.env {
                 seed_keys_walked += 1;
                 if let Some(id) = Self::handle_id_from_value(val) {
@@ -290,17 +345,51 @@ impl Interpreter {
                 // the call that bound it, not "the rest of this block", so a
                 // nested spawn inside that call must not overwrite an unrelated
                 // caller's live entry for the same bare name.
-                if self.thread_redeclared_vars.borrow().contains(&key)
+                let published = if self.thread_redeclared_vars.borrow().contains(&key)
                     && !self.thread_decl_in_flight.contains(&key)
                     && !self.thread_param_shadow_vars.borrow().contains(&key)
                 {
                     shared.declare(&key, val.clone());
                     seed_inserts += 1;
+                    true
                 } else if shared.seed_if_absent(&key, || val.clone()) {
                     seed_inserts += 1;
+                    true
+                } else {
+                    false
+                };
+                // ADR-0039 §8.6: classify the lane entry. A container this
+                // block NAMES is genuinely shared and keeps its entry for good
+                // — including promoting one an earlier spawn had marked
+                // transient. A container it never names, whose entry THIS spawn
+                // created, was published only because this loop publishes
+                // everything, so mark it for withdrawal at the next cross-thread
+                // drain.
+                //
+                // Marking, rather than declining to seed, is deliberate and
+                // measured: a routine the block CALLS can still reach the
+                // container, which no analysis over the block's own free
+                // variables can see (see §8.6). Only marking entries this spawn
+                // created matters just as much — an entry an earlier, naming
+                // spawn established stays durable no matter how many unrelated
+                // spawns walk past it afterwards.
+                if let Some(refs) = referenced_containers
+                    && Self::transient_lane_candidate(&key)
+                {
+                    if refs.contains(&key) {
+                        transient_unmarks.push(key);
+                    } else if published {
+                        transient_marks.push(key);
+                    }
                 }
             }
             crate::vm::vm_stats::record_spawn_seeding(seed_keys_walked, seed_inserts);
+            for key in transient_unmarks {
+                self.transient_lane_containers.remove(&key);
+            }
+            for key in transient_marks {
+                self.transient_lane_containers.insert(key);
+            }
             // Track C: migrate the parent's existing `state` variables into shared
             // cells (keyed by their normalized cross-compilation key) so a routine
             // whose `state` was already mutated before the first thread spawned
@@ -600,6 +689,10 @@ impl Interpreter {
             // The child starts no declaration of its own; its own `my`s populate
             // this as they run.
             thread_decl_in_flight: std::collections::HashSet::new(),
+            // ADR-0039 §8.6: withdrawal is the *parent's* bookkeeping — the
+            // child must not retire an entry it depends on. Its own spawns
+            // populate this as they run.
+            transient_lane_containers: std::collections::HashSet::new(),
             // The child starts no call of its own, but it inherits the
             // parent's currently-active parameter shadows (see the
             // `thread_redeclared_vars` comment above) — its own subsequent

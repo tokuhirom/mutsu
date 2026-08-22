@@ -52,58 +52,70 @@ name, so re-key the store". Two thirds of that expired before it was worked:
   callee's `my @items` runs **before** the process's first spawn, so there is no
   mask to keep, re-key or scope. No discipline applied to the store can fix it.
 
-What was left was a single sigil, and it was not a *keying* problem: it was
-that a bare name cannot say which binding an entry belongs to.
+What was left was a single sigil, and it was not a keying problem at all — see
+below.
 
-## The fix
+## The fix: the lane entry gets a lifetime
 
-The cross-thread store is keyed by bare name, so by itself it cannot tell "the
-container this frame is looking at" from "some other frame's container that
-happens to share the name". `container_name_is_redeclared`
-(`src/runtime/runtime_shared_vars.rs`) is the predicate all nine lane gates
-already consult for that question, and its old answer -- "was this name masked
-by a `my` since the last spawn?" -- is structurally incapable of covering the
-repros above:
+A bare-name entry can be wrong in two independent ways. It can name the wrong
+binding — a *keying* problem, and ADR-0039 §8.4 point 4 is right that only slots
+fix that. Or it can be **alive when it should not be**. The repros above are the
+second one: the seeding loop publishes *everything* live at every spawn, so a
+frame-local container lands in a process-visible store, and the entry then
+outlives the frame it belongs to. That needs no key redesign; it needs the entry
+to stop existing when it stops being needed.
 
-- the mask is only ever populated while `shared_vars_active`, so the callee's
-  `my @items`, which runs *before* the process's first spawn, is never masked at
-  all; and
-- the mask is not scoped to the declaring frame, so even when it is set it is
-  dropped at the next spawn and outlives the frame when it is not.
+So lane entries now have a lifetime:
 
-It now also asks the containers themselves. Container mutation in mutsu is
-write-through-the-shared-node (ADR-0013 §7 / ADR-0039 §2), so a container's `Gc`
-node **is** its binding identity -- the same property slots would give, read off
-the value instead of the frame. `container_store_binding_is_foreign` resolves
-the name the way the frame would without the store (`unit_lexicals` first, then
-`env`) and compares its node against the store's base entry and its
-authoritative `__mutsu_atomic_*` copy. A match means the entry is about *this*
-binding and every lane preference is correct; no match means it belongs to
-another frame and this one stays local.
+- `block_referenced_containers` (new, `src/runtime/runtime_thread.rs`) collects
+  the plain-lexical `@`/`%` names in the spawned block's `free_var_syms` /
+  `free_var_writes` / `free_var_container_writes` — which already fold up nested
+  closures, so `start { start { @a.push(1) } }` counts `@a`. It returns `Option`
+  and is `None` for the block-less `clone_for_thread` entry point (supply
+  drivers, `.then`, socket and proc readers), which keeps its previous behaviour
+  exactly.
+- `clone_for_thread_excluding` classifies each entry as it publishes it. A
+  container the block **names** is genuinely shared: durable, and any earlier
+  transient mark on it is cleared. A container it never names, **whose entry
+  this spawn created**, is recorded in `transient_lane_containers`. Only entries
+  this spawn created are marked, so one an earlier naming spawn established
+  stays durable however many unrelated spawns walk past it later.
+- `sync_shared_vars_to_env` withdraws the marked entries (and their
+  `__mutsu_atomic_*` twins, which reads prefer) at the tail of the drain, after
+  everything the workers did has been merged back into `env` or written through
+  the owning unit-lexical cell.
 
-The test is conservative in the direction that preserves sharing: no live local
-binding, a non-container value, or a name absent from the store all answer "not
-foreign", leaving the previous behaviour exactly as it was. It is restricted to
-plain lexical names, so twigil'd, dynamic (`@*x`), attribute and `::`-qualified
-containers keep their own routes, and it only runs while `shared_vars_active`.
+Withdrawing at the drain rather than declining to publish is the load-bearing
+choice, and it was arrived at by measurement.
 
-### The approach it replaced, and why
+## Two cheaper routes, measured and rejected
 
-ADR-0039 §8.3 pointed at a "third `@`/`%` sigil skip": `block_captured_scalars`
-`continue`s on `@`/`%`/`&` while scanning a spawned block's free variables. The
-direct reading of that is to stop *publishing* a container the spawned block
-never names. That was tried first. It fixed both repros and left the entire rest
-of the `t/` suite green (3341 files) -- but broke exactly two shapes, both
-**indirect**: a worker whose block names only a routine
-(`await start { inner('x') }`) that pushes to an outer container. Those
-containers really are shared, and the name lane really is what carries them, so
-a static reachability analysis over the block's free variables is the wrong
-instrument: it cannot see through a call.
+Both were implemented and run through full CI before the one that shipped. The
+results are recorded here and in ADR-0039 §8.6 so nobody re-derives them.
 
-The identity test needs no reachability analysis. In the indirect shapes the
-store's entry *is* the frame's own container, so it answers "not foreign" and
-the sharing stands; in the collision shapes it is a different container, so the
-frame stays local.
+**(1) Decline to seed a container the block never names** — the direct reading
+of ADR-0039 §8.3's "third `@`/`%` sigil skip". It fixed both repros and left the
+entire rest of the `t/` suite green (3341 files, 31116 assertions), failing
+exactly two assertions, both **indirect**: a worker whose block names only a
+routine (`await start { inner('x') }` where `sub inner { @acc.push(...) }`, and
+its mainline-named-sub twin) that pushes to an outer container. Those containers
+really are shared and the name lane really is what carries them. A static
+reachability analysis over the block's own free variables cannot see through a
+call, so this is not merely incomplete — it is the wrong instrument.
+
+**(2) Resolve the entry by container identity** — replace the
+`thread_redeclared_vars` mask with "is the store's node the same `Gc` as the one
+this frame holds?", on the reasoning that container mutation is
+write-through-the-shared-node so a container's node *is* its binding. It fixed
+everything above, and is unsound under contention: `Gc::make_mut` inside
+`shared_array_mutate` reallocates whenever the node is shared, so a concurrent
+mutation destroys the identity the test depends on and a reader whose copy has
+drifted silently writes locally. Measured: `t/concurrent-array-index-assign.t`
+and `t/concurrent-hash-assign.t` lost updates under heavy contention (20 threads
+× 50 indices), `t/escaped-closure-elem-incdec-delete.t` failed, and
+`t/cas-multidim-cells.t` timed out. This is exactly the failure mode CLAUDE.md's
+risk definition warns about — correct only under an analysis that is incomplete
+in precisely the concurrent case.
 
 ## Pins
 
@@ -119,6 +131,10 @@ concurrency suite stay green.
 
 Container scoping is still *dynamic* in the compiler: `Expr::ArrayVar` emits a
 bare `GetArrayVar(name)` (ADR-0039 §1.3), and the four by-name mechanisms listed
-in ADR-0039 §8.4 point 3 are still in place. ADR-0039 slice 2 remains the end
-state — but it is now a mechanism-**deletion** slice rather than a correctness
-one. See ADR-0039 §8.6.
+in ADR-0039 §8.4 point 3 are still in place. A container reached only indirectly
+is still shared by bare name for the life of the spawn, so two frames that are
+both live and both spawning while sharing a name can still collide inside that
+window. ADR-0039 slice 2 remains the end state and subsumes all of it — once a
+container resolves through its slot, no entry lifetime needs managing. What
+changed is that the recorded, reproducible failure mode is closed and pinned.
+See ADR-0039 §8.6.

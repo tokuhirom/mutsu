@@ -1823,6 +1823,23 @@ pub struct Interpreter {
     /// in-flight window closes that hole; the store is republished normally once
     /// the initializer's value lands. Empty for single-threaded programs.
     pub(crate) thread_decl_in_flight: std::collections::HashSet<String>,
+    /// Plain-lexical `@`/`%` names this frame's spawns put on the bare-name
+    /// cross-thread lane **only because every spawn publishes every live
+    /// container**, not because any spawned block actually names them
+    /// (ADR-0039 §8.6).
+    ///
+    /// Such an entry is needed only for as long as a worker might reach the
+    /// container *indirectly* — through a routine the block calls rather than
+    /// names. Once the next cross-thread drain (`sync_shared_vars_to_env`) has
+    /// merged whatever the workers did back into `env`, it has served its whole
+    /// purpose, and keeping it is what let a callee's own `my @items` outlive
+    /// its frame in a process-visible, bare-name-keyed store and hijack an
+    /// unrelated caller's same-named binding. So the drain withdraws them.
+    ///
+    /// A name a later spawn's block DOES reference is removed from this set at
+    /// that spawn: it is then a genuinely shared container and keeps the lane.
+    /// Empty for single-threaded programs.
+    pub(crate) transient_lane_containers: std::collections::HashSet<String>,
     /// Bare scalar names currently masked in [`Self::thread_redeclared_vars`]
     /// because of a **parameter binding** (`mask_thread_redeclared_params`),
     /// not a `my` declaration. `clone_for_thread_excluding` must treat the two

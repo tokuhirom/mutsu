@@ -265,96 +265,10 @@ impl Interpreter {
     /// name genuinely shared?" by *presence* in the store, which a masked name
     /// still satisfies — the entry is simply the outer binding's. They ask here
     /// instead so a re-declared container stays frame-local on every axis.
-    /// ADR-0039 §8.6 widens this from "was masked by a `my`" to "is not this
-    /// binding", because the mask alone cannot answer the question. The mask is
-    /// only ever set while `shared_vars_active`, so a routine-local
-    /// `my @items` declared *before* the process's first spawn is unmasked
-    /// forever — which is exactly the shape the deep ticket measured. See
-    /// [`container_store_binding_is_foreign`](Self::container_store_binding_is_foreign).
     pub(crate) fn container_name_is_redeclared(&self, key: &str) -> bool {
-        if !self.shared_vars_active || !key.starts_with(['@', '%']) {
-            return false;
-        }
-        if self.thread_redeclared_vars.borrow().contains(key) {
-            return true;
-        }
-        self.container_store_binding_is_foreign(key)
-    }
-
-    /// Whether `key` is a plain-lexical `@`/`%` name the ADR-0039 §8.6 binding
-    /// identity test applies to. Twigil'd, dynamic and attribute containers
-    /// (`@!x`, `@*y`, `%?RESOURCES`) are not plain lexicals and keep their
-    /// existing routes untouched — `@*x`/`%*x` in particular depend on the name
-    /// lane for their cross-thread propagation (see the aggregate-dynamic
-    /// carve-out in `clone_for_thread`'s seeding loop). The anonymous container
-    /// slot names are excluded for the same reason `collect_unit_lexical_names`
-    /// excludes them.
-    fn lane_identity_checked_name(key: &str) -> bool {
-        Self::is_plain_lexical_name(key) && !key.contains("__ANON") && !key.contains("::")
-    }
-
-    /// Whether the cross-thread store's entry under a plain-lexical `@`/`%`
-    /// name describes a **different binding** from the one this frame currently
-    /// holds under that name.
-    ///
-    /// ADR-0039 §8.6. The store is keyed by bare name, so it cannot by itself
-    /// distinguish "the container this frame is looking at" from "some other
-    /// frame's container that happens to share the name". `thread_redeclared_vars`
-    /// was the previous answer, and it is structurally incomplete: it is only
-    /// populated while `shared_vars_active`, so a routine-local `my @items`
-    /// declared before the process's first spawn is never masked at all, and
-    /// the mask is not scoped to the declaring frame either. That is why
-    /// ADR-0039 §8.4 point 4 concluded that no *keying* discipline short of
-    /// per-frame keys removes the collision.
-    ///
-    /// This is not a keying discipline: it asks the containers themselves.
-    /// Container mutation in mutsu is write-through-the-shared-node (§2 /
-    /// ADR-0013 §7), so a container's `Gc` node **is** its binding identity —
-    /// the same property slots would give, read off the value instead of the
-    /// frame. If this frame's container is the same node the store holds (the
-    /// base entry seeded at spawn time, or the authoritative `__mutsu_atomic_*`
-    /// copy a cross-thread mutation installed), the entry is about *this*
-    /// binding and every lane preference is correct. If it is neither, the
-    /// entry belongs to somebody else and this frame must stay local.
-    ///
-    /// Conservative in the direction that preserves sharing: a name with no
-    /// live local binding, a non-container value, or a name absent from the
-    /// store all answer `false`, leaving the existing behaviour in place.
-    pub(crate) fn container_store_binding_is_foreign(&self, key: &str) -> bool {
-        if !Self::lane_identity_checked_name(key) {
-            return false;
-        }
-        // The binding this frame would resolve `key` to without the store. A
-        // compunit file-scope container (ADR-0039 slice 1) lives in
-        // `unit_lexicals`, not `env`, and takes precedence there too.
-        let Some(local) = self
-            .unit_lexical_container(key)
-            .or_else(|| self.env.get(key).cloned())
-        else {
-            return false;
-        };
-        let local = local.deref_container();
-        if !matches!(local.view(), ValueView::Array(..) | ValueView::Hash(..)) {
-            return false;
-        }
-        let atomic_key = if key.starts_with('@') {
-            format!("__mutsu_atomic_arr::{key}")
-        } else {
-            format!("__mutsu_atomic_hash::{key}")
-        };
-        let base = self.shared_vars.get(key);
-        let atomic = self.shared_vars.get(&atomic_key);
-        if base.is_none() && atomic.is_none() {
-            // Nothing in the store under this name: nothing to be foreign to.
-            return false;
-        }
-        let ours = base
-            .as_ref()
-            .is_some_and(|v| Self::same_container_arc(&local, v))
-            || atomic
-                .as_ref()
-                .is_some_and(|v| Self::same_container_arc(&local, v));
-        !ours
+        self.shared_vars_active
+            && key.starts_with(['@', '%'])
+            && self.thread_redeclared_vars.borrow().contains(key)
     }
 
     /// Mask each scalar parameter, and each **slurpy** `@`/`%` parameter
@@ -718,6 +632,7 @@ impl Interpreter {
                 .collect()
         };
         if dirty_keys.is_empty() {
+            self.withdraw_transient_lane_containers();
             return;
         }
         let updates: Vec<(String, Value)> = {
@@ -815,6 +730,44 @@ impl Interpreter {
                 continue;
             }
             self.env.insert(key, val);
+        }
+        self.withdraw_transient_lane_containers();
+    }
+
+    /// Retire the bare-name lane entries this frame's spawns created only
+    /// because [`clone_for_thread_excluding`](Self::clone_for_thread) publishes
+    /// **every** live container, not because any spawned block named them
+    /// (ADR-0039 §8.6).
+    ///
+    /// Runs at the tail of the cross-thread drain, so everything the workers
+    /// did has just been merged back into `env` (or written through the owning
+    /// unit-lexical cell) — after which the entry has no readers left that are
+    /// entitled to it, and every reader that is *not* entitled to it is exactly
+    /// the bug: the store is keyed by bare name and process-visible, so a
+    /// callee's own `my @items` published by an unrelated `await start { 1 }`
+    /// outlived its frame and hijacked the caller's same-named binding on every
+    /// later read.
+    ///
+    /// Withdrawing rather than never-publishing is what keeps an *indirectly*
+    /// reached container working: a routine the block calls (rather than names)
+    /// can mutate it through the lane for the whole life of the spawn, and only
+    /// then is the entry retired. A later spawn whose block does name the
+    /// container clears its mark and it becomes durable again.
+    ///
+    /// The `__mutsu_atomic_*` twin goes with it: reads prefer that entry, so
+    /// leaving it behind would retire nothing.
+    fn withdraw_transient_lane_containers(&mut self) {
+        if self.transient_lane_containers.is_empty() {
+            return;
+        }
+        for key in std::mem::take(&mut self.transient_lane_containers) {
+            let atomic_key = if key.starts_with('@') {
+                format!("__mutsu_atomic_arr::{key}")
+            } else {
+                format!("__mutsu_atomic_hash::{key}")
+            };
+            self.shared_vars.remove(&atomic_key);
+            self.shared_vars.remove(&key);
         }
     }
 
