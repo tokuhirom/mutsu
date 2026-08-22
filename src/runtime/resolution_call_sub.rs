@@ -1097,6 +1097,9 @@ impl Interpreter {
                         body: list.body.clone(),
                         env,
                         cache: std::sync::Mutex::new(list.cache.lock().unwrap().clone()),
+                        generation_state: std::sync::Mutex::new(
+                            list.generation_state.lock().unwrap().clone(),
+                        ),
                         compiled_code: list.compiled_code.clone(),
                         compiled_fns: list.compiled_fns.clone(),
                         elems_count: list.elems_count.clone(),

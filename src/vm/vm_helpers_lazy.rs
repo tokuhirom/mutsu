@@ -462,13 +462,30 @@ impl Interpreter {
     }
 
     /// If the variable `name` holds a lazy `@`-array backed by a cache-bearing
-    /// spec (infinite sequence/closure/scan), reify its cached prefix into a
-    /// real Array and write it back, so a subsequent element mutation
-    /// (`@a[i] = v`, `:delete`) operates on a materialized backing. Front
-    /// mutations collapse the list to its prefix (no worse than the pre-L2
-    /// capped Array); reads keep it lazy. Reifies only cache-backed specs, so it
-    /// never runs user code or hangs. (L2)
-    pub(super) fn reify_lazy_array_slot(&mut self, name: &str) -> Result<(), RuntimeError> {
+    /// spec (infinite sequence/closure/scan), reify enough of its prefix into a
+    /// temporary real Array and write it back, so a subsequent element mutation
+    /// (`@a[i] = v`, `:delete`) can run the existing (LazyList-unaware)
+    /// element-assign/delete machinery unchanged. `touched_index`, when the
+    /// caller can cheaply determine it (a plain non-negative Int subscript on
+    /// top of the stack), bounds the reify to exactly the elements that
+    /// mutation needs -- matching raku, which reifies only up to the touched
+    /// index and keeps the rest of an infinite source live. Without a concrete
+    /// index (a slice assign, a WhateverCode delete index, ...) this falls back
+    /// to the historical capped prefix so a genuinely infinite source cannot
+    /// hang or blow memory.
+    ///
+    /// Returns the original `LazyList`'s `Gc` handle when it reified one, so
+    /// the caller can hand it to [`Self::restore_lazy_array_slot`] afterwards
+    /// and rebuild a still-lazy value around the mutated prefix and the SAME
+    /// live source -- an element write/delete on a lazy array must not
+    /// collapse it into a finite Array (raku: `@a.is-lazy` stays `True`,
+    /// `@a.elems` keeps throwing `X::Cannot::Lazy`, and a later out-of-range
+    /// read keeps pulling from the live source). (L2, bounded reify follow-up)
+    pub(super) fn reify_lazy_array_slot(
+        &mut self,
+        name: &str,
+        touched_index: Option<i64>,
+    ) -> Result<Option<crate::gc::Gc<LazyList>>, RuntimeError> {
         let lazy = match self.env().get(name).map(Value::view) {
             // Any `@`-array-context lazy list must materialize before an element
             // mutation, not just the cache-backed infinite specs: a finite
@@ -478,34 +495,122 @@ impl Interpreter {
             Some(ValueView::LazyList(ll)) if ll.in_array_context() => Some(ll.clone()),
             _ => None,
         };
-        if let Some(ll) = lazy {
-            // A `.lazy`-on-a-finite-list is a pure cache-only `LazyList` (no source
-            // that can extend it). Its cache IS the complete data, so use it
-            // directly: `force_lazy_list_vm_n(cap)` would return an empty prefix
-            // (its cache-hit path needs `cache.len() >= needed`, which a short
-            // finite cache never satisfies) and drop the elements.
-            let has_extendable_source = ll.sequence_spec.is_some()
-                || ll.closure_seq.is_some()
-                || ll.scan_spec.is_some()
-                || ll.lazy_pipe.is_some()
-                || ll.coroutine.is_some()
-                || ll.walk_pending.is_some()
-                || ll.cat_pull.is_some()
-                || ll.compiled_code.is_some();
-            let items = if has_extendable_source {
-                // Reify a bounded prefix (matching the historical reify-to-cap of a
-                // capped `ArrayKind::Lazy` Array). The cap bounds a genuinely-
-                // infinite source so the mutation cannot hang; a finite source
-                // reifies fully below the cap.
-                const MAX_ARRAY_EXPAND: usize = 100_000;
-                self.force_lazy_list_vm_n(&ll, MAX_ARRAY_EXPAND)?
-            } else {
-                ll.cache.lock().unwrap().clone().unwrap_or_default()
+        let Some(ll) = lazy else {
+            return Ok(None);
+        };
+        // A `.lazy`-on-a-finite-list is a pure cache-only `LazyList` (no source
+        // that can extend it). Its cache IS the complete data, so use it
+        // directly: `force_lazy_list_vm_n(cap)` would return an empty prefix
+        // (its cache-hit path needs `cache.len() >= needed`, which a short
+        // finite cache never satisfies) and drop the elements.
+        let has_extendable_source = ll.sequence_spec.is_some()
+            || ll.closure_seq.is_some()
+            || ll.scan_spec.is_some()
+            || ll.lazy_pipe.is_some()
+            || ll.coroutine.is_some()
+            || ll.walk_pending.is_some()
+            || ll.cat_pull.is_some()
+            || ll.compiled_code.is_some();
+        let items = if has_extendable_source {
+            const MAX_ARRAY_EXPAND: usize = 100_000;
+            let needed = match touched_index {
+                Some(i) if i >= 0 => (i as usize).saturating_add(1),
+                _ => MAX_ARRAY_EXPAND,
             };
-            self.env_mut()
-                .insert(name.to_string(), Value::real_array(items));
+            self.force_lazy_list_vm_n(&ll, needed)?
+        } else {
+            ll.cache.lock().unwrap().clone().unwrap_or_default()
+        };
+        self.env_mut()
+            .insert(name.to_string(), Value::real_array(items));
+        Ok(Some(ll))
+    }
+
+    /// Counterpart to [`Self::reify_lazy_array_slot`]: once the generic
+    /// element-assign/delete machinery has finished mutating the temporary
+    /// real Array that function installed, rebuild a still-lazy `LazyList`
+    /// around the mutated prefix and `source` (the SAME live sequence
+    /// spec/closure/gather coroutine/... the array was reified from), and
+    /// write it back over the temporary Array. No-op if the slot no longer
+    /// holds a plain Array (e.g. the mutation deleted the variable, or wrapped
+    /// it in a container the reify step did not anticipate) -- in that rare
+    /// case the array simply stays the finite prefix, no worse than before
+    /// this bounded-reify change.
+    ///
+    /// Also refreshes the caller's local slot (`code`/`slot`), not just env:
+    /// the element-assign/delete machinery this wraps writes its result
+    /// through the dual store's local-slot fast paths, so leaving the slot
+    /// holding the stale temporary Array would let a later per-statement
+    /// `locals`->`env` reconcile clobber the LazyList this function just
+    /// installed (surfaced by a `@a.is-lazy`/`.gist` touch between the
+    /// mutation and a later out-of-range read silently losing laziness).
+    pub(super) fn restore_lazy_array_slot(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        source: crate::gc::Gc<LazyList>,
+    ) {
+        let Some(current) = self.env().get(name).cloned() else {
+            return;
+        };
+        let ValueView::Array(items, _) = current.view() else {
+            return;
+        };
+        // A plain Array applies its `is default(...)` value to a hole
+        // transparently at READ time, via the embedded `ArrayData::default`
+        // field (`typed_container_default`) -- `LazyList` has no equivalent
+        // field, and the general lazy-array index-read path
+        // (`vm_var_index_ops.rs`) rebuilds a bare `Vec<Value>` from `cache`
+        // with no default metadata at all. So bake the default into a hole
+        // HERE, once, while the mutated prefix is still a real Array that
+        // knows its own default. Only a genuine hole (untracked by the
+        // array's `initialized` set) is substituted -- an explicit
+        // `@a[i] = Any` write stays `Any`, matching raku
+        // (`my @a is default(99) = 1,2,3; @a[1] = Any; @a[1]` is `Any`, not
+        // `99`, while `@a[1]:delete; @a[1]` IS `99`).
+        let initialized = items.initialized.clone();
+        // `typed_container_default` only reads the embedded `container_default`
+        // (plus type metadata); fall back to the name-keyed `var_default`
+        // table too, matching `exec_delete_index_named_op_inner`'s own
+        // `saved_default` computation -- a container that arrived here
+        // without ever having its embedded default re-tagged (e.g. an
+        // `is default(...)` declared before the array was ever reified)
+        // must still find it by name.
+        let default = self
+            .container_default(&current)
+            .or_else(|| self.var_default(name).cloned())
+            .unwrap_or_else(|| self.typed_container_default(&current));
+        let items: Vec<Value> = items
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let is_hole = match v.view() {
+                    ValueView::Nil => true,
+                    ValueView::Package(_) => !initialized.as_ref().is_some_and(|s| s.contains(&i)),
+                    _ => false,
+                };
+                if is_hole { default.clone() } else { v.clone() }
+            })
+            .collect();
+        {
+            let mut cache = source.cache.lock().unwrap();
+            let cached = cache.get_or_insert_with(Vec::new);
+            // Overwrite only the mutated prefix (`items`). A longer tail the
+            // cache already held -- from an earlier out-of-range read, or an
+            // earlier `@a[j] = v` override at some `j` beyond this prefix --
+            // must survive untouched; replacing the whole cache would both
+            // discard that already-pulled tail (forcing a wasted re-pull)
+            // and silently revert any such earlier override.
+            if cached.len() < items.len() {
+                cached.resize(items.len(), Value::NIL);
+            }
+            for (i, v) in items.iter().enumerate() {
+                cached[i] = v.clone();
+            }
         }
-        Ok(())
+        let restored = Value::lazy_list(source);
+        self.env_mut().insert(name.to_string(), restored.clone());
+        self.locals_set_by_name(code, name, restored);
     }
 
     pub(super) fn lazy_list_needs_forcing(method: &str) -> bool {

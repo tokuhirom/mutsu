@@ -281,11 +281,17 @@ impl Interpreter {
             }
         }
 
-        // Snapshot the current history without holding the cache lock across
-        // user-code execution.
+        // Snapshot the PRISTINE trailing history from `generation_state`, not
+        // `cache`, without holding either lock across user-code execution:
+        // the generator closure may read several trailing elements (e.g. a
+        // Fibonacci-style `1, 1, * + * ... *`), and `cache` may hold an
+        // element an `@`-array mutation overwrote in place
+        // (`Interpreter::restore_lazy_array_slot`) -- feeding that override
+        // back into the generator would corrupt every later term. See the
+        // `generation_state` field doc on `LazyList`.
         let mut history = {
-            let cache = list.cache.lock().unwrap();
-            cache.as_ref().cloned().unwrap_or_default()
+            let gen_state = list.generation_state.lock().unwrap();
+            gen_state.as_ref().cloned().unwrap_or_default()
         };
 
         let state_mutex = list.closure_seq.as_ref().unwrap();
@@ -320,10 +326,18 @@ impl Interpreter {
             }
         }
 
-        // Publish the extended history back to the cache.
-        *list.cache.lock().unwrap() = Some(history.clone());
-        let take = needed.min(history.len());
-        Ok(history[..take].to_vec())
+        // Publish the extended PRISTINE history back to `generation_state`...
+        *list.generation_state.lock().unwrap() = Some(history.clone());
+        // ...and append only the NEWLY generated tail to `cache` -- positions
+        // it already had may hold a user override and must not be clobbered
+        // (see `extend_sequence_cache`'s matching comment).
+        let mut cache = list.cache.lock().unwrap();
+        let cached = cache.get_or_insert_with(Vec::new);
+        if cached.len() < history.len() {
+            cached.extend_from_slice(&history[cached.len()..]);
+        }
+        let take = needed.min(cached.len());
+        Ok(cached[..take].to_vec())
     }
 
     /// Extend a sequence-spec lazy list's cache to at least `needed` elements.
@@ -334,12 +348,23 @@ impl Interpreter {
         spec: &crate::value::SequenceSpec,
         needed: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
-        let mut cache = list.cache.lock().unwrap();
-        let items = cache.get_or_insert_with(Vec::new);
-        if items.len() >= needed {
-            return Ok(items[..needed].to_vec());
+        {
+            let cache = list.cache.lock().unwrap();
+            if let Some(cached) = cache.as_ref()
+                && cached.len() >= needed
+            {
+                return Ok(cached[..needed].to_vec());
+            }
         }
-        // Generate more elements
+        // Generate new elements from `generation_state` -- the sequence's OWN
+        // trailing history -- NOT from `cache`. `cache` is the user-visible
+        // prefix and may hold an element an `@`-array mutation overwrote in
+        // place (`Interpreter::restore_lazy_array_slot`); extending from it
+        // would let that override corrupt later terms (raku: `@a[2]=99` on
+        // `1,2,4...Inf` still computes `8` at index 3, not a value derived
+        // from `99`). See the `generation_state` field doc on `LazyList`.
+        let mut gen_state = list.generation_state.lock().unwrap();
+        let items = gen_state.get_or_insert_with(Vec::new);
         while items.len() < needed {
             let last = items.last().cloned().unwrap_or(Value::int(0));
             let next = match spec {
@@ -417,6 +442,19 @@ impl Interpreter {
             };
             items.push(next);
         }
-        Ok(items[..needed].to_vec())
+        let history_snapshot = items.clone();
+        drop(gen_state);
+        // Append only the freshly generated tail to `cache` -- positions it
+        // already had (0..old cache len) may hold a user override and must
+        // not be clobbered; `cache` and `generation_state` otherwise grow in
+        // lockstep, so the tail beyond the current cache length is exactly
+        // what generation just produced.
+        let mut cache = list.cache.lock().unwrap();
+        let cached = cache.get_or_insert_with(Vec::new);
+        if cached.len() < history_snapshot.len() {
+            cached.extend_from_slice(&history_snapshot[cached.len()..]);
+        }
+        let take = needed.min(cached.len());
+        Ok(cached[..take].to_vec())
     }
 }

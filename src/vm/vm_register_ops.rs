@@ -156,6 +156,7 @@ impl Interpreter {
                 body: body.clone(),
                 env,
                 cache: std::sync::Mutex::new(None),
+                generation_state: std::sync::Mutex::new(None),
                 compiled_code: Some(std::sync::Arc::new(compiled_code)),
                 compiled_fns: Some(std::sync::Arc::new(compiled_fns)),
                 elems_count: None,

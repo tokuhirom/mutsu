@@ -208,9 +208,33 @@ impl Interpreter {
         // authoritative slot first, as the sibling element-assignment handler
         // does.
         self.seed_env_from_scalar_slot(code, slot, &var_name);
-        // A lazy `@`-array reifies its prefix before an element delete
-        // (`@a[i]:delete`) — delete needs a materialized backing. (L2)
-        self.reify_lazy_array_slot(&var_name)?;
+        // A lazy `@`-array reifies a prefix before an element delete
+        // (`@a[i]:delete`) — delete needs a materialized backing Array to
+        // operate on. Peeking the (not-yet-popped) index bounds the reify to
+        // exactly the touched element for the common simple-Int-subscript
+        // shape; `restore_lazy_array_slot` at the end of this function
+        // rebuilds a still-lazy value around the mutated prefix and the SAME
+        // live source afterwards, so the array does not lose its infinite
+        // tail. (L2, bounded reify follow-up — see docs/lazy-arrays.md)
+        let delete_touched_index = self.stack.last().and_then(|idx| match idx.view() {
+            ValueView::Int(n) if n >= 0 => Some(n),
+            _ => None,
+        });
+        let lazy_source = self.reify_lazy_array_slot(&var_name, delete_touched_index)?;
+        // A lazy array's reified prefix has a live tail beyond it, so
+        // deleting its LAST touched slot must NOT shrink the array the way
+        // `trim_trailing_array_holes` shrinks a genuinely finite one (raku:
+        // `@a[2]:delete` on `1,2,4...Inf` leaves `@a[2]` an `Any` hole,
+        // `@a[3]` still `8` -- the array does not lose an element). Record
+        // the reified prefix's length now, before `exec_delete_index_named_op_inner`
+        // runs and (for a plain Array) may trim a trailing hole off; restored
+        // below if trimming shortened it.
+        let pre_delete_len = lazy_source.as_ref().and_then(|_| {
+            self.env().get(&var_name).and_then(|v| match v.view() {
+                ValueView::Array(items, _) => Some(items.len()),
+                _ => None,
+            })
+        });
         // ADR-0039 slice 1: `var_name` may be a compunit's own file-scope
         // `@`/`%` (its authoritative storage is the cell in `unit_lexicals`,
         // not `env[var_name]` — that key can hold a completely unrelated
@@ -265,6 +289,33 @@ impl Interpreter {
             None => None,
         };
         let result = self.exec_delete_index_named_op_inner(code, name_idx, slot);
+        if let Some(ll) = lazy_source {
+            // Undo a trailing-hole trim `exec_delete_index_named_op_inner`
+            // may have applied (see the `pre_delete_len` comment above): pad
+            // the array back to its reified length with the same `Any` hole
+            // value a delete of a non-trailing slot would have left, so the
+            // live tail's positions are not shifted.
+            if let Some(min_len) = pre_delete_len
+                && let Some(container) = self.env_mut().get_mut(&var_name)
+                && matches!(container.view(), ValueView::Array(items, _) if items.len() < min_len)
+            {
+                // Extend the SAME `ArrayData` node in place (not a fresh
+                // `Value::real_array`), so its embedded `default`/type
+                // metadata -- already re-tagged by
+                // `exec_delete_index_named_op_inner` above -- survives for
+                // `restore_lazy_array_slot` to read back.
+                container.with_array_mut(|items, _kind| {
+                    let arr = crate::value::gc_data_mut(items);
+                    while arr.len() < min_len {
+                        arr.push(Value::package(crate::symbol::Symbol::intern("Any")));
+                    }
+                });
+                if let Some(padded_val) = self.env().get(&var_name).cloned() {
+                    self.locals_set_by_name(code, &var_name, padded_val);
+                }
+            }
+            self.restore_lazy_array_slot(code, &var_name, ll);
+        }
         if let Some(overrides) = mixin_overrides
             && let Some(mutated) = self.env().get(&var_name).cloned()
         {
