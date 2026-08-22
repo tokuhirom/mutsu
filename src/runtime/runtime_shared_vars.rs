@@ -766,43 +766,29 @@ impl Interpreter {
             } else {
                 format!("__mutsu_atomic_hash::{key}")
             };
-            // Retiring the entry must not retire the DATA. Once a mutation has
-            // routed through the lane, the `__mutsu_atomic_*` entry is the
-            // authoritative copy and the mutating thread deliberately dropped
-            // its own `env` copy (`shared_array_mutate`) so `make_mut` could
-            // work in place. Worse, the ordinary drain above cannot restore it:
-            // its dirty-key filter skips any name this lineage re-declared, and
-            // a worker's own `my @a` is exactly that. So materialize the live
-            // value back into this frame's own storage first — through the
-            // owning unit-lexical cell or a `:=`-bound cell when there is one,
-            // so every alias keeps observing it, exactly as
-            // `shared_array_mutate`'s own non-thread-clone writeback does.
-            //
-            // Only when the key is dirty: a clean entry is just the copy the
-            // spawn seeded, so there is nothing to preserve, and writing it
-            // back would be actively wrong for a name whose declaration is
-            // still in flight or whose parameter shadow is live (there the
-            // seed took the OUTER binding's value on purpose).
-            let dirty = self
+            // **Only a CLEAN entry is retired**, and that restriction is what
+            // makes the whole mechanism safe rather than merely narrow. A clean
+            // entry is positive proof that no thread ever used the lane for
+            // this name since the spawn published it — which is exactly the
+            // "published a binding nothing had asked to share" case, and
+            // nothing else. The moment any thread writes it the name is in
+            // genuine cross-thread use: the entry becomes the authoritative
+            // copy (the writer drops its own `env` copy so `make_mut` can work
+            // in place), other threads may still be mid-flight against it, and
+            // taking it away underneath them loses updates and races the `Gc`
+            // (measured: it emptied worker A's accumulator in
+            // `t/sibling-thread-array-lane-scope.t`, and segfaulted
+            // `roast/integration/advent2014-day05.t`, whose `$supply.act`
+            // handlers keep pushing to `@seen` while the driving `start` blocks
+            // are awaited). So a dirty entry simply graduates to durable: drop
+            // the mark and leave it alone.
+            if self
                 .shared_vars_dirty
                 .read()
                 .ok()
-                .is_some_and(|d| d.contains(&key));
-            if dirty
-                && let Some(val) = self
-                    .shared_vars
-                    .get(&atomic_key)
-                    .or_else(|| self.shared_vars.get(&key))
+                .is_some_and(|d| d.contains(&key))
             {
-                if let Some(cell) = self.unit_lexical_container_cell(&key) {
-                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
-                } else if let Some(ValueView::ContainerRef(cell)) =
-                    self.env.get(&key).map(Value::view)
-                {
-                    *cell.lock().unwrap_or_else(|e| e.into_inner()) = val;
-                } else {
-                    self.env.insert(key.clone(), val);
-                }
+                continue;
             }
             self.shared_vars.remove(&atomic_key);
             self.shared_vars.remove(&key);

@@ -83,11 +83,18 @@ So lane entries now have a lifetime:
 - `sync_shared_vars_to_env` withdraws the marked entries (and their
   `__mutsu_atomic_*` twins, which reads prefer) at the tail of the drain, after
   everything the workers did has been merged back into `env` or written through
-  the owning unit-lexical cell. It first *materializes* a dirty entry's live
-  value into the frame's own storage — once a mutation has routed through the
-  lane the atomic entry is the authoritative copy, the mutating thread
-  deliberately dropped its `env` copy, and the ordinary drain cannot restore it
-  because its dirty-key filter skips any name this lineage re-declared.
+  the owning unit-lexical cell. **Only a clean entry is retired.** That
+  restriction is what makes the mechanism safe rather than merely narrow: a
+  clean entry is positive proof that no thread ever used the lane for that name
+  since the spawn published it — exactly the "published a binding nothing had
+  asked to share" case and nothing else. A dirty entry graduates to durable: the
+  moment any thread writes it, the name is in genuine cross-thread use, the
+  entry is the authoritative copy, other threads may be mid-flight against it,
+  and taking it away underneath them loses updates and races the `Gc`
+  (measured: it emptied worker A's accumulator in
+  `t/sibling-thread-array-lane-scope.t` and segfaulted
+  `roast/integration/advent2014-day05.t`, whose `$supply.act` handlers keep
+  pushing to `@seen` while the driving `start` blocks are awaited).
 - Only the **top-level** interpreter classifies. On a worker thread the lane is
   not an optional publication channel — it is the storage: `push @a, ...` routes
   through `__mutsu_atomic_arr::` unconditionally when `is_thread_clone()`
