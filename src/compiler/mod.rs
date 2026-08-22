@@ -2486,23 +2486,34 @@ impl Compiler {
         }
     }
 
-    /// Bake the positions of the `|EXPR` arguments into the constant pool.
+    /// Bake the `|EXPR` positions of a `Stmt::Call`-shaped (`CallArg`) argument
+    /// list into the constant pool, for `ExecCallPairs`.
     ///
-    /// Argument-list interpolation is a property of the *syntax*, not of the
-    /// value: `f(|@a)` spreads, while `f(@a.Slip)` passes one Slip. Only the
-    /// compiler can tell the two apart, so the call op carries the positions
-    /// it must spread. `None` (no `|` argument) is the common case.
-    fn add_slip_positions_constant(&mut self, args: &[CallArg]) -> Option<u32> {
-        let entries: Vec<Value> = args
-            .iter()
-            .enumerate()
-            .filter(|(_, arg)| matches!(arg, CallArg::Slip(_)))
-            .map(|(i, _)| Value::int(i as i64))
-            .collect();
-        if entries.is_empty() {
-            None
-        } else {
+    /// ADR-0054 Slice 4: this uses the SAME per-position entry shape
+    /// `add_arg_sources_constant` uses for an `Expr`-list call site (`TRUE`
+    /// for a `|EXPR` position, `NIL` otherwise — decoded by
+    /// `decode_arg_slip_positions`), rather than the separate "array of bare
+    /// integer positions" encoding the retired `add_slip_positions_constant`
+    /// used. `ExecCallPairs` has no rw-arg source tracking (it never did, so
+    /// this does not add `Str`/`Pair` name entries the way
+    /// `add_arg_sources_constant` does for `CallFunc`/`CallMethod`/etc.) — a
+    /// call site now carries exactly one syntax descriptor instead of two
+    /// parallel constants. `None` (no `|` argument) is the common case.
+    fn add_call_arg_sources_constant(&mut self, args: &[CallArg]) -> Option<u32> {
+        let mut entries = Vec::with_capacity(args.len());
+        let mut has_slip = false;
+        for arg in args {
+            if matches!(arg, CallArg::Slip(_)) {
+                entries.push(Value::TRUE);
+                has_slip = true;
+            } else {
+                entries.push(Value::NIL);
+            }
+        }
+        if has_slip {
             Some(self.code.add_constant(Value::array(entries)))
+        } else {
+            None
         }
     }
 

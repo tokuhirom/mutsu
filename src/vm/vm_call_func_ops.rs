@@ -351,6 +351,13 @@ impl Interpreter {
             self.amp_param_shadowed_names
                 .contains(&code.const_sym(name_idx))
         };
+        // ADR-0054 Slice 4: whether this call site wrote a `|EXPR` argument,
+        // decided once from the compile-time descriptor rather than by
+        // probing the stack for Slip-shaped values on every cache check
+        // below. A plain argument that merely evaluates to a Slip
+        // (`f(@a.Slip)`) does not set this, so such a call stays eligible
+        // for the light-call / OTF caches instead of forfeiting them.
+        let call_has_slip = Self::stack_args_have_slip(code, arg_sources_idx);
         // Ultra-fast path: positional light-call cache for positional-only functions.
         if !skip_name_caches {
             let name_str = Self::const_str(code, name_idx);
@@ -390,19 +397,11 @@ impl Interpreter {
                         // them into a single scan.
                         let stack_args = &self.stack[self.stack.len() - arity_usize..];
                         let mut has_junction = false;
-                        let mut has_slip = false;
                         let mut cl: Option<i64> = None;
                         for v in stack_args {
                             let view = v.view();
                             if matches!(view, ValueView::Junction { .. }) {
                                 has_junction = true;
-                                break;
-                            }
-                            // A Slip argument spreads into the argument list, so the
-                            // arity this path binds is not the compiled arity — the
-                            // slow path's `flatten_call_args` must run instead.
-                            if matches!(view, ValueView::Slip(_)) {
-                                has_slip = true;
                                 break;
                             }
                             if cl.is_none() {
@@ -413,7 +412,7 @@ impl Interpreter {
                         // caller's container -> fall through to the slow path.
                         let share_into_scalar =
                             Self::call_shares_container_into_scalar_param(cf, stack_args);
-                        if !has_junction && !has_slip && !share_into_scalar {
+                        if !has_junction && !call_has_slip && !share_into_scalar {
                             let start = self.stack.len() - arity_usize;
                             // Pooled args buffer (J4d): `drain(..).collect()`
                             // was one malloc/free per call on the hottest call
@@ -484,11 +483,10 @@ impl Interpreter {
                         && self.stack[self.stack.len() - arity_usize..]
                             .iter()
                             .any(|v| matches!(v.view(), ValueView::Junction { .. }));
-                    let has_slip = self.stack_args_have_slip(arity_usize);
                     if self.stack.len() >= arity_usize
                         && !named_share
                         && !has_junction
-                        && !has_slip
+                        && !call_has_slip
                         && !Self::call_shares_container_into_scalar_param(
                             cf,
                             &self.stack[self.stack.len() - arity_usize..],
@@ -557,7 +555,7 @@ impl Interpreter {
                     && !cf.has_inner_subs
                 {
                     let arity_usize = arity as usize;
-                    if self.stack.len() >= arity_usize && !self.stack_args_have_slip(arity_usize) {
+                    if self.stack.len() >= arity_usize && !call_has_slip {
                         let start = self.stack.len() - arity_usize;
                         // Pooled args buffer (mirrors the two light-call cached
                         // paths above): `drain(..).collect()` was one malloc/free

@@ -2858,11 +2858,11 @@ impl Compiler {
                     }
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
-                let slip_positions_idx = self.add_slip_positions_constant(&rewritten_args);
+                let arg_sources_idx = self.add_call_arg_sources_constant(&rewritten_args);
                 self.code.emit(OpCode::ExecCallPairs {
                     name_idx,
                     arity: rewritten_args.len() as u32,
-                    slip_positions_idx,
+                    arg_sources_idx,
                     keep_value: false,
                 });
             }

@@ -3529,7 +3529,7 @@ impl Interpreter {
             OpCode::ExecCallPairs {
                 name_idx,
                 arity,
-                slip_positions_idx,
+                arg_sources_idx,
                 keep_value,
             } => {
                 self.sync_source_line(code, *ip);
@@ -3543,7 +3543,7 @@ impl Interpreter {
                     compiled_fns,
                     *name_idx,
                     *arity,
-                    *slip_positions_idx,
+                    *arg_sources_idx,
                     *keep_value,
                 )?;
                 *ip += 1;

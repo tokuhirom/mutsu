@@ -1177,17 +1177,23 @@ pub(crate) enum OpCode {
     },
     /// Statement-level call with positional/named values encoded as Pair.
     ///
-    /// `slip_positions_idx` indexes a constant `Array` of the argument
-    /// positions written as `|EXPR`. Those — and only those — spread into the
-    /// argument list: a Slip an ordinary argument merely evaluated to
-    /// (`is-deeply $s.Slip, $t.Slip, 'name'`) stays one argument, as in Rakudo.
-    /// `keep_value` (tail position: the call's value is the body's result)
-    /// pushes the call result onto the stack; plain statement position leaves
-    /// the stack untouched.
+    /// ADR-0054 Slice 4: `arg_sources_idx` is the SAME per-argument-position
+    /// descriptor `CallFunc`/`CallMethod`/etc. carry (see their doc comments
+    /// and `decode_arg_slip_positions`) — a `|EXPR` position is a `TRUE`
+    /// entry. Those — and only those — spread into the argument list: a Slip
+    /// an ordinary argument merely evaluated to (`is-deeply $s.Slip,
+    /// $t.Slip, 'name'`) stays one argument, as in Rakudo. Before Slice 4
+    /// this carried a dedicated `slip_positions_idx` (a constant array of
+    /// bare integer positions, decoded by the now-deleted
+    /// `spread_slip_positions`); it collapsed into this table so a call site
+    /// has exactly one syntax descriptor instead of two. `keep_value` (tail
+    /// position: the call's value is the body's result) pushes the call
+    /// result onto the stack; plain statement position leaves the stack
+    /// untouched.
     ExecCallPairs {
         name_idx: u32,
         arity: u32,
-        slip_positions_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
         keep_value: bool,
     },
     BlockScope {
