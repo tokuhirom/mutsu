@@ -87,3 +87,39 @@ handler as the already-filed
 which has the minimal repro; fixing `new_type` to actually respect (and record) which
 `Metamodel::*HOW` it was called on is likely a prerequisite for all three findings
 tracked across these two files, not just a message-text difference.
+
+## Related finding: `Metamodel::Naming`/`Metamodel::Stashing` are not valid `does` types (2026-08-22, doc-diff batch-6)
+
+`Type/Metamodel/Stashing.rakudoc:45`'s worked example defines a *custom* metaclass
+(`class WithStashHOW does Metamodel::Naming does Metamodel::Stashing { ... }`) that
+implements `.new_type`/`.set_name`/`.add_stash` itself, calling
+`Metamodel::Primitives.create_type` directly rather than going through
+`Metamodel::ClassHOW`. This fails even earlier than the `new_type` issues above:
+
+```raku
+class WithStashHOW
+    does Metamodel::Naming
+    does Metamodel::Stashing
+{
+    method new_type(WithStashHOW:_: Str:D :$name! --> Mu) {
+        my WithStashHOW:D $meta := self.new;
+        my Mu             $type := Metamodel::Primitives.create_type: $meta, 'Uninstantiable';
+        $meta.set_name: $type, $name;
+        self.add_stash: $type
+    }
+}
+my Mu constant WithStash = WithStashHOW.new_type: :name<WithStash>;
+say WithStash.WHO; # OUTPUT: «WithStash␤»
+```
+
+- `raku`: `WithStash`
+- `mutsu`: `X::InvalidType: Invalid typename 'Metamodel::Naming'` — `Metamodel::Naming`
+  is not registered as a composable role/type at all, so the `does Metamodel::Naming`
+  clause fails before the class body is even considered.
+
+This is a distinct (and more fundamental) blocker than the `new_type`-bootstrapping
+issue above: `Metamodel::Naming`, `Metamodel::Stashing`, and `Metamodel::Primitives`
+would all need to exist as genuine composable roles/types users can `does` and call
+directly, which is a much larger slice of the MOP than just fixing `new_type`'s
+bootstrapping. Filed here (rather than as a separate ticket) since it's part of the
+same "script type creation directly through `Metamodel::*`" question raised above.
