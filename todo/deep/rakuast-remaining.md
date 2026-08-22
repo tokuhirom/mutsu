@@ -107,10 +107,9 @@ an explicit design:
 - `constant`
 - associative subscripts
 - `CATCH` blocks
-- WhateverCode such as `* + 1` — **Phase 1 (deferral) and Phase 2 (RakuAST read / the
-  leaf split) shipped: `Q[* + 1].AST` works now. Phase 4 (the thunk-barrier priming
-  correctness fix — the highest-payoff remaining slice, see below) is next; Phase 3
-  (RakuAST write / `EVAL`) not started — see
+- WhateverCode such as `* + 1` — **Phases 1, 2 and 4 shipped: `Q[* + 1].AST` works, and
+  priming now stops at thunk barriers. Only Phase 3 (RakuAST write / `EVAL`) is left, and
+  it has no roast or correctness payoff of its own — see
   [ADR-0033](../../docs/adr/0033-whatever-priming-leaf-and-derived-scope.md)**
 - code-block interpolation
 - regexes
@@ -119,7 +118,7 @@ Pick these deliberately by user impact rather than treating them as another
 cadence of mechanical slices. Lower through the existing internal AST and
 compiler; do not add a second execution engine.
 
-### Phases 1-2 shipped, Phase 4 is the next highest-payoff slice: WhateverCode (ADR-0033)
+### Phases 1, 2 and 4 shipped; only Phase 3 remains: WhateverCode (ADR-0033)
 
 `* + 1` was picked first because it is the highest-frequency construct on the list
 (`.map(* + 1)`, `.grep(* > 3)`, `@a[* - 1]`) and because investigating it surfaced a
@@ -154,18 +153,25 @@ including two adjacent RakuAST operator-name rendering bugs (`!~~`, `=>`) it fix
 the way and one latent runtime bug it fixed as a side effect (`$_ ~~ *` previously
 shadowed the caller's topic instead of reading it dynamically).
 
-**Phase 4 (the thunk-barrier priming correctness fix) is now the highest-payoff remaining
-slice** — it is a genuine, user-visible correctness bug independent of RakuAST
-(`(1..10).grep(* > 3 && * < 8)` silently returns the wrong list, `5 6` instead of raku's
-`1 2 3 4 5 6 7`), not merely a `.AST` gap, and Phase 2's leaf split is its prerequisite
-(the ADR's `plant()` scope authority needs to read the classified leaves). See the ADR's
-"Phasing" section for the exact scope (thunk barriers: `&&`/`||`/`//`/`and`/`or`/
-`andthen`/`orelse`/`notandthen`/ternary) and its "Phase-4 prerequisite" section (the
-chained-comparison `&&`-duplication trap that must be resolved first, e.g. via a new
-`Expr::ChainedCompare` node). Phase 3 (RakuAST write / `EVAL` of a hand-constructed
-`WhateverCode::Argument` tree) remains designed only at the ADR's outline level and has
-no roast/correctness payoff of its own (RakuAST has zero roast dependents, ADR-0011
-ANALYSIS §7-9) — pick it up after Phase 4, not before.
+Phase 4 — the thunk-barrier priming correctness fix — shipped 2026-08-23. It was a
+genuine, user-visible correctness bug independent of RakuAST: `(1..10).grep(* > 3 && * < 8)`
+silently returned `5 6` instead of raku's `1 2 3 4 5 6 7`, because mutsu primed straight
+through the thunky operators and built one arity-2 closure where raku builds two
+independent arity-1 ones; a ternary primed nothing at all. `src/whatever_curry/plant.rs`
+now owns the barrier rule (`&&`/`||`/`//`/`and`/`or`/`andthen`/`orelse`/`notandthen`/
+ternary), and the barrier is *opaque* to the enclosing scope, which is what let the ~50
+parser planting sites fall into line without being rewritten. The ADR's "Phase-4
+prerequisite" (the chained-comparison `&&`-duplication trap) was resolved with a dedicated
+`TokenKind::ChainAnd` rather than the heavier `Expr::ChainedCompare` node — that node is
+still worth having for RakuAST rendering fidelity and is filed as
+[`todo/tickets/chained-compare-ast-node.md`](../tickets/chained-compare-ast-node.md). See
+the ADR's "Phase 4 outcome" section for the full account, including the `xor` / `^^`
+re-measurement and a latent de-duplication bug the prerequisite flushed out.
+
+**Phase 3 (RakuAST write / `EVAL` of a hand-constructed `WhateverCode::Argument` tree) is
+the only part of ADR-0033 still open.** It remains designed only at the ADR's outline
+level and has no roast/correctness payoff of its own (RakuAST has zero roast dependents,
+ADR-0011 ANALYSIS §7-9), so it is a low-priority pick relative to the rest of this file.
 
 The remaining items on both lists above are still undesigned.
 

@@ -160,6 +160,15 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
         e if is_whatever(e) => true,
+        // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
+        // `notandthen`, and the ternary) are **opaque** to the enclosing
+        // priming scope: each operand is a thunk, hence a priming scope of its
+        // own, planted by `crate::whatever_curry::plant`. A `*` below a barrier
+        // therefore neither creates nor enlarges any scope above it — which is
+        // exactly why `(* > 3 && * < 8)` is two arity-1 `WhateverCode`s (rakudo:
+        // `.arity` 1, `(5)` True) rather than one arity-2 closure, and why
+        // `((* > 3 && * < 8) + *)` is a single arity-1 closure. ADR-0033 Phase 4.
+        e if crate::whatever_curry::is_thunk_barrier(e) => false,
         // Don't treat bare * inside range/sequence operators as WhateverCode.
         // `1..*` is a Range, but `1..*-1` is a WhateverCode.
         // If an endpoint contains a non-bare Whatever (e.g. `*-1`), the whole

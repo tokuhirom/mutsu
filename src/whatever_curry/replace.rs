@@ -24,9 +24,17 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             Expr::Var(var_name)
         }
         Expr::WhateverCurry(inner) => replace_whatever_numbered(inner, counter),
+        // A thunk barrier is opaque: each of its operands is its own priming
+        // scope (already wrapped in a `WhateverCurry` by `super::plant`, which
+        // the compiler expands into its own closure), so no placeholder inside
+        // it belongs to the enclosing closure's parameter list. Clone it
+        // through untouched. ADR-0033 Phase 4.
+        e if super::plant::is_thunk_barrier(e) => e.clone(),
+        // `ChainAnd`: the parser's synthesized chained-comparison conjunction,
+        // whose middle operand is duplicated by the expansion.
         Expr::Binary {
             left,
-            op: TokenKind::AndAnd,
+            op: TokenKind::ChainAnd,
             right,
         } => {
             if let (
@@ -57,7 +65,7 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
                         op: lop.clone(),
                         right: Box::new(new_mid.clone()),
                     }),
-                    op: TokenKind::AndAnd,
+                    op: TokenKind::ChainAnd,
                     right: Box::new(Expr::Binary {
                         left: Box::new(new_mid),
                         op: rop.clone(),
@@ -67,7 +75,7 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
             }
             Expr::Binary {
                 left: Box::new(replace_whatever_numbered(left, counter)),
-                op: TokenKind::AndAnd,
+                op: TokenKind::ChainAnd,
                 right: Box::new(replace_whatever_numbered(right, counter)),
             }
         }
@@ -203,6 +211,10 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
         e if is_whatever(e) => Expr::Var("_".to_string()),
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
+        // See the matching arm in `replace_whatever_numbered`: a thunk barrier's
+        // operands are separate priming scopes and must not be substituted into
+        // the enclosing closure's body. ADR-0033 Phase 4.
+        e if super::plant::is_thunk_barrier(e) => e.clone(),
         // SmartMatch/BangTilde: see the matching arm in
         // `replace_whatever_numbered` above.
         Expr::Binary {

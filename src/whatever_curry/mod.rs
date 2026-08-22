@@ -26,6 +26,8 @@
 
 mod build;
 pub(crate) mod mark;
+mod plant;
 mod replace;
 
 pub(crate) use build::{build_closure, make_wc_param};
+pub(crate) use plant::{is_thunk_barrier, plant_here};

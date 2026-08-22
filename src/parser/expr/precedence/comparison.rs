@@ -201,7 +201,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 };
                 result = Expr::Binary {
                     left: Box::new(result),
-                    op: TokenKind::AndAnd,
+                    op: TokenKind::ChainAnd,
                     right: Box::new(next_cmp),
                 };
                 prev_right = next_right;
@@ -228,7 +228,7 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                 };
                 result = Expr::Binary {
                     left: Box::new(result),
-                    op: TokenKind::AndAnd,
+                    op: TokenKind::ChainAnd,
                     right: Box::new(next_cmp),
                 };
                 prev_right = next_right;

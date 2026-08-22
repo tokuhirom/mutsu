@@ -112,9 +112,17 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // dedup below, so recursing here yields exactly the arity
         // `build_closure` would give it if built standalone.
         Expr::WhateverCurry(inner) => count_whatever(inner),
+        // A thunk barrier is opaque to the enclosing priming scope: its operands
+        // are scopes of their own (already materialised as `WhateverCurry`
+        // markers by `super::plant`), so they contribute no placeholder to the
+        // arity of whatever encloses them. ADR-0033 Phase 4.
+        e if super::plant::is_thunk_barrier(e) => 0,
+        // `ChainAnd` is the parser's *synthesized* chained-comparison
+        // conjunction, not a user-written `&&` — it is deliberately not a thunk
+        // barrier, and its middle operand is duplicated by the expansion.
         Expr::Binary {
             left,
-            op: TokenKind::AndAnd,
+            op: TokenKind::ChainAnd,
             right,
         } => {
             if let (
