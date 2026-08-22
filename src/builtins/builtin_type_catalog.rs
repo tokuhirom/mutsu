@@ -423,6 +423,8 @@ static CATALOG: &[BuiltinTypeInfo] = &[
     row!("NFD", mro: ["NFD", "Uni", "Any", "Mu"], roles: ["Stringy", "Positional[uint32]"], owner: ""),
     row!("NFKC", mro: ["NFKC", "Uni", "Any", "Mu"], roles: ["Stringy", "Positional[uint32]"], owner: ""),
     row!("NFKD", mro: ["NFKD", "Uni", "Any", "Mu"], roles: ["Stringy", "Positional[uint32]"], owner: ""),
+    // raku: `Unicode.^mro` is Unicode, Any, Mu; it composes no roles.
+    row!("Unicode", mro: ["Unicode", "Any", "Mu"], roles: [], owner: ""),
     // ---- Misc value types reachable via value_type_name ----
     row!("Version", mro: ["Version", "Any", "Mu"], roles: [], owner: ""),
     row!("Capture", mro: ["Capture", "Any", "Mu"], roles: [], owner: ""),
