@@ -1,7 +1,8 @@
-# Battery survey: XML parsing and generation
+# Battery: XML parsing and generation — `XML`
 
 **Slot:** XML parse + generate (DOM-style tree building, serialization back to an XML
-string) · **Status:** **no candidate bundled — survey only** (2026-08-22) ·
+string) · **Selected:** `XML` v0.3.6 (`auth<zef:raku-community-modules>`,
+Artistic-2.0) · **Kind:** Selected, not yet bundled (blocked on mutsu core work) ·
 **Yardstick:** [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) — license
 (hard gate) → dependency weight → proven behaviour on mutsu → API fit ·
 **Procedure:** [selection-method.md](selection-method.md)
@@ -9,10 +10,23 @@ string) · **Status:** **no candidate bundled — survey only** (2026-08-22) ·
 Flagged as gap #3 in
 [python-stdlib-comparison.md](python-stdlib-comparison.md)'s "Structured Markup
 Processing Tools" section: Python's `xml.etree.ElementTree`/`xml.dom`/`xml.sax` have no
-mutsu equivalent. This is the first pass at the slot. **Selection criterion (user
-decision, matching the CSV survey): the candidate must support both parsing and
-generating XML** (build a tree in memory, serialize it back to an XML string), not
-reading alone — the same rule that disqualified `CSV::Parser` in [csv.md](csv.md).
+mutsu equivalent. **Selection criterion (user decision, matching the CSV survey): the
+candidate must support both parsing and generating XML** (build a tree in memory,
+serialize it back to an XML string), not reading alone — the same rule that
+disqualified `CSV::Parser` in [csv.md](csv.md).
+
+## Status: selected, not yet bundled
+
+`XML` wins the field over `LibXML` per the [Recommendation](#recommendation) below: 45
+dependents (the highest ecosystem-standing signal of any battery survey to date) versus
+`LibXML`'s 7, zero runtime dependencies versus a hard `libxml2` system-library
+dependency, and no exposure to the kind of native-library maintenance risk discussed in
+["A note on the no-native-dependency rule"](#a-note-on-the-no-native-dependency-rule)
+below. It is **not usable on mutsu today** — see
+[What blocks mutsu today](#what-blocks-mutsu-today) — so shipping it means fixing its
+two filed blockers first. The mechanical vendoring follow-up, once those clear, is
+tracked in
+[todo/tickets/bundle-xml-battery.md](../../todo/tickets/bundle-xml-battery.md).
 
 ## A note on the no-native-dependency rule
 
