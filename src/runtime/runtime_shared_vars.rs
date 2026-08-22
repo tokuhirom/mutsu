@@ -632,6 +632,7 @@ impl Interpreter {
                 .collect()
         };
         if dirty_keys.is_empty() {
+            self.withdraw_transient_lane_containers();
             return;
         }
         let updates: Vec<(String, Value)> = {
@@ -729,6 +730,68 @@ impl Interpreter {
                 continue;
             }
             self.env.insert(key, val);
+        }
+        self.withdraw_transient_lane_containers();
+    }
+
+    /// Retire the bare-name lane entries this frame's spawns created only
+    /// because [`clone_for_thread_excluding`](Self::clone_for_thread) publishes
+    /// **every** live container, not because any spawned block named them
+    /// (ADR-0039 §8.6).
+    ///
+    /// Runs at the tail of the cross-thread drain, so everything the workers
+    /// did has just been merged back into `env` (or written through the owning
+    /// unit-lexical cell) — after which the entry has no readers left that are
+    /// entitled to it, and every reader that is *not* entitled to it is exactly
+    /// the bug: the store is keyed by bare name and process-visible, so a
+    /// callee's own `my @items` published by an unrelated `await start { 1 }`
+    /// outlived its frame and hijacked the caller's same-named binding on every
+    /// later read.
+    ///
+    /// Withdrawing rather than never-publishing is what keeps an *indirectly*
+    /// reached container working: a routine the block calls (rather than names)
+    /// can mutate it through the lane for the whole life of the spawn, and only
+    /// then is the entry retired. A later spawn whose block does name the
+    /// container clears its mark and it becomes durable again.
+    ///
+    /// The `__mutsu_atomic_*` twin goes with it: reads prefer that entry, so
+    /// leaving it behind would retire nothing.
+    fn withdraw_transient_lane_containers(&mut self) {
+        if self.transient_lane_containers.is_empty() {
+            return;
+        }
+        for key in std::mem::take(&mut self.transient_lane_containers) {
+            let atomic_key = if key.starts_with('@') {
+                format!("__mutsu_atomic_arr::{key}")
+            } else {
+                format!("__mutsu_atomic_hash::{key}")
+            };
+            // **Only a CLEAN entry is retired**, and that restriction is what
+            // makes the whole mechanism safe rather than merely narrow. A clean
+            // entry is positive proof that no thread ever used the lane for
+            // this name since the spawn published it — which is exactly the
+            // "published a binding nothing had asked to share" case, and
+            // nothing else. The moment any thread writes it the name is in
+            // genuine cross-thread use: the entry becomes the authoritative
+            // copy (the writer drops its own `env` copy so `make_mut` can work
+            // in place), other threads may still be mid-flight against it, and
+            // taking it away underneath them loses updates and races the `Gc`
+            // (measured: it emptied worker A's accumulator in
+            // `t/sibling-thread-array-lane-scope.t`, and segfaulted
+            // `roast/integration/advent2014-day05.t`, whose `$supply.act`
+            // handlers keep pushing to `@seen` while the driving `start` blocks
+            // are awaited). So a dirty entry simply graduates to durable: drop
+            // the mark and leave it alone.
+            if self
+                .shared_vars_dirty
+                .read()
+                .ok()
+                .is_some_and(|d| d.contains(&key))
+            {
+                continue;
+            }
+            self.shared_vars.remove(&atomic_key);
+            self.shared_vars.remove(&key);
         }
     }
 

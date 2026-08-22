@@ -1,15 +1,20 @@
 # ADR-0039: `@`/`%` lexicals must resolve lexically — retiring by-name container resolution, and correcting the "container write-back is structurally different" premise
 
-- Status: Slice 1 (§4.1) landed 2026-08-20. Slice 2 (§4.2 — containers resolve by
-  slot/upvalue, not by name, retiring the by-name path at the compiler) is next.
+- Status: Slice 1 (§4.1) landed 2026-08-20. §8.2's recorded cross-thread
+  collisions closed 2026-08-22 by giving a container's bare-name lane entry a
+  *lifetime* — see §8.6, which also records two cheaper routes measured and
+  rejected. Slice 2 (§4.2 — containers resolve by slot/upvalue, not by name,
+  retiring the by-name path at the compiler) is still next and still the end
+  state; it now carries no known open correctness bug of its own.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),
   ADR-0025 (cell boxing must be value-kind-blind — slice 3 defers `@`/`%`),
   ADR-0010 (cross-thread lexical sharing scope — the `__mutsu_atomic_*` lanes)
 - Addresses: `todo/deep/module-file-scope-array-and-hash-still-share-the-caller.md`,
-  `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
-  (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20)
+  `news/2026-08/shared-store-bare-name-collision-across-unrelated-frames.md`
+  (the cross-thread-store axis of the same root cause — see §8, added 2026-08-20;
+  closed 2026-08-22, see §8.6)
 
 ## 1. Context
 
@@ -446,8 +451,10 @@ acceptance measure.
 
 ## 8. Addendum (2026-08-20): the cross-thread-store axis is the same bug
 
-This section folds `todo/deep/shared-store-bare-name-collision-across-unrelated-frames.md`
-into this ADR. It adds no new *decision* — §4's decision already covers it —
+This section folds the deep ticket
+`shared-store-bare-name-collision-across-unrelated-frames` (now retired to
+`news/2026-08/`) into this ADR. It adds no new *decision* — §4's decision
+already covers it —
 but it adds evidence, a third sigil skip to lift, an exclusion §4.1's list
 misses, and one requirement slice 2 would otherwise get wrong. It is an
 amendment to a `Proposed`, unimplemented design, not a revision of a decided
@@ -603,3 +610,115 @@ and any thread-using program with two same-named containers hits it. Treat §8.2
 (a) and (b) as acceptance pins for §6 alongside the module and mainline
 matrices, and keep the deep ticket open until slice 2 lands — slice 1 alone does
 not close it, because §8.2's containers are routine-local, not file-scope.
+
+(Superseded 2026-08-22 by §8.6: the deep ticket closed there instead, because
+§8.3's own mechanism turned out to be liftable without waiting for slice 2. The
+acceptance pins moved to `t/thread-uncaptured-container-lane.t`.)
+### 8.6 What landed (2026-08-22): the lane entry gets a lifetime
+
+§8.4 point 4 concluded that "no keying discipline short of per-frame keys — i.e.
+slots — removes it". That is right, and it is also not the only axis available.
+A bare-name entry can be wrong in two independent ways: it can name the wrong
+binding (a *keying* problem, which needs slots), or it can be **alive when it
+should not be**. §8.2 is the second one. `sub work { my @items = ...; await
+start { 1 }; ... }` publishes a frame-local container into a process-visible
+store because the seeding loop publishes *everything* live at every spawn, and
+the entry then outlives the frame it belongs to. Nothing about that requires a
+key redesign; it requires the entry to stop existing when it stops being
+needed.
+
+So lane entries now have a lifetime:
+
+- `block_referenced_containers` (new, `runtime/runtime_thread.rs`) collects the
+  plain-lexical `@`/`%` names in the spawned block's `free_var_syms` /
+  `free_var_writes` / `free_var_container_writes` — which already fold up nested
+  closures, so `start { start { @a.push(1) } }` counts `@a`. It returns `Option`:
+  `None` for the block-less `clone_for_thread` entry point (supply drivers,
+  `.then`, socket and proc readers), which keeps its previous behaviour exactly.
+- `clone_for_thread_excluding` classifies each entry as it publishes it. A
+  container the block **names** is genuinely shared: its entry is durable, and
+  any earlier transient mark on it is cleared (promotion). A container the block
+  never names, **whose entry this spawn created**, is recorded in
+  `transient_lane_containers`. Only entries this spawn created are marked, so an
+  entry an earlier naming spawn established stays durable however many unrelated
+  spawns walk past it later.
+- `sync_shared_vars_to_env` withdraws the marked entries (and their
+  `__mutsu_atomic_*` twins, which reads prefer) at the tail of the drain — after
+  everything the workers did has been merged back into `env` or written through
+  the owning unit-lexical cell. **Only a CLEAN entry is retired.** That
+  restriction is what makes the mechanism safe rather than merely narrow: a
+  clean entry is positive proof that no thread ever used the lane for that name
+  since the spawn published it, which is exactly the "published a binding
+  nothing had asked to share" case and nothing else. A dirty entry graduates to
+  durable — the moment any thread writes it, the name is in genuine
+  cross-thread use, the entry is the authoritative copy, other threads may be
+  mid-flight against it, and taking it away underneath them loses updates and
+  races the `Gc`.
+- Only the **top-level** interpreter classifies. On a worker thread the lane is
+  not an optional publication channel a container might or might not need — it
+  is the storage: `push @a, ...` routes through `__mutsu_atomic_arr::`
+  unconditionally when `is_thread_clone()` (`vm/vm_data_push_ops.rs`), precisely
+  so concurrent appends serialize. Retiring an entry there withdraws a
+  deliberate mechanism's backing store mid-use (measured: it emptied worker A's
+  accumulator in `t/sibling-thread-array-lane-scope.t`), and buys nothing — a
+  worker's lineage store is its own (ADR-0010), so its entries cannot outlive
+  into an unrelated frame the way a root-store entry published by the main
+  interpreter does, which is the collision §8.2 records.
+
+Withdrawing at the drain rather than declining to publish is the load-bearing
+choice, and it was arrived at by measurement, not taste — see below.
+
+#### Two cheaper routes, measured and rejected
+
+Both were implemented and run through the full CI suite before this one. The
+results are recorded here so the next reader does not re-derive them.
+
+**(1) Decline to seed a container the block never names** — the direct reading
+of §8.3's "third `@`/`%` sigil skip". It fixed both §8.2 repros and left the
+entire rest of the `t/` suite green (3341 files, 31116 assertions), failing
+exactly two assertions, both **indirect**: a worker whose block names only a
+routine (`await start { inner('x') }` where `sub inner { @acc.push(...) }`, and
+its mainline-named-sub twin) that pushes to an outer container. Those containers
+really are shared and the name lane really is what carries them. A static
+reachability analysis over the block's own free variables cannot see through a
+call, so this route is not merely incomplete — it is the wrong instrument.
+Rejected. §8.3's diagnosis of the mechanism stands; its implied remedy does not.
+
+**(2) Resolve the entry by container identity** — replace the
+`thread_redeclared_vars` mask in `container_name_is_redeclared` with "is the
+store's node the same `Gc` as the one this frame holds?", on the reasoning that
+container mutation is write-through-the-shared-node (§2) so a container's node
+*is* its binding. Attractive, and it fixed all of the above. But it is unsound
+under contention: `Gc::make_mut` inside `shared_array_mutate` reallocates
+whenever the node is shared, so a concurrent mutation destroys the very identity
+the test depends on, and a reader whose copy has drifted silently decides the
+entry is foreign and writes locally. Measured: `t/concurrent-array-index-assign.t`
+and `t/concurrent-hash-assign.t` lost updates under heavy contention (20 threads
+× 50 indices), `t/escaped-closure-elem-incdec-delete.t` failed, and
+`t/cas-multidim-cells.t` timed out. Rejected — and note this is the failure mode
+CLAUDE.md's risk definition warns about: correct only under an analysis that is
+incomplete in exactly the concurrent case.
+
+#### Relation to §8.4
+
+- **Point 1 respected.** §8.2 (b)'s non-slurpy `@`/`%` parameter is fixed
+  without touching `mask_thread_redeclared_params`: the parameter's entry is
+  transient and retired at the drain, so it is simply not there when the caller
+  reads its own binding afterwards.
+- **Point 2 does not arise.** The lane is unchanged for every container a block
+  names, so the `pending_caller_var_writeback` drain that requirement protects
+  is untouched — indeed the withdrawal deliberately runs *after* it.
+- **Point 3 untouched.** The four by-name mechanisms remain for slice 2.
+- **Point 4 respected.** Nothing is re-keyed. The claim it makes — that keying
+  alone cannot fix §8.2 — is confirmed; what it did not consider is that the
+  entry's *lifetime* is a separate axis, and that is the one this uses.
+
+#### What this does not do
+
+Container scoping is still dynamic in the compiler: `Expr::ArrayVar` still emits
+a bare `GetArrayVar(name)` (§1.3). A container reached only indirectly is still
+shared by bare name for the life of the spawn, and two frames that are *both*
+live and both spawning while sharing a name can still collide inside that
+window. Slice 2 remains the end state and subsumes all of it — once a container
+resolves through its slot, no entry lifetime needs managing. What changed is
+that the recorded, reproducible failure mode is closed and pinned.

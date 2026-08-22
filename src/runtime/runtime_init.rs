@@ -2912,6 +2912,7 @@ impl Interpreter {
                 std::collections::HashSet::new(),
             )),
             thread_decl_in_flight: std::collections::HashSet::new(),
+            transient_lane_containers: std::collections::HashSet::new(),
             thread_param_shadow_vars: Box::new(std::cell::RefCell::new(
                 std::collections::HashSet::new(),
             )),
