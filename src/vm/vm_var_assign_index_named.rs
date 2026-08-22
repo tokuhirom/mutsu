@@ -3291,6 +3291,17 @@ impl Interpreter {
             let descended = unsafe { Self::descend_container_ref(root) };
             return Some(unsafe { &mut *descended });
         }
+        // An `our @a`/`our %h` of the running routine's own package lives under
+        // the package-qualified mirror, not under the bare env key (which
+        // belongs to the loading scope). Mirrors the read-side precedence in
+        // `get_env_with_main_alias`, so every element-assign / `push` / `pop` /
+        // key-set / `:delete` that funnels through here mutates the package's
+        // own container. See `vm_our_package_vars`.
+        if let Some(root) = self.our_package_container_mut(var_name) {
+            let root = root as *mut Value;
+            let descended = unsafe { Self::descend_container_ref(root) };
+            return Some(unsafe { &mut *descended });
+        }
         let root = self.env_mut().get_mut(var_name)? as *mut Value;
         let descended = unsafe { Self::descend_container_ref(root) };
         Some(unsafe { &mut *descended })

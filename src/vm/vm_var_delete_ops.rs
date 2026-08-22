@@ -242,6 +242,26 @@ impl Interpreter {
             self.env_mut().insert(var_name.clone(), inner);
             saved
         });
+        // The `our`-package twin of the unit-lexical case just above: an
+        // `our %h`/`our @a` of the running routine's own package is stored
+        // under the package-qualified mirror in `our_vars`, while `env[%h]`
+        // holds the loading scope's own same-named binding. Same
+        // seed / run / write-back / restore dance, because this op resolves
+        // its container out of env by name rather than through
+        // `env_root_descended_mut` (which already prefers the mirror).
+        // Mutually exclusive with `unit_cell`: a compunit's file-scope `my`
+        // wins over a same-named package variable, matching the read-side
+        // precedence in `get_env_with_main_alias`.
+        let our_key = match unit_cell {
+            Some(_) => None,
+            None => self.our_package_container_key(&var_name),
+        };
+        let saved_our_env_entry = our_key.as_ref().map(|key| {
+            let saved = self.env().get(&var_name).cloned();
+            let inner = self.get_our_var(key).cloned().unwrap_or(Value::NIL);
+            self.env_mut().insert(var_name.clone(), inner);
+            saved
+        });
         let bound_cell = match self.env().get(&var_name).map(Value::view) {
             Some(ValueView::ContainerRef(cell)) => Some(cell.clone()),
             _ => None,
@@ -318,6 +338,22 @@ impl Interpreter {
             let cell_val = Value::container_ref(cell);
             self.env_mut().insert(var_name.clone(), cell_val.clone());
             self.write_local_slot_or_name(code, slot, &var_name, cell_val);
+        }
+        if let Some(key) = our_key {
+            if let Some(mutated) = self.env().get(&var_name).cloned() {
+                self.our_mirror_store_preserving_identity(&key, &mutated);
+            }
+            // Restore whatever the bare env key held before the seed — see
+            // the `unit_cell` restore below for why leaving the package
+            // container installed there would undo the isolation.
+            match saved_our_env_entry.flatten() {
+                Some(v) => {
+                    self.env_mut().insert(var_name.clone(), v);
+                }
+                None => {
+                    self.env_mut().remove(&var_name);
+                }
+            }
         }
         if let Some(cell) = unit_cell {
             if let Some(mutated) = self.env().get(&var_name).cloned() {

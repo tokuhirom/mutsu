@@ -11,9 +11,9 @@ ADR's stated architectural end state, not merely a follow-up; the exclusion
 list slice 1 carries (`our`, `state`, `is export`, `$*dynamic`, `::`-qualified,
 type-constrained, anonymous-container names) is explicitly "the list of things
 slice 2 must subsume" (ADR-0039 §4.3). `our @arr` colliding (§1.2's third
-instance) is ALSO still broken — slice 1 deliberately does not touch it (a
-separate resolution-bug ticket, not a store gap). Move this file to
-`news/2026-08/` only once slice 2 lands and closes the remaining by-name
+instance) was ALSO still broken after slice 1; it is **FIXED as of 2026-08-23**
+by a resolution-only change (see "Remaining open scope" item 1). Move this file
+to `news/2026-08/` only once slice 2 lands and closes the remaining by-name
 container resolution path.
 
 `news/2026-08/module-file-scope-lexical-is-not-the-callers.md` fixed this for
@@ -113,18 +113,30 @@ module — now pinned as `t/module-file-scope-lexical.t`'s container half),
 `namedsub-mainline.raku` (the module-free mainline shadow shape — now pinned
 as `t/named-sub-lexical-scope-container.t`), `repro-sub.raku` (consumer
 declares the shadow inside a sub — now fixed too), `ourtest.raku` (`our @a` —
-STILL diverges from `raku`, deliberately unfixed by slice 1), `alias.raku`
-(the write-through control, unaffected by this ADR either way).
+fixed 2026-08-23, now pinned as `t/our-container-bare-name-resolution.t`; only
+its trailing `our $s` scalar line still diverges, tracked separately),
+`alias.raku` (the write-through control, unaffected by this ADR either way).
 
 ## Remaining open scope (why this file is not fully closed)
 
-1. **`our @arr` colliding** (§1.2's third instance, `ourtest.raku`) — still
-   reproduces after slice 1. mutsu maintains the package-qualified mirror
-   (`@UFL3::arr` reads correctly), but the module's own routines never
-   consult it by the bare name, so `a-push` still lands on the consumer's
-   array. This needs a RESOLUTION fix (prefer the package-qualified mirror
-   for an `our`-declared name when running inside that package), not a store
-   change — deliberately out of slice 1's scope per ADR-0039 §4.1.
+1. ~~**`our @arr` colliding**~~ — **FIXED 2026-08-23**, see
+   `news/2026-08/our-container-bare-name-prefers-package-mirror.md`. The
+   resolution fix landed as `src/vm/vm_our_package_vars.rs`: a bare `@`/`%`
+   name is resolved to the package-qualified `our` mirror of the package the
+   running routine belongs to, wired into the read chokepoint
+   (`get_env_with_main_alias`), the container-mutation chokepoint
+   (`env_root_descended_mut`), and `:delete`'s own by-name dance
+   (`exec_delete_index_named_op`). A name the running frame declares as its
+   own local is never redirected, so lexical shadowing inside the module
+   still wins. Pinned by `t/our-container-bare-name-resolution.t` (28
+   assertions) with fixture `t/lib/UnitOurContainer.rakumod`. No store change
+   was needed, exactly as ADR-0039 §4.1 predicted.
+
+   The **scalar** twin (`our $x` written from a module routine landing on the
+   caller's `my $x`) is a different mechanism — a scalar has no shared node,
+   so it needs `SetGlobal`'s bare env store suppressed rather than resolution
+   redirected — and is tracked separately in
+   `todo/tickets/our-scalar-write-leaks-to-the-callers-lexical.md`.
 2. **Slice 2** (ADR-0039 §4.2): container free variables in ordinary inner
    blocks, closures, and any non-compunit-file-scope declaration still
    resolve by name at the compiler (`Expr::ArrayVar`/`Expr::HashVar` emit
