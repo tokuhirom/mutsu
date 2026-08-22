@@ -1,8 +1,10 @@
 # ADR-0042: A type constraint belongs to the container, not to a name — retiring the `var_type_constraints` side table
 
-- Status: Partially Implemented — Slice 1 landed 2026-08-20 (see §10); its
-  follow-on "outer-first shadow" finding fixed 2026-08-22 (see §11, which
-  supersedes part of §5.2/§6). Slices 2 and 3 not started.
+- Status: Partially Implemented — Slice 1 landed 2026-08-20 as PR #6743
+  (`dc39cb3e3`; see §10); its follow-on "outer-first shadow" finding fixed
+  2026-08-22 as `b388b1b9f` (see §11, which supersedes part of §5.2/§6).
+  Slice 1 re-verified `raku`-oracled on `c10d305d4` (2026-08-23): §2.2 matrix
+  7/7, §3 alias probe 8/8, §3.1 `state` gap closed. Slices 2 and 3 not started.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability), ADR-0024 (mainline lexicals —
   the same by-name/lexical split for scalar *values*),
@@ -337,7 +339,7 @@ save/restore is a workaround for the unscoped map, carrying the latent
 promotion defect noted in §5.3. It is recorded here as part of slice 3's
 deletion list, not as a failing shape to fix.
 
-## 10. Slice 1 status (landed 2026-08-20)
+## 10. Slice 1 status (landed 2026-08-20 as PR #6743, `dc39cb3e3`)
 
 All four §5.1 steps landed as specified, with two adjustments discovered
 during implementation:

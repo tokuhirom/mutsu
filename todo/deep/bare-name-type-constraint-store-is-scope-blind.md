@@ -3,6 +3,29 @@
 `Interpreter::var_type_constraints` is a single global `HashMap<String,
 String>` keyed by BARE variable name, and it is never frame-scoped.
 
+## Status 2026-08-23: ADR-0042 Slice 1 is SHIPPED — residual 1 is closed
+
+Slice 1 landed 2026-08-20 as PR #6743 (`dc39cb3e3`), and the follow-on
+"outer-first shadow" finding landed 2026-08-22 as `b388b1b9f`
+(`news/2026-08/typed-declaration-shadow-scope-leak.md`). Re-verified on
+`c10d305d4`, `raku`-oracled: the ADR's §2.2 container matrix matches `raku`
+7/7, the §3 alias probe (enforcement reached through a differently-named bound
+alias, which only the container can supply) matches 8/8, and the §3.1 `state`
+container gap is closed. Pins green: `t/typed-constraint-scope-matrix.t`,
+`t/state-typed-container-alias.t`, `t/typed-constraint-shadow-scope.t`,
+`t/typed-lexical-constraint-frame-scoped.t`,
+`t/typed-lexical-constraint-block-scoped.t`.
+
+**Residual 1 below (`@`/`%` containers) is therefore CLOSED** — a container's
+element/key constraint is now read from the value's own embedded
+`ArrayData`/`HashData` metadata at the ten mutation chokepoints, not from the
+bare-name map. Residual 4 was already found not to reproduce (ADR-0042 §9).
+
+This ticket stays open for **ADR-0042 Slices 2 and 3**, which are NOT started:
+slice 2 (a scalar cell carries its `of`, the architectural half — residuals 2
+and 3 below) and slice 3 (delete the map and its workarounds). Do not re-dispatch
+slice 1.
+
 ## Status 2026-08-20: superseded by ADR-0042 — read that first
 
 The remaining work is now designed in
@@ -24,8 +47,9 @@ is **stale in two ways** and the ADR carries the corrected, measured version:
   `my Str $s; my $t := $s; $t = 42` wrongly succeeds.
 
 Residual 4 (`for`-loop typed params) does not reproduce as a divergence; see
-ADR-0042 §9. Slice 1 of ADR-0042 is **ready for direct implementation** — it is
-mechanical and needs no further design.
+ADR-0042 §9. Slice 1 of ADR-0042 was ready for direct implementation — it was
+mechanical and needed no further design. **It has since shipped; see the
+2026-08-23 status above.**
 
 ## Status 2026-08-13: routine-scoped SCALARS are fixed
 
@@ -72,7 +96,8 @@ Pinned by `t/typed-lexical-constraint-block-scoped.t` (verified against
 
 ## What is still scope-blind (as recorded 2026-08-13 — see the stale-scope note above)
 
-1. **`@`/`%` containers**: `my Int @a` inside a routine still registers the
+1. **[CLOSED 2026-08-23 by ADR-0042 slice 1, PR #6743.]** **`@`/`%` containers**:
+   `my Int @a` inside a routine still registers the
    bare name in the global map (their element/key-type metadata is consulted
    through `var_type_constraint_fast` by the push/subscript/element-assign
    fast paths, which never probe env). A module method's `my Int @r` can
