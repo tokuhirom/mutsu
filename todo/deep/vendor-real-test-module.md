@@ -2777,3 +2777,59 @@ above to surface automatically.
 No interpreter code was touched in this pass — this was a test-harness fix
 only. **The 20-file `t/` residue and the 76-file roast residue are unchanged
 and are the next work**, per the priority list above (items 2-5).
+
+## 2026-08-22: `throws-like-gather-sink.t` fully closed by ADR-0037 Slices 4-5; `t/` residue re-measured at 19
+
+`throws-like-gather-sink.t`'s remaining 3 subtests (the ones needing the
+actual return-targeting mechanism, past the sink-forcing fix that already
+closed subtest 1) are fixed —
+[ADR-0037](../../docs/adr/0037-eval-context-frame-owns-the-return-target.md)
+Slices 4 and 5 landed. `EVAL ..., context => $ctx`'s `return` now targets the
+routine `$ctx` names specifically (past any intervening routine boundary),
+not just the frame that happened to call `EVAL`. Full details, including a
+second independent bug this surfaced (the two "light" call dispatch paths
+caught any return signal unconditionally, never checking whether it was
+actually meant for them), are in the ADR's own "Implementation status" and in
+`news/2026-08/eval-context-frame-owns-the-return-target.md`, which retires
+this ticket's origin,
+`todo/deep/eval-context-frame-owns-the-return-target.md`.
+
+Re-ran `scripts/test-module-sweep.sh 6` (debug build, from the repo root, on
+top of this fix):
+
+```
+pass under both:                   3243
+regressed under the real Test:     19
+passes only under the real Test:   0
+fail under both (pre-existing):    91
+```
+
+**`throws-like-gather-sink.t` is confirmed gone from `regressions.txt`** —
+the specific thing this session's fix targeted. The count moved from the
+2026-08-20 measurement's 20 (18 script-visible + 2 masked by the TAP-TODO
+quirk) to 19 (still + the same 2 masked), but not by a clean -1: several
+other files closed or newly appeared between the two measurements from
+unrelated work on `main` in between, not investigated further here (out of
+scope for this ADR) —
+`exception-role-membership.t`, `subscript-adverbs.t`, `undeclared-when-type.t`
+and `vm-panic-boundary.t` are gone (already fixed elsewhere, consistent with
+this file's 2026-08-19 residue-count trend); `placeholder-scope-rejecting.t`
+and `user-class-shadows-immutable-builtin.t` are new and untriaged.
+`any-type-object-int-coercion.t`, `bound-nil-method-warn.t`,
+`type-object-numeric-coercion.t` and `warns-like.t` reappear in the raw
+`regressions.txt` but are the same sweep-harness cwd artifact the 2026-08-20
+entry already named ("do not reproduce from the repo root") — not real
+regressions. `exits-ok.t` and `failure-sink-handled.t` remain masked by the
+TAP-TODO predicate quirk (confirmed by hand: still non-zero real exit status,
+4 and 255 respectively) — unchanged, still open, still needs the
+TAP-TODO-aware predicate follow-up noted above.
+
+`emit-done-controlflow.t`, the other file the ADR's origin ticket named, was
+already closed by an unrelated earlier fix
+(`news/2026-08/emit-done-controlflow-illegal-control.md`, 2026-08-18, "closed:
+bare `emit`/`done` were an uncatchable Rust-level panic under the real
+module" above) before this session began; re-confirmed passing 5/5 under
+`MUTSU_REAL_TEST=1` as part of this sweep, not newly fixed by it.
+
+roast side not re-swept this session (unrelated to the fix; the priority list
+item 3 above still applies).

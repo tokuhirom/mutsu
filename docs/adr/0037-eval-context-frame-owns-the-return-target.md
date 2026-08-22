@@ -1,8 +1,7 @@
 # ADR-0037: `EVAL ..., context => $frame` — the context frame owns the return target, and the routine chain must be dispatch-path-independent
 
-- Status: Partially implemented — Slices 1-3 landed (see "Implementation
-  status" below); Slice 4 (targeting a live context routine) and Slice 5
-  (residue/end-to-end sweep) are next
+- Status: Implemented — all five slices landed (see "Implementation status"
+  below)
 - Date: 2026-08-20
 - Origin: `todo/deep/eval-context-frame-owns-the-return-target.md`
 - Related: [ADR-0035](0035-method-calls-observe-caller-frames.md) (same family —
@@ -505,7 +504,126 @@ binaries (`roast/S04-statements/return.t` test 15 specifically,
 `roast/S06-signature/definite-return.t`) all green; `cargo clippy -- -D
 warnings` and `cargo fmt` clean.
 
-**Slice 4 (targeting a live context routine) and Slice 5 (residue and
-end-to-end sweep) are not started.** They build on Slice 1's now-sound
-`routine_stack` and Slice 2-3's classification/identity machinery but are
-independent follow-up work.
+**Slices 4 and 5 landed (2026-08-22).** Slice 4:
+`EvalContextRoutineState::Live` grew a payload (`Live(Option<u64>)`), the
+target routine's registration clone id resolved right where liveness itself
+is decided — `classify_eval_context_routine`
+(`src/runtime/builtins_eval_misc.rs`) now, on a live match, calls
+`registration_clone_id` (`src/runtime/accessors_resolve.rs`, widened from
+private to `pub(crate)` for this) on the matched `RoutineFrame`'s
+`package`/`name`, the same `__mutsu_callable_id::{package}::{name}` lookup
+`RegisterSub` maintains and `RuntimeError::return_target_callable_id`
+compares against. `None` for a live frame with no resolvable id (an
+anonymous routine, which never registers one) — falls back to the pre-Slice-4
+first-boundary-catches behavior rather than mistargeting.
+
+Per the ADR's own guidance, the id is **not** an `OpCode::Return` payload.
+`compile_block_value_opts` (`src/runtime/resolution_eval.rs`) bakes it onto
+the freshly-compiled EVAL unit's own `CompiledCode` as a new field,
+`eval_context_target_callable_id: Option<u64>` (`src/opcode.rs`), set only
+when `pending_eval_context_routine` is `Live(Some(id))` — so it only affects
+`return` written directly in the EVAL unit's own mainline; a nested
+closure/sub the snippet declares compiles through
+`compile_closure_body_with_routine_flag`, which builds a fresh `Compiler`/
+`CompiledCode` that never sees the field, so this cannot leak into a routine
+the snippet defines. Already covered by `carrier_compile_ctx_key`'s existing
+`eval_context_routine: Option<EvalContextRoutineState>` field, since the
+`Live` payload is part of that same enum — a cache hit only serves a compile
+made under the identical (state, id) pair. `OpCode::Return`'s exec arm
+(`src/vm/vm_exec_dispatch.rs`) reads `code.eval_context_target_callable_id`
+and stamps it onto the raised `RuntimeError::return_signal` via the existing
+`set_return_target_callable_id`, which the decline-if-not-my-target check
+every routine boundary already runs
+(`vm_call_named_inner.rs`/`vm_closure_dispatch.rs`/`vm_method_dispatch.rs`)
+then does the rest: the signal sails past every intervening routine frame
+whose id does not match, exactly the existing mechanism a bare block's
+`return` already used to reach its lexically enclosing routine.
+
+**A second, independent defect surfaced while verifying Slice 4 against the
+ADR's own §1.1(b) two-deep repro**, and had to be fixed for the repro to pass
+at all: the two **light** call dispatch paths
+(`call_compiled_function_positional_light` in `vm_call_light.rs`,
+`call_compiled_function_light`/`call_compiled_function_light_spec` in
+`vm_call_light_typed.rs`) catch *any* signal carrying `return_value.is_some()`
+unconditionally — unlike `call_compiled_function_named`
+(`vm_call_named_inner.rs`) and the closure dispatcher
+(`vm_closure_dispatch.rs`), neither light path ever checks
+`return_target_callable_id()` before swallowing the signal. Slice 1 (this
+ADR) made both paths push a `RoutineFrame`, which made `enclosing_routine_exists()`
+sound on them, but never taught them to *decline* a signal aimed at a
+different frame — so a positional-light or named-light routine sitting
+between the EVAL call and its live-context target caught the signal itself
+instead of letting it pass through, which is exactly the shape the ADR's
+`sub thrower($code) { ... }` repro takes (a mandatory-positional signature is
+positional-light-eligible). Fixed by adding the same decline check the named
+path already has to both light paths' `return_value.is_some()` arm, gated
+behind `if let Some(target_id) = e.return_target_callable_id()` so the
+(overwhelmingly common) untargeted-return case pays no extra cost at all —
+`registration_clone_id` is only called, and only then, when a signal actually
+carries a target. This is a genuine, general-purpose fix (not scoped to
+EVAL): any non-local return whose target is a specific callable id — which
+already included a bare block's `return` reaching for its enclosing routine
+before this ADR existed — was silently mis-caught by an intervening
+light-dispatched routine. Confirmed with `rust-gdb -batch` breakpoints that,
+pre-fix, the two-deep repro's `return_target_callable_id` was correctly
+resolved and stamped (`Some(18)`, matching the target routine's registration
+id) but was being swallowed one frame too early, inside `thrower` itself —
+the positional-light path's own decline arm was simply missing.
+
+Pin: `t/eval-context-live-target.t` (5 assertions) — the ADR's own §1.1(b)
+two-deep repro verified byte-for-byte against `raku`, plus the same shape
+through the named-light dispatch path (`named-thrower(:$code)`) to pin the
+`vm_call_light_typed.rs` twin of the decline check, plus a three-deep chain
+where the context is captured one frame below the actual `EVAL` call site (so
+neither the immediate `EVAL` caller nor its immediate caller is the target).
+All five assertions verified first against `raku`, then against mutsu.
+Re-verified the §1.1(a) mainline-context and uncontextualized probes (§1.1(a),
+`sub f() { EVAL 'return 1'; return 2 }`, and the §1.3 dispatch-path matrix
+across `pos1($x)`/`named1(:$x)`) are all still correct after both changes.
+
+Slice 5: swept the three residue items the ADR names by name.
+`CALLERS::` (plural) is stamped identically to `CALLER::` at the same site
+(`vm_var_assign_local.rs`'s combined `CALLER`/`CALLERS` arm, unchanged by
+this ADR), so `context => CALLERS::` already targets a live frame the same
+way — verified directly (`raku` and mutsu agree on the two-deep repro with
+`CALLERS::` substituted for `CALLER::`) and pinned in
+`t/eval-context-slice5-residue.t`. `$*THROWS-LIKE-CONTEXT`
+(`Test::Util`'s `no-fatal-throws-like`, `roast/packages/Test-Helpers/lib/Test/Util.rakumod`)
+stores its captured `CALLER::` in a dynamic variable that the real
+`Test.rakumod`'s `throws-like` reads back several frames deeper, inside its
+own `subtest { ... }` — exactly the capture-now/use-later shape §2.3's
+rejected alternative (c) named as the reason the mechanism is a stamped
+attribute on a `Stash` value rather than a live frame reference; verified
+that the stamp survives being threaded through a dynamic variable (not just
+a lexical) and pinned in the same file. `EVALFILE`'s signature
+(`raku-doc/doc/Type/independent-routines.rakudoc`:
+`EVALFILE($filename where Blob|Cool, :$lang = 'Raku', :$check)`) has no
+`context` parameter at all, so it was never in scope for the targeting
+machinery; confirmed its plain, uncontextualized `return` semantics
+(unwinding to whichever routine dynamically encloses the `EVALFILE()` call,
+or throwing `X::ControlFlow::Return` with none) are unaffected by any of
+this ADR's changes and pinned the same way, so a future EVALFILE change
+cannot silently regress it.
+
+The ADR's own acceptance gate for Slice 3
+(`MUTSU_REAL_TEST=1 prove -e target/debug/mutsu t/throws-like-gather-sink.t`
+reaching 4/4) still holds; the file's remaining 3 subtests (the ones needing
+the actual targeting, not just the sink-forcing fix) now pass for the right
+reason rather than by the pre-Slice-4 first-boundary coincidence.
+`t/emit-done-controlflow.t` (the other file the origin ticket named) passes
+5/5 under `MUTSU_REAL_TEST=1` — it was already closed by an unrelated,
+earlier fix (`news/2026-08/emit-done-controlflow-illegal-control.md`,
+2026-08-18) before this ADR's targeting work began; re-verified here as part
+of Slice 5's sweep, not newly fixed by it.
+
+Verification: full local `t/` suite green; `cargo clippy -- -D warnings` and
+`cargo fmt` clean; `roast/S04-statements/return.t` (test 15 specifically),
+`roast/S06-advanced/{return,callframe}.t`, and the full Slice 1-3 pin set
+(`t/eval-return-across-dispatch-paths.t`,
+`t/eval-return-target-needs-a-real-routine.t`,
+`t/eval-context-caller-routine-attr.t`, `t/eval-context-package.t`,
+`t/eval-caller-frames.t`, `t/caller-not-dynamic.t`,
+`t/backtrace-block-frames.t`, `t/module-file-var-and-callframe.t`,
+`t/callframe-*.t`) all still green. The origin ticket,
+`todo/deep/eval-context-frame-owns-the-return-target.md`, is retired to
+`news/2026-08/eval-context-frame-owns-the-return-target.md`.
