@@ -22,9 +22,10 @@ The original blocker (bare-identifier adverb declaration names) landed on
 still 0/19 at the file level; `docs/batteries/toml.md`'s **remaining work
 list** carries the current blockers, largest first:
 
-1. `todo/deep/is-rw-lvalue-return-is-caller-side-ast-reinterpretation.md` —
-   `Crane.set` silently does nothing, so `from-toml` returns `{}`. Nothing in
-   `Config::TOML` can produce a result until this lands.
+1. `todo/deep/deferred-vivification-token-is-hash-only.md` — the `is rw` lvalue
+   return itself landed 2026-08-22 (ADR-0059), so `Crane.set` works for hash
+   paths; the deferred vivification token is still hash-only, so Crane's
+   `Positional` candidates vivify a `Hash` keyed `"0"` where an `Array` belongs.
 2. ~~The `||`-alternation losing-branch code block~~ and ~~`push` with a slip
    in sink context~~ both landed 2026-08-22
    (`news/2026-08/ordered-alternation-loser-branch-code-block.md`,

@@ -174,6 +174,25 @@ impl Compiler {
         {
             return;
         }
+        // `return-rw <expr>` must hand the CALLER a container, not a value:
+        // `sub g(\c) is rw { return-rw c<a> }; g(%h) = 1` writes the element of
+        // the caller's `%h`. Compile the operand in the same container-producing
+        // mode a `:=` bind RHS uses (`scalar_bind_autovivify` + `bind_terminal`),
+        // so a subscript yields the element's shared `ContainerRef` cell (or a
+        // deferred `HashEntryRef` for a not-yet-existent key) instead of a
+        // decontainerized read. The assignment site then writes through it (see
+        // `assign_lvalue_container`). Non-subscript operands compile unchanged.
+        if name == "return-rw" && args.len() == 1 {
+            self.compile_return_rw_arg(&args[0]);
+            let arg_sources_idx = self.add_arg_sources_constant(args);
+            let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            self.code.emit(OpCode::CallFunc {
+                name_idx,
+                arity: 1,
+                arg_sources_idx,
+            });
+            return;
+        }
         // A `my &f` binding visible right here SHADOWS any package/registry
         // routine of the same name, so the bare-name call must reach the
         // binding — exactly as `&f(...)` does. Without this, `my &f = ...; f(1)`

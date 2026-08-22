@@ -488,10 +488,31 @@ impl Interpreter {
                 .as_deref()
                 .cloned()
                 .or_else(|| Self::rw_sub_target_expr(&def.body));
-            if let Some(target_expr) = tail {
-                let allow_target_assign =
-                    def.is_rw || Self::is_explicit_return_rw_target(&target_expr);
-                if allow_target_assign {
+            // Lvalue return (the primary mechanism): run the routine and write
+            // through the container it hands back. This is the only mechanism
+            // that can express an element reached through one of the routine's
+            // OWN parameters (`sub g(\c) is rw { return-rw c<a> }`), a computed
+            // tail, or a recursive descent — none of which the caller-side tail
+            // re-interpretation below can resolve, because the caller's frame has
+            // no binding for the callee's parameters.
+            if def.is_rw
+                || tail
+                    .as_ref()
+                    .is_some_and(Self::is_explicit_return_rw_target)
+            {
+                let was_lvalue = self.in_lvalue_assignment;
+                self.in_lvalue_assignment = true;
+                let result = self.call_function(name, call_args.clone());
+                self.in_lvalue_assignment = was_lvalue;
+                let result = result?;
+                if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                    return assigned;
+                }
+                // The routine returned a plain value. Fall back to the legacy
+                // caller-side tail re-interpretation, which still covers the
+                // bare-lexical tail (`sub f() is rw { $x }`) — a variable is not
+                // yet compiled to a container return (see ADR-0058 §Slice 2).
+                if let Some(target_expr) = tail {
                     match self.assign_rw_target_expr(&target_expr, value.clone()) {
                         Ok(result) => return Ok(result),
                         Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
@@ -500,6 +521,10 @@ impl Interpreter {
                         Err(_) => {}
                     }
                 }
+                return Err(RuntimeError::new(format!(
+                    "X::Assignment::RO: sub '{}' is not rw",
+                    name
+                )));
             }
             let was_lvalue = self.in_lvalue_assignment;
             self.in_lvalue_assignment = true;
@@ -550,10 +575,26 @@ impl Interpreter {
                         value,
                     );
                 }
-                if let Some(target_expr) = Self::rw_sub_target_expr(&data.body) {
-                    let allow_target_assign =
-                        data.is_rw || Self::is_explicit_return_rw_target(&target_expr);
-                    if allow_target_assign {
+                let tail = Self::rw_sub_target_expr(&data.body);
+                // Lvalue return, the same order as the named path above: run the
+                // routine, write through the container it returns, and only fall
+                // back to the caller-side tail re-interpretation for a routine
+                // that returned a plain value (ADR-0058).
+                if data.is_rw
+                    || tail
+                        .as_ref()
+                        .is_some_and(Self::is_explicit_return_rw_target)
+                {
+                    let was_lvalue = self.in_lvalue_assignment;
+                    self.in_lvalue_assignment = true;
+                    let result =
+                        self.call_sub_value(Value::sub_value(data), call_args.clone(), true);
+                    self.in_lvalue_assignment = was_lvalue;
+                    let result = result?;
+                    if let Some(assigned) = self.assign_lvalue_container(&result, value.clone()) {
+                        return assigned;
+                    }
+                    if let Some(target_expr) = tail {
                         match self.assign_rw_target_expr(&target_expr, value.clone()) {
                             Ok(result) => return Ok(result),
                             Err(err) if Self::is_explicit_return_rw_target(&target_expr) => {
@@ -562,6 +603,7 @@ impl Interpreter {
                             Err(_) => {}
                         }
                     }
+                    return Err(RuntimeError::assignment_ro(Some("sub is not rw")));
                 }
                 let was_lvalue = self.in_lvalue_assignment;
                 self.in_lvalue_assignment = true;

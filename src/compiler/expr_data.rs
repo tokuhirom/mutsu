@@ -525,7 +525,7 @@ impl Compiler {
                     self.code.emit(OpCode::GetEnvIndex(key_idx));
                 } else {
                     self.compile_expr(target);
-                    self.compile_expr(index);
+                    self.compile_subscript_index(index);
                     if use_autovivify {
                         self.code.emit(lazy_op);
                     } else {
@@ -534,7 +534,7 @@ impl Compiler {
                 }
             } else {
                 self.compile_expr(target);
-                self.compile_expr(index);
+                self.compile_subscript_index(index);
                 if use_autovivify {
                     self.code.emit(lazy_op);
                 } else {
@@ -542,8 +542,10 @@ impl Compiler {
                 }
             }
         } else {
-            self.compile_expr(target);
-            self.compile_expr(index);
+            if !(use_autovivify && self.emit_bind_chain_raw_target(target)) {
+                self.compile_expr(target);
+            }
+            self.compile_subscript_index(index);
             if use_autovivify {
                 self.code.emit(lazy_op);
             } else {
@@ -551,6 +553,69 @@ impl Compiler {
             }
         }
         self.bind_terminal = saved_terminal;
+    }
+
+    /// Compile the *index* half of a subscript. The index selects which element
+    /// the chain descends to; it is an ordinary value read and never part of the
+    /// lvalue chain itself, so container mode must be off while compiling it.
+    /// Without this, `c{@s[0]}` inside a bind / `return-rw` operand compiled
+    /// `@s[0]` as a bind-ref too and passed a `ContainerRef` where the key was
+    /// wanted.
+    fn compile_subscript_index(&mut self, index: &Expr) {
+        let saved_av = self.scalar_bind_autovivify;
+        let saved_terminal = self.bind_terminal;
+        self.scalar_bind_autovivify = false;
+        self.bind_terminal = false;
+        self.compile_expr(index);
+        self.scalar_bind_autovivify = saved_av;
+        self.bind_terminal = saved_terminal;
+    }
+
+    /// In a container-producing (bind / `return-rw`) subscript chain, read a
+    /// plain variable target through its RAW slot.
+    ///
+    /// An ordinary `GetLocal` resolves a deferred `HashEntryRef` bind token to
+    /// its current *value* (`Any` while the key does not exist), which severs
+    /// the chain: `my $x := %h<a>; my $y := $x<b>` and the `is rw` lvalue-return
+    /// twin `sub f(\c) is rw { return-rw c<b> }` called with a not-yet-existent
+    /// `%h<a>` both then descend into `Any` instead of extending the deferred
+    /// path. `GetLocalDeferred` hands the token itself to `IndexAutovivifyLazy`,
+    /// whose `HashEntryRef` arm appends the next key so the eventual write
+    /// autovivifies the whole path — the recursive descent a path-addressing
+    /// routine performs.
+    ///
+    /// Only applies to a plain (twigil-free, unqualified) name that resolves to
+    /// a local slot; anything else — a twigil'd or package-qualified variable,
+    /// an env-based name, an expression — compiles normally, because those have
+    /// their own read emitters in `compile_expr_var`. Returns whether it emitted
+    /// the read.
+    fn emit_bind_chain_raw_target(&mut self, target: &Expr) -> bool {
+        let name = match target {
+            Expr::Var(name) if Self::is_plain_lexical_name(name) => name.as_str(),
+            // A bare word only *is* the variable under the same conditions the
+            // ordinary `Expr::BareWord` compile requires (a sigilless binding or
+            // an in-scope constant); anything else resolves as a type/package
+            // through `GetBareWord` and must keep doing so.
+            Expr::BareWord(name)
+                if self.sigilless_locals.contains(name.as_str())
+                    || self.constant_vars_in_scope.contains(name.as_str()) =>
+            {
+                name.as_str()
+            }
+            _ => return false,
+        };
+        // A `constant`'s compile-time value is read from the constant pool, not
+        // from a slot — do not divert that.
+        if self.constant_value(name).is_some() {
+            return false;
+        }
+        match self.local_map.get(name).copied() {
+            Some(slot) => {
+                self.code.emit(OpCode::GetLocalDeferred(slot));
+                true
+            }
+            None => false,
+        }
     }
 
     /// Compile StringInterpolation expression.

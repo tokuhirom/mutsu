@@ -125,6 +125,18 @@ impl Interpreter {
             let repr = cur.to_string_value();
             return Err(RuntimeError::assignment_ro_typename(&typename, &repr));
         }
+        // Lvalue return (ADR-0059) for a TYPE-OBJECT invocant
+        // (`Crane::In.in(container, @path) = $v`, a class-method lvalue): run
+        // the method and write through the container it returns. Every
+        // instance-oriented path below rejects a non-instance target outright,
+        // so this is the only route for that shape. The instance case is handled
+        // at the existing "run the method and inspect its result" site further
+        // down, which already calls the body exactly once.
+        if let Some(assigned) =
+            self.try_rw_method_container_lvalue(&target, method, &method_args, &value)?
+        {
+            return Ok(assigned);
+        }
         // An `is repr('CStruct')` handle keeps no Raku attributes: its fields
         // live in the C struct its `address` points at, so an assignment has to
         // write native memory (`$bind.buffer = $addr`). Without this the write
@@ -957,9 +969,15 @@ impl Interpreter {
         // `$obj.AT-KEY($k) = $v` means "set element $k", so skip this setter
         // convention and let the raw-accessor recursion / element handling below
         // take it (otherwise it would mis-call `AT-KEY($v)` with the value).
+        // ADR-0059: an `is rw` method that computes its location is an lvalue
+        // accessor, never a `$obj.name($value)` setter. Calling it with the
+        // assigned value as its only argument binds that value into the
+        // method's first parameter and produces nonsense
+        // (`I.in(%h, "a") = 1` called `in(1)`), so it must not be hijacked here.
         if let Some(var_name) = target_var
             && !method_args.is_empty()
             && !matches!(method, "AT-KEY" | "AT-POS")
+            && !self.setter_convention_would_preempt_lvalue_return(&target, method, &method_args)
         {
             match self.call_method_mut_with_values(
                 var_name,
@@ -1546,6 +1564,13 @@ impl Interpreter {
                 &attributes,
                 value,
             );
+        }
+        // ADR-0059: the method returned a container — a `ContainerRef` cell or a
+        // deferred `HashEntryRef` — instead of a Proxy. Write through it. This
+        // is the instance-invocant half of the lvalue return; the type-object
+        // half runs at the top of this function.
+        if let Some(assigned) = self.assign_lvalue_container(&method_result, value.clone()) {
+            return assigned;
         }
 
         Err(RuntimeError::new(format!(
