@@ -425,6 +425,50 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
   its own and squarely within NativeCall's known, measured gaps
   (`todo/deep/nativecall-cannot-be-vendored.md`) — not ticketed further.
 
+Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/`concurrency`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Parameter.rakudoc:306` | a generic `::T` type parameter isn't resolved when reporting later type-check failures (shows literal `T`, and takes a completely different error-shape for a second case) | [generic-type-param-binding-error-message-unresolved.md](../todo/tickets/generic-type-param-binding-error-message-unresolved.md) |
+| `Type/Parameter.rakudoc:347,395` | `Parameter.sub_signature`/`.modifier` reflection methods are unimplemented | [parameter-sub-signature-and-modifier-attrs-missing.md](../todo/tickets/parameter-sub-signature-and-modifier-attrs-missing.md) |
+| `Type/Parameter.rakudoc:197` | `+@l` slurpy's "single argument rule" wrongly preserves element identity like `is raw` does | [plus-sigil-single-arg-rule-list-context-flattening.md](../todo/tickets/plus-sigil-single-arg-rule-list-context-flattening.md) |
+| `Type/Match.rakudoc:20` | `$¢` (cursor-position variable) inside a regex-embedded code block is unimplemented | [dollar-cent-cursor-variable-in-embedded-regex-block-missing.md](../todo/tickets/dollar-cent-cursor-variable-in-embedded-regex-block-missing.md) |
+| `Type/Match.rakudoc:40` | `$0` read inside a regex-embedded code block returns the raw string instead of a `Match` object | [dollar-numbered-capture-in-embedded-regex-block-returns-raw-value.md](../todo/tickets/dollar-numbered-capture-in-embedded-regex-block-returns-raw-value.md) |
+| `Type/Mu.rakudoc:238` | default `.clone()` doesn't share Array/Hash-typed attribute containers with the original (found while investigating a raku-drift-bucketed example — the drift bucketing itself is correct, but a real bug was hiding in the same example) | [clone-array-hash-attribute-containers-not-shared.md](../todo/tickets/clone-array-hash-attribute-containers-not-shared.md) |
+| `Type/Mu.rakudoc:267` | assigning a list through a `%`-sigil `rw` accessor doesn't coerce it to Hash pairs the way a direct `%var = list` does | [hash-attribute-rw-accessor-list-assignment-not-coerced-to-pairs.md](../todo/tickets/hash-attribute-rw-accessor-list-assignment-not-coerced-to-pairs.md) |
+| `Type/Mu.rakudoc:435` | `.WHY`'s `Pod::Block::Declarator` doesn't stringify to the leading/trailing doc-comment text | [pod-why-declarator-object-not-stringified.md](../todo/tickets/pod-why-declarator-object-not-stringified.md) |
+| `Type/Mu.rakudoc:119` | `.Capture` reads a raw stored attribute value instead of calling an overriding accessor method | [capture-coercion-uses-stored-attribute-not-accessor-method.md](../todo/tickets/capture-coercion-uses-stored-attribute-not-accessor-method.md) |
+| `Type/Mu.rakudoc:515` | `next` thrown mid-evaluation of a `FIRST`-phaser comma expression corrupts later `take slip(...)` calls in the same `gather` | [next-inside-comma-expression-corrupts-following-take-slip.md](../todo/tickets/next-inside-comma-expression-corrupts-following-take-slip.md) |
+| `Type/Mu.rakudoc:531` | `take-rw` doesn't preserve a mutable container alias through `gather` | [take-rw-loses-mutable-container-alias.md](../todo/tickets/take-rw-loses-mutable-container-alias.md) |
+| `Language/subscripts.rakudoc:418` | a chained hash-then-array autovivification (`$h{"k"}[0] = v`) leaves the root variable showing `Any` on `.raku` | [nested-autovivification-then-raku-shows-any.md](../todo/tickets/nested-autovivification-then-raku-shows-any.md) |
+| `Language/subscripts.rakudoc:462` | indexing a `:=`-bound infinite sequence through a hash slice (`%h{$key}[idx]`) divides by zero | [bound-infinite-sequence-hash-slice-divide-by-zero.md](../todo/tickets/bound-infinite-sequence-hash-slice-divide-by-zero.md) |
+| `Language/subscripts.rakudoc:964` | `my @var is CustomClass = ...` never dispatches the class's `STORE`/overridden `Str` methods (custom Proxy-like container binding) | [is-typename-custom-container-store-protocol-unimplemented.md](../todo/deep/is-typename-custom-container-store-protocol-unimplemented.md) |
+| `Language/concurrency.rakudoc:49,85` | a broken `Promise`'s exception isn't wrapped/mixed with `X::Promise::Broken` | [promise-broken-exception-not-wrapped-in-x-promise-broken.md](../todo/tickets/promise-broken-exception-not-wrapped-in-x-promise-broken.md) |
+| `Language/concurrency.rakudoc:124` | `Promise.cause`'s backtrace duplicates the `in block <unit>` frame | [promise-cause-duplicate-in-block-backtrace-frame.md](../todo/tickets/promise-cause-duplicate-in-block-backtrace-frame.md) |
+| `Language/concurrency.rakudoc:213` | `Promise.vow` doesn't protect against a second `.keep`/`.break` via the original Promise | [promise-vow-keep-protection-not-enforced.md](../todo/tickets/promise-vow-keep-protection-not-enforced.md) |
+| `Language/concurrency.rakudoc:703` | `Thread.new(code => {...}).run` — `.run` method is unimplemented | [thread-new-run-method-missing.md](../todo/tickets/thread-new-run-method-missing.md) |
+| `Language/concurrency.rakudoc:709` | `Thread.start({...})`'s block never runs — the main program exits before the spawned thread completes | [thread-start-block-not-awaited-before-process-exit.md](../todo/tickets/thread-start-block-not-awaited-before-process-exit.md) |
+
+**Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
+- `Type/Parameter.rakudoc` [3] (line 176) — `raku-drift` (the doc's stated `# OUTPUT` omits the
+  `(42)` value that raku's actual current output includes).
+- `Language/subscripts.rakudoc` [4] (line 51, a `.Mix` keyed by a `Date` object failing to match a
+  distinct-but-equal-value `Date` lookup key) — the **Deferred** "WHICH-keyed QuantHash storage"
+  cluster; confirmed the same root cause with a minimal repro (a plain `Hash` with the same Date
+  keys looks up correctly, only `.Mix`/QuantHash storage fails), not re-ticketed.
+- `Language/subscripts.rakudoc` [5], [6] (lines 225, 336) — hash/Bag iteration-order `raku-drift`,
+  both sides nondeterministic (the known harness false positive for `.keys`/`{*}` iteration order).
+- `Language/subscripts.rakudoc` [7] (line 348, `say @fib[]` on a `1,1, * + * … *` sequence fully
+  reifying instead of showing `[...]`) — the **Deferred** lazy-list cluster's "closure_seq /
+  scan_spec arrays stay force-capped on `@`-assign" residue; confirmed a bare `say @fib;` (no
+  subscript at all) already shows the same full-reification bug for this exact sequence shape.
+- `Language/concurrency.rakudoc` [2] (line 85) — bucketed `raku-drift` by the harness (correctly,
+  since raku's current output no longer matches the doc's stated `# OUTPUT`), but re-verified
+  directly: mutsu's own output diverges from raku's *actual* behavior for the same root cause as
+  the `:49` finding above (missing `X::Promise::Broken` wrapping), so it is folded into
+  [promise-broken-exception-not-wrapped-in-x-promise-broken.md](../todo/tickets/promise-broken-exception-not-wrapped-in-x-promise-broken.md)
+  above rather than being skipped.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
