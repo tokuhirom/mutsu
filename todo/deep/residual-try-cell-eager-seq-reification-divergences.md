@@ -1,61 +1,55 @@
-# Residual try-cell divergences from eager sub-returned/assigned Seq reification
+# Residual try-cell divergences: `.map` runs its callback eagerly
 
-Split out of `todo/deep/deferred-seq-materialization-destroys-the-original.md`, which is now
-retired (its headline symptom — a second method call on a deferred `Seq` destroying the value —
-was fixed by [ADR-0034](../../docs/adr/0034-seq-reification-is-in-place-and-distinct-from-consumption.md),
-see `news/2026-08/seq-reification-distinct-from-consumption.md`). ADR-0034 §6 explicitly scopes
-this part out as a **different** defect: mutsu forces a `map`-produced `LazyList` at the
-assignment/call boundary, where raku keeps it lazy until something actually consumes it — that is
-about **where** forcing happens (in `LazyList`), not about **what** forcing does to a `Seq` (which
-ADR-0034 fixed). Landing ADR-0034 removed the coupling that made these cells hard to fix (every
-extra touch used to be a chance to hit the destroy-on-materialize bug), so this work is now
-tractable on its own terms, but it has not been attempted yet.
+**Re-diagnosed 2026-08-22.** All twelve cells below were re-measured against a
+current `main` build and all twelve still reproduce — none was fixed by an
+intervening change. The design for the main root cause now lives in
+[ADR-0058](../../docs/adr/0058-map-grep-produce-a-deferred-seq.md) (`Proposed`),
+and the whole cell matrix is pinned as a rakudo-verified oracle in
+`t/map-callback-runs-at-consumption.t` (23 rows; raku passes 23/23, mutsu 12,
+with the 11 divergent rows marked `todo`). This file stays open only to track
+that the work is not done.
 
-Originally found while investigating `todo/tickets/sinking-a-try-blocks-discarded-value-escapes-the-try.md`
-(now closed — its own motivating symptom was fixed by #6115, and its `try`-statement sink
-placement was verified rakudo-conformant; see `news/2026-08/try-statement-sink-semantics-pinned.md`).
-That investigation's probe matrix found a family of cells where mutsu is *more forgiving* than
-raku — it never aborts a file raku would pass, only passes constructs raku would abort. Each
-snippet is `raku` / `mutsu`:
+## The root cause is NOT what this ticket originally said
 
-- P4: `try { (1..3).map({die "boom"}) }; say "alive ", $!.defined` (unit scope)
-  — raku: **throws**; mutsu: `alive True` (caught inside the try, since the
-  force happens before the try's own boundary closes).
-- P5: `sub f { (1..3).map({die "boom"}) }; try { f() }; say ...` — same shape,
-  one level of call indirection; same divergence.
-- P12/P13: `sub f { (1..3).map({die "boom"}) }; sub ee { try { f() }; $! };
-  say ee().^name` (literal-`.map`-tail variant too) — raku: **throws**; mutsu:
-  `X::AdHoc` + alive (caught).
-- P18: `sub ee { try { f() } }; say ee().^name` (die-Seq, try final, value
-  used) — raku: `Seq` + alive, never forced; mutsu: `Nil` + alive, forced and
-  caught.
-- Q5/Q6: yada-stub `map -> $x,$y { ... }, 1..6` reached via `try { map ... }`
-  or `try { f() }` inside a sub — raku: **throws** (`in sub ee`); mutsu:
-  `Failure` + alive.
-- Q9: `try { (1..3).map({die "boom"}) }; CATCH { default { say
-  "unit-caught" } };` at unit scope — raku: **unit-caught** (the escape is
-  caught by the *enclosing* block's CATCH, since raku's try has already let it
-  through); mutsu: alive, no unit-caught (mutsu's inner try already caught it
-  before it could escape).
-- Q11: `try { EVAL $c }` in a sub, `$c` = die-Seq code — raku: **throws**;
-  mutsu: `X::AdHoc` + alive.
-- Q14: `sub f { (1..3).map({ fail "x" }) }; try { f() }; say ...` (unit) —
-  raku: **throws**; mutsu: `alive True`.
-- R6/R7: Q5/Q6 with a `reached-tail` marker after the `try` — raku: throws
-  before the marker prints (R6) or throws after invoking the block (R7);
-  mutsu: `reached-tail` prints, `r=Failure`/`r=X::StubCode`, alive — the
-  marker printing at all is the tell that mutsu's force happened too early.
+The original text (and [ADR-0034](../../docs/adr/0034-seq-reification-is-in-place-and-distinct-from-consumption.md)
+§6 quoting it) blamed "mutsu forces a `map`-produced `LazyList` at the
+assignment/call boundary" and pointed at `force_lazy_list_vm`'s callers. That
+does not fit the cells: `(1..3)` is **finite**, so `is_lazy_pipe_source`
+(`src/runtime/methods_collection.rs`) is false and **no `LazyList` is ever
+built**. `dispatch_map_method` (`src/runtime/methods_dispatch_match2.rs`)
+materializes the source and calls `eval_map_over_items` immediately, inside the
+`try`. There is no deferred value whose force could be moved — the callback has
+already run by the time the `try` block's tail value exists.
 
-These will align toward raku automatically once sub-returned/assigned Seqs stay lazy — **landing
-that laziness fix makes mutsu STRICTER in every one of these cells** (constructs that pass today
-will start aborting, matching raku), so a full roast-whitelist sweep is mandatory when it lands,
-not just `make test`. `t/try-sink-semantics.t` pins the cells that already match and must keep
-matching; re-run it after any laziness change here.
+mutsu's `try`/sink *placement* is also not at fault and must not be touched:
+`compile_try_region` leaves the tail value on the stack and lets the enclosing
+statement's `SinkPop` force it outside the trap, which is rakudo's own rule
+(`news/2026-08/try-statement-sink-semantics-pinned.md`).
 
-## Where to start
+**The real cause is that `.map`/`.grep` are eager over a finite source in mutsu
+and lazy in rakudo.** This is observable with no `try` and no exception at all:
 
-The root cause is `LazyList` forcing at the sub-return/assignment boundary rather than at first
-consumption — a different mechanism from `Seq`'s `SeqBody` (ADR-0034 §6 confirms `LazyList` is
-explicitly out of scope there). Look at `force_lazy_list_vm`/`force_lazy_list_vm_n`'s callers in
-`src/vm/vm_helpers_lazy.rs` and wherever a sub return value or `=`-assignment RHS gets eagerly
-forced before it reaches its actual first consumer.
+```raku
+my $s = (1..3).map({ say "side $_"; $_ }); say "before"; say $s.List;
+# raku:  before / side 1 / side 2 / side 3 / (1 2 3)
+# mutsu: side 1 / side 2 / side 3 / before / (1 2 3)
+```
+
+`.grep` behaves the same way and does not even have the `return`/stub deferral
+`.map` has.
+
+## What is left to do
+
+- **Nine of the eleven divergent rows** (P4, P5, P12, P13, P18, Q9, Q11, Q14 and
+  the side-effect-ordering row) are ADR-0058's target. Implementing that ADR
+  un-`todo`s them; it also makes mutsu **stricter**, so a full `make roast` is
+  mandatory, not `make test` alone.
+- **The other two rows** (Q5/Q6/R6/R7's exit status) are a **separate, narrower
+  bug**, recorded in ADR-0058 §1.4: the stub-map path already defers correctly
+  and already matches raku once the enclosing `try` is removed. What diverges is
+  how a `fail` raised *during the force* resolves when a `try` sits lexically
+  between it and the routine — mutsu returns it from the routine as a `Failure`,
+  rakudo throws it. Nobody has looked into that yet.
+
+`t/try-sink-semantics.t` pins the sink-placement half and must keep passing
+through both fixes.
