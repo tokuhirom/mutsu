@@ -461,6 +461,14 @@ impl Interpreter {
         is_positional: bool,
         target_slot: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // A variable still holding a DEFERRED vivification token has no
+        // container to assign into yet (`my $x := %h<g>; $x[0] = 'x'`); every
+        // helper below resolves the token to `Any` and drops the write. Handle
+        // it first: walk-create the path and promote the binding to a cell.
+        if let Some(result) = self.try_deferred_token_index_assign(code, name_idx, &[is_positional])
+        {
+            return result;
+        }
         // ADR-0039 slice 1: `name_idx` may name a compunit's own file-scope
         // `@`/`%` (its authoritative storage is the cell in `unit_lexicals`,
         // not `env[var_name]` — that key can hold a completely unrelated

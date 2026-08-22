@@ -579,7 +579,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
             Kind::HashEntryRef => {
                 let h = peek_arc::<HashEntryRefBox>(bits);
                 ValueView::HashEntryRef {
-                    hash: &h.hash,
+                    root: &h.root,
                     path: &h.path,
                     eager: h.eager,
                 }

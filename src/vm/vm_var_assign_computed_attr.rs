@@ -65,20 +65,31 @@ impl Interpreter {
             // multi-key for `$d := %k<p><q>`) and install the shared cell at
             // the terminal entry so the bound var and the hash entry alias
             // bidirectionally afterwards.
-            let Some((arc, key)) = token.hash_entry_terminal() else {
+            let Some(terminal) = token.hash_entry_terminal() else {
                 return false;
             };
             let cell = crate::gc::Gc::new(std::sync::Mutex::new(val));
-            // SAFETY: aliased in-place mutation of a shared hash; see
-            // `gc_contents_mut`. No live borrow into the map.
-            let hd = unsafe { crate::value::gc_contents_mut(&arc) };
-            Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
+            terminal.insert(Value::container_ref(cell.clone()));
             cell
         } else {
             return false;
         };
-        self.locals[idx] = Value::container_ref(cell);
+        let cell_val = Value::container_ref(cell);
+        self.locals[idx] = cell_val.clone();
         self.flush_local_to_env(code, idx);
+        // A `:=` bind also registers a sigilless alias (`__mutsu_sigilless_alias::$x`
+        // -> `__mutsu_bind_index_ref_N`), and the env-centric element-assign
+        // handlers redirect through it before they look at anything else. That
+        // alias target still held the pre-materialization value, so a SECOND
+        // write through the bound variable (`$x = ['a']; $x[1] = 'b'`) found no
+        // container there, autovivified a fresh one, and silently detached from
+        // the hash entry. Point the alias at the cell too.
+        if let Some(name) = code.locals.get(idx).cloned() {
+            let root = self.resolve_alias_root(&name);
+            if root != name {
+                self.set_env_with_main_alias(&root, cell_val);
+            }
+        }
         true
     }
 

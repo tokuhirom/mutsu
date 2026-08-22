@@ -212,6 +212,8 @@ mod aliased_mut;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod display;
+/// Deferred vivification path steps ([`EntryStep`] / [`EntryTerminal`]).
+mod entry_path;
 mod error;
 mod error_construct;
 mod error_typed;
@@ -259,6 +261,9 @@ mod seq_body_shapes;
 pub(crate) use crate::gc::gc_contents_mut;
 pub(crate) use aliased_mut::gc_data_mut;
 pub(crate) use attr_map::{AttrKey, AttrMap, attr_twigil_base};
+pub(crate) use entry_path::EntryRoot;
+pub use entry_path::EntryStep;
+pub(crate) use entry_path::is_container_hole;
 pub use guards::{ArcRef, GcRef, RefGuard, WeakGcRef};
 pub(in crate::value) use nanbox::NanBox;
 use native_backing::NativeBacking;
@@ -1312,11 +1317,20 @@ pub(in crate::value) enum ValueRepr {
     /// iteration until the first write — see `t/phantom-entry-bind.t`).
     ///
     /// - Reading returns the current value at the path (or `Any` if any level is
-    ///   missing/non-hash), without creating anything.
-    /// - Writing walk-creates intermediate hashes and inserts at the terminal key.
+    ///   missing/of the wrong kind), without creating anything.
+    /// - Writing walk-creates the intermediate containers and inserts at the
+    ///   terminal slot.
     /// - `path.len() == 1` is the single-key case (`$b := %h<x>`); a longer path
     ///   is a deferred nested bind (`$b := %h<a><b>`), accumulated one subscript
     ///   at a time by `exec_index_autovivify_lazy_op`.
+    ///
+    /// Each step records whether the subscript was associative or positional
+    /// ([`EntryStep`]), so the walk-create makes the container the *next* step
+    /// asks for: `%h<g>[0] = 'x'` autovivifies `{:g($["x"])}`. Before the steps
+    /// were typed, every step was a `String` key and that same write produced
+    /// `{:g(${"0" => "x"})}`. The root ([`EntryRoot`]) is a `Hash` for a token
+    /// minted by `hash_slot_ref` / `hash_autovivify`, or the shared cell an
+    /// empty array element was already promoted to.
     ///
     /// It also serves `is raw` reduce lvalue descent (`hash_autovivify`), where
     /// the entry is eagerly created first so the path is always length 1 —
@@ -1327,8 +1341,8 @@ pub(in crate::value) enum ValueRepr {
     /// §3) an independent `%g<x><y> = 42` reaches the token's captured root,
     /// and rakudo does not retro-bind that (t/phantom-entry-bind.t).
     HashEntryRef {
-        hash: Gc<HashData>,
-        path: Vec<String>,
+        root: EntryRoot,
+        path: Vec<EntryStep>,
         eager: bool,
     },
 }

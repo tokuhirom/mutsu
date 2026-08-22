@@ -104,7 +104,10 @@ impl Interpreter {
     /// a `HashEntryRef` (hash) or a shared `ContainerRef` cell (array element) so
     /// that `:=` bind to nested elements works.
     /// Stack: [target, key] -> [HashEntryRef | ContainerRef]
-    pub(super) fn exec_index_autovivify_op(&mut self) -> Result<(), RuntimeError> {
+    pub(super) fn exec_index_autovivify_op(
+        &mut self,
+        is_positional: bool,
+    ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
 
@@ -164,16 +167,23 @@ impl Interpreter {
                 }
             }
             // If the target is Nil/Any (not yet vivified) inside a HashEntryRef,
-            // create an empty hash and then auto-vivify the key.
+            // create the container the subscript addresses — an Array for a
+            // positional step, a Hash for an associative one — and vivify in it.
             _ if matches!(target.view(), ValueView::HashEntryRef { .. }) => {
-                let key = Value::hash_key_encode(&index);
-                let new_hash = Value::hash(std::collections::HashMap::new());
-                target.hash_entry_write(new_hash.clone());
-                if let Some(slot_ref) = new_hash.hash_autovivify_cell(&key) {
-                    self.stack.push(slot_ref);
-                } else {
-                    self.stack.push(Value::NIL);
-                }
+                let slot_ref = match Self::positional_step(&index, is_positional) {
+                    Some(idx) => {
+                        let new_array = Value::real_array(Vec::new());
+                        target.hash_entry_write(new_array.clone());
+                        new_array.array_slot_ref(idx, false)
+                    }
+                    None => {
+                        let key = Value::hash_key_encode(&index);
+                        let new_hash = Value::hash(std::collections::HashMap::new());
+                        target.hash_entry_write(new_hash.clone());
+                        new_hash.hash_autovivify_cell(&key)
+                    }
+                };
+                self.stack.push(slot_ref.unwrap_or(Value::NIL));
             }
             _ => {
                 // Fallback: just do a normal index read
@@ -217,6 +227,7 @@ impl Interpreter {
     pub(super) fn exec_index_autovivify_lazy_op(
         &mut self,
         terminal: bool,
+        is_positional: bool,
     ) -> Result<(), RuntimeError> {
         let index = self.stack.pop().unwrap();
         let target = self.stack.pop().unwrap();
@@ -224,6 +235,31 @@ impl Interpreter {
         let resolved = match target.view() {
             ValueView::HashEntryRef { .. } => target.hash_entry_read(),
             ValueView::Scalar(inner) => inner.clone(),
+            // An EMPTY shared cell is a chain link whose container does not
+            // exist yet — `array_slot_ref` promotes a fresh array hole to one,
+            // and `GetLocalDeferred` hands it here whole in container mode
+            // rather than dereferencing it to a bare `Any` with no way back to
+            // the storage. Anchor a deferred path on the cell so the eventual
+            // write creates the container the step asks for and stores it back
+            // in the cell, keeping every alias of the element in sync.
+            //
+            // Gated on the cell being EMPTY. A cell promoted from a *scalar*
+            // leaf (`my %h = a => 1; my $x := %h<a><b>`) holds real data:
+            // rakudo raises "Cannot assign to an immutable value" on the write,
+            // so falling through to the plain read below (a silent no-op) is
+            // right, and replacing the `1` with a fresh Hash would not be.
+            ValueView::ContainerRef(cell)
+                if crate::value::is_container_hole(
+                    &cell.lock().unwrap_or_else(|e| e.into_inner()),
+                ) =>
+            {
+                let step = Self::deferred_path_step(&index, is_positional);
+                self.stack.push(Value::hash_entry_ref(
+                    crate::value::EntryRoot::Cell(cell.clone()),
+                    vec![step],
+                ));
+                return Ok(());
+            }
             _ => target.clone(),
         };
 
@@ -266,7 +302,7 @@ impl Interpreter {
                 } else {
                     self.stack.push(resolved.clone());
                     self.stack.push(index);
-                    return self.exec_index_autovivify_op();
+                    return self.exec_index_autovivify_op(is_positional);
                 }
             }
             // When resolved is an Array (e.g. reached through a HashEntryRef),
@@ -276,26 +312,28 @@ impl Interpreter {
             ValueView::Array(..) => {
                 self.stack.push(resolved.clone());
                 self.stack.push(index);
-                return self.exec_index_autovivify_op();
+                return self.exec_index_autovivify_op(is_positional);
             }
             // When the target is a HashEntryRef pointing to a non-existent key
-            // (resolved to Any/Nil), in lazy mode extend its `path` by one key so
-            // the deferred bind autovivifies the full path on write.
+            // (resolved to Any/Nil), in lazy mode extend its `path` by one step so
+            // the deferred bind autovivifies the full path on write. The step
+            // records the subscript's shape, so a positional link walk-creates
+            // an Array (`%h<g>[0] = 'x'` is `{:g($["x"])}`, not `{"0" => "x"}`).
             _ if matches!(target.view(), ValueView::HashEntryRef { .. }) => {
-                let key = Value::hash_key_encode(&index);
-                let ValueView::HashEntryRef { hash, path, .. } = target.view() else {
+                let step = Self::deferred_path_step(&index, is_positional);
+                let ValueView::HashEntryRef { root, path, .. } = target.view() else {
                     unreachable!()
                 };
-                let hash = hash.clone();
+                let root = root.clone();
                 let mut path = path.clone();
-                path.push(key);
-                self.stack.push(Value::hash_entry_ref(hash, path));
+                path.push(step);
+                self.stack.push(Value::hash_entry_ref(root, path));
             }
             _ => {
                 // Fallback to normal autovivify for non-hash targets
                 self.stack.push(target);
                 self.stack.push(index);
-                return self.exec_index_autovivify_op();
+                return self.exec_index_autovivify_op(is_positional);
             }
         }
         Ok(())

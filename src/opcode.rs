@@ -1340,11 +1340,20 @@ pub(crate) enum OpCode {
     /// Returns a HashEntryRef that defers creation until write.
     /// Used for the outermost level of `:=` bind so that binding alone
     /// does not autovivify (e.g. `my $b := %h<a><b>` keeps %h empty).
-    IndexAutovivifyLazy,
+    ///
+    /// `is_positional` mirrors [`OpCode::Index`]: true for `[...]`, false for
+    /// `{...}` / `<...>`. It is what the deferred token's path step records, so
+    /// a positional step over a not-yet-existent container walk-creates an
+    /// `Array` rather than a `Hash` keyed by the stringified index.
+    IndexAutovivifyLazy {
+        is_positional: bool,
+    },
     /// Like IndexAutovivifyLazy, but the index is the TERMINAL element of a `:=`
     /// bind RHS. A container-valued (Array/Hash) leaf is promoted to a
     /// `ContainerRef` cell — not kept as a traversal back-reference.
-    IndexAutovivifyLazyTerminal,
+    IndexAutovivifyLazyTerminal {
+        is_positional: bool,
+    },
     /// `%h<k>:delete` / `@a[i]:delete`. First field is the container variable's
     /// name (const-pool index); the optional second is its compile-time-resolved
     /// local slot (§1.5: the mutated container is written back through this exact

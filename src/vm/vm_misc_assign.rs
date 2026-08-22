@@ -446,13 +446,10 @@ impl Interpreter {
             ) && !name.starts_with('@')
                 && !name.starts_with('%')
                 && let Some(token) = current.as_ref()
-                && let Some((arc, key)) = token.hash_entry_terminal()
+                && let Some(terminal) = token.hash_entry_terminal()
             {
                 let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
-                // SAFETY: aliased in-place mutation of a shared hash; see
-                // `gc_contents_mut`. No live borrow into the map.
-                let hd = unsafe { crate::value::gc_contents_mut(&arc) };
-                Value::hash_insert_through(&mut hd.map, key, Value::container_ref(cell.clone()));
+                terminal.insert(Value::container_ref(cell.clone()));
                 let cell_val = Value::container_ref(cell);
                 if let Some(idx) = code.locals.iter().position(|n| n == &name)
                     && idx < self.locals.len()

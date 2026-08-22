@@ -198,23 +198,20 @@ impl Interpreter {
                 } else {
                     a
                 };
-                if let Some((arc, key)) = Self::extract_hash_ref(other) {
-                    let ptr = crate::gc::Gc::as_ptr(&arc);
-                    if let Some(ValueView::ContainerRef(elem_cell)) =
-                        unsafe { (*ptr).get(key.as_str()) }.map(Value::view)
-                    {
-                        return crate::gc::Gc::ptr_eq(&cell, &elem_cell);
-                    }
+                if let Some(elem) = other.hash_entry_locate().and_then(|t| t.peek())
+                    && let ValueView::ContainerRef(elem_cell) = elem.view()
+                {
+                    return crate::gc::Gc::ptr_eq(&cell, &elem_cell);
                 }
                 return false;
             }
             _ => {}
         }
-        // Extract (arc, key) from each side
-        let a_ref = Self::extract_hash_ref(a);
-        let b_ref = Self::extract_hash_ref(b);
-        if let (Some((a_arc, a_key)), Some((b_arc, b_key))) = (a_ref, b_ref) {
-            crate::gc::Gc::ptr_eq(&a_arc, &b_arc) && a_key == b_key
+        // Locate the terminal slot each side denotes and compare slot identity.
+        let a_ref = a.hash_entry_locate();
+        let b_ref = b.hash_entry_locate();
+        if let (Some(a_slot), Some(b_slot)) = (a_ref, b_ref) {
+            a_slot.same_slot(&b_slot)
         } else if a.is_any_type_object() && b.is_any_type_object() {
             // Two raw container reads that both hold the Any type object (the
             // uninitialized-scalar seed, PLAN 8.5 step 3) are distinct
@@ -225,25 +222,6 @@ impl Interpreter {
             // Both are the same value identity (for non-hash-ref cases)
             crate::runtime::values_identical(a, b)
         }
-    }
-
-    /// Extract the `(terminal hash Arc, terminal key)` a `HashEntryRef` points
-    /// to, walking its `path` READ-ONLY. Returns `None` if any intermediate level
-    /// is missing or not a hash (the deferred path is not yet materialized, so it
-    /// has no stable container identity).
-    fn extract_hash_ref(val: &Value) -> Option<(crate::gc::Gc<crate::value::HashData>, String)> {
-        let ValueView::HashEntryRef { hash, path, .. } = val.view() else {
-            return None;
-        };
-        let mut cur = hash.clone();
-        for k in &path[..path.len() - 1] {
-            let ptr = crate::gc::Gc::as_ptr(&cur);
-            match unsafe { (*ptr).get(k.as_str()) }.map(Value::view) {
-                Some(ValueView::Hash(inner)) => cur = inner.clone(),
-                _ => return None,
-            }
-        }
-        Some((cur, path.last().unwrap().clone()))
     }
 
     /// For an encoded source like "@b\0idx\01" (or "%h\0idx\0k"), look up the

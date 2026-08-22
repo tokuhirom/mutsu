@@ -121,8 +121,8 @@ pub(in crate::value) struct MixinBox(
 
 #[derive(Debug, Clone)]
 pub(in crate::value) struct HashEntryRefBox {
-    pub(in crate::value) hash: Gc<HashData>,
-    pub(in crate::value) path: Vec<String>,
+    pub(in crate::value) root: crate::value::EntryRoot,
+    pub(in crate::value) path: Vec<crate::value::EntryStep>,
     pub(in crate::value) eager: bool,
 }
 

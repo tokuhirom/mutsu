@@ -79,7 +79,10 @@ impl Interpreter {
         // ADR-0021 I2: data-minted pairs default positional.
         gc.keys()
             .map(|k| {
-                let vref = Value::hash_entry_ref_eager(gc.clone(), vec![k.clone()]);
+                let vref = Value::hash_entry_ref_eager(
+                    crate::value::EntryRoot::Hash(gc.clone()),
+                    vec![crate::value::EntryStep::Key(k.clone())],
+                );
                 Value::value_pair(gc.typed_key(k), vref)
             })
             .collect()

@@ -299,11 +299,18 @@ impl Interpreter {
                         // first write walk-creates the intermediate hashes
                         // (`hash_entry_terminal`), so `%h{$a;$b;$c} = v` through
                         // a `\target` / `is rw` bind autovivifies like raku.
-                        let mut path = vec![key];
+                        // Every `;` dimension of this opcode is associative
+                        // (the compiler emits `MultiDimIndexBindRef` for a
+                        // subscript whose dims are all one shape), so all
+                        // remaining steps are keys.
+                        let mut path = vec![crate::value::EntryStep::Key(key)];
                         for d in &dims[i + 1..] {
-                            path.push(Value::hash_key_encode(d));
+                            path.push(crate::value::EntryStep::Key(Value::hash_key_encode(d)));
                         }
-                        return Ok(Some(Value::hash_entry_ref(map.clone(), path)));
+                        return Ok(Some(Value::hash_entry_ref(
+                            crate::value::EntryRoot::Hash(map.clone()),
+                            path,
+                        )));
                     }
                     match cur.hash_slot_ref(&key, terminal) {
                         Some(v) => v,

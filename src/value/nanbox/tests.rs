@@ -534,8 +534,11 @@ fn every_variant_roundtrips_losslessly() {
             cache: Mutex::new(Some(Value::int(5))),
         })),
         ValueRepr::HashEntryRef {
-            hash: Gc::new(HashData::default()),
-            path: vec!["a".to_string(), "b".to_string()],
+            root: crate::value::EntryRoot::Hash(Gc::new(HashData::default())),
+            path: vec![
+                crate::value::EntryStep::Key("a".to_string()),
+                crate::value::EntryStep::Index(1),
+            ],
             eager: false,
         },
     ];

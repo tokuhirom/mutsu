@@ -1553,17 +1553,10 @@ impl Interpreter {
                         && !name.starts_with('%')
                         && let Some(token) = self.env().get(&name).cloned()
                         && matches!(token.view(), ValueView::HashEntryRef { .. })
-                        && let Some((arc, key)) = token.hash_entry_terminal()
+                        && let Some(terminal) = token.hash_entry_terminal()
                     {
                         let cell = crate::gc::Gc::new(std::sync::Mutex::new(val.clone()));
-                        // SAFETY: aliased in-place mutation of a shared hash; see
-                        // `gc_contents_mut`. No live borrow into the map.
-                        let hd = unsafe { crate::value::gc_contents_mut(&arc) };
-                        Value::hash_insert_through(
-                            &mut hd.map,
-                            key,
-                            Value::container_ref(cell.clone()),
-                        );
+                        terminal.insert(Value::container_ref(cell.clone()));
                         self.set_env_with_main_alias(&name, Value::container_ref(cell));
                         *ip += 1;
                         return Ok(());
@@ -3561,12 +3554,12 @@ impl Interpreter {
                 self.exec_index_op_with_positional(*is_positional)?;
                 *ip += 1;
             }
-            OpCode::IndexAutovivifyLazy => {
-                self.exec_index_autovivify_lazy_op(false)?;
+            OpCode::IndexAutovivifyLazy { is_positional } => {
+                self.exec_index_autovivify_lazy_op(false, *is_positional)?;
                 *ip += 1;
             }
-            OpCode::IndexAutovivifyLazyTerminal => {
-                self.exec_index_autovivify_lazy_op(true)?;
+            OpCode::IndexAutovivifyLazyTerminal { is_positional } => {
+                self.exec_index_autovivify_lazy_op(true, *is_positional)?;
                 *ip += 1;
             }
             OpCode::DeleteIndexNamed(name_idx, slot) => {

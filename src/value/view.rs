@@ -128,8 +128,8 @@ pub enum ValueView<'a> {
     ContainerRef(GcRef<'a, Mutex<Value>>),
     LazyThunk(ArcRef<'a, LazyThunkData>),
     HashEntryRef {
-        hash: &'a Gc<HashData>,
-        path: &'a Vec<String>,
+        root: &'a crate::value::EntryRoot,
+        path: &'a Vec<crate::value::EntryStep>,
         eager: bool,
     },
 }
@@ -464,9 +464,12 @@ impl Value {
     /// Construct a DEFERRED `HashEntryRef` vivification token (`eager: false`
     /// — connects on read only through the cell a bound-var write installs).
     #[inline]
-    pub(crate) fn hash_entry_ref(hash: Gc<HashData>, path: Vec<String>) -> Self {
+    pub(crate) fn hash_entry_ref(
+        root: crate::value::EntryRoot,
+        path: Vec<crate::value::EntryStep>,
+    ) -> Self {
         Value::from_repr(ValueRepr::HashEntryRef {
-            hash,
+            root,
             path,
             eager: false,
         })
@@ -476,9 +479,12 @@ impl Value {
     /// each access (used for live `for %h -> $p` iteration pairs, whose
     /// `.value` must reflect an in-loop `%h{$p.key} = X`).
     #[inline]
-    pub(crate) fn hash_entry_ref_eager(hash: Gc<HashData>, path: Vec<String>) -> Self {
+    pub(crate) fn hash_entry_ref_eager(
+        root: crate::value::EntryRoot,
+        path: Vec<crate::value::EntryStep>,
+    ) -> Self {
         Value::from_repr(ValueRepr::HashEntryRef {
-            hash,
+            root,
             path,
             eager: true,
         })
@@ -902,19 +908,19 @@ impl Value {
         }))
     }
 
-    /// Run `f` on the hash-entry-ref payload (target hash + key path) if this
-    /// is exactly a `HashEntryRef`. Returns `None` (without calling `f`)
-    /// otherwise. Used e.g. to resync the COW hash pointer after a store.
+    /// Run `f` on the hash-entry-ref payload (root + path) if this is exactly a
+    /// `HashEntryRef`. Returns `None` (without calling `f`) otherwise. Used e.g.
+    /// to resync the COW hash pointer after a store.
     #[inline]
     pub(crate) fn with_hash_entry_ref_mut<R>(
         &mut self,
-        f: impl FnOnce(&mut Gc<HashData>, &mut Vec<String>) -> R,
+        f: impl FnOnce(&mut crate::value::EntryRoot, &mut Vec<crate::value::EntryStep>) -> R,
     ) -> Option<R> {
         if !matches!(self.view(), ValueView::HashEntryRef { .. }) {
             return None;
         }
         Some(self.with_repr_mut(|r| match r {
-            ValueRepr::HashEntryRef { hash, path, .. } => f(hash, path),
+            ValueRepr::HashEntryRef { root, path, .. } => f(root, path),
             _ => unreachable!("with_hash_entry_ref_mut probed a HashEntryRef"),
         }))
     }

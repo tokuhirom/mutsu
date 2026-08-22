@@ -491,13 +491,9 @@ impl Interpreter {
                 // node in place, so `$p.value = X` updates `%h{$p.key}` and the
                 // ref keeps reading the new value.
                 if let ValueView::HashEntryRef { .. } = current_value.as_ref().view()
-                    && let Some((node, last_key)) = current_value.hash_entry_terminal()
+                    && let Some(terminal) = current_value.hash_entry_terminal()
                 {
-                    // SAFETY: aliased in-place mutation of a shared hash node;
-                    // mirrors `hash_entry_terminal`'s own interior mutation. No
-                    // borrow into the map is held across the write.
-                    let data = unsafe { crate::value::gc_contents_mut(&node) };
-                    data.map.insert(last_key, value.clone());
+                    terminal.insert(value.clone());
                     return Ok(value);
                 }
                 // A Pair whose value is a shared `ContainerRef` (built by `key =>

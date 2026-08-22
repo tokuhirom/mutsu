@@ -295,6 +295,18 @@ impl Interpreter {
         // early return AND keep the non-container hot path move-only (into_deref is
         // never reached for non-ContainerRef values).
         if val.is_container_ref() {
+            // In container mode, an EMPTY cell is a live link of the lvalue
+            // chain, not a value: `my @a; my $x := @a[0]; my $y := $x<k>`
+            // promoted the array hole to a cell holding `Any`, and dereferencing
+            // it here hands the subscript a bare `Any` with no way back to the
+            // storage — the eventual write went nowhere. Hand the cell itself to
+            // the subscript so it can anchor a deferred path (`EntryRoot::Cell`).
+            // A cell holding a real container still derefs: the container shares
+            // its `Gc`, so the chain continues through it unchanged.
+            if keep_deferred_entry && !crate::runtime::types::value_is_defined(&val) {
+                self.stack.push(val);
+                return Ok(());
+            }
             self.stack.push(val.into_deref());
             return Ok(());
         }
