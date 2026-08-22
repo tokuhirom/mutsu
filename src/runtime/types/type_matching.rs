@@ -624,7 +624,7 @@ impl Interpreter {
         // *distinct* types (`array`'s MRO is `array, Cool, Any, Mu` — it does
         // `Positional`/`Iterable`/`Cool`, but it is not an `Array`), so a
         // native `array[T]` must answer False to an `Array` constraint even
-        // though mutsu represents it as a `Value::Array`. Only the `Array`
+        // though mutsu represents it as the `Array` variant of `Value`. Only the `Array`
         // name is narrowed here; `Positional`, `Iterable`, `Cool` and `Any`
         // keep matching through the generic tail exactly as raku reports them.
         if (constraint == "Array" || constraint.starts_with("Array["))

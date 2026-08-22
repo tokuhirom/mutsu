@@ -1,6 +1,6 @@
 # ADR-0054: Argument-list interpolation is a call-site property — retire blind Slip flattening
 
-- Status: Accepted (Slices 1-3 implemented; Slices 4-6 remain)
+- Status: Accepted (Slices 1-6 implemented; ADR fully closed out)
 - Date: 2026-08-20
 - Origin: `todo/deep/blind-slip-flattening-in-fixed-arity-calls.md`
   (re-verified reproducing on `main` @ `b1a9bb8a5`, 2026-08-20; the
@@ -358,6 +358,12 @@ on the old behaviour via a compiled trampoline.
   gap `slip-arg-flatten.t` does not cover, because every case there has a
   slurpy callee), `t/slip-slurpy-binding-is-independent.t` (§2.3, so a later
   slice cannot "fix" a regression by re-adding call-site flattening).
+  `t/slip-value-argument-warm-cache.t` (Slice 4: 50 repeated calls each of a
+  Slip-valued single-arg call site, a `|EXPR`-spreading sibling site, a
+  slurpy callee, and the "non-firing tail `if`" shape — pins correctness of
+  the collapsed `arg_sources_idx` descriptor and the compile-time
+  `call_has_slip` cache gate under a warm light-call cache, not just on the
+  first cold call).
 - Must stay green: `t/slip-listop-args.t`, `t/capture-slip.t`,
   `t/hash-spread-slip.t`, `t/multi-slip-otf.t`, `t/hyper-method-slip-result.t`,
   `t/say-slip-nonflatten.t`, `t/await-slip-flatten.t`,
@@ -439,6 +445,96 @@ on the old behaviour via a compiled trampoline.
   rather than the single caller §4 anticipated — Slice 4's constant collapse
   is what reduces that to one, so the inlining note there is deferred to
   that slice.
-- [ ] Slice 4 constant collapse + cache gate
-- [ ] Slice 5 compiler dodge cleanup
-- [ ] Slice 6 internal-caller audit
+- [x] Slice 4 constant collapse + cache gate — `ExecCallPairs`'s dedicated
+  `slip_positions_idx` (a constant array of bare integer positions, decoded
+  by the now-deleted `spread_slip_positions`) is gone; the opcode field is
+  renamed `arg_sources_idx` and carries the SAME per-position `TRUE`/`NIL`
+  descriptor shape `CallFunc`/`CallMethod`/etc. use (built by the new
+  `Compiler::add_call_arg_sources_constant(&[CallArg])`, the `CallArg`-list
+  counterpart of `add_arg_sources_constant`; `ExecCallPairs` never tracked
+  rw-arg sources, so it only needs the `TRUE`/`NIL` slip marker, not the
+  `Str`/`Pair` name entries the `Expr`-list callers also encode).
+  `exec_exec_call_pairs_op` (`vm_call_exec_ops.rs`) now calls the same
+  `spread_call_args_by_syntax` every other call op uses (passing `None` for
+  `decoded_sources` and discarding the always-`None` returned source list),
+  so a call site carries exactly one syntax descriptor and one spreading
+  mechanism instead of two. This gave `append_flattened_call_arg` its
+  anticipated single call site, so it is now inlined directly into
+  `spread_call_args_by_syntax`'s loop (its dead `preserve_empty_slip`
+  parameter — always `false` at both of its two former call sites — is
+  dropped in the same pass).
+
+  The cache-gate half: `stack_args_have_slip` (`vm_call_helpers.rs`) no
+  longer takes `&self`/`arity` and probes the stack; it is now
+  `Self::stack_args_have_slip(code, arg_sources_idx) -> bool`, a thin
+  wrapper over `decode_arg_slip_positions(code, arg_sources_idx).is_some()`
+  — a call site with no `|EXPR` position resolves this in O(1) with zero
+  allocation, since `arg_sources_idx` is `None` on the common call. In
+  `exec_call_func_op` (`vm_call_func_ops.rs`) this is now computed ONCE per
+  call, as `call_has_slip`, and reused at all three cache-eligibility
+  checks: the ultra-fast positional-light-cache fused scan (which
+  previously ran its own separate `matches!(view, ValueView::Slip(_))`
+  probe over the stack args inline — removed, since it was the same
+  value-shape bug the ADR targets, just not routed through the named
+  helper), the named light-call cache check, and the OTF-compiled-function
+  cache check. `CallOnValue`/`CallOnCodeVar` have no light-call cache (they
+  always spread via `spread_call_args_by_syntax` unconditionally), so no
+  change was needed there.
+
+  Verified: a positional-only user sub called 2000 times in a loop with a
+  Slip-VALUED (non-`|`) argument (`g(@a.Slip)`) shows
+  `function-full-resolve total=1` under `MUTSU_JIT=off MUTSU_VM_STATS=1`
+  (one cold resolve, the rest warm-cache hits) both before and after this
+  slice — confirmed the OLD runtime-shape check by temporarily reintroducing
+  it: the existing `function-full-resolve`/`function-fallback`/
+  `function-carrier`/dual-store/JIT counters do NOT discriminate the
+  light-call-cache-hit path from the heavier `call_compiled_function_named`
+  path for a plain compiled top-level sub with no env/multi-dispatch
+  involvement in either case, so no existing `MUTSU_VM_STATS` counter can
+  observe this specific cache-eligibility win directly; the correctness of
+  staying cache-eligible under a warm cache is instead pinned by
+  `t/slip-value-argument-warm-cache.t` (50 repeated calls each, mixing a
+  Slip-valued single-arg call site, a `|EXPR`-spreading sibling call site,
+  a slurpy callee, and the ADR's motivating "non-firing tail `if`" shape,
+  so the two call-site shapes cannot get confused once their cache entries
+  are warm). A `perf stat`/wall-clock A/B is the only observable signal for
+  the raw speedup and is not suitable for a deterministic CI-gated test per
+  repo policy (`docs/flaky-test-policy.md`).
+- [x] Slice 5 compiler dodge cleanup — `compile_tail_stmt_call_value`
+  (`helpers_control_flow.rs`) and its `Stmt::Call` tail-position call site
+  (`helpers_sub_body.rs`) keep the SAME routing (positional-only args reuse
+  `Expr::Call`; named/slip args route through `ExecCallPairs { keep_value:
+  true }`) — Slice 4 did not change which call op tail-position dispatch
+  compiles to, only what `ExecCallPairs` decodes internally. Both doc
+  comments are rewritten to drop the "must NOT go through
+  `call_args_to_expr_args`... `append_flattened_call_arg`... silently
+  dropping an `Empty`-valued positional argument" justification: that
+  concern is gone now that `CallFunc` tracks `|EXPR` positions by call-site
+  syntax exactly like `ExecCallPairs` does (Slices 1-4), so
+  `ExecCallPairs`'s syntax-accurate slip tracking is no longer a
+  distinguishing reason to prefer it over `Expr::Call` for this shape. The
+  ONLY remaining reason for the special-cased routing is `keep_value`
+  (tail-position value production): `Stmt::Call`'s plain statement op
+  (`ExecCall`/`ExecCallPairs { keep_value: false }`) discards its result, so
+  a tail call with named/slip args still needs the `keep_value: true`
+  routing or the routine would return its topic instead of the call's value
+  (JSON::Marshal's `to-json($ret, :$sorted-keys, :$pretty)` regression this
+  guards against). No behaviour change; `t/tail-stmt-call-named-value.t`
+  stays green.
+- [x] Slice 6 internal-caller audit (S5) — swept every
+  `Value::slip`/`slip_arc` construction in `src/runtime/` and
+  `src/builtins/` (`grep -rn 'Value::slip\|slip_arc' src/runtime/
+  src/builtins/`, ~20 sites). Every one of them constructs a `Slip` as a
+  RETURN VALUE (a `.Slip`/`Slip.new`/`slip()` coercion or constructor, the
+  `andthen`/`notandthen`/`succeed`/`leave`/`make` "return `Empty`" control-
+  flow signal value, or a recursive value-transform like hyper-prefix
+  mapping or Proxy resolution preserving Slip-ness through a nested
+  structure) — never as a synthesized argument handed to a
+  `call_*_with_values` function expecting the call machinery to
+  auto-spread it. No internal (non-compiled) caller was relying on the old
+  blind-flattening behaviour via a compiled trampoline: S5's runtime-
+  invoked calls (map/grep/sort callbacks, supply taps, `callwith`,
+  `.assuming`, etc.) already build their argument vectors directly as
+  `Vec<Value>`/`&[Value]`, matching the ADR's expectation. No code change
+  was needed for this slice; it is a clean audit result, not a skipped
+  check.

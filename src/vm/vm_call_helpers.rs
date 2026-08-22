@@ -62,70 +62,19 @@ impl Interpreter {
         }
     }
 
-    pub(super) fn append_flattened_call_arg(
-        args: &mut Vec<Value>,
-        arg: Value,
-        preserve_empty_slip: bool,
-    ) {
-        match arg.view() {
-            ValueView::Slip(items) => {
-                if preserve_empty_slip && items.is_empty() {
-                    args.push(Value::slip_arc(items.clone()));
-                    return;
-                }
-                for item in items.iter() {
-                    Self::append_slip_item(args, item);
-                }
-            }
-            _ => args.push(arg),
-        }
-    }
-
-    /// Does any of the top `arity` stack values need Slip flattening?
+    /// Does this call site carry a `|EXPR` argument-list interpolation?
     ///
-    /// The light-call / OTF caches bind the *compiled* arity directly against
-    /// the stack, but a Slip argument spreads into the argument list and so
-    /// changes that arity. Flattening lives on the slow dispatch path
-    /// (`spread_call_args_by_syntax`), so a call carrying one must skip those
-    /// caches.
-    pub(super) fn stack_args_have_slip(&self, arity: usize) -> bool {
-        self.stack.len() >= arity
-            && self.stack[self.stack.len() - arity..]
-                .iter()
-                .any(|v| matches!(v.view(), ValueView::Slip(_)))
-    }
-
-    /// Spread the arguments the *source* wrote as `|EXPR` into the argument list.
-    ///
-    /// `slip_positions_idx` indexes a constant list of those positions, so a
-    /// Slip an ordinary argument evaluated to is left alone — `is-deeply
-    /// $s.Slip, $t.Slip, 'name'` keeps its three arguments while `is-deeply
-    /// |($got, $expected), 'name'` spreads into three.
-    pub(super) fn spread_slip_positions(
-        code: &CompiledCode,
-        args: Vec<Value>,
-        slip_positions_idx: Option<u32>,
-    ) -> Vec<Value> {
-        let Some(idx) = slip_positions_idx else {
-            return args;
-        };
-        let ValueView::Array(entries, _) = code.constants[idx as usize].view() else {
-            unreachable!("expected slip-position array constant")
-        };
-        let slip_at: Vec<usize> = entries
-            .iter()
-            .filter_map(|v| v.as_int())
-            .map(|i| i as usize)
-            .collect();
-        let mut out = Vec::with_capacity(args.len());
-        for (i, arg) in args.into_iter().enumerate() {
-            if slip_at.contains(&i) {
-                Self::append_flattened_call_arg(&mut out, arg, false);
-            } else {
-                out.push(arg);
-            }
-        }
-        out
+    /// ADR-0054 Slice 4: decided once from the compile-time descriptor
+    /// (`decode_arg_slip_positions`), not by probing the stack for
+    /// Slip-SHAPED values — a plain argument that merely evaluates to a
+    /// Slip (`f(@a.Slip)`) must stay eligible for the light-call / OTF
+    /// caches below. The light-call / OTF caches bind the *compiled* arity
+    /// directly against the stack, but a `|EXPR` argument spreads into the
+    /// argument list and so changes that arity. Spreading lives on the slow
+    /// dispatch path (`spread_call_args_by_syntax`), so a call carrying one
+    /// must skip those caches.
+    pub(super) fn stack_args_have_slip(code: &CompiledCode, arg_sources_idx: Option<u32>) -> bool {
+        Self::decode_arg_slip_positions(code, arg_sources_idx).is_some()
     }
 
     /// Spread a call's raw arguments by call-site syntax (ADR-0054 S1/S2),
@@ -134,15 +83,24 @@ impl Interpreter {
     /// argument -- including one that merely evaluated to a Slip
     /// (`f(@a.Slip)`) -- stays exactly one argument, matching Raku (a `Slip`
     /// is an ordinary `List` subtype, not a request to spread). This
-    /// replaces the old runtime-value-shape inference
-    /// (`append_flattened_call_arg` applied unconditionally to every
-    /// argument), which could not distinguish `f(|@a)` from `f(@a.Slip)`.
+    /// replaces the old runtime-value-shape inference (a Slip flattened
+    /// unconditionally, regardless of source syntax), which could not
+    /// distinguish `f(|@a)` from `f(@a.Slip)`.
     ///
     /// `decoded_sources` (from `decode_arg_sources`, over the SAME
     /// pre-flatten positions as `arg_sources_idx`) is expanded in lockstep
     /// with the returned args, so the two never desync: a spread position
     /// has no single traceable rw source, so every runtime argument it
     /// expands into gets `None` there.
+    ///
+    /// ADR-0054 Slice 4: this is the ONE mechanism every call op uses --
+    /// `ExecCallPairs` (`exec_exec_call_pairs_op`) collapsed its dedicated
+    /// `slip_positions_idx` constant into the same `arg_sources_idx`
+    /// descriptor and calls this too (passing `None` for `decoded_sources`,
+    /// since it never tracked rw-arg sources), which is why the
+    /// per-position flattening below now has exactly one call site and is
+    /// inlined rather than factored into a separate
+    /// `append_flattened_call_arg` helper.
     pub(super) fn spread_call_args_by_syntax(
         code: &CompiledCode,
         raw_args: Vec<Value>,
@@ -159,7 +117,14 @@ impl Interpreter {
         for (i, arg) in raw_args.into_iter().enumerate() {
             if slip_at.contains(&i) {
                 let before = args.len();
-                Self::append_flattened_call_arg(&mut args, arg, false);
+                match arg.view() {
+                    ValueView::Slip(items) => {
+                        for item in items.iter() {
+                            Self::append_slip_item(&mut args, item);
+                        }
+                    }
+                    _ => args.push(arg),
+                }
                 sources.extend(std::iter::repeat_n(None, args.len() - before));
             } else {
                 let name = decoded_sources

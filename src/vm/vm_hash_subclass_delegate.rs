@@ -10,7 +10,7 @@
 //!
 //! Unlike Array (whose mutators needed hand-written Rust fast paths —
 //! `native_array_storage_mut` — because a plain `real_array` has no rich
-//! native coverage of its own), a plain `Value::Hash` already has full native
+//! native coverage of its own), a plain `Hash` value already has full native
 //! method coverage (AT-KEY/ASSIGN-KEY/BIND-KEY/DELETE-KEY/EXISTS-KEY/keys/
 //! values/kv/pairs/push/.../raku/gist/...) through the SAME dispatch a named
 //! `%h` variable uses. So this delegation just re-targets that existing
@@ -146,7 +146,7 @@ impl Interpreter {
         // the backing storage from the flattened value list, mirroring how a
         // plain `%h = pairs` assignment repopulates a native Hash. Handled here
         // directly rather than by re-targeting the native dispatch (a plain
-        // `Value::Hash` has no native `STORE` method of its own to delegate
+        // `Hash` value has no native `STORE` method of its own to delegate
         // to — see the module doc comment).
         if method == "STORE" {
             let items = args.first().map(crate::runtime::utils::value_to_list);

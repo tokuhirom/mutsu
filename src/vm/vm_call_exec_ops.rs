@@ -190,7 +190,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         name_idx: u32,
         arity: u32,
-        slip_positions_idx: Option<u32>,
+        arg_sources_idx: Option<u32>,
         keep_value: bool,
     ) -> Result<(), RuntimeError> {
         let name = Self::const_str(code, name_idx).to_string();
@@ -202,7 +202,11 @@ impl Interpreter {
         }
         let start = self.stack.len() - arity;
         let args: Vec<Value> = self.stack.drain(start..).collect();
-        let args = Self::spread_slip_positions(code, args, slip_positions_idx);
+        // ADR-0054 Slice 4: `ExecCallPairs` never tracked rw-arg sources, so
+        // it only needs the spread `|EXPR` positions from
+        // `spread_call_args_by_syntax` — pass `None` for `decoded_sources`
+        // and discard the (always-`None`) returned source list.
+        let (args, _) = Self::spread_call_args_by_syntax(code, args, arg_sources_idx, None);
         // Auto-FETCH Proxy args
         let args = if self.in_lvalue_assignment {
             args

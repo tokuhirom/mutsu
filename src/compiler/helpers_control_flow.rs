@@ -821,15 +821,21 @@ impl Compiler {
 
     /// Compile a tail-position statement call (`Stmt::Call` as the last
     /// statement of a body) so its value stays on the stack — the body's
-    /// result. Positional-only calls reuse the expression path; calls with
-    /// named/slip args compile exactly like the statement path (`MakePair`
-    /// pairs, `MakeSlip` + slip side table — a Slip an argument merely
-    /// *evaluates to* stays one argument) and dispatch via `ExecCallPairs
-    /// { keep_value: true }`, which pushes the call's value. Without this, a
-    /// tail call with named args fell to the value-less statement op and the
-    /// routine returned its topic instead (JSON::Marshal's `to-json($ret,
-    /// :$sorted-keys, :$pretty)` tail made `marshal` return Any on the
-    /// interpreter path).
+    /// result. Positional-only calls reuse the expression path
+    /// (`Expr::Call`, whose `CallFunc` op spreads only `|EXPR` positions,
+    /// same as `ExecCallPairs` below -- ADR-0054 Slices 1-3); calls with
+    /// named/slip args compile exactly like the statement path
+    /// (`MakeNamedArg` pairs, `MakeSlip`) and dispatch via `ExecCallPairs {
+    /// keep_value: true }`, which pushes the call's value. That routing is
+    /// needed ONLY to satisfy `keep_value` now: `ExecCallPairs`'s
+    /// syntax-accurate `|EXPR` tracking is no longer a reason to prefer it
+    /// over `Expr::Call`, since `CallFunc` tracks call-site syntax
+    /// identically (ADR-0054 Slice 4 collapsed both call ops onto the same
+    /// `arg_sources_idx` descriptor). Without the `keep_value` routing, a
+    /// tail call with named args fell to the value-less statement op and
+    /// the routine returned its topic instead (JSON::Marshal's
+    /// `to-json($ret, :$sorted-keys, :$pretty)` tail made `marshal` return
+    /// Any on the interpreter path).
     pub(super) fn compile_tail_stmt_call_value(
         &mut self,
         name: crate::symbol::Symbol,
@@ -902,11 +908,11 @@ impl Compiler {
             }
         }
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
-        let slip_positions_idx = self.add_slip_positions_constant(&rewritten_args);
+        let arg_sources_idx = self.add_call_arg_sources_constant(&rewritten_args);
         self.code.emit(OpCode::ExecCallPairs {
             name_idx,
             arity: rewritten_args.len() as u32,
-            slip_positions_idx,
+            arg_sources_idx,
             keep_value: true,
         });
     }
