@@ -69,15 +69,15 @@ pub(in crate::parser) use compile_consts::{
 pub(in crate::parser) use control_stmts::is_known_call;
 pub(in crate::parser) use lib_paths::{parser_lib_paths, try_add_parse_time_lib_path};
 pub(in crate::parser) use module_exports::{
-    import_inline_module_exports, register_inline_module_exports, register_module_exports,
-    register_module_type_names,
+    import_inline_module_exports, note_type_index_incomplete, register_inline_module_exports,
+    register_module_exports, register_module_type_names, type_index_is_complete,
 };
 pub(in crate::parser) use pragma_preseed::{
     current_attributes_pragma, is_user_declared_enum_value, is_user_declared_sub,
     is_user_declared_type, push_package_path, register_user_enum_value, register_user_type,
     register_user_type_verbatim, reset_package_path, set_attributes_pragma,
     set_eval_imported_function_preseed, set_eval_operator_assoc_preseed, set_eval_operator_preseed,
-    set_eval_user_sub_preseed,
+    set_eval_user_sub_preseed, set_eval_user_type_preseed,
 };
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, lookup_custom_infix_precedence, lookup_postfix_precedence,
@@ -200,6 +200,10 @@ thread_local! {
     /// should see as declared (so e.g. `first.uc` can parse as
     /// `first().uc` when a user sub `first` shadows the `first` listop).
     static EVAL_USER_SUB_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Type names (class/role/enum/subset/grammar) the calling unit has
+    /// declared, re-registered after `reset_user_subs` so an EVAL'd snippet
+    /// parses them as declared types rather than undeclared barewords.
+    static EVAL_USER_TYPE_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
     /// Declarator keywords registered by a `use`d module's EXPORTHOW::DECLARE
     /// (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):

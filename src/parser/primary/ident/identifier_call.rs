@@ -135,14 +135,23 @@ fn parse_require_expr<'a>(input: &'a str, rest: &'a str) -> PResult<'a, Expr> {
 
     let mut args = vec![target];
 
-    if let Some(module_name) = module_name_for_parse {
-        let is_path_like = module_name.ends_with(".rakumod")
-            || module_name.ends_with(".pm6")
-            || module_name.contains('/')
-            || module_name.contains('\\');
-        if !is_path_like {
-            crate::parser::stmt::simple::register_module_exports(&module_name);
+    match module_name_for_parse {
+        Some(module_name) => {
+            let is_path_like = module_name.ends_with(".rakumod")
+                || module_name.ends_with(".pm6")
+                || module_name.contains('/')
+                || module_name.contains('\\');
+            if is_path_like {
+                // A `require "path/to/File.rakumod"` is resolved at run time
+                // only; the parser cannot harvest its type names.
+                crate::parser::stmt::simple::note_type_index_incomplete();
+            } else {
+                crate::parser::stmt::simple::register_module_exports(&module_name);
+            }
         }
+        // `require ::($computed)` names a module only at run time, so the
+        // parse-time type index cannot cover what it brings in.
+        None => crate::parser::stmt::simple::note_type_index_incomplete(),
     }
 
     let (r_ws, _) = ws(rest)?;

@@ -135,6 +135,9 @@ pub(crate) fn reset_user_subs() {
         *s.borrow_mut() = vec![LexicalScope::default()];
     });
     reset_package_path();
+    // Each compilation unit gets a fresh type-index completeness verdict: the
+    // imports of the unit just parsed say nothing about the next one.
+    super::module_exports::take_type_index_incomplete();
     // Apply pre-seeded operator names (for EVAL context)
     EVAL_OPERATOR_PRESEED.with(|preseed| {
         let names = preseed.borrow();
@@ -167,6 +170,17 @@ pub(crate) fn reset_user_subs() {
             if let Some(scope) = scopes.last_mut() {
                 for name in names.iter() {
                     scope.user_subs.insert(name.clone());
+                }
+            }
+        });
+    });
+    EVAL_USER_TYPE_PRESEED.with(|preseed| {
+        let names = preseed.borrow();
+        SCOPES.with(|s| {
+            let mut scopes = s.borrow_mut();
+            if let Some(scope) = scopes.last_mut() {
+                for name in names.iter() {
+                    scope.user_types.insert(name.clone());
                 }
             }
         });

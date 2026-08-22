@@ -77,6 +77,7 @@ impl Interpreter {
         imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
+        let user_type_names = self.collect_eval_user_type_names();
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).
@@ -88,6 +89,7 @@ impl Interpreter {
             op_assoc,
             imported_names,
             &user_sub_names,
+            &user_type_names,
         );
         crate::parser::clear_parser_lib_paths();
         match parse_result {

@@ -40,24 +40,71 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
     // without its required block. This produces an X::Syntax::BlockGobbled sorrow
     // plus an X::Syntax::Missing(block) panic, bundled in an X::Comp::Group.
     //
-    // We can only reliably detect this at parse time for the reserved `X::` and
-    // `CX::` exception/control namespaces: any name there that is neither a known
-    // builtin exception nor a user-declared type is genuinely undeclared. Other
-    // compound names are ambiguous at parse time (e.g. `Day::Mon` enum values, or
-    // imported types the parser has not seen), so we leave them alone to avoid
-    // false positives — mutsu registers user/imported types at run time, not at
-    // parse time.
+    // raku diagnoses this for *any* undeclared name because its parser has
+    // already executed every `use` at BEGIN time — declaration order matters
+    // there too (`when Foo {}; class Foo {}` is the same error). mutsu's
+    // parse-time symbol table is a close approximation: `register_module_exports`
+    // scans each `use`d module's source for the types it declares, transitively
+    // and memoized, so imported names are known here as well. The one thing that
+    // approximation cannot cover is a module the parser could not resolve to a
+    // file (an `inst#` installed repository, a runtime `require`, a module
+    // missing from this environment) — `type_index_is_complete` reports that,
+    // and while it is false the diagnosis stays restricted to the reserved
+    // `X::`/`CX::` exception namespaces, whose members are either known builtin
+    // exceptions or genuinely undeclared.
     if rest.starts_with('{')
         && let Expr::BareWord(name) = &cond
-        && (name.starts_with("X::") || name.starts_with("CX::"))
-        && !crate::runtime::utils::is_known_type_constraint(name)
-        && !crate::runtime::utils::is_known_compound_type(name)
-        && !crate::parser::stmt::simple::is_user_declared_type(name)
+        && (crate::parser::stmt::simple::type_index_is_complete()
+            || name.starts_with("X::")
+            || name.starts_with("CX::"))
+        && !bareword_names_known_term(name)
     {
         return Err(gobbled_block_error(name, rest.len()));
     }
     let (rest, body) = block(rest)?;
     Ok((rest, Stmt::When { cond, body }))
+}
+
+/// Whether a bareword `when` matcher names something the parser already knows,
+/// and so cannot be a routine call that gobbled the block.
+fn bareword_names_known_term(name: &str) -> bool {
+    use crate::parser::stmt::simple;
+    use crate::runtime::utils;
+    // A type smiley (`when Map:D { }`, `when Channel:U { }`) can only attach to
+    // a type name, so the name is never a routine call whatever the base is —
+    // an undeclared base is a different diagnostic ("Type ... is not declared").
+    if name.ends_with(":D") || name.ends_with(":U") || name.ends_with(":_") {
+        return true;
+    }
+    if utils::is_known_type_constraint(name)
+        || utils::is_known_compound_type(name)
+        || utils::is_builtin_enum_value(name)
+        || utils::is_builtin_constant_term(name)
+        || simple::is_user_declared_type(name)
+        || simple::is_user_declared_value_term(name)
+        || simple::is_user_declared_enum_value(name)
+        // A declared routine used as a matcher (`when foo { }`) really does
+        // gobble the block in raku, but the message differs and the construct is
+        // vanishingly rare; leaving it alone keeps this check to the case the
+        // ticket is about.
+        || simple::is_user_declared_sub(name)
+    {
+        return true;
+    }
+    // A package-qualified enum value: `when Day::Mon { }`,
+    // `when HTTP::HPACK::Indexing::Indexed { }`. The head names the enum type
+    // and the last segment one of its values.
+    if let Some((head, last)) = name.rsplit_once("::") {
+        let head_is_type = simple::is_user_declared_type(head)
+            || utils::is_known_type_constraint(head)
+            || utils::is_known_compound_type(head);
+        let last_is_value =
+            simple::is_user_declared_enum_value(last) || utils::is_builtin_enum_value(last);
+        if head_is_type && last_is_value {
+            return true;
+        }
+    }
+    false
 }
 
 /// Build the `X::Comp::Group` raised when an undeclared bareword gobbles the

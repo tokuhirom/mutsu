@@ -217,6 +217,24 @@ impl Interpreter {
         names
     }
 
+    /// Collect the type names (classes, roles, enums, subsets) the calling unit
+    /// has declared, so an EVAL'd snippet parses them as declared types. mutsu
+    /// registers user types in the runtime registry, not in the parser's scope
+    /// stack, and the nested parse starts from an empty scope stack — without
+    /// this seed every outer type looks undeclared to it, which the `when`
+    /// gobbled-block check would report as a syntax error on valid code.
+    pub(crate) fn collect_eval_user_type_names(&self) -> Vec<String> {
+        let registry = self.registry();
+        registry
+            .classes
+            .keys()
+            .chain(registry.roles.keys())
+            .chain(registry.enum_types.keys())
+            .chain(registry.subsets.keys())
+            .cloned()
+            .collect()
+    }
+
     pub(super) fn eval_eval_string(&mut self, code: &str) -> Result<Value, RuntimeError> {
         let routine_snapshot = self.snapshot_routine_registry();
         let roles_snapshot = self.registry().roles.clone();

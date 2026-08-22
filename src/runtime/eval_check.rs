@@ -572,12 +572,14 @@ impl Interpreter {
         imported_names: &[String],
     ) -> Result<Value, RuntimeError> {
         let user_sub_names = self.collect_eval_user_sub_names();
+        let user_type_names = self.collect_eval_user_type_names();
         match crate::parser::parse_program_with_operators_and_user_subs(
             src,
             op_names,
             op_assoc,
             imported_names,
             &user_sub_names,
+            &user_type_names,
         ) {
             Ok((stmts, _)) => {
                 self.check_eval_class_redeclarations(&stmts)?;

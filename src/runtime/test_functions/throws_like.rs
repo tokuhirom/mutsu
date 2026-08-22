@@ -165,6 +165,7 @@ impl Interpreter {
                 // EVAL'd code parses `b2 Num` (a listop call with a bareword-type
                 // argument) as a call rather than two disjoint terms.
                 let user_subs = nested.collect_eval_user_sub_names();
+                let user_types = nested.collect_eval_user_type_names();
                 let pre_check_result = {
                     let op_names = nested.collect_operator_sub_names();
                     let op_assoc = nested.collect_operator_assoc_map();
@@ -175,6 +176,7 @@ impl Interpreter {
                         &op_assoc,
                         &imported_names,
                         &user_subs,
+                        &user_types,
                     ) {
                         Ok((stmts, _)) => {
                             for stmt in &stmts {

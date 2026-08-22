@@ -35,6 +35,16 @@ pub(crate) fn set_eval_user_sub_preseed(names: Vec<String>) {
     });
 }
 
+/// Set type names (classes, roles, enums, subsets, grammars) to re-register
+/// after a scope reset, so an EVAL'd snippet sees the calling unit's types as
+/// declared. Without this the nested parse believes every user type is
+/// undeclared, which the `when`-matcher gobbled-block check reads as an error.
+pub(crate) fn set_eval_user_type_preseed(names: Vec<String>) {
+    EVAL_USER_TYPE_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
+    });
+}
+
 /// Check if a name was declared as a user sub in any enclosing scope.
 pub(crate) fn is_user_declared_sub(name: &str) -> bool {
     SCOPES.with(|s| {
