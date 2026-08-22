@@ -42,6 +42,50 @@ Together they carry ~2500 distinct distribution names. Filter on name,
 the maintenance signal, and `source-url`, which points at a tarball you can fetch
 directly (no `git clone` guessing at repository names).
 
+### Resolving the GitHub URL
+
+`rea.json`'s `source-url` is a REA mirror tarball link (`raw.githubusercontent.com/raku/REA/...`),
+**not** the upstream repository — do not report it as "the GitHub URL". To find the
+real one:
+
+1. **Prefer `support.source`** when the entry has one — it is usually a
+   `git://github.com/OWNER/REPO.git` or `https://github.com/OWNER/REPO.git` URL;
+   strip the scheme/`.git` suffix to get a browsable
+   `https://github.com/OWNER/REPO`. Most entries in the index have **no**
+   `support` field at all (an empty `{}` or the key absent), so expect to fall
+   through to step 2 often.
+2. **Fall back to the `dist` string's `auth<...>` field.** `auth<github:OWNER>`
+   almost always means the source lives at `https://github.com/OWNER/<repo>`,
+   but the repo name does not always match the dist name verbatim — `::`
+   commonly becomes `-`, and some repos carry a `p6-`/`perl6-`/`Raku-` prefix
+   (e.g. `CompUnit::Repository::Tar` → `ugexe/Raku-CompUnit--Repository--Tar`).
+   Confirm the guess resolves (`gh repo view OWNER/REPO`) before citing it.
+   `auth<zef:ORG>` and `auth<cpan:AUTHOR>` do **not** reliably map to a GitHub
+   owner this way — these need a search (`gh search repos <name>`, or the
+   dist's own README) instead of a guessed URL.
+
+### Stars and last commit via `gh`
+
+Once you have `OWNER/REPO`, `gh` (already authenticated in this environment —
+see `CLAUDE.md`'s GitHub-operations note) returns both signals in one call:
+
+```
+gh repo view OWNER/REPO --json url,stargazerCount,pushedAt,isArchived \
+  -q '"\(.url)\t★\(.stargazerCount)\tlast push: \(.pushedAt)\tarchived: \(.isArchived)"'
+```
+
+- **`stargazerCount`** — a secondary popularity signal. Weight it well below the
+  dependents count (§2 below): stars measure visibility, dependents measure
+  what actually breaks if the module disappears.
+- **`pushedAt`** — the last commit push, a maintenance signal that is often more
+  current than `rea.json`'s `release-date` (a repo can carry unreleased
+  bugfix commits with no new tagged version).
+- **`isArchived: true`** is close to a hard disqualifier — an archived repo
+  will not receive security fixes.
+
+Record all four (URL, stars, last push, archived-or-not) in the candidate's
+metrics table row, per the new columns in §2 below.
+
 ## 2. Compute the metrics
 
 For each candidate collect, in this order:
@@ -53,6 +97,7 @@ For each candidate collect, in this order:
 | **Version + release date** | `rea.json` `version` / `release-date` | is it maintained, or abandoned years ago? **Always state this explicitly in the record's final decision, not just the metrics table** — a stale release is a leading indicator of deeper problems, not just neglect: the TOML survey (`docs/batteries/toml.md`) found the one candidate last released in 2021 (5 years old) was also the one written directly against raw `nqp::` ops, a coding style essentially unseen in current-era modules and a near-guaranteed mutsu parser/interpreter gap. Check the age *before* spending time on the mutsu run, since it predicts where the mutsu run is likely to fail. |
 | **Maintainer org** | the `auth<...>` field of `dist` / the dist name in `rea.json` | per BATTERIES.md §2, `auth<zef:raku-community-modules>` is a preference tiebreaker among otherwise-comparable candidates — that org is a curated, actively-maintained home, distinct from a single-author dist that may be unmaintained. Note it in the record even when it doesn't change the winner. |
 | **Dependents** | count dists in the index whose `depends` names it | ecosystem standing — far better evidence than stars or opinion |
+| **GitHub URL / stars / last push** | `gh repo view OWNER/REPO --json url,stargazerCount,pushedAt,isArchived` (see "Resolving the GitHub URL" / "Stars and last commit via `gh`" above) | stars are a weak popularity signal (below dependents); last-push date is often a more current maintenance signal than `rea.json`'s `release-date`; an archived repo is close to a hard disqualifier |
 | raku result | run its own suite under `raku` | the baseline |
 | **mutsu result** | run its own suite under mutsu | the actual decision input |
 
