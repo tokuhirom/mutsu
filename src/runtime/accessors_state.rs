@@ -270,6 +270,13 @@ impl Interpreter {
         self.our_vars.get(key)
     }
 
+    /// Mutable counterpart of [`Self::get_our_var`], for the container
+    /// write chokepoint (`env_root_descended_mut`): a package's `our @a`/`our
+    /// %h` is mutated in place through its stored `Gc`, not replaced.
+    pub(crate) fn get_our_var_mut(&mut self, key: &str) -> Option<&mut Value> {
+        self.our_vars.get_mut(key)
+    }
+
     pub(crate) fn our_vars_iter(&self) -> impl Iterator<Item = (&String, &Value)> {
         self.our_vars.iter()
     }

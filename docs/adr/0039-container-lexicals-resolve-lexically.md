@@ -3,9 +3,14 @@
 - Status: Slice 1 (§4.1) landed 2026-08-20. §8.2's recorded cross-thread
   collisions closed 2026-08-22 by giving a container's bare-name lane entry a
   *lifetime* — see §8.6, which also records two cheaper routes measured and
-  rejected. Slice 2 (§4.2 — containers resolve by slot/upvalue, not by name,
-  retiring the by-name path at the compiler) is still next and still the end
-  state; it now carries no known open correctness bug of its own.
+  rejected. §4.1's excluded `our` container case (§1.2's third instance) was
+  fixed separately on 2026-08-23 by a resolution-only change, as §4.1
+  predicted it could be — see
+  `news/2026-08/our-container-bare-name-prefers-package-mirror.md` and
+  `src/vm/vm_our_package_vars.rs`. Slice 2 (§4.2 — containers resolve by
+  slot/upvalue, not by name, retiring the by-name path at the compiler) is
+  still next and still the end state; it now carries no known open
+  correctness bug of its own.
 - Date: 2026-08-20
 - Related: ADR-0013 (container interior mutability — `gc_contents_mut`),
   ADR-0024 (mainline lexicals for named subs — the scalar half of this bug),

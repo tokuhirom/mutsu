@@ -211,7 +211,7 @@ impl Interpreter {
     /// already qualified, sigil-stripped twigils, or positional captures —
     /// mirroring the `GetGlobal` bare-name read fallback so reads and writes
     /// resolve to the same canonical store.
-    fn package_qualified_candidate(name: &str, cur: &str) -> Option<String> {
+    pub(super) fn package_qualified_candidate(name: &str, cur: &str) -> Option<String> {
         if name.contains("::") || cur.is_empty() || cur == "GLOBAL" || cur.contains("::&") {
             return None;
         }
@@ -974,6 +974,17 @@ impl Interpreter {
         // what this returns is a mutation of the module's own container.
         if let Some(v) = self.unit_scope_lexical(name) {
             return Some(v.into_deref());
+        }
+        // An `our @a` / `our %h` of the package the running routine belongs to
+        // is likewise NOT reachable under its bare env key — the module's own
+        // routines compile the bare name (the sub-body state-scope package
+        // disables qualification), while the container itself lives under the
+        // package-qualified mirror `@Pkg::a`. Prefer that mirror over the env
+        // key, which belongs to whatever scope loaded the module. Checked
+        // AFTER `unit_scope_lexical` so a compunit's file-scope `my` still
+        // wins over a same-named package variable. See `vm_our_package_vars`.
+        if let Some(v) = self.our_package_container(name) {
+            return Some(v);
         }
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
