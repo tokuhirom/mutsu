@@ -469,6 +469,38 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
   [promise-broken-exception-not-wrapped-in-x-promise-broken.md](../todo/tickets/promise-broken-exception-not-wrapped-in-x-promise-broken.md)
   above rather than being skipped.
 
+Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
+`Metamodel::ParametricRoleHOW`/`Lock::Async`/`X::Method::InvalidQualifier`/
+`IO::Path::Parts`/`phasers`/`Metamodel::TypePretense`/`IO::Notification::Change`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Type/Backtrace.rakudoc:15` | `$!.backtrace[N]` positional indexing always returns `Nil` | [backtrace-frame-indexing-returns-nil.md](../todo/tickets/backtrace-frame-indexing-returns-nil.md) |
+| `Type/Backtrace.rakudoc:72,84,96` | `Backtrace` is missing `.next-interesting-index`, `.outer-caller-idx`, `.nice` | [backtrace-introspection-methods-missing.md](../todo/tickets/backtrace-introspection-methods-missing.md) |
+| `Type/Scalar.rakudoc:43` | `my $b := 1; $b.VAR.^name` should be `Int` (bind creates no container), mutsu gives `Scalar` | [bind-scalar-literal-var-name-not-int.md](../todo/tickets/bind-scalar-literal-var-name-not-int.md) |
+| `Language/perl-var.rakudoc:154` | `CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>` | [compunit-repository-gist-missing-inst-prefix.md](../todo/tickets/compunit-repository-gist-missing-inst-prefix.md) |
+| `Type/Metamodel/ParametricRoleHOW.rakudoc:29` | a parenthesized anonymous `role {...}` term (parameterized or not) is a hard parse error; `(class {...})` already works | [anon-role-expression-term-parse-fail.md](../todo/tickets/anon-role-expression-term-parse-fail.md) |
+| `Type/Metamodel/ParametricRoleHOW.rakudoc:35` | `Metamodel::ParametricRoleHOW.new_type(...)` returns a type whose `.HOW` is `ClassHOW`, not `ParametricRoleHOW` | [metamodel-parametricrolehow-new-type-wrong-how.md](../todo/tickets/metamodel-parametricrolehow-new-type-wrong-how.md) |
+| `Type/Lock/Async.rakudoc:162,202` | `Lock::Async` is missing `.protect-or-queue-on-recursion` and `.with-lock-hidden-from-recursion-check` | [lock-async-recursion-methods-missing.md](../todo/tickets/lock-async-recursion-methods-missing.md) |
+| `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
+| `Type/IO/Path/Parts.rakudoc:71` | `$parts[]` (empty postcircumfix index) on `IO::Path::Parts` shows the whole-object gist instead of iterating its 3 positional elements | [io-path-parts-empty-subscript-not-positional.md](../todo/tickets/io-path-parts-empty-subscript-not-positional.md) |
+| `Language/phasers.rakudoc:401` | a `CONTROL { when CX::Take {...} }` handler is never invoked for `take` inside `gather` (unlike `CX::Warn`/`CX::Done`, which work) | [control-phaser-cx-take-not-intercepted.md](../todo/tickets/control-phaser-cx-take-not-intercepted.md) |
+| `Type/Metamodel/TypePretense.rakudoc:15,47` | `Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented | [role-type-pretense-cool-incomplete.md](../todo/tickets/role-type-pretense-cool-incomplete.md) |
+
+**Excluded from this batch-4 sub-run (already deferred/resolved/drift/false-positive/environment):**
+- `Type/Scalar.rakudoc` [2] (line 53, `[1, 2, 3][0].VAR.^name` should be `Scalar`, mutsu gives
+  `Int`) — the already-**Deferred**/deep "Array/Hash elements are stored bare — element reads lack
+  itemization" cluster (`todo/deep/element-itemization-lost-in-scalar-binding.md`, ADR-0040); the
+  `(1, 2, 3)[0]` (plain List, not Array) case in the same example already matches raku.
+- `Language/perl-var.rakudoc` [1] (line 198, `$*KERNEL`/`$*DISTRO`/`$*VM` release/name/auth fields) —
+  inherently environment/build-dependent (kernel version, OS distro, VM identity), same exclusion
+  category as `Language/variables.rakudoc` [6]/[7]/[9]/[10]/[8] noted above; not a bug.
+- `Type/IO/Notification/Change.rakudoc` — re-ran the harness; all 3 candidate blocks are bucketed
+  "no oracle" (raku itself does not exit cleanly on any of them in this environment) rather than
+  `mutsu-crash`, so there is no finding to compare against the survey table's stale `crash=1`. These
+  examples use live filesystem-watching (`IO::Notification.watch-path`), which is inherently
+  timing/environment-dependent and not a clean minimal repro; not ticketed.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
