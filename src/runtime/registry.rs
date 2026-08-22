@@ -305,6 +305,16 @@ pub(crate) struct Registry {
     pub(crate) composed_role_bodies: HashSet<String>,
     /// Bound role type parameters per class: class -> (param name -> value).
     pub(crate) class_role_param_bindings: HashMap<String, HashMap<String, Value>>,
+    /// Anonymous type-object identity cache for a role-mixed value's `.WHAT`
+    /// (ADR-0060): composition key
+    /// (`crate::value::types::mixin_composition_key`) -> the shared
+    /// `overrides` node every `Mixin` of that exact composition uses for
+    /// `.WHAT`. Mirrors `composed_role_bodies`'s existing
+    /// `"mixin:{base}:{role}"` memo key, which encodes the same underlying
+    /// Rakudo mechanism (one permanent anonymous type per (base type, role
+    /// set) pair) for a different purpose (deferred-body-run-once, rather
+    /// than `.WHAT` identity).
+    pub(crate) mixin_what_cache: HashMap<String, crate::gc::Gc<crate::value::MixinOverrides>>,
 
     // ----- functions / subs / tokens (PR-A slice 5, final PR-A slice) -----
     /// User-defined subs: fully-qualified name -> [`FunctionDef`]. Read on the

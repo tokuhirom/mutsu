@@ -85,3 +85,4 @@ The role of an ADR is to preserve the *context of the judgment* — something th
 | [0057](0057-var-reflection-identity-cell-address.md) | `.VAR` reflection identity is the shared cell's address, not a per-frame cache — reusing ADR-0032's container-capture edge as the boxing trigger | Accepted (implemented) |
 | [0058](0058-map-grep-produce-a-deferred-seq.md) | `.map`/`.grep` produce a deferred `Seq` — the callback runs at first consumption, not at the call | Proposed (design complete; implementation not started) |
 | [0059](0059-is-rw-routines-return-a-container.md) | An `is rw` routine returns a container — retiring caller-side tail re-interpretation | Accepted (Slice 1 implemented; Slices 2-3 open) |
+| [0060](0060-mixin-what-is-a-composition-keyed-type-object.md) | A role-mixed value's `.WHAT` is a composition-keyed type object, not the shared base or a per-instance fork | Accepted (implemented) |

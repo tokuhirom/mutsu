@@ -160,23 +160,12 @@ impl Interpreter {
                 if let Some(allo) = crate::value::types::allomorph_type_name(inner, mixins) {
                     return Ok(Value::package(Symbol::intern(&allo)));
                 }
-                // NOTE: this reports the SHARED base type's `.WHAT` (e.g. plain
-                // `Hash`), not a distinct per-composition anonymous type object
-                // the way Rakudo's real metamodel does. A tempting "fix" is to
-                // wrap the base `.WHAT` in a `Mixin` that reuses this value's
-                // own `overrides` Gc handle, so a later `.^set_name` on the
-                // `.WHAT` (e.g. `Hash::Restricted`'s
-                // `v.var.WHAT.^set_name(...)`) is visible back on this value.
-                // That was tried and reverted: it broke
-                // `roast/S14-roles/instantiation.t` ("Punned role classes have
-                // the same .WHAT") — two independently-`.new()`-ed instances of
-                // the same punned role each carry their OWN `overrides` map (per
-                // instance attribute/mixin storage), so reusing it as the type
-                // identity makes `$obj.WHAT === $obj2.WHAT` false when it must
-                // be true. The correct fix needs a composition-keyed (base type
-                // + role set), not instance-keyed, anonymous type object cache —
-                // see todo/deep/mixin-what-identity-not-per-composition.md.
-                return self.call_method_with_values(inner.as_ref().clone(), "WHAT", args.clone());
+                // A role-mixed value's `.WHAT` is a distinct anonymous type
+                // object per (base type, role set, role type-arguments)
+                // composition — permanently cached and shared by every value
+                // with that exact composition (ADR-0060), not the shared base
+                // type and not forked per instance.
+                return self.mixin_what_value(inner, mixins, &args);
             }
             ValueView::Proxy {
                 subclass: Some((name, _)),
@@ -675,7 +664,7 @@ impl Interpreter {
     }
 
     /// Dispatch .^name method
-    pub(super) fn dispatch_caret_name(&self, target: &Value) -> Result<Value, RuntimeError> {
+    pub(super) fn dispatch_caret_name(&mut self, target: &Value) -> Result<Value, RuntimeError> {
         Ok(Value::str(match target.view() {
             ValueView::Package(name) => {
                 let resolved = name.resolve();
@@ -712,26 +701,19 @@ impl Interpreter {
                     n
                 }
             }
-            // `.^set_name` called directly on a role-mixed value (see
-            // `dispatch_classhow_method`'s "set_name" handler) writes a
-            // display-name override onto the shared `overrides` map of its
-            // `Mixin` representation, in place (`t/metamodel-set-name.t`'s
-            // `Foo.new but role {...}` scenario). The fast `.^name` path must
-            // consult it before falling back to the synthesized
-            // `Base+{Role,...}` name. (This does NOT cover
-            // `Hash::Restricted`'s `v.var.WHAT.^set_name(...)` — `.WHAT`
-            // returns a different value with its own `overrides`; see
-            // `dispatch_what`'s `ValueView::Mixin` arm above and
-            // `todo/deep/mixin-what-identity-not-per-composition.md`.)
-            ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_type_name__") => {
-                overrides["__mutsu_type_name__"].to_string_value()
-            }
-            ValueView::Mixin(inner, _) => match inner.as_ref().view() {
-                ValueView::Instance { class_name, .. } => {
-                    crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+            // `.^set_name`, whether called directly on a role-mixed value
+            // (`$obj.^set_name(...)`) or on its `.WHAT`
+            // (`Hash::Restricted`'s `v.var.WHAT.^set_name(...)`), writes into
+            // the SAME composition-keyed shared node (ADR-0060) — so the fast
+            // `.^name` path resolves that same node here before falling back
+            // to the synthesized `Base+{Role,...}` name.
+            ValueView::Mixin(inner, mixins) => {
+                let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
+                match overrides.get("__mutsu_type_name__") {
+                    Some(renamed) => renamed.to_string_value(),
+                    None => crate::value::types::what_type_name(target),
                 }
-                _ => value_type_name(target).to_string(),
-            },
+            }
             ValueView::Promise(p) => p.class_name().resolve(),
             ValueView::ParametricRole {
                 base_name,

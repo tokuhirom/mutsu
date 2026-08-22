@@ -406,6 +406,7 @@ mod methods_introspect;
 mod methods_io_dispatch;
 mod methods_match_dispatch;
 mod methods_mixin_dispatch;
+mod methods_mixin_what_cache;
 mod methods_mut;
 mod methods_mut_dispatch;
 mod methods_mut_hash;

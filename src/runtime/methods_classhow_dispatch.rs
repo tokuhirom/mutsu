@@ -195,17 +195,21 @@ impl Interpreter {
                 // `.^name` returns it.
                 let new_name = args[1].to_string_value();
                 match args[0].view() {
-                    ValueView::Mixin(_, overrides) => {
-                        // Store the friendly name on the shared overrides map so a
-                        // later `.^name` on any alias of this mixed-in object
-                        // returns it. The metamethod receives a clone of the
-                        // invocant, but the clone shares the overrides node, so an
-                        // in-place write reaches the caller's value too — matching
-                        // Rakudo's in-place mutation of the anonymous metaobject.
+                    ValueView::Mixin(inner, mixins) => {
+                        // Resolve to the composition-keyed shared node
+                        // (ADR-0060) — the SAME node whether `args[0]` came
+                        // from `.WHAT` (`Hash::Restricted`'s
+                        // `v.var.WHAT.^set_name(...)`) or is the mixed-in
+                        // instance itself (`$obj.^set_name(...)`,
+                        // `t/metamodel-set-name.t`'s `Foo.new but role {...}`
+                        // scenario) — so a later `.^name` on ANY value with
+                        // this exact composition, including one constructed
+                        // after this call, observes the rename.
+                        let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
                         // SAFETY: aliased in-place mutation of a shared container
                         // (see `gc_contents_mut`); no borrow into the map is live
                         // across the insert, and the insert does not re-enter the VM.
-                        let map = unsafe { crate::gc::gc_contents_mut(overrides) };
+                        let map = unsafe { crate::gc::gc_contents_mut(&overrides) };
                         map.insert(
                             "__mutsu_type_name__".to_string(),
                             Value::str(new_name.clone()),
@@ -217,12 +221,12 @@ impl Interpreter {
                         // the SAME shared value for every variable of that type —
                         // it is not a fresh per-instance metaobject. Writing a
                         // display-name override keyed by "Hash" would rename the
-                        // type process-wide for every hash, not just the caller's
-                        // (see `Hash::Restricted`'s `v.var.WHAT.^set_name(...)` in
-                        // todo/tickets/set-name-on-builtin-type-package-no-op.md —
-                        // the real fix there is giving a role-mixed native value's
-                        // `.WHAT` a distinct anonymous type object, which mutsu does
-                        // not do yet). Silently no-op for builtins; only a
+                        // type process-wide for every hash, not just the caller's.
+                        // A role-mixed native value's `.WHAT` (the
+                        // `ValueView::Mixin` arm above) is what gives
+                        // `Hash::Restricted` a distinct anonymous type object to
+                        // rename instead; this arm only ever sees the bare shared
+                        // `Package`, so it stays a no-op for builtins — only a
                         // user-declared class's own `Package` value is safe to
                         // rename this way.
                         if !Self::is_builtin_type(&resolved) {
@@ -242,51 +246,57 @@ impl Interpreter {
                 }
                 Ok(Value::str(new_name))
             }
-            "name" if args.len() == 1 => Ok(Value::str(match args[0].view() {
-                ValueView::Mixin(_, overrides) if overrides.contains_key("__mutsu_type_name__") => {
-                    overrides["__mutsu_type_name__"].to_string_value()
+            "name" if args.len() == 1 => {
+                if let ValueView::Mixin(inner, mixins) = args[0].view() {
+                    // Same composition-keyed shared node as `set_name`
+                    // (ADR-0060): a rename made via `.WHAT.^set_name(...)`
+                    // or directly on the instance is visible here either way.
+                    let overrides = self.mixin_instance_composition_overrides(inner, mixins)?;
+                    let name = match overrides.get("__mutsu_type_name__") {
+                        Some(renamed) => renamed.to_string_value(),
+                        // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports
+                        // its base type with a `+{Role,...}` suffix, e.g.
+                        // `Int+{Foo::Bar}`. `what_type_name` builds this from the
+                        // recorded role keys; `value_type_name` (a `&'static str`)
+                        // cannot.
+                        None => crate::value::what_type_name(&args[0]),
+                    };
+                    return Ok(Value::str(name));
                 }
-                // A role-mixed value (`5 but Foo::Bar`, `$x does R`) reports its
-                // base type with a `+{Role,...}` suffix, e.g. `Int+{Foo::Bar}`.
-                // `what_type_name` builds this from the recorded role keys;
-                // `value_type_name` (a `&'static str`) cannot.
-                ValueView::Mixin(_, overrides)
-                    if crate::value::role_mixin_suffix(overrides).is_some() =>
-                {
-                    crate::value::what_type_name(&args[0])
-                }
-                ValueView::Package(name) => self
-                    .type_metadata
-                    .get(&name.resolve())
-                    .and_then(|m| m.get("__set_name__"))
-                    .map(Value::to_string_value)
-                    .unwrap_or_else(|| {
-                        crate::value::user_facing_type_name(&name.resolve()).to_string()
-                    }),
-                ValueView::Instance { class_name, .. } => self
-                    .type_metadata
-                    .get(&class_name.resolve())
-                    .and_then(|m| m.get("__set_name__"))
-                    .map(Value::to_string_value)
-                    .unwrap_or_else(|| {
-                        crate::value::user_facing_type_name(&class_name.resolve()).to_string()
-                    }),
-                ValueView::ParametricRole {
-                    base_name,
-                    type_args,
-                } => {
-                    let args_str = type_args
-                        .iter()
-                        .map(|v| match v.view() {
-                            ValueView::Package(n) => n.resolve(),
-                            _ => v.to_string_value(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    format!("{}[{}]", base_name, args_str)
-                }
-                _ => self.dispatch_owner_name(&args[0]).to_string(),
-            })),
+                Ok(Value::str(match args[0].view() {
+                    ValueView::Package(name) => self
+                        .type_metadata
+                        .get(&name.resolve())
+                        .and_then(|m| m.get("__set_name__"))
+                        .map(Value::to_string_value)
+                        .unwrap_or_else(|| {
+                            crate::value::user_facing_type_name(&name.resolve()).to_string()
+                        }),
+                    ValueView::Instance { class_name, .. } => self
+                        .type_metadata
+                        .get(&class_name.resolve())
+                        .and_then(|m| m.get("__set_name__"))
+                        .map(Value::to_string_value)
+                        .unwrap_or_else(|| {
+                            crate::value::user_facing_type_name(&class_name.resolve()).to_string()
+                        }),
+                    ValueView::ParametricRole {
+                        base_name,
+                        type_args,
+                    } => {
+                        let args_str = type_args
+                            .iter()
+                            .map(|v| match v.view() {
+                                ValueView::Package(n) => n.resolve(),
+                                _ => v.to_string_value(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        format!("{}[{}]", base_name, args_str)
+                    }
+                    _ => self.dispatch_owner_name(&args[0]).to_string(),
+                }))
+            }
             "array_type" if !args.is_empty() => {
                 // The element type of a native array-ish container. Derived from
                 // the same name `.^name` reports — `dispatch_caret_name`, which
