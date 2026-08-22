@@ -531,6 +531,61 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
   reports its own identity (`mutsu (0.1.0)`) rather than impersonating rakudo, which
   is intentional, not a bug.
 
+Found in the 2026-08-22 batch-4 re-run of `operators`/`MixHash`/`Phaser::PrePost`/
+`IO::Spec::Cygwin`/`quoting`/`classtut`/`Lock::ConditionVariable`/`newline`:
+
+| file:line | one-line summary | ticket |
+|---|---|---|
+| `Language/operators.rakudoc:1991` | `42 but 'string'`'s `.^name` reports the `IntStr` allomorph type instead of raku's `Int+{<anon\|1>}` | [but-mixin-anon-name-uses-allomorph-instead-of-plus-anon.md](../todo/tickets/but-mixin-anon-name-uses-allomorph-instead-of-plus-anon.md) |
+| `Language/operators.rakudoc:3177` | `infix:<Z>(...)` function-call form dies at runtime ("Two terms in a row"), other `infix:<...>` ops work | [infix-z-function-call-form-parse-fails.md](../todo/tickets/infix-z-function-call-form-parse-fails.md) |
+| `Language/operators.rakudoc:482` | `«=»` hyper-assignment to a nested-tuple destructuring target silently no-ops | [hyper-assign-nested-destructuring-target-not-applied.md](../todo/tickets/hyper-assign-nested-destructuring-target-not-applied.md) |
+| `Language/operators.rakudoc:567` | a hyper-operator wrapping another hyper-operator (`»>>+<<»`) fails to parse | [nested-hyper-operator-parse-fail.md](../todo/tickets/nested-hyper-operator-parse-fail.md) |
+| `Language/operators.rakudoc:707` | `.raku` on a nested array-literal element drops the `$`-itemization prefix | [array-literal-nested-element-itemization-lost-in-raku.md](../todo/tickets/array-literal-nested-element-itemization-lost-in-raku.md) |
+| `Language/operators.rakudoc:1675` | `[∘]` (empty-operand function-composition reduce) doesn't produce an identity `Callable` | [compose-reduce-empty-list-not-identity-callable.md](../todo/tickets/compose-reduce-empty-list-not-identity-callable.md) |
+| `Language/operators.rakudoc:214` | `s///` replacement text with a literal word immediately followed by `{block}` is a hard parse error | [subst-replacement-bareword-adjacent-code-block-parse-fail.md](../todo/tickets/subst-replacement-bareword-adjacent-code-block-parse-fail.md) |
+| `Type/X/Phaser/PrePost.rakudoc:15` | `X::Phaser::PrePost`'s message drops the failed `PRE`/`POST` condition's source text | [phaser-pre-post-message-drops-condition-source-text.md](../todo/tickets/phaser-pre-post-message-drops-condition-source-text.md) |
+| `Type/IO/Spec/Cygwin.rakudoc:80` | `IO::Spec::Cygwin.is-absolute` doesn't recognize a Win32-style drive path (`C:\foo`) | [iospec-cygwin-is-absolute-missing-win32-drive-path.md](../todo/tickets/iospec-cygwin-is-absolute-missing-win32-drive-path.md) |
+| `Language/quoting.rakudoc:368` | `< 42/10 >` (space-padded angle-quote word) doesn't produce the `RatStr` allomorph like the Complex case does | [angle-bracket-quoted-word-space-padded-loses-allomorph.md](../todo/tickets/angle-bracket-quoted-word-space-padded-loses-allomorph.md) |
+| `Type/Lock/ConditionVariable.rakudoc:69` | `Lock`/`condition`/`Thread.start` signal-wait deadlocks when the lock/condition/counter locals are declared inside a loop body (works fine at top level / in a bare block) | [loop-scoped-lock-condition-thread-signal-hang.md](../todo/tickets/loop-scoped-lock-condition-thread-signal-hang.md) |
+| `Language/newline.rakudoc:40` | `open()` doesn't recognize an `IO::Special` object (`<STDOUT>`/etc.) as a special-handle target, tries to open it as a literal path | [open-io-special-stdout-target-not-recognized.md](../todo/tickets/open-io-special-stdout-target-not-recognized.md) |
+| `Type/MixHash.rakudoc:99` | `MixHash (^) MixHash` / `MixHash (+) MixHash` give garbage output (raw un-combined pairs) where the same ops on plain `Mix` work correctly | [mixhash-set-operators-give-wrong-uncoerced-output.md](../todo/tickets/mixhash-set-operators-give-wrong-uncoerced-output.md) |
+
+**Excluded from this batch-4 sub-run (already deferred/resolved/drift/false-positive):**
+- `Language/operators.rakudoc` [1] (line 1795, `<a b c> (+) (a => 2.5, b => 3.14).Mix`) — matches
+  the already-documented "Still deferred: Mix *arithmetic* operators" residue under the
+  `Mix.rakudoc`/`Baggy.rakudoc` entry in the Resolved section above (lossy f64 weight addition,
+  `4.140000000000001` vs `4.14`).
+- `Language/operators.rakudoc` [3]/[chained-Z parse crash] (line 3157, `say (1, 2 Z <a b c> Z <+
+  ->).raku;`, and the simpler `say 1, 2 Z 3, 4 Z 5, 6;`) — a residue of the already-**Deferred**
+  "List-infix (`Z`/`X`/meta/infix-func) comma precedence" cluster: the statement/argument listop
+  fix (#5268/#5271) lifts a *single* `Z` occurrence in a comma-list argument, but a *second*,
+  chained `Z` in the same argument still hard-fails to parse ("Two terms in a row") instead of
+  just giving a wrong precedence result. Confirmed the fully-parenthesized form (`(1,2) Z (3,4) Z
+  (5,6)`) parses and evaluates correctly, isolating the gap to the same listop-arg-list-lifting
+  mechanism, not a new root cause.
+- `Language/operators.rakudoc` [8] (line 602, `my @n = [\~] 1..*; say @n[^5];`) — matches the
+  already-**Deferred** Lazy-list cluster's named "closure_seq / scan_spec arrays stay
+  force-capped on `@`-assign" residue (confirmed: this exact `@`-assigned triangle-reduce over an
+  infinite Range hangs).
+- `Language/operators.rakudoc` [11] (line 2376, `Set(...) eqv Set(...)` with a custom `.WHICH`
+  method) — matches the already-**Deferred** "WHICH-keyed QuantHash storage" cluster.
+- `Language/operators.rakudoc` [12] (line 2507, bare `$*TOLERANCE` arithmetic) — matches the
+  already-documented "Still open" residue of the `≅`/`=~=` fix (operators.rakudoc [20]/[21]
+  above) and the "Block-scope restore of a dynamic var with a pre-existing outer value" deferred
+  cluster.
+- `Type/MixHash.rakudoc` [1], [3], [4] (lines 38/58/69, `.pairs`/`.keys.map(&WHAT)` element
+  order) — hash/QuantHash iteration-order `raku-drift`/nondeterminism, the "Known harness false
+  positive" documented above the Ticketed section; verified directly that repeated `raku` runs
+  of the identical program (`MixHash.new: "a","a","b"=>0,"c"=>3.14; .keys.map(&WHAT)`) give
+  different orders across runs (4 runs: `(Pair)(Str)(Pair)` ×3, `(Str)(Pair)(Pair)` ×1).
+- `Language/classtut.rakudoc` [1] (line 805, `$o.^methods(:local)».name.join(', ')` on stub
+  classes) — the real-`raku` output includes a synthesized `POPULATE` method that the doc's own
+  illustrative `# OUTPUT` block (for a related, fuller example a few lines up) does not mention
+  at all; this looks like an undocumented, Rakudo-build-specific internal method (confirmed: even
+  a bare `class Foo {}; say Foo.^methods(:local)».name` shows `(POPULATE)` taking 2 positional
+  args, i.e. internal plumbing, not user-visible language behavior) added to the current Rakudo
+  build after this doc was written — treated as raku-implementation-drift, not a mutsu bug.
+
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are
 intentionally deferred; see PLAN.md §8.5 and the ADRs:
