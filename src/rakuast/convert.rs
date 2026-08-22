@@ -274,7 +274,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             let body_node = if explicit_defs.is_empty() {
                 topic_block_node(body)?
             } else {
-                pointy_block(explicit_defs, body)?
+                pointy_block(explicit_defs, body, None)?
             };
             // Field order matches raku: labels, mode, source, body.
             let mut fields = label_fields(label);
@@ -349,10 +349,12 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             ..
         } => {
             // Phase 2 slice 7 covers the plain named `sub NAME (params) { body }`
-            // form. Traits, multi, export, return type, operator subs, and
-            // alternate signatures carry extra RakuAST shape, deferred.
+            // form; return types are covered too (`-->` via `Signature.returns`,
+            // `returns`/`of` via `Trait::Returns`/`Trait::Of`). Other traits,
+            // multi, export, operator subs, and alternate signatures carry extra
+            // RakuAST shape, deferred.
+            let spelling = return_type_spelling(custom_traits)?;
             if name_expr.is_some()
-                || return_type.is_some()
                 || associativity.is_some()
                 || precedence_trait.is_some()
                 || !signature_alternates.is_empty()
@@ -363,17 +365,23 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 || !export_tags.is_empty()
                 || *is_test_assertion
                 || *supersede
-                || !custom_traits.is_empty()
+                || custom_traits
+                    .iter()
+                    .any(|(t, _)| !is_return_spelling_marker(t))
             {
-                return Err(unsupported(
-                    "sub with traits / multi / export / return type",
-                ));
+                return Err(unsupported("sub with traits / multi / export"));
+            }
+            if return_type.is_none() && spelling != ReturnSpelling::Arrow {
+                // A `__return_via_*` marker without a return type would be a
+                // parser inconsistency; refuse rather than render a wrong node.
+                return Err(unsupported("sub with a return trait but no return type"));
             }
             Ok(Some(statement_expression(routine_node(
                 RakuAstClass::Sub,
                 &name.resolve(),
                 param_defs,
                 body,
+                return_type.as_deref().map(|t| (t, spelling)),
             )?)))
         }
         Stmt::MethodDecl {
@@ -420,6 +428,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
                 &name.resolve(),
                 param_defs,
                 body,
+                None,
             )?)))
         }
         Stmt::ClassDecl {
@@ -953,6 +962,52 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
                 node_field(Some("right"), convert_expr(right)?),
             ],
         }),
+        // A hyper infix `@a >>+<< @b` -> ApplyInfix(left, MetaInfix::Hyper(
+        // [dwim-left,] infix, [dwim-right]), right). mutsu keeps the operator
+        // text and both dwim flags on `Expr::HyperOp`, so this is a faithful
+        // 1:1 mapping; raku omits a dwim field whose value is False.
+        Expr::HyperOp {
+            op,
+            left,
+            right,
+            dwim_left,
+            dwim_right,
+        } => {
+            let mut hyper_fields = Vec::with_capacity(3);
+            if *dwim_left {
+                hyper_fields.push(RakuAstField {
+                    name: Some("dwim-left"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                });
+            }
+            hyper_fields.push(node_field(
+                Some("infix"),
+                RakuAstNode {
+                    class: RakuAstClass::Infix,
+                    fields: vec![leaf_field(None, Value::str(op.clone()))],
+                },
+            ));
+            if *dwim_right {
+                hyper_fields.push(RakuAstField {
+                    name: Some("dwim-right"),
+                    value: RakuAstFieldValue::Node(Value::truth(true)),
+                });
+            }
+            Ok(RakuAstNode {
+                class: RakuAstClass::ApplyInfix,
+                fields: vec![
+                    node_field(Some("left"), convert_expr(left)?),
+                    node_field(
+                        Some("infix"),
+                        RakuAstNode {
+                            class: RakuAstClass::MetaInfixHyper,
+                            fields: hyper_fields,
+                        },
+                    ),
+                    node_field(Some("right"), convert_expr(right)?),
+                ],
+            })
+        }
         Expr::Unary { op, expr } => Ok(RakuAstNode {
             class: RakuAstClass::ApplyPrefix,
             fields: vec![
@@ -1138,10 +1193,10 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
             if *is_whatever_code {
                 return Err(unsupported("Whatever-code closure (compound assignment)"));
             }
-            if *is_rw || return_type.is_some() {
-                return Err(unsupported("`is rw` / typed pointy block"));
+            if *is_rw {
+                return Err(unsupported("`is rw` pointy block"));
             }
-            pointy_block(param_defs, body)
+            pointy_block(param_defs, body, return_type.as_deref())
         }
         // An interpolated string `"a $x b"` -> QuotedString with a segment per
         // part (a literal run is a `StrLiteral`, an interpolated term keeps its
@@ -1307,11 +1362,19 @@ fn topic_block_node(body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
 }
 
 /// A multi/zero-parameter pointy block (`-> $a, $b { }`, `-> { }`). An empty
-/// parameter list omits the `signature` field entirely (matching raku).
-fn pointy_block(param_defs: &[ParamDef], body: &[Stmt]) -> Result<RakuAstNode, RuntimeError> {
+/// parameter list with no `--> T` return type omits the `signature` field
+/// entirely (matching raku).
+fn pointy_block(
+    param_defs: &[ParamDef],
+    body: &[Stmt],
+    returns: Option<&str>,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = Vec::new();
-    if !param_defs.is_empty() {
-        fields.push(node_field(Some("signature"), signature(param_defs, false)?));
+    if !param_defs.is_empty() || returns.is_some() {
+        fields.push(node_field(
+            Some("signature"),
+            signature(param_defs, false, returns)?,
+        ));
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode {
@@ -1343,37 +1406,107 @@ fn pointy_block_from_lambda(param: &str, body: &[Stmt]) -> Result<RakuAstNode, R
     })
 }
 
-/// A named routine — `Sub` or `Method` — with an optional signature and a
-/// body. A parameter-less routine omits the `signature` field; parameters
-/// carry the implicit `type => Type::Setting(Any)` (`type_setting = true`).
+/// The parser markers that record a `returns` / `of` return-type trait. They
+/// are internal (`__`-prefixed) bookkeeping, not user traits, so the converter
+/// reads them for the spelling instead of treating them as a coverage boundary.
+fn is_return_spelling_marker(trait_name: &str) -> bool {
+    matches!(trait_name, "__return_via_trait" | "__return_via_of")
+}
+
+/// Which spelling a routine's return type used, read off the parser markers.
+/// `returns X of Y` leaves both markers (mutsu folds them into one
+/// `X[Y]` return type); raku models that as a single trait, so defer.
+fn return_type_spelling(
+    custom_traits: &[(String, Option<Expr>)],
+) -> Result<ReturnSpelling, RuntimeError> {
+    let returns = custom_traits.iter().any(|(t, _)| t == "__return_via_trait");
+    let of = custom_traits.iter().any(|(t, _)| t == "__return_via_of");
+    match (returns, of) {
+        (false, false) => Ok(ReturnSpelling::Arrow),
+        (true, false) => Ok(ReturnSpelling::ReturnsTrait),
+        (false, true) => Ok(ReturnSpelling::OfTrait),
+        (true, true) => Err(unsupported("`returns X of Y` combined return trait")),
+    }
+}
+
+/// How a routine's return type was written in the source. raku models the two
+/// spellings with different nodes, and mutsu's internal AST keeps them apart
+/// (the `returns`/`of` forms leave a `__return_via_*` marker in `custom_traits`),
+/// so the converter never has to guess.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReturnSpelling {
+    /// `sub f(--> Int)` — part of the signature (`Signature.returns`).
+    Arrow,
+    /// `sub f() returns Int` — a routine trait (`Trait::Returns`).
+    ReturnsTrait,
+    /// `sub f() of Int` — a routine trait (`Trait::Of`).
+    OfTrait,
+}
+
+/// A named routine — `Sub` or `Method` — with an optional signature, optional
+/// return type, and a body. A parameter-less routine with no `-->` return type
+/// omits the `signature` field; parameters carry the implicit
+/// `type => Type::Setting(Any)` (`type_setting = true`).
 fn routine_node(
     class: RakuAstClass,
     name: &str,
     param_defs: &[ParamDef],
     body: &[Stmt],
+    return_type: Option<(&str, ReturnSpelling)>,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut fields = vec![node_field(Some("name"), name_from_identifier(name))];
-    if !param_defs.is_empty() {
-        fields.push(node_field(Some("signature"), signature(param_defs, true)?));
+    let arrow_returns = match return_type {
+        Some((t, ReturnSpelling::Arrow)) => Some(t),
+        _ => None,
+    };
+    if !param_defs.is_empty() || arrow_returns.is_some() {
+        fields.push(node_field(
+            Some("signature"),
+            signature(param_defs, true, arrow_returns)?,
+        ));
+    }
+    if let Some((t, spelling)) = return_type
+        && spelling != ReturnSpelling::Arrow
+    {
+        let trait_class = match spelling {
+            ReturnSpelling::OfTrait => RakuAstClass::TraitOf,
+            _ => RakuAstClass::TraitReturns,
+        };
+        let trait_node = RakuAstNode {
+            class: trait_class,
+            fields: vec![node_field(None, build_type_node(t)?)],
+        };
+        fields.push(RakuAstField {
+            name: Some("traits"),
+            value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
+        });
     }
     fields.push(node_field(Some("body"), blockoid(body)?));
     Ok(RakuAstNode { class, fields })
 }
 
-/// `Signature(parameters => (Parameter, ...))`. `type_setting` prepends the
-/// implicit `type => Type::Setting(Any)` on each parameter — present in
-/// sub/method signatures, absent in pointy-block signatures.
-fn signature(param_defs: &[ParamDef], type_setting: bool) -> Result<RakuAstNode, RuntimeError> {
+/// `Signature(parameters => (Parameter, ...)[, returns => Type])`. `type_setting`
+/// prepends the implicit `type => Type::Setting(Any)` on each parameter —
+/// present in sub/method signatures, absent in pointy-block signatures.
+fn signature(
+    param_defs: &[ParamDef],
+    type_setting: bool,
+    returns: Option<&str>,
+) -> Result<RakuAstNode, RuntimeError> {
     let mut params = Vec::with_capacity(param_defs.len());
     for pd in param_defs {
         params.push(Value::rakuast(Box::new(parameter(pd, type_setting)?)));
     }
+    let mut fields = vec![RakuAstField {
+        name: Some("parameters"),
+        value: RakuAstFieldValue::List(params),
+    }];
+    if let Some(t) = returns {
+        fields.push(node_field(Some("returns"), build_type_node(t)?));
+    }
     Ok(RakuAstNode {
         class: RakuAstClass::Signature,
-        fields: vec![RakuAstField {
-            name: Some("parameters"),
-            value: RakuAstFieldValue::List(params),
-        }],
+        fields,
     })
 }
 

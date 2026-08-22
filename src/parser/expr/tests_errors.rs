@@ -320,7 +320,17 @@ fn parse_method_colon_arg_pointy_with_return_type() {
         Expr::MethodCall { name, args, .. } => {
             assert_eq!(name, "map");
             assert_eq!(args.len(), 1);
-            assert!(matches!(args[0], Expr::Lambda { ref param, .. } if param.as_str() == "x"));
+            // A pointy block that declares a `--> T` return type keeps the
+            // constraint, so it parses to the param_defs-carrying closure node
+            // rather than the name-only `Expr::Lambda`.
+            assert!(matches!(
+                args[0],
+                Expr::AnonSubParams {
+                    ref params,
+                    ref return_type,
+                    ..
+                } if params == &["x".to_string()] && return_type.as_deref() == Some("Int")
+            ));
         }
         _ => panic!("expected method call expression"),
     }

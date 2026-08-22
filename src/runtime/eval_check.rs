@@ -244,7 +244,9 @@ fn walk_validate_sub_param_types(
                 ..
             } => {
                 interp.validate_param_type_constraints(param_defs, declared, packages, classes)?;
-                let via_trait = custom_traits.iter().any(|(t, _)| t == "__return_via_trait");
+                let via_trait = custom_traits
+                    .iter()
+                    .any(|(t, _)| t == "__return_via_trait" || t == "__return_via_of");
                 interp.validate_return_type_constraint(
                     return_type.as_deref(),
                     param_defs,

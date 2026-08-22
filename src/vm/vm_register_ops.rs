@@ -247,6 +247,15 @@ impl Interpreter {
                 &mut captured_env,
                 &mut upvalues,
             );
+            // A bare block never declares a return type of its own, so a
+            // lexically-inherited `__mutsu_return_type` (from the routine or
+            // pointy block it is written inside) must not be enforced on the
+            // block's own result — the same guard the `MakeLambda` /
+            // `MakeAnonSubParams` arms already apply. Without it, a block
+            // argument written inside e.g. `-> $x --> Pair { (@k.map({ … })
+            // .join: $sep) => $x }` failed the *outer* `Pair` check on its own
+            // inner value.
+            captured_env.remove("__mutsu_return_type");
             let cc_source_line = compiled_code
                 .as_ref()
                 .and_then(|cc| cc.source_line)

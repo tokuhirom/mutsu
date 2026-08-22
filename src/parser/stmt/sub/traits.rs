@@ -303,8 +303,11 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                 Some(base) if !base.contains('[') => format!("{base}[{type_name}]"),
                 _ => type_name,
             });
-            if !custom_traits.iter().any(|(t, _)| t == "__return_via_trait") {
-                custom_traits.push(("__return_via_trait".to_string(), None));
+            // `of` is a distinct trait from `returns` in RakuAST
+            // (`Trait::Of` vs `Trait::Returns`), so it gets its own marker;
+            // both mean "the return type came from a trait, not `-->`".
+            if !custom_traits.iter().any(|(t, _)| t == "__return_via_of") {
+                custom_traits.push(("__return_via_of".to_string(), None));
             }
             input = r;
             continue;
