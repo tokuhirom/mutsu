@@ -122,6 +122,18 @@ impl Interpreter {
     }
 
     pub(crate) fn resolved_type_capture_name(&self, constraint: &str) -> String {
+        if let Some(inner) = constraint
+            .strip_prefix("::(")
+            .and_then(|s| s.strip_suffix(')'))
+        {
+            // `q<...>` is the common indirect-type spelling in modules: unlike
+            // a bare `::T` capture, it names a type from an expression result.
+            // Preserve the general form for later evaluation, while resolving
+            // literal word quotes without re-entering the VM from this helper.
+            if let Some(name) = inner.strip_prefix("q<").and_then(|s| s.strip_suffix('>')) {
+                return name.to_string();
+            }
+        }
         if self.has_type_capture_binding(constraint)
             && let Some(value) = self.env.get(constraint)
         {
