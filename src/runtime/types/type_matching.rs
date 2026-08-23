@@ -438,6 +438,7 @@ impl Interpreter {
                 // to it here instead of re-deriving a partial answer, so this
                 // fast-accept never disagrees with the general checker below.
                 ValueView::LazyList(_) => constraint == crate::runtime::value_type_name(value),
+                ValueView::Array(_, kind) if kind.is_itemized() => constraint == "Scalar",
                 _ => false,
             }
         };

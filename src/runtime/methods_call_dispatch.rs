@@ -366,10 +366,20 @@ impl Interpreter {
         // see the container itself (the `$` sigil / itemization is the point).
         if let ValueView::Array(items, kind) = target.view()
             && kind.is_itemized()
-            && !matches!(method, "raku" | "perl" | "item" | "VAR" | "self")
         {
-            let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
-            return self.call_method_with_values(deconted, method, args);
+            if method == "VAR" {
+                // `$(...)` is represented as an itemized List/Array sharing
+                // its backing storage.  It is still a Scalar container for
+                // introspection, so `.VAR` must expose Scalar rather than
+                // the contextualized aggregate's inner type.
+                return Ok(Value::package(Symbol::intern("Scalar")));
+            }
+            if matches!(method, "raku" | "perl" | "item" | "self") {
+                // These methods observe the itemized container itself.
+            } else {
+                let deconted = Value::array_with_kind(items.clone(), kind.decontainerize());
+                return self.call_method_with_values(deconted, method, args);
+            }
         }
         // `self.rakuseen($id, &code)`: Mu's cyclic-structure guard for
         // `.raku`/`.gist`. A user `.raku` wraps its body in
