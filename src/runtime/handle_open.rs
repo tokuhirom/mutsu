@@ -51,9 +51,77 @@ impl IoHandleState {
                 }
                 Ok(pos >= end)
             }
-            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(false),
+            // stdin is not seekable, so there is no position to compare: Rakudo
+            // reports `.eof` from the decoder having hit end-of-stream, which
+            // only happens once a read came back empty. `$*ARGFILES` reaches
+            // this arm only when it has no file list to walk (see
+            // `eof_argfiles`), i.e. when it too is reading stdin.
+            IoHandleTarget::Stdin | IoHandleTarget::ArgFiles => Ok(self.stream_hit_eof),
             _ => Err(RuntimeError::new("Handle not readable")),
         }
+    }
+
+    /// Whether this handle is an `$*ARGFILES` / `IO::ArgFiles` handle, whose
+    /// `.eof` needs the `@*ARGS` file list (see `eof_argfiles`).
+    pub(crate) fn is_argfiles(&self) -> bool {
+        matches!(self.target, IoHandleTarget::ArgFiles)
+    }
+
+    /// `.eof` for an `$*ARGFILES` / `IO::ArgFiles` handle, which walks a list of
+    /// files (falling back to stdin when the list is empty).
+    ///
+    /// Mirrors Rakudo's `IO::CatHandle.eof`: `True` only when the active source
+    /// is exhausted *and* no further source is left. Crucially it advances by
+    /// at most one source per call (Rakudo's `self!next-handle`) and never
+    /// skips past an empty file, so `while !$*ARGFILES.eof { .say for
+    /// $*ARGFILES.get }` over `a.txt` (non-empty) and `b.txt` (empty) yields
+    /// a's lines, then one trailing `Nil` for b, then stops.
+    ///
+    /// Over real non-empty files the loop stops right after the last line (no
+    /// trailing `Nil`); over stdin it yields one final `Nil`, because stdin is
+    /// not seekable and its eof is only known once a read hit end-of-stream.
+    pub(crate) fn eof_argfiles(&mut self, args_list: &[String]) -> Result<bool, RuntimeError> {
+        use std::io::BufRead;
+        if self.closed {
+            return Err(RuntimeError::io_closed("handle operation"));
+        }
+        // An `IO::ArgFiles.new(@files)` handle carries its own file list; a
+        // plain `$*ARGFILES` handle falls back to `@*ARGS`.
+        let effective_list: Vec<String> = match &self.argfiles_paths {
+            Some(paths) => paths.clone(),
+            None => args_list.to_vec(),
+        };
+        if effective_list.is_empty() {
+            // No file arguments: `$*ARGFILES` reads stdin.
+            return Ok(self.stream_hit_eof);
+        }
+        if self.argfiles_index >= effective_list.len() {
+            return Ok(true);
+        }
+        // Is the active source exhausted? A source that has not been opened yet
+        // is not: Rakudo reports `False` for a freshly opened handle even when
+        // the file behind it turns out to be empty.
+        let exhausted = if let Some(reader) = self.argfiles_reader.as_mut() {
+            // `fill_buf` peeks without consuming, so this does not disturb the
+            // next `.get`/`.read`.
+            reader
+                .fill_buf()
+                .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?
+                .is_empty()
+        } else if effective_list[self.argfiles_index] == "-" {
+            // `-` names stdin; it is exhausted only once a read said so.
+            self.stream_hit_eof
+        } else {
+            false
+        };
+        if !exhausted {
+            return Ok(false);
+        }
+        // Advance one source, then report whether any remains. Opening it is
+        // left to the next read.
+        self.argfiles_reader = None;
+        self.argfiles_index += 1;
+        Ok(self.argfiles_index >= effective_list.len())
     }
 
     /// `.seek($offset, $whence)` — reposition the file cursor. `mode`: 0 = from
@@ -327,7 +395,26 @@ impl Interpreter {
     }
 
     pub(super) fn handle_eof_value(&mut self, handle_value: &Value) -> Result<bool, RuntimeError> {
-        self.with_handle_mut(handle_value, |state| state.eof())
+        // A plain `$*ARGFILES` handle walks the files named in `@*ARGS`; read
+        // them out before borrowing the handle table.
+        let args_list: Vec<String> = self
+            .env
+            .get("@*ARGS")
+            .and_then(|v| {
+                if let crate::value::ValueView::Array(items, ..) = v.view() {
+                    Some(items.iter().map(|v| v.to_string_value()).collect())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_default();
+        self.with_handle_mut(handle_value, |state| {
+            if matches!(state.target, IoHandleTarget::ArgFiles) {
+                state.eof_argfiles(&args_list)
+            } else {
+                state.eof()
+            }
+        })
     }
 
     pub(super) fn set_handle_encoding(
@@ -549,6 +636,7 @@ impl Interpreter {
             nl_out: nl_out.unwrap_or_else(|| "\n".to_string()),
             bytes_written: 0,
             read_attempted: false,
+            stream_hit_eof: false,
             utf16_bom_written: false,
             utf16_detected_be: None,
             argfiles_index: 0,

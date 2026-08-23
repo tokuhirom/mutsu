@@ -520,6 +520,13 @@ impl Interpreter {
         let Some(state) = table.map.get_mut(&id) else {
             return Some(Err(RuntimeError::new("Invalid IO::Handle")));
         };
+        // `$*ARGFILES.eof` has to walk the file list in `@*ARGS`, which lives in
+        // the env and cannot be read while the handle table is borrowed. Fall
+        // through to the interpreter's `handle_eof_value`, which fetches the
+        // list first.
+        if matches!(op, Op::Eof) && state.is_argfiles() {
+            return None;
+        }
         let result = match op {
             Op::Tell => state.tell().map(Value::int),
             Op::Eof => state.eof().map(Value::truth),

@@ -185,6 +185,7 @@ impl Interpreter {
                         let mut out = String::new();
                         for _ in 0..limit {
                             let Some(ch) = Self::read_utf8_char(&mut stdin)? else {
+                                state.stream_hit_eof = true;
                                 break;
                             };
                             out.push_str(&ch);
@@ -195,6 +196,8 @@ impl Interpreter {
                         stdin
                             .read_to_end(&mut bytes)
                             .map_err(|err| RuntimeError::new(format!("Failed to read: {}", err)))?;
+                        // Reading to the end consumed the whole stream.
+                        state.stream_hit_eof = true;
                         Ok(String::from_utf8_lossy(&bytes).to_string())
                     }
                 }

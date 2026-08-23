@@ -94,6 +94,7 @@ impl Interpreter {
                     nl_out: "\n".to_string(),
                     bytes_written: 0,
                     read_attempted: false,
+                    stream_hit_eof: false,
                     utf16_bom_written: false,
                     utf16_detected_be: None,
                     argfiles_index: 0,

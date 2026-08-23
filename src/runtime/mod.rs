@@ -975,6 +975,12 @@ pub(crate) struct IoHandleState {
     /// Used to implement Raku's eof semantics: a freshly opened file at
     /// position 0 with size 0 returns False for .eof until a read is attempted.
     read_attempted: bool,
+    /// Whether a read from a *non-seekable* stream (stdin, or the stdin
+    /// fallback of `$*ARGFILES`) has already hit end-of-stream. Such handles
+    /// cannot answer `.eof` by comparing a position against a length, and
+    /// Rakudo does not peek ahead either: `$*IN.eof` stays `False` until a
+    /// read actually came back empty, and only then flips to `True`.
+    stream_hit_eof: bool,
     /// Whether the UTF-16 BOM has been written for this handle.
     /// Used to ensure we only write one BOM at the start of a utf16 stream.
     utf16_bom_written: bool,
