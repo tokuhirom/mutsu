@@ -239,6 +239,7 @@ fn param_trait_mixin_type(traits: &[String]) -> Option<Symbol> {
 /// Convert a ParamDef (from the parser) to a SigParam (for runtime).
 pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     let is_capture = p.slurpy && (p.name == "_capture" || p.sigilless);
+    let is_implicit_topic = p.block_param && p.name == "$_";
 
     let sigil = if p.name.starts_with('@') {
         '@'
@@ -250,7 +251,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
         '$'
     };
 
-    let name = if p.name == "_capture"
+    let name = if is_implicit_topic {
+        "_".to_string()
+    } else if p.name == "_capture"
         || p.name == "__type_only__"
         || p.name.starts_with("__ANON_STATE_")
         || p.name == "__ANON_OPTIONAL__"
@@ -290,7 +293,9 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
     SigParam {
         name,
         type_constraint,
-        multi_invocant: p.multi_invocant,
+        // The synthetic topic parameter is rendered after the top-level `;;`
+        // separator, even though it is not an explicit invocant in the AST.
+        multi_invocant: p.multi_invocant && !is_implicit_topic,
         named: p.named,
         slurpy: p.slurpy && !is_capture,
         double_slurpy: p.double_slurpy,
@@ -310,7 +315,15 @@ pub(crate) fn param_def_to_sig_param(p: &ParamDef) -> SigParam {
             .outer_sub_signature
             .as_ref()
             .map(|subs| subs.iter().map(param_def_to_sig_param).collect()),
-        traits: p.traits.clone(),
+        traits: if is_implicit_topic {
+            let mut traits = p.traits.clone();
+            if !traits.iter().any(|trait_name| trait_name == "raw") {
+                traits.push("raw".to_string());
+            }
+            traits
+        } else {
+            p.traits.clone()
+        },
         code_signature: p
             .code_signature
             .as_ref()
@@ -1035,6 +1048,12 @@ fn render_param(p: &SigParam) -> String {
     {
         result.push_str(" = ");
         result.push_str(&crate::builtins::methods_0arg::raku_repr::raku_value(lit));
+    } else if p.name == "_"
+        && let Some(Expr::Var(name)) = p.default_expr.as_deref()
+        && name == "$_"
+    {
+        // A bare block's synthetic topic parameter defaults to the outer topic.
+        result.push_str(" = OUTER::<$_>");
     }
 
     result
