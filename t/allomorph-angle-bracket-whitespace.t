@@ -14,7 +14,7 @@ use Test;
 # mutsu used to shortcut a single space-padded fraction straight to a plain
 # `Rat`, losing the allomorph.
 
-plan 71;
+plan 84;
 
 # --- Int: allomorphic whether tight or padded --------------------------------
 
@@ -58,6 +58,22 @@ is <+1/2>.^name,  'Rat',    '<+1/2> is a plain Rat (signed numerator allowed)';
 is <-1/2>.^name,  'Rat',    '<-1/2> is a plain Rat';
 is <1/+3>.^name,  'RatStr', '<1/+3> is a RatStr (signed denominator is not a literal)';
 is <+1/+3>.^name, 'RatStr', '<+1/+3> is a RatStr';
+
+# Quote-word fractions divide arbitrary numeric parts. They are not literal
+# terms, so even a tightly written decimal/exponent fraction is an allomorph.
+is <1.5/2>.^name,   'RatStr', '<1.5/2> is a RatStr';
+is +<1.5/2>,        0.75,    '<1.5/2> divides a decimal numerator';
+is <1/2.5>.^name,   'RatStr', '<1/2.5> is a RatStr';
+is +<1/2.5>,        0.4,     '<1/2.5> divides a decimal denominator';
+is +<.5/2>,         0.25,    '<.5/2> accepts a leading-dot numerator';
+is +<1/.5>,         2,       '<1/.5> accepts a leading-dot denominator';
+is +<1/-3>,         -1/3,    '<1/-3> accepts a signed denominator';
+is +<-1/-3>,        1/3,     '<-1/-3> accepts signed parts';
+is <1e2/2>.^name,   'NumStr', '<1e2/2> promotes the result to NumStr';
+is +<1e2/2>,        50e0,    '<1e2/2> performs Num division';
+is <Inf/2>.^name,   'NumStr', '<Inf/2> is a NumStr';
+is +<Inf/2>,        Inf,     '<Inf/2> divides Inf';
+ok (+<NaN/2>).isNaN,          '<NaN/2> divides NaN';
 
 # --- Num: allomorphic whether tight or padded --------------------------------
 
