@@ -107,8 +107,13 @@ impl Interpreter {
                 self.collect_class_methods(cn, private, &mut result);
             }
 
-            // For built-in types that don't have class defs, add known methods
-            if result.is_empty() || !self.registry().classes.contains_key(&class_name) {
+            // For built-in types that don't have class defs, add known methods.
+            // `:all` also exposes the universal Any/Mu methods for user-defined
+            // classes. The MRO walk above visits those names, but they are
+            // native catalog entries rather than registry ClassDefs, so the
+            // normal user-class result is non-empty and the old condition
+            // skipped them entirely.
+            if all || result.is_empty() || !self.registry().classes.contains_key(&class_name) {
                 self.collect_builtin_type_methods(&class_name, &mut result);
                 if all {
                     self.collect_builtin_type_methods("Any", &mut result);
