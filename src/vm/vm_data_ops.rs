@@ -82,10 +82,11 @@ impl Interpreter {
                     Err(_) => continue,
                 }
             } else if let ValueView::LazyList(ll) = val.view()
-                && ll.coroutine.is_some()
-                && ll.sequence_spec.is_none()
-                && ll.scan_spec.is_none()
-                && ll.lazy_pipe.is_none()
+                && ((ll.coroutine.is_some()
+                    && ll.sequence_spec.is_none()
+                    && ll.scan_spec.is_none()
+                    && ll.lazy_pipe.is_none())
+                    || ll.has_finite_closure_endpoint())
                 && !matches!(
                     ll.env
                         .get("__mutsu_preserve_lazy_on_array_assign")
@@ -93,14 +94,10 @@ impl Interpreter {
                     Some(ValueView::Bool(true))
                 )
             {
-                // Array literals (`[...]`) are eager: a gather/take LazyList must
-                // run now so its side effects happen (e.g. `take shift @array`
-                // mutating an outer array a surrounding `while` loops on) and its
-                // elements materialize. Only a plain gather (coroutine, no
-                // sequence/scan/pipe spec) is forced — an infinite `...` sequence
-                // or a lazy map/grep pipe must stay lazy (forcing a sequence_spec
-                // would truncate it to its finite cache). A `lazy`-marked list is
-                // likewise left lazy; so is one that fails a strict force.
+                // Array literals (`[...]`) are eager: a finite gather/take or
+                // finite-endpoint closure sequence must run now so its elements
+                // materialize. Unbounded `... *` sequences and lazy pipelines
+                // stay lazy; a `lazy`-marked list stays lazy too.
                 match self.force_lazy_list_vm(&ll) {
                     Ok(items) => Value::seq(items),
                     Err(_) => val,

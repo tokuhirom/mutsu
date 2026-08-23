@@ -143,6 +143,15 @@ impl LazyList {
                 .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
     }
 
+    /// A closure sequence can have a concrete endpoint while still requiring
+    /// incremental evaluation to discover it. Unlike `... *`, such a sequence
+    /// is safe for strict consumers to reify to completion.
+    pub(crate) fn has_finite_closure_endpoint(&self) -> bool {
+        self.closure_seq
+            .as_ref()
+            .is_some_and(|state| state.lock().unwrap().endpoint.is_some())
+    }
+
     /// Whether this `.map`/`.grep` lazy pipe bottoms out in a *definitively
     /// finite* source, so a strict reification (`.List`/`for`/`.flat`/gist) can
     /// force it to completion instead of keeping it lazy. Conservative: returns

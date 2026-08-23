@@ -1106,11 +1106,11 @@ impl Interpreter {
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
         let max_gen = match (&mode, &endpoint_kind) {
-            // Try a small eager prefix for ordinary finite list contexts,
-            // then retain the generator and endpoint. We cannot soundly infer
-            // a recurrence from generated values: the closure may have hidden
-            // state or side effects, so an unfinished prefix is deferred.
-            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 32,
+            // Retain finite closure sequences from the start. We cannot
+            // soundly infer a recurrence from generated values: the closure
+            // may have hidden state or side effects. Strict consumers reify
+            // them through their explicit forcing paths.
+            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
