@@ -1223,6 +1223,7 @@ pub(crate) enum Stmt {
         name: Symbol,
         params: Vec<String>,
         param_defs: Vec<ParamDef>,
+        return_type: Option<String>,
         body: Vec<Stmt>,
         is_export: bool,
         custom_traits: Vec<String>,

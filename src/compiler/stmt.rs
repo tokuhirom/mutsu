@@ -3898,6 +3898,7 @@ impl Compiler {
                 name,
                 params,
                 param_defs,
+                return_type,
                 body,
                 is_method,
                 ..
@@ -3923,7 +3924,7 @@ impl Compiler {
                         &name.resolve(),
                         params,
                         param_defs,
-                        None,
+                        return_type.as_ref(),
                         &rewritten,
                         false,
                         None,

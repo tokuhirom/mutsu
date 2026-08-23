@@ -8,7 +8,9 @@ use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws
 use crate::parser::parse_result::{PError, PResult, opt_char, parse_char};
 use crate::parser::primary::var::is_pseudo_package;
 use crate::parser::stmt::sub::parse_sub_name;
-use crate::parser::stmt::{block, keyword, parse_param_list, parse_sub_traits, qualified_ident};
+use crate::parser::stmt::{
+    block, keyword, parse_param_list_with_return_pub, parse_sub_traits, qualified_ident,
+};
 
 /// Extract names of exported sub declarations from a statement list.
 pub(crate) fn extract_exported_subs(
@@ -599,15 +601,15 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
     };
     let (rest, name) = parse_sub_name(rest)?;
     let (rest, _) = ws(rest)?;
-    let (rest, param_defs) = if rest.starts_with('(') {
+    let (rest, (param_defs, return_type)) = if rest.starts_with('(') {
         let (r, _) = parse_char(rest, '(')?;
         let (r, _) = ws(r)?;
-        let (r, pd) = parse_param_list(r)?;
+        let (r, (pd, return_type)) = parse_param_list_with_return_pub(r)?;
         let (r, _) = ws(r)?;
         let (r, _) = parse_char(r, ')')?;
-        (r, pd)
+        (r, (pd, return_type))
     } else {
-        (rest, Vec::new())
+        (rest, (Vec::new(), None))
     };
     let params: Vec<String> = param_defs.iter().map(|p| p.name.clone()).collect();
     let (rest, _) = ws(rest)?;
@@ -628,6 +630,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
                 name: Symbol::intern(&name),
                 params,
                 param_defs,
+                return_type: return_type.clone(),
                 body,
                 is_export: traits.is_export,
                 custom_traits: traits
@@ -647,6 +650,7 @@ pub(crate) fn proto_decl_scoped(input: &str, is_our: bool) -> PResult<'_, Stmt> 
             name: Symbol::intern(&name),
             params,
             param_defs,
+            return_type,
             body,
             is_export: traits.is_export,
             custom_traits: traits

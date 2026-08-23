@@ -1062,6 +1062,7 @@ impl Interpreter {
             name,
             params,
             param_defs,
+            return_type,
             is_export,
             custom_traits,
             is_method,
@@ -1085,10 +1086,25 @@ impl Interpreter {
         // pattern, SBOM::CycloneDX). Skip the package-level registration for
         // method protos; the method-table path already handles them.
         if !*is_method {
-            self.register_proto_decl(&name_str, params, param_defs, body, *is_our, compiled)?;
+            self.register_proto_decl(
+                &name_str,
+                params,
+                param_defs,
+                return_type.as_ref(),
+                body,
+                *is_our,
+                compiled,
+            )?;
         }
         if *is_export {
-            self.register_proto_decl_as_global(&name_str, params, param_defs, body, compiled)?;
+            self.register_proto_decl_as_global(
+                &name_str,
+                params,
+                param_defs,
+                return_type.as_ref(),
+                body,
+                compiled,
+            )?;
             // Record the export so consumers/MAIN-dispatch see the whole multi
             // family. A `proto … is export` exports its candidates too (raku),
             // e.g. zef's `proto MAIN(|) is export` over `multi sub MAIN(…)`.

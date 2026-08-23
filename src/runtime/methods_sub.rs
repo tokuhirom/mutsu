@@ -185,7 +185,8 @@ impl Interpreter {
                         })
                         .collect()
                 };
-                let info = param_defs_to_sig_info(&defs, None);
+                let return_type = self.routine_return_spec_by_name(name);
+                let info = param_defs_to_sig_info(&defs, return_type);
                 return Some(Ok(make_signature_value(info, Some(&*self))));
             }
             if candidates.len() == 1 {
