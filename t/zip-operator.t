@@ -1,6 +1,6 @@
 use Test;
 
-plan 18;
+plan 23;
 
 # Basic Z operator
 is (<a b> Z <1 2>), <a 1 b 2>, 'non-meta zip produces expected result';
@@ -38,3 +38,21 @@ is (1,2 Zcmp 3,2,0), (Order::Less, Order::Same), 'zip-cmp works';
 
 # Z with =>
 is (<a b> Z=> (1, 2)), (a => 1, b => 2), 'zip with pair construction';
+
+# Pull lazy map/grep pipes and sequence specs when they are zip operands.
+is ((10, 20) Z* map { $_ }, (0, 1 ... *)), (0, 20),
+    'zip pulls a lazy map pipe';
+is ((10, 20) Z* (0, 1 ... *).map({ $_ + 1 })), (10, 40),
+    'zip pulls a lazy mapped sequence method';
+is ((1..40) Z+ (0, 1 ... *)).elems, 40,
+    'zip extends an arithmetic sequence beyond its eager prefix';
+is ((1..4) Z+ (0..*)).[^4], (1, 3, 5, 7),
+    'zip handles an inclusive infinite range without overflow';
+
+sub fft {
+    return @_ if @_ == 1;
+    my @evn = fft(@_[0, 2 ... *]);
+    my @odd = fft(@_[1, 3 ... *]) Z* map &cis, (0, -tau / @_ ... *);
+    flat @evn »+« @odd, @evn »-« @odd;
+}
+is fft(<1 1 1 1 0 0 0 0>).elems, 8, 'FFT zips a lazy map pipe';

@@ -1,6 +1,32 @@
 use super::*;
 
 impl Interpreter {
+    fn zip_iter_from_value(&mut self, val: &Value, needed: usize) -> Result<ZipIter, RuntimeError> {
+        if let ValueView::LazyList(list) = val.view() {
+            // A cache-only lazy value is already finite.  Pull-backed values
+            // (map/grep pipes and sequences) need VM execution to populate the
+            // prefix consumed by Z/X; reading value_to_list here would only
+            // observe their current cache.
+            let has_extendable_source = list.sequence_spec.is_some()
+                || list.closure_seq.is_some()
+                || list.scan_spec.is_some()
+                || list.lazy_pipe.is_some()
+                || list.coroutine.is_some()
+                || list.walk_pending.is_some()
+                || list.cat_pull.is_some()
+                || list.compiled_code.is_some();
+            let items = if has_extendable_source {
+                self.force_lazy_list_vm_n(&list, needed)?
+            } else {
+                list.cache.lock().unwrap().clone().unwrap_or_default()
+            };
+            return Ok(ZipIter::Lazy(
+                items.into_iter().take(MAX_ZIP_EXPAND).collect(),
+            ));
+        }
+        Ok(ZipIter::from_value(val))
+    }
+
     pub(super) fn canonical_infix_lookup_name(name: &str) -> std::borrow::Cow<'_, str> {
         if name == "(+)" {
             return std::borrow::Cow::Borrowed("+");
@@ -113,8 +139,22 @@ impl Interpreter {
             "Z" => {
                 // Use lazy index-based iteration for ranges to avoid
                 // materializing huge/infinite lists like 1..*.
-                let left_iter = ZipIter::from_value(&left);
-                let right_iter = ZipIter::from_value(&right);
+                let left_lazy = matches!(left.view(), ValueView::LazyList(_));
+                let right_lazy = matches!(right.view(), ValueView::LazyList(_));
+                let left_probe = ZipIter::from_value(&left);
+                let right_probe = ZipIter::from_value(&right);
+                let left_needed = if left_lazy && !right_lazy {
+                    right_probe.len()
+                } else {
+                    MAX_ZIP_EXPAND
+                };
+                let right_needed = if right_lazy && !left_lazy {
+                    left_probe.len()
+                } else {
+                    MAX_ZIP_EXPAND
+                };
+                let left_iter = self.zip_iter_from_value(&left, left_needed)?;
+                let right_iter = self.zip_iter_from_value(&right, right_needed)?;
                 let all_lazy = left_iter.is_lazy() && right_iter.is_lazy();
                 let len = left_iter.len().min(right_iter.len()).min(MAX_ZIP_EXPAND);
                 let mut results = Vec::new();
@@ -345,7 +385,25 @@ impl Interpreter {
                 }
             }
             "Z" => {
-                let iters: Vec<ZipIter> = operands.iter().map(ZipIter::from_value).collect();
+                let probes: Vec<ZipIter> = operands.iter().map(ZipIter::from_value).collect();
+                let has_eager_operand = operands
+                    .iter()
+                    .any(|v| !matches!(v.view(), ValueView::LazyList(_)));
+                let pull_limit = if has_eager_operand {
+                    probes
+                        .iter()
+                        .zip(&operands)
+                        .filter(|(_, v)| !matches!(v.view(), ValueView::LazyList(_)))
+                        .map(|(iter, _)| iter.len())
+                        .min()
+                        .unwrap_or(0)
+                } else {
+                    MAX_ZIP_EXPAND
+                };
+                let iters: Vec<ZipIter> = operands
+                    .iter()
+                    .map(|v| self.zip_iter_from_value(v, pull_limit))
+                    .collect::<Result<_, _>>()?;
                 let all_lazy = iters.iter().all(|it| it.is_lazy());
                 let len = iters
                     .iter()
@@ -434,7 +492,11 @@ impl ZipIter {
         match val.view() {
             ValueView::Range(a, b) => {
                 let count = if b >= a {
-                    ((b - a + 1) as usize).min(MAX_ZIP_EXPAND)
+                    b.saturating_sub(a)
+                        .saturating_add(1)
+                        .try_into()
+                        .unwrap_or(usize::MAX)
+                        .min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
@@ -449,18 +511,25 @@ impl ZipIter {
                 ZipIter::IntRangeExcl { start: a, count }
             }
             ValueView::RangeExclStart(a, b) => {
-                let start = a + 1;
+                let start = a.saturating_add(1);
                 let count = if b >= start {
-                    ((b - start + 1) as usize).min(MAX_ZIP_EXPAND)
+                    b.saturating_sub(start)
+                        .saturating_add(1)
+                        .try_into()
+                        .unwrap_or(usize::MAX)
+                        .min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
                 ZipIter::IntRange { start, count }
             }
             ValueView::RangeExclBoth(a, b) => {
-                let start = a + 1;
+                let start = a.saturating_add(1);
                 let count = if b > start {
-                    ((b - start) as usize).min(MAX_ZIP_EXPAND)
+                    b.saturating_sub(start)
+                        .try_into()
+                        .unwrap_or(usize::MAX)
+                        .min(MAX_ZIP_EXPAND)
                 } else {
                     0
                 };
