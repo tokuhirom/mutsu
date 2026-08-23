@@ -1217,6 +1217,32 @@ impl Interpreter {
                     Value::NIL
                 }
             }
+            // `Backtrace` is Positional over its frames: `$!.backtrace[0]`,
+            // `[*-1]`, `[0..2]` and slices all index the frame list, exactly as
+            // list context already does (`runtime::utils::list` unwraps the same
+            // `frames` attribute). Rakudo keeps those frames in a List, so an
+            // out-of-range index reads back as `Nil` rather than the `Any` an
+            // Array would hand out — delegating the whole subscript to the
+            // stored `frames` List reproduces every index shape for free
+            // instead of re-deriving them per index kind here.
+            (
+                ValueView::Instance {
+                    class_name,
+                    attributes,
+                    ..
+                },
+                _,
+            ) if is_positional && class_name == "Backtrace" => {
+                let frames = attributes
+                    .as_map()
+                    .get("frames")
+                    .cloned()
+                    .unwrap_or_else(|| Value::array(vec![]));
+                let idx_clone = index.clone();
+                self.stack.push(frames);
+                self.stack.push(idx_clone);
+                return self.exec_index_op_with_positional(is_positional);
+            }
             // Instance with __baggy_data__: delegate subscript to the inner Bag/Set
             (ValueView::Instance { attributes, .. }, _)
                 if attributes.contains_key("__baggy_data__") =>
