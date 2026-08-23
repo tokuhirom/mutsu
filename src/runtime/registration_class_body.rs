@@ -335,6 +335,7 @@ impl Interpreter {
             .map(|p| p.name.clone())
             .collect();
         let fdef = FunctionDef {
+            is_cached: false,
             package: Symbol::intern(cx.name),
             name: *proto_name,
             params: effective_params,

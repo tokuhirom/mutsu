@@ -962,6 +962,7 @@ impl Interpreter {
             param_defs: effective_param_defs,
             body: body.to_vec(),
             is_test_assertion,
+            is_cached: custom_traits.iter().any(|(t, _)| t == "cached"),
             is_rw,
             is_raw,
             is_method: false,
@@ -1588,6 +1589,7 @@ impl Interpreter {
         multi: bool,
     ) {
         let def = FunctionDef {
+            is_cached: false,
             package: Symbol::intern(&self.current_package()),
             name: Symbol::intern(name),
             params: params.to_vec(),
@@ -1665,6 +1667,7 @@ impl Interpreter {
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&fq),
             std::sync::Arc::new(FunctionDef {
+                is_cached: false,
                 package: Symbol::intern(&self.current_package()),
                 name: Symbol::intern(name),
                 params: params.to_vec(),
@@ -1729,6 +1732,7 @@ impl Interpreter {
         self.registry_mut().proto_functions.insert(
             Symbol::intern(&key),
             std::sync::Arc::new(FunctionDef {
+                is_cached: false,
                 package: Symbol::intern("GLOBAL"),
                 name: Symbol::intern(name),
                 params: params.to_vec(),

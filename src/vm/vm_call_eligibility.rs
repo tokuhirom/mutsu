@@ -70,6 +70,7 @@ impl Interpreter {
     pub(super) fn is_fast_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         cf.params.is_empty()
             && cf.param_defs.is_empty()
+            && !cf.is_cached
             && cf.return_type.is_none()
             && !fn_name.is_empty()
             // NOTE: `state` variables are allowed here. A `state` store key is
@@ -103,6 +104,7 @@ impl Interpreter {
     pub(super) fn is_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         !fn_name.is_empty()
             && cf.return_type.is_none()
+            && !cf.is_cached
             && cf.code.state_locals.is_empty()
             && !cf.is_rw
             && !cf.is_raw
@@ -154,6 +156,7 @@ impl Interpreter {
     pub(super) fn is_positional_light_call_eligible(cf: &CompiledFunction, fn_name: &str) -> bool {
         !fn_name.is_empty()
             && cf.code.state_locals.is_empty()
+            && !cf.is_cached
             && !cf.is_rw
             && !cf.is_raw
             && !cf.empty_sig

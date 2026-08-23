@@ -349,6 +349,7 @@ impl Interpreter {
                         let (our_params, our_param_defs) =
                             method_sub_form_params(&effective_params, &effective_param_defs);
                         let func_def = crate::ast::FunctionDef {
+                            is_cached: false,
                             package: Symbol::intern(name),
                             name: Symbol::intern(&resolved_method_name),
                             params: our_params,
@@ -380,6 +381,7 @@ impl Interpreter {
                         let (my_params, my_param_defs) =
                             method_sub_form_params(&effective_params, &effective_param_defs);
                         let func_def = crate::ast::FunctionDef {
+                            is_cached: false,
                             package: Symbol::intern(name),
                             name: Symbol::intern(&resolved_method_name),
                             params: my_params,

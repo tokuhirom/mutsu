@@ -336,6 +336,7 @@ impl Interpreter {
         is_raw: bool,
     ) -> std::sync::Arc<crate::opcode::CompiledFunction> {
         let tmp_def = crate::ast::FunctionDef {
+            is_cached: false,
             package: Symbol::intern(&self.current_package()),
             name,
             params: params.to_vec(),

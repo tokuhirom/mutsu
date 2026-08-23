@@ -3780,6 +3780,7 @@ impl Compiler {
                 let prev_our = self.compiling_our_sub;
                 self.compiling_our_sub = custom_traits.iter().any(|(t, _)| t == "__our_scoped");
                 let mut compiled_routine_keys = Vec::new();
+                let is_cached = custom_traits.iter().any(|(t, _)| t == "cached");
                 if let Some(key) = self.compile_sub_body_with_deprecation(
                     &name_str,
                     params,
@@ -3790,6 +3791,7 @@ impl Compiler {
                     state_group.as_deref(),
                     *is_rw,
                     *is_raw,
+                    is_cached,
                     deprecated_info.clone(),
                 ) {
                     compiled_routine_keys.push(key);
@@ -3806,6 +3808,7 @@ impl Compiler {
                         state_group.as_deref(),
                         *is_rw,
                         *is_raw,
+                        is_cached,
                         deprecated_info.clone(),
                     ) {
                         compiled_routine_keys.push(key);
@@ -3883,6 +3886,7 @@ impl Compiler {
                             None,
                             *is_rw,
                             false,
+                            false,
                         )
                         .into_iter()
                         .collect();
@@ -3928,6 +3932,7 @@ impl Compiler {
                         &rewritten,
                         false,
                         None,
+                        false,
                         false,
                         false,
                     );

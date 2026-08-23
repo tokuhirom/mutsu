@@ -7136,6 +7136,8 @@ pub(crate) struct NamedParamBind {
 }
 
 /// A compiled function body (SubDecl compiled to bytecode).
+pub(crate) type MemoCache = std::sync::Arc<std::sync::Mutex<Vec<(Vec<Value>, Value)>>>;
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledFunction {
     pub(crate) code: CompiledCode,
@@ -7151,6 +7153,8 @@ pub(crate) struct CompiledFunction {
     /// When true, this sub is declared `is rw`.
     #[allow(dead_code)]
     pub(crate) is_rw: bool,
+    /// When true, calls memoize successful results by argument values.
+    pub(crate) is_cached: bool,
     /// When true, this sub is declared `is raw` and Proxy values should NOT be auto-FETCHed.
     pub(crate) is_raw: bool,
     /// Pre-computed mapping from positional parameter index to locals slot index.
@@ -7218,6 +7222,7 @@ pub(crate) struct CompiledFunction {
     /// empty one before falling back to whatever `CompiledFns` the caller
     /// happens to have in scope.
     pub(crate) compiled_fns: Option<std::sync::Arc<CompiledFns>>,
+    pub(crate) memo_cache: MemoCache,
 }
 
 impl CompiledFunction {
