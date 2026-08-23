@@ -278,6 +278,19 @@ impl Interpreter {
             }
             return Ok(Value::seq(out));
         }
+        // Bare `Z` is the callable form of the zip operator. Keep it here,
+        // alongside the `ZX`/`Z+` meta-operator handling, so
+        // `infix:<Z>(left, right)` does not fall through to re-parsing an
+        // infix expression as a last-resort fallback.
+        if op == "Z" {
+            let left_list = Self::value_to_list(left);
+            let right_list = Self::value_to_list(right);
+            let len = left_list.len().min(right_list.len());
+            let out = (0..len)
+                .map(|i| Value::array(vec![left_list[i].clone(), right_list[i].clone()]))
+                .collect();
+            return Ok(Value::seq(out));
+        }
         if let Some(inner_op) = op.strip_prefix('Z')
             && !inner_op.is_empty()
         {
