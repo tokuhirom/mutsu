@@ -1475,6 +1475,13 @@ impl Interpreter {
                                     || (bytes[0] == b'/' && bytes[1] == b'/'));
                             let leading = path.starts_with('/') || path.starts_with('\\');
                             drive_abs || unc || leading
+                        } else if is_cygwin {
+                            let bytes = path.as_bytes();
+                            path.starts_with('/')
+                                || (bytes.len() >= 3
+                                    && bytes[0].is_ascii_alphabetic()
+                                    && bytes[1] == b':'
+                                    && (bytes[2] == b'\\' || bytes[2] == b'/'))
                         } else {
                             path.starts_with('/')
                         };
