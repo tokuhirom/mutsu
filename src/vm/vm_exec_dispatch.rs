@@ -1974,6 +1974,24 @@ impl Interpreter {
             OpCode::DeitemizeZen => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);
                 let deitemized = match val.view() {
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name.resolve() == "IO::Path::Parts" => {
+                        let attrs = attributes.as_map();
+                        Value::array(
+                            crate::runtime::utils::io_path_parts_keys()
+                                .iter()
+                                .map(|key| {
+                                    Value::pair(
+                                        (*key).to_string(),
+                                        attrs.get(*key).cloned().unwrap_or(Value::NIL),
+                                    )
+                                })
+                                .collect(),
+                        )
+                    }
                     ValueView::Array(items, kind) if kind.is_itemized() => {
                         Value::array_with_kind(items.clone(), kind.decontainerize())
                     }

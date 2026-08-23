@@ -385,6 +385,27 @@ impl Interpreter {
             index = Value::int(items.len() as i64);
         }
         let mut target = self.stack.pop().unwrap();
+        // An empty positional subscript (`$parts[]`) asks a Positional object
+        // for all of its elements. IO::Path::Parts stores its three elements
+        // as named attributes, so materialize them in positional order rather
+        // than treating the object itself as a one-element value.
+        if is_positional
+            && matches!(index.view(), ValueView::Whatever)
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name.resolve() == "IO::Path::Parts"
+        {
+            let attrs = attributes.as_map();
+            let values = crate::runtime::utils::io_path_parts_keys()
+                .iter()
+                .map(|key| attrs.get(*key).cloned().unwrap_or(Value::NIL))
+                .collect();
+            self.stack.push(Value::array(values));
+            return Ok(());
+        }
         if let ValueView::Junction { kind, values } = target.view() {
             let mut results = Vec::with_capacity(values.len());
             for value in values.iter() {
