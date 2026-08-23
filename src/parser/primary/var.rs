@@ -19,7 +19,7 @@ mod scalar;
 mod sigil_vars;
 
 // ── pub(crate): accessible from anywhere in the crate ──────────────────────
-pub(crate) use adverb::parse_adverb_value_pub;
+pub(crate) use adverb::{parse_adverb_value_pub, parse_anon_adverb_value};
 pub(in crate::parser) use ident::parse_qualified_ident_prefix_with_hyphens;
 pub(crate) use ident::{is_pseudo_package, parse_ident_with_hyphens};
 pub(crate) use perl5::detect_perl5_scalar_var;

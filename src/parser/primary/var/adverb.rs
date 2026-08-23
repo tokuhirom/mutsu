@@ -9,6 +9,13 @@ use super::ident::parse_ident_with_hyphens;
 pub(crate) fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, String) {
     while rest.starts_with(':') && !rest.starts_with("::") {
         let after_colon = &rest[1..];
+        // Key-less colon pair: `$take-me:<home>`, `:«home»`, `:['home']`.
+        if let Some((canonical, r2)) = parse_anon_adverb_value(after_colon) {
+            name.push(':');
+            name.push_str(&canonical);
+            rest = r2;
+            continue;
+        }
         if let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon) {
             // Keep postfix adverb names available to postfix parsing.
             // This avoids treating `$a:delete` as a variable named `a:delete`.
@@ -35,12 +42,34 @@ pub(crate) fn parse_adverb_value_pub(input: &str) -> Option<(String, &str)> {
     parse_adverb_value(input)
 }
 
+/// Parse the value of a *key-less* colon pair in an extended identifier, i.e.
+/// the `<home>` of `$take-me:<home>` (S02, `Language/syntax.rakudoc`). The value
+/// alone spells the pair, so `$take-me:<home>`, `$take-me:«home»` and
+/// `$take-me:['home']` all name the same variable.
+///
+/// Unlike the keyed form this deliberately does **not** accept `(...)`: `:(...)`
+/// is a signature literal, and raku rejects `my $t:("home")` outright with
+/// "You can't adverb $t".
+pub(crate) fn parse_anon_adverb_value(input: &str) -> Option<(String, &str)> {
+    match input.chars().next()? {
+        '<' | '\u{00AB}' | '[' => parse_adverb_value(input),
+        _ => None,
+    }
+}
+
 /// Parse adverb value brackets and canonicalize to `<word1 word2>` form.
 /// Returns (canonical_string, remaining_input) or None if no adverb value follows.
 fn parse_adverb_value(input: &str) -> Option<(String, &str)> {
     let first_char = input.chars().next()?;
     match first_char {
         '<' => {
+            // Double angle brackets: <<a b>> (same name as <a b>, per S02 —
+            // "the bracketing characters used do not count as part of it").
+            if let Some(inner) = input.strip_prefix("<<")
+                && let Some(close) = inner.find(">>")
+            {
+                return Some((format!("<{}>", &inner[..close]), &inner[close + 2..]));
+            }
             // Angle brackets: <a b>
             let close = input.find('>')?;
             let content = &input[1..close];
