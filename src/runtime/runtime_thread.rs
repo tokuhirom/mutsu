@@ -482,6 +482,7 @@ impl Interpreter {
                 nl_out: handle.nl_out.clone(),
                 bytes_written: handle.bytes_written,
                 read_attempted: handle.read_attempted,
+                stream_hit_eof: handle.stream_hit_eof,
                 utf16_bom_written: handle.utf16_bom_written,
                 utf16_detected_be: handle.utf16_detected_be,
                 argfiles_index: handle.argfiles_index,

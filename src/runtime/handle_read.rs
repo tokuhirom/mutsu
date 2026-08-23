@@ -113,9 +113,14 @@ impl Interpreter {
                 IoHandleTarget::Stdin => {
                     let seps = state.line_separators.clone();
                     let chomp = state.line_chomp;
-                    let mut stdin = std::io::stdin().lock();
-                    Self::read_record_with_separators(&mut stdin, &seps, chomp)
-                        .map(LineOutcome::Done)
+                    let line = {
+                        let mut stdin = std::io::stdin().lock();
+                        Self::read_record_with_separators(&mut stdin, &seps, chomp)?
+                    };
+                    if line.is_none() {
+                        state.stream_hit_eof = true;
+                    }
+                    Ok(LineOutcome::Done(line))
                 }
                 IoHandleTarget::ArgFiles => {
                     let seps = state.line_separators.clone();
@@ -130,13 +135,18 @@ impl Interpreter {
                         // No file args — read from stdin, using $*IN's nl-in.
                         let (effective_seps, effective_chomp) =
                             stdin_seps.unwrap_or((seps.clone(), chomp));
-                        let mut stdin = std::io::stdin().lock();
-                        return Self::read_record_with_separators(
-                            &mut stdin,
-                            &effective_seps,
-                            effective_chomp,
-                        )
-                        .map(LineOutcome::Done);
+                        let line = {
+                            let mut stdin = std::io::stdin().lock();
+                            Self::read_record_with_separators(
+                                &mut stdin,
+                                &effective_seps,
+                                effective_chomp,
+                            )?
+                        };
+                        if line.is_none() {
+                            state.stream_hit_eof = true;
+                        }
+                        return Ok(LineOutcome::Done(line));
                     }
                     // Read from files listed in the effective list sequentially
                     loop {
@@ -148,10 +158,14 @@ impl Interpreter {
                             let path = &effective_list[state.argfiles_index];
                             if path == "-" {
                                 // `-` means read from stdin
-                                let mut stdin = std::io::stdin().lock();
-                                match Self::read_record_with_separators(&mut stdin, &seps, chomp)? {
+                                let line = {
+                                    let mut stdin = std::io::stdin().lock();
+                                    Self::read_record_with_separators(&mut stdin, &seps, chomp)?
+                                };
+                                match line {
                                     Some(line) => return Ok(LineOutcome::Done(Some(line))),
                                     None => {
+                                        state.stream_hit_eof = true;
                                         state.argfiles_index += 1;
                                         continue;
                                     }
@@ -288,12 +302,20 @@ impl Interpreter {
             if argfiles_list.is_empty() {
                 // No file args — read from stdin
                 use std::io::Read;
-                let mut stdin = std::io::stdin().lock();
                 let mut buffer = vec![0u8; count];
-                let bytes_read = stdin.read(&mut buffer).map_err(|err| {
-                    RuntimeError::new(format!("Failed to read from stdin: {}", err))
-                })?;
+                let bytes_read = {
+                    let mut stdin = std::io::stdin().lock();
+                    stdin.read(&mut buffer).map_err(|err| {
+                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                    })?
+                };
                 buffer.truncate(bytes_read);
+                if bytes_read == 0 && count > 0 {
+                    self.with_handle_mut(handle_value, |state| {
+                        state.stream_hit_eof = true;
+                        Ok(())
+                    })?;
+                }
                 return Ok(buffer);
             }
             return self.with_handle_mut(handle_value, |state| {
@@ -336,12 +358,17 @@ impl Interpreter {
             }
             IoHandleTarget::Stdin => {
                 use std::io::Read;
-                let mut stdin = std::io::stdin().lock();
                 let mut buffer = vec![0u8; count];
-                let bytes_read = stdin.read(&mut buffer).map_err(|err| {
-                    RuntimeError::new(format!("Failed to read from stdin: {}", err))
-                })?;
+                let bytes_read = {
+                    let mut stdin = std::io::stdin().lock();
+                    stdin.read(&mut buffer).map_err(|err| {
+                        RuntimeError::new(format!("Failed to read from stdin: {}", err))
+                    })?
+                };
                 buffer.truncate(bytes_read);
+                if bytes_read == 0 && count > 0 {
+                    state.stream_hit_eof = true;
+                }
                 Ok(buffer)
             }
             IoHandleTarget::File => {
