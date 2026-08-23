@@ -206,6 +206,17 @@ fn parse_angle_rat_word(word: &str) -> Option<Value> {
     if lhs.is_empty() || rhs.is_empty() {
         return None;
     }
+
+    // Preserve exact Rat values when both parts are integers.  Going through
+    // generic division would promote large integer operands to Num, losing the
+    // numerator/denominator needed by `.raku` and by Rat stringification.
+    if let (Some(n), Some(d)) = (parse_angle_int(lhs), parse_angle_int(rhs)) {
+        return Some(crate::value::make_rat(n, d));
+    }
+    if let (Some(n), Some(d)) = (parse_angle_bigint(lhs), parse_angle_bigint(rhs)) {
+        return Some(crate::value::make_big_rat(n, d));
+    }
+
     let numer = parse_angle_numeric(lhs)?;
     let denom = parse_angle_numeric(rhs)?;
     let value = crate::builtins::arith_div(numer, denom).ok()?;

@@ -14,7 +14,7 @@ use Test;
 # mutsu used to shortcut a single space-padded fraction straight to a plain
 # `Rat`, losing the allomorph.
 
-plan 84;
+plan 86;
 
 # --- Int: allomorphic whether tight or padded --------------------------------
 
@@ -45,6 +45,11 @@ is <2/3>.^name,      'Rat',    '<2/3> is a plain Rat';
 is < 2/3 >.^name,    'RatStr', '< 2/3 > is a RatStr';
 is <1/0>.^name,      'Rat',    '<1/0> is a plain Rat';
 is < 1/0 >.^name,    'RatStr', '< 1/0 > is a RatStr';
+is <1/99999999999999999999>.gist, '0.00000000000000000001',
+    'large integer fractions retain exact Rat stringification';
+is <1/99999999999999999999>.raku,
+    '<1/99999999999999999999>',
+    'large integer fractions retain exact Rat repr';
 is +< 42/10 >, 4.2,  '< 42/10 > numeric half is the divided value';
 is ~< 42/10 >, '42/10', '< 42/10 > string half keeps the fraction spelling';
 is < 42/10 >.numerator,   21, '< 42/10 > numerator (reduced)';
