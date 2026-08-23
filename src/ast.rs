@@ -2239,12 +2239,12 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
 ///
 /// `ArgSupply` is only meaningful when the construct is `Signature`-capable
 /// (see [`PlaceholderBodyKind`]); it names *what value* the construct hands
-/// its body when it invokes it. Not every variant is exercised yet — ADR-0048
-/// Phase 1 only *classifies* existing constructs (`Condition`, `Elements`,
-/// `Topic`, `CallerArgs`); `ConditionAfterFirstPass` (repeat's first pass) and
-/// `None` (zero-arg bodies like `when`/bare `{}`) are reserved for the later
-/// phases that actually bind them (D3/D4).
-#[allow(dead_code)] // ConditionAfterFirstPass/None: reserved for Phase 2+ (D3/D4)
+/// its body when it invokes it. Not every variant is exercised yet — Phase 1
+/// classified `Condition`, `Elements`, `Topic` and `CallerArgs`; Phase 3
+/// (D3/D6) put `None` to work for the zero-argument bodies (`when`, the bare
+/// `{}` statement). `ConditionAfterFirstPass` (`repeat {} while/until`'s `Mu`
+/// first pass) is still reserved for D4/Phase 4.
+#[allow(dead_code)] // ConditionAfterFirstPass: reserved for Phase 4 (D4)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ArgSupply {
     /// The enclosing block's own arguments (routine bodies, closure values).
@@ -2275,16 +2275,18 @@ pub(crate) enum PlaceholderBodyKind {
     /// No block of its own: descend, placeholders belong to the enclosing
     /// scope. Covers statement MODIFIERS (`if`/`for`/`given` with
     /// `is_statement_modifier: true`, which have no block at all — mirroring
-    /// the `For`/`Given` modifier rule below), and also `while`/bare
-    /// `{}`-family statements/`when`/`RoleDecl`/WhateverCode closures, which
-    /// mutsu currently (WRONGLY, per ADR-0048's raku audit) treats the same
-    /// way: they leak their placeholders to the enclosing scope (or, for
+    /// the `For`/`Given` modifier rule below), the parser's synthetic
+    /// `SyntheticBlock` desugar wrapper (no `{ ... }` in the source at all),
+    /// and also `while`/`RoleDecl`/WhateverCode closures, which mutsu
+    /// currently (WRONGLY, per ADR-0048's raku audit) treats the same way:
+    /// they leak their placeholders to the enclosing scope (or, for
     /// `RoleDecl`, over-reject) instead of matching raku's rule. Phase 1 was
     /// a pure refactor of the existing (partly wrong) behaviour into one
     /// table; Phase 2 corrected `loop`/`react`/`default`/`Catch`/`Control`/
-    /// `Phaser` (moved to `NoSignature`, see below); the remaining wrong
-    /// entries are corrected by ADR-0048's later phases (D3 for `when`/bare
-    /// `{}`'s *arity*, D7 for `RoleDecl`), not here.
+    /// `Phaser` (moved to `NoSignature`, see below); Phase 3 corrected `when`
+    /// and the bare `{}` statement (moved to `Signature(ArgSupply::None)`);
+    /// the remaining wrong entries are corrected by ADR-0048's later phases
+    /// (D4 for `while`/`repeat`, D7 for `RoleDecl`), not here.
     Transparent,
     /// A boundary that takes a signature; the construct supplies `ArgSupply`
     /// when it invokes its body. `if`/`elsif`/`unless`/`with`/`without`
@@ -2293,11 +2295,12 @@ pub(crate) enum PlaceholderBodyKind {
     /// (`ArgSupply::Elements`); `given`/`with` (non-modifier) and `whenever`
     /// supply the topic/emitted value (`ArgSupply::Topic`); real closures
     /// (`sub {}`/`-> {}`/named subs) supply the caller's own arguments
-    /// (`ArgSupply::CallerArgs`). Only the *first* placeholder is currently
-    /// bound at each of these sites (a second placeholder falls through to
-    /// the enclosing scope instead of raising raku's arity error) — ADR-0048
-    /// D3 fixes that binding in a later phase; Phase 1 only records the
-    /// classification.
+    /// (`ArgSupply::CallerArgs`); `when` bodies and the bare `{}` statement
+    /// are invoked with nothing (`ArgSupply::None`, ADR-0048 Phase 3/D6).
+    /// The *value* half of the contract lives in the compiler's shared
+    /// `Compiler::emit_inlined_body_placeholder_binds` (ADR-0048 D3), which
+    /// binds as many of the body's placeholders as the construct supplies and
+    /// raises raku's `Too few positionals passed` for the rest.
     Signature(ArgSupply),
     /// A boundary that may not take a signature at all: a placeholder used
     /// directly inside it is `X::Placeholder::Block`. `class`/`RoleDecl`
@@ -2368,7 +2371,22 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
         // `repeat while $b < 10 { $tracker = $^a; $b++ }` does NOT reject
         // `$^a` (pins `roast/S04-statements/repeat.t`'s "placeholders and
         // 'repeat while' mix" subtest, which would otherwise regress).
-        Stmt::Loop { repeat: true, .. } => PlaceholderBodyKind::Transparent,
+        //
+        // ADR-0048 Phase 3 had to promote it from that placeholder
+        // `Transparent` to its real `Signature` classification: once the bare
+        // `{ ... }` STATEMENT became a zero-argument boundary (D6, below), a
+        // `repeat` nested in one — exactly the shape of
+        // `roast/S04-statements/repeat.t`'s subtest and of
+        // `t/placeholder-scope-rejecting.t`'s accepting pin — leaked its
+        // `$^a` out to the enclosing bare block, which then reported it as a
+        // parameter nothing supplies. This is the *classification* half of
+        // D4 only: the `ArgSupply::ConditionAfterFirstPass` bind itself (`Mu`
+        // on the first pass, the raw condition afterwards) is still Phase 4's
+        // work, so a placeholder in a `repeat` body is a parameter of that
+        // body that nothing binds yet, rather than the enclosing block's.
+        Stmt::Loop { repeat: true, .. } => {
+            PlaceholderBodyKind::Signature(ArgSupply::ConditionAfterFirstPass)
+        }
         // `loop {}` (`repeat: false`, both headerless and C-style) and
         // `react {}` fall through to the `NoSignature` catch-all below.
         // The `whenever` body is its own block scope, supplied the emitted
@@ -2379,14 +2397,27 @@ pub(crate) fn placeholder_body_kind(stmt: &Stmt) -> PlaceholderBodyKind {
         Stmt::Whenever { .. } => PlaceholderBodyKind::Signature(ArgSupply::Topic),
         // `Default`/`Catch`/`Control`/`Phaser` do not take a signature in
         // raku either — ADR-0048 Phase 2 flips them to `NoSignature` via the
-        // catch-all below. `Block`/`SyntheticBlock` (the bare `{}` statement,
-        // D6) and `When` (D3) stay `Transparent`/pending later phases;
+        // catch-all below.
+        //
+        // ADR-0048 Phase 3 (D3/D6): a bare `{ ... }` STATEMENT and a `when`
+        // body are real Blocks that raku invokes with ZERO arguments, so a
+        // placeholder in one is that block's own unsatisfied parameter, not
+        // the enclosing block's — `{ $^c }` and `given 5 { when 5 { $^c } }`
+        // both die with "Too few positionals passed; expected 1 argument but
+        // got 0", and `{ when 5 { $^c } }.arity` is 0. Hence
+        // `Signature(ArgSupply::None)`: a boundary the shallow walks stop at,
+        // whose arity failure `emit_inlined_body_placeholder_binds` raises at
+        // the body's own compile site.
+        //
+        // `SyntheticBlock` is NOT included: it is a parser desugar wrapper
+        // (destructuring declarations, `has` attribute lowering, package
+        // meta-statements, ...) with no `{ ... }` in the source at all, so a
+        // placeholder inside one still belongs to the enclosing block.
         // `RoleDecl` stays `Transparent` too (a deliberate Phase-1
         // over-reject via its own `emit_block_placeholder_die` call site —
         // correcting it is Phase 5/D7, not here).
-        Stmt::Block(_) | Stmt::SyntheticBlock(_) | Stmt::RoleDecl { .. } | Stmt::When { .. } => {
-            PlaceholderBodyKind::Transparent
-        }
+        Stmt::Block(_) | Stmt::When { .. } => PlaceholderBodyKind::Signature(ArgSupply::None),
+        Stmt::SyntheticBlock(_) | Stmt::RoleDecl { .. } => PlaceholderBodyKind::Transparent,
         Stmt::Given {
             is_statement_modifier: true,
             ..
@@ -2421,7 +2452,11 @@ pub(crate) fn placeholder_body_kind_expr(expr: &Expr) -> PlaceholderBodyKind {
         Expr::AnonSub { .. } | Expr::AnonSubParams { .. } | Expr::Lambda { .. } => {
             PlaceholderBodyKind::Signature(ArgSupply::CallerArgs)
         }
-        // The bare `{}` term (D6, Phase 3) stays `Transparent`. `Gather`
+        // The bare `{}` TERM (an `Expr::Block` in value position) stays
+        // `Transparent`: `compile_expr_block` turns a placeholder-bearing one
+        // into a real closure with those placeholders as its signature
+        // (`{ $^c }.arity` is 1), so it is not the zero-argument statement
+        // Block that ADR-0048 Phase 3/D6 reclassified. `Gather`
         // (`gather {}`) does NOT — ADR-0048 Phase 2 flips it to `NoSignature`
         // via the catch-all below (raku: a placeholder inside `gather {}` is
         // `X::Placeholder::Block`, not the enclosing block's own param).

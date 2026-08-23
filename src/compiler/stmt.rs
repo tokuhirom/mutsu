@@ -769,6 +769,7 @@ impl Compiler {
     }
 
     pub(super) fn compile_stmt(&mut self, stmt: &Stmt) {
+        self.note_construct_body_block(stmt);
         match stmt {
             Stmt::Expr(expr) => {
                 // See `Compiler::sunk_list_assign_result` — the statement's
@@ -836,6 +837,30 @@ impl Compiler {
                     let idx = self.code.add_constant(err_val);
                     self.code.emit(OpCode::LoadConst(idx));
                     self.code.emit(OpCode::Die);
+                    return;
+                }
+                // ADR-0048 D3/D6: a bare `{ ... }` STATEMENT is a Block raku
+                // invokes with ZERO arguments, so a placeholder it declares is
+                // that block's own unsatisfied parameter -- `{ $^c }` dies with
+                // "Too few positionals passed; expected 1 argument but got 0".
+                // (This replaces the ad-hoc "Implicit placeholder parameters are
+                // not available in bare nested blocks" string the two tail-block
+                // sites used to emit, and additionally covers the NON-tail form,
+                // which previously leaked the placeholder onto the enclosing
+                // routine's signature.)
+                //
+                // Two shapes are NOT such a block. A SYNTHESIZED body -- an
+                // `if`/`while`/`loop` branch the compile sites re-wrap in
+                // `Stmt::Block` -- is not a block of its own; `synthetic_block_body`
+                // marks those, so peek it here rather than consuming it (it is
+                // taken further down as `is_bare`). And a statement MODIFIER's
+                // modified statement (`{ $a = $^x } unless 0`) IS this construct's
+                // own block, supplied the modifier's value -- see
+                // `is_construct_body_block`.
+                if !self.synthetic_block_body
+                    && !self.is_construct_body_block(stmts)
+                    && self.emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
+                {
                     return;
                 }
                 // A block with a top-level `when`/`default` is where that
@@ -2066,16 +2091,21 @@ impl Compiler {
                 // A bare `if EXPR { ... $^a ... }` whose block has a scalar
                 // placeholder receives the condition value as that placeholder
                 // (like `if EXPR -> $a { ... }`), so `if 42 { $^a.say }` prints 42.
-                // Bind the first scalar placeholder (`$^a` → env key `^a`); a valid
-                // block can take only the one condition value.
-                let cond_placeholder: Option<String> = if binding_var.is_none() {
-                    crate::ast::collect_placeholders_shallow(then_branch)
-                        .into_iter()
-                        .find(|n| n.starts_with('^'))
-                } else {
-                    None
-                };
-                let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
+                // The bind itself (and the arity failure when the branch declares
+                // more placeholders than the single condition value satisfies) is
+                // ADR-0048 D3's shared `emit_inlined_body_placeholder_binds`.
+                //
+                // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER introduces
+                // no block of its own (the oracle classifies it `Transparent`), so
+                // its "body" placeholders are the enclosing routine's own
+                // parameters: `sub f { say "$^a" if 1; 0 }; f(7)` must print 7, not
+                // the condition. The two value-position `if` sites already carried
+                // this guard; this one did not, which is why only the *non-tail*
+                // statement-modifier form diverged.
+                let bind_cond_placeholders = binding_var.is_none() && !*is_statement_modifier;
+                let binds_cond_placeholder =
+                    bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
+                let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
                 // A condition that is a compile-time constant resolves the branch
                 // here (ADR-0006 §2.2): `constant DEBUG = False; if DEBUG { note
                 // ... }` emits nothing at all. The unreachable branch is only
@@ -2129,9 +2159,11 @@ impl Compiler {
                     // Flatten the duplicated condition into @_ (like *@ slurpy).
                     self.code.emit(OpCode::FlattenSlurpy);
                     self.emit_set_named_var("@_");
-                } else if let Some(ph) = &cond_placeholder {
-                    // Bind the scalar placeholder to the (unflattened) condition value.
-                    self.emit_set_named_var(ph);
+                } else if bind_cond_placeholders {
+                    // Bind the branch's placeholders to the (unflattened) condition
+                    // value -- ADR-0048 D3. Emitted inside the taken branch so a
+                    // never-taken `if 0 { "$^a $^b" }` raises nothing, matching raku.
+                    self.emit_inlined_body_placeholder_binds(then_branch, ArgSupply::Condition);
                 }
                 // The branch is a block literal the enclosing block re-clones on
                 // every execution, so its own `state` restarts each time — see
@@ -2218,6 +2250,16 @@ impl Compiler {
                     // never calls the block in raku at all, so there is no
                     // persisting-modifier case to preserve (unlike `for`,
                     // which gates on `is_statement_modifier`).
+                    //
+                    // For ADR-0048 D3/D6 that sole block is still treated as
+                    // this loop's own body rather than a nested zero-argument
+                    // one: `Stmt::While` carries no `is_statement_modifier`
+                    // flag, so `{ $a = $^x } while COND` and the far rarer
+                    // `while COND { { $^a } }` are indistinguishable here, and
+                    // the conservative choice is to not raise. Supplying the
+                    // raw condition to either is D4/Phase 4's job. Re-noted
+                    // because `expand_loop_phasers` rebuilt the body list.
+                    self.note_construct_body_block_stmts(&loop_body);
                     self.compile_scope_restored_loop_body(&loop_body);
                 }
                 self.code.patch_loop_end(loop_idx);
@@ -2578,6 +2620,13 @@ impl Compiler {
                 // there — t/state-var-per-block-clone.t test 5).
                 self.suppress_loop_block_state_reset =
                     *is_statement_modifier && Self::loop_body_is_sole_block(&loop_body);
+                // ...and by the same token that sole block is the loop's own
+                // block, supplied one element per iteration -- not a nested
+                // zero-argument one (ADR-0048 D3/D6). Re-noted here because
+                // `expand_loop_phasers` rebuilt the body list.
+                if *is_statement_modifier {
+                    self.note_construct_body_block_stmts(&loop_body);
+                }
                 self.compile_scope_restored_loop_body(&loop_body);
                 self.callframe_block_depth -= 1;
                 for n in &newly_registered {
@@ -3082,13 +3131,14 @@ impl Compiler {
                 // Rebinding it to the topic here made
                 // `sub ROL64 { ($^a … $_ …) given $^n%64 }` read the topic for
                 // `$^a` instead of the first argument.
-                if !*is_statement_modifier
-                    && let Some(ph) = crate::ast::collect_placeholders_shallow(body)
-                        .into_iter()
-                        .find(|n| n.starts_with('^'))
-                {
-                    self.code.emit(OpCode::Dup);
-                    self.emit_set_named_var(&ph);
+                if !*is_statement_modifier {
+                    // ADR-0048 D3's shared bind. `Dup` only when a scalar
+                    // placeholder will actually consume the copy -- the topic
+                    // itself must stay on the stack for `OpCode::Given`.
+                    if Self::inlined_body_binds_supplied_value(body) {
+                        self.code.emit(OpCode::Dup);
+                    }
+                    self.emit_inlined_body_placeholder_binds(body, ArgSupply::Topic);
                 }
                 let pointy_param_idx =
                     pointy_param_name.map(|name| self.code.add_constant(Value::str(name)));
@@ -3174,6 +3224,13 @@ impl Compiler {
                     })
                 });
                 let saved_scope = self.push_dynamic_scope_lexical();
+                // ADR-0048 D3: a `when` body is a Block raku invokes with ZERO
+                // arguments (`{ when 5 { $^c } }.arity` is 0), so any placeholder
+                // it declares is an unsatisfied parameter. Emitted INSIDE the
+                // `When` region: a non-matching `when` never invokes its body and
+                // must not raise (`given 5 { when 6 { $^c }; say "no match" }`
+                // prints "no match" in raku).
+                self.emit_inlined_body_placeholder_binds(body, ArgSupply::None);
                 for (i, s) in body.iter().enumerate() {
                     let is_last = i == body.len() - 1;
                     if is_last {

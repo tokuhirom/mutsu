@@ -687,7 +687,13 @@ impl Compiler {
                     }
                     Stmt::Block(stmts) => {
                         // Bare blocks in final statement position auto-execute and
-                        // produce their final value.
+                        // produce their final value -- but raku still invokes them
+                        // with zero arguments, so a placeholder inside one is an
+                        // unsatisfied parameter (ADR-0048 D3/D6).
+                        if sub_compiler.emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
+                        {
+                            continue;
+                        }
                         sub_compiler.compile_block_inline(stmts);
                         continue;
                     }
@@ -1310,11 +1316,16 @@ impl Compiler {
                             continue;
                         }
                         Stmt::Block(stmts) | Stmt::SyntheticBlock(stmts) => {
-                            if Self::has_block_placeholders(stmts) {
-                                sub_compiler.compile_stmt(&Stmt::Die(Expr::Literal(Value::str(
-                                    "Implicit placeholder parameters are not available in bare nested blocks"
-                                        .to_string(),
-                                ))));
+                            // ADR-0048 D3/D6: see the matching tail-block site in
+                            // `compiler/mod.rs` -- a tail bare `{ ... }` statement
+                            // is a Block invoked with zero arguments, so it gets
+                            // raku's "Too few positionals passed" instead of the
+                            // retired ad-hoc bare-nested-block string.
+                            if matches!(stmt, Stmt::Block(_))
+                                && sub_compiler
+                                    .emit_inlined_body_placeholder_binds(stmts, ArgSupply::None)
+                            {
+                                // fatal: the block never runs
                             } else if matches!(stmt, Stmt::SyntheticBlock(_)) {
                                 // A parser wrapper, not a real scope -- see
                                 // `compile_synthetic_block_inline`.
