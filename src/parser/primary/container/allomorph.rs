@@ -30,23 +30,18 @@ fn unescape_angle_word(word: &str) -> String {
     out
 }
 
+/// Build the value of one quote-word.
+///
+/// Quote-words *always* yield the allomorph for a number-shaped word — there is
+/// no "plain numeric" mode here. Raku's plain `Rat`/`Complex` come from the
+/// separate `rat_number` / `complex_number` *literal terms*, which only the
+/// `<...>`-as-a-term parser recognises; it unwraps the allomorph built here
+/// after consulting [`angle_word_is_numeric_literal`].
 pub(crate) fn angle_word_value(word: &str) -> Value {
-    angle_word_value_impl(word, false)
-}
-
-/// Like `angle_word_value` but always produces allomorphic types for fractions.
-/// Used for multi-element word lists where `<2/3>` becomes RatStr, not plain Rat.
-pub(crate) fn angle_word_value_full_allomorphic(word: &str) -> Value {
-    angle_word_value_impl(word, true)
-}
-
-fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
     // Raku `<...>` words produce allomorphic types: numeric-looking words
     // become IntStr, RatStr, NumStr, or ComplexStr — values that smartmatch
     // against both their numeric type and Str.
     // We represent allomorphs as Mixin(numeric_value, {"Str": Str(word)}).
-    // For single-element <2/3>, fraction notation produces a plain Rat, not RatStr.
-    // For multi-element lists, fractions produce RatStr.
 
     // Process backslash escapes within the word: `\\` → `\`, `\<`/`\>` → `<`/`>`,
     // `\ ` → space (allows embedded spaces in a word).
@@ -68,13 +63,13 @@ fn angle_word_value_impl(word: &str, fraction_allomorphic: bool) -> Value {
         word
     };
     if let Some(rat) = parse_angle_rat_word(parse_word) {
-        if fraction_allomorphic {
-            return make_allomorphic_value(rat, word);
-        }
-        return rat;
+        return make_allomorphic_value(rat, word);
     }
     if let Some(complex) = parse_angle_complex(parse_word) {
         return make_allomorphic_value(complex, word);
+    }
+    if let Some(val) = parse_angle_inf_nan(parse_word) {
+        return make_allomorphic_value(val, word);
     }
     // The plain integer/decimal/Num parsers accept only unsigned digits (the
     // sign is normally a prefix operator), so a leading `+`/`-` is stripped here
@@ -136,6 +131,74 @@ fn make_allomorphic_value(val: Value, word: &str) -> Value {
     let mut mixins = std::collections::HashMap::new();
     mixins.insert("Str".to_string(), Value::str(word.to_string()));
     Value::mixin(val, mixins)
+}
+
+/// Parse the `Inf` / `NaN` word forms, which are allomorphic `NumStr`s.
+///
+/// Raku accepts a sign on `Inf` (`<-Inf>` is a `NumStr`) but not on `NaN`
+/// (`<-NaN>` stays a plain `Str`), and both spellings are case-sensitive:
+/// `<inf>` and `<nan>` are ordinary strings.
+fn parse_angle_inf_nan(word: &str) -> Option<Value> {
+    match word {
+        "Inf" | "+Inf" => Some(Value::num(f64::INFINITY)),
+        "-Inf" => Some(Value::num(f64::NEG_INFINITY)),
+        "NaN" => Some(Value::num(f64::NAN)),
+        _ => None,
+    }
+}
+
+/// Does this `<...>` content read as one of Raku's numeric *literal terms*
+/// rather than as quote-words?
+///
+/// Raku's grammar has dedicated `rat_number` (`<nu/de>`) and `complex_number`
+/// (`<re±im i>`) terms that evaluate to a plain `Rat` / `Complex`. Everything
+/// else between `<` and `>` is ordinary quote-words and therefore yields the
+/// *allomorph*. The distinction is purely syntactic, so the very same number
+/// changes type once it is padded with spaces:
+///
+/// ```text
+/// <42/10>    Rat          < 42/10 >    RatStr
+/// <1+42i>    Complex      < 1+42i >    ComplexStr
+/// ```
+///
+/// A bare imaginary such as `<42i>` has no real part, so it never matches
+/// `complex_number` and stays a `ComplexStr` even when tight.
+pub(crate) fn angle_word_is_numeric_literal(content: &str) -> bool {
+    // Padding whitespace, or any backslash escape, means the content went
+    // through quote-words and cannot be a literal term.
+    if content.is_empty() || content.contains('\\') || content.chars().any(char::is_whitespace) {
+        return false;
+    }
+    // U+2212 MINUS SIGN is accepted in these literals (roast pins `<5−1i>` as a
+    // plain Complex), so normalize it the same way the value parsers do.
+    let normalized;
+    let content = if content.contains('\u{2212}') {
+        normalized = content.replace('\u{2212}', "-");
+        normalized.as_str()
+    } else {
+        content
+    };
+    if content.ends_with('i') {
+        return matches!(parse_angle_complex_parts(content), Some((_, true)));
+    }
+    is_angle_rat_literal(content)
+}
+
+/// Raku's `bare_rat_number` production is `signed-integer '/' integer`: the
+/// numerator may carry a sign but the denominator may not, so `<+1/2>` is a
+/// literal `Rat` while `<1/+3>` is a `RatStr`.
+fn is_angle_rat_literal(word: &str) -> bool {
+    let Some((nu, de)) = word.split_once('/') else {
+        return false;
+    };
+    if de.starts_with('+') || de.starts_with('-') {
+        return false;
+    }
+    is_angle_integer_literal(nu) && is_angle_integer_literal(de)
+}
+
+fn is_angle_integer_literal(s: &str) -> bool {
+    !s.is_empty() && (parse_angle_int(s).is_some() || parse_angle_bigint(s).is_some())
 }
 
 fn parse_angle_rat_word(word: &str) -> Option<Value> {
@@ -231,9 +294,17 @@ fn parse_angle_int(s: &str) -> Option<i64> {
     clean.parse::<i64>().ok().map(|n| sign * n)
 }
 
-/// Parse a complex number literal from an angle bracket word.
+/// Parse a complex number from an angle bracket word.
 /// Handles forms like: 3+0i, -2+5i, 0+31337i, 3-3i, 5i, -3i, 3.5+2.1i, 2e0+0i
 fn parse_angle_complex(word: &str) -> Option<Value> {
+    parse_angle_complex_parts(word).map(|(value, _)| value)
+}
+
+/// As [`parse_angle_complex`], but also reports whether the word carried an
+/// explicit **real part**. Only the full `re±im i` form is Raku's
+/// `complex_number` literal term; a pure imaginary like `42i` parses to the
+/// same `Complex` value but is quote-words, so it stays a `ComplexStr`.
+fn parse_angle_complex_parts(word: &str) -> Option<(Value, bool)> {
     let word = word.trim();
     // Must end with 'i'
     if !word.ends_with('i') {
@@ -241,9 +312,9 @@ fn parse_angle_complex(word: &str) -> Option<Value> {
     }
     let without_i = &word[..word.len() - 1];
 
-    // Pure imaginary: just "Ni" (e.g. "5i", "-3i")
+    // Pure imaginary: just "Ni" (e.g. "5i", "-3i") — no real part.
     if let Ok(imag) = without_i.parse::<f64>() {
-        return Some(Value::complex(0.0, imag));
+        return Some((Value::complex(0.0, imag), false));
     }
 
     // Find the last '+' or '-' that splits real from imaginary.
@@ -269,7 +340,7 @@ fn parse_angle_complex(word: &str) -> Option<Value> {
 
     let real: f64 = real_str.parse().ok()?;
     let imag: f64 = imag_str.parse().ok()?;
-    Some(Value::complex(real, imag))
+    Some((Value::complex(real, imag), true))
 }
 
 /// Parse a Num (floating-point with exponent) from an angle bracket word.
@@ -284,8 +355,12 @@ fn parse_angle_num(word: &str) -> Option<Value> {
     Some(Value::num(val))
 }
 
-/// Build an `Expr::Literal` from a single angle-bracket word, applying allomorphic
-/// type inference (IntStr, RatStr, etc.).
-pub(super) fn angle_word_expr(word: &str) -> crate::ast::Expr {
-    crate::ast::Expr::Literal(angle_word_value(word))
+/// Strip the `Str` mixin off an allomorph, leaving the bare numeric value.
+/// Used by the `<...>`-as-a-term parser for Raku's `rat_number` /
+/// `complex_number` literal terms, which are plain `Rat` / `Complex`.
+pub(super) fn strip_allomorph(value: Value) -> Value {
+    match value.view() {
+        ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+        _ => value,
+    }
 }

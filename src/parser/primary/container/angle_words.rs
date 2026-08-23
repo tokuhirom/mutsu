@@ -6,7 +6,7 @@ use crate::parser::primary::quote_adverbs::QuoteFlags;
 use crate::parser::primary::string::{parse_quotewords_quoted_atom, quotewords_atom_expr};
 use crate::symbol::Symbol;
 
-use super::allomorph::{angle_word_expr, angle_word_value_full_allomorphic};
+use super::allomorph::{angle_word_is_numeric_literal, angle_word_value, strip_allomorph};
 
 /// Parse a < > quote-word list.
 pub(crate) fn angle_list(input: &str) -> PResult<'_, Expr> {
@@ -80,27 +80,24 @@ fn parse_quote_word_list<'a>(
     }
     let words = split_angle_words(content);
     if words.len() == 1 {
-        let expr = angle_word_expr(words[0]);
-        // Single-word angle brackets: <7+8i> produces plain Complex, not ComplexStr
-        // and <2/3> produces plain Rat, not RatStr.
-        // However, if the original content had surrounding whitespace (e.g. <01.0+42i >),
-        // keep the allomorphic ComplexStr form.
-        let has_whitespace = content.trim() != content;
-        let expr = if !has_whitespace
-            && let Expr::Literal(ref lit) = expr
-            && let crate::value::ValueView::Mixin(inner, _) = lit.view()
-            && matches!(inner.as_ref().view(), crate::value::ValueView::Complex(..))
-        {
-            Expr::Literal(inner.as_ref().clone())
-        } else {
-            expr
-        };
-        Ok((rest, expr))
+        // `<...>` is quote-words, and quote-words always yield the *allomorph*
+        // (IntStr, RatStr, NumStr, ComplexStr). The only exceptions are Raku's
+        // dedicated numeric literal terms `<nu/de>` and `<re±im i>`, which the
+        // grammar recognises solely when the bracket content is exactly that
+        // literal — padding whitespace disqualifies it. So build the allomorph
+        // first and unwrap it only for a genuine literal term, which is what
+        // makes `<42/10>` a Rat but `< 42/10 >` a RatStr.
+        let mut value = angle_word_value(words[0]);
+        if angle_word_is_numeric_literal(content) {
+            value = strip_allomorph(value);
+        }
+        Ok((rest, Expr::Literal(value)))
     } else {
-        // Multi-element lists: fractions also become allomorphic (RatStr)
+        // Multi-element lists are always plain quote-words, so every
+        // number-shaped word stays allomorphic.
         let exprs = words
             .iter()
-            .map(|w| Expr::Literal(angle_word_value_full_allomorphic(w)))
+            .map(|w| Expr::Literal(angle_word_value(w)))
             .collect();
         Ok((rest, Expr::ArrayLiteral(exprs)))
     }
@@ -258,7 +255,7 @@ fn split_quotish_words(content: &str) -> Result<Vec<Expr>, PError> {
         } else {
             // «...» and <<...>> are equivalent to qqww:v, so fractions
             // also produce allomorphic types (RatStr).
-            words.push(Expr::Literal(angle_word_value_full_allomorphic(word)));
+            words.push(Expr::Literal(angle_word_value(word)));
         }
         rest = r;
     }

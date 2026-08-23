@@ -101,8 +101,8 @@ pub(in crate::parser) fn register_leaked_region_with_jump(
     });
 }
 
-pub(crate) fn angle_word_value_full_allomorphic(word: &str) -> Value {
-    container::angle_word_value_full_allomorphic(word)
+pub(crate) fn angle_word_value(word: &str) -> Value {
+    container::angle_word_value(word)
 }
 
 /// Compute the 1-based line number of `input` within the original source.

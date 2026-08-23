@@ -189,7 +189,7 @@ impl Interpreter {
             _ => {
                 for word in value.to_string_value().split_whitespace() {
                     if allomorphic {
-                        out.push(crate::parser::angle_word_value_full_allomorphic(word));
+                        out.push(crate::parser::angle_word_value(word));
                     } else {
                         out.push(Value::str(word.to_string()));
                     }

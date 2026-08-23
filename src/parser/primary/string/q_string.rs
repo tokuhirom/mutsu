@@ -135,11 +135,7 @@ pub(crate) fn apply_post_processing<'a>(
         {
             let words: Vec<Expr> = if flags.val {
                 s.split_whitespace()
-                    .map(|w| {
-                        Expr::Literal(
-                            crate::parser::primary::container::angle_word_value_full_allomorphic(w),
-                        )
-                    })
+                    .map(|w| Expr::Literal(crate::parser::primary::container::angle_word_value(w)))
                     .collect()
             } else {
                 s.split_whitespace()

@@ -292,8 +292,8 @@ pub(crate) fn invalidate_all_memos() {
     }
 }
 
-pub(crate) fn angle_word_value_full_allomorphic(word: &str) -> Value {
-    primary::angle_word_value_full_allomorphic(word)
+pub(crate) fn angle_word_value(word: &str) -> Value {
+    primary::angle_word_value(word)
 }
 
 fn line_col_at_offset(source: &str, offset: usize) -> (usize, usize) {
