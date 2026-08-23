@@ -207,6 +207,15 @@ pub(crate) fn var_name(input: &str) -> PResult<'_, String> {
         if let Ok((mut rest, mut name)) = qualified_ident(r) {
             while rest.starts_with(':') && !rest.starts_with("::") {
                 let after_colon = &rest[1..];
+                // Key-less colon pair: `my $take-me:<home>` / `:«home»` / `:['home']`.
+                if let Some((canonical, r2)) =
+                    crate::parser::primary::var::parse_anon_adverb_value(after_colon)
+                {
+                    name.push(':');
+                    name.push_str(&canonical);
+                    rest = r2;
+                    continue;
+                }
                 if let Ok((r2, suffix)) = ident(after_colon) {
                     name.push(':');
                     name.push_str(&suffix);
