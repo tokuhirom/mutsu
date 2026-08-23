@@ -3,7 +3,8 @@ use std::collections::{HashMap, HashSet};
 
 use super::super::*;
 use super::regex_helpers::{
-    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, merge_regex_captures,
+    LTM_DECLARATIVE_MODE, LTM_PREFIX_TERMINATED, NamedRegexLookupSpec, alternation_capture_slots,
+    merge_regex_captures,
 };
 use super::regex_ltm_rank::{LtmAtomMode, ltm_atom_mode};
 
@@ -87,6 +88,7 @@ impl Interpreter {
     fn ltm_rank_and_collect_branches<'a>(
         &mut self,
         alts: impl Iterator<Item = &'a RegexPattern>,
+        capture_slots: usize,
         chars: &[char],
         pos: usize,
         pkg: &str,
@@ -100,6 +102,11 @@ impl Interpreter {
             let ends: Vec<(usize, RegexCaptures)> = raw_ends
                 .into_iter()
                 .map(|(end, mut inner_caps)| {
+                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
+                    }
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);
@@ -184,10 +191,12 @@ impl Interpreter {
             // code block) is deferred: it matches zero-width, so it can only
             // win when NOTHING else matched, and running it eagerly would fire
             // its side effects (a `die`!) on paths raku never executes.
+            let capture_slots = alternation_capture_slots(alternatives);
             let mut branches = self.ltm_rank_and_collect_branches(
                 alternatives
                     .iter()
                     .filter(|alt| !Self::is_pure_code_block_alt(alt)),
+                capture_slots,
                 chars,
                 pos,
                 pkg,
@@ -197,6 +206,7 @@ impl Interpreter {
                     alternatives
                         .iter()
                         .filter(|alt| Self::is_pure_code_block_alt(alt)),
+                    capture_slots,
                     chars,
                     pos,
                     pkg,
@@ -230,6 +240,7 @@ impl Interpreter {
             //    alt_0 matches (reversed)]
             // After pushing to LIFO: alt_0's highest-priority match is on top.
             let mut groups: Vec<Vec<(usize, RegexCaptures)>> = Vec::new();
+            let capture_slots = alternation_capture_slots(alternatives);
             for alt in alternatives {
                 let earlier_matched = groups.iter().any(|g| !g.is_empty());
                 // Defer a side-effect-only alternative (`|| { die ... }`): once
@@ -257,6 +268,11 @@ impl Interpreter {
                 // convention). Reverse to LOWEST FIRST for our return convention.
                 let mut group = Vec::new();
                 for (next, mut inner_caps) in inner_matches {
+                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
+                    }
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);

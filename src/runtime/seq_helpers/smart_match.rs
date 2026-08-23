@@ -898,6 +898,9 @@ impl Interpreter {
                     self.reset_capture_env_vars();
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
+                        if v.alternation_padding {
+                            continue;
+                        }
                         self.env
                             .insert(i.to_string(), Value::str(captures.slot_text(v)));
                     }
@@ -916,7 +919,7 @@ impl Interpreter {
                             .entry(Symbol::intern(hash_name))
                             .or_default();
                     }
-                    let match_obj = Value::make_match_object_full(
+                    let match_obj = Value::make_match_object_full_visible(
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,

@@ -22,6 +22,9 @@ thread_local! {
     /// value afterwards (a subrule's pattern may itself be measured while an outer
     /// measurement is live).
     pub(crate) static LTM_DECLARATIVE_MODE: Cell<bool> = const { Cell::new(false) };
+    /// A quantified alternation folds only captures it actually produces.
+    /// Its unmatched branches must not manufacture extra iterations.
+    pub(super) static IN_QUANTIFIED_ALTERNATION_MATCH: Cell<bool> = const { Cell::new(false) };
     /// Set by the matcher when `LTM_DECLARATIVE_MODE` made it stop at a code atom.
     /// `walk_tokens` checks it after every token and stops walking, so the
     /// termination propagates out through nested subrules.
@@ -1017,6 +1020,16 @@ pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     }
 }
 
+/// The positional-capture width reserved by an alternation.  Capture numbers
+/// after an alternation follow its widest branch, so a shorter winning branch
+/// must contribute Nil slots for the captures it did not take.
+pub(super) fn alternation_capture_slots(alts: &[RegexPattern]) -> usize {
+    alts.iter()
+        .map(count_pattern_capture_groups)
+        .max()
+        .unwrap_or(0)
+}
+
 /// Whether matching `atom` involves an alternation whose branches can have
 /// different lengths — the case where a greedy quantifier (`*`/`+`/`**`) must be
 /// able to backtrack into a *shorter* per-iteration choice to satisfy a later
@@ -1109,6 +1122,7 @@ pub(super) fn fold_quantified_captures(
             subcap: last.2.clone(),
             quantified: Some(list),
             nil: false,
+            alternation_padding: false,
         });
     }
 

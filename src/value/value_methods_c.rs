@@ -43,6 +43,23 @@ impl Value {
         Value::lazy_match(std::sync::Arc::new(cap), target)
     }
 
+    /// Build a user-visible Match, omitting terminal alternation-only holes.
+    /// The regex engine keeps those holes while matching so nested actions can
+    /// still resolve their static `$N` capture numbers.
+    pub(crate) fn make_match_object_full_visible(
+        from: i64,
+        to: i64,
+        positional: &[crate::runtime::PosSlot],
+        named: &HashMap<crate::symbol::Symbol, crate::runtime::NamedSlot>,
+        target: crate::runtime::MatchTarget,
+    ) -> Self {
+        let visible_len = positional
+            .iter()
+            .rposition(|slot| !slot.alternation_padding)
+            .map_or(0, |idx| idx + 1);
+        Self::make_match_object_full(from, to, &positional[..visible_len], named, target)
+    }
+
     pub(crate) fn version_strip_trailing_zeros(parts: &[VersionPart]) -> Vec<VersionPart> {
         let mut v: Vec<VersionPart> = parts.to_vec();
         while matches!(v.last(), Some(VersionPart::Num(0))) {

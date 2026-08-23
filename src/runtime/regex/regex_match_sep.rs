@@ -426,6 +426,7 @@ impl Interpreter {
                 subcap,
                 quantified: Some(list),
                 nil: false,
+                alternation_padding: false,
             }
         };
         let atom_refs: Vec<&RegexCaptures> = atom_caps.iter().collect();
