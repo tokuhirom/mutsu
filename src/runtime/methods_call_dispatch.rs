@@ -1600,6 +1600,13 @@ impl Interpreter {
                                 crate::value::ArrayKind::List,
                             ));
                         }
+                        if path == "." {
+                            return Ok(Value::array(vec![
+                                Value::str_from(""),
+                                Value::str_from(""),
+                                Value::str_from("."),
+                            ]));
+                        }
                         let basename = path
                             .rfind('/')
                             .map(|pos| &path[pos + 1..])
@@ -1683,8 +1690,11 @@ impl Interpreter {
                         } else {
                             ("".to_string(), path.clone())
                         };
-                        let (dirname, basename) = if rest == "/" {
+                        let only_seps = !rest.is_empty() && rest.chars().all(|c| c == '/');
+                        let (dirname, basename) = if only_seps {
                             ("/", "/")
+                        } else if rest.is_empty() {
+                            ("", "")
                         } else if rest.ends_with('/') {
                             let trimmed = rest.trim_end_matches('/');
                             if let Some(pos) = trimmed.rfind('/') {
