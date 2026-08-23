@@ -107,10 +107,19 @@ impl Interpreter {
     /// by first converting backslashes to forward slashes (Cygwin treats `\`
     /// and `/` interchangeably and emits forward slashes).
     pub(crate) fn io_path_parts_spec(path: &str, attributes: &AttrMap) -> (String, String, String) {
-        if Self::is_cygwin_spec(attributes) {
+        let parts = if Self::is_cygwin_spec(attributes) {
             Self::io_path_parts(&path.replace('\\', "/"))
         } else {
             Self::io_path_parts(path)
+        };
+        if Self::is_win32_spec(attributes)
+            && !parts.0.is_empty()
+            && parts.1 == "/"
+            && parts.2 == "/"
+        {
+            (parts.0, "\\".to_string(), "\\".to_string())
+        } else {
+            parts
         }
     }
 

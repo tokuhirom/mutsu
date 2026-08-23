@@ -50,7 +50,9 @@ impl Interpreter {
             "Str" => Ok(Value::str(p.clone())),
             "gist" => {
                 let shown = if Self::io_path_is_absolute_spec(attributes, &p, original) {
-                    if Self::is_win32_spec(attributes) {
+                    if Self::is_win32_spec(attributes) && (p.ends_with('/') || p.ends_with('\\')) {
+                        p.clone()
+                    } else if Self::is_win32_spec(attributes) {
                         Self::canonpath_win32(&p, false)
                     } else if Self::is_cygwin_spec(attributes) {
                         Self::canonpath_cygwin(&p.replace('\\', "/"), false)
