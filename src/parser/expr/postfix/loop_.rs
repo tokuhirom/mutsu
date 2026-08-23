@@ -877,15 +877,11 @@ fn postfix_expr_loop_from(
                         // both `Int 42` and `Str "42"`. Plain hashes stringify
                         // the key, so they are unaffected.
                         let index_expr = if keys.len() == 1 {
-                            Expr::Literal(crate::parser::angle_word_value_full_allomorphic(keys[0]))
+                            Expr::Literal(crate::parser::angle_word_value(keys[0]))
                         } else {
                             Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| {
-                                        Expr::Literal(
-                                            crate::parser::angle_word_value_full_allomorphic(k),
-                                        )
-                                    })
+                                    .map(|k| Expr::Literal(crate::parser::angle_word_value(k)))
                                     .collect(),
                             )
                         };
@@ -1718,11 +1714,11 @@ fn postfix_expr_loop_from(
             let index_expr = if nested_angle {
                 Expr::Literal(Value::str(content.to_string()))
             } else if keys.len() == 1 {
-                Expr::Literal(crate::parser::angle_word_value_full_allomorphic(keys[0]))
+                Expr::Literal(crate::parser::angle_word_value(keys[0]))
             } else {
                 Expr::ArrayLiteral(
                     keys.into_iter()
-                        .map(|k| Expr::Literal(crate::parser::angle_word_value_full_allomorphic(k)))
+                        .map(|k| Expr::Literal(crate::parser::angle_word_value(k)))
                         .collect(),
                 )
             };
@@ -2835,17 +2831,11 @@ fn postfix_expr_loop_from(
                         // val()-allomorphic keys, matching the plain `<...>`
                         // subscript above.
                         let args = if keys.len() == 1 {
-                            vec![Expr::Literal(
-                                crate::parser::angle_word_value_full_allomorphic(keys[0]),
-                            )]
+                            vec![Expr::Literal(crate::parser::angle_word_value(keys[0]))]
                         } else {
                             vec![Expr::ArrayLiteral(
                                 keys.into_iter()
-                                    .map(|k| {
-                                        Expr::Literal(
-                                            crate::parser::angle_word_value_full_allomorphic(k),
-                                        )
-                                    })
+                                    .map(|k| Expr::Literal(crate::parser::angle_word_value(k)))
                                     .collect(),
                             )]
                         };
