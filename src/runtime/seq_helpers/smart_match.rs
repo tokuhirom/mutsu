@@ -916,7 +916,7 @@ impl Interpreter {
                             .entry(Symbol::intern(hash_name))
                             .or_default();
                     }
-                    let match_obj = Value::make_match_object_full(
+                    let match_obj = Value::make_match_object_full_visible(
                         captures.from as i64,
                         captures.to as i64,
                         &captures.positional,

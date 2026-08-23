@@ -245,7 +245,6 @@ impl Interpreter {
                     caps.from = caps.capture_start.unwrap_or(0);
                     caps.to = caps.capture_end.unwrap_or(end);
                     caps.target = Some(target.clone());
-                    super::regex_helpers::trim_trailing_alternation_padding(&mut caps);
                     caps
                 });
         }
@@ -256,7 +255,6 @@ impl Interpreter {
                 caps.from = caps.capture_start.unwrap_or(start);
                 caps.to = caps.capture_end.unwrap_or(end);
                 caps.target = Some(target.clone());
-                super::regex_helpers::trim_trailing_alternation_padding(&mut caps);
                 return Some(caps);
             }
         }

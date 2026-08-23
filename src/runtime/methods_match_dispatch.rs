@@ -207,7 +207,7 @@ impl Interpreter {
             let mtarget = captures.target_or_new(&text);
             // Reduce-time inline actions (children first) commit per-node `.made`.
             self.reduce_regex_captures_made(&mut captures, Some(&mtarget));
-            let match_obj = Value::make_match_object_full(
+            let match_obj = Value::make_match_object_full_visible(
                 from,
                 to,
                 &captures.positional,

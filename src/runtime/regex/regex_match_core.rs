@@ -858,14 +858,18 @@ impl Interpreter {
     ) -> Option<usize> {
         let token = &ctx.pattern.tokens[idx];
         let iter_pos_base = store.caps().positional.len();
-        let (next, delta) = self.regex_match_atom_with_capture_in_pkg(
+        let prior_quantified =
+            super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(|flag| flag.replace(true));
+        let matched = self.regex_match_atom_with_capture_in_pkg(
             &token.atom,
             ctx.chars,
             current,
             store.caps(),
             ctx.pkg,
             ctx.pattern.ignore_case,
-        )?;
+        );
+        super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(|flag| flag.set(prior_quantified));
+        let (next, delta) = matched?;
         if next == current {
             return None;
         }
@@ -1055,6 +1059,8 @@ impl Interpreter {
             return false;
         }
         let token = &ctx.pattern.tokens[idx];
+        let prior_quantified =
+            super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(|flag| flag.replace(true));
         let cands = self.regex_match_atom_all_with_capture_in_pkg(
             &token.atom,
             ctx.chars,
@@ -1063,6 +1069,7 @@ impl Interpreter {
             ctx.pkg,
             ctx.pattern.ignore_case,
         );
+        super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(|flag| flag.set(prior_quantified));
         // Candidates come lowest-priority first: greedy iterates highest
         // first, frugal keeps the producer order.
         let iter: Box<dyn Iterator<Item = (usize, RegexCaptures)>> = if frugal {

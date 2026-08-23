@@ -102,9 +102,11 @@ impl Interpreter {
             let ends: Vec<(usize, RegexCaptures)> = raw_ends
                 .into_iter()
                 .map(|(end, mut inner_caps)| {
-                    inner_caps
-                        .positional
-                        .resize(capture_slots, PosSlot::alternation_padding());
+                    if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
+                    }
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);
@@ -266,9 +268,11 @@ impl Interpreter {
                 // convention). Reverse to LOWEST FIRST for our return convention.
                 let mut group = Vec::new();
                 for (next, mut inner_caps) in inner_matches {
-                    inner_caps
-                        .positional
-                        .resize(capture_slots, PosSlot::alternation_padding());
+                    if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
+                    }
                     let mut new_caps = RegexCaptures::default();
                     for (k, v) in inner_caps.named.drain() {
                         new_caps.named.entry(k).or_default().merge(v);
