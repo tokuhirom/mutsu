@@ -83,7 +83,7 @@ impl Interpreter {
 
     /// Check if a value matches a type name for sequence type endpoints.
     /// Handles the Num->Rat mapping since mutsu uses Num for decimal values.
-    pub(in crate::runtime) fn seq_type_matches(val: &Value, type_name: &str) -> bool {
+    pub(crate) fn seq_type_matches(val: &Value, type_name: &str) -> bool {
         let actual = super::super::value_type_name(val);
         if actual == type_name {
             return true;
@@ -97,7 +97,7 @@ impl Interpreter {
         false
     }
 
-    pub(in crate::runtime) fn seq_values_equal(a: &Value, b: &Value) -> bool {
+    pub(crate) fn seq_values_equal(a: &Value, b: &Value) -> bool {
         // Junction endpoint: check if a matches any junction value
         if let ValueView::Junction { values, .. } = b.view() {
             return values.iter().any(|v| Self::seq_values_equal(a, v));

@@ -1894,6 +1894,11 @@ pub(crate) struct ClosureSeqState {
     pub(crate) closure_env: Option<Env>,
     /// Pre-compiled fast-path body for the generator (when the fast path applies).
     pub(crate) precompiled: Option<CompiledClosureBody>,
+    /// A value endpoint retained when a finite closure sequence is deferred.
+    /// `None` is an unbounded `... *` sequence.
+    pub(crate) endpoint: Option<Value>,
+    /// Do not include `endpoint` in the generated sequence (`...^`).
+    pub(crate) exclude_endpoint: bool,
     /// Set once the generator signals termination (`last`/error) so we stop pulling.
     pub(crate) finished: bool,
 }
