@@ -956,6 +956,7 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Backtrace", "list", 1, 0),
     ("Backtrace", "Str", 3, 0),
     ("Backtrace", "gist", 1, 0),
+    ("Backtrace", "AT-POS", 2, 0),
     ("Backtrace::Frame", "is-routine", 1, 0),
     ("Backtrace::Frame", "subname", 1, 0),
     ("Backtrace::Frame", "is-hidden", 1, 0),

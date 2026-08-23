@@ -507,6 +507,25 @@ pub(crate) fn native_method_1arg(
                         }
                         Some(Ok(Value::NIL))
                     }
+                    // `Backtrace` is Positional over its frames (Rakudo's
+                    // Backtrace is a List of Backtrace::Frame), so
+                    // `$!.backtrace.AT-POS($i)` reads the frame at that
+                    // position and an out-of-range index reads back as Nil.
+                    ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } if class_name == "Backtrace" => {
+                        let frames = attributes
+                            .as_map()
+                            .get("frames")
+                            .cloned()
+                            .unwrap_or(Value::NIL);
+                        Some(Ok(crate::runtime::utils::value_to_list(&frames)
+                            .get(idx)
+                            .cloned()
+                            .unwrap_or(Value::NIL)))
+                    }
                     ValueView::Instance {
                         class_name,
                         attributes,
