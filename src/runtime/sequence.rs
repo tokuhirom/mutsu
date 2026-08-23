@@ -1106,7 +1106,10 @@ impl Interpreter {
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
         let max_gen = match (&mode, &endpoint_kind) {
-            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 256,
+            // A value endpoint is the termination condition for the generator.
+            // Do not impose an arbitrary eager-generation limit here: a valid
+            // closure sequence may need more than 256 steps to reach it.
+            (SeqMode::Closure, Some(EndpointKind::Value(_))) => usize::MAX,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
