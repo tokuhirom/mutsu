@@ -854,6 +854,10 @@ impl Interpreter {
                     } else {
                         value
                     };
+                    // A real Array/Hash element is a Scalar and cannot hold
+                    // `Nil`: decay each `Nil` the assignment stored to the
+                    // container's own default (ADR-0049).
+                    assigned_value = self.decay_nil_container_elements(assigned_value);
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if assigned_value.is_nil()
@@ -929,6 +933,10 @@ impl Interpreter {
                     } else {
                         value
                     };
+                    // A real Array/Hash element is a Scalar and cannot hold
+                    // `Nil`: decay each `Nil` the assignment stored to the
+                    // container's own default (ADR-0049).
+                    assigned_value = self.decay_nil_container_elements(assigned_value);
                     // When Nil is assigned to an attribute with `is default(...)`,
                     // restore the default value instead of setting Nil.
                     if assigned_value.is_nil()
@@ -1237,6 +1245,10 @@ impl Interpreter {
                     value,
                     preserve_hash_entries,
                 );
+                // A real Array/Hash element is a Scalar and cannot hold
+                // `Nil`: decay each `Nil` the assignment stored to the
+                // container's own default (ADR-0049).
+                assigned_value = self.decay_nil_container_elements(assigned_value);
                 // When Nil is assigned to an attribute with `is default(...)`,
                 // restore the default value instead of setting Nil.
                 if assigned_value.is_nil()
@@ -1432,6 +1444,10 @@ impl Interpreter {
             } else {
                 value
             };
+            // A real Array/Hash element is a Scalar and cannot hold `Nil`:
+            // decay each `Nil` the assignment stored to the container's own
+            // default (ADR-0049).
+            assigned_value = self.decay_nil_container_elements(assigned_value);
             // When Nil is assigned to an attribute with `is default(...)`,
             // restore the default value instead of setting Nil.
             if assigned_value.is_nil()

@@ -982,6 +982,12 @@ impl Interpreter {
             if !is_bind {
                 assigned = self.decay_nil_elements_for_var_assign(name, assigned);
             }
+            // `@a = Nil` resets to the *outgoing container's* own
+            // `is default(...)` -- see `array_assign_nil_container_default`.
+            if !is_bind && raw_popped.is_nil() {
+                let old = self.locals[idx].clone();
+                assigned = self.array_assign_nil_container_default(name, &old, assigned);
+            }
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`, §4
             // BLOCKERS.md test 15): its OWN elements are shared `ContainerRef`
             // cells from the bind-time slice promotion (`vm_var_index_ops.rs`).

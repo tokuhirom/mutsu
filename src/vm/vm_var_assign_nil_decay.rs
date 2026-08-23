@@ -52,6 +52,41 @@ impl Interpreter {
         self.typed_container_default(container)
     }
 
+    /// `@a = Nil` is a one-element *list* assignment whose single `Nil`
+    /// element resets to the owning container's own `is default(...)` (raku:
+    /// `[42]`, not `[Any]`). `coerce_to_array` is deliberately type-blind and
+    /// hardcodes `Any` for a bare `Nil` RHS, and the `is default(...)` hole
+    /// fixup on the SetLocal path does not run at all on the by-name
+    /// `SetGlobal` store that an attribute twigil (`@!a`) compiles to.
+    ///
+    /// So consult both sources: the *outgoing* container's embedded default
+    /// (tagged at construction for a public container attribute, and the only
+    /// source available when the store is by slot) and, failing that, the
+    /// name-keyed `var_default` (which method entry populates for
+    /// `@!a`/`@.a`, and which is the only source for a private-only
+    /// attribute, whose container is not tagged at construction). The fresh
+    /// container is re-tagged, because Raku's `=` assigns *into* an Array
+    /// rather than replacing it, so `@!a[5]` still yields the default
+    /// afterwards.
+    ///
+    /// Callers gate on the RHS actually being `Nil`, so the (cheap) old-value
+    /// clone is only paid on that path.
+    pub(crate) fn array_assign_nil_container_default(
+        &mut self,
+        name: &str,
+        old_container: &Value,
+        assigned: Value,
+    ) -> Value {
+        let Some(def) = self
+            .container_default(old_container)
+            .or_else(|| self.var_default(name).cloned())
+        else {
+            return assigned;
+        };
+        let replaced = Value::real_array(vec![def.clone()]);
+        self.tag_container_default(replaced, def)
+    }
+
     /// ADR-0049 slice 3: replaces the narrow, hardcoded-`Any`
     /// `nil_elems_to_any` fixup that used to run only for a whole-array
     /// (list-)assignment to an UNTYPED `@` variable (gated on
