@@ -319,6 +319,7 @@ impl Interpreter {
         let Stmt::ProtoDecl {
             name: proto_name,
             param_defs,
+            return_type,
             body: proto_body,
             is_method: true,
             ..
@@ -345,7 +346,7 @@ impl Interpreter {
             is_method: true,
             empty_sig: false,
             is_stub: Self::is_stub_routine_body(proto_body),
-            return_type: None,
+            return_type: return_type.clone(),
             is_default: false,
             deprecated_message: None,
             source_file: self.current_source_file(),

@@ -60,6 +60,11 @@ impl Interpreter {
         {
             return Some(rt.clone());
         }
+        if let Some(def) = self.resolve_proto_function(name)
+            && let Some(ref rt) = def.return_type
+        {
+            return Some(rt.clone());
+        }
         None
     }
 

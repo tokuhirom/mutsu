@@ -3394,6 +3394,7 @@ pub(crate) struct CompiledProtoDeclPlan {
     pub(crate) name: Symbol,
     pub(crate) params: Vec<String>,
     pub(crate) param_defs: Vec<ParamDef>,
+    pub(crate) return_type: Option<String>,
     pub(crate) is_export: bool,
     pub(crate) custom_traits: Vec<String>,
     /// True for `proto method`/`proto submethod`: such a proto never
@@ -6820,6 +6821,7 @@ impl CompiledCode {
             name,
             params,
             param_defs,
+            return_type,
             body,
             is_export,
             custom_traits,
@@ -6834,6 +6836,7 @@ impl CompiledCode {
             name: *name,
             params: params.clone(),
             param_defs: param_defs.clone(),
+            return_type: return_type.clone(),
             is_export: *is_export,
             custom_traits: custom_traits.clone(),
             is_method: *is_method,

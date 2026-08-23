@@ -374,6 +374,76 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let (
+            read,
+            write,
+            append,
+            bin,
+            line_chomp,
+            line_separators,
+            out_buffer_capacity,
+            nl_out,
+            enc,
+            _create,
+            _exclusive,
+        ) = self.parse_io_flags_values(&args[1..]);
+
+        // IO::Special is a sentinel for an already-open standard stream, not
+        // a path named "IO::Special()". Reopen it as a fresh IO::Handle so
+        // per-handle options such as :nl-out do not mutate $*OUT/$*ERR/$*IN.
+        if let Some(ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        }) = args.first().map(Value::view)
+            && class_name == "IO::Special"
+            && let Some(what) = attributes.as_map().get("what")
+        {
+            let what = what.to_string_value();
+            let (target, default_mode, target_name) = match what.as_str() {
+                "<STDOUT>" | "STDOUT" => (IoHandleTarget::Stdout, IoHandleMode::Write, "STDOUT"),
+                "<STDERR>" | "STDERR" => (IoHandleTarget::Stderr, IoHandleMode::Write, "STDERR"),
+                "<STDIN>" | "STDIN" => (IoHandleTarget::Stdin, IoHandleMode::Read, "STDIN"),
+                _ => (IoHandleTarget::File, IoHandleMode::Read, ""),
+            };
+            if target != IoHandleTarget::File {
+                let mode = if append {
+                    IoHandleMode::Append
+                } else if read && write {
+                    IoHandleMode::ReadWrite
+                } else if write {
+                    IoHandleMode::Write
+                } else if read {
+                    // With no explicit mode, retain the stream's natural
+                    // direction (stdout/stderr are writable by default).
+                    if args[1..].iter().any(|arg| {
+                        matches!(arg.view(), ValueView::Pair(name, value) if name == "r" && value.truthy())
+                    }) {
+                        IoHandleMode::Read
+                    } else {
+                        default_mode
+                    }
+                } else {
+                    default_mode
+                };
+                let handle = self.create_handle(target, mode, Some(target_name.to_string()));
+                self.with_handle_mut(&handle, |state| {
+                    state.line_chomp = line_chomp;
+                    state.line_separators = line_separators;
+                    state.out_buffer_capacity = out_buffer_capacity;
+                    state.nl_out = nl_out.unwrap_or_else(|| "\n".to_string());
+                    state.bin = bin;
+                    state.encoding = if bin {
+                        "bin".to_string()
+                    } else {
+                        enc.unwrap_or_else(|| "utf-8".to_string())
+                    };
+                    Ok(())
+                })?;
+                return Ok(handle);
+            }
+        }
+
         // `open` takes an `IO()`-coercible path. When handed an IO::Handle
         // (e.g. `open(IO::Handle.new(:path($p)))`), coerce it to its `.path`
         // so the underlying file is opened, matching rakudo.
@@ -393,19 +463,8 @@ impl Interpreter {
             None => return Err(RuntimeError::new("open requires a path argument")),
         };
         check_null_in_path(&path)?;
-        let (
-            read,
-            write,
-            append,
-            bin,
-            line_chomp,
-            line_separators,
-            out_buffer_capacity,
-            nl_out,
-            enc,
-            create,
-            exclusive,
-        ) = self.parse_io_flags_values(&args[1..]);
+        let create = _create;
+        let exclusive = _exclusive;
         let path_buf = self.resolve_path(&path);
         match self.open_file_handle(
             &path_buf,
