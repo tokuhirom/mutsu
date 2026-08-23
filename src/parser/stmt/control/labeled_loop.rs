@@ -19,6 +19,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         && !rest.starts_with("while")
         && !rest.starts_with("until")
         && !rest.starts_with("loop")
+        && !rest.starts_with("repeat")
         && !rest.starts_with("do")
     {
         return Err(PError::expected("labeled loop"));
@@ -91,6 +92,34 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         // { ... }` header and the infinite `loop { ... }` form are handled, then
         // stamp the label onto the returned loop node.
         let (r, stmt) = loop_stmt(rest)?;
+        if let Stmt::Loop {
+            init,
+            cond,
+            step,
+            body,
+            repeat,
+            ..
+        } = stmt
+        {
+            return Ok((
+                r,
+                Stmt::Loop {
+                    init,
+                    cond,
+                    step,
+                    body,
+                    repeat,
+                    label: Some(label),
+                },
+            ));
+        }
+        return Ok((r, stmt));
+    }
+    if keyword("repeat", rest).is_some() {
+        // Delegate to `repeat_stmt` so both `repeat while/until` and
+        // `repeat { ... } while/until` forms are handled, then stamp the
+        // label onto the returned loop node.
+        let (r, stmt) = repeat_stmt(rest)?;
         if let Stmt::Loop {
             init,
             cond,
