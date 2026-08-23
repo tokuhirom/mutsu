@@ -94,45 +94,9 @@ fn io_path_file_test_result(key: &str, negated: bool, path_str: Option<String>) 
         "e" => path.exists(),
         "d" => path.is_dir(),
         "f" => path.is_file(),
-        "r" => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&p)
-                    .map(|m| m.permissions().mode() & 0o444 != 0)
-                    .unwrap_or(false)
-            }
-            #[cfg(not(unix))]
-            {
-                path.exists()
-            }
-        }
-        "w" => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&p)
-                    .map(|m| m.permissions().mode() & 0o222 != 0)
-                    .unwrap_or(false)
-            }
-            #[cfg(not(unix))]
-            {
-                path.exists()
-            }
-        }
-        "x" => {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::metadata(&p)
-                    .map(|m| m.permissions().mode() & 0o111 != 0)
-                    .unwrap_or(false)
-            }
-            #[cfg(not(unix))]
-            {
-                false
-            }
-        }
+        "r" => crate::runtime::path_is_readable(path),
+        "w" => crate::runtime::path_is_writable(path),
+        "x" => crate::runtime::path_is_executable(path),
         "rw" => {
             #[cfg(unix)]
             {
