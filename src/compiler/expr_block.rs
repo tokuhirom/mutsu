@@ -116,13 +116,15 @@ impl Compiler {
                 // statement-position Given arm in `stmt.rs`. Rebinding it to
                 // the topic here made `sub w1 { "a=$^a" with $^n }` read the
                 // topic for `$^a` instead of the sub's own first argument.
-                if !is_statement_modifier
-                    && let Some(ph) = crate::ast::collect_placeholders_shallow(body)
-                        .into_iter()
-                        .find(|n| n.starts_with('^'))
-                {
-                    self.code.emit(OpCode::Dup);
-                    self.emit_set_named_var(&ph);
+                if !is_statement_modifier {
+                    // ADR-0048 D3's shared bind (mirrors the statement-position
+                    // `Given` arm). `Dup` only when a scalar placeholder will
+                    // consume the copy -- the topic must stay on the stack for
+                    // `OpCode::DoGivenExpr`.
+                    if Self::inlined_body_binds_supplied_value(body) {
+                        self.code.emit(OpCode::Dup);
+                    }
+                    self.emit_inlined_body_placeholder_binds(body, ArgSupply::Topic);
                 }
                 let given_idx = self.code.emit(OpCode::DoGivenExpr { body_end: 0 });
                 self.compile_block_inline(body);

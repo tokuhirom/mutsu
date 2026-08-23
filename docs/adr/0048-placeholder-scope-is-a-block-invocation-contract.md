@@ -1,6 +1,6 @@
 # ADR-0048: Placeholder scope is a per-construct block-invocation contract, not a per-AST-arm boundary flag
 
-- Status: Accepted (P1, P2 landed; P3-P5 not started)
+- Status: Accepted (P1, P2, P3 landed; P4-P5 not started)
 - Date: 2026-08-20
 - Supersedes the framing of: `todo/deep/placeholder-scope-loop-while-block-boundaries.md`
   (and, transitively, the retired `todo/tickets/placeholder-scope-while-loop-not-a-boundary.md`)
@@ -446,11 +446,102 @@ both backwards for `role` (over-rejects) and `module` (accepts). Classify
      construct/kind) and a clean run of the full local `t/` suite (30788
      tests; the only failure was the pre-existing, environment-specific
      `t/compunit-can-install.t` test 4 already noted under Phase 1).
-3. **Shared bind emitter + arity error (D3).** Fixes multi-placeholder
-   `if`/`given`, and `when` / bare `{}` via `ArgSupply::None`; retires the two
-   ad-hoc bare-block strings.
+3. **Shared bind emitter + arity error (D3). LANDED (PR #6897, 2026-08-23).**
+   Added `Compiler::emit_inlined_body_placeholder_binds` (plus
+   `inlined_body_caret_placeholders`/`inlined_body_binds_supplied_value`) in
+   the new `src/compiler/helpers_placeholder_binds.rs`, and routed all five
+   copy-pasted single-placeholder-bind sites through it: `Stmt::If`
+   (`compiler/stmt.rs`), `compile_if_value`
+   (`compiler/helpers_control_flow.rs`), `compile_do_if_expr_bound`
+   (`compiler/helpers_do_expr.rs`), `Stmt::Given` (`compiler/stmt.rs`) and the
+   value-position `do given` (`compiler/expr_block.rs`). The emitter collects
+   *every* caret placeholder of the body (`$^a`, and the `@^a`/`%^a`/`&^a`
+   forms the old `.find(|n| n.starts_with('^'))` filter silently skipped —
+   raku counts those as positionals too), binds as many as `supplied`
+   provides, and emits raku's verbatim
+   `Too few positionals passed; expected N argument(s) but got M` (singular
+   at N == 1) for the rest. The die is emitted *inside* the body's own
+   control-flow region, because the arity failure is raised on invocation:
+   `if 0 { "$^a $^b" }` and a non-matching `when` must not raise at all.
+   - **`when` and the bare `{}` statement are now
+     `Signature(ArgSupply::None)`** (D6), so the shallow walks stop at them
+     and `emit_inlined_body_placeholder_binds` raises the zero-supply arity
+     error at `Stmt::When`, `Stmt::Block`, and the three tail-block sites
+     (`compiler/mod.rs`, two in `compiler/helpers_sub_body.rs`). That retires
+     both copies of the ad-hoc `"Implicit placeholder parameters are not
+     available in bare nested blocks"` string, *and* fixes the non-tail bare
+     block, which previously leaked its placeholder onto the enclosing
+     routine's signature entirely unchecked (`sub f { { $^c }; 99 }` gave `f`
+     arity 1; raku gives it `()`).
+   - **`Stmt::SyntheticBlock` deliberately stays `Transparent`** and is
+     excluded from the bare-block check. It is a parser desugar wrapper
+     (destructuring declarations, `has` lowering, package meta-statements)
+     with no `{ ... }` in the source at all, so a placeholder inside one still
+     belongs to the enclosing block. The two ad-hoc-string sites applied their
+     check to `SyntheticBlock` as well; that was over-rejection, not a
+     behaviour worth preserving.
+   - **The `Stmt::If` statement-position site was missing the
+     `!is_statement_modifier` guard its two value-position siblings already
+     had**, so a NON-tail `if` statement modifier bound the enclosing
+     routine's placeholder to the modifier's condition:
+     `sub f { say "$^a" if 1; 0 }; f(7)` printed `1` instead of `7` (the tail
+     form went through `compile_if_value` and was already correct). Unifying
+     the five sites on one emitter made the asymmetry visible; the guard is
+     now identical at all of them.
+   - **A statement modifier's *modified statement* can itself be a bare
+     block, and then that block IS the construct's own** — the first CI-visible
+     casualty of D6, caught locally by `t/statement-modifiers.t` and
+     `roast/S04-statement-modifiers/{if,unless}.t`. `{ $a = $^x } unless 0`
+     parses to an `If` whose `then_branch` is exactly `[Stmt::Block(inner)]`,
+     and raku supplies the modifier's value to that block (it prints `0`, and
+     `{ $a = $^x } given 69` prints `69`; the parser already lowers those two
+     into a `VarDecl` of `^x` at the head of the block —
+     `rewrite_placeholder_block_modifier_stmt`). Only a block *genuinely
+     nested* inside a construct's braces (`if 1 { { $^a } }`) is a second,
+     separately-invoked zero-argument Block, and the two are indistinguishable
+     from inside the `Stmt::Block` arm. `Compiler::note_construct_body_block`
+     therefore records the body block's *address* (the AST outlives the whole
+     compile) for a statement-modifier `If`/`Given`/`For` and for any
+     sole-block `While` body, and `is_construct_body_block` makes that one
+     node skip the zero-supply check. The loop arms re-note it after
+     `expand_loop_phasers`, which rebuilds the body list and so invalidates
+     the original address. `Stmt::While` carries no `is_statement_modifier`
+     flag, so the far rarer `while C { { $^a } }` gets the same pass — a
+     deliberate false negative whose real fix is D4.
+   - **Phase 3 required promoting `repeat {} while/until` to its real
+     `Signature(ArgSupply::ConditionAfterFirstPass)` classification** — the
+     *classification* half of D4 only, no new codegen. Once a bare `{ ... }`
+     statement became a zero-argument boundary, a `repeat` nested inside one
+     leaked its `$^a` out to that block, which then correctly-but-wrongly
+     reported it as a parameter nothing supplies. That is exactly the shape of
+     `roast/S04-statements/repeat.t`'s "placeholders and 'repeat while' mix"
+     subtest (whitelisted) and of the accepting pin Phase 2 added to
+     `t/placeholder-scope-rejecting.t`, so Phase 3 could not land without it.
+     Phase 2's note that `repeat` "belongs with D4, not this rejecting set"
+     stands — it is still not *rejected*; it is now a boundary whose parameter
+     nothing binds yet, which is what D4/Phase 4 finishes.
+   - Verified by a new `t/placeholder-scope-signature-capable.t` (36 cases,
+     one per row of the signature-capable evidence table plus the
+     modifier-over-a-bare-block group) that passes **unmodified under real
+     `raku`** as well as under mutsu — including the exact failure text,
+     asserted via an `EVAL`/`CATCH` helper rather than `throws-like`'s
+     `message` matcher (which mutsu currently accepts and ignores).
+   - **Residual divergences Phase 3 deliberately did not chase** (all
+     pre-existing, all D4/Phase 4 shaped, none regressed by this phase):
+     `{ $a = "$^x $^y" } unless 0` under-supplies without raising, because the
+     parser's modifier desugar binds the first placeholder to the condition
+     and the rest to `Nil` rather than deferring to D3's emitter;
+     `{ @a.push($^x) } for 1, 2` yields `True` per element instead of the
+     element (verified pre-existing by temporarily reverting the `Stmt::Block`
+     classification); `while` still leaks a placeholder in its body to the
+     enclosing routine and mutsu *calls* a `{ ... } while COND` block that
+     raku never calls; and a genuinely nested `if 1 { { $^a } }` / `given 5 { {
+     $^a } }` prints `True` where raku raises the zero-supply failure.
 4. **`while`/`until`/`repeat` raw-condition supply (D4) and the signature
-   clash (D5).**
+   clash (D5).** (`repeat`'s oracle *classification* already landed in Phase 3
+   above; what remains is the per-iteration bind for all three, and `while`'s
+   own classification — a placeholder in a `while` body still leaks to the
+   enclosing routine.)
 5. **Role classification (D7).** (`module`/`package`/`grammar` — the other
    half of D7 — already landed in Phase 2 above.)
 

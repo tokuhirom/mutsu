@@ -174,14 +174,10 @@ impl Compiler {
         // so this binding does not apply — mirrors the same guard in
         // `compile_if_value`.
         let needs_at_underscore = binding_var.is_none() && Self::body_uses_legacy_args(then_branch);
-        let cond_placeholder: Option<String> = if binding_var.is_none() && !is_statement_modifier {
-            crate::ast::collect_placeholders_shallow(then_branch)
-                .into_iter()
-                .find(|n| n.starts_with('^'))
-        } else {
-            None
-        };
-        let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
+        let bind_cond_placeholders = binding_var.is_none() && !is_statement_modifier;
+        let binds_cond_placeholder =
+            bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
+        let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
         let mut deferred_container_decl = None;
         if let Some(var_name) = binding_var {
             let (read_expr, deferred) = self.compile_if_binding_decl(var_name, cond);
@@ -198,8 +194,11 @@ impl Compiler {
         if needs_at_underscore {
             self.code.emit(OpCode::FlattenSlurpy);
             self.emit_set_named_var("@_");
-        } else if let Some(ph) = &cond_placeholder {
-            self.emit_set_named_var(ph);
+        } else if bind_cond_placeholders {
+            // ADR-0048 D3's shared bind: binds every placeholder the branch
+            // declares that the single condition value can satisfy, and raises
+            // raku's "Too few positionals passed" for the rest.
+            self.emit_inlined_body_placeholder_binds(then_branch, ArgSupply::Condition);
         }
         // The branch is a block literal re-cloned per execution of the enclosing
         // block, so its own `state` restarts — see `OpCode::ResetStateLocals`.

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast::{AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
+use crate::ast::{ArgSupply, AssignOp, CallArg, Expr, PhaserKind, Stmt, make_anon_sub};
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction, OpCode};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
@@ -1125,6 +1125,7 @@ mod helpers_dynamic;
 mod helpers_method_body;
 pub(crate) mod helpers_ops;
 mod helpers_phasers;
+mod helpers_placeholder_binds;
 mod helpers_stmt_analysis;
 mod helpers_sub_body;
 pub(crate) mod lex_scope;
@@ -1422,6 +1423,12 @@ pub(crate) struct Compiler {
     /// not a genuine source `{ ... }`). The `Stmt::Block` arm consumes it to
     /// decide whether the resulting scope is a backtrace-visible callframe.
     synthetic_block_body: bool,
+    /// Address of the `Stmt::Block` body a statement modifier (or a `while`)
+    /// supplies its own value to — ADR-0048 D3/D6. See
+    /// `Compiler::note_construct_body_block`, which records it, and
+    /// `is_construct_body_block`, which the `Stmt::Block` arm consults to skip
+    /// its zero-argument arity check for exactly that node.
+    construct_body_block: Option<usize>,
     /// Set true immediately before the ONE NEXT `push_dynamic_scope_lexical`
     /// call recursively invoked to inline a `Stmt::SyntheticBlock`'s body (the
     /// parser's wrapper for a `:=`-bind declaration, e.g. `my $x := expr` ->
@@ -1620,6 +1627,7 @@ impl Compiler {
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
             synthetic_block_body: false,
+            construct_body_block: None,
             next_dynamic_scope_inline_transparent: false,
             suppress_loop_block_state_reset: false,
             next_try_is_bare_block: false,
@@ -3208,11 +3216,17 @@ impl Compiler {
                             continue;
                         }
                         Stmt::Block(body) | Stmt::SyntheticBlock(body) => {
-                            if Self::has_block_placeholders(body) {
-                                self.compile_stmt(&Stmt::Die(Expr::Literal(Value::str(
-                                    "Implicit placeholder parameters are not available in bare nested blocks"
-                                        .to_string(),
-                                ))));
+                            // ADR-0048 D3/D6: a tail bare `{ ... }` statement is
+                            // still a Block invoked with zero arguments, so it
+                            // gets raku's arity failure -- retiring the ad-hoc
+                            // "Implicit placeholder parameters are not available
+                            // in bare nested blocks" string that used to live
+                            // here. `SyntheticBlock` is a parser desugar wrapper,
+                            // not a source block, so it is excluded: its
+                            // placeholders belong to the enclosing routine.
+                            if matches!(stmt, Stmt::Block(_))
+                                && self.emit_inlined_body_placeholder_binds(body, ArgSupply::None)
+                            {
                                 continue;
                             }
                             // A tail block carrying ENTER/LEAVE/KEEP/UNDO/PRE/POST

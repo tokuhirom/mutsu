@@ -258,22 +258,19 @@ impl Compiler {
         let needs_at_underscore = Self::body_uses_legacy_args(then_branch);
         // A bare `if EXPR { ... $^a ... }` whose block has a scalar placeholder
         // receives the condition value as that placeholder (like `-> $a`), so
-        // `if 42 { $^a.say }` prints 42. Bind the first scalar placeholder
-        // (`$^a` → env key `^a`); a valid block takes only the one condition value.
+        // `if 42 { $^a.say }` prints 42. The bind (and the arity failure when the
+        // branch declares more placeholders than the single condition value
+        // satisfies) is ADR-0048 D3's shared emitter.
         //
         // An `if`/`unless`/`with`/`without` STATEMENT MODIFIER (including the
         // synthetic `If` `with`/`without` desugar to) has no block of its own,
         // so this binding does not apply: `sub f { $^a if $^n }` must bind
         // `$^a` to the sub's own placeholder argument, not to the modifier's
         // boolean condition result (`$^n.defined`/truthiness).
-        let cond_placeholder: Option<String> = if binding_var.is_none() && !is_statement_modifier {
-            crate::ast::collect_placeholders_shallow(then_branch)
-                .into_iter()
-                .find(|n| n.starts_with('^'))
-        } else {
-            None
-        };
-        let needs_cond_value = needs_at_underscore || cond_placeholder.is_some();
+        let bind_cond_placeholders = binding_var.is_none() && !is_statement_modifier;
+        let binds_cond_placeholder =
+            bind_cond_placeholders && Self::inlined_body_binds_supplied_value(then_branch);
+        let needs_cond_value = needs_at_underscore || binds_cond_placeholder;
         // A topic-binding `if EXPR -> $v { ... }` (or a pointy `elsif`): bind the
         // condition value to `$v` and test the bound variable, mirroring the
         // statement-form desugar (`{ my $v = EXPR; if $v { ... } }`) that
@@ -310,9 +307,10 @@ impl Compiler {
             // Flatten the duplicated condition into @_.
             self.code.emit(OpCode::FlattenSlurpy);
             self.emit_set_named_var("@_");
-        } else if let Some(ph) = &cond_placeholder {
-            // Bind the scalar placeholder to the (unflattened) condition value.
-            self.emit_set_named_var(ph);
+        } else if bind_cond_placeholders {
+            // Bind the branch's placeholders to the (unflattened) condition value
+            // -- ADR-0048 D3.
+            self.emit_inlined_body_placeholder_binds(then_branch, ArgSupply::Condition);
         }
         // A branch with ENTER/LEAVE/KEEP/UNDO phasers is a real block scope:
         // its LEAVE must fire when the branch exits, with the branch value
