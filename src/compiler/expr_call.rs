@@ -402,6 +402,10 @@ impl Compiler {
             let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
             self.code.emit(OpCode::Dup);
             self.code.emit(OpCode::SetGlobal(tmp_idx));
+            // SetGlobal preserves the value for expression context. The
+            // assignment loop reads the snapshot through tmp_name, so the
+            // duplicate must not remain below the later call arguments.
+            self.code.emit(OpCode::Pop);
             // List assignment copies RHS *values* into the LHS containers, and
             // the whole RHS is decontainerized into a value buffer BEFORE any LHS
             // is written (`($p, $q) = ($q, $p)` swaps, `($a, $b) = ($x, ++$x)`
@@ -480,6 +484,7 @@ impl Compiler {
                             });
                         }
                         self.emit_assign_local_or_name(var_name);
+                        self.code.emit(OpCode::Pop);
                         offset += 1;
                     }
                     Expr::ArrayVar(var_name) => {
@@ -498,6 +503,7 @@ impl Compiler {
                         };
                         self.compile_expr(&rhs_expr);
                         self.emit_assign_local_or_name(&format!("@{}", var_name));
+                        self.code.emit(OpCode::Pop);
                         seen_slurpy = true;
                     }
                     Expr::HashVar(var_name) => {
@@ -517,6 +523,7 @@ impl Compiler {
                         };
                         self.compile_expr(&rhs_expr);
                         self.emit_assign_local_or_name(&format!("%{}", var_name));
+                        self.code.emit(OpCode::Pop);
                         seen_slurpy = true;
                     }
                     Expr::Index {

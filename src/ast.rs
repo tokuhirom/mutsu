@@ -2890,6 +2890,47 @@ pub(crate) fn has_var_decl(stmts: &[Stmt], name: &str) -> bool {
 pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
     let placeholders = collect_placeholders_shallow(&stmts);
     if placeholders.is_empty() {
+        // A signature-less block has an implicit `*@_` when it reads the
+        // legacy argument array. Keep that distinction from an explicitly
+        // empty `-> {}` signature, which still rejects positional arguments.
+        let body_debug = format!("{stmts:?}");
+        let uses_at_underscore = body_debug.contains("ArrayVar(\"_\")");
+        if uses_at_underscore {
+            let legacy_params = vec!["@_".to_string()];
+            let param_defs = legacy_params
+                .iter()
+                .map(|name| ParamDef {
+                    name: name.clone(),
+                    default: None,
+                    multi_invocant: true,
+                    required: false,
+                    named: false,
+                    slurpy: true,
+                    double_slurpy: false,
+                    onearg: false,
+                    sigilless: false,
+                    type_constraint: None,
+                    literal_value: None,
+                    sub_signature: None,
+                    where_constraint: None,
+                    traits: Vec::new(),
+                    optional_marker: false,
+                    outer_sub_signature: None,
+                    code_signature: None,
+                    is_invocant: false,
+                    shape_constraints: None,
+                    block_param: true,
+                })
+                .collect();
+            return Expr::AnonSubParams {
+                params: legacy_params,
+                param_defs,
+                return_type: None,
+                body: stmts,
+                is_rw: false,
+                is_whatever_code: false,
+            };
+        }
         Expr::AnonSub {
             body: stmts,
             is_rw: false,

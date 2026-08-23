@@ -1,6 +1,7 @@
 use super::super::super::expr::expression;
 use super::super::super::helpers::{ws, ws1};
 use super::super::super::parse_result::{PError, PResult, opt_char, parse_char};
+use super::super::parse_statement_modifier;
 use super::super::{ident, keyword, var_name};
 use super::helpers::register_term_symbol_from_decl_name;
 use super::parse_decl_type_constraint;
@@ -450,11 +451,11 @@ fn parse_destructuring_with_rhs(
     // matching the scalar `if my $x = f() { ... }` path. Only consume the
     // optional trailing `;` when there is no such block.
     let (rest_ws, _) = ws(rest)?;
-    let rest = if rest_ws.starts_with('{') {
-        rest
-    } else {
-        opt_char(rest_ws, ';').0
-    };
+    let has_following_block = rest_ws.starts_with('{');
+    let rhs_ends_with_block = matches!(raw_rhs, Expr::DoBlock { .. } | Expr::DoStmt(_));
+    let block_rhs_ends_at_newline =
+        rhs_ends_with_block && rest[..rest.len() - rest_ws.len()].contains('\n');
+    let rest = if has_following_block { rest } else { rest_ws };
 
     let has_named = vars.iter().any(|v| v.is_named);
 
@@ -619,7 +620,14 @@ fn parse_destructuring_with_rhs(
     // ...` whose trailing `MarkSigillessReadonly` would otherwise leave a
     // constrained decl block-final and skip its check. (subtypes.t 90)
     stmts.push(Stmt::Expr(Expr::ArrayVar(array_bare)));
-    Ok((rest, Stmt::SyntheticBlock(stmts)))
+    let block = Stmt::SyntheticBlock(stmts);
+    if has_following_block || block_rhs_ends_at_newline {
+        // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
+        // surrounding conditional, not to this declaration's modifier parser.
+        Ok((rest, block))
+    } else {
+        parse_statement_modifier(rest, block)
+    }
 }
 
 /// Return the default expression for a native type, or Nil for non-native types.
