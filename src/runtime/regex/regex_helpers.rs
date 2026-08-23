@@ -1001,6 +1001,17 @@ pub(super) fn merge_regex_captures(
     dst
 }
 
+/// Omit alternation-only holes that remain at the end of a completed Match.
+pub(super) fn trim_trailing_alternation_padding(caps: &mut RegexCaptures) {
+    while caps
+        .positional
+        .last()
+        .is_some_and(|slot| slot.alternation_padding)
+    {
+        caps.positional.pop();
+    }
+}
+
 /// Count how many positional capture groups the given atom will produce.
 pub(super) fn count_capture_groups(atom: &RegexAtom) -> usize {
     match atom {
@@ -1119,6 +1130,7 @@ pub(super) fn fold_quantified_captures(
             subcap: last.2.clone(),
             quantified: Some(list),
             nil: false,
+            alternation_padding: false,
         });
     }
 

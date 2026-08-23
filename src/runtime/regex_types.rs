@@ -69,6 +69,8 @@ pub(crate) struct PosSlot {
     /// An *unmatched optional* capture (`(x)?` that matched zero times),
     /// rendered as `Nil` rather than an empty Match.
     pub(crate) nil: bool,
+    /// A Nil slot inserted only to reserve an alternation branch's width.
+    pub(crate) alternation_padding: bool,
 }
 
 impl PosSlot {
@@ -81,10 +83,10 @@ impl PosSlot {
         }
     }
 
-    /// A capture number reserved by a non-matching alternation branch.
-    pub(crate) fn nil() -> Self {
+    pub(crate) fn alternation_padding() -> Self {
         PosSlot {
             nil: true,
+            alternation_padding: true,
             ..Default::default()
         }
     }

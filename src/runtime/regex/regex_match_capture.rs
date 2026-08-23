@@ -161,7 +161,9 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        inner_caps.positional.resize(capture_slots, PosSlot::nil());
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
@@ -214,7 +216,9 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        inner_caps.positional.resize(capture_slots, PosSlot::nil());
+                        inner_caps
+                            .positional
+                            .resize(capture_slots, PosSlot::alternation_padding());
                         let mut new_caps = RegexCaptures::default();
                         for (k, v) in inner_caps.named.drain() {
                             new_caps.named.entry(k).or_default().merge(v);
