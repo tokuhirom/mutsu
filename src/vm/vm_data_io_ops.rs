@@ -26,6 +26,11 @@ fn needs_method_dispatch(v: &Value) -> bool {
         // `gist_value`/`to_str_context` fast paths would print the bare type
         // name "LazyList" instead.
         ValueView::LazyList(..) => true,
+        // Sub/Routine gist is not the same as their stringification: a named
+        // routine gists as `&name` while `.Str` remains the bare name. Route
+        // these through the native `.gist` dispatch instead of the fast
+        // string-value fallback used by the output op.
+        ValueView::Sub(..) | ValueView::WeakSub(..) | ValueView::Routine { .. } => true,
         // A collection whose gist embeds an element's gist must be rendered via
         // method dispatch when any element needs it (e.g. an instance/type-object
         // with a custom `method gist`), so the per-element gist is honored.
@@ -52,7 +57,10 @@ fn element_needs_method_dispatch(v: &Value) -> bool {
         ValueView::Instance { .. }
         | ValueView::CustomType { .. }
         | ValueView::CustomTypeInstance(_)
-        | ValueView::Package(..) => true,
+        | ValueView::Package(..)
+        | ValueView::Sub(..)
+        | ValueView::WeakSub(..)
+        | ValueView::Routine { .. } => true,
         ValueView::Array(items, _) => items.iter().any(element_needs_method_dispatch),
         ValueView::Seq(items) | ValueView::HyperSeq(items) | ValueView::RaceSeq(items) => {
             items.iter().any(element_needs_method_dispatch)
