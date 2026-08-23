@@ -130,18 +130,20 @@ impl Interpreter {
         match current.as_ref().map(Value::view) {
             Some(ValueView::Hash(_)) if !preserve_hash_entries => {
                 let value = value.into_descalarized();
-                if matches!(value.view(), ValueView::Hash(_)) {
+                let result = if matches!(value.view(), ValueView::Hash(_)) {
                     value
                 } else {
                     Self::normalize_hash_like_assignment(std::collections::HashMap::new(), value)
-                }
+                };
+                Self::carry_container_default(current.as_ref(), result)
             }
             Some(ValueView::Hash(existing_hash)) => {
-                // Carry the existing container's `is default(...)` onto the result
-                // so a whole-hash rw-accessor writeback (`$o.h<k> = v`, which
-                // round-trips the whole hash) does not strip the element default.
-                let existing_default = existing_hash.default.clone();
-                // Likewise carry the object-hash `original_keys` from BOTH
+                // The existing container's `is default(...)` is carried onto
+                // the result by `carry_container_default` below, so a
+                // whole-hash rw-accessor writeback (`$o.h<k> = v`, which
+                // round-trips the whole hash) does not strip the element
+                // default.
+                // Carry the object-hash `original_keys` from BOTH
                 // sides of the merge: the store keys are `.WHICH` strings, and
                 // losing the key objects would make the later re-tag treat
                 // them as raw Str keys and double-encode them.
@@ -151,15 +153,10 @@ impl Interpreter {
                 {
                     merged_orig.extend(new_orig.clone());
                 }
-                let mut result =
-                    Self::normalize_hash_like_assignment(existing_hash.map.clone(), value);
-                if let Some(def) = existing_default {
-                    result.with_hash_mut(|arc| {
-                        if arc.default.is_none() {
-                            crate::gc::Gc::make_mut(arc).default = Some(def);
-                        }
-                    });
-                }
+                let mut result = Self::carry_container_default(
+                    current.as_ref(),
+                    Self::normalize_hash_like_assignment(existing_hash.map.clone(), value),
+                );
                 if !merged_orig.is_empty() {
                     result.with_hash_mut(|arc| {
                         if arc.original_keys.is_none() {
@@ -169,9 +166,56 @@ impl Interpreter {
                 }
                 result
             }
-            Some(ValueView::Array(..)) => super::coerce_to_array(value),
+            Some(ValueView::Array(existing_items, _)) => {
+                let result = match existing_items.default.as_deref() {
+                    // `@attr = Nil` is a one-element *list* assignment whose
+                    // single `Nil` element resets to the owning container's
+                    // own default (raku: `[42]`). `coerce_to_array` is
+                    // deliberately type-blind and hardcodes `Any` for a `Nil`
+                    // RHS, which is only correct when no default is declared.
+                    Some(def) if value.is_nil() => Value::real_array(vec![def.clone()]),
+                    _ => super::coerce_to_array(value),
+                };
+                Self::carry_container_default(current.as_ref(), result)
+            }
             _ => value,
         }
+    }
+
+    /// Raku's `=` assigns *into* an existing `Array`/`Hash` container, so the
+    /// container's own `is default(...)` survives a whole-container
+    /// assignment through an rw accessor (`$o.a = <x y>; $o.a[10]` still
+    /// yields the default). `coerce_to_array` /
+    /// `normalize_hash_like_assignment` build a fresh container out of the
+    /// RHS alone and cannot know about the old one, so re-attach the
+    /// outgoing container's embedded default here. Only fills a hole: an RHS
+    /// that carries its own `is default(...)` keeps it.
+    fn carry_container_default(current: Option<&Value>, mut result: Value) -> Value {
+        let existing_default = match current.map(Value::view) {
+            Some(ValueView::Array(items, _)) => items.default.clone(),
+            Some(ValueView::Hash(items)) => items.default.clone(),
+            _ => None,
+        };
+        let Some(def) = existing_default else {
+            return result;
+        };
+        let tagged = result
+            .with_array_mut(|items, _kind| {
+                let data = crate::gc::Gc::make_mut(items);
+                if data.default.is_none() {
+                    data.default = Some(def.clone());
+                }
+            })
+            .is_some();
+        if !tagged {
+            result.with_hash_mut(|items| {
+                let data = crate::gc::Gc::make_mut(items);
+                if data.default.is_none() {
+                    data.default = Some(def.clone());
+                }
+            });
+        }
+        result
     }
 
     /// ADR-0040 slice 1: this used to STRIP an incoming Scalar wrapper /

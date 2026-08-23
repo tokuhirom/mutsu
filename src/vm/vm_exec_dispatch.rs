@@ -1207,6 +1207,14 @@ impl Interpreter {
                         // preserves the container type instead of copying into
                         // a fresh Array — same semantics as the SetLocal path.
                         self.bind_positional_value(&name, &raw_val)?
+                    } else if raw_val.is_nil() {
+                        // `@!attr = Nil` (a private attribute twigil reaches
+                        // the store by name, not by slot) resets to the
+                        // outgoing container's own `is default(...)` -- see
+                        // `array_assign_nil_container_default`.
+                        let old = self.env().get(&name).cloned().unwrap_or(Value::NIL);
+                        let coerced = runtime::coerce_to_array(raw_val);
+                        self.array_assign_nil_container_default(&name, &old, coerced)
                     } else {
                         runtime::coerce_to_array(raw_val)
                     }
