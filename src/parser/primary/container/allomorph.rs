@@ -206,18 +206,55 @@ fn parse_angle_rat_word(word: &str) -> Option<Value> {
     if lhs.is_empty() || rhs.is_empty() {
         return None;
     }
-    // Don't parse negative denominators as Rat (Raku spec: <1/-3> is Str)
-    if rhs.starts_with('-') {
-        return None;
-    }
-    // Try i64 first, fall back to BigInt for large numbers
+
+    // Preserve exact Rat values when both parts are integers.  Going through
+    // generic division would promote large integer operands to Num, losing the
+    // numerator/denominator needed by `.raku` and by Rat stringification.
     if let (Some(n), Some(d)) = (parse_angle_int(lhs), parse_angle_int(rhs)) {
         return Some(crate::value::make_rat(n, d));
     }
-    // BigInt fallback
-    let numer = parse_angle_bigint(lhs)?;
-    let denom = parse_angle_bigint(rhs)?;
-    Some(crate::value::make_big_rat(numer, denom))
+    if let (Some(n), Some(d)) = (parse_angle_bigint(lhs), parse_angle_bigint(rhs)) {
+        return Some(crate::value::make_big_rat(n, d));
+    }
+
+    let numer = parse_angle_numeric(lhs)?;
+    let denom = parse_angle_numeric(rhs)?;
+    let value = crate::builtins::arith_div(numer, denom).ok()?;
+    value.is_numeric().then_some(value)
+}
+
+/// Parse one of the arbitrary numeric parts accepted by a quote-word fraction.
+/// Unlike a numeric literal term, the sign belongs to the word and must be
+/// handled here rather than by the expression parser.
+fn parse_angle_numeric(word: &str) -> Option<Value> {
+    let (negative, unsigned) = match word.strip_prefix('-') {
+        Some(rest) if !rest.is_empty() => (true, rest),
+        _ => (false, word.strip_prefix('+').unwrap_or(word)),
+    };
+    if unsigned.is_empty() {
+        return None;
+    }
+
+    let value = parse_angle_inf_nan(word).or_else(|| {
+        for parse in [
+            crate::parser::primary::number::integer_no_warn,
+            crate::parser::primary::number::decimal,
+            crate::parser::primary::number::dot_decimal,
+        ] {
+            if let Ok((rest, crate::ast::Expr::Literal(value))) = parse(unsigned)
+                && rest.is_empty()
+            {
+                return Some(value);
+            }
+        }
+        parse_angle_num(unsigned)
+    })?;
+
+    if negative {
+        Some(negate_angle_numeric(value))
+    } else {
+        Some(value)
+    }
 }
 
 fn parse_angle_bigint(s: &str) -> Option<num_bigint::BigInt> {
