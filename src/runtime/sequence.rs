@@ -1651,18 +1651,22 @@ impl Interpreter {
                     }
                 }
 
+                result.push(item);
+                // A repeated *value* is not enough to prove a cycle: the
+                // Fibonacci sequence starts `0, 1, 1, 2, ...`. Require the
+                // trailing two-value generator state to repeat, which catches
+                // alternating/constant closure sequences without truncating a
+                // multi-seed recurrence before its endpoint.
                 if matches!(mode, SeqMode::Closure)
                     && matches!(endpoint_kind, Some(EndpointKind::Value(_)))
-                    && result
-                        .iter()
-                        .any(|prior| Self::seq_values_equal(prior, &item))
+                    && result.len() >= 4
+                    && Self::seq_values_equal(&result[result.len() - 1], &result[result.len() - 3])
+                    && Self::seq_values_equal(&result[result.len() - 2], &result[result.len() - 4])
                 {
                     closure_cycle_detected = true;
                     should_break = true;
                     break;
                 }
-
-                result.push(item);
             }
             if should_break {
                 break;
