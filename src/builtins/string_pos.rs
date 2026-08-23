@@ -22,6 +22,14 @@
 
 use unicode_segmentation::UnicodeSegmentation;
 
+fn is_utf8_c8_payload(g: &str) -> bool {
+    g == "x"
+}
+
+fn is_hex_digit(g: &str) -> bool {
+    g.len() == 1 && g.as_bytes()[0].is_ascii_hexdigit()
+}
+
 /// True when `s` has one grapheme per byte, so byte offsets *are* grapheme
 /// offsets. ASCII guarantees one byte per codepoint; the only ASCII sequence
 /// that merges two codepoints into one grapheme is `\r\n`.
@@ -35,7 +43,26 @@ pub(crate) fn grapheme_units(s: &str) -> Vec<&str> {
     if is_flat_ascii(s) {
         return (0..s.len()).map(|i| &s[i..i + 1]).collect();
     }
-    s.graphemes(true).collect()
+    let raw: Vec<(usize, &str)> = s.grapheme_indices(true).collect();
+    let mut units = Vec::with_capacity(raw.len());
+    let mut i = 0;
+    while i < raw.len() {
+        let (start, grapheme) = raw[i];
+        if grapheme == crate::runtime::utf8_c8::SYNTHETIC_MARKER_STR
+            && i + 3 < raw.len()
+            && is_utf8_c8_payload(raw[i + 1].1)
+            && is_hex_digit(raw[i + 2].1)
+            && is_hex_digit(raw[i + 3].1)
+        {
+            let end = raw[i + 3].0 + raw[i + 3].1.len();
+            units.push(&s[start..end]);
+            i += 4;
+        } else {
+            units.push(grapheme);
+            i += 1;
+        }
+    }
+    units
 }
 
 /// Convert a **byte** offset (what `str::find` returns) into the grapheme
@@ -45,7 +72,7 @@ pub(crate) fn grapheme_offset(s: &str, byte_pos: usize) -> usize {
     if is_flat_ascii(s) {
         return byte_pos;
     }
-    s[..byte_pos].graphemes(true).count()
+    grapheme_units(&s[..byte_pos]).len()
 }
 
 /// The number of graphemes in `s` — the length `index`/`substr` positions are
@@ -54,7 +81,7 @@ pub(crate) fn grapheme_len(s: &str) -> usize {
     if is_flat_ascii(s) {
         return s.len();
     }
-    s.graphemes(true).count()
+    grapheme_units(s).len()
 }
 
 #[cfg(test)]

@@ -258,9 +258,9 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 .collect();
             Some(Ok(Value::seq(parts)))
         }
-        "chars" => Some(Ok(Value::int(
-            arg.to_string_value().graphemes(true).count() as i64,
-        ))),
+        "chars" => Some(Ok(Value::int(crate::builtins::string_pos::grapheme_len(
+            &arg.to_string_value(),
+        ) as i64))),
         "chr" => {
             let (code, display) = match arg.view() {
                 ValueView::Int(i) => (i, format!("{}", i)),
