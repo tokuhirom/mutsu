@@ -654,6 +654,32 @@ impl Interpreter {
             .any(|a| matches!(a.view(), ValueView::LazyList(_)))
         {
             let name = name_sym.resolve();
+            if matches!(name.as_str(), "any" | "all" | "one" | "none") {
+                // Junction constructors need concrete eigenstates. In
+                // particular, a finite gather/map/grep pipeline must be
+                // reified while the RHS is still being evaluated: otherwise
+                // an assignment such as `$j = any (gather $j».take).grep(...)`
+                // stores the pipeline itself as an eigenstate, and forcing it
+                // later observes the newly assigned (self-referential)
+                // junction and recurses forever. Leave genuinely infinite
+                // lazy sources untouched rather than attempting to exhaust
+                // them here.
+                let mut forced_args = Vec::with_capacity(args.len());
+                for arg in args {
+                    if let ValueView::LazyList(ll) = arg.view()
+                        && ll.is_from_gather()
+                        && !ll.is_lazy_infinite()
+                    {
+                        match self.force_lazy_list_vm(&ll) {
+                            Ok(items) => forced_args.push(Value::seq(items)),
+                            Err(e) => return Some(Err(e)),
+                        }
+                    } else {
+                        forced_args.push(arg.clone());
+                    }
+                }
+                return crate::builtins::native_function(name_sym, &forced_args);
+            }
             if matches!(name.as_str(), "flat" | "eager") {
                 // For `flat`, a single lazy argument stays lazy (`flat 42 xx *`
                 // / `flat 10,11 ... *` propagate `.is-lazy`). The one exception

@@ -182,6 +182,7 @@ impl LazyList {
                     ll.coroutine.is_some() || ll.is_from_gather() || !ll.body.is_empty()
                 }
             }
+            ValueView::Junction { values, .. } => values.iter().all(Self::value_source_is_finite),
             _ => false,
         }
     }
