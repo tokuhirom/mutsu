@@ -48,7 +48,7 @@ pub(crate) fn build_chain_cmp_expr(
             },
             Stmt::Expr(Expr::Binary {
                 left: Box::new(cmp),
-                op: TokenKind::AndAnd,
+                op: TokenKind::ChainAnd,
                 right: Box::new(rest),
             }),
         ],
@@ -72,7 +72,7 @@ pub(crate) fn build_chain_cmp_expr_with_repeated_middle(
         let next_cmp = make_chain_cmp(prev_right, op.clone(), next_right.clone(), *negated);
         result = Expr::Binary {
             left: Box::new(result),
-            op: TokenKind::AndAnd,
+            op: TokenKind::ChainAnd,
             right: Box::new(next_cmp),
         };
         prev_right = next_right;

@@ -24,6 +24,12 @@ fn is_noncurrying_pseudo_method(name: &str) -> bool {
 }
 
 pub(super) fn mark_expr(expr: &mut Expr) {
+    // ADR-0033 Phase 4: this same top-down walk is also the priming-*scope*
+    // authority. At a thunk barrier (or a ternary) each operand is its own
+    // scope, so plant a `WhateverCurry` marker around it *before* recursing —
+    // the recursion below then classifies the leaves inside the new marker
+    // exactly as it would have classified them in place.
+    crate::whatever_curry::plant_here(expr);
     match expr {
         Expr::Whatever => *expr = Expr::WhateverArg,
         // Already classified (re-running mark_expr should never happen in

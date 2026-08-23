@@ -1,7 +1,10 @@
 # ADR-0033: Whatever-priming is a leaf property plus a derived scope — defer `WhateverCode` construction out of the parser
 
 - **Status**: Phase 1 shipped (2026-08-19). Phase 2 shipped (2026-08-20, see "Phase 2
-  outcome" below). Phases 3-4 not started.
+  outcome" below). **Phase 4 shipped (2026-08-23, see "Phase 4 outcome" below)** — the
+  thunk-barrier priming correctness fix, plus its chained-comparison prerequisite. Phase 3
+  (RakuAST write / `EVAL`) not started; it has no roast or correctness payoff of its own
+  and was deliberately left until after Phase 4.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -531,6 +534,110 @@ plan except `[*]` (excluded with an inline comment: mutsu currently parses a sta
 `[*]` as the `[*]`-reduction metaoperator over an empty list — a pre-existing,
 Whatever-unrelated parse ambiguity with no `*` node in the tree to classify either way —
 while raku renders `Term::Whatever`; out of scope for this ADR).
+
+## Phase 4 outcome (2026-08-23)
+
+Shipped. Every row of the Problem-2 table at the top of this ADR now matches the system
+`raku`, re-measured on the day rather than trusted from the table, and pinned by a new
+**dual-oracle** `t/whatever-thunky-operators.t` (34 assertions, passing verbatim under
+both `target/debug/mutsu` and `raku`).
+
+### What actually changed — much less than section 4 anticipated
+
+The design in section 4 assumed Phase 4 had to "replace the ~50 parser sites with a single
+`plant` call". Measuring first showed that is not what the correctness fix requires, and
+that doing it would have been a large *behaviour-neutral* refactor bolted onto a
+behaviour-changing one. The rule decomposes into two halves, and the parser's existing
+sites fall into line on their own once the first half is in place:
+
+1. **A thunk barrier is opaque to the enclosing priming scope.** `contains_whatever`
+   (`src/parser/expr/whatever.rs`), `count_whatever` (`whatever_curry/build.rs`) and both
+   `replace_whatever_*` walkers (`whatever_curry/replace.rs`) stop dead at a barrier. This
+   is Rakudo's own model: a thunky op is never "whatever-ish", so it neither creates nor
+   enlarges a scope above it. Because every one of the ~50 parser planting sites is gated
+   on `should_wrap_whatevercode` → `contains_whatever`, **no site can any longer propose a
+   scope that spans a barrier** — the fifty-site rewrite turned out to be unnecessary for
+   the correctness goal, not merely deferrable.
+2. **Each barrier operand is a scope of its own.** The new `src/whatever_curry/plant.rs`
+   owns this — `is_thunk_barrier()` (the barrier set) and `plant_here()` (materialise an
+   `Expr::WhateverCurry` around each operand that primes, gated by the same
+   `should_wrap_whatevercode`). It is invoked from the head of `mark_expr`
+   (`whatever_curry/mark/expr.rs`), which section 2.3 already designated "deliberately the
+   seed of the `plant.rs` this ADR's section 4 calls for — same traversal, same
+   parent-context switch, one phase later it also decides where scopes begin". That
+   prediction held exactly: no second walk was needed.
+
+Half 1 is what makes the *residue* case fall out for free. `((* > 3 && * < 8) + *)` is a
+single arity-1 `WhateverCode` in rakudo (measured); with the barrier opaque, the enclosing
+`+` sees exactly one placeholder and the existing machinery curries it correctly, with no
+special case. Half 2 is a strict gain for the ternary, which mutsu previously primed *not
+at all*: all three parts are now scopes, so `(* + 1 ?? * + 2 !! * + 3)` is a
+`WhateverCode` instead of dying while coercing `Whatever` to `Numeric`.
+
+Because a barrier's operands are materialised *before* the enclosing closure body is
+built, `replace_whatever_*` must clone a barrier subtree through untouched rather than
+substituting `$_` / `__wc_N` into it — the inner markers are separate closures that the
+compiler expands on its own when it compiles the outer lambda's body.
+
+### The prerequisite: `TokenKind::ChainAnd`, not `Expr::ChainedCompare`
+
+The "Phase-4 prerequisite" section below is confirmed real, and the measurement that
+proves it also corrects section 2.6. That section states `(1 < * < 10).arity` "is 1 in
+both implementations"; it is not — rakudo prints `WhateverCode.new`, because `.arity` is
+itself inside the priming scope. The load-bearing measurement is instead the pair
+
+```text
+(1 < * < 10)(0)        False   # one arity-1 curry over the whole chain
+(1 < * && * < 10)(0)   True    # a real `&&` yields only its right-hand thunk
+```
+
+which shows a synthesized chain conjunction and a user-written `&&` must land on opposite
+sides of the barrier rule. The prerequisite section offers two resolutions; this PR takes
+a third, lighter one that satisfies the same requirement ("make the expansion
+distinguishable"): a dedicated `TokenKind::ChainAnd`, emitted by `chain_cmp.rs` and
+`comparison.rs` where they synthesize the conjunction, absent from `is_thunk_barrier`, and
+compiled exactly like `AndAnd`.
+
+`Expr::ChainedCompare { operands, ops }` was costed and rejected *for this PR*. A new
+`Expr` variant needs an arm in every walker that must see through it — Phase 1's own
+Outcome records 41 files needing a `WhateverCurry` arm — and the failure mode is silent:
+a walker with a `_ => {}` catch-all (placeholder collection, sink warnings, closure
+free-variable analysis) would simply stop seeing the chain's operands. `ChainAnd` keeps
+the `Expr::Binary` shape every existing walker already handles, so its audit is the
+bounded set of 20 `TokenKind::AndAnd` sites, all inspected. The node form remains worth
+doing for its *other* benefit — rendering `1 < * < 10` faithfully in RakuAST instead of as
+the expanded `&&` — and is tracked as
+[`todo/tickets/chained-compare-ast-node.md`](../../todo/tickets/chained-compare-ast-node.md).
+
+A bonus correctness fix came with it: the `count_whatever` / `replace_whatever_numbered`
+de-duplication special case, which used to fire on *any* `AndAnd` whose two operands
+shared a structurally-equal middle, now fires only on `ChainAnd`. That heuristic was
+mis-firing on a user-written `1 < * && * < 10`, which mutsu curried into one arity-1
+closure (`(0)` → `False`); it now correctly yields the right-hand thunk (`(0)` → `True`,
+matching rakudo).
+
+### `xor` and `^^` re-measured, as the Risks section demanded
+
+Both are non-short-circuit and rakudo primes neither: `(* + 1 xor * + 2).WHAT` and
+`(* + 1 ^^ * + 2).WHAT` are each `Nil` plus a `Useless use of "+" in expression "* + 2" in
+sink context` warning. No barrier treatment reproduces that (splitting would yield a
+`Bool`, not `Nil`), so both stay off the barrier list and mutsu keeps returning
+`(WhateverCode)` — a documented divergence rather than a guess. This resolves the "`xor`
+is unresolved" risk: excluded, deliberately, with `^^` alongside it.
+
+### Divergences left standing (all pre-existing, none touched by this phase)
+
+`(1 xx *).WHAT` is `Array` vs rakudo's `Seq`; `((* - 1) o (* * 2)).WHAT` is `Sub` vs
+`Block+{...}`; `(*(1))` curries in mutsu where rakudo dies with "No such method 'CALL-ME'
+for invocant of type 'Whatever'". None involve a thunk barrier.
+
+### Validation
+
+`prove t/` in full (3361 files, 31562 assertions) green; `cargo test --workspace` (868
+unit tests plus every integration binary) green; `cargo clippy -- -D warnings` clean; the
+whitelisted `roast/S02-*`, `roast/S03-*` and `roast/S04-*` sweep (345 files) green, with
+`roast/S02-types/{whatever,hyperwhatever}.t`, `roast/S03-operators/composition.t`,
+`short-circuit.t` and `ternary.t` checked individually first.
 
 ## Phase 2 detailed design (added 2026-08-20)
 
