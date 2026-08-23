@@ -566,6 +566,29 @@ pub(crate) fn known_call_stmt(input: &str) -> PResult<'_, Stmt> {
         } else {
             rest
         };
+        // `done VALUE` is shorthand for `emit VALUE; done`. Keep the payload
+        // as a separate statement so supply's existing lowering can rewrite
+        // both operations to the current emitter. Parenthesised `done()` is
+        // deliberately still the no-payload control-flow form above.
+        if had_ws
+            && !rest.is_empty()
+            && !rest.starts_with(';')
+            && !rest.starts_with('}')
+            && !is_stmt_modifier_keyword(rest)
+        {
+            let (rest, value) =
+                crate::parser::stmt::assign::parse_comma_or_expr_no_word_logical(rest)?;
+            return parse_statement_modifier(
+                rest,
+                Stmt::SyntheticBlock(vec![
+                    Stmt::Call {
+                        name: Symbol::intern("emit"),
+                        args: vec![crate::ast::CallArg::Positional(value)],
+                    },
+                    Stmt::ReactDone,
+                ]),
+            );
+        }
         // Support statement modifiers like `done if $v >= 2`
         return parse_statement_modifier(rest, Stmt::ReactDone);
     }
