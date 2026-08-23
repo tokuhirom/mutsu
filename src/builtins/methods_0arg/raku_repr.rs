@@ -661,13 +661,10 @@ pub fn raku_value(v: &Value) -> String {
         ValueView::Channel(_) => "Channel.new".to_string(),
         ValueView::Rat(n, d) => {
             if d == 0 {
-                if n == 0 {
-                    "NaN".to_string()
-                } else if n > 0 {
-                    "Inf".to_string()
-                } else {
-                    "-Inf".to_string()
-                }
+                // A Rat retains its exact zero-denominator spelling in `.raku`.
+                // This matters when the Rat is nested in an allomorph or collection,
+                // where rendering cannot use the direct Rat method dispatch.
+                format!("<{}/0>", n)
             } else if n % d == 0 {
                 format!("{}.0", n / d)
             } else {
@@ -694,13 +691,7 @@ pub fn raku_value(v: &Value) -> String {
         }
         ValueView::BigRat(n, d) => {
             if d == &num_bigint::BigInt::from(0) {
-                if n == &num_bigint::BigInt::from(0) {
-                    "NaN".to_string()
-                } else if n > &num_bigint::BigInt::from(0) {
-                    "Inf".to_string()
-                } else {
-                    "-Inf".to_string()
-                }
+                format!("<{}/0>", n)
             } else if (n % d) == num_bigint::BigInt::from(0) {
                 format!("{}.0", n / d)
             } else {
