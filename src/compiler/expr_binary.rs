@@ -263,9 +263,19 @@ impl Compiler {
             // (HTTP::HPACK's `decode-str($packed, $idx) xx 2` advances `$idx`
             // by reference twice) — see todo/tickets/closure-rw-arg-writeback.md.
             const XX_UNROLL_MAX: i64 = 32;
+            // A scalar `constant` is folded at this point just like a literal
+            // count. This is especially valuable for a small fixed repeat in a
+            // hot loop: compiling a synthetic thunk and dispatching it once per
+            // element adds a closure boundary that the direct, in-frame unroll
+            // does not need. Only `constant_value` participates, so an ordinary
+            // sigilless variable remains dynamically evaluated.
+            let known_repeat_count = match right {
+                Expr::Literal(value) => value.as_int(),
+                Expr::BareWord(name) => self.constant_value(name).and_then(Value::as_int),
+                _ => None,
+            };
             if Self::xx_lhs_needs_reeval(left)
-                && let Expr::Literal(n_lit) = right
-                && let ValueView::Int(n) = n_lit.view()
+                && let Some(n) = known_repeat_count
                 && (0..=XX_UNROLL_MAX).contains(&n)
             {
                 for _ in 0..n {
