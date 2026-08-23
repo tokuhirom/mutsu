@@ -211,7 +211,7 @@ impl Interpreter {
                     }
                 }
                 if let Some(test) = maybe_test.clone()
-                    && self.call_sub_value(test, Vec::new(), false)?.truthy()
+                    && self.call_protect_block(&test)?.truthy()
                 {
                     return Ok(Value::NIL);
                 }
@@ -234,7 +234,8 @@ impl Interpreter {
                     drop(state);
 
                     let predicate_ok = if let Some(test) = maybe_test.clone() {
-                        self.call_sub_value(test, Vec::new(), false)?.truthy()
+                        let value = self.call_protect_block(&test)?;
+                        value.truthy()
                     } else {
                         true
                     };
