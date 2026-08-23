@@ -2895,14 +2895,8 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
         // empty `-> {}` signature, which still rejects positional arguments.
         let body_debug = format!("{stmts:?}");
         let uses_at_underscore = body_debug.contains("ArrayVar(\"_\")");
-        let uses_percent_underscore = body_debug.contains("HashVar(\"_\")");
-        if uses_at_underscore || uses_percent_underscore {
-            let legacy_params = [(uses_at_underscore, "@_"), (uses_percent_underscore, "%_")];
-            let legacy_params: Vec<_> = legacy_params
-                .into_iter()
-                .filter(|(used, _)| *used)
-                .map(|(_, name)| name.to_string())
-                .collect();
+        if uses_at_underscore {
+            let legacy_params = vec!["@_".to_string()];
             let param_defs = legacy_params
                 .iter()
                 .map(|name| ParamDef {
