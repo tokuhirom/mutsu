@@ -77,11 +77,16 @@ pub(in crate::parser) fn parse_symbolic_deref_segments(
 
 /// Parse a variable name from raw string (used in interpolation).
 pub(crate) fn parse_var_name_from_str(input: &str) -> (&str, String) {
-    // Handle twigils: $*, $?, $!, $^
+    // Handle twigils: $*, $?, $!, $^, $:
     let (rest, twigil) = if input.starts_with('*')
         || input.starts_with('?')
         || input.starts_with('!')
         || input.starts_with('^')
+        || (input.starts_with(':')
+            && input[1..]
+                .chars()
+                .next()
+                .is_some_and(is_raku_identifier_start))
     {
         (&input[1..], &input[..1])
     } else {

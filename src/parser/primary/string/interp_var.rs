@@ -358,6 +358,11 @@ pub(crate) fn try_interpolate_var<'a>(
             || next == '?'
             || next == '!'
             || next == '^'
+            || (next == ':'
+                && rest[2..]
+                    .chars()
+                    .next()
+                    .is_some_and(crate::parser::helpers::is_raku_identifier_start))
         {
             if !current.is_empty() {
                 parts.push(Expr::Literal(literal_str(std::mem::take(current))));
