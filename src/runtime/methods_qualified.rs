@@ -969,8 +969,8 @@ impl Interpreter {
             return Some(self.call_method_with_values(target.clone(), actual_method, args));
         }
         Some(Err(RuntimeError::new(format!(
-            "X::Method::InvalidQualifier: Cannot dispatch to a method on {} because it is not inherited or done by {}",
-            qualifier, type_name
+            "X::Method::InvalidQualifier: Cannot dispatch to method {} on {} because it is not inherited or done by {}",
+            actual_method, qualifier, type_name
         ))))
     }
 
