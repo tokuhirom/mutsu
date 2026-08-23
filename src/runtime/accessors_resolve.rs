@@ -350,6 +350,26 @@ impl Interpreter {
                     }
                     return Value::NIL;
                 }
+                if frame.is_submethod {
+                    let mut env = crate::env::Env::new();
+                    env.insert(
+                        "__mutsu_callable_type".to_string(),
+                        Value::str_from("Submethod"),
+                    );
+                    env.insert(
+                        "__mutsu_routine_name".to_string(),
+                        Value::str(format!("{}::{}", frame.package, frame.name)),
+                    );
+                    return Value::make_sub(
+                        frame.package,
+                        frame.name,
+                        Vec::new(),
+                        Vec::new(),
+                        Vec::new(),
+                        false,
+                        env,
+                    );
+                }
                 return Value::routine_parts(frame.package, frame.name, false);
             }
             return Value::NIL;

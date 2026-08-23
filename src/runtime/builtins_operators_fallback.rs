@@ -617,6 +617,7 @@ impl Interpreter {
                 line: None,
                 file: None,
                 is_method: false,
+                is_submethod: false,
                 is_block: false,
                 def_file: None,
                 invocation_id: crate::runtime::next_invocation_id(),
