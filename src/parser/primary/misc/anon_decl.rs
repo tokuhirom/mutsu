@@ -67,11 +67,12 @@ pub(crate) fn anon_class_expr(input: &str) -> PResult<'_, Expr> {
     } else if rest.starts_with('{') {
         let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
         (rest, format!("__ANON_CLASS_{id}__"), Vec::new(), Vec::new())
-    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+    } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
         // Named class in expression context: `class Foo { ... }`. The name may
         // be QUALIFIED — `class X::Foo is Exception {}.new.throw` is the shape
         // roast/S04-exceptions/exceptions-alternatives.t uses — so stopping at
-        // the first `::` would leave `::Foo is Exception` unparsed.
+        // the first `::` would leave `::Foo is Exception` unparsed. Raku class
+        // names may also begin with non-ASCII identifier characters.
         let (r, class_name) = parse_qualified_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         // Parse optional `is Parent` / `does Role` clauses

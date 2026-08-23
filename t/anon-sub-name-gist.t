@@ -1,7 +1,9 @@
 use v6;
 use Test;
+use lib $?FILE.IO.parent(2).add("roast/packages/Test-Helpers/lib");
+use Test::Util;
 
-plan 14;
+plan 19;
 
 # PLAN §8.13 leftovers: `anon sub NAME {...}` keeps its .name without
 # installing `&NAME`, and Sub gist/Str/raku render the Rakudo forms.
@@ -23,6 +25,17 @@ sub outer { 'outer' }
 my $shadow = anon sub outer { 'anon' };
 is outer(), 'outer', 'anon sub does not clobber an existing same-named sub';
 is $shadow.(), 'anon', 'the anon value itself stays callable';
+
+# Anonymous declarations accept the same Unicode identifier starts as regular
+# declarations, and say uses the named Sub's gist form.
+my $unicode-sub = anon sub þ { 42 };
+is $unicode-sub.name, 'þ', 'anon sub keeps a non-ASCII name';
+is $unicode-sub.(), 42, 'anon sub with a non-ASCII name is callable';
+is (anon class þ {}).^name, 'þ', 'anon class accepts a non-ASCII name';
+is_run 'say anon sub Foo { 42 };', { :out("&Foo\n") },
+    'say uses the named anon sub gist';
+is_run 'say anon sub þ { 42 };', { :out("&þ\n") },
+    'say uses the non-ASCII anon sub gist';
 
 # Sub rendering forms (Rakudo-compatible).
 sub named-here { }
