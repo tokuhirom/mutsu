@@ -463,6 +463,20 @@ fn raku_value_as_element(v: &Value) -> String {
             let decontainerized_val = Value::array_with_kind(items.clone(), decontainerized);
             raku_value(&decontainerized_val)
         }
+        // The other two kinds ADR-0040 itemizes at the element store follow the
+        // same rule as the `Array` arm above: a real-array element IS a Scalar
+        // container, so the itemization it carries is not information and raku
+        // does not print the sigil. `my @a; @a.push(%h); @a.raku` renders
+        // `[{:x(1)},]`, not `[${:x(1)},]`, and a stored `Seq` renders
+        // `[(7, 8).Seq,]`, not `[$((7, 8).Seq),]`. (A List keeps the sigil —
+        // `($(%h), $[1,2]).raku` — which is why the caller only routes real
+        // `@`-array elements here.) `Range` and the other `.item()`-boxed
+        // kinds already render bare, because `itemize_scalar_repr` only adds
+        // the sigil for Array/Hash/Seq.
+        ValueView::Hash(_) if v.hash_is_itemized() => {
+            raku_value(&v.clone().with_hash_itemized(false))
+        }
+        ValueView::Scalar(inner) if matches!(inner.view(), ValueView::Seq(_)) => raku_value(inner),
         _ => raku_value(v),
     }
 }

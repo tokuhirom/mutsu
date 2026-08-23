@@ -32,8 +32,8 @@ fixed by widening it to see through that shape for every method except the rende
 (`raku`/`gist`/`perl`), which need the wrapper intact to render the `$`.
 
 A pre-existing, unrelated `splice` arity bug was found and filed separately rather than fixed here
-(`todo/tickets/splice-multi-arg-array-incorrectly-flattens.md`) to keep this change's blast radius
-scoped to itemization.
+to keep this change's blast radius scoped to itemization. (It has since been fixed —
+`news/2026-08/splice-replacement-arg-one-arg-rule.md`.)
 
 CI caught a genuine companion bug this change exposed: `.pick`/`.roll`'s generic fallback decomposed
 a value into elements using the *same* itemization-respecting `value_to_list` the store sites rely

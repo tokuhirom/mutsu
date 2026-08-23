@@ -56,7 +56,7 @@ an explicit `.clone`. Per raku's actual (if gotcha-prone) semantics, `.item` on 
 shares the *same* underlying container — it only prevents auto-flattening in list context, it
 does not imply a copy. This may be the same store-side itemization/container question already
 being tracked architecturally (see `docs/adr/0040-array-hash-elements-are-itemized-at-the-store.md`
-and its follow-up tickets, e.g. `todo/tickets/splice-multi-arg-array-incorrectly-flattens.md`'s
+and its follow-up work, e.g. `news/2026-08/splice-replacement-arg-one-arg-rule.md`'s
 neighborhood) — worth checking against that ADR before implementing, since "does push alias or
 copy a container" is a core container-semantics question that ADR's itemization work may already
 touch.

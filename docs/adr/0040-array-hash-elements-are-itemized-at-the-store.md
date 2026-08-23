@@ -561,7 +561,7 @@ exception for a bare `ContainerRef`) — those three must keep the `Scalar` wrap
 itemization they need to render lives only in that outer wrapper.
 
 **A pre-existing, unrelated `splice` arity bug was found and filed separately, not fixed here**
-(`todo/tickets/splice-multi-arg-array-incorrectly-flattens.md`): `splice`'s replacement-argument
+(since fixed — `news/2026-08/splice-replacement-arg-one-arg-rule.md`): `splice`'s replacement-argument
 handling flattens *every* `Array`/`List` argument unconditionally, where raku only flattens an
 `Array`/`List` argument when it is the sole replacement argument (the same one-arg rule
 `push`/`append`/`unshift`/`prepend` already implement correctly). This ADR's itemization hook is
