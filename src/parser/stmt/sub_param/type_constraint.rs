@@ -112,6 +112,28 @@ pub(crate) fn parse_type_constraint_expr(input: &str) -> Option<(&str, String)> 
         (r, "::?CLASS".to_string())
     } else if let Some(r) = input.strip_prefix("::?ROLE") {
         (r, "::?ROLE".to_string())
+    } else if let Some(after_open) = input.strip_prefix("::(") {
+        // Indirect type constraints use the same expression form as an
+        // indirect type term, but must remain part of the parameter metadata
+        // until the parameter is bound (the expression can depend on scope).
+        let mut depth = 1usize;
+        let mut close = None;
+        for (idx, ch) in after_open.char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close = Some(idx);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let close = close?;
+        let inner = after_open[..close].trim();
+        (&after_open[close + 1..], format!("::({inner})"))
     // Handle type capture variables like `::a` (e.g., `my ::a $a`)
     } else if input.starts_with("::")
         && input[2..]
