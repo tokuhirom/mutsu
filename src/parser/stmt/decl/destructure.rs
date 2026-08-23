@@ -452,6 +452,9 @@ fn parse_destructuring_with_rhs(
     // optional trailing `;` when there is no such block.
     let (rest_ws, _) = ws(rest)?;
     let has_following_block = rest_ws.starts_with('{');
+    let rhs_ends_with_block = matches!(raw_rhs, Expr::DoBlock { .. } | Expr::DoStmt(_));
+    let block_rhs_ends_at_newline =
+        rhs_ends_with_block && rest[..rest.len() - rest_ws.len()].contains('\n');
     let rest = if has_following_block { rest } else { rest_ws };
 
     let has_named = vars.iter().any(|v| v.is_named);
@@ -618,7 +621,7 @@ fn parse_destructuring_with_rhs(
     // constrained decl block-final and skip its check. (subtypes.t 90)
     stmts.push(Stmt::Expr(Expr::ArrayVar(array_bare)));
     let block = Stmt::SyntheticBlock(stmts);
-    if has_following_block {
+    if has_following_block || block_rhs_ends_at_newline {
         // In `if my ($a, $b) = f() { ... }`, the braced block belongs to the
         // surrounding conditional, not to this declaration's modifier parser.
         Ok((rest, block))

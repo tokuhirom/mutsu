@@ -1,6 +1,6 @@
 use Test;
 
-plan 8;
+plan 9;
 
 # Assignment expressions must leave exactly their value on the VM stack.
 {
@@ -30,6 +30,12 @@ plan 8;
     my $value = 0;
     my ($a, $b) = $_, $_ + 1 given 10;
     is "$a/$b", '10/11', 'given applies to a destructuring declaration';
+    my ($e, $f) = do given True {
+        when True { 30, 40 }
+        default { 0, 0 }
+    }
+    my $after-do-given = $e == 30 && $f == 40;
+    ok $after-do-given, 'a statement after do-given does not capture the declaration';
     my ($c, $d) = 20, 21;
     is "$c/$d", '20/21', 'plain destructuring remains unchanged';
 }
