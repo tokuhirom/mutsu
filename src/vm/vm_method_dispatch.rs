@@ -691,6 +691,7 @@ impl Interpreter {
             self.current_source_line(),
             self.current_source_file_sym(),
             method_def.source_file.as_deref().map(Symbol::intern),
+            method_def.is_submethod,
         );
 
         // Execute bytecode
@@ -1687,6 +1688,7 @@ impl Interpreter {
             self.current_source_line(),
             self.current_source_file_sym(),
             method_def.source_file.as_deref().map(Symbol::intern),
+            method_def.is_submethod,
         );
 
         // Execute bytecode (same as slow path)

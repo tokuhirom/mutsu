@@ -52,6 +52,7 @@ impl Interpreter {
             line,
             file,
             is_method: false,
+            is_submethod: false,
             is_block: false,
             def_file,
             invocation_id: crate::runtime::next_invocation_id(),
@@ -65,6 +66,7 @@ impl Interpreter {
     /// this, `executing_source_file()`'s frame walk always fell through past a
     /// method frame to the dynamically-scoped `?FILE`, which had already
     /// reverted to the main script by the time the method ran.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_method_routine_with_location(
         &mut self,
         package: Symbol,
@@ -73,6 +75,7 @@ impl Interpreter {
         line: Option<u32>,
         file: Option<Symbol>,
         def_file: Option<Symbol>,
+        is_submethod: bool,
     ) {
         self.routine_stack.push(super::RoutineFrame {
             package,
@@ -81,6 +84,7 @@ impl Interpreter {
             line,
             file,
             is_method: true,
+            is_submethod,
             is_block: false,
             def_file,
             invocation_id: crate::runtime::next_invocation_id(),
@@ -106,6 +110,7 @@ impl Interpreter {
             line,
             file,
             is_method: false,
+            is_submethod: false,
             is_block: true,
             def_file,
             invocation_id: crate::runtime::next_invocation_id(),

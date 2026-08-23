@@ -1100,6 +1100,8 @@ pub(crate) struct RoutineFrame {
     pub line: Option<u32>,
     pub file: Option<Symbol>,
     pub is_method: bool,
+    /// Whether this method frame belongs to a `submethod` declaration.
+    pub is_submethod: bool,
     /// Whether this frame is a block/closure (not a named routine).
     pub is_block: bool,
     /// The file this routine's BODY lives in (None = same as the caller /
