@@ -99,6 +99,74 @@ pub(crate) fn flatten_append_args(args: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
+/// Flatten the *replacement* arguments of `.splice($offset, $size, ...)` --
+/// i.e. `args[2..]` -- into the final list of elements to insert.
+///
+/// `splice` has its own one-arg rule, distinct from `append`'s
+/// ([`flatten_append_args`]). Rakudo spells it as three families of
+/// candidates (`Array.^lookup('splice').candidates>>.signature`):
+///
+/// - `(..., **@new)` -- the *non*-flattening slurpy: each argument becomes
+///   exactly one element.
+/// - `(..., @new)` -- a single argument that does `Positional`: its elements
+///   are used.
+/// - `(..., @new is item)` -- ditto for an *itemized* `Positional` (`$[7,8]`).
+///
+/// So the discriminator is `Positional`, and the `is item` candidate is why
+/// splice differs from push/append in both directions:
+///
+/// - an itemized single Array still flattens here
+///   (`@a.splice(1,1,$[7,8])` inserts `7, 8`), while `@a.append($[7,8])`
+///   keeps it whole;
+/// - a single `Hash`/`Set`/`Bag` is `Associative`, not `Positional`, so it
+///   stays ONE element here, while `@a.append(%h)` flattens it to pairs.
+///
+/// A `Slip` flattens at *any* arity -- that is what a Slip is, and it is
+/// independent of which candidate binds.
+///
+/// ADR-0040 slice 1: every value returned is a final stored element, so it is
+/// itemized here -- after the one-arg-rule decision, never before it.
+/// ADR-0049 slice 4: a `Nil` replacement decays to plain `Any`, NOT to the
+/// target container's `is default(...)` value (confirmed against real `raku`;
+/// splice differs from push/append/unshift/prepend here).
+pub(crate) fn flatten_splice_replacement_args(args: &[Value]) -> Vec<Value> {
+    let single = args.len() == 1;
+    let mut out: Vec<Value> = Vec::new();
+    for arg in args {
+        match arg.view() {
+            // A Slip flattens regardless of how many arguments there are.
+            ValueView::Slip(vals) => out.extend(vals.iter().cloned()),
+            // The one-arg rule proper: a lone `Positional` argument
+            // contributes its elements, itemized or not.
+            ValueView::Array(vals, _) if single => out.extend(vals.iter().cloned()),
+            ValueView::Seq(vals) | ValueView::HyperSeq(vals) | ValueView::RaceSeq(vals)
+                if single =>
+            {
+                out.extend(vals.iter().cloned())
+            }
+            ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+                if single =>
+            {
+                out.extend(crate::runtime::utils::value_to_list(arg))
+            }
+            _ => out.push(arg.clone()),
+        }
+    }
+    out.into_iter()
+        .map(|v| {
+            if v.is_nil() {
+                Value::package(crate::symbol::Symbol::intern("Any"))
+            } else {
+                v.itemize_for_element_store()
+            }
+        })
+        .collect()
+}
+
 /// Split a string by commas while respecting bracket/paren depth.
 /// Returns the trimmed, non-empty parts.
 fn split_balanced_comma_list(input: &str) -> Vec<String> {

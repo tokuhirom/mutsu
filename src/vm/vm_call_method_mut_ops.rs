@@ -3132,25 +3132,22 @@ impl Interpreter {
             _ => return None,
         };
         // Replacement values (args[2..]): reject lazy values (the interpreter
-        // raises `X::Cannot::Lazy`); flatten `Array` args exactly as the
-        // interpreter's `do_splice` does.
-        let mut replacement: Vec<Value> = Vec::new();
-        for arg in args.iter().skip(2) {
-            match arg.view() {
+        // raises `X::Cannot::Lazy`), then apply splice's one-arg rule /
+        // itemization / Nil decay through the single shared helper the
+        // interpreter's `do_splice` uses, so the two paths cannot diverge.
+        let post = args.get(2..).unwrap_or(&[]);
+        for arg in post {
+            let lazy = match arg.view() {
                 ValueView::Array(arr, ..) => {
-                    if arr.iter().any(crate::builtins::methods_0arg::is_value_lazy) {
-                        return None;
-                    }
-                    replacement.extend(arr.iter().cloned());
+                    arr.iter().any(crate::builtins::methods_0arg::is_value_lazy)
                 }
-                _ => {
-                    if crate::builtins::methods_0arg::is_value_lazy(arg) {
-                        return None;
-                    }
-                    replacement.push(arg.clone());
-                }
+                _ => crate::builtins::methods_0arg::is_value_lazy(arg),
+            };
+            if lazy {
+                return None;
             }
         }
+        let replacement = crate::runtime::flatten_splice_replacement_args(post);
         // The receiver must be exactly the array currently bound to this name.
         // Container identity (§3): splice through the SHARED backing node (no
         // COW) so by-value holders of the same array observe it. Compute the

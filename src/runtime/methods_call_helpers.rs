@@ -331,15 +331,8 @@ impl Interpreter {
         let end = (start + count).min(len);
         // Snapshot the replacement BEFORE draining: a self-splice
         // (`f().splice(1, 0, f())`) aliases the items being mutated in place.
-        let mut replacement: Vec<Value> = Vec::new();
-        for arg in args.iter().skip(2) {
-            match arg.view() {
-                ValueView::Array(arr, ..) => replacement.extend(arr.iter().cloned()),
-                ValueView::Seq(arr) => replacement.extend(arr.iter().cloned()),
-                ValueView::Slip(arr) => replacement.extend(arr.iter().cloned()),
-                _ => replacement.push(arg.clone()),
-            }
-        }
+        let replacement =
+            crate::runtime::flatten_splice_replacement_args(args.get(2..).unwrap_or(&[]));
         let removed: Vec<Value> = data.items_mut().drain(start..end).collect();
         for (i, item) in replacement.into_iter().enumerate() {
             data.items_mut().insert(start + i, item);

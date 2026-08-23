@@ -1065,45 +1065,23 @@ impl Interpreter {
                         // shared backing node (container identity §3), so a
                         // self-splice replacement (`splice(@a, .., @a)`) aliases
                         // `items` and must be snapshotted pre-drain.
-                        let mut new_items: Vec<Value> = Vec::new();
-                        for arg in args.iter().skip(2) {
-                            match arg.view() {
-                                ValueView::Array(arr, ..) => {
-                                    new_items.extend(arr.iter().cloned());
-                                }
-                                // ADR-0040 slice 1: a replacement arg kept
-                                // whole (not flattened above) becomes one
-                                // stored element, itemized like any other
-                                // element store. NOTE: the Array arm above
-                                // has a pre-existing, unrelated arity bug —
-                                // see todo/tickets/splice-multi-arg-array-
-                                // incorrectly-flattens.md — this only
-                                // itemizes whatever this function already
-                                // decides to keep as one element (e.g. a
-                                // Range discrete arg, which is unaffected by
-                                // that bug).
-                                //
-                                // ADR-0049 slice 4: a `Nil` replacement arg
-                                // decays to plain `Any`, NOT the target
-                                // container's own `is default(...)` value —
-                                // confirmed against real `raku`: unlike
-                                // push/append/unshift/prepend (which all
-                                // decay to the container's default),
-                                // `@a is default(42); @a.splice(1,0,Nil)`
-                                // stores `Any`, not `42`. `.splice`'s
-                                // inserted args do not go through a declared-
-                                // element-type check at all in mutsu today
-                                // (a separate, pre-existing gap — real raku
-                                // dies with a type-check error inserting
-                                // `Nil`/`Any` into a typed array via splice;
-                                // see todo/tickets/splice-insert-not-type-
-                                // checked.md), so only the Nil-to-Any decay
-                                // itself is in this ADR's scope.
-                                _ if arg.is_nil() => new_items
-                                    .push(Value::package(crate::symbol::Symbol::intern("Any"))),
-                                _ => new_items.push(arg.clone().itemize_for_element_store()),
-                            }
-                        }
+                        // splice's own one-arg rule (a lone `Positional`
+                        // argument flattens, several arguments never do) plus
+                        // ADR-0040 element itemization and the ADR-0049
+                        // Nil-to-Any decay all live in the one shared helper,
+                        // so this path, the by-value path
+                        // (`Interpreter::splice_array_data`) and the VM fast
+                        // path (`try_native_array_splice`) cannot drift.
+                        //
+                        // (`.splice`'s inserted args still do not go through a
+                        // declared-element-type check in mutsu — a separate,
+                        // pre-existing gap: real raku dies with a type-check
+                        // error inserting `Nil`/`Any` into a typed array via
+                        // splice; see todo/tickets/splice-insert-not-type-
+                        // checked.md.)
+                        let new_items = crate::runtime::flatten_splice_replacement_args(
+                            args.get(2..).unwrap_or(&[]),
+                        );
                         let removed: Vec<Value> = items.drain(start..end).collect();
                         for (i, item) in new_items.into_iter().enumerate() {
                             items.insert(start + i, item);
