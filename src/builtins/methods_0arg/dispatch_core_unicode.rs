@@ -2,7 +2,6 @@
 /// uninames, uniparse, uniprops, unival, univals, chr, chrs
 use crate::value::{RuntimeError, Value, ValueView};
 use unicode_normalization::UnicodeNormalization;
-use unicode_segmentation::UnicodeSegmentation;
 
 use super::make_no_match_error;
 
@@ -56,7 +55,7 @@ pub(super) fn dispatch(
                 return Some(Some(Err(err)));
             }
             Some(Some(Ok(Value::int(
-                target.to_string_value().graphemes(true).count() as i64,
+                crate::builtins::string_pos::grapheme_len(&target.to_string_value()) as i64,
             ))))
         }
         "ord" => {
