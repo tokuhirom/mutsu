@@ -96,18 +96,17 @@ impl Interpreter {
                 };
                 let lazy_inputs = value_is_lazy(&left) || value_is_lazy(&right);
                 let lazy_limit = 256usize;
-                let left_list = if value_is_lazy(&left) {
-                    let iter = self.zip_iter_from_value(&left, lazy_limit)?;
-                    (0..iter.len()).map(|i| iter.nth(i)).collect()
-                } else {
-                    runtime::value_to_list(&left)
+                let materialize_side = |v: &Value| -> Vec<Value> {
+                    if value_is_lazy(v) {
+                        let iter = ZipIter::from_value(v);
+                        let len = iter.len().min(lazy_limit);
+                        (0..len).map(|i| iter.nth(i)).collect()
+                    } else {
+                        runtime::value_to_list(v)
+                    }
                 };
-                let right_list = if value_is_lazy(&right) {
-                    let iter = self.zip_iter_from_value(&right, lazy_limit)?;
-                    (0..iter.len()).map(|i| iter.nth(i)).collect()
-                } else {
-                    runtime::value_to_list(&right)
-                };
+                let left_list = materialize_side(&left);
+                let right_list = materialize_side(&right);
                 let mut results = Vec::new();
                 if op.is_empty() || op == "," {
                     for l in &left_list {
