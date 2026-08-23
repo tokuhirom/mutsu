@@ -479,6 +479,7 @@ impl Interpreter {
             enc,
             create,
             exclusive,
+            None,
         ) {
             Ok(handle) => Ok(handle),
             // Raku returns a Failure (wrapping the exception) when open() fails,

@@ -260,6 +260,7 @@ impl Interpreter {
                     enc,
                     create,
                     exclusive,
+                    Some(std::path::Path::new(&path_str)),
                 ) {
                     Ok(handle) => Ok(handle),
                     // Like the `open` sub, `IO::Handle.open` returns a Failure
