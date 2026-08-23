@@ -22,10 +22,9 @@ thread_local! {
     /// value afterwards (a subrule's pattern may itself be measured while an outer
     /// measurement is live).
     pub(crate) static LTM_DECLARATIVE_MODE: Cell<bool> = const { Cell::new(false) };
-    /// A quantified atom folds only captures it actually produces. Padding an
-    /// unmatched alternation branch here would manufacture an extra iteration
-    /// and change the capture visible to an action inside the quantifier.
-    pub(super) static IN_QUANTIFIED_ATOM_MATCH: Cell<bool> = const { Cell::new(false) };
+    /// A quantified alternation folds only captures it actually produces.
+    /// Its unmatched branches must not manufacture extra iterations.
+    pub(super) static IN_QUANTIFIED_ALTERNATION_MATCH: Cell<bool> = const { Cell::new(false) };
     /// Set by the matcher when `LTM_DECLARATIVE_MODE` made it stop at a code atom.
     /// `walk_tokens` checks it after every token and stops walking, so the
     /// termination propagates out through nested subrules.

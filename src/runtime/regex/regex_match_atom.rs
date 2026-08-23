@@ -102,7 +102,7 @@ impl Interpreter {
             let ends: Vec<(usize, RegexCaptures)> = raw_ends
                 .into_iter()
                 .map(|(end, mut inner_caps)| {
-                    if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                         inner_caps
                             .positional
                             .resize(capture_slots, PosSlot::alternation_padding());
@@ -268,7 +268,7 @@ impl Interpreter {
                 // convention). Reverse to LOWEST FIRST for our return convention.
                 let mut group = Vec::new();
                 for (next, mut inner_caps) in inner_matches {
-                    if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                    if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                         inner_caps
                             .positional
                             .resize(capture_slots, PosSlot::alternation_padding());

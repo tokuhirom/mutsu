@@ -161,7 +161,7 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                        if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                             inner_caps
                                 .positional
                                 .resize(capture_slots, PosSlot::alternation_padding());
@@ -218,7 +218,7 @@ impl Interpreter {
                     if let Some((next, mut inner_caps)) =
                         self.regex_match_end_from_caps_in_pkg(alt, chars, pos, pkg)
                     {
-                        if !super::regex_helpers::IN_QUANTIFIED_ATOM_MATCH.with(Cell::get) {
+                        if !super::regex_helpers::IN_QUANTIFIED_ALTERNATION_MATCH.with(Cell::get) {
                             inner_caps
                                 .positional
                                 .resize(capture_slots, PosSlot::alternation_padding());

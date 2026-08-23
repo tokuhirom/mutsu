@@ -898,6 +898,9 @@ impl Interpreter {
                     self.reset_capture_env_vars();
                     // Set positional captures as strings first (needed by code blocks)
                     for (i, v) in captures.positional.iter().enumerate() {
+                        if v.alternation_padding {
+                            continue;
+                        }
                         self.env
                             .insert(i.to_string(), Value::str(captures.slot_text(v)));
                     }
