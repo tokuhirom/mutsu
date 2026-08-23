@@ -3396,6 +3396,29 @@ impl Compiler {
 
             // --- Take (gather/take) ---
             Stmt::Take(expr, is_rw) => {
+                // `take |EXPR` is a call with a flattened argument list, not
+                // `take` of a runtime Slip. Route this spelling through the
+                // ordinary call path so multiple positional arguments are
+                // bundled by the `take` builtin into one List item. The direct
+                // Take opcode must remain for `take EXPR`, where a Slip is
+                // intentionally flattened into the gather.
+                if !*is_rw
+                    && matches!(
+                        expr,
+                        Expr::Unary {
+                            op: crate::token_kind::TokenKind::Pipe,
+                            ..
+                        }
+                    )
+                {
+                    let call = Expr::Call {
+                        name: Symbol::intern("take"),
+                        args: vec![expr.clone()],
+                    };
+                    self.compile_expr(&call);
+                    self.code.emit(OpCode::Pop);
+                    return;
+                }
                 if *is_rw {
                     // `take-rw <lvalue>`: capture the source container (a shared
                     // `ContainerRef` cell), not a snapshot, so the gathered value
