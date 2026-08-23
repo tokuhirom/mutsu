@@ -485,6 +485,7 @@ impl Interpreter {
                     None,
                     create,
                     exclusive,
+                    None,
                 )
             }
             // nqp::readfh($fh, $buf, $count) — read up to $count bytes,

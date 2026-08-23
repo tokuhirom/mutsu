@@ -569,6 +569,7 @@ impl Interpreter {
         enc: Option<String>,
         create: bool,
         exclusive: bool,
+        display_path: Option<&Path>,
     ) -> Result<Value, RuntimeError> {
         // Opening a directory as a file handle is an error in Raku
         if path.is_dir() {
@@ -618,7 +619,7 @@ impl Interpreter {
         let mut state = IoHandleState {
             target: IoHandleTarget::File,
             mode,
-            path: Some(Self::stringify_path(path)),
+            path: Some(Self::stringify_path(display_path.unwrap_or(path))),
             line_separators: Self::normalize_line_separators(line_separators),
             line_chomp,
             encoding: if bin {

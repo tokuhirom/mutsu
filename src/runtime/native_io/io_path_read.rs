@@ -155,6 +155,7 @@ impl Interpreter {
                 enc,
                 create,
                 exclusive,
+                Some(std::path::Path::new(&p)),
             ) {
                 Ok(handle) => Ok(handle),
                 // Like the `open` sub, `IO::Path.open` returns a Failure (wrapping
