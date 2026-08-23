@@ -34,11 +34,9 @@ impl Interpreter {
         let body_start = spec.cond_end as usize;
         let step_begin = spec.step_start as usize;
         let loop_end = spec.body_end as usize;
-        let stack_base = if spec.collect {
-            Some(self.stack.len())
-        } else {
-            None
-        };
+        // ADR-0052 Slice 1: own a stack base and truncate to it at the end of
+        // every iteration, collecting or not (see `vm_for_loop_body.rs`).
+        let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
 
         // When resuming a gather coroutine that suspended inside this loop, the
@@ -101,19 +99,20 @@ impl Interpreter {
                 }
                 match body_res {
                     Ok(()) => {
-                        if let Some(ref mut coll) = collected {
-                            let base = stack_base.unwrap();
-                            if self.stack.len() > base {
-                                Self::collect_loop_value(coll, self.stack.pop().unwrap());
-                            }
-                            self.stack.truncate(base);
+                        if let Some(ref mut coll) = collected
+                            && self.stack.len() > stack_base
+                        {
+                            Self::collect_loop_value(coll, self.stack.pop().unwrap());
                         }
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         continue 'body_redo;
                     }
                     Err(e)
@@ -122,6 +121,7 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             if let Some(ref mut coll) = collected {
                                 Self::collect_loop_value(coll, v.clone());
@@ -132,9 +132,11 @@ impl Interpreter {
                         break 'c_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'c_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e)
@@ -175,6 +177,9 @@ impl Interpreter {
                 self.pop_loop_local_scope(code);
                 return Err(e);
             }
+            // Iteration boundary: the step runs in statement position, so the
+            // loop is back at its own base before the next condition check.
+            self.stack.truncate(stack_base);
         }
         self.pop_loop_local_scope(code);
         if let Some(coll) = collected {
@@ -219,6 +224,10 @@ impl Interpreter {
         let body_start = *ip + 1;
         let cond_start = cond_end as usize;
         let loop_end = body_end as usize;
+        // ADR-0052 Slice 1: own a stack base and truncate to it at the end of
+        // every iteration (see `vm_for_loop_body.rs`). `repeat` never collects,
+        // so it previously established no base at all.
+        let stack_base = self.stack.len();
 
         // Fresh entry to the loop statement: state variables declared in the
         // body or condition re-initialize (fresh block clone per statement
@@ -258,9 +267,11 @@ impl Interpreter {
                 }
                 match body_res {
                     Ok(()) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, label) => {
+                        self.stack.truncate(stack_base);
                         continue 'body_redo;
                     }
                     Err(e)
@@ -269,15 +280,18 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, label) =>
                     {
+                        self.stack.truncate(stack_base);
                         if let Some(v) = e.return_value {
                             self.env_mut().insert("_".to_string(), v);
                         }
                         break 'repeat_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, label) => {
+                        self.stack.truncate(stack_base);
                         break 'repeat_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, label) => {
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) => {

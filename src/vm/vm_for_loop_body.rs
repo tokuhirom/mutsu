@@ -140,11 +140,13 @@ impl Interpreter {
         } else {
             items.to_vec()
         };
-        let stack_base = if spec.collect {
-            Some(self.stack.len())
-        } else {
-            None
-        };
+        // ADR-0052 Slice 1: a construct that runs a body owns a stack base and
+        // truncates to it at the end of EVERY iteration, not only when it is
+        // collecting. A sink-position loop used to establish no base at all, so
+        // anything an iteration left behind (a body that exits mid-statement via
+        // `succeed`, and — once the clause starts pushing — a non-matching
+        // `when`) piled up one value per pass.
+        let stack_base = self.stack.len();
         let mut collected = if spec.collect { Some(Vec::new()) } else { None };
         let mut deferred_container_refs: Vec<(usize, String)> = Vec::new();
         // A `for` block owns its topic (raku binds `$_` as the block's own
@@ -681,26 +683,28 @@ impl Interpreter {
                             &param_name,
                             idx,
                         );
-                        if let Some(ref mut coll) = collected {
-                            let base = stack_base.unwrap();
-                            if self.stack.len() > base {
-                                let val = self.stack.pop().unwrap();
-                                let deferred_ref =
-                                    self.take_container_ref_for(code).map(|(n, _)| n);
-                                let coll_start_len = coll.len();
-                                Self::collect_loop_value(coll, val);
-                                if let Some(name) = deferred_ref
-                                    && coll.len() == coll_start_len + 1
-                                {
-                                    deferred_container_refs.push((coll_start_len, name));
-                                }
+                        if let Some(ref mut coll) = collected
+                            && self.stack.len() > stack_base
+                        {
+                            let val = self.stack.pop().unwrap();
+                            let deferred_ref = self.take_container_ref_for(code).map(|(n, _)| n);
+                            let coll_start_len = coll.len();
+                            Self::collect_loop_value(coll, val);
+                            if let Some(name) = deferred_ref
+                                && coll.len() == coll_start_len + 1
+                            {
+                                deferred_container_refs.push((coll_start_len, name));
                             }
-                            // Drain any extra values pushed during this iteration
-                            self.stack.truncate(base);
                         }
+                        // Drain anything else this iteration left behind.
+                        self.stack.truncate(stack_base);
                         break 'body_redo;
                     }
                     Err(e) if e.is_succeed() => {
+                        // A matched `when` abandons the body mid-range, so drop
+                        // whatever it had already pushed (ADR-0052 Slice 1); the
+                        // clause's value travels in the signal, not here.
+                        self.stack.truncate(stack_base);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -736,6 +740,9 @@ impl Interpreter {
                         break 'body_redo;
                     }
                     Err(e) if e.is_redo() && Self::label_matches(&e.label, &spec.label) => {
+                        // The iteration restarts from the top; anything the
+                        // abandoned pass pushed is not part of the retry.
+                        self.stack.truncate(stack_base);
                         if param_name.is_none() {
                             self.set_loop_topic(topic_local, item.clone());
                         }
@@ -753,6 +760,9 @@ impl Interpreter {
                             && e.leave_routine().is_none()
                             && Self::label_matches(&e.label, &spec.label) =>
                     {
+                        // `leave` ends the loop; its value comes from the signal
+                        // (pushed below), not from the abandoned body's stack.
+                        self.stack.truncate(stack_base);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -799,6 +809,7 @@ impl Interpreter {
                         break 'for_loop;
                     }
                     Err(e) if e.is_last() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,
@@ -835,6 +846,7 @@ impl Interpreter {
                         break 'for_loop;
                     }
                     Err(e) if e.is_next() && Self::label_matches(&e.label, &spec.label) => {
+                        self.stack.truncate(stack_base);
                         if writes_back_loop_var {
                             self.write_back_for_topic_item(
                                 code,

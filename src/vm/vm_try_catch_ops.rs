@@ -392,6 +392,16 @@ impl Interpreter {
                     }
                     return Err(pending_err);
                 }
+                // ADR-0052 Slice 1: the CONTROL block ran as its own statement
+                // range from `saved_depth`, and a `when`/`default` that matched
+                // inside it abandoned that range mid-way, leaving the clause's
+                // value behind. Drop it and yield the single value this op's
+                // consumer expects — the same normalization the `is_return`
+                // branch above and the CATCH handler already perform. Without
+                // it `my $x = do { last; CONTROL { when CX::Last { 7 } } }` was
+                // `7`; raku says `Any`.
+                self.stack.truncate(saved_depth);
+                self.stack.push(Value::NIL);
                 *ip = end;
                 Ok(())
             }
