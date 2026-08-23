@@ -9,6 +9,26 @@ impl Interpreter {
         fn_package: &str,
         fn_name: &str,
     ) -> Result<Value, RuntimeError> {
+        let cache_key: Vec<Value> = if cf.is_cached {
+            args.iter()
+                .map(|arg| match arg.view() {
+                    ValueView::VarRef { value, .. } => (*value).clone(),
+                    _ => arg.clone(),
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if cf.is_cached
+            && let Some((_, value)) = cf
+                .memo_cache
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(key, _)| *key == cache_key)
+        {
+            return Ok(value.clone());
+        }
         // Gate user-infix overrides out of module code: only count a call as
         // "module code" when the function's source file differs from the main
         // script.  User-defined `multi sub` in the test file are OTF-compiled
@@ -55,6 +75,14 @@ impl Interpreter {
         self.restore_pragma_state(saved_pragmas);
         if is_module_call {
             self.module_call_depth -= 1;
+        }
+        if cf.is_cached
+            && let Ok(value) = &result
+        {
+            cf.memo_cache
+                .lock()
+                .unwrap()
+                .push((cache_key, value.clone()));
         }
         result
     }

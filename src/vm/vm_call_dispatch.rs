@@ -215,6 +215,7 @@ impl Interpreter {
             empty_sig: def.empty_sig,
             is_rw: def.is_rw,
             is_raw: def.is_raw,
+            is_cached: def.is_cached,
             param_local_slots: None,
             has_inner_subs: false,
             declares_inner_routines: false,
@@ -225,6 +226,7 @@ impl Interpreter {
             package: pkg.clone(),
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
+            memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan();

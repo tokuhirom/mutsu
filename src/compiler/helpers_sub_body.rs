@@ -176,6 +176,7 @@ impl Compiler {
         state_group: Option<&str>,
         is_rw: bool,
         is_raw: bool,
+        is_cached: bool,
     ) -> Option<crate::symbol::Symbol> {
         self.compile_sub_body_with_deprecation(
             name,
@@ -187,6 +188,7 @@ impl Compiler {
             state_group,
             is_rw,
             is_raw,
+            is_cached,
             None,
         )
     }
@@ -203,6 +205,7 @@ impl Compiler {
         state_group: Option<&str>,
         is_rw: bool,
         is_raw: bool,
+        is_cached: bool,
         deprecated_info: Option<(String, String, String, String)>,
     ) -> Option<crate::symbol::Symbol> {
         // Before compiling the sub body, check for heredoc interpolations
@@ -542,6 +545,7 @@ impl Compiler {
                 && !Self::body_uses_legacy_args(body),
             is_rw,
             is_raw,
+            is_cached,
             param_local_slots: None,
             has_inner_subs: false,
             declares_inner_routines: false,
@@ -554,6 +558,7 @@ impl Compiler {
             package: key_package,
             compiled_fns: (!own_compiled_fns.is_empty())
                 .then(|| std::sync::Arc::new(own_compiled_fns)),
+            memo_cache: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
         };
         cf.precompute_param_local_slots();
         cf.precompute_named_call_plan();

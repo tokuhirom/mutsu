@@ -1399,6 +1399,7 @@ mod tests {
 
     fn dummy_proto_def(owner: &str, name: &str) -> FunctionDef {
         FunctionDef {
+            is_cached: false,
             package: Symbol::intern(owner),
             name: Symbol::intern(name),
             params: Vec::new(),

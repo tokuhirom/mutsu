@@ -139,6 +139,7 @@ impl Interpreter {
         })];
         let params: Vec<String> = sub_param_defs.iter().map(|p| p.name.clone()).collect();
         let def = FunctionDef {
+            is_cached: false,
             package: Symbol::intern(class_name),
             name: Symbol::intern(op_name),
             params,
