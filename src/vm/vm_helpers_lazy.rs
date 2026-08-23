@@ -799,6 +799,18 @@ impl Interpreter {
             return self.force_cat_pull(list, usize::MAX);
         }
 
+        // A closure sequence with a concrete endpoint is finite, even though
+        // we deferred its tail to avoid speculating about recurrence.  Strict
+        // consumers must drive it to that endpoint; unbounded closure
+        // sequences are rejected by their callers before reaching this path.
+        if list
+            .closure_seq
+            .as_ref()
+            .is_some_and(|state| state.lock().unwrap().endpoint.is_some())
+        {
+            return self.extend_closure_sequence(list, usize::MAX);
+        }
+
         // Check cache first
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);

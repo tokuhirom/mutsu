@@ -1106,10 +1106,11 @@ impl Interpreter {
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
         let max_gen = match (&mode, &endpoint_kind) {
-            // A value endpoint is the termination condition for the generator.
-            // A closure sequence may need more than the old 256 eager steps to
-            // reach it; a detected cycle below is deferred to a LazyList.
-            (SeqMode::Closure, Some(EndpointKind::Value(_))) => usize::MAX,
+            // Closure sequences with a concrete endpoint retain their
+            // generator from the start. We cannot soundly infer a recurrence
+            // from generated values: the closure may have hidden state or
+            // side effects. On-demand pulls continue until the endpoint.
+            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
@@ -1239,10 +1240,10 @@ impl Interpreter {
         // during initial generation. When it did, the sequence is finite and
         // must NOT be left as a resumable infinite closure sequence.
         let mut closure_generation_finished = false;
-        // A repeated generated value before reaching a value endpoint signals
-        // a cycle such as `1, { -$_ } ... 3`. Do not keep eagerly searching
-        // forever; preserve the generator and endpoint for demand-driven pulls.
-        let mut closure_cycle_detected = false;
+        // Records whether a finite value endpoint was actually reached during
+        // eager-prefix generation.  Hitting the prefix limit is not evidence
+        // of a cycle: closure state can be external to the visible values.
+        let mut closure_endpoint_reached = false;
         // Set when the generator ERRORED during eager-prefix generation of an
         // infinite `… *` sequence — typically a re-entrant read of the
         // not-yet-bound sequence itself (`my @primes = 2,3,5,-> $p { … @primes … } … *`).
@@ -1559,6 +1560,7 @@ impl Interpreter {
                                 if !exclusive {
                                     result.push(item);
                                 }
+                                closure_endpoint_reached = true;
                                 should_break = true;
                                 continue;
                             }
@@ -1566,6 +1568,7 @@ impl Interpreter {
                                 if !exclusive {
                                     result.push(item);
                                 }
+                                closure_endpoint_reached = true;
                                 should_break = true;
                                 continue;
                             }
@@ -1652,34 +1655,19 @@ impl Interpreter {
                 }
 
                 result.push(item);
-                // A repeated *value* is not enough to prove a cycle: the
-                // Fibonacci sequence starts `0, 1, 1, 2, ...`. Require the
-                // trailing two-value generator state to repeat, which catches
-                // alternating/constant closure sequences without truncating a
-                // multi-seed recurrence before its endpoint.
-                if matches!(mode, SeqMode::Closure)
-                    && matches!(endpoint_kind, Some(EndpointKind::Value(_)))
-                    && result.len() >= 4
-                    && Self::seq_values_equal(&result[result.len() - 1], &result[result.len() - 3])
-                    && Self::seq_values_equal(&result[result.len() - 2], &result[result.len() - 4])
-                {
-                    closure_cycle_detected = true;
-                    should_break = true;
-                    break;
-                }
             }
             if should_break {
                 break;
             }
         }
 
-        // A closure-generated value-endpoint sequence that repeats before the
-        // endpoint can be an infinite cycle. Preserve it as lazy rather than
-        // eagerly searching forever; the puller keeps testing the endpoint.
+        // Defer an unfinished finite closure sequence after its eager prefix.
+        // This deliberately makes no claim about a cycle: only evaluating the
+        // closure can establish whether it eventually reaches the endpoint.
         if matches!(mode, SeqMode::Closure)
-            && closure_cycle_detected
             && matches!(endpoint_kind, Some(EndpointKind::Value(_)))
-            && extra_rhs.is_empty()
+            && !closure_endpoint_reached
+            && !closure_generation_finished
             && let Some(gen_fn) = generator
         {
             let endpoint = endpoint.clone();
@@ -1690,6 +1678,7 @@ impl Interpreter {
                     .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
                 endpoint,
                 exclude_endpoint: exclusive,
+                post_endpoint: extra_rhs,
                 finished: false,
             };
             return Ok(Value::lazy_list(crate::gc::Gc::new(
@@ -1743,6 +1732,7 @@ impl Interpreter {
                         .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
                     endpoint: None,
                     exclude_endpoint: false,
+                    post_endpoint: Vec::new(),
                     finished: false,
                 };
                 let mut ll = crate::value::LazyList::new_closure_sequence(result, state);

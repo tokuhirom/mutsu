@@ -332,6 +332,7 @@ impl Interpreter {
                             if !state.exclude_endpoint {
                                 history.push(item);
                             }
+                            history.extend(state.post_endpoint.iter().cloned());
                             state.finished = true;
                             break;
                         }

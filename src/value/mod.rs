@@ -1880,7 +1880,7 @@ impl ForLoopResumeState {
 /// code plus its associated compiled functions.
 pub(crate) type CompiledClosureBody = (Arc<CompiledCode>, Arc<CompiledFns>);
 
-/// State for an infinite closure-based sequence (`1, 1, * + * ... *`).
+/// State for a lazy closure-based sequence (`1, 1, * + * ... *`).
 ///
 /// Unlike `SequenceSpec` (arithmetic/geometric, computed without VM context),
 /// a closure generator must re-invoke user code to produce each next element,
@@ -1899,6 +1899,9 @@ pub(crate) struct ClosureSeqState {
     pub(crate) endpoint: Option<Value>,
     /// Do not include `endpoint` in the generated sequence (`...^`).
     pub(crate) exclude_endpoint: bool,
+    /// Values following a list/range endpoint. They become visible only once
+    /// the endpoint has been reached.
+    pub(crate) post_endpoint: Vec<Value>,
     /// Set once the generator signals termination (`last`/error) so we stop pulling.
     pub(crate) finished: bool,
 }

@@ -136,7 +136,11 @@ impl LazyList {
     /// / `extend_closure_sequence`), so a method that needs the whole list must
     /// raise `X::Cannot::Lazy` rather than read the (tiny) seed cache (L2b).
     pub(crate) fn is_infinite_spec(&self) -> bool {
-        self.sequence_spec.is_some() || self.closure_seq.is_some()
+        self.sequence_spec.is_some()
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
     }
 
     /// Whether this `.map`/`.grep` lazy pipe bottoms out in a *definitively
@@ -193,6 +197,7 @@ impl LazyList {
     pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
         self.is_from_gather()
             || self.is_infinite_spec()
+            || self.closure_seq.is_some()
             || self.walk_pending.is_some()
             || self.cat_pull.is_some()
     }
