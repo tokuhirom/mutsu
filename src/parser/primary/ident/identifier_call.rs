@@ -83,6 +83,8 @@ fn starts_slip_prefix_arg(s: &str) -> bool {
         rest.as_bytes().first(),
         Some(b'$') | Some(b'@') | Some(b'%') | Some(b'&') | Some(b'(')
     ) || rest.starts_with("\\(")
+        || rest.starts_with("«")
+        || rest.starts_with("<<")
 }
 
 /// When `do STMT` parses its inner statement via the full statement parser, a
