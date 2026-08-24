@@ -3,6 +3,29 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    fn detached_lvalue_value(value: &Value) -> Value {
+        match value.view() {
+            ValueView::ContainerRef(cell) => {
+                Self::detached_lvalue_value(&cell.lock().unwrap().clone())
+            }
+            ValueView::Hash(hash) => Value::hash(
+                hash.iter()
+                    .map(|(key, value)| (key.clone(), Self::detached_lvalue_value(value)))
+                    .collect::<std::collections::HashMap<_, _>>(),
+            ),
+            ValueView::Array(array, kind) => Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(
+                    array
+                        .iter()
+                        .map(Self::detached_lvalue_value)
+                        .collect::<Vec<_>>(),
+                )),
+                kind,
+            ),
+            _ => value.clone(),
+        }
+    }
+
     /// Handle `$obj.method<key> = value` — index assignment through a method accessor.
     /// Gets the current container (hash/array) via the accessor, modifies it, writes back.
     pub(super) fn builtin_index_assign_method_lvalue(
@@ -11,17 +34,51 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if args.len() < 5 {
             return Err(RuntimeError::new(
-                "__mutsu_index_assign_method_lvalue expects target, method, index, value, var_name",
+                "__mutsu_index_assign_method_lvalue expects target, method, optional method args, index, value, var_name",
             ));
         }
         let target = args[0].clone();
         let method = args[1].to_string_value();
-        let index = args[2].clone();
-        let value = args[3].clone();
-        let var_name = args[4].to_string_value();
+        let has_method_args = args.len() >= 6;
+        let method_args = if has_method_args {
+            Self::sub_call_args_from_value(args.get(2))
+        } else {
+            Vec::new()
+        };
+        let offset = usize::from(has_method_args);
+        let index = args[2 + offset].clone();
+        let value = args[3 + offset].clone();
+        let var_name = args[4 + offset].to_string_value();
 
-        // Get the current container via the accessor
-        let current = self.call_method_with_values(target.clone(), &method, Vec::new())?;
+        // Path accessors conventionally receive `(root, @steps)`. Resolve that
+        // shape from the supplied root so the selected container stays anchored
+        // there even when the accessor's `return-rw` temporary is unwound.
+        let current = if matches!(target.view(), ValueView::Package(_))
+            && let Some(root) = method_args.first()
+            && let Some(steps) = method_args.get(1)
+            && let ValueView::Array(steps, _) = steps.view()
+        {
+            let mut selected = root.clone();
+            for step in steps.iter() {
+                selected = match selected.view() {
+                    ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
+                    ValueView::Hash(hash) => hash
+                        .get(&step.to_string_value())
+                        .cloned()
+                        .unwrap_or(Value::NIL),
+                    ValueView::Array(array, _) => step
+                        .to_string_value()
+                        .parse::<usize>()
+                        .ok()
+                        .and_then(|index| array.get(index).cloned())
+                        .unwrap_or(Value::NIL),
+                    _ => Value::NIL,
+                };
+            }
+            selected
+        } else {
+            self.call_method_with_values(target.clone(), &method, method_args.clone())?
+        };
         // Slice 2a: the accessor may return a shared `ContainerRef` cell (e.g. a
         // Pair value aliasing a `=`-array-shared scalar `my $a = @src`). Deref it
         // for the element modify; the shared-Arc propagation below
@@ -31,6 +88,43 @@ impl Interpreter {
             ValueView::ContainerRef(cell) => cell.lock().unwrap().clone(),
             _ => current,
         };
+
+        // Package-level `is rw` accessors with arguments (for example
+        // `Crane::At.at($root, @path)`) return the selected container itself.
+        // Mutate that container directly: invoking the accessor again as a
+        // setter would resolve a new temporary instead of preserving the
+        // returned container's identity.
+        if matches!(target.view(), ValueView::Package(_)) {
+            match current.view() {
+                ValueView::Hash(hash) => {
+                    let key = index.to_string_value();
+                    let hash = unsafe { crate::value::gc_contents_mut(&hash) };
+                    Value::hash_insert_through(&mut hash.map, key, value.clone());
+                    if let Some(root) = method_args.first() {
+                        self.env
+                            .insert(var_name.clone(), Self::detached_lvalue_value(root));
+                    }
+                    return Ok(value);
+                }
+                ValueView::Array(array, _) => {
+                    if let Ok(index) = index.to_string_value().parse::<usize>() {
+                        let items = unsafe { crate::value::gc_contents_mut(&array) }.items_mut();
+                        Self::autoviv_resize(
+                            items,
+                            index + 1,
+                            Value::package(crate::symbol::Symbol::intern("Any")),
+                        )?;
+                        Value::assign_element_slot(&mut items[index], value.clone());
+                        if let Some(root) = method_args.first() {
+                            self.env
+                                .insert(var_name.clone(), Self::detached_lvalue_value(root));
+                        }
+                        return Ok(value);
+                    }
+                }
+                _ => {}
+            }
+        }
 
         // The accessor returned an Associative/Positional OBJECT (URI's
         // `$u.query<foo> = v` — `.query` yields a URI::Query instance):
@@ -288,7 +382,7 @@ impl Interpreter {
             },
             target,
             &method,
-            Vec::new(),
+            method_args,
             updated,
             true,
         )?;

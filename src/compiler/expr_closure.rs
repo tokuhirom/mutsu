@@ -783,18 +783,32 @@ impl Compiler {
             args: method_args,
             ..
         } = target
-            && method_args.is_empty()
+            && (method_args.is_empty() || matches!(method_target.as_ref(), Expr::BareWord(_)))
             && let Some(var_name) = Self::method_call_target_var_name(method_target)
         {
+            let writeback_name = if var_name.is_empty() {
+                method_args
+                    .first()
+                    .and_then(Self::index_assign_target_name)
+                    .unwrap_or_default()
+            } else {
+                var_name
+            };
+            let mut args = vec![
+                (**method_target).clone(),
+                Expr::Literal(Value::str(method_name.resolve().to_string())),
+            ];
+            if !method_args.is_empty() {
+                args.push(Expr::BracketArray(method_args.clone(), false));
+            }
+            args.extend([
+                index.clone(),
+                value.clone(),
+                Expr::Literal(Value::str(writeback_name)),
+            ]);
             let rewritten = Expr::Call {
                 name: Symbol::intern("__mutsu_index_assign_method_lvalue"),
-                args: vec![
-                    (**method_target).clone(),
-                    Expr::Literal(Value::str(method_name.resolve().to_string())),
-                    index.clone(),
-                    value.clone(),
-                    Expr::Literal(Value::str(var_name)),
-                ],
+                args,
             };
             self.compile_expr(&rewritten);
         } else if let Some(arr_name) = Self::map_rw_identity_target_name(target) {
