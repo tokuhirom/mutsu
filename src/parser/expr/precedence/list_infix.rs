@@ -120,10 +120,10 @@ pub(crate) fn sequence_only_expr(input: &str) -> PResult<'_, Expr> {
                         r2.len(),
                     )
                 })?;
-            if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
+            if contains_whatever(&right) && !matches!(right, Expr::Whatever | Expr::HyperWhatever) {
                 right = Expr::WhateverCurry(Box::new(right));
             }
-            if contains_whatever(&left) && !matches!(left, Expr::Whatever) {
+            if contains_whatever(&left) && !matches!(left, Expr::Whatever | Expr::HyperWhatever) {
                 left = Expr::WhateverCurry(Box::new(left));
             }
             left = wrap_left_exclusive_sequence(
@@ -180,7 +180,7 @@ pub(crate) fn sequence_expr(input: &str) -> PResult<'_, Expr> {
                     r2.len(),
                 )
             })?;
-            if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
+            if contains_whatever(&right) && !matches!(right, Expr::Whatever | Expr::HyperWhatever) {
                 right = Expr::WhateverCurry(Box::new(right));
             }
             maybe_wrap_lhs(&mut left);

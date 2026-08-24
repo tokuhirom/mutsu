@@ -12,7 +12,7 @@ use crate::token_kind::TokenKind;
 use crate::value::ValueView;
 
 pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
-    if !contains_whatever(expr) || is_whatever(expr) {
+    if !contains_whatever(expr) || is_whatever(expr) || matches!(expr, Expr::HyperWhatever) {
         return false;
     }
     if contains_xx_with_bare_whatever(expr) {
@@ -43,7 +43,11 @@ pub(crate) fn should_wrap_whatevercode(expr: &Expr) -> bool {
         // CallOn on a *compound* curry target (`*[0](...)`, `*.foo(...)`) wraps the
         // target into a WhateverCode and invokes it (handled by the target-wrap arm
         // in `expression`). Keep the bare-target CallOn unwrapped here.
-        Expr::CallOn { target, .. } if is_whatever(target) => false,
+        Expr::CallOn { target, .. }
+            if is_whatever(target) || matches!(target.as_ref(), Expr::HyperWhatever) =>
+        {
+            false
+        }
         // List replication `xx` does not Whatever-curry a *bare* `*` operand: a
         // standalone `*` is the Whatever value, repeated literally. `* xx 2` is
         // `(*, *)`; `1 xx *`/`1 x *` is the infinite-repeat form. None wrap into a
@@ -159,7 +163,7 @@ fn is_wrapped_whatevercode(expr: &Expr) -> bool {
 
 pub(crate) fn contains_whatever(expr: &Expr) -> bool {
     match expr {
-        e if is_whatever(e) => true,
+        e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => true,
         // Thunk barriers (`&&`, `||`, `//`, `and`, `or`, `andthen`, `orelse`,
         // `notandthen`, and the ternary) are **opaque** to the enclosing
         // priming scope: each operand is a thunk, hence a priming scope of its

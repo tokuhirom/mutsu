@@ -5,6 +5,7 @@
 use super::replace::{replace_whatever_numbered, replace_whatever_single};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::parser::{contains_whatever, is_whatever, should_wrap_whatevercode};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
@@ -60,6 +61,37 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
 
     let wc_count = count_whatever(expr);
 
+    // A HyperWhatever primes the expression with a slurpy positional parameter
+    // and maps the primed body over every supplied argument. Reuse the ordinary
+    // single-Whatever substitution for the per-item callback so all operators
+    // and postfix chains retain their normal compiler path.
+    if wc_count == 0 && contains_hyperwhatever(expr) {
+        let item_body = replace_whatever_single(expr);
+        let mapper = Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![Stmt::Expr(item_body)],
+            is_whatever_code: true,
+            param_sigilless: false,
+        };
+        let args_name = "@__hw_args".to_string();
+        let mut args_def = make_wc_param(args_name.clone());
+        args_def.slurpy = true;
+        return Expr::AnonSubParams {
+            params: vec![args_name.clone()],
+            param_defs: vec![args_def],
+            return_type: None,
+            body: vec![Stmt::Expr(Expr::MethodCall {
+                target: Box::new(Expr::ArrayVar("__hw_args".to_string())),
+                name: Symbol::intern("map"),
+                args: vec![mapper],
+                modifier: None,
+                quoted: false,
+            })],
+            is_rw: false,
+            is_whatever_code: true,
+        };
+    }
+
     if wc_count <= 1 && !expr_contains_topic(expr) {
         // Single-arg: use Lambda with param "_" for backward compat (this keeps the
         // `deepmap`/hyper container-passing path working, which binds each leaf to
@@ -99,6 +131,38 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             is_rw: false,
             is_whatever_code: true,
         }
+    }
+}
+
+/// Whether this priming scope contains a HyperWhatever placeholder.
+///
+/// `contains_whatever` also reports composed, already-planted ordinary
+/// `WhateverCurry` operands.  Those can have a zero visible placeholder count
+/// at an enclosing scope, so using that broader predicate here would mistake
+/// ordinary compositions such as `(^*).roll` for HyperWhatever and give them
+/// slurpy/map semantics.
+fn contains_hyperwhatever(expr: &Expr) -> bool {
+    match expr {
+        Expr::HyperWhatever => true,
+        Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
+        e if super::plant::is_thunk_barrier(e) => false,
+        Expr::Binary { left, right, .. } => {
+            contains_hyperwhatever(left) || contains_hyperwhatever(right)
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_hyperwhatever(expr),
+        Expr::MethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::HyperMethodCallDynamic { target, .. }
+        | Expr::CallOn { target, .. }
+        | Expr::Index { target, .. } => contains_hyperwhatever(target),
+        Expr::InfixFunc { left, right, .. } => {
+            contains_hyperwhatever(left) || right.iter().any(contains_hyperwhatever)
+        }
+        Expr::MetaOp { left, right, .. } => {
+            contains_hyperwhatever(left) || contains_hyperwhatever(right)
+        }
+        _ => false,
     }
 }
 

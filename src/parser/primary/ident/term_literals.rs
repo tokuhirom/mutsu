@@ -225,7 +225,17 @@ pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {
         if after.starts_with('*') {
             return Err(PError::expected("whatever"));
         }
-        // **<digit> or **$ would be power op, but **) or **, or end is HyperWhatever
+        // ASCII operands make this the infix power operator. Superscript powers,
+        // however, are postfix operators and therefore follow a HyperWhatever
+        // term just as they can follow a single Whatever term (`**²`, `**⁻¹`).
+        let starts_superscript_power = after.chars().next().is_some_and(is_superscript_digit)
+            || after
+                .chars()
+                .next()
+                .is_some_and(|c| matches!(c, '\u{207A}' | '\u{207B}' | '\u{00AF}'))
+                && after.chars().nth(1).is_some_and(is_superscript_digit);
+        // **<digit> or **$ would be power op, but **) or **, a postfix
+        // superscript, or end is HyperWhatever.
         if !after.is_empty()
             && !after.starts_with(')')
             && !after.starts_with(']')
@@ -236,6 +246,7 @@ pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {
             && !after.starts_with('\n')
             && !after.starts_with('\t')
             && !after.starts_with('\r')
+            && !starts_superscript_power
         {
             return Err(PError::expected("whatever (not **)"));
         }

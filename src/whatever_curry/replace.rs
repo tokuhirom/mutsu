@@ -209,7 +209,7 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
 /// Replace Whatever and nested single-arg WhateverCode with $_ (for single-arg wrapping).
 pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
-        e if is_whatever(e) => Expr::Var("_".to_string()),
+        e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => Expr::Var("_".to_string()),
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
         // See the matching arm in `replace_whatever_numbered`: a thunk barrier's
         // operands are separate priming scopes and must not be substituted into

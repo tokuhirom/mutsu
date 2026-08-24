@@ -323,6 +323,7 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
         let consumed = &content_start[..content_start.len() - before_close.len()];
         let result = if is_single_paren_group(consumed)
             && (crate::parser::expr::is_whatever(&result)
+                || matches!(&result, Expr::HyperWhatever)
                 || is_whatevercode_closure(&result)
                 || matches!(&result, Expr::Grouped(_)))
         {
