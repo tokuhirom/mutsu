@@ -158,6 +158,13 @@ impl LazyList {
         }
     }
 
+    /// Create the lazy view used by the left-exclusive sequence operators.
+    /// The view drops one item as it pulls, preserving any generator carried
+    /// by the source instead of snapshotting its currently-realized cache.
+    pub(crate) fn new_skip_first_pipe(source: Value) -> Self {
+        Self::new_index_pipe(source, IndexTransform::SkipFirst)
+    }
+
     /// Create an infinite closure-based sequence (`1, 1, * + * ... *`).
     ///
     /// `seeds` is the initial element history (already includes any eagerly

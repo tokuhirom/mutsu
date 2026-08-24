@@ -124,9 +124,31 @@ impl Interpreter {
     /// avoiding the interpreter roundtrip through `eval_xx_repeat_thunk`.
     fn vm_xx_repeat_thunk(
         &mut self,
-        data: &crate::value::SubData,
+        data: &crate::gc::Gc<crate::value::SubData>,
         n: usize,
     ) -> Result<Vec<Value>, RuntimeError> {
+        // The compiler bakes every compiler-generated `xx` thunk into the
+        // enclosing code object's closure pool. Invoke that bytecode through
+        // the normal closure-call ABI: it installs the closure's own captured
+        // environment and upvalues, then restores the caller state. Running
+        // it as a bare reusable block would instead inherit the caller's frame
+        // layout, which is not a closure invocation and can bind a capture to
+        // the wrong local slot.
+        if let Some(code) = &data.compiled_code {
+            let empty_fns = crate::opcode::CompiledFns::default();
+            let fns = data.compiled_fns.as_deref().unwrap_or(&empty_fns);
+            let mut out = Vec::with_capacity(n);
+            for _ in 0..n {
+                let value = self.call_compiled_closure(data, code, Vec::new(), fns)?;
+                if let ValueView::Slip(items) = value.view() {
+                    out.extend(items.iter().cloned());
+                } else {
+                    out.push(value);
+                }
+            }
+            return Ok(out);
+        }
+
         // RAII (`MarkContextGuard`,
         // `todo/deep/mark-context-flags-leak-across-live-call-boundary.md`):
         // this drives the thunk body directly via `run_reuse` rather than
@@ -154,7 +176,9 @@ impl Interpreter {
             self.env_mut().insert_sym(*k, v.clone());
         }
 
-        // Compile the thunk body
+        // Runtime-created Sub values do not carry bytecode. Keep their legacy
+        // AST compilation fallback, but only for that genuinely uncompiled
+        // shape.
         let compiler = crate::compiler::Compiler::new();
         let (code, compiled_fns) = compiler.compile(&data.body);
         let code = Arc::new(code);
@@ -486,7 +510,7 @@ impl Interpreter {
                 self.stack.push(Value::seq(items));
                 return Ok(());
             }
-            let items = self.vm_xx_repeat_thunk(data.as_ref(), n)?;
+            let items = self.vm_xx_repeat_thunk(&data, n)?;
             self.stack.push(Value::seq(items));
             return Ok(());
         }

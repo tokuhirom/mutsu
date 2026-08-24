@@ -39,6 +39,13 @@ impl Interpreter {
         if list.walk_pending.is_some() {
             return self.force_walk_pending(list, usize::MAX);
         }
+        // A closure sequence with a concrete endpoint is externally finite,
+        // but its generator is retained so construction does not eagerly walk
+        // to a distant endpoint.  A strict consumer must drive that generator
+        // before consulting the seed cache.
+        if list.has_finite_closure_endpoint() {
+            return self.extend_closure_sequence(list, usize::MAX);
+        }
         if let Some(cached) = list.cache.lock().unwrap().clone() {
             return Ok(cached);
         }

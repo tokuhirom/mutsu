@@ -127,9 +127,21 @@ impl Interpreter {
         self.call_method_with_values(args[0].clone(), "elems", vec![])
     }
 
-    pub(super) fn builtin_set(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    fn reify_finite_closure_args(&mut self, args: &[Value]) -> Result<Vec<Value>, RuntimeError> {
+        args.iter()
+            .map(|arg| match arg.view() {
+                ValueView::LazyList(list) if list.has_finite_closure_endpoint() => {
+                    self.force_lazy_list_vm(&list).map(Value::seq)
+                }
+                _ => Ok(arg.clone()),
+            })
+            .collect()
+    }
+
+    pub(super) fn builtin_set(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let args = self.reify_finite_closure_args(args)?;
         // Check for lazy inputs
-        for arg in args {
+        for arg in &args {
             if Self::is_lazy_for_coerce(arg) {
                 return Err(RuntimeError::cannot_lazy_what("set"));
             }
@@ -143,7 +155,7 @@ impl Interpreter {
             crate::runtime::utils::quanthash_insert_set(elems, original_keys, val);
         };
 
-        for arg in args {
+        for arg in &args {
             match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
                 ValueView::Array(_, kind) if kind.is_itemized() => {
@@ -178,9 +190,10 @@ impl Interpreter {
         Ok(Value::set_typed(elems, original_keys))
     }
 
-    pub(super) fn builtin_bag(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_bag(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let args = self.reify_finite_closure_args(args)?;
         // Check for lazy inputs
-        for arg in args {
+        for arg in &args {
             if Self::is_lazy_for_coerce(arg) {
                 return Err(RuntimeError::cannot_lazy_what("bag"));
             }
@@ -201,7 +214,7 @@ impl Interpreter {
             *counts.entry(key).or_insert(0) += 1;
         }
 
-        for arg in args {
+        for arg in &args {
             match arg.view() {
                 // Itemized arrays/hashes are single elements
                 ValueView::Array(_, kind) if kind.is_itemized() => {
@@ -240,9 +253,10 @@ impl Interpreter {
         Ok(Value::bag_typed(counts, original_keys))
     }
 
-    pub(super) fn builtin_mix(&self, args: &[Value]) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_mix(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        let args = self.reify_finite_closure_args(args)?;
         // Check for lazy inputs
-        for arg in args {
+        for arg in &args {
             if Self::is_lazy_for_coerce(arg) {
                 return Err(RuntimeError::cannot_lazy_what("mix"));
             }
@@ -258,7 +272,7 @@ impl Interpreter {
             *weights.entry(key).or_insert(0.0) += 1.0;
         };
 
-        for arg in args {
+        for arg in &args {
             match arg.view() {
                 // Itemized arrays ($[...]) are treated as a single element
                 ValueView::Array(_, kind) if kind.is_itemized() => {

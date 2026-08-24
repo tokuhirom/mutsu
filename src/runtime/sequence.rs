@@ -1106,7 +1106,11 @@ impl Interpreter {
         // Generate values
         let mut result: Vec<Value> = seeds.clone();
         let max_gen = match (&mode, &endpoint_kind) {
-            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 256,
+            // Retain finite closure sequences from the start. We cannot
+            // soundly infer a recurrence from generated values: the closure
+            // may have hidden state or side effects. Strict consumers reify
+            // them through their explicit forcing paths.
+            (SeqMode::Closure, Some(EndpointKind::Value(_))) => 0,
             (_, Some(_)) => 10000,
             (_, None) => 32,
         };
@@ -1236,6 +1240,10 @@ impl Interpreter {
         // during initial generation. When it did, the sequence is finite and
         // must NOT be left as a resumable infinite closure sequence.
         let mut closure_generation_finished = false;
+        // Records whether a finite value endpoint was actually reached during
+        // eager-prefix generation.  Hitting the prefix limit is not evidence
+        // of a cycle: closure state can be external to the visible values.
+        let mut closure_endpoint_reached = false;
         // Set when the generator ERRORED during eager-prefix generation of an
         // infinite `… *` sequence — typically a re-entrant read of the
         // not-yet-bound sequence itself (`my @primes = 2,3,5,-> $p { … @primes … } … *`).
@@ -1552,6 +1560,7 @@ impl Interpreter {
                                 if !exclusive {
                                     result.push(item);
                                 }
+                                closure_endpoint_reached = true;
                                 should_break = true;
                                 continue;
                             }
@@ -1559,6 +1568,7 @@ impl Interpreter {
                                 if !exclusive {
                                     result.push(item);
                                 }
+                                closure_endpoint_reached = true;
                                 should_break = true;
                                 continue;
                             }
@@ -1651,6 +1661,31 @@ impl Interpreter {
             }
         }
 
+        // Defer an unfinished finite closure sequence after its eager prefix.
+        // This deliberately makes no claim about a cycle: only evaluating the
+        // closure can establish whether it eventually reaches the endpoint.
+        if matches!(mode, SeqMode::Closure)
+            && matches!(endpoint_kind, Some(EndpointKind::Value(_)))
+            && !closure_endpoint_reached
+            && !closure_generation_finished
+            && let Some(gen_fn) = generator
+        {
+            let endpoint = endpoint.clone();
+            let state = crate::value::ClosureSeqState {
+                generator: gen_fn,
+                closure_env: generator_closure_env,
+                precompiled: precompiled_closure
+                    .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
+                endpoint,
+                exclude_endpoint: exclusive,
+                post_endpoint: extra_rhs,
+                finished: false,
+            };
+            return Ok(Value::lazy_list(crate::gc::Gc::new(
+                crate::value::LazyList::new_closure_sequence(result, state),
+            )));
+        }
+
         result.extend(extra_rhs);
         // When the endpoint is infinite (None), return a LazyList to preserve laziness
         if endpoint.is_none() && endpoint_kind.is_none() {
@@ -1695,6 +1730,9 @@ impl Interpreter {
                     closure_env: generator_closure_env,
                     precompiled: precompiled_closure
                         .map(|(c, f)| (std::sync::Arc::new(c), std::sync::Arc::new(f))),
+                    endpoint: None,
+                    exclude_endpoint: false,
+                    post_endpoint: Vec::new(),
                     finished: false,
                 };
                 let mut ll = crate::value::LazyList::new_closure_sequence(result, state);
@@ -1794,6 +1832,9 @@ impl Interpreter {
             // Collect results, avoiding duplicates at segment boundaries
             let items: Option<Vec<Value>> = match seg_result.view() {
                 ValueView::Array(items, ..) => Some(items.as_ref().clone().into_items()),
+                ValueView::LazyList(ll) if ll.has_finite_closure_endpoint() => {
+                    Some(self.force_lazy_list_vm(&ll)?)
+                }
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone(),
                 _ => None,
             };

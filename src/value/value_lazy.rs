@@ -73,8 +73,15 @@ impl LazyList {
     /// materialize on gist/Str rather than render a placeholder.
     pub(crate) fn is_genuinely_lazy(&self) -> bool {
         self.sequence_spec.is_some()
-            || self.lazy_pipe.is_some()
-            || self.closure_seq.is_some()
+            || self.lazy_pipe.as_ref().is_some_and(|pipe| {
+                let pipe = pipe.lock().unwrap();
+                !matches!(pipe.index_transform, Some(IndexTransform::SkipFirst))
+                    || Self::value_is_genuinely_lazy(&pipe.source)
+            })
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || self.scan_spec.is_some()
             // The `__mutsu_preserve_lazy_on_array_assign` marker is set
             // exclusively by an explicit `lazy` prefix / `.lazy` method call
@@ -136,7 +143,20 @@ impl LazyList {
     /// / `extend_closure_sequence`), so a method that needs the whole list must
     /// raise `X::Cannot::Lazy` rather than read the (tiny) seed cache (L2b).
     pub(crate) fn is_infinite_spec(&self) -> bool {
-        self.sequence_spec.is_some() || self.closure_seq.is_some()
+        self.sequence_spec.is_some()
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
+    }
+
+    /// A closure sequence can have a concrete endpoint while still requiring
+    /// incremental evaluation to discover it. Unlike `... *`, such a sequence
+    /// is safe for strict consumers to reify to completion.
+    pub(crate) fn has_finite_closure_endpoint(&self) -> bool {
+        self.closure_seq
+            .as_ref()
+            .is_some_and(|state| state.lock().unwrap().endpoint.is_some())
     }
 
     /// Whether this `.map`/`.grep` lazy pipe bottoms out in a *definitively
@@ -176,6 +196,8 @@ impl LazyList {
                     ll.pipe_bottoms_out_finite()
                 } else if ll.is_infinite_spec() || ll.cat_pull.is_some() {
                     false
+                } else if ll.has_finite_closure_endpoint() {
+                    true
                 } else {
                     // A gather coroutine (or an already-materialized gather body)
                     // is finite; sequence/closure/cat specs were ruled out above.
@@ -187,12 +209,20 @@ impl LazyList {
         }
     }
 
+    fn value_is_genuinely_lazy(source: &Value) -> bool {
+        match source.view() {
+            ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
+            _ => false,
+        }
+    }
+
     /// Gate for the VM force/incremental-pull dispatch block: a gather-sourced
     /// list (eager or `lazy`), an infinite sequence/closure spec, or a lazy
     /// `WALK(method)()` candidate-invocation list.
     pub(crate) fn needs_vm_lazy_dispatch(&self) -> bool {
         self.is_from_gather()
             || self.is_infinite_spec()
+            || self.closure_seq.is_some()
             || self.walk_pending.is_some()
             || self.cat_pull.is_some()
     }

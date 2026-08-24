@@ -738,7 +738,7 @@ impl Interpreter {
     /// Dispatch the "is-lazy" method.
     fn dispatch_is_lazy_method(&self, target: &Value) -> Value {
         let value_is_lazy = |v: &Value| match v.view() {
-            ValueView::LazyList(_) => true,
+            ValueView::LazyList(list) => !list.has_finite_closure_endpoint() && !list.is_cat_pull(),
             ValueView::Array(_, kind) if kind.is_lazy() => true,
             ValueView::Range(_, end)
             | ValueView::RangeExcl(_, end)

@@ -219,15 +219,11 @@ impl Interpreter {
                                 Value::array(new_items)
                             })
                         }
-                        ValueView::LazyList(ll) => {
-                            let mut items = ll.cache.lock().unwrap().clone().unwrap_or_default();
-                            if !items.is_empty() {
-                                items.remove(0);
-                            }
-                            Some(Value::lazy_list(crate::gc::Gc::new(
-                                crate::value::LazyList::new_cached(items),
-                            )))
-                        }
+                        ValueView::LazyList(ll) => Some(Value::lazy_list(crate::gc::Gc::new(
+                            crate::value::LazyList::new_skip_first_pipe(Value::lazy_list(
+                                ll.clone(),
+                            )),
+                        ))),
                         _ => None,
                     };
                     if let Some(new_result) = new_result {

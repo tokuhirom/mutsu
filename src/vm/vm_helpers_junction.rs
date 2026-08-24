@@ -266,7 +266,7 @@ impl Interpreter {
     /// by re-invoking its generator closure over the growing element history.
     /// Returns whatever is available (possibly fewer than `needed`) once the
     /// generator signals termination.
-    pub(super) fn extend_closure_sequence(
+    pub(crate) fn extend_closure_sequence(
         &mut self,
         list: &LazyList,
         needed: usize,
@@ -315,10 +315,30 @@ impl Interpreter {
                 // contributes each as its own sequence element — flatten the Slip
                 // into the history so the next step's `$^a`/`$^b` see the newest
                 // elements (mirrors the eager `result.extend(items_to_add)` path).
-                Some(v) => match v.view() {
-                    crate::value::ValueView::Slip(items) => history.extend(items.iter().cloned()),
-                    _ => history.push(v),
-                },
+                Some(v) => {
+                    let items: Vec<Value> = match v.view() {
+                        crate::value::ValueView::Slip(items) => items.iter().cloned().collect(),
+                        _ => vec![v],
+                    };
+                    for item in items {
+                        let reached_endpoint = state.endpoint.as_ref().is_some_and(|endpoint| {
+                            if let crate::value::ValueView::Package(type_name) = endpoint.view() {
+                                Self::seq_type_matches(&item, &type_name.resolve())
+                            } else {
+                                Self::seq_values_equal(&item, endpoint)
+                            }
+                        });
+                        if reached_endpoint {
+                            if !state.exclude_endpoint {
+                                history.push(item);
+                            }
+                            history.extend(state.post_endpoint.iter().cloned());
+                            state.finished = true;
+                            break;
+                        }
+                        history.push(item);
+                    }
+                }
                 None => {
                     state.finished = true;
                     break;
