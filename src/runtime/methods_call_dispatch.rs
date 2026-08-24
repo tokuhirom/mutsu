@@ -1314,7 +1314,6 @@ impl Interpreter {
                 if constraint != "Mu" && constraint != "Any" {
                     for arg in &args {
                         let val = match arg.view() {
-                            ValueView::Pair(_, v) => v.clone(),
                             ValueView::ValuePair(_, v) => v.clone(),
                             _ => continue,
                         };
@@ -1340,43 +1339,22 @@ impl Interpreter {
                 // each insert.
                 let data = unsafe { crate::value::gc_contents_mut(&arc) };
                 for arg in args {
-                    match arg.view() {
-                        ValueView::Pair(k, v) => {
-                            let key = k.as_str().to_string();
-                            let v = v.clone();
-                            let map = &mut data.map;
-                            if let Some(existing) = map.get(&key) {
-                                // Key exists: create itemized array
-                                let arr = Value::array_with_kind(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                        existing.clone(),
-                                        v,
-                                    ])),
-                                    crate::value::ArrayKind::ItemArray,
-                                );
-                                map.insert(key, arr);
-                            } else {
-                                map.insert(key, v);
-                            }
+                    if let ValueView::ValuePair(k, v) = arg.view() {
+                        let key = k.to_string_value();
+                        let v = v.clone();
+                        let map = &mut data.map;
+                        if let Some(existing) = map.get(&key) {
+                            let arr = Value::array_with_kind(
+                                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
+                                    existing.clone(),
+                                    v,
+                                ])),
+                                crate::value::ArrayKind::ItemArray,
+                            );
+                            map.insert(key, arr);
+                        } else {
+                            map.insert(key, v);
                         }
-                        ValueView::ValuePair(k, v) => {
-                            let key = k.to_string_value();
-                            let v = v.clone();
-                            let map = &mut data.map;
-                            if let Some(existing) = map.get(&key) {
-                                let arr = Value::array_with_kind(
-                                    crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                        existing.clone(),
-                                        v,
-                                    ])),
-                                    crate::value::ArrayKind::ItemArray,
-                                );
-                                map.insert(key, arr);
-                            } else {
-                                map.insert(key, v);
-                            }
-                        }
-                        _ => {}
                     }
                 }
                 return Ok(target);
@@ -1384,40 +1362,21 @@ impl Interpreter {
             // Not shared: build new hash
             let mut new_map = (**arc).clone();
             for arg in args {
-                match arg.view() {
-                    ValueView::Pair(k, v) => {
-                        let key = k.as_str().to_string();
-                        let v = v.clone();
-                        if let Some(existing) = new_map.get(&key) {
-                            let arr = Value::array_with_kind(
-                                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                    existing.clone(),
-                                    v,
-                                ])),
-                                crate::value::ArrayKind::ItemArray,
-                            );
-                            new_map.insert(key, arr);
-                        } else {
-                            new_map.insert(key, v);
-                        }
+                if let ValueView::ValuePair(k, v) = arg.view() {
+                    let key = k.to_string_value();
+                    let v = v.clone();
+                    if let Some(existing) = new_map.get(&key) {
+                        let arr = Value::array_with_kind(
+                            crate::gc::Gc::new(crate::value::ArrayData::new(vec![
+                                existing.clone(),
+                                v,
+                            ])),
+                            crate::value::ArrayKind::ItemArray,
+                        );
+                        new_map.insert(key, arr);
+                    } else {
+                        new_map.insert(key, v);
                     }
-                    ValueView::ValuePair(k, v) => {
-                        let key = k.to_string_value();
-                        let v = v.clone();
-                        if let Some(existing) = new_map.get(&key) {
-                            let arr = Value::array_with_kind(
-                                crate::gc::Gc::new(crate::value::ArrayData::new(vec![
-                                    existing.clone(),
-                                    v,
-                                ])),
-                                crate::value::ArrayKind::ItemArray,
-                            );
-                            new_map.insert(key, arr);
-                        } else {
-                            new_map.insert(key, v);
-                        }
-                    }
-                    _ => {}
                 }
             }
             return Ok(Value::hash_with_data(Value::hash_arc(new_map)));

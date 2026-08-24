@@ -8,9 +8,10 @@ impl Interpreter {
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
             match arg.view() {
-                ValueView::Pair(k, v) => {
-                    pairs.push((k.clone(), v.clone()));
-                }
+                // Named-flavour Pairs are named arguments at the call boundary,
+                // not entries for Hash.push/append's positional `+new` capture.
+                // Positional Pair data is represented by ValuePair below.
+                ValueView::Pair(..) => {}
                 ValueView::ValuePair(k, v) => {
                     pairs.push((k.to_string_value(), v.clone()));
                 }
@@ -56,9 +57,9 @@ impl Interpreter {
         let mut iter = args.into_iter().peekable();
         while let Some(arg) = iter.next() {
             match arg.view() {
-                ValueView::Pair(k, v) => {
-                    pairs.push((Value::str(k.clone()), v.clone()));
-                }
+                // See hash_push_collect_pairs: named arguments are not part of
+                // the positional `+new` capture.
+                ValueView::Pair(..) => {}
                 ValueView::ValuePair(k, v) => {
                     pairs.push((k.clone(), v.clone()));
                 }
