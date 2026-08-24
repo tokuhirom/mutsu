@@ -4,6 +4,9 @@ use crate::parser::expr::operators::{
 };
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::PResult;
+use crate::parser::stmt::simple::TMP_INDEX_COUNTER;
+
+use std::sync::atomic::Ordering;
 
 use super::arith::{OpPrecedence, additive_expr, classify_base_op, try_custom_infix_at_level};
 use super::meta_bracket::block_newline_terminates;
@@ -66,13 +69,13 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     }
     candidates.sort_by_key(|&(pos, ..)| pos);
 
-    for (end, dwim_right, right_marker_len) in candidates {
+    let candidate = candidates
+        .iter()
+        .copied()
+        .find(|(end, ..)| &after_left[..*end] != "=")
+        .or_else(|| candidates.first().copied());
+    if let Some((end, dwim_right, right_marker_len)) = candidate {
         let op = &after_left[..end];
-        // Reject bare `=` as the operator — that is hyper-assignment syntax
-        // (e.g. `»=»`), handled at the statement level.
-        if op == "=" {
-            continue;
-        }
         return Some((
             op.to_string(),
             dwim_left,
@@ -81,6 +84,55 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
         ));
     }
     None
+}
+
+fn lower_hyper_assign_target(target: Expr, source: Expr) -> Expr {
+    match target {
+        Expr::Grouped(inner) => lower_hyper_assign_target(*inner, source),
+        Expr::ArrayLiteral(items) => Expr::DoBlock {
+            body: items
+                .into_iter()
+                .enumerate()
+                .map(|(index, item)| {
+                    crate::ast::Stmt::Expr(lower_hyper_assign_target(
+                        item,
+                        Expr::Index {
+                            target: Box::new(source.clone()),
+                            index: Box::new(Expr::Literal(crate::value::Value::int(index as i64))),
+                            is_positional: true,
+                        },
+                    ))
+                })
+                .collect(),
+            label: None,
+        },
+        target => crate::parser::expr::precedence::assign_to_target_expr(target, source),
+    }
+}
+
+fn lower_hyper_assignment(target: Expr, value: Expr) -> Expr {
+    let temp_name = format!(
+        "__mutsu_hyper_assign_{}",
+        TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    Expr::DoBlock {
+        body: vec![
+            crate::ast::Stmt::VarDecl {
+                name: temp_name.clone(),
+                expr: value,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            },
+            crate::ast::Stmt::Expr(lower_hyper_assign_target(target, Expr::Var(temp_name))),
+        ],
+        label: None,
+    }
 }
 
 /// Parse hyper operator with function reference: >>[&func]<<, <<[&func]>>, etc.
@@ -190,12 +242,16 @@ fn parse_hyper_rhs(input: &str, parent_prec: i32) -> PResult<'_, Expr> {
             let (r, right) = parse_hyper_rhs(r, prec).map_err(|err| {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
-            left = Expr::HyperOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-                dwim_left,
-                dwim_right,
+            left = if op == "=" {
+                lower_hyper_assignment(left, right)
+            } else {
+                Expr::HyperOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    dwim_left,
+                    dwim_right,
+                }
             };
             rest = r;
             continue;
@@ -242,12 +298,16 @@ pub(crate) fn concat_expr(input: &str) -> PResult<'_, Expr> {
             let (r, right) = parse_hyper_rhs(r, parent_prec).map_err(|err| {
                 enrich_expected_error(err, "expected expression after hyper operator", r.len())
             })?;
-            left = Expr::HyperOp {
-                op,
-                left: Box::new(left),
-                right: Box::new(right),
-                dwim_left,
-                dwim_right,
+            left = if op == "=" {
+                lower_hyper_assignment(left, right)
+            } else {
+                Expr::HyperOp {
+                    op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    dwim_left,
+                    dwim_right,
+                }
             };
             rest = r;
             continue;
