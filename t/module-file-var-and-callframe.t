@@ -17,12 +17,15 @@ use FileVarFixture;
 # absolutely and appends the module name (`/abs/Foo.rakumod (Foo)`), so this
 # file has to run under both.
 
-plan 11;
+plan 14;
 
 my $script = 't/module-file-var-and-callframe.t';
 my $module = 't/lib/FileVarFixture.rakumod';
 
 ok $?FILE.contains($script), 'the main script reports its own file';
+is $?FILE, $?FILE.IO.absolute.Str, 'the main script file is absolute';
+is "$?FILE", $?FILE.IO.absolute.Str, 'interpolated main script file is absolute';
+is callframe.file, $*PROGRAM-NAME, 'callframe keeps the invocation path';
 
 ok fixture-file().contains($module),
     'a module routine reports the module file, not the script';
