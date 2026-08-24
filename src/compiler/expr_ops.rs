@@ -384,6 +384,36 @@ impl Compiler {
 
     /// Compile MetaOp (Rop, Xop, Zop).
     pub(super) fn compile_expr_meta_op(&mut self, meta: &str, op: &str, left: &Expr, right: &Expr) {
+        // A grouped declaration used as an X/Z operand (`my ($a, $b) Z ...`)
+        // declares its scalars in the surrounding scope and contributes a List
+        // of those scalar values. The parser represents the declaration as a
+        // scopeless SyntheticBlock, so run the declarations first and continue
+        // with the corresponding literal list operand.
+        if matches!(meta, "X" | "Z")
+            && let Expr::DoStmt(stmt) = left
+            && let Stmt::SyntheticBlock(stmts) = stmt.as_ref()
+            && !stmts.is_empty()
+            && stmts
+                .iter()
+                .all(|stmt| matches!(stmt, Stmt::VarDecl { .. }))
+        {
+            let mut targets = Vec::with_capacity(stmts.len());
+            for stmt in stmts {
+                let Stmt::VarDecl { name, .. } = stmt else {
+                    unreachable!();
+                };
+                self.compile_stmt(stmt);
+                targets.push(if let Some(name) = name.strip_prefix('@') {
+                    Expr::ArrayVar(name.to_string())
+                } else if let Some(name) = name.strip_prefix('%') {
+                    Expr::HashVar(name.to_string())
+                } else {
+                    Expr::Var(name.clone())
+                });
+            }
+            self.compile_expr_meta_op(meta, op, &Expr::ArrayLiteral(targets), right);
+            return;
+        }
         if meta == "X" && matches!(op, "and" | "&&" | "or" | "||" | "andthen" | "orelse") {
             let thunked = Expr::AnonSub {
                 body: vec![Stmt::Expr(right.clone())],
@@ -527,9 +557,7 @@ impl Compiler {
         // in-place assignment operator, so each cross/zip pair mutates the
         // corresponding left cell and the mutated left container is written back
         // to the lvalue. The expression value is the Seq of per-op assignment
-        // results (which, for `X`, differs from the mutated container). Only a
-        // simple lvalue (`@a`, `$a`) is written back; any other left operand
-        // falls through to the general path.
+        // results (which, for `X`, differs from the mutated container).
         if (meta == "X" || meta == "Z")
             && let Some(target) = Self::meta_assign_writeback_target(op, left)
         {
@@ -541,6 +569,39 @@ impl Compiler {
             // The MetaOpAssign pushes [result_seq, mutated_left]; store the
             // mutated container (top) back into the lvalue, leaving the Seq.
             self.emit_set_named_var(&target);
+            return;
+        }
+        // A literal list of scalar lvalues (`($a, $b) Z[+=] ...`) needs the same
+        // MetaOpAssign result, but its mutated-left value must be distributed
+        // back across the individual containers. Stash that value temporarily,
+        // reuse the regular list-lvalue assignment compiler, and discard the
+        // assignment helper's value so the original per-op Seq remains.
+        if (meta == "X" || meta == "Z")
+            && Self::is_meta_assign_op(op)
+            && let Expr::ArrayLiteral(targets) = left
+        {
+            self.compile_expr(left);
+            self.compile_expr(right);
+            let meta_idx = self.code.add_constant(Value::str(meta.to_string()));
+            let op_idx = self.code.add_constant(Value::str(op.to_string()));
+            self.code.emit(OpCode::MetaOpAssign { meta_idx, op_idx });
+            let tmp_name = format!("__mutsu_meta_assign_tmp_{}", self.code.constants.len());
+            let tmp_idx = self.code.add_constant(Value::str(tmp_name.clone()));
+            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            let result_name = format!("__mutsu_meta_assign_result_{}", self.code.constants.len());
+            let result_idx = self.code.add_constant(Value::str(result_name.clone()));
+            self.code.emit(OpCode::SetGlobal(result_idx));
+            let assign_call = Expr::Call {
+                name: Symbol::intern("__mutsu_assign_callable_lvalue"),
+                args: vec![
+                    Expr::ArrayLiteral(targets.clone()),
+                    Expr::ArrayLiteral(Vec::new()),
+                    Expr::Var(tmp_name),
+                ],
+            };
+            self.compile_expr(&assign_call);
+            self.code.emit(OpCode::Pop);
+            self.code.emit(OpCode::GetGlobal(result_idx));
             return;
         }
         // List-associative chaining for X/Z: `a X b X c` is a single n-ary
@@ -623,14 +684,17 @@ impl Compiler {
     /// end in `=` (`==`, `<=`, `=~=`, …) are not assignments. Returns `None`
     /// when the op is not an assignment or the left operand is not a plain
     /// variable lvalue.
-    fn meta_assign_writeback_target(op: &str, left: &Expr) -> Option<String> {
-        let is_assign_op = op.ends_with('=')
+    fn is_meta_assign_op(op: &str) -> bool {
+        op.ends_with('=')
             && op.len() > 1
             && !matches!(
                 op,
-                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:="
-            );
-        if !is_assign_op {
+                "==" | "!=" | "<=" | ">=" | "===" | "!==" | "<=>" | "=~=" | "=:=" | "!=:="
+            )
+    }
+
+    fn meta_assign_writeback_target(op: &str, left: &Expr) -> Option<String> {
+        if !Self::is_meta_assign_op(op) {
             return None;
         }
         match left {
