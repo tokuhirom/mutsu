@@ -5,7 +5,7 @@ use Test;
 # `@` array survives as a reify-on-demand lazy array, matching raku.
 # Found by the doc-diff sweep (Language/list.rakudoc [7], [1]).
 
-plan 17;
+plan 23;
 
 # Infinite sequence assigned directly.
 {
@@ -23,6 +23,23 @@ plan 17;
     ok @lazy-array.is-lazy, 'sequence via bound scalar stays lazy';
     is-deeply @lazy-array[10..15], (1024, 2048, 4096, 8192, 16384, 32768),
         'doc example slice matches';
+}
+
+# An endpoint-less closure sequence keeps its live generator when assigned to
+# an Array. The eager construction prefix is deliberately small; indexing past
+# it must resume the generator instead of exposing a capped finite Array.
+{
+    my @fib = 1, 1, * + * ... *;
+    ok @fib.is-lazy, 'closure-sequence array stays lazy';
+    is @fib[34], 9227465, 'closure-sequence array reifies past the eager prefix';
+    is @fib.gist, '[...]', 'closure-sequence array gist stays a placeholder';
+    throws-like { @fib.elems }, X::Cannot::Lazy,
+        'closure-sequence array has no finite elems count';
+
+    @fib[2] = 99;
+    is @fib[2], 99, 'closure-sequence array element mutation is visible';
+    is @fib[35], 14930352,
+        'mutation does not corrupt the generator history or discard its tail';
 }
 
 # The `lazy` prefix takes the whole sequence as its operand (looser than

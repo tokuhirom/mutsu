@@ -91,10 +91,12 @@ needs_vm_lazy_dispatch}`. **The catch (handled):** `force_lazy_list_vm` and
 `reify_lazy_array_slot` now *extend* a sequence spec to the 100k cap rather than
 reading the O(1) seed cache, so a strict force / front mutation still gets a real
 prefix. t/lazy-array-reify.t gained 3 fresh-`1..*` map/grep cases; the reify test
-runs in 0.06 CPU (was 1.8) — confirming the O(1) read path. **Still deferred to
-step 6:** converting `(1...*)`/closure-seq arrays at `@`-assign (gated on
-S32-array/create.t partial-reify surviving). Original plan kept below for
-reference.
+runs in 0.06 CPU (was 1.8) — confirming the O(1) read path. **Step 6 completed
+(2026-08-24):** endpoint-less closure-seq arrays now remain reify-on-demand
+`LazyList` values across `@` assignment. The existing shared `Gc<LazyList>`
+reifier and L2c mutation restore path satisfy S32-array/create.t's
+partial-reify contract: clones see the same generated values while element
+mutations remain container-local. Original plan kept below for reference.
 
 ## L2c — bounded reify on element mutation (DONE 2026-08-22)
 
