@@ -918,6 +918,10 @@ pub(crate) enum Stmt {
         /// placeholder scope (`for @a { $^x }` gives the loop the parameter).
         #[serde(default)]
         is_statement_modifier: bool,
+        /// The block references `&?BLOCK` and therefore needs a callable value
+        /// while its ordinary, inline `ForLoop` execution is in progress.
+        #[serde(default)]
+        uses_block_magic: bool,
     },
     Say(Vec<Expr>),
     Put(Vec<Expr>),

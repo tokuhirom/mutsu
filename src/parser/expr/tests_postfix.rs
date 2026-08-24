@@ -159,6 +159,25 @@ fn parse_hyper_dot_ampersand_block_call() {
 }
 
 #[test]
+fn parse_hyper_dot_block_self_reference() {
+    let (rest, expr) = expression("$m».&?BLOCK").unwrap();
+    assert_eq!(rest, "");
+    match expr {
+        Expr::HyperMethodCallDynamic {
+            target,
+            name_expr,
+            args,
+            ..
+        } => {
+            assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
+            assert!(matches!(*name_expr, Expr::CodeVar(ref n) if n == "?BLOCK"));
+            assert!(args.is_empty());
+        }
+        _ => panic!("expected hyper dynamic block call"),
+    }
+}
+
+#[test]
 fn parse_hyper_method_with_unspace_after_operator() {
     let (rest, expr) = expression("$m»\\\n.foo").unwrap();
     assert_eq!(rest, "");

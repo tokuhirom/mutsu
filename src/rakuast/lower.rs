@@ -194,6 +194,7 @@ fn lower_for(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         // RakuAST spells the modifier form as `StatementModifierFor`, which this
         // lowering does not cover; a `RakuAst::Statement::For` is the block form.
         is_statement_modifier: false,
+        uses_block_magic: false,
     })
 }
 

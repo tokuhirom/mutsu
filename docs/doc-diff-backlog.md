@@ -322,7 +322,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 | `Language/traps.rakudoc:1948` | `\|«@array` (flatten + hyper prefix combined) fails to parse | [flatten-hyper-prefix-parse-error.md](../todo/tickets/flatten-hyper-prefix-parse-error.md) |
 | `Language/traps.rakudoc:1067` | `for EXPR ~~ /regex/ { BLOCK }` executes `BLOCK` where raku produces no output | [for-loop-over-smartmatch-result-executes-unexpectedly.md](../todo/tickets/for-loop-over-smartmatch-result-executes-unexpectedly.md) |
 | `Language/traps.rakudoc:406`, `Language/variables.rakudoc:853` | a scalar's container isn't aliased when pushed into a collection without `.clone` — mutsu snapshots by value where raku aliases | [container-aliasing-not-preserved-into-collection.md](../todo/tickets/container-aliasing-not-preserved-into-collection.md) |
-| `Language/variables.rakudoc:1551` | `».&?BLOCK` (hyper-call with a block self-reference) dispatches an empty method name | [hyper-call-block-self-reference-empty-method.md](../todo/tickets/hyper-call-block-self-reference-empty-method.md) |
+| `Language/variables.rakudoc:1551` | ~~`».&?BLOCK` (hyper-call with a block self-reference) dispatches an empty method name~~ | [resolved](../news/2026-08/hyper-call-block-self-reference-empty-method.md) |
 | `Language/variables.rakudoc:134` | `my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift) | [paren-single-var-decl-var-scalar-name.md](../todo/tickets/paren-single-var-decl-var-scalar-name.md) |
 | `Language/variables.rakudoc:768` | `anon class`/`anon sub` with a non-ASCII name fails to parse; `anon sub NAME` also gists without the `&` sigil | [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md) |
 | `Language/variables.rakudoc:1765` | `$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification | [dollar-raku-wrong-metaclass-and-stringify.md](../todo/tickets/dollar-raku-wrong-metaclass-and-stringify.md) |
@@ -337,7 +337,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
   (same shape as `Type/IO/Path.rakudoc` [4] from the earlier sub-batch); the real bug underneath
   it (`».&?BLOCK` dispatching an empty method name) was isolated to a small non-environment-
   dependent repro and filed as
-  [hyper-call-block-self-reference-empty-method.md](../todo/tickets/hyper-call-block-self-reference-empty-method.md).
+  [hyper-call-block-self-reference-empty-method.md](../news/2026-08/hyper-call-block-self-reference-empty-method.md).
 - `Language/variables.rakudoc` [3] — `$?FILE` reports mutsu's relative invocation path where raku
   resolves to an absolute path; confirmed real, low-priority/cosmetic, filed as
   [dollar-question-file-relative-not-absolute.md](../todo/tickets/dollar-question-file-relative-not-absolute.md).
