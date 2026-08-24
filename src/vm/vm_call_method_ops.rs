@@ -1161,6 +1161,22 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // List coercions change the view of a live gather without forcing its
+        // coroutine. This keeps an infinite gather pullable while ensuring a
+        // later force renders the finite result as a List rather than a Seq.
+        if let ValueView::LazyList(ll) = target.view()
+            && ll.coroutine.is_some()
+            && args.is_empty()
+            && matches!(method, "List" | "list" | "values")
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "gather-list-context",
+            );
+            self.stack
+                .push(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())));
+            return Ok(());
+        }
         let target = if let ValueView::LazyList(ll) = target.view()
             && ll.needs_vm_lazy_dispatch()
             && Self::lazy_list_needs_forcing(method)
@@ -1213,7 +1229,11 @@ impl Interpreter {
             if !matches!(method, "elems" | "hyper" | "race") && ll.lazy_pipe.is_none() {
                 *self.env_mut() = saved_env;
             }
-            Value::seq(items)
+            if ll.in_list_context() {
+                Value::array(items)
+            } else {
+                Value::seq(items)
+            }
         } else {
             target
         };
