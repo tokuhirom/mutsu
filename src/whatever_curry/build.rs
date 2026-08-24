@@ -5,6 +5,7 @@
 use super::replace::{replace_whatever_numbered, replace_whatever_single};
 use crate::ast::{Expr, ParamDef, Stmt};
 use crate::parser::{contains_whatever, is_whatever, should_wrap_whatevercode};
+use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 
 pub(crate) fn make_wc_param(name: String) -> ParamDef {
@@ -59,6 +60,37 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
     }
 
     let wc_count = count_whatever(expr);
+
+    // A HyperWhatever primes the expression with a slurpy positional parameter
+    // and maps the primed body over every supplied argument. Reuse the ordinary
+    // single-Whatever substitution for the per-item callback so all operators
+    // and postfix chains retain their normal compiler path.
+    if wc_count == 0 && contains_whatever(expr) {
+        let item_body = replace_whatever_single(expr);
+        let mapper = Expr::Lambda {
+            param: "_".to_string(),
+            body: vec![Stmt::Expr(item_body)],
+            is_whatever_code: true,
+            param_sigilless: false,
+        };
+        let args_name = "@__hw_args".to_string();
+        let mut args_def = make_wc_param(args_name.clone());
+        args_def.slurpy = true;
+        return Expr::AnonSubParams {
+            params: vec![args_name.clone()],
+            param_defs: vec![args_def],
+            return_type: None,
+            body: vec![Stmt::Expr(Expr::MethodCall {
+                target: Box::new(Expr::ArrayVar("__hw_args".to_string())),
+                name: Symbol::intern("map"),
+                args: vec![mapper],
+                modifier: None,
+                quoted: false,
+            })],
+            is_rw: false,
+            is_whatever_code: true,
+        };
+    }
 
     if wc_count <= 1 && !expr_contains_topic(expr) {
         // Single-arg: use Lambda with param "_" for backward compat (this keeps the

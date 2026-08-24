@@ -88,7 +88,9 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
             op: TokenKind::FatArrow,
             right,
         } => {
-            let value = if contains_whatever(&right) && !matches!(&*right, Expr::Whatever) {
+            let value = if contains_whatever(&right)
+                && !matches!(&*right, Expr::Whatever | Expr::HyperWhatever)
+            {
                 Expr::WhateverCurry(right)
             } else {
                 *right
@@ -100,7 +102,8 @@ pub(crate) fn wrap_smartmatch_rhs(right: Expr) -> Expr {
             }
         }
         other => {
-            if contains_whatever(&other) && !matches!(&other, Expr::Whatever) {
+            if contains_whatever(&other) && !matches!(&other, Expr::Whatever | Expr::HyperWhatever)
+            {
                 Expr::WhateverCurry(Box::new(other))
             } else {
                 other

@@ -138,7 +138,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
                     r2.len(),
                 )
             })?;
-            if contains_whatever(&right) && !matches!(right, Expr::Whatever) {
+            if contains_whatever(&right) && !matches!(right, Expr::Whatever | Expr::HyperWhatever) {
                 right = Expr::WhateverCurry(Box::new(right));
             }
             maybe_wrap_lhs(&mut left);

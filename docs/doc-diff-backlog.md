@@ -643,7 +643,6 @@ Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamod
 | `Type/Baggy.rakudoc:197` | `classify-list` with an array mapper renders an out-of-range key as `Nil` instead of `(Any)` (plain `.classify` with a block mapper already gets this right) | [classify-list-array-mapper-out-of-range-shows-nil.md](../todo/tickets/classify-list-array-mapper-out-of-range-shows-nil.md) |
 | `Type/Slip.rakudoc:57` | `take \|($a, $b)` over-flattens like `.Slip`, instead of bundling the unpacked args into one `take`d `List` item | [take-pipe-slip-over-flattens.md](../todo/tickets/take-pipe-slip-over-flattens.md) |
 | `Type/Buf.rakudoc:84` | `subbuf-rw($buf, from, len) = value` (bare function-call form) silently doesn't mutate; the method-call form (`$buf.subbuf-rw(from, len) = value`) already works | [subbuf-rw-function-form-lvalue-not-mutating.md](../todo/tickets/subbuf-rw-function-form-lvalue-not-mutating.md) |
-| `Type/HyperWhatever.rakudoc:41` | `(**²)` — HyperWhatever (`**`) immediately followed by a postfix power operator — fails to parse; the single-`Whatever` equivalent (`*²`) already works | [hyperwhatever-postfix-power-parse-fails.md](../todo/tickets/hyperwhatever-postfix-power-parse-fails.md) |
 
 **Excluded from this batch-5 sub-run:**
 - `Type/Metamodel/Documenting.rakudoc` [1] (line 16, `#\|[...]`/`#=[...]` class-level declarator
