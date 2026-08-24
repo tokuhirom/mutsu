@@ -438,15 +438,17 @@ impl Interpreter {
             .program_path
             .clone()
             .unwrap_or_else(|| "<unknown>".to_string());
-        self.env
-            .insert("?FILE".to_string(), Value::str(file_name.clone()));
+        let source_file = std::fs::canonicalize(&file_name)
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| file_name.clone());
+        self.env.insert("?FILE".to_string(), Value::str(file_name));
         self.cur_source_line = 1;
         crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
         crate::parser::set_parser_program_path(self.program_path.clone());
         // `$?FILE` folds to the file of the compilation unit being parsed (see
         // the parser's scalar-var twigil handling); for the mainline that is the
         // script itself.
-        let saved_source_file = crate::parser::set_parser_source_file(Some(file_name));
+        let saved_source_file = crate::parser::set_parser_source_file(Some(source_file));
         let parse_result = crate::parse_dispatch::parse_compilation_unit(&preprocessed);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();

@@ -326,7 +326,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 | `Language/variables.rakudoc:134` | `my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift) | [paren-single-var-decl-var-scalar-name.md](../todo/tickets/paren-single-var-decl-var-scalar-name.md) |
 | `Language/variables.rakudoc:768` | `anon class`/`anon sub` with a non-ASCII name fails to parse; `anon sub NAME` also gists without the `&` sigil | [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md) |
 | `Language/variables.rakudoc:1765` | `$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification | [dollar-raku-wrong-metaclass-and-stringify.md](../todo/tickets/dollar-raku-wrong-metaclass-and-stringify.md) |
-| `Language/variables.rakudoc:318` | `$?FILE` reports the relative invocation path instead of an absolute path | [dollar-question-file-relative-not-absolute.md](../todo/tickets/dollar-question-file-relative-not-absolute.md) |
+| `Language/variables.rakudoc:318` | ~~`$?FILE` reports the relative invocation path instead of an absolute path~~ | [resolved](../news/2026-08/dollar-question-file-relative-not-absolute.md) |
 
 **Excluded from this sub-batch (already deferred/resolved/drift/false-positive/environment):**
 - `Language/regexes.rakudoc` [3], [8] — `raku-drift`.
@@ -338,9 +338,9 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
   it (`».&?BLOCK` dispatching an empty method name) was isolated to a small non-environment-
   dependent repro and filed as
   [hyper-call-block-self-reference-empty-method.md](../news/2026-08/hyper-call-block-self-reference-empty-method.md).
-- `Language/variables.rakudoc` [3] — `$?FILE` reports mutsu's relative invocation path where raku
-  resolves to an absolute path; confirmed real, low-priority/cosmetic, filed as
-  [dollar-question-file-relative-not-absolute.md](../todo/tickets/dollar-question-file-relative-not-absolute.md).
+- `Language/variables.rakudoc` [3] — `$?FILE` now resolves the main compilation unit to an absolute
+  path, matching raku; pinned by
+  [module-file-var-and-callframe.t](../t/module-file-var-and-callframe.t).
 - `Language/variables.rakudoc` [6], [7], [9], [10] — `raku-drift` (`$*DISTRO`, `$*VM.config`,
   `$*RAKU.compiler.version` are inherently environment/version-specific).
 - `Language/variables.rakudoc` [8] — `$*VM.precomp-ext`/`.precomp-target` report `mutsu`/`mutsu`
