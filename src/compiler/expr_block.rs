@@ -790,6 +790,32 @@ impl Compiler {
             {
                 self.compile_synthetic_block_inline(inner);
             }
+            // An uninitialized grouped declaration (`my ($a, $b)`) is a List
+            // expression whose elements are the newly declared scalar values.
+            // Its SyntheticBlock is scopeless: the declarations remain visible
+            // in the surrounding lexical scope.
+            Stmt::SyntheticBlock(inner)
+                if !inner.is_empty()
+                    && inner
+                        .iter()
+                        .all(|stmt| matches!(stmt, Stmt::VarDecl { .. })) =>
+            {
+                let mut values = Vec::with_capacity(inner.len());
+                for stmt in inner {
+                    let Stmt::VarDecl { name, .. } = stmt else {
+                        unreachable!();
+                    };
+                    self.compile_stmt(stmt);
+                    values.push(if let Some(name) = name.strip_prefix('@') {
+                        Expr::ArrayVar(name.to_string())
+                    } else if let Some(name) = name.strip_prefix('%') {
+                        Expr::HashVar(name.to_string())
+                    } else {
+                        Expr::Var(name.clone())
+                    });
+                }
+                self.compile_expr(&Expr::ArrayLiteral(values));
+            }
             Stmt::SyntheticBlock(inner) => {
                 self.compile_do_block_expr_scoped(inner, &None);
             }

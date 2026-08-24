@@ -5,7 +5,7 @@ use Test;
 # (Z) pair mutates the corresponding left cell. The left container is written
 # back, and the expression value is the Seq of the per-op assignment results.
 
-plan 16;
+plan 22;
 
 # --- Cross meta-assignment: @a[i] accumulates every @b element. ---
 {
@@ -97,6 +97,26 @@ plan 16;
     my @b = 1, 2, 3;
     $a X[+=] @b;
     is $a, 11, 'scalar X[+=] folds every right element into the scalar';
+}
+
+# --- Literal lists write back to each scalar container. ---
+{
+    my ($a, $b);
+    my @r = ($a, $b) Z[+=] 1, 2;
+    is @r.raku, '[1, 2]', 'literal-list Z[+=] returns the assigned values';
+    is "$a,$b", '1,2', 'literal-list Z[+=] mutates both scalar containers';
+}
+{
+    my $a = 1;
+    my $b = 10;
+    my @r = ($a, $b) X[+=] 2, 3;
+    is @r.raku, '[3, 6, 12, 15]', 'literal-list X[+=] returns every intermediate value';
+    is "$a,$b", '6,15', 'literal-list X[+=] writes back the accumulated values';
+}
+{
+    is (my ($a, $b) Z[+=] 1, 2).raku, '(1, 2).Seq',
+        'grouped declaration works as a meta-assignment operand';
+    is "$a,$b", '1,2', 'grouped declaration remains visible after meta-assignment';
 }
 
 # --- Plain (non-assign) X still produces the flat cross list. ---
