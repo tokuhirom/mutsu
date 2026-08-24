@@ -351,7 +351,17 @@ impl Interpreter {
     /// dedicated re-wrap (integration/error-reporting.t test 21).
     /// TODO: `render_str_value` (put/print) still swallows these signals.
     pub(crate) fn render_gist_value(&mut self, value: &Value) -> Result<String, RuntimeError> {
-        match self.call_method_with_values(value.clone(), "gist", vec![]) {
+        // The pure native `.gist` fast path cannot reproduce the base method's
+        // virtual `.Str` call on a role Mixin. Enter mixin dispatch directly so
+        // a role-provided `gist`, or its inherited-gist/provided-Str fallback,
+        // runs before ordinary native dispatch.
+        let result = if value.is_mixin_value() {
+            self.dispatch_mixin_method_call(value, "gist", vec![])
+                .unwrap_or_else(|| self.call_method_with_values(value.clone(), "gist", vec![]))
+        } else {
+            self.call_method_with_values(value.clone(), "gist", vec![])
+        };
+        match result {
             Ok(result) => Ok(result.to_string_value()),
             Err(e) if e.return_value.is_some() => Err(RuntimeError::controlflow_return(true)),
             Err(e) if e.is_method_not_found() || e.is_multi_no_match() => {

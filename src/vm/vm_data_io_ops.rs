@@ -48,15 +48,13 @@ fn needs_method_dispatch(v: &Value) -> bool {
     }
 }
 
-/// Whether a *collection element* must be rendered via method dispatch. Unlike
-/// the top-level check, a Mixin element is excluded: a Mixin wrapping a
-/// List/Array renders via its inner value, and dispatching `.gist` on it would
-/// add a spurious paren layer (regressing e.g. `(@list but Role).gist`).
+/// Whether a *collection element* must be rendered via method dispatch.
 fn element_needs_method_dispatch(v: &Value) -> bool {
     match v.view() {
         ValueView::Instance { .. }
         | ValueView::CustomType { .. }
         | ValueView::CustomTypeInstance(_)
+        | ValueView::Mixin(..)
         | ValueView::Package(..)
         | ValueView::Sub(..)
         | ValueView::WeakSub(..)

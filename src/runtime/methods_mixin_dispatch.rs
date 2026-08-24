@@ -291,6 +291,16 @@ impl Interpreter {
                 super::methods_signature_errors::make_multi_no_match_error(method),
             ));
         }
+        // The native base implementation of `.gist` stringifies through the
+        // invocant's virtual `.Str`. Keep that dispatch on the Mixin wrapper:
+        // delegating `.gist` straight to `inner` would skip a `method Str`
+        // supplied by a composed role (including a Hash element default).
+        if method == "gist"
+            && args.is_empty()
+            && let Some(str_result) = self.dispatch_mixin_method_call(target, "Str", vec![])
+        {
+            return Some(str_result);
+        }
         if method == "can" && args.len() == 1 {
             let method_name = args[0].to_string_value();
             // First collect from the inner value's MRO

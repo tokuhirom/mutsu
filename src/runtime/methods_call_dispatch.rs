@@ -2424,15 +2424,13 @@ impl Interpreter {
         if method == "gist" && args.is_empty() {
             fn collection_contains_instance(value: &Value) -> bool {
                 match value.view() {
-                    // Values that may carry a user-defined `method gist`
-                    // (instances, custom types, and type objects) must be rendered
-                    // via method dispatch rather than the pure `gist_value` fast
-                    // path. (Mixin is intentionally excluded: a Mixin wrapping a
-                    // List/Array renders via its inner value, and routing it
-                    // through `.gist` would add a spurious paren layer.)
+                    // Values that may carry a user-defined `method gist` or
+                    // `method Str` must be rendered via method dispatch rather
+                    // than the pure `gist_value` fast path.
                     ValueView::Instance { .. }
                     | ValueView::CustomType(_)
                     | ValueView::CustomTypeInstance(_)
+                    | ValueView::Mixin(..)
                     | ValueView::Package(..) => true,
                     _ if value.as_list_items().is_some() => value
                         .as_list_items()
@@ -2503,11 +2501,8 @@ impl Interpreter {
                     ValueView::ValuePair(k, v) => {
                         format!("{} => {}", gist_item(interp, k), gist_item(interp, v))
                     }
-                    _ => match interp.call_method_with_values(value.clone(), "gist", vec![]) {
-                        Ok(v) => match v.view() {
-                            ValueView::Str(s) => s.to_string(),
-                            _ => v.to_string_value(),
-                        },
+                    _ => match interp.render_gist_value(value) {
+                        Ok(v) => v,
                         Err(_) => crate::runtime::gist_value(value),
                     },
                 }
