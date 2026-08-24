@@ -219,6 +219,7 @@ impl Compiler {
     pub(super) fn method_call_target_var_name(target: &Expr) -> Option<String> {
         match target {
             Expr::Var(name) => Some(name.clone()),
+            Expr::BareWord(_) => Some(String::new()),
             _ => None,
         }
     }

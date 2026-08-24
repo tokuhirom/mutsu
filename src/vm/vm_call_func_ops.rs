@@ -916,8 +916,12 @@ impl Interpreter {
         // the new env value straight through to the local slot after dispatch,
         // keeping locals coherent without depending on the `env_dirty` backstop.
         let lvalue_writeback_target = match name.as_str() {
-            "__mutsu_assign_method_lvalue" | "__mutsu_index_assign_method_lvalue" => args
+            "__mutsu_assign_method_lvalue" => args
                 .get(4)
+                .map(|v| v.to_string_value())
+                .filter(|s| !s.is_empty()),
+            "__mutsu_index_assign_method_lvalue" => args
+                .get(if args.len() >= 6 { 5 } else { 4 })
                 .map(|v| v.to_string_value())
                 .filter(|s| !s.is_empty()),
             "__mutsu_index_delete_method_lvalue" => args
@@ -926,6 +930,10 @@ impl Interpreter {
                 .filter(|s| !s.is_empty()),
             _ => None,
         };
+        let package_index_lvalue = name == "__mutsu_index_assign_method_lvalue"
+            && args
+                .first()
+                .is_some_and(|target| matches!(target.view(), ValueView::Package(_)));
         // Snapshot the target's CURRENT env value so the writeback below can tell
         // whether the lvalue builtin actually changed it. Some lvalue methods do
         // NOT write `env[target]` at all (`Failure.handled = True` only flips a
@@ -967,10 +975,11 @@ impl Interpreter {
             // byte-identical: env tracks the slot, so a builtin that writes
             // `env[target]` always leaves `prev != val`, and one that does not
             // leaves `prev == val == the live slot value` (a no-op pull anyway).
-            && match lvalue_writeback_pre {
-                Some(Some(ref prev)) => !prev.same_variant(&val) || *prev != val,
-                _ => true,
-            }
+            && (package_index_lvalue
+                || match lvalue_writeback_pre {
+                    Some(Some(ref prev)) => !prev.same_variant(&val) || *prev != val,
+                    _ => true,
+                })
         {
             self.locals[slot] = val;
         }
