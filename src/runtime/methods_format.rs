@@ -175,7 +175,7 @@ impl Interpreter {
                         crate::runtime::MatchTarget::new(&fmt),
                     )));
                 }
-                ("Formatter", "CODE") => {
+                ("Formatter", "new" | "CODE") => {
                     let fmt = args.first().map(Value::to_string_value).unwrap_or_default();
                     let count = super::sprintf::sprintf_directive_count(&fmt);
                     return Some(Ok(self.format_callable(&fmt, count)));
