@@ -376,6 +376,13 @@ impl Interpreter {
                     // bypassing the map/grep callback entirely.
                     let idx = Value::int(source_idx as i64);
                     let produced: Vec<Value> = match index_transform.unwrap() {
+                        crate::value::IndexTransform::SkipFirst => {
+                            if source_idx == 0 {
+                                Vec::new()
+                            } else {
+                                vec![elem]
+                            }
+                        }
                         crate::value::IndexTransform::Pairs => {
                             vec![Value::value_pair(idx, elem)]
                         }

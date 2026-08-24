@@ -1732,6 +1732,10 @@ pub(crate) struct MapGrepSpec {
 /// `.pairs`/`.antipairs`/`.kv`/`flat` over a lazy list so they don't force it.
 #[derive(Debug, Clone, Copy)]
 pub(crate) enum IndexTransform {
+    /// Sequence `^...`: discard the first source element while retaining the
+    /// source reifier.  This cannot be implemented by trimming the current
+    /// cache because the cache may contain only the sequence seed.
+    SkipFirst,
     /// `.pairs`: element `i` → `Pair(i, elem)`.
     Pairs,
     /// `.antipairs`: element `i` → `Pair(elem, i)`.

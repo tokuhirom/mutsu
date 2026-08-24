@@ -118,6 +118,9 @@ pub(super) fn dispatch(
                 if is_gather && crate::value::lazylist_is_consumed(&ll) {
                     return Some(Some(Err(crate::value::seq_consumed_error())));
                 }
+                return Some(Some(Ok(Value::truth(
+                    !ll.has_finite_closure_endpoint() && !ll.is_cat_pull(),
+                ))));
             }
             Some(Some(Ok(Value::truth(is_value_lazy(target)))))
         }

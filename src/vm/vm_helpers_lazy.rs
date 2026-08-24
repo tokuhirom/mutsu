@@ -621,6 +621,7 @@ impl Interpreter {
                 | "Numeric"
                 | "Int"
                 | "elems"
+                | "end"
                 | "hyper"
                 | "race"
                 | "first"

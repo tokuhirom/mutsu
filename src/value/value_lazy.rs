@@ -73,8 +73,15 @@ impl LazyList {
     /// materialize on gist/Str rather than render a placeholder.
     pub(crate) fn is_genuinely_lazy(&self) -> bool {
         self.sequence_spec.is_some()
-            || self.lazy_pipe.is_some()
-            || self.closure_seq.is_some()
+            || self.lazy_pipe.as_ref().is_some_and(|pipe| {
+                let pipe = pipe.lock().unwrap();
+                !matches!(pipe.index_transform, Some(IndexTransform::SkipFirst))
+                    || Self::value_is_genuinely_lazy(&pipe.source)
+            })
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || self.scan_spec.is_some()
             // The `__mutsu_preserve_lazy_on_array_assign` marker is set
             // exclusively by an explicit `lazy` prefix / `.lazy` method call
@@ -189,6 +196,8 @@ impl LazyList {
                     ll.pipe_bottoms_out_finite()
                 } else if ll.is_infinite_spec() || ll.cat_pull.is_some() {
                     false
+                } else if ll.has_finite_closure_endpoint() {
+                    true
                 } else {
                     // A gather coroutine (or an already-materialized gather body)
                     // is finite; sequence/closure/cat specs were ruled out above.
@@ -196,6 +205,13 @@ impl LazyList {
                 }
             }
             ValueView::Junction { values, .. } => values.iter().all(Self::value_source_is_finite),
+            _ => false,
+        }
+    }
+
+    fn value_is_genuinely_lazy(source: &Value) -> bool {
+        match source.view() {
+            ValueView::LazyList(ll) => ll.is_genuinely_lazy(),
             _ => false,
         }
     }

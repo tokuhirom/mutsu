@@ -1832,6 +1832,9 @@ impl Interpreter {
             // Collect results, avoiding duplicates at segment boundaries
             let items: Option<Vec<Value>> = match seg_result.view() {
                 ValueView::Array(items, ..) => Some(items.as_ref().clone().into_items()),
+                ValueView::LazyList(ll) if ll.has_finite_closure_endpoint() => {
+                    Some(self.force_lazy_list_vm(&ll)?)
+                }
                 ValueView::LazyList(ll) => ll.cache.lock().unwrap().clone(),
                 _ => None,
             };

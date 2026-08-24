@@ -266,7 +266,7 @@ impl Interpreter {
     /// by re-invoking its generator closure over the growing element history.
     /// Returns whatever is available (possibly fewer than `needed`) once the
     /// generator signals termination.
-    pub(super) fn extend_closure_sequence(
+    pub(crate) fn extend_closure_sequence(
         &mut self,
         list: &LazyList,
         needed: usize,
