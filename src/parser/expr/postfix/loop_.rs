@@ -486,7 +486,11 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
     }
     // Hyper-prefix slip forms: |<< expr / |>> expr.
     // Lower to the same unary Pipe AST used by plain `|expr`.
-    if input.starts_with("|<<") || input.starts_with("|>>") || input.starts_with("|«") {
+    let unicode_hyper_slip = input
+        .strip_prefix("|«")
+        .and_then(|rest| rest.chars().next())
+        .is_some_and(|c| matches!(c, '$' | '@' | '%' | '&' | '('));
+    if input.starts_with("|<<") || input.starts_with("|>>") || unicode_hyper_slip {
         let marker_len = if input.starts_with("|«") {
             1 + '«'.len_utf8()
         } else {
