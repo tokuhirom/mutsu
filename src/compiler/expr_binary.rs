@@ -316,13 +316,15 @@ impl Compiler {
                 } else {
                     left.clone()
                 };
-                let thunk = Expr::AnonSubParams {
-                    params: Vec::new(),
-                    param_defs: Vec::new(),
-                    return_type: None,
+                // `xx` thunks its lhs as a bare block, not as a routine.  A
+                // routine gets a fresh undefined `$_`, while a bare block
+                // closes over the current topic.  The distinction matters
+                // when the repeated expression reads `$_` inside another
+                // deferred block, such as a closure-generated sequence.
+                let thunk = Expr::AnonSub {
                     body: vec![Stmt::Expr(reevaluated_lhs)],
                     is_rw: false,
-                    is_whatever_code: false,
+                    is_block: true,
                 };
                 self.compile_expr(&thunk);
             } else {
