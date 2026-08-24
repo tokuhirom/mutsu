@@ -355,10 +355,27 @@ impl Interpreter {
         } else {
             "Perl6::Metamodel::ClassHOW"
         };
+        let anonymous_mixin_layers = match type_name.as_str() {
+            "Array" => 2,
+            "Hash" | "Set" | "Bag" | "Mix" => 1,
+            _ => 0,
+        };
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(type_name.clone()));
         attrs.insert("__mutsu_how_target".to_string(), Value::str(type_name));
-        Ok(Value::make_instance(Symbol::intern(how_name), attrs))
+        let mut how = Value::make_instance(Symbol::intern(how_name), attrs);
+
+        // Rakudo composes anonymous implementation roles into the metaobjects
+        // for the mutable built-in collection classes.  Preserve that actual
+        // MOP shape instead of special-casing `.^name`: wrapping the HOW in
+        // ordinary mixin layers lets WHAT, name, identity, and method dispatch
+        // all observe the same composed metaobject.
+        for _ in 0..anonymous_mixin_layers {
+            let mut mixins = HashMap::new();
+            mixins.insert("__mutsu_role__<anon>".to_string(), Value::TRUE);
+            how = Value::mixin(how, mixins);
+        }
+        Ok(how)
     }
 
     /// Dispatch .WHO method

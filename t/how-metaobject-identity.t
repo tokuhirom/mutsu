@@ -5,7 +5,7 @@ use Test;
 # type, not by a fresh allocation. And `$how.name($obj)` is a ClassHOW method
 # (`$obj.^name` desugars to `$obj.HOW.name($obj)`), not an rw-accessor write.
 
-plan 12;
+plan 17;
 
 # HOW identity (=== over metaobjects)
 ok  1.HOW === 2.HOW,   'same-type instances share the metaobject';
@@ -32,3 +32,17 @@ my $fh = Foo.HOW;
 is $fh.name(Foo), 'Foo', 'user-class metaobject .name is Foo';
 ok Foo.HOW === Foo.new.HOW, 'user-class type object and instance share metaobject';
 nok Foo.HOW === Int.HOW,    'user-class and Int metaobjects differ';
+
+# Mutable built-in collection metaobjects include Rakudo's anonymous
+# implementation-role compositions.  These are real HOW type layers, not a
+# display-only suffix: WHAT sees the same composed type as ^name.
+is Hash.HOW.^name, 'Perl6::Metamodel::ClassHOW+{<anon>}',
+    'Hash HOW has its anonymous implementation-role mixin';
+is (%).HOW.^name, 'Perl6::Metamodel::ClassHOW+{<anon>}',
+    'a hash value has the composed Hash HOW';
+is Array.HOW.^name, 'Perl6::Metamodel::ClassHOW+{<anon>}+{<anon>}',
+    'Array HOW has both anonymous implementation-role mixins';
+is Set.HOW.^name, 'Perl6::Metamodel::ClassHOW+{<anon>}',
+    'Set HOW has its anonymous implementation-role mixin';
+is Hash.HOW.WHAT.^name, Hash.HOW.^name,
+    'HOW.WHAT retains the composed metaobject type';
