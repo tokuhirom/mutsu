@@ -400,8 +400,8 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
     // Capture slip: |expr — flatten an expression into the argument list
     if input.starts_with('|') && !input.starts_with("||") {
         let after_pipe = &input[1..];
-        if let Some(&c) = after_pipe.as_bytes().first()
-            && (c == b'@'
+        if after_pipe.as_bytes().first().is_some_and(|&c| {
+            c == b'@'
                 || c == b'%'
                 || c == b'$'
                 || c == b'.'
@@ -409,8 +409,8 @@ fn parse_single_call_arg_mode(input: &str, listop: bool) -> PResult<'_, CallArg>
                 || c == b'['
                 || c == b'<'
                 || c.is_ascii_alphabetic()
-                || c == b'_')
-            && let Ok((r, expr)) = expression(after_pipe)
+                || c == b'_'
+        }) && let Ok((r, expr)) = expression(after_pipe)
         {
             return Ok((r, CallArg::Slip(expr)));
         }

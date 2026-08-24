@@ -83,6 +83,11 @@ fn starts_slip_prefix_arg(s: &str) -> bool {
         rest.as_bytes().first(),
         Some(b'$') | Some(b'@') | Some(b'%') | Some(b'&') | Some(b'(')
     ) || rest.starts_with("\\(")
+        || rest.strip_prefix("«").is_some_and(|s| {
+            s.chars()
+                .next()
+                .is_some_and(|c| matches!(c, '$' | '@' | '%' | '&' | '('))
+        })
 }
 
 /// When `do STMT` parses its inner statement via the full statement parser, a
