@@ -86,6 +86,13 @@ fn parse_for_with_operator_code_ref_in_iterable_list() {
 }
 
 #[test]
+fn parse_for_over_smartmatch_result_with_body() {
+    let (rest, stmts) = program("for 'x' ~~ /./ { say 'yes' }").unwrap();
+    assert_eq!(rest, "");
+    assert!(matches!(&stmts[0], Stmt::For { .. }));
+}
+
+#[test]
 fn parse_chained_inline_modifiers_in_paren_expr() {
     let (rest, stmts) = program("my @odd = ($_ * $_ if $_ % 2 for 0..10);").unwrap();
     assert_eq!(rest, "");

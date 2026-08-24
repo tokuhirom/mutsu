@@ -228,7 +228,11 @@ impl Interpreter {
             body.claim_single_use_once()?;
         }
         iterable = self.reify_or_consume_seq_target(iterable, "for")?;
-        let raw_items = if let ValueView::LazyList(ll) = iterable.view() {
+        let raw_items = if spec.direct_smartmatch
+            && matches!(iterable.view(), ValueView::Instance { class_name, .. } if class_name == "Match")
+        {
+            Vec::new()
+        } else if let ValueView::LazyList(ll) = iterable.view() {
             self.force_lazy_list_vm(&ll)?
         } else if let ValueView::Channel(ch) = iterable.view() {
             // Drain the channel synchronously, blocking on receive until the
