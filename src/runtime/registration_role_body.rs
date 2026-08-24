@@ -266,12 +266,6 @@ impl Interpreter {
                 )));
             }
         };
-        if role.is_stub_role {
-            return Err(RuntimeError::typed_msg(
-                "X::Role::Parametric::NoSuchCandidate",
-                "No matching candidate found for the parametric role",
-            ));
-        }
         self.registry_mut()
             .role_parents
             .entry(name.to_string())
