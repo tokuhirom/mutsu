@@ -389,6 +389,7 @@ impl Compiler {
                 topic_local,
                 source_container_local,
                 body_end: 0,
+                block_callable_local: None,
                 label: label.clone(),
                 arity,
                 collect: true,
@@ -497,6 +498,7 @@ impl Compiler {
             // Placeholders were already resolved on the source `lazy for` node;
             // this synthesized loop wraps an ordinary block body.
             is_statement_modifier: false,
+            uses_block_magic: false,
         };
         // Build gather block wrapping the for loop, then mark it `.lazy` so the
         // body does not run until the resulting Seq is consumed (`lazy for`

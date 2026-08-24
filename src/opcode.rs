@@ -211,6 +211,9 @@ pub(crate) struct ForLoopSpec {
     /// through env today, so ADR-0018 keeps exactly this slot synchronized.
     pub(crate) source_container_local: Option<u32>,
     pub(crate) body_end: u32,
+    /// Local slot holding the materialized callable for an inline `for` block
+    /// that references `&?BLOCK`.
+    pub(crate) block_callable_local: Option<u32>,
     pub(crate) label: Option<String>,
     pub(crate) arity: u32,
     pub(crate) collect: bool,

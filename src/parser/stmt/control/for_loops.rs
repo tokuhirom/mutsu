@@ -278,6 +278,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             sigilless_param_names.push(pd.name.clone());
         }
     }
+    let block_input = rest;
     let (rest, body) = if !code_param_names.is_empty() || !sigilless_param_names.is_empty() {
         let (r, _) = parse_char(rest, '{')?;
         super::super::simple::push_scope();
@@ -294,6 +295,8 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     } else {
         block(rest)?
     };
+    let consumed_block = &block_input[..block_input.len() - rest.len()];
+    let uses_block_magic = consumed_block.contains("&?BLOCK");
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
         let placeholders = collect_placeholders_shallow(&body);
@@ -325,6 +328,7 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             rw_block,
             explicit_zero_params,
             is_statement_modifier: false,
+            uses_block_magic,
         },
     ))
 }

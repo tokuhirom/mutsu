@@ -223,6 +223,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             rw_block,
             explicit_zero_params,
             is_statement_modifier,
+            uses_block_magic,
         } => Stmt::For {
             iterable,
             param,
@@ -235,6 +236,7 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             rw_block,
             explicit_zero_params,
             is_statement_modifier,
+            uses_block_magic,
         },
         Stmt::Given {
             topic,

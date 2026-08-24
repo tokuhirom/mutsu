@@ -70,6 +70,18 @@ impl Interpreter {
             }
         }
         let mut val = loan_env!(self, resolve_code_var(name));
+        // Compound control blocks execute inline and therefore do not install
+        // `&?BLOCK` in the ordinary lexical environment. When the compiler has
+        // materialized such a block (for recursive use), the construct places
+        // it on the block stack while its inline body runs. Keep ordinary
+        // lexical resolution first: real closures carry the precise weak
+        // self-reference needed by `.leave` and other identity-sensitive APIs.
+        if val.is_nil()
+            && name == "?BLOCK"
+            && let Some(block) = self.block_stack_top().cloned()
+        {
+            val = block;
+        }
         // Fallback for fast-path method dispatch (skip_env_setup=true):
         // &!attr is not set in env, so read directly from self's instance
         // attributes when available.

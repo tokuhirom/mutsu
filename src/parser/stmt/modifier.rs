@@ -584,6 +584,7 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                 rw_block: false,
                 explicit_zero_params: false,
                 is_statement_modifier: true,
+                uses_block_magic: false,
             },
         )));
     }

@@ -584,7 +584,13 @@ impl Interpreter {
             }
             'body_redo: loop {
                 let run_start = nested_entry.take().unwrap_or(body_start);
+                if let Some(slot) = spec.block_callable_local {
+                    self.push_block(self.locals[slot as usize].clone());
+                }
                 let mut body_result = self.run_range(code, run_start, loop_end, compiled_fns);
+                if spec.block_callable_local.is_some() {
+                    self.pop_block();
+                }
                 // An immutable Mix/Set/Bag source yields immutable weights: if the
                 // body modified a sigilless/rw alias, Raku throws X::Assignment::RO.
                 // Detect it here (writeback is already suppressed above) and convert

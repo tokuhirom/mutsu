@@ -253,6 +253,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             rw_block,
             explicit_zero_params,
             is_statement_modifier: _,
+            uses_block_magic: _,
         } => {
             // Implicit-topic (`for SRC { ... $_ }`, slice 6) and explicit-signature
             // (`for @a -> $x`, slice 12) forms. Hyper/race/lazy modes, `<->` rw

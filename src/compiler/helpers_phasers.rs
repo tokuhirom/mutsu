@@ -267,6 +267,7 @@ impl Compiler {
                 rw_block,
                 explicit_zero_params,
                 is_statement_modifier,
+                uses_block_magic,
             } => Stmt::For {
                 iterable: iterable.clone(),
                 param: param.clone(),
@@ -286,6 +287,7 @@ impl Compiler {
                 rw_block: *rw_block,
                 explicit_zero_params: *explicit_zero_params,
                 is_statement_modifier: *is_statement_modifier,
+                uses_block_magic: *uses_block_magic,
             },
             Stmt::Loop {
                 init,

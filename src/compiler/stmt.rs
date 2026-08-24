@@ -2279,6 +2279,7 @@ impl Compiler {
                 rw_block,
                 explicit_zero_params,
                 is_statement_modifier,
+                uses_block_magic,
             } => {
                 // `for @a[*] { ... }` — a whole-array Whatever slice iterates the
                 // same elements as `for @a`, including aliasing for write-back
@@ -2321,6 +2322,42 @@ impl Compiler {
                     }
                     return;
                 }
+                let block_callable_local = if *uses_block_magic {
+                    let closure = if param.is_none() && params.is_empty() && !explicit_zero_params {
+                        Expr::AnonSub {
+                            body: body.clone(),
+                            is_rw: *rw_block,
+                            is_block: true,
+                        }
+                    } else {
+                        let (closure_params, closure_param_defs) = if params.is_empty() {
+                            (
+                                param.iter().cloned().collect(),
+                                param_def.iter().cloned().collect(),
+                            )
+                        } else {
+                            (params.clone(), params_def.clone())
+                        };
+                        Expr::AnonSubParams {
+                            params: closure_params,
+                            param_defs: closure_param_defs,
+                            return_type: None,
+                            body: body.clone(),
+                            is_rw: *rw_block,
+                            is_whatever_code: false,
+                        }
+                    };
+                    self.compile_expr(&closure);
+                    let local = self.alloc_fresh_local(&format!(
+                        "__mutsu_for_block_callable_{}",
+                        self.tmp_counter
+                    ));
+                    self.tmp_counter += 1;
+                    self.code.emit(OpCode::SetLocal(local));
+                    Some(local)
+                } else {
+                    None
+                };
                 let (pre_stmts, loop_body, post_stmts) =
                     self.expand_loop_phasers(body, label.as_deref());
                 for s in &pre_stmts {
@@ -2535,6 +2572,7 @@ impl Compiler {
                             topic_local,
                             source_container_local,
                             body_end: 0,
+                            block_callable_local,
                             label: label.clone(),
                             arity,
                             collect: false,

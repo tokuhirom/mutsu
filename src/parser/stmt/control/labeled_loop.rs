@@ -38,7 +38,9 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, (param, param_def, params, params_def, rw_block, explicit_zero_params)) =
             parse_for_params(r)?;
         let (r, _) = ws(r)?;
+        let block_input = r;
         let (r, body) = block(r)?;
+        let uses_block_magic = block_input[..block_input.len() - r.len()].contains("&?BLOCK");
         return Ok((
             r,
             Stmt::For {
@@ -53,6 +55,7 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
                 rw_block,
                 explicit_zero_params,
                 is_statement_modifier: false,
+                uses_block_magic,
             },
         ));
     }
