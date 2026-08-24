@@ -125,8 +125,36 @@ impl Interpreter {
         current: Option<Value>,
         value: Value,
         preserve_hash_entries: bool,
+        force_hash_context: bool,
     ) -> Value {
         let current = current.map(Value::into_descalarized);
+        if force_hash_context && !preserve_hash_entries {
+            let value = value.into_descalarized();
+            let result = match value.view() {
+                ValueView::Hash(_) => value,
+                ValueView::Array(items, _)
+                    if items.iter().any(|item| {
+                        !matches!(
+                            item.descalarize().view(),
+                            ValueView::Pair(..) | ValueView::ValuePair(..) | ValueView::Hash(..)
+                        )
+                    }) =>
+                {
+                    // Hash.STORE list-contextualizes a flat alternating list as
+                    // key/value pairs. Build it directly so a Nil value remains
+                    // Nil until the target container's default-decay step below.
+                    let mut map = std::collections::HashMap::new();
+                    let mut iter = items.iter().cloned();
+                    while let Some(key) = iter.next() {
+                        let val = iter.next().unwrap_or(Value::NIL);
+                        map.insert(key.into_descalarized().to_string_value(), val);
+                    }
+                    Value::hash(map)
+                }
+                _ => Self::normalize_hash_like_assignment(std::collections::HashMap::new(), value),
+            };
+            return Self::carry_container_default(current.as_ref(), result);
+        }
         match current.as_ref().map(Value::view) {
             Some(ValueView::Hash(_)) if !preserve_hash_entries => {
                 let value = value.into_descalarized();

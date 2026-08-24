@@ -850,6 +850,7 @@ impl Interpreter {
                             current,
                             value,
                             preserve_hash_entries,
+                            false,
                         )
                     } else {
                         value
@@ -929,6 +930,7 @@ impl Interpreter {
                             current,
                             value,
                             preserve_hash_entries,
+                            false,
                         )
                     } else {
                         value
@@ -1244,7 +1246,19 @@ impl Interpreter {
                     updated.get(&attr_key).cloned().map(|v| v.deref_container()),
                     value,
                     preserve_hash_entries,
+                    attr_sigil == '%',
                 );
+                // A default-initialized `%` slot may still be represented by its
+                // raw initializer before the first store, so there is no embedded
+                // Hash default for `carry_container_default` to copy. Restore the
+                // declaration's `is default(...)` metadata before Nil decay.
+                if attr_sigil == '%'
+                    && self.container_default(&assigned_value).is_none()
+                    && let Some(def) = self
+                        .class_attribute_default_with_role_fallback(&class_name.resolve(), method)
+                {
+                    assigned_value = self.tag_container_default(assigned_value, def);
+                }
                 // A real Array/Hash element is a Scalar and cannot hold
                 // `Nil`: decay each `Nil` the assignment stored to the
                 // container's own default (ADR-0049).
@@ -1427,8 +1441,13 @@ impl Interpreter {
                 method
             )));
         }
-        if let Some((attr_name, _sigil)) = rw_attr_target {
+        if let Some((attr_name, attr_sigil)) = rw_attr_target {
             let mut updated = attributes.to_map();
+            let force_hash_context = attr_sigil == '%'
+                || self
+                    .collect_class_attributes(&class_name.resolve())
+                    .iter()
+                    .any(|attr| attr.name == attr_name && attr.sigil == '%');
             let current = if method_args.is_empty() {
                 self.call_method_with_values(
                     Value::instance_parts(class_name, attributes.clone(), target_id),
@@ -1440,7 +1459,12 @@ impl Interpreter {
                 None
             };
             let mut assigned_value = if method_args.is_empty() {
-                Self::normalize_rw_accessor_assignment(current, value, preserve_hash_entries)
+                Self::normalize_rw_accessor_assignment(
+                    current,
+                    value,
+                    preserve_hash_entries,
+                    force_hash_context,
+                )
             } else {
                 value
             };
