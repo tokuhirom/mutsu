@@ -230,25 +230,30 @@ impl LazyList {
     /// Whether `my @a = <this list>` keeps the list as a reify-on-demand lazy
     /// array (L2b step 6, docs/lazy-arrays.md) instead of eagerly
     /// materializing. An explicit `lazy` marker always preserves; otherwise
-    /// only a *deterministic* unreifiable source does — an infinite
-    /// arithmetic/geometric sequence spec, or a map/grep pipe over an
-    /// infinite source. A pipe bottoming out in a finite source (a plain
-    /// gather) and a finite cat-pull materialize eagerly, matching raku.
+    /// only an unreifiable source does — an infinite arithmetic/geometric or
+    /// closure sequence, or a map/grep pipe over an infinite source. A pipe
+    /// bottoming out in a finite source (a plain gather) and a finite cat-pull
+    /// materialize eagerly, matching raku.
     ///
-    /// TODO: closure_seq (`1, {rand} ... *`) and scan_spec stay on the old
-    /// capped-Array path: S32-array/create.t "partially-reified" requires
-    /// `@a.clone` to SHARE the reifier (clone and original see the same
-    /// `{rand}` values), which needs a shared element-cell store —
-    /// container-repr territory (ADR-0001 layer 3a), not a per-site fix.
+    /// `closure_seq` is safe to preserve here: `LazyList` lives behind a shared
+    /// `Gc`, so ordinary Value clones share the reifier and its generated
+    /// cache. Array assignment's `with_array_context` clone snapshots that
+    /// shared state only when constructing a distinct Array container; later
+    /// element writes remain isolated by the existing restore-lazy-array path.
     pub(crate) fn preserve_lazy_on_array_assign(&self) -> bool {
         self.is_lazy_marked()
             || self.sequence_spec.is_some()
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
     }
 
     /// Whether this list is genuinely *infinite / unreifiable* — an infinite
-    /// `...` sequence spec, or a lazy map/grep pipe over an infinite source —
-    /// as opposed to a merely `lazy`-marked but *finite* list (`lazy 1, 2`).
+    /// `...` sequence spec, an endpoint-less closure sequence, or a lazy
+    /// map/grep pipe over an infinite source — as opposed to a merely
+    /// `lazy`-marked but *finite* list (`lazy 1, 2`).
     /// This is `preserve_lazy_on_array_assign` MINUS the `is_lazy_marked` case.
     ///
     /// A `[...]` bracket-array keeps only these lazy (`.is-lazy` True, `.elems`
@@ -257,6 +262,10 @@ impl LazyList {
     /// the tiny seed cache keep working.
     pub(crate) fn is_lazy_infinite(&self) -> bool {
         self.sequence_spec.is_some()
+            || self
+                .closure_seq
+                .as_ref()
+                .is_some_and(|state| state.lock().unwrap().endpoint.is_none())
             || (self.lazy_pipe.is_some() && !self.pipe_bottoms_out_finite())
     }
 
