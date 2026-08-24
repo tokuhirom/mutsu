@@ -65,7 +65,7 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
     // and maps the primed body over every supplied argument. Reuse the ordinary
     // single-Whatever substitution for the per-item callback so all operators
     // and postfix chains retain their normal compiler path.
-    if wc_count == 0 && contains_whatever(expr) {
+    if wc_count == 0 && contains_hyperwhatever(expr) {
         let item_body = replace_whatever_single(expr);
         let mapper = Expr::Lambda {
             param: "_".to_string(),
@@ -131,6 +131,38 @@ pub(crate) fn build_closure(expr: &Expr) -> Expr {
             is_rw: false,
             is_whatever_code: true,
         }
+    }
+}
+
+/// Whether this priming scope contains a HyperWhatever placeholder.
+///
+/// `contains_whatever` also reports composed, already-planted ordinary
+/// `WhateverCurry` operands.  Those can have a zero visible placeholder count
+/// at an enclosing scope, so using that broader predicate here would mistake
+/// ordinary compositions such as `(^*).roll` for HyperWhatever and give them
+/// slurpy/map semantics.
+fn contains_hyperwhatever(expr: &Expr) -> bool {
+    match expr {
+        Expr::HyperWhatever => true,
+        Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
+        e if super::plant::is_thunk_barrier(e) => false,
+        Expr::Binary { left, right, .. } => {
+            contains_hyperwhatever(left) || contains_hyperwhatever(right)
+        }
+        Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => contains_hyperwhatever(expr),
+        Expr::MethodCall { target, .. }
+        | Expr::DynamicMethodCall { target, .. }
+        | Expr::HyperMethodCall { target, .. }
+        | Expr::HyperMethodCallDynamic { target, .. }
+        | Expr::CallOn { target, .. }
+        | Expr::Index { target, .. } => contains_hyperwhatever(target),
+        Expr::InfixFunc { left, right, .. } => {
+            contains_hyperwhatever(left) || right.iter().any(contains_hyperwhatever)
+        }
+        Expr::MetaOp { left, right, .. } => {
+            contains_hyperwhatever(left) || contains_hyperwhatever(right)
+        }
+        _ => false,
     }
 }
 
