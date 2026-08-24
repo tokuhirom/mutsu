@@ -279,6 +279,10 @@ pub(crate) struct ForLoopSpec {
     /// type. Distinguished from bare `for %h` (Pairs, no value writeback) and
     /// `.keys` (read-only).
     pub(crate) values_mode: bool,
+    /// The source expression is a direct smartmatch. A successful Match has
+    /// an empty list value in this context; an itemized scalar variable still
+    /// yields the Match as one item.
+    pub(crate) direct_smartmatch: bool,
     /// The bare source array variable name for `for @a` (without sigil), when
     /// the iterable is a single plain array variable. Enables live-array
     /// iteration: if the loop body pushes onto `@a`, the loop keeps yielding

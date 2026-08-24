@@ -412,6 +412,7 @@ impl Compiler {
                     .collect(),
                 loop_var_wraps_element: Self::for_iterable_wraps_pair(iterable),
                 values_mode: Self::for_iterable_is_values_alias(iterable),
+                direct_smartmatch: Self::for_direct_smartmatch(iterable),
                 single_array_source: Self::for_single_array_source(iterable),
                 single_array_source_local: self
                     .for_single_array_source_local(&Self::for_single_array_source(iterable)),

@@ -2982,6 +2982,16 @@ impl Compiler {
         }
     }
 
+    fn for_direct_smartmatch(iterable: &Expr) -> bool {
+        matches!(
+            iterable,
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::SmartMatch,
+                ..
+            }
+        )
+    }
+
     /// Bake the local slot for a `for @a` live-array source (§1.5). The source
     /// is an `@`-variable by construction (`for_single_array_source` only
     /// matches `Expr::ArrayVar`), so the `@`-sigiled local key is tried FIRST:
