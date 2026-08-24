@@ -783,7 +783,8 @@ impl Compiler {
             args: method_args,
             ..
         } = target
-            && (method_args.is_empty() || matches!(method_target.as_ref(), Expr::BareWord(_)))
+            && ((method_args.is_empty() && matches!(method_target.as_ref(), Expr::Var(_)))
+                || (!method_args.is_empty() && matches!(method_target.as_ref(), Expr::BareWord(_))))
             && let Some(var_name) = Self::method_call_target_var_name(method_target)
         {
             let writeback_name = if var_name.is_empty() {
