@@ -2,7 +2,18 @@ use super::*;
 
 pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
     // Try to parse a chained assignment: $var op= ...
-    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+    //
+    // `try_parse_assign_expr` short-circuits a leading parenthesized
+    // assignment (`($b = 2)`), stopping right after the `)`. When something
+    // other than a clean terminator follows -- e.g. `($b = 2) / 2`, where `/`
+    // still needs to bind to the whole group -- fall through to
+    // `parse_comma_or_expr` below instead, which reaches the same
+    // recognition through `paren_expr` (wrapping it in `Expr::Grouped`) and
+    // then correctly continues the infix/postfix precedence chain, exactly
+    // like the plain `=` statement path already does. See #6953.
+    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input)
+        && (!input.starts_with('(') || paren_assign_rhs_is_complete(rest))
+    {
         // After a chained assign, check for comma list at this level
         let (r, _) = ws(rest)?;
         // A chained *list* assignment to an `@`/`%` container absorbs the comma
@@ -94,7 +105,12 @@ pub(crate) fn parse_assign_expr_or_comma(input: &str) -> PResult<'_, Expr> {
 /// `(@a = 1, 2) and 3` while `$x ||= 42, 43` keeps its item-assignment
 /// (comma-tight) `||=`.
 pub(crate) fn parse_assign_expr_or_comma_no_word_logical(input: &str) -> PResult<'_, Expr> {
-    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input) {
+    // See the matching comment in `parse_assign_expr_or_comma` above (#6953):
+    // only take the parenthesized-assignment shortcut when nothing but a
+    // clean terminator follows the `)`.
+    if let Ok((rest, assign_expr)) = try_parse_assign_expr(input)
+        && (!input.starts_with('(') || paren_assign_rhs_is_complete(rest))
+    {
         let (r, _) = ws(rest)?;
         // Chained *list* assignment to an `@`/`%` container absorbs the comma list
         // on its right (see [`parse_assign_expr_or_comma`]).

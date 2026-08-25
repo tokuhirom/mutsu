@@ -80,7 +80,7 @@ pub(in crate::parser) use comma::{
     normalize_comma_list_items, parse_comma_or_expr, parse_comma_or_expr_item_no_word_logical,
     parse_comma_or_expr_no_word_logical,
 };
-pub(in crate::parser) use try_assign::try_parse_assign_expr;
+pub(in crate::parser) use try_assign::{paren_assign_rhs_is_complete, try_parse_assign_expr};
 
 pub(crate) use bracket::parse_bracket_meta_assign_op;
 pub(crate) use compound_expr::{

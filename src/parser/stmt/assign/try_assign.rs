@@ -1,5 +1,72 @@
 use super::*;
 
+/// Does `rest` -- the input immediately after a parenthesized-assignment's
+/// closing `)` -- start with something an ENCLOSING layer is responsible for
+/// consuming (a comma list, a trailing word-logical/statement-modifier
+/// re-attached above this precedence level, an enclosing bracket, etc.), as
+/// opposed to a tighter infix/postfix operator that must still bind to the
+/// group itself?
+///
+/// Used by [`try_parse_assign_expr`]'s callers to decide whether a
+/// successful parenthesized-assignment shortcut (`($b = 2)` recognized as a
+/// complete `Expr::AssignExpr`, stopping right after the `)`) is really the
+/// whole answer. When it is NOT -- e.g. `($b = 2) / 2`, where `/` still needs
+/// to apply to the whole group -- the caller must discard the shortcut and
+/// re-parse via the general expression grammar instead, which recognizes the
+/// same inner assignment through `paren_expr` (wrapping it in
+/// `Expr::Grouped`) and then correctly continues through the normal
+/// infix/postfix precedence chain (see `fixes #6953`).
+pub(in crate::parser) fn paren_assign_rhs_is_complete(rest: &str) -> bool {
+    let Ok((rest, _)) = ws(rest) else {
+        return true;
+    };
+    if rest.is_empty() {
+        return true;
+    }
+    if rest.starts_with(';')
+        || rest.starts_with(')')
+        || rest.starts_with('}')
+        || rest.starts_with(']')
+    {
+        return true;
+    }
+    if rest.starts_with(",,") {
+        return false;
+    }
+    if rest.starts_with(',') || rest.starts_with("=>") {
+        return true;
+    }
+    // Loose word-logicals and statement modifiers are looser than assignment
+    // and are re-attached by an enclosing layer (`word_logical_split`,
+    // `parse_statement_modifier`) -- they must not be treated as "more RHS".
+    const WORD_TERMINATORS: [&str; 11] = [
+        "andthen",
+        "notandthen",
+        "orelse",
+        "and",
+        "or",
+        "xor",
+        "if",
+        "unless",
+        "while",
+        "until",
+        "for",
+    ];
+    for kw in WORD_TERMINATORS {
+        if let Some(after) = rest.strip_prefix(kw) {
+            let is_boundary = after
+                .chars()
+                .next()
+                .map(|c| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(true);
+            if is_boundary {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Parse a single argument in colon method-call syntax (.method: arg1, arg2).
 /// Tries colonpair first (:name, :$var, :!flag, :0port), then expression.
 pub(crate) fn parse_colon_method_arg(input: &str) -> PResult<'_, Expr> {
@@ -375,9 +442,20 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
         let (rest, rhs) = if op.is_list_precedence() {
             parse_comma_or_expr(rest)?
         } else {
+            // `try_parse_assign_expr` short-circuits a leading parenthesized
+            // assignment (`($b = 2)`), stopping right after the `)`. But
+            // `+=` (and friends) is item assignment -- looser than a
+            // following tighter infix like `/` -- so `$a += ($b = 2) / 2`
+            // must parse as `$a += (($b = 2) / 2)`. Only accept the shortcut
+            // when nothing but a clean terminator follows the `)`;
+            // otherwise fall back to the general expression grammar, which
+            // reaches the same recognition through `paren_expr` and then
+            // correctly continues the infix/postfix chain. See #6953.
             match try_parse_assign_expr(rest) {
-                Ok(r) => r,
-                Err(_) => expression_no_sequence(rest)?,
+                Ok((r, expr)) if !rest.starts_with('(') || paren_assign_rhs_is_complete(r) => {
+                    (r, expr)
+                }
+                _ => expression_no_sequence(rest)?,
             }
         };
         let name = format!("{}{}", prefix, var);
