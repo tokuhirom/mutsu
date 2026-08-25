@@ -68,9 +68,20 @@ code that hardcodes a small index expecting a setting frame will differ.
 - `mutsu` `.gist`: the frame's `.Str` text (`  in block <unit> at f.raku line 3`)
 - `mutsu` `.raku`: a bare `Backtrace::Frame.new` with no attributes
 
-`.Str` itself matches Rakudo. Faithfully reproducing the gist is partly
-impossible (Rakudo's `code =>` renders a `Block` with its memory address) and
-partly the same frame-model question, so it is recorded here rather than fixed.
+`.Str` itself matches Rakudo — including its trailing newline, since
+`news/2026-08/backtrace-full-frames-not-newline-separated.md`. Faithfully
+reproducing the gist is partly impossible (Rakudo's `code =>` renders a `Block`
+with its memory address) and partly the same frame-model question, so it is
+recorded here rather than fixed.
+
+## What the introspection work relies on this ticket for
+
+`Backtrace.next-interesting-index` / `.outer-caller-idx` / `.nice` landed in
+`news/2026-08/backtrace-introspection-methods-missing.md`, deliberately defined
+*relative to mutsu's own frame list* rather than to Rakudo's absolute indices:
+`nice` starts at frame 0 (Rakudo starts at 1, because its frame 0 is always a
+setting frame), and `outer-caller-idx` reconstructs the lexical chain from the
+dynamic stack. Closing gap 2 would move those entry points, not invalidate them.
 
 ## Affected files (starting point)
 
