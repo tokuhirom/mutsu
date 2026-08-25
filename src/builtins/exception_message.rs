@@ -25,6 +25,23 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
                 reason, marked
             ))
         }
+        // The `Promise` resolution-protocol errors. Their text lives here
+        // rather than in a `message` attribute stored at each throw site: a
+        // `message` attribute shadows this table for `.message`/`.Str`/
+        // `.gist`, so a hand-built `X::Promise::Vowed.new` would otherwise
+        // render differently from a thrown one (the defect PR #6980 fixed
+        // across the whole `X::Proc::Async::*` family).
+        "X::Promise::Vowed" => {
+            Some("Access denied to keep/break this Promise; already vowed".to_string())
+        }
+        "X::Promise::Resolved" => Some(format!(
+            "Cannot keep/break a Promise more than once (status: {})",
+            promise_status(attrs)
+        )),
+        "X::Promise::CauseOnlyValidOnBroken" => Some(format!(
+            "Can only call cause on a broken promise (status: {})",
+            promise_status(attrs)
+        )),
         "X::Method::NotFound" => {
             let method = attr_str(attrs, "method");
             let typename = attr_str(attrs, "typename");
@@ -197,6 +214,20 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
         }
         _ => None,
     }
+}
+
+/// The promise status an `X::Promise::*` message reports. Rakudo derives it
+/// from the exception's `promise` attribute (`$.promise.status`), so read
+/// that live status when present and fall back to an explicit `status`
+/// attribute (which a hand-built `X::Promise::Resolved.new(:status<Kept>)`
+/// or a `throws-like ... status => 'Kept'` check supplies instead).
+fn promise_status(attrs: &AttrMap) -> String {
+    if let Some(p) = attrs.get("promise")
+        && let ValueView::Promise(shared) = p.view()
+    {
+        return shared.status();
+    }
+    attr_str_or(attrs, "status", "Planned")
 }
 
 /// Extract a string attribute, defaulting to "" if absent.

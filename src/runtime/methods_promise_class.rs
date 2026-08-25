@@ -69,7 +69,7 @@ impl Interpreter {
 
     /// Hand `promise` to a user `$*SCHEDULER` via `.cue(&keeper, :$in)`, where
     /// `&keeper` is a synthesized zero-arg block whose body is
-    /// `$promise.keep(True)`. Returns the scheduler's cancellation value, which
+    /// `$vow.keep(True)`. Returns the scheduler's cancellation value, which
     /// the caller discards (`Promise.in` returns the promise itself).
     fn cue_promise_on_scheduler(
         &mut self,
@@ -85,9 +85,17 @@ impl Interpreter {
 
     /// A zero-arg block that keeps `promise` with `True`, as a first-class
     /// `Callable` a user scheduler can store and invoke later.
+    ///
+    /// It keeps through the promise's **vow**, not through `$promise.keep`:
+    /// `Promise.in`/`.at` hand the runtime the right to resolve the promise
+    /// (`mark_vowed`), so the user-facing `.keep` on it is X::Promise::Vowed
+    /// by design. Rakudo's own cued closure closes over the vow the same way.
     fn promise_keeper_block(promise: &SharedPromise) -> Value {
+        let mut vow_attrs = std::collections::HashMap::new();
+        vow_attrs.insert("promise".to_string(), Value::promise(promise.clone()));
+        let vow = Value::make_instance(Symbol::intern("Promise::Vow"), vow_attrs);
         let body = vec![crate::ast::Stmt::Expr(crate::ast::Expr::MethodCall {
-            target: Box::new(crate::ast::Expr::Literal(Value::promise(promise.clone()))),
+            target: Box::new(crate::ast::Expr::Literal(vow)),
             name: Symbol::intern("keep"),
             args: vec![crate::ast::Expr::Literal(Value::TRUE)],
             modifier: None,
@@ -130,6 +138,9 @@ impl Interpreter {
         if let Some(cls) = self.promise_class_name(target) {
             let secs = args.first().map(|v| v.to_f64()).unwrap_or(0.0);
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            // mutsu resolves this promise itself (the timer keeps it), so it
+            // is vowed: user `.keep`/`.break`/`.vow` on it is X::Promise::Vowed.
+            promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             if let Some(scheduler) = self.user_scheduler() {
                 if let Err(e) = self.cue_promise_on_scheduler(scheduler, &promise, "in", secs) {
@@ -174,6 +185,7 @@ impl Interpreter {
             let now = crate::value::current_time_secs_f64();
             let delay = at_time - now;
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             if let Some(scheduler) = self.user_scheduler() {
                 // Rakudo's `Promise.at` cues with `:in($at - now)`, not `:at`,
@@ -231,6 +243,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("allof", args) {
                 Ok(p) => p,
@@ -267,6 +280,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         if let Some(cls) = self.promise_class_name(target) {
             let promise = SharedPromise::new_with_class(Symbol::intern(&cls));
+            promise.mark_vowed();
             let ret = Value::promise(promise.clone());
             let promises = match self.collect_promise_combinator_inputs("anyof", args) {
                 Ok(p) => p,

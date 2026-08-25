@@ -433,9 +433,6 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
 | `Type/Mu.rakudoc:531` | `take-rw` doesn't preserve a mutable container alias through `gather` | [take-rw-loses-mutable-container-alias.md](../todo/tickets/take-rw-loses-mutable-container-alias.md) |
 | `Language/subscripts.rakudoc:418` | a chained hash-then-array autovivification (`$h{"k"}[0] = v`) leaves the root variable showing `Any` on `.raku` | [nested-autovivification-then-raku-shows-any.md](../todo/tickets/nested-autovivification-then-raku-shows-any.md) |
 | `Language/subscripts.rakudoc:964` | `my @var is CustomClass = ...` never dispatches the class's `STORE`/overridden `Str` methods (custom Proxy-like container binding) | [is-typename-custom-container-store-protocol-unimplemented.md](../todo/deep/is-typename-custom-container-store-protocol-unimplemented.md) |
-| `Language/concurrency.rakudoc:49,85` | a broken `Promise`'s exception isn't wrapped/mixed with `X::Promise::Broken` | [promise-broken-exception-not-wrapped-in-x-promise-broken.md](../todo/tickets/promise-broken-exception-not-wrapped-in-x-promise-broken.md) |
-| `Language/concurrency.rakudoc:124` | `Promise.cause`'s backtrace duplicates the `in block <unit>` frame | [promise-cause-duplicate-in-block-backtrace-frame.md](../todo/tickets/promise-cause-duplicate-in-block-backtrace-frame.md) |
-| `Language/concurrency.rakudoc:213` | `Promise.vow` doesn't protect against a second `.keep`/`.break` via the original Promise | [promise-vow-keep-protection-not-enforced.md](../todo/tickets/promise-vow-keep-protection-not-enforced.md) |
 | `Language/concurrency.rakudoc:703` | `Thread.new(code => {...}).run` — `.run` method is unimplemented | [thread-new-run-method-missing.md](../todo/tickets/thread-new-run-method-missing.md) |
 | `Language/concurrency.rakudoc:709` | `Thread.start({...})`'s block never runs — the main program exits before the spawned thread completes | [thread-start-block-not-awaited-before-process-exit.md](../todo/tickets/thread-start-block-not-awaited-before-process-exit.md) |
 
@@ -452,12 +449,6 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
   reifying instead of showing `[...]`) — the **Deferred** lazy-list cluster's "closure_seq /
   scan_spec arrays stay force-capped on `@`-assign" residue; confirmed a bare `say @fib;` (no
   subscript at all) already shows the same full-reification bug for this exact sequence shape.
-- `Language/concurrency.rakudoc` [2] (line 85) — bucketed `raku-drift` by the harness (correctly,
-  since raku's current output no longer matches the doc's stated `# OUTPUT`), but re-verified
-  directly: mutsu's own output diverges from raku's *actual* behavior for the same root cause as
-  the `:49` finding above (missing `X::Promise::Broken` wrapping), so it is folded into
-  [promise-broken-exception-not-wrapped-in-x-promise-broken.md](../todo/tickets/promise-broken-exception-not-wrapped-in-x-promise-broken.md)
-  above rather than being skipped.
 
 Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 `Metamodel::ParametricRoleHOW`/`Lock::Async`/`X::Method::InvalidQualifier`/

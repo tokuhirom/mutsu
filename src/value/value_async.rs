@@ -33,6 +33,7 @@ impl SharedPromise {
                     class_name,
                     thread_payload: None,
                     waiters: Vec::new(),
+                    vow_taken: false,
                 }),
                 Condvar::new(),
             )),
@@ -51,10 +52,37 @@ impl SharedPromise {
                     class_name: Symbol::intern("Promise"),
                     thread_payload: None,
                     waiters: Vec::new(),
+                    vow_taken: false,
                 }),
                 Condvar::new(),
             )),
         }
+    }
+
+    /// Consume this promise's single vow. Returns `false` when a vow was
+    /// already taken (by `.vow`, `.keep` or `.break`), which is what
+    /// `X::Promise::Vowed` reports. Internal resolution paths (`keep`,
+    /// `break_with`, `try_keep`, `try_break`) deliberately do NOT consult
+    /// the flag: they stand in for the `Vow` object mutsu itself holds.
+    pub(crate) fn take_vow(&self) -> bool {
+        let (lock, _) = &*self.inner;
+        let mut state = lock.lock().unwrap();
+        if state.vow_taken {
+            return false;
+        }
+        state.vow_taken = true;
+        true
+    }
+
+    /// Mark this promise as internally vowed: mutsu owns its resolution, so
+    /// user code must not `.keep`/`.break`/`.vow` it. Rakudo does this for
+    /// every promise it resolves itself (`Promise.start`, `.in`, `.at`,
+    /// `.allof`, `.anyof`, `.then`, ...) — but NOT for `Promise.kept` /
+    /// `Promise.broken`, which hand back an already-settled promise whose
+    /// vow was never taken.
+    pub(crate) fn mark_vowed(&self) {
+        let (lock, _) = &*self.inner;
+        lock.lock().unwrap().vow_taken = true;
     }
 
     pub(crate) fn class_name(&self) -> Symbol {

@@ -148,6 +148,12 @@ impl Interpreter {
     /// The `.text` of a `Backtrace` stored on an exception instance's
     /// `backtrace` attribute, if present and non-empty.
     pub(crate) fn exception_backtrace_text(exception: &Value) -> Option<String> {
+        // A role mixed into an exception (`X::AdHoc+{X::Promise::Broken}`)
+        // wraps the instance in a `Mixin`; the `backtrace` attribute still
+        // lives on the instance underneath, so look through the wrapper.
+        if let ValueView::Mixin(inner, _) = exception.view() {
+            return Self::exception_backtrace_text(inner);
+        }
         let ValueView::Instance { attributes, .. } = exception.view() else {
             return None;
         };

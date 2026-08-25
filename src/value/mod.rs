@@ -2078,6 +2078,13 @@ struct PromiseState {
     /// — observable as an intermittent CI-only failure under load
     /// (S17-promise/then.t "simple keep"/"simple break").
     waiters: Vec<PromiseWaiter>,
+    /// Has a `Promise::Vow` been taken for this promise? Rakudo's
+    /// `Promise.vow`, `Promise.keep` and `Promise.break` all consume the
+    /// single available vow: the first of them to run sets this, and every
+    /// later one throws `X::Promise::Vowed`. Only the returned `Vow` object
+    /// (and mutsu's own internal resolution paths, which bypass the
+    /// user-facing methods) may resolve a vowed promise afterwards.
+    vow_taken: bool,
 }
 
 #[derive(Debug, Clone)]

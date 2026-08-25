@@ -370,20 +370,16 @@ impl Interpreter {
             return Err(RuntimeError::new("Promise::Vow promise is not a Promise"));
         };
         match method {
+            // A `Vow` resolves its promise unconditionally -- holding the vow
+            // IS the permission -- so neither arm consults the vow flag; only
+            // an already-settled promise is an error. Both share the one
+            // `X::Promise::Resolved` builder so the message stays in a single
+            // place (`format_exception_message`), rather than being baked into
+            // a `message` attribute that would shadow it.
             "keep" => {
                 let value = args.into_iter().next().unwrap_or(Value::TRUE);
                 if let Err(status) = shared.try_keep(value) {
-                    let msg = format!(
-                        "Cannot keep/break a Promise more than once (status: {})",
-                        status
-                    );
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    attrs.insert("promise".to_string(), Value::promise(shared.clone()));
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                    return Err(Interpreter::promise_resolved_error(&shared, &status));
                 }
                 Ok(Value::NIL)
             }
@@ -393,17 +389,7 @@ impl Interpreter {
                     .next()
                     .unwrap_or_else(|| Value::str_from("Died"));
                 if let Err(status) = shared.try_break(reason) {
-                    let msg = format!(
-                        "Cannot keep/break a Promise more than once (status: {})",
-                        status
-                    );
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    attrs.insert("promise".to_string(), Value::promise(shared.clone()));
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    return Err(err);
+                    return Err(Interpreter::promise_resolved_error(&shared, &status));
                 }
                 Ok(Value::NIL)
             }

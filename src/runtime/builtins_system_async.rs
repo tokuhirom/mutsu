@@ -193,7 +193,15 @@ impl Interpreter {
         // Append the await call-site to the exception's backtrace, so the gist
         // surfaces both where the Promise's code died (preserved) and where it
         // was awaited (the re-throw location) — matching Raku's X::Await::Died.
-        if let ValueView::Instance { attributes, .. } = cause.view() {
+        // A role mixed into the cause (`TooShort+{X::Promise::Broken}`, which
+        // is what `.result` inside a `.then` callback rethrows) wraps the
+        // instance in a `Mixin`. Every Instance-shaped step below must look
+        // through that wrapper, or the awaited exception loses its real type
+        // to the generic `X::Await::Died` fallback.
+        let cause_instance = Self::exception_instance_of(&cause);
+        if let Some(ValueView::Instance { attributes, .. }) =
+            cause_instance.as_ref().map(Value::view)
+        {
             let await_bt = self.await_site_backtrace();
             if !await_bt.is_empty()
                 && let Some(bt) = attributes.as_map().get("backtrace").cloned()
@@ -217,8 +225,8 @@ impl Interpreter {
                 bt_attrs.insert("text".to_string(), Value::str(combined));
             }
         }
-        let msg = match cause.view() {
-            ValueView::Instance { attributes, .. } => {
+        let msg = match cause_instance.as_ref().map(Value::view) {
+            Some(ValueView::Instance { attributes, .. }) => {
                 attributes.insert("__mutsu_does_await_died".to_string(), Value::TRUE);
                 attributes
                     .as_map()
@@ -229,7 +237,7 @@ impl Interpreter {
             _ => cause.to_string_value(),
         };
         let mut err = RuntimeError::new(msg.clone());
-        let exc = if matches!(cause.view(), ValueView::Instance { .. }) {
+        let exc = if cause_instance.is_some() {
             cause
         } else {
             let mut attrs = std::collections::HashMap::new();

@@ -143,6 +143,18 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
+        // `X::Promise::Broken` is composed into a broken promise's cause by
+        // `Promise.result`, and the role overrides `gist` (only `gist` — see
+        // `promise_broken_gist`). mutsu registers the role with no method
+        // table, so intercept here rather than at one of the several native
+        // `.gist` arms downstream: this is the single point both `$ex.gist`
+        // and `say $ex` funnel through.
+        if method == "gist"
+            && args.is_empty()
+            && let Some(result) = self.promise_broken_gist(&target)
+        {
+            return result;
+        }
         if !args.iter().any(|a| a.is_string_pair_value()) {
             return self.call_method_with_values_inner(target, method, args, true);
         }
