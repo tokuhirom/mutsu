@@ -174,6 +174,25 @@ impl Interpreter {
             // (mirrors the sub side's named-share gate).
             let named_container_share = has_named_args
                 && self.method_shares_container_into_named_scalar_param(method_def, &args);
+            // Every named argument must have somewhere to land: a named slurpy
+            // (`*%_` — implicit, or explicit) absorbing leftovers, or an
+            // eligible named param consuming its key. An `is hidden` class's
+            // methods get NO implicit `*%_` (`effective_method_param_defs`),
+            // and the slow binder rejects an unexpected named argument for
+            // them (roast S12-class/interface-consistency.t test 5:
+            // `Bar.new.m1(1, :x)` must die) — the fast path must not silently
+            // drop it, so such calls keep the full path.
+            let named_args_all_land = !has_named_args
+                || method_def
+                    .param_defs
+                    .iter()
+                    .any(|pd| pd.slurpy && pd.name.starts_with('%'))
+                || args.iter().all(|a| match a.unwrap_varref().view() {
+                    ValueView::Pair(k, _) => method_def.param_defs.iter().any(|pd| {
+                        pd.named && Self::named_param_fast_match_key(pd) == Some(k.as_str())
+                    }),
+                    _ => true,
+                });
             let has_complex_params = method_def.param_defs.iter().any(|pd| {
                 if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
                     return false;
@@ -261,6 +280,7 @@ impl Interpreter {
 
             if !has_unmodeled_pair_arg
                 && named_params_fast_ok
+                && named_args_all_land
                 && !named_container_share
                 && !has_missing_required
                 && !has_invocant_constraint

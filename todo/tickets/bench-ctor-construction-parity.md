@@ -357,6 +357,17 @@ same `Any` type object the bind writes (t/build-attr-default-order.t test 8).
 The slow path records this through its exit attr-local sync
 (`write_attr_cell_by_key`); the fast path now records it at bind time.
 
+A second subtlety the first CI run caught (all three roast jobs failed
+identically on S12-class/interface-consistency.t test 5): an `is hidden`
+class's methods get NO implicit `*%_` (`effective_method_param_defs`), so an
+unexpected named argument must die — but the fast path silently dropped
+leftover named args regardless of whether a `%_` slurpy existed to absorb
+them. Fixed with the `named_args_all_land` gate: named-arg calls take the
+fast path only when a `%`-named slurpy exists or every named key is consumed
+by an eligible named param; otherwise the full path raises the proper error.
+Pinned in t/tweak-named-fast-path.t. (No bench cost: normal methods have the
+implicit `*%_`, so the check short-circuits on the slurpy probe.)
+
 **Measured (release, core-pinned `perf stat -e instructions`, 5000 ctors,
 local box):**
 

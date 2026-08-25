@@ -8,7 +8,7 @@ use Test;
 # (v2026.06) before the fast path was extended, and must stay identical
 # whichever dispatch path a call takes.
 
-plan 33;
+plan 35;
 
 # --- attributive scalar named param on TWEAK ---
 class TScalar {
@@ -127,6 +127,19 @@ class TShare {
 my @shared = 1, 2;
 TShare.new.push-it(n => @shared);
 is @shared.elems, 3, 'named @-variable arg into :$n still mutates the caller array';
+
+# --- is hidden: no implicit *%_, so an unexpected named arg must die ---
+# (roast S12-class/interface-consistency.t test 5 — the fast path must not
+# silently drop a named arg the method has no %_ slurpy to absorb.)
+class THiddenBase {
+    method m1($a) { 1 }
+}
+class THidden is THiddenBase is hidden {
+    method m1($a) { 2 }
+}
+dies-ok { THidden.new.m1(1, :x<1>, :y<2>) },
+    'is hidden method (no implicit *%_) still dies on unexpected named args';
+is THidden.new.m1(1), 2, 'is hidden method still callable without named args';
 
 # --- BUILD attributive bind counts as "BUILD set it" (initializer suppressed) ---
 class TBuildBind {
