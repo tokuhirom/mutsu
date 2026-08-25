@@ -388,6 +388,59 @@ impl Interpreter {
         (value, writes)
     }
 
+    /// Build the positional (`$0`, `$1`, …), named-capture, and `$/` / `$¢`
+    /// bindings that a plain `{ … }` / `<?{ … }>` code block sees at this
+    /// point in the match — for an embedded `:my $var = EXPR;` declarator's
+    /// initializer, which must see the same in-progress match state (e.g.
+    /// `:my $c = ~$0;`) rather than reading an unbound `$0`. Mirrors the
+    /// bindings `eval_regex_inline_code` installs above, minus the `.made`
+    /// grammar-action dispatch — a declarator's RHS running an action would
+    /// be a surprising side effect for what looks like a plain variable read.
+    pub(super) fn regex_capture_bindings(
+        caps: &RegexCaptures,
+        chars: &[char],
+        pos: usize,
+    ) -> Vec<(String, Value)> {
+        let from = caps.match_from.min(chars.len());
+        let to = pos.min(chars.len()).max(from);
+        let matched_so_far: String = chars[from..to].iter().collect();
+        let live_target = super::regex_helpers::current_match_target()
+            .unwrap_or_else(|| MatchTarget::new(&matched_so_far));
+        let mut env: Vec<(String, Value)> = Vec::new();
+        for (i, slot) in caps.positional.iter().enumerate() {
+            env.push((
+                i.to_string(),
+                Value::str(live_target.span_str(slot.from, slot.to)),
+            ));
+        }
+        for (k, slot) in &caps.named {
+            if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
+                continue;
+            }
+            let texts: Vec<String> = slot
+                .nodes
+                .iter()
+                .map(|n| live_target.span_str(n.from, n.to))
+                .collect();
+            let value = if texts.len() == 1 {
+                Value::str(texts.into_iter().next().unwrap())
+            } else {
+                Value::array(texts.into_iter().map(Value::str).collect())
+            };
+            env.push((format!("<{}>", k), value));
+        }
+        let cursor = Value::make_match_object_full(
+            caps.match_from as i64,
+            (caps.match_from + matched_so_far.chars().count()) as i64,
+            &caps.positional,
+            &caps.named,
+            live_target.clone(),
+        );
+        env.push(("\u{00A2}".to_string(), cursor.clone()));
+        env.push(("/".to_string(), cursor));
+        env
+    }
+
     /// Build a Match object for each named capture in `caps` WITHOUT running
     /// any actions. Used when an embedded code block references `$<x>.made` but
     /// no `:actions` object is in play: the capture must still be a Match (so
