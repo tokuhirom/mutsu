@@ -187,7 +187,9 @@ impl Interpreter {
                 let args_str: Vec<String> = type_args
                     .iter()
                     .map(|a| match a.view() {
-                        ValueView::Package(n) => n.resolve(),
+                        ValueView::Package(n) => {
+                            crate::value::user_facing_type_name(&n.resolve()).into_owned()
+                        }
                         ValueView::ParametricRole { .. } => {
                             // Recursively get the WHAT name for nested parametric roles
                             if let Ok(what) =
@@ -234,6 +236,18 @@ impl Interpreter {
         Ok(Value::package(Symbol::intern(visible_type_name)))
     }
 
+    /// A meta-object for one of the native `Perl6::Metamodel::*HOW` classes,
+    /// tagged with the type it describes.
+    fn native_how_instance(how_name: &str, type_name: &str) -> Value {
+        let mut attrs = HashMap::new();
+        attrs.insert("name".to_string(), Value::str(type_name.to_string()));
+        attrs.insert(
+            "__mutsu_how_target".to_string(),
+            Value::str(type_name.to_string()),
+        );
+        Value::make_instance(Symbol::intern(how_name), attrs)
+    }
+
     /// Dispatch .HOW method
     pub(super) fn dispatch_how(
         &self,
@@ -264,7 +278,9 @@ impl Interpreter {
             let args_str = type_args
                 .iter()
                 .map(|v| match v.view() {
-                    ValueView::Package(n) => n.resolve(),
+                    ValueView::Package(n) => {
+                        crate::value::user_facing_type_name(&n.resolve()).into_owned()
+                    }
                     _ => v.to_string_value(),
                 })
                 .collect::<Vec<_>>()
@@ -287,6 +303,19 @@ impl Interpreter {
             && let Some(how_val) = self.registry().class_how_values.get(name)
         {
             return Ok(how_val.clone());
+        }
+        // An INDIVIDUAL parametric role — one `role` declaration, as opposed to
+        // the same-named role *group* the installed name resolves to — reports
+        // `ParametricRoleHOW`. Two shapes carry that identity: the type object a
+        // role declaration expression evaluates to (`(role R {...})`, a
+        // candidate-keyed `Package`), and the candidate objects `.^candidates`
+        // hands out.
+        if self.is_individual_role_type_object(target) {
+            let display = self.role_type_object_display_name(target);
+            return Ok(Self::native_how_instance(
+                "Perl6::Metamodel::ParametricRoleHOW",
+                &display,
+            ));
         }
         // Return a meta-object (ClassHOW) for any value
         let type_name = match target.view() {
@@ -315,8 +344,18 @@ impl Interpreter {
                 tn.to_string()
             }
         };
+        // A role name only reports a role metaclass for the *type object*. An
+        // INSTANCE of a role is an instance of the class the role was punned
+        // into (`R.new` builds an anonymous class that does `R`), and an
+        // ordinary class instance's metaclass is `ClassHOW` — the role group
+        // lives on the name, not on the values made from it.
+        let is_type_object = matches!(target.view(), ValueView::Package(_));
         // Use appropriate HOW metaclass for each type kind
-        let how_name = if let Some(kind) = self.registry().package_kinds.get(&type_name) {
+        let how_name = if let Some(native) = self.registry().declared_native_how.get(&type_name) {
+            // Minted at runtime by `Metamodel::<X>HOW.new_type(...)`; the
+            // metaclass it was minted through is its metaclass.
+            return Ok(Self::native_how_instance(native, &type_name));
+        } else if let Some(kind) = self.registry().package_kinds.get(&type_name) {
             // A bare `package`/`module`/`grammar` reports its own metaclass
             // rather than the default `ClassHOW`.
             match kind {
@@ -324,24 +363,25 @@ impl Interpreter {
                 crate::ast::PackageKind::Module => "Perl6::Metamodel::ModuleHOW",
                 crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
             }
-        } else if self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
-            || matches!(
-                type_name.as_str(),
-                "Numeric"
-                    | "Real"
-                    | "Rational"
-                    | "Stringy"
-                    | "Positional"
-                    | "Associative"
-                    | "Callable"
-                    | "Setty"
-                    | "Baggy"
-                    | "Mixy"
-                    | "Dateish"
-                    | "Iterable"
-                    | "Iterator"
-                    | "PositionalBindFailover"
-            )
+        } else if is_type_object
+            && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
+                || matches!(
+                    type_name.as_str(),
+                    "Numeric"
+                        | "Real"
+                        | "Rational"
+                        | "Stringy"
+                        | "Positional"
+                        | "Associative"
+                        | "Callable"
+                        | "Setty"
+                        | "Baggy"
+                        | "Mixy"
+                        | "Dateish"
+                        | "Iterable"
+                        | "Iterator"
+                        | "PositionalBindFailover"
+                ))
         {
             "Perl6::Metamodel::ParametricRoleGroupHOW"
         } else if self.registry().enum_types.contains_key(&type_name) {
@@ -741,7 +781,9 @@ impl Interpreter {
                 let args_str = type_args
                     .iter()
                     .map(|v| match v.view() {
-                        ValueView::Package(n) => n.resolve(),
+                        ValueView::Package(n) => {
+                            crate::value::user_facing_type_name(&n.resolve()).into_owned()
+                        }
                         _ => v.to_string_value(),
                     })
                     .collect::<Vec<_>>()

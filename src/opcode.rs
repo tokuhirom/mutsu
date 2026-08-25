@@ -723,6 +723,13 @@ pub(crate) enum OpCode {
     GetHashVar(u32),
     GetBareWord(u32),
     GetPseudoStash(u32),
+    /// Replace the role *group* type object on the stack with the INDIVIDUAL
+    /// parametric role that was just declared (the group's current candidate).
+    /// Emitted right after a `role` declaration used in expression position, so
+    /// `(role R { ... })` evaluates to a `ParametricRoleHOW`-backed role like it
+    /// does in Rakudo, while the installed name `R` keeps resolving to the
+    /// `ParametricRoleGroupHOW` group.
+    RoleGroupToCandidate,
 
     // -- Arithmetic --
     Add,

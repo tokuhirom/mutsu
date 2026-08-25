@@ -1173,6 +1173,16 @@ impl Interpreter {
             if Self::type_matches(constraint, &package_name.resolve()) {
                 return true;
             }
+            // An INDIVIDUAL parametric role (the value of a `role` declaration
+            // expression) type-checks exactly like the group it belongs to:
+            // `my $r = (role R { }); $r ~~ R` is True. See
+            // `types/role_candidate.rs`.
+            if let Some((group, _)) = self.role_candidate_group(&package_name.resolve())
+                && (Self::type_matches(constraint, &group)
+                    || self.role_is_subtype(&group, constraint))
+            {
+                return true;
+            }
             // ADR-0047: `package_name` may be the BARE type name as written in
             // source (e.g. from `Parameter.type`/`subset X of Y` reflection,
             // which never goes through env) while the actual registry key for

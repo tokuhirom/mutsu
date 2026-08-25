@@ -13,6 +13,10 @@ impl Interpreter {
             || cn == "Perl6::Metamodel::EnumHOW"
             || cn == "Perl6::Metamodel::CurriedRoleHOW"
             || cn == "Perl6::Metamodel::ParametricRoleGroupHOW"
+            // One individual `role` declaration, as opposed to the same-named
+            // group above (`types/role_candidate.rs`). Answers the same
+            // introspection methods.
+            || cn == "Perl6::Metamodel::ParametricRoleHOW"
             || cn == "Perl6::Metamodel::CoercionHOW"
     }
 

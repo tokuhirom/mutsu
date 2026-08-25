@@ -186,6 +186,14 @@ pub(crate) struct Registry {
     pub(crate) class_trusts: HashMap<String, HashSet<String>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
+    /// Type name -> the NATIVE `Perl6::Metamodel::*HOW` metaclass that type
+    /// reports from `.HOW`. Populated when a type is minted at runtime through
+    /// `Metamodel::<X>HOW.new_type(...)`: the metaclass the call was made on is
+    /// the type's metaclass, so `Metamodel::ParametricRoleHOW.new_type(...).HOW`
+    /// is a `ParametricRoleHOW` and not the default `ClassHOW`. Distinct from
+    /// `class_how_values`, which carries *user* HOW instances installed by the
+    /// EXPORTHOW/DECLARE protocol.
+    pub(crate) declared_native_how: HashMap<String, String>,
     /// Grammars declared under a custom EXPORTHOW `grammar` metaclass whose HOW
     /// class defines a user `find_method`: grammar name -> HOW instance. The
     /// regex engine consults this to route subrule dispatch through the custom

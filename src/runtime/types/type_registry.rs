@@ -622,7 +622,9 @@ impl Interpreter {
     }
 
     pub(crate) fn has_role(&self, name: &str) -> bool {
-        self.registry().roles.contains_key(name)
+        // An individual candidate's declaration-site key (`R\0<role-id>`, see
+        // `types/role_candidate.rs`) names the same role as its group.
+        self.registry().roles.contains_key(name) || self.role_candidate_group(name).is_some()
     }
 
     pub(crate) fn role_has_method(&self, role_name: &str, method_name: &str) -> bool {
