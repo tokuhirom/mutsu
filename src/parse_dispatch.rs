@@ -31,3 +31,17 @@ pub(crate) fn parse_compilation_unit(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     parser::parse_program(input)
 }
+
+/// Parse a quote-construct body under `qq` (double-quote) interpolation rules,
+/// producing the expression that yields the interpolated string.
+///
+/// This is the ONE implementation of the interpolation grammar — variables with
+/// their postcircumfixes (`$x`, `$0`, `$<name>`, `@a[1]`, `%h{$/}`), embedded
+/// `{ ... }` code blocks (including one adjacent to literal text, `d{lc $0}`),
+/// and the full backslash-escape set. Callers that need `qq` semantics for a
+/// body that is not lexically a `"..."` literal (notably the `s///` / `S///`
+/// replacement, which Raku also treats as a `qq` quote) must come through here
+/// rather than growing a second, partial interpolator.
+pub(crate) fn parse_qq_interpolation(content: &str) -> crate::ast::Expr {
+    parser::interpolate_qq_content(content)
+}

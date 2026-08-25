@@ -36,7 +36,19 @@ pub(super) fn parse_trans_adverbs(
     let mut complement = false;
     let mut squash = false;
 
-    while let Some(after_colon) = rest.strip_prefix(':') {
+    loop {
+        // Raku allows whitespace between `tr`/`TR` and its adverbs
+        // (`tr :d/b//`), and between consecutive adverbs.
+        let after_colon = match rest.strip_prefix(':') {
+            Some(r) => r,
+            None => match super::adverbs::skip_ws_before_adverb(rest) {
+                Some(after_ws) => {
+                    rest = after_ws;
+                    &rest[1..]
+                }
+                None => break,
+            },
+        };
         let name_len = after_colon
             .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_' || c == '-'))
             .unwrap_or(after_colon.len());

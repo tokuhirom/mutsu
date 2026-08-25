@@ -169,12 +169,38 @@ pub(super) fn reject_trailing_p5_modifiers(rest: &str) -> Result<(), PError> {
     Ok(())
 }
 
+/// Raku allows whitespace between a quote-like operator and its adverbs, and
+/// between consecutive adverbs (`s :g :i/pat/repl/`, `m :i /B/`, `tr :d/b//`).
+/// Returns `input` with that leading whitespace stripped, but ONLY when an
+/// adverb really follows — a plain `s /pat/repl/` (whitespace before the
+/// *delimiter*) must be left untouched, because the callers use the presence of
+/// that whitespace to decide whether `(` opens a delimiter or a call.
+pub(super) fn skip_ws_before_adverb(input: &str) -> Option<&str> {
+    let trimmed = input.trim_start();
+    if trimmed.len() == input.len() {
+        return None;
+    }
+    let rest = trimmed.strip_prefix(':')?;
+    let c = rest.chars().next()?;
+    // `::Foo` is a package name, never an adverb; an adverb name starts with an
+    // identifier character (`:g`, `:samecase`) or a digit (`:2nd`).
+    (c.is_ascii_alphanumeric() || c == '_').then_some(trimmed)
+}
+
+/// True when `input` opens with an adverb, with or without leading whitespace.
+pub(super) fn starts_with_adverb(input: &str) -> bool {
+    input.starts_with(':') || skip_ws_before_adverb(input).is_some()
+}
+
 pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
     let mut spec = input;
     let mut adverbs = MatchAdverbs::default();
     loop {
         if !spec.starts_with(':') {
-            break;
+            match skip_ws_before_adverb(spec) {
+                Some(after_ws) => spec = after_ws,
+                None => break,
+            }
         }
         let mut r = &spec[1..];
         let mut leading_digits = String::new();

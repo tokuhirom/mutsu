@@ -2872,6 +2872,7 @@ impl Interpreter {
             predictive_seq_iters: HashMap::new(),
             protect_block_cache: HashMap::new(),
             carrier_compile_cache: HashMap::new(),
+            subst_repl_plans: HashMap::new(),
             map_grep_compile_cache: HashMap::new(),
             subset_predicate_cache: HashMap::new(),
             subset_where_fail: None,

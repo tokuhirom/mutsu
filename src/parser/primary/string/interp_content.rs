@@ -83,7 +83,7 @@ pub(crate) fn interpolate_string_content_with_modes(
 /// full statement list (`{$c++; "new"}`), not just a single expression — mirror
 /// the `$( … )` interpolation path: try a statement list first (so multi-statement
 /// blocks and statement-modifiers work), then fall back to a single expression.
-fn parse_braced_closure_body(inner: &str) -> Option<Expr> {
+pub(in crate::parser::primary) fn parse_braced_closure_body(inner: &str) -> Option<Expr> {
     if let Ok((leftover, stmts)) = crate::parser::stmt::stmt_list_pub(inner)
         && leftover.trim().is_empty()
         && !stmts.is_empty()

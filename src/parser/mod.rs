@@ -26,13 +26,25 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
-/// Parse a heredoc body string as an interpolated (qq-style) string expression.
-/// Used by the compiler to defer heredoc interpolation to compile time.
-pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
+/// Parse a quote body under `qq` (double-quote) interpolation rules: variables
+/// with their postcircumfixes, embedded `{ ... }` code blocks, and the full
+/// backslash-escape set.
+///
+/// This is the single implementation of that grammar. A construct that Raku
+/// specifies as `qq`-quoted but that is not lexically a `"..."` literal — a
+/// heredoc body, an `s///` replacement — must route through here rather than
+/// grow its own partial interpolator.
+pub(crate) fn interpolate_qq_content(content: &str) -> crate::ast::Expr {
     primary::quote_adverbs::process_content_with_flags(
         content,
         &primary::quote_adverbs::QuoteFlags::qq_double(),
     )
+}
+
+/// Parse a heredoc body string as an interpolated (qq-style) string expression.
+/// Used by the compiler to defer heredoc interpolation to compile time.
+pub(crate) fn interpolate_heredoc_content(content: &str) -> crate::ast::Expr {
+    interpolate_qq_content(content)
 }
 
 /// Slang activation surface for the runtime (ADR-0026): the runtime's
