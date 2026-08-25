@@ -92,6 +92,10 @@ pub(crate) const BUILTIN_PARENT_TYPES: &[&str] = &[
     "Mixy",
     "Date",
     "DateTime",
+    // Dateish is a real composable role in Raku (both Date and DateTime
+    // themselves `does Dateish`); a user class may `does Dateish` and supply
+    // its own state/private `!formatter`, e.g. TOML::Thumb's `Time::Local`.
+    "Dateish",
     "Capture",
     "Grammar",
     "Parameter",

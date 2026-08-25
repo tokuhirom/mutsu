@@ -666,6 +666,36 @@ impl Interpreter {
             }
         }
 
+        // `.Str`/`.gist`/`.Stringy` on an instance of a user class that composes
+        // `Dateish` without providing its own override. Rakudo's `Dateish` role
+        // does not carry a public default formatter method — both `Date` and
+        // `DateTime` implement it as a private `!formatter`, and the role's
+        // `Str` simply calls `self!formatter()` (Rakudo `src/core.c/Dateish.pm6`).
+        // A composing class (e.g. TOML::Thumb's `Time::Local`) is expected to
+        // supply its own private `!formatter`; if it doesn't, the private-method
+        // dispatch below raises the same "No such private method" error Rakudo
+        // does. `Stringy` must be included too: `~$obj` / string interpolation
+        // try `.Stringy` before `.Str`, and a generic instance already answers
+        // `.Stringy` with the "ClassName()" default, which would otherwise win
+        // before `.Str` is ever tried.
+        if matches!(method, "Str" | "gist" | "Stringy")
+            && args.is_empty()
+            && let ValueView::Instance { class_name, .. } = target.view()
+        {
+            let cn = class_name.resolve();
+            if !self.class_has_user_method(&cn, method) && self.class_does_role(&cn, "Dateish") {
+                // Simulate calling `self!formatter()` from a method owned by the
+                // instance's own class (mirroring how Rakudo's `Dateish::Str`,
+                // once flattened into the composing class, resolves the private
+                // call against that class) so the private-method-permission
+                // check (`private_owner_trusts_caller`) allows it.
+                self.push_method_class(cn);
+                let result = self.call_method_with_values(target, "!formatter", vec![]);
+                self.pop_method_class();
+                return result;
+            }
+        }
+
         // .return method: triggers a return from the enclosing sub with the invocant
         if method == "return" && args.is_empty() {
             let mut err = RuntimeError::new("return");
