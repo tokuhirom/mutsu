@@ -2012,6 +2012,34 @@ impl Interpreter {
                     _ => {}
                 }
             }
+            // `$b.add(x)` / `$b.remove(x)`: the BagHash-only per-key count
+            // mutators (semantics, and the rationale for mutating in place
+            // through the shared node, live in `vm_baghash_mutators`). The
+            // counts are already adjusted through the bag's own `Gc` node, so
+            // the writeback below is NOT what makes the mutation visible -- it
+            // re-seats the SAME (mutated) value in both halves of the dual
+            // store so a later locals<->env sync cannot resurrect a stale
+            // snapshot of the bag (`my %b is BagHash` reproduced exactly that).
+            "add" | "remove" => {
+                if let Some(receiver) =
+                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, &method)
+                {
+                    let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
+                        receiver, &method, &args,
+                    )?;
+                    if !target_name.is_empty() {
+                        self.env_mut()
+                            .insert(target_name.to_string(), target.clone());
+                        self.update_local_if_exists(code, &target_name, &target);
+                    }
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethodmut",
+                        "baghash-add-remove",
+                    );
+                    self.stack.push(result);
+                    return Ok(());
+                }
+            }
             // `@a.BIND-POS($i, $x)` binds element `$i` to the caller variable
             // `$x` as a shared `ContainerRef` cell — the array analog of
             // BIND-KEY above. A later `$x = ...` writes through to `@a[$i]` (and

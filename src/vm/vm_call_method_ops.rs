@@ -1844,6 +1844,27 @@ impl Interpreter {
                     self.stack.push(result);
                     return Ok(());
                 }
+                // `BagHash.add` / `.remove` reached through the non-mutating
+                // (CallMethod) opcode: an invocant with no simple variable name
+                // to write back through, e.g. `$obj.bag.add('x')` or
+                // `@bags[0].remove('x')`. Same container-identity story as the
+                // shift/pop fast path just below — the per-key count adjustment
+                // goes through the bag's SHARED backing node, so the holder
+                // observes it. `vm_call_method_mut_ops.rs` runs the same helper
+                // for the named-variable form (and re-seats the dual store).
+                if let Some(receiver) =
+                    crate::vm::vm_baghash_mutators::baghash_mutator_receiver(&target, method)
+                {
+                    let result = crate::vm::vm_baghash_mutators::apply_baghash_mutator(
+                        receiver, method, &args,
+                    )?;
+                    crate::vm::vm_stats::record_dispatch_entry_intercept(
+                        "callmethod",
+                        "baghash-add-remove",
+                    );
+                    self.stack.push(result);
+                    return Ok(());
+                }
                 // Fast path for shift/pop on array values in the non-mutating
                 // (CallMethod) path. Handles value invocants with no simple
                 // variable name to write back through: literals ([1,2,3].shift),
