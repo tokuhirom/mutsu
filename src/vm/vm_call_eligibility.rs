@@ -275,6 +275,16 @@ impl Interpreter {
             if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.named {
                 continue;
             }
+            // Skip named (string-keyed Pair) arguments when aligning positional
+            // params to args — the binder does not consume them positionally.
+            // (Reached with Pair args now that the fast path accepts simple
+            // named-param methods, S6.)
+            while args
+                .get(arg_idx)
+                .is_some_and(|a| a.unwrap_varref().is_string_pair_value())
+            {
+                arg_idx += 1;
+            }
             let Some(arg) = args.get(arg_idx) else {
                 break;
             };
@@ -383,6 +393,133 @@ impl Interpreter {
                 .as_bytes()
                 .first()
                 .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+    }
+
+    /// Method analogue of [`Self::call_shares_container_into_named_scalar_param`]:
+    /// true when an `@`/`%` *variable* is passed by name into a plain readonly
+    /// scalar `$` named param of a method (`method m(:$n) { $n.push }` called as
+    /// `$o.m(n => @a)`). Raku binds the same mutable container; the slot-only
+    /// fast path binds a copy whose `.push` COW-detaches, so such a call must
+    /// take the slow `bind_function_args_values` path (which promotes the bound
+    /// value to a shared cell and registers the rw writeback). The source
+    /// variable name arrives as the "key=source" encoding in `arg_sources`,
+    /// exactly like the sub side.
+    pub(super) fn method_shares_container_into_named_scalar_param(
+        &self,
+        method_def: &crate::runtime::MethodDef,
+        args: &[Value],
+    ) -> bool {
+        let Some(sources) = self.pending_call_arg_sources() else {
+            return false;
+        };
+        args.iter().enumerate().any(|(i, arg)| {
+            let unwrapped = unwrap_varref_value(arg.clone());
+            let ValueView::Pair(key, val) = unwrapped.view() else {
+                return false;
+            };
+            if !matches!(val.view(), ValueView::Array(..) | ValueView::Hash(..)) {
+                return false;
+            }
+            let has_container_source = sources
+                .get(i)
+                .and_then(|s| s.as_ref())
+                .and_then(|enc| enc.split_once('='))
+                .is_some_and(|(_, src)| src.starts_with('@') || src.starts_with('%'));
+            if !has_container_source {
+                return false;
+            }
+            method_def.param_defs.iter().any(|pd| {
+                pd.named
+                    && Self::named_param_share_match_key(pd) == key.as_str()
+                    && Self::is_eligible_named_scalar_share_param(pd)
+            })
+        })
+    }
+
+    /// The caller-side Pair key a NAMED parameter matches on the compiled-method
+    /// fast path — mirroring the slow binder's named arm (binding_signature.rs):
+    /// strip an optional container sigil (`@`/`%`), then an attribute twigil
+    /// (`!`/`.`). Returns `None` for named shapes the fast path does not model:
+    /// `:name`-literal / `@:`/`%:` placeholder forms, `&`-sigiled callables,
+    /// plain (non-attributive) `@`/`%` container named params (container-alias
+    /// semantics live only on the full path), the topic `_`, and `self`.
+    pub(super) fn named_param_fast_match_key(pd: &crate::ast::ParamDef) -> Option<&str> {
+        let name = pd.name.as_str();
+        let bare = if let Some(rest) = name
+            .strip_prefix("@!")
+            .or_else(|| name.strip_prefix("@."))
+            .or_else(|| name.strip_prefix("%!"))
+            .or_else(|| name.strip_prefix("%."))
+        {
+            // Attributive container form (`:@!a` / `:%.h`).
+            rest
+        } else if let Some(rest) = name.strip_prefix('!').or_else(|| name.strip_prefix('.')) {
+            // Attributive scalar form (`:$!x` / `:$.x`).
+            rest
+        } else if name
+            .as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+        {
+            // Plain scalar named param (`:$x` — stored sigil-less).
+            name
+        } else {
+            return None;
+        };
+        if bare == "_" || bare == "self" {
+            return None;
+        }
+        bare.as_bytes()
+            .first()
+            .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_')
+            .then_some(bare)
+    }
+
+    /// S6 (bench-ctor): whether a NAMED parameter is simple enough for the
+    /// compiled-method fast path to bind directly. Conservative allow-list:
+    /// a plain readonly scalar named param (`:$x`) or an attributive named
+    /// param (`:$!x` / `:@!a` / `:%!h` — bound through the invocant's live
+    /// attribute cell), with no traits, no type constraint, no
+    /// where/sub-signature/coercion, and no default needing evaluation. A
+    /// defaulted or required named param is eligible only when the call
+    /// actually supplies its key — otherwise the full path evaluates the
+    /// default expression / raises the proper "required named parameter not
+    /// passed" error.
+    pub(super) fn named_param_fast_eligible(
+        pd: &crate::ast::ParamDef,
+        args: &[Value],
+        base_is_instance: bool,
+    ) -> bool {
+        if !pd.traits.is_empty()
+            || pd.slurpy
+            || pd.double_slurpy
+            || pd.onearg
+            || pd.sigilless
+            || pd.where_constraint.is_some()
+            || pd.sub_signature.is_some()
+            || pd.outer_sub_signature.is_some()
+            || pd.code_signature.is_some()
+            || pd.type_constraint.is_some()
+            || pd.literal_value.is_some()
+            || pd.shape_constraints.is_some()
+        {
+            return false;
+        }
+        let Some(key) = Self::named_param_fast_match_key(pd) else {
+            return false;
+        };
+        if crate::value::attr_twigil_base(&pd.name).is_some() && !base_is_instance {
+            return false;
+        }
+        if pd.default.is_some() || pd.required {
+            let supplied = args.iter().any(
+                |a| matches!(a.unwrap_varref().view(), ValueView::Pair(k, _) if k.as_str() == key),
+            );
+            if !supplied {
+                return false;
+            }
+        }
+        true
     }
 
     /// Ultra-fast call for simple positional-only functions (e.g. `sub fib($n)`).

@@ -132,6 +132,48 @@ impl Interpreter {
                 || self
                     .class_role_param_bindings(receiver_class_name)
                     .is_some();
+            // Classify arguments the way the slow binder does
+            // (`bind_function_args_values`): a string-keyed `Pair` (after VarRef
+            // unwrap) is a named argument; everything else is positional. Two
+            // shapes always keep the full path: a non-string-keyed `ValuePair`
+            // (the main binder treats it as positional but the legacy
+            // placeholder path as named — ambiguous), and an internal
+            // `__mutsu_*` Pair (the slow path filters it before binding).
+            let mut positional_arg_count = 0usize;
+            let mut has_named_args = false;
+            let mut has_unmodeled_pair_arg = false;
+            for a in &args {
+                let u = a.unwrap_varref();
+                if u.is_string_pair_value() {
+                    has_named_args = true;
+                    if let ValueView::Pair(key, _) = u.view()
+                        && key.starts_with("__mutsu_")
+                    {
+                        has_unmodeled_pair_arg = true;
+                    }
+                } else if u.is_any_pair_value() || a.is_any_pair_value() {
+                    has_unmodeled_pair_arg = true;
+                } else {
+                    positional_arg_count += 1;
+                }
+            }
+            // S6 (bench-ctor): simple named/attributive params now bind on the
+            // fast path (`named_param_fast_eligible` — plain readonly scalar
+            // `:$x`, attributive `:$!x`/`:@!a`/`:%!h` via the live attribute
+            // cell). Everything else named-shaped bails via this predicate.
+            let base_is_instance = matches!(base.view(), ValueView::Instance { .. });
+            let named_params_fast_ok = method_def.param_defs.iter().all(|pd| {
+                if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || !pd.named {
+                    return true;
+                }
+                Self::named_param_fast_eligible(pd, &args, base_is_instance)
+            });
+            // A named `@`/`%`-container argument bound to a plain named scalar
+            // param shares the caller's container (slow-path ContainerRef
+            // promotion + exit writeback) — keep such calls on the full path
+            // (mirrors the sub side's named-share gate).
+            let named_container_share = has_named_args
+                && self.method_shares_container_into_named_scalar_param(method_def, &args);
             let has_complex_params = method_def.param_defs.iter().any(|pd| {
                 if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
                     return false;
@@ -140,16 +182,21 @@ impl Interpreter {
                 if pd.slurpy && pd.name == "%_" {
                     return false;
                 }
-                // An attributive parameter (`$!x`/`@!a`) binds straight to an
-                // attribute, i.e. it mutates `self` — so it is not read-only and
-                // must take the full path (which mirrors it into the shared cell
-                // and writes it back). The read-only fast path drops the write.
+                // Named params are vetted by `named_params_fast_ok` above.
+                if pd.named {
+                    return false;
+                }
+                // A POSITIONAL attributive parameter (`$!x`/`@!a`) binds straight
+                // to an attribute, i.e. it mutates `self` — so it is not
+                // read-only and must take the full path (which mirrors it into
+                // the shared cell and writes it back). The read-only fast path
+                // drops the write. (NAMED attributive params write the live cell
+                // on the fast path now — see `named_param_fast_eligible`.)
                 if Self::attr_twigil_base(&pd.name).is_some() {
                     return true;
                 }
                 pd.slurpy
                     || pd.double_slurpy
-                    || pd.named
                     || pd.where_constraint.is_some()
                     || pd.sub_signature.is_some()
                     || pd.outer_sub_signature.is_some()
@@ -160,13 +207,20 @@ impl Interpreter {
                         .is_some_and(|tc| tc.contains('('))
             });
             // If a default expr needs evaluation and args are missing, fall back
+            // (named-param defaults are handled by `named_param_fast_eligible`;
+            // only positional params consume positional args here).
             let needs_default_eval = {
                 let mut pos = 0;
                 method_def.param_defs.iter().any(|pd| {
-                    if pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") {
+                    if pd.is_invocant
+                        || pd.traits.iter().any(|t| t == "invocant")
+                        || pd.named
+                        || pd.slurpy
+                        || pd.double_slurpy
+                    {
                         return false;
                     }
-                    let result = pos >= args.len() && pd.default.is_some();
+                    let result = pos >= positional_arg_count && pd.default.is_some();
                     pos += 1;
                     result
                 })
@@ -185,7 +239,8 @@ impl Interpreter {
                     {
                         return false;
                     }
-                    let missing = pos >= args.len() && pd.default.is_none() && !pd.optional_marker;
+                    let missing =
+                        pos >= positional_arg_count && pd.default.is_none() && !pd.optional_marker;
                     pos += 1;
                     missing
                 })
@@ -202,17 +257,11 @@ impl Interpreter {
                         && !pd.named
                 })
                 .count();
-            let has_arg_mismatch = args.len() > positional_count;
-            // A named argument (`$obj.m(:a)` → `Pair("a", …)`) must not be bound to a
-            // positional param by the fast path's index loop — it belongs in the
-            // implicit `*%_`, and a required positional left unfilled by it must die
-            // (`method m($x){}; X(:a)` → too-few-positionals). Routing any call that
-            // carries a Pair/ValuePair to the full path (which separates named from
-            // positional and validates arity via `bind_function_args_values`) keeps
-            // that check; the fast path stays for the common all-positional call.
-            let has_named_arg = args.iter().any(|a| a.is_any_pair_value());
+            let has_arg_mismatch = positional_arg_count > positional_count;
 
-            if !has_named_arg
+            if !has_unmodeled_pair_arg
+                && named_params_fast_ok
+                && !named_container_share
                 && !has_missing_required
                 && !has_invocant_constraint
                 && !has_attr_aliases
@@ -1419,7 +1468,11 @@ impl Interpreter {
                 .cloned()
         };
 
-        // Build param name → arg value mapping (skip invocant)
+        // Build param name → arg value mapping (skip invocant). Positional
+        // args are consumed in order, skipping named (string-keyed Pair)
+        // arguments the way the slow binder does; named params match Pair args
+        // by key (rightmost wins), and attributive named params write through
+        // the invocant's live attribute cell exactly like `bind_param_value`.
         let mut param_values: Vec<(&str, Value)> = Vec::new();
         let mut arg_idx = 0;
         for (idx, param_name) in method_def.params.iter().enumerate() {
@@ -1430,6 +1483,57 @@ impl Interpreter {
             if is_invocant {
                 param_values.push((param_name, base.clone()));
                 continue;
+            }
+            if let Some(pd) = pd.filter(|pd| pd.named) {
+                // Simple named/attributive param (gate: `named_param_fast_eligible`).
+                let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
+                    args.iter()
+                        .rev()
+                        .find_map(|a| match a.unwrap_varref().view() {
+                            ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
+                            _ => None,
+                        })
+                });
+                let val = match bound {
+                    // `@`-sigiled (attributive) named param: re-home a List
+                    // into an Array (mirrors `bind_param_value`); scalar named
+                    // params are item bindings (mirrors the slow binder's
+                    // named arm).
+                    Some(v) if pd.name.starts_with('@') => {
+                        Self::normalize_positional_param_value(v)
+                    }
+                    Some(v) if pd.name.starts_with('%') => v,
+                    Some(v) => Self::itemize_plain_scalar_param(pd, v),
+                    // An unsupplied optional named param binds its type-object
+                    // default. For an attributive param this overwrites the
+                    // attribute — the slow path and rakudo both do (pinned by
+                    // t/tweak-named-fast-path.t).
+                    None => Self::missing_optional_param_value(pd),
+                };
+                // Attributive param: write the one attribute through `self`'s
+                // shared cell (the single-key cell write `bind_param_value`
+                // performs) BEFORE the locals-init loop below reads attribute
+                // slots off the cell.
+                if let Some((attr_name, _)) = crate::value::attr_twigil_base(&pd.name)
+                    && let Some(cell) = &attrs_cell
+                {
+                    // Inside a BUILD phase this bind counts as "BUILD set it",
+                    // even unpassed (the type-object bind must suppress the
+                    // `has $.a = 5` initializer; the seed comparison alone
+                    // cannot tell — an untyped attribute's seed IS the same
+                    // type object). The slow path records this via its exit
+                    // attr-local sync through `write_attr_cell_by_key`; the
+                    // fast path records it here. No-op outside BUILD.
+                    self.record_build_attr_write(cell, crate::symbol::Symbol::intern(attr_name));
+                    cell.insert(attr_name.to_string(), val.clone());
+                }
+                param_values.push((param_name, val));
+                continue;
+            }
+            // Positional param: skip named (string-Pair) args, as the slow
+            // binder does when consuming positionals.
+            while arg_idx < args.len() && args[arg_idx].unwrap_varref().is_string_pair_value() {
+                arg_idx += 1;
             }
             if arg_idx < args.len() {
                 let mut val = args[arg_idx].clone();

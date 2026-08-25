@@ -99,14 +99,36 @@ impl Interpreter {
                 if key.is_empty() {
                     continue;
                 }
-                let consumed = param_defs.iter().any(|pd| {
-                    (pd.named && pd.name == *key)
-                        || pd.name == format!(":{}", key)
-                        || (pd.named
-                            && (pd.name == format!("@{}", key)
-                                || pd.name == format!("%{}", key)
-                                || pd.name == format!("&{}", key)))
-                });
+                // Mirror the slow binder's `explicit_named_keys` (and rakudo):
+                // strip the container sigil, then the attribute twigil, so an
+                // attributive named param (`:$!x` -> name "!x") consumes the
+                // caller key "x" and keeps it out of `%_`.
+                let consumed = param_defs
+                    .iter()
+                    .filter(|pd| (pd.named || pd.name.starts_with(':')) && !pd.slurpy)
+                    .any(|pd| {
+                        let bare = if let Some(rest) = pd.name.strip_prefix(':') {
+                            rest
+                        } else if let Some(rest) = pd
+                            .name
+                            .strip_prefix("@:")
+                            .or_else(|| pd.name.strip_prefix("%:"))
+                        {
+                            rest
+                        } else {
+                            let after_sigil = pd
+                                .name
+                                .strip_prefix('@')
+                                .or_else(|| pd.name.strip_prefix('%'))
+                                .or_else(|| pd.name.strip_prefix('&'))
+                                .unwrap_or(&pd.name);
+                            after_sigil
+                                .strip_prefix('!')
+                                .or_else(|| after_sigil.strip_prefix('.'))
+                                .unwrap_or(after_sigil)
+                        };
+                        bare == *key
+                    });
                 if !consumed {
                     implicit_named.insert(key.to_string(), val.clone());
                 }
