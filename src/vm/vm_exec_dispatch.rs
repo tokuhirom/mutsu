@@ -798,6 +798,10 @@ impl Interpreter {
                 self.exec_get_pseudo_stash_op(code, *name_idx);
                 *ip += 1;
             }
+            OpCode::RoleGroupToCandidate => {
+                self.exec_role_group_to_candidate_op();
+                *ip += 1;
+            }
             OpCode::GetOurVar(name_idx) => {
                 let name = Self::const_str(code, *name_idx);
                 let val = self

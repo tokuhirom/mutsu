@@ -2163,6 +2163,18 @@ impl Interpreter {
                         .classes
                         .insert(name.clone(), Default::default());
                 }
+                // The metaclass the call was made on IS the new type's
+                // metaclass: `Metamodel::ParametricRoleHOW.new_type(...)`
+                // yields a type whose `.HOW` is a `ParametricRoleHOW`, not the
+                // default `ClassHOW` (`Metamodel::ModuleHOW` a `ModuleHOW`, and
+                // so on). Record it so `.HOW` reports the right one.
+                if let ValueView::Package(how_pkg) = target.view()
+                    && let Some(short) = how_pkg.resolve().strip_prefix("Metamodel::")
+                {
+                    self.registry_mut()
+                        .declared_native_how
+                        .insert(name.clone(), format!("Perl6::Metamodel::{short}"));
+                }
                 Ok(Value::package(Symbol::intern(&name)))
             }
             // Metamodel::Primitives static methods

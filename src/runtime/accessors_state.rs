@@ -1324,7 +1324,13 @@ impl Interpreter {
 
     #[allow(dead_code)]
     pub(crate) fn get_role_def(&self, role_name: &str) -> Option<super::RoleDef> {
-        self.registry().roles.get(role_name).cloned()
+        if let Some(def) = self.registry().roles.get(role_name) {
+            return Some(def.clone());
+        }
+        // An individual candidate's declaration-site key (`R\0<role-id>`, see
+        // `types/role_candidate.rs`) resolves to its group's definition.
+        let (group, _) = self.role_candidate_group(role_name)?;
+        self.registry().roles.get(&group).cloned()
     }
 
     pub(crate) fn class_role_param_bindings(

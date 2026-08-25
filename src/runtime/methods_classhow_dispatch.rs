@@ -499,11 +499,25 @@ impl Interpreter {
                     Ok(Value::array(mro))
                 } else {
                     let mro = self.classhow_mro_names(&args[0]);
-                    Ok(Value::array(
-                        mro.into_iter()
-                            .map(|s| Value::package(Symbol::intern(&s)))
-                            .collect::<Vec<_>>(),
-                    ))
+                    let mut values = mro
+                        .into_iter()
+                        .map(|s| Value::package(Symbol::intern(&s)))
+                        .collect::<Vec<_>>();
+                    // The head of an MRO is the invocant's own type object
+                    // (`C.^mro[0] === C`, `$o.^mro[0] === $o.WHAT`). Naming it
+                    // by the class name is only equivalent while the name has
+                    // exactly one type object behind it — it does not for a
+                    // role that has been punned (`R.new`: the name `R` is the
+                    // role *group*, while the instance's type is the punned
+                    // class) nor for a role-mixed value (`(1 but R)`, whose
+                    // type is `Int+{R}`, not `Int`). Take the type object from
+                    // `.WHAT`, which already answers all three correctly.
+                    if !matches!(args[0].view(), ValueView::Package(_))
+                        && let Some(head) = values.first_mut()
+                    {
+                        *head = self.dispatch_what(&args[0], Vec::new())?;
+                    }
+                    Ok(Value::array(values))
                 }
             }
             "archetypes" if !args.is_empty() => {

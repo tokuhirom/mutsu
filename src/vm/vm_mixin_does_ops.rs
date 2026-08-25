@@ -4,6 +4,9 @@ use super::*;
 impl Interpreter {
     pub(super) fn exec_but_mixin_op(&mut self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
+        // `(role :: { ... })` on the RHS is the individual parametric role, not
+        // the group; composition is group-keyed throughout, so narrow it back.
+        let right = self.normalize_role_type_object(&right);
         let left = self.stack.pop().unwrap();
         // `$obj but R` runs role R's `submethod TWEAK`/`BUILD` via the interpreter,
         // which can mutate a captured-outer caller lexical by name (`my $invoked;
@@ -98,6 +101,7 @@ impl Interpreter {
     /// with duplicate type conflict checking.
     pub(super) fn exec_but_mixin_tuple_elem_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
+        let right = self.normalize_role_type_object(&right);
         let left = self.stack.pop().unwrap();
         // A role element in the tuple (`1 but (R1, R2)`) is composed as a proper
         // role mixin, not a value mixin: the single-role `but R` path composes
@@ -345,6 +349,9 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // `(role :: { ... })` on the RHS is the individual parametric role, not
+        // the group; composition is group-keyed throughout, so narrow it back.
+        let right = self.normalize_role_type_object(&right);
         // `does`/`but` on a type-object invocant (undefined scalars are stored
         // as Nil and act as the `Any` type object) is illegal *when composing a
         // role or another type* — there is no instance to compose into. Mixing a

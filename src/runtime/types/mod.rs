@@ -5,6 +5,7 @@ mod args_matching;
 mod binding_helpers;
 mod binding_signature;
 mod coercion;
+mod role_candidate;
 mod role_mixin_class;
 mod roles;
 mod signature;
@@ -16,6 +17,7 @@ mod type_registry;
 pub(crate) use coercion::{
     coerce_impossible_error, diagnostic_type_name, is_coercion_constraint, parse_coercion_type,
 };
+pub(crate) use role_candidate::role_candidate_type_name;
 pub(in crate::runtime) use signature::{
     bind_named_rename_sub_signature, bind_sub_signature_from_value,
     collect_nested_named_alias_keys, encode_slurpy_rw_param, indexed_varref_from_value,
@@ -697,7 +699,11 @@ impl Interpreter {
         let ValueView::Package(role_name) = value.view() else {
             return Ok(value);
         };
-        let role_name = role_name.resolve();
+        // The value may be an INDIVIDUAL parametric role (a `role` declaration
+        // used as a type-parameter default is exactly this shape); its
+        // candidates are recorded under the group's name. See
+        // `types/role_candidate.rs`.
+        let role_name = self.role_group_name(&role_name.resolve());
         let Some(candidates) = self.registry().role_candidates.get(&role_name).cloned() else {
             return Ok(value);
         };

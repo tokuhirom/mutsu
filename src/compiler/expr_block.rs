@@ -685,10 +685,15 @@ impl Compiler {
                 }
             }
             Stmt::RoleDecl { name, .. } => {
-                // Register the role and return the role type object.
+                // Register the role and return the role type object. Rakudo
+                // hands back the INDIVIDUAL parametric role just declared (a
+                // `ParametricRoleHOW`), not the same-named role *group* the
+                // installed name resolves to (a `ParametricRoleGroupHOW`) —
+                // `RoleGroupToCandidate` narrows the bareword lookup to it.
                 self.compile_stmt(stmt);
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 self.code.emit(OpCode::GetBareWord(name_idx));
+                self.code.emit(OpCode::RoleGroupToCandidate);
             }
             Stmt::Package { name, .. } => {
                 // Register the package and return the type object.

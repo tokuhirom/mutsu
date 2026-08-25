@@ -386,6 +386,12 @@ impl Interpreter {
             ValueView::Package(name) if self.registry().roles.contains_key(&name.resolve()) => {
                 Some((name.resolve(), Vec::new()))
             }
+            // An INDIVIDUAL parametric role (what a `role` declaration
+            // expression evaluates to) applies as its group: composition is
+            // group-keyed throughout. See `types/role_candidate.rs`.
+            ValueView::Package(name) if self.role_candidate_group(&name.resolve()).is_some() => {
+                Some((self.role_group_name(&name.resolve()), Vec::new()))
+            }
             ValueView::Str(name) if self.registry().roles.contains_key(name.as_str()) => {
                 Some((name.to_string(), Vec::new()))
             }

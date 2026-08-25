@@ -2957,7 +2957,15 @@ impl Interpreter {
                         None => Ok(Value::NIL),
                     };
                 }
-                let role_name_resolved = role_name.resolve();
+                // An INDIVIDUAL parametric role (`my $r = role R { ... }`, or a
+                // role used as a type-parameter default) puns through the group
+                // it belongs to — the pun is registered under the group's name.
+                // Only the *punning* half is redirected: introspection
+                // (`.HOW`, `.^name`) must still see the candidate, which is the
+                // whole point of it having its own type object. See
+                // `types/role_candidate.rs`.
+                let raw_role_name = role_name.resolve();
+                let role_name_resolved = self.role_group_name(&raw_role_name);
                 let has_role_method = self.role_or_parent_has_method(&role_name_resolved, method);
                 let has_public_accessor = args.is_empty()
                     && self
@@ -2975,8 +2983,20 @@ impl Interpreter {
                 if has_role_method || has_public_accessor {
                     // Already punned: fall through to ordinary class dispatch,
                     // which is what makes the retry below terminate.
-                    if !self.registry().classes.contains_key(&role_name.resolve()) {
-                        self.ensure_role_punned_to_class(&role_name.resolve())?;
+                    let needs_pun = !self.registry().classes.contains_key(&role_name_resolved);
+                    if needs_pun {
+                        self.ensure_role_punned_to_class(&role_name_resolved)?;
+                    }
+                    if role_name_resolved != raw_role_name {
+                        // The pun lives under the group's name, so retry there
+                        // rather than on the candidate's own site key.
+                        return self.call_method_with_values(
+                            Value::package(Symbol::intern(&role_name_resolved)),
+                            method,
+                            args,
+                        );
+                    }
+                    if needs_pun {
                         return self.call_method_with_values(target.clone(), method, args);
                     }
                 }

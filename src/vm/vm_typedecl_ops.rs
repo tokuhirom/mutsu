@@ -696,6 +696,36 @@ impl Interpreter {
         }
     }
 
+    /// Replace a role *group* type object on the stack with the individual
+    /// parametric role it currently holds — the candidate the `role`
+    /// declaration that just ran registered. See
+    /// `runtime/types/role_candidate.rs` for why the two need distinct type
+    /// objects and how the candidate site key is demangled for display.
+    ///
+    /// A no-op for anything that is not a registered role (an anonymous role
+    /// whose registration was skipped, a stub, or a name that never made it
+    /// into the registry), so the declaration expression keeps its old value
+    /// rather than becoming an unusable name.
+    pub(super) fn exec_role_group_to_candidate_op(&mut self) {
+        let Some(top) = self.stack.last() else {
+            return;
+        };
+        let crate::value::ValueView::Package(name) = top.view() else {
+            return;
+        };
+        let group = name.resolve();
+        let Some(role_id) = self.registry().roles.get(&group).map(|r| r.role_id) else {
+            return;
+        };
+        if role_id == 0 {
+            return;
+        }
+        let candidate = crate::runtime::types::role_candidate_type_name(&group, role_id);
+        if let Some(slot) = self.stack.last_mut() {
+            *slot = Value::package(crate::symbol::Symbol::intern(&candidate));
+        }
+    }
+
     pub(super) fn exec_register_role_op(
         &mut self,
         code: &CompiledCode,
