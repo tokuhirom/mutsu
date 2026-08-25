@@ -7,12 +7,22 @@ impl Interpreter {
     /// via `our_locals`, but they are otherwise only reconciled at block exit;
     /// this makes the lexical alias `$b` see a package-qualified write inside the
     /// same block. No-op when the written name is not `our`-linked to a slot.
+    ///
+    /// Gated by [`Self::our_link_owner_in_scope`] for the same reason the reverse
+    /// direction is (see [`Self::sync_our_package_var_from_local`]): the lexical
+    /// alias only exists inside the owning package's scope, and the slot it was
+    /// recorded against is shared with every same-named declaration in the code
+    /// object. Without the gate, `module M { our @l }` followed by a mainline
+    /// `my @l` made an external `@M::l = ...` write land on the mainline lexical.
     pub(crate) fn sync_our_local_from_qualified(
         &mut self,
         code: &CompiledCode,
         qualified_name: &str,
         val: &Value,
     ) {
+        if code.our_locals.is_empty() || !self.our_link_owner_in_scope(qualified_name) {
+            return;
+        }
         for (slot, our_name) in &code.our_locals {
             if our_name == qualified_name && *slot < self.locals.len() {
                 self.locals[*slot] = val.clone();
@@ -31,14 +41,44 @@ impl Interpreter {
     /// reconciliation is too late (and never happens at all for a module
     /// mainline, which is why an exported `our` variable read as Nil in the
     /// consumer). No-op for the overwhelmingly common code with no `our` locals.
-    pub(crate) fn sync_our_package_var_from_local(&mut self, code: &CompiledCode, slot: usize) {
-        if code.our_locals.is_empty() {
+    ///
+    /// `code.our_locals` is keyed by LOCAL SLOT, and a slot is shared by every
+    /// same-named declaration in the code object (`declare_local` is
+    /// get-or-create by name; the §1.4 shadow-slot campaign is what would change
+    /// that). An in-file `module M { ... }` body compiles INLINE into the
+    /// enclosing frame, so `module M { our $x }` and a mainline `my $x` land on
+    /// one slot — and this sync then pushed the mainline lexical's value out to
+    /// `$M::x`. Two gates keep the link to the declaration it actually belongs
+    /// to, both lexical facts rather than value guesses:
+    ///
+    /// * `is_vardecl` — a DECLARATION never reverse-syncs. A `my`/`state` is a
+    ///   fresh lexical that is not a package variable at all, and an `our`
+    ///   declaration publishes itself explicitly (`DeclareOurScalar`, or the
+    ///   `SetGlobal`/`SetGlobalRaw` the compiler emits immediately after the
+    ///   declaring `SetLocal` — the same place the `our_locals` entry is
+    ///   pushed), so the sync is redundant there in every shape.
+    /// * [`Self::our_link_owner_in_scope`] — an `our` variable's lexical alias
+    ///   exists only inside its own package's scope, which `PackageScope`
+    ///   brackets exactly. Once `module M { ... }` has exited,
+    ///   `current_package` is back to `GLOBAL` and `M::x` is no longer reachable
+    ///   by the bare name, so a later write to the shared slot is a different
+    ///   variable.
+    pub(crate) fn sync_our_package_var_from_local(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        is_vardecl: bool,
+    ) {
+        if code.our_locals.is_empty() || is_vardecl {
             return;
         }
+        // Nested in-file packages put several entries on one slot
+        // (`module M { module N { our $x }; our $x }`), so pick the one whose
+        // owner is in scope rather than the first by slot.
         let Some(qualified) = code
             .our_locals
             .iter()
-            .find(|(s, _)| *s == slot)
+            .find(|(s, name)| *s == slot && self.our_link_owner_in_scope(name))
             .map(|(_, name)| name.clone())
         else {
             return;
@@ -48,6 +88,30 @@ impl Interpreter {
         };
         self.set_our_var(qualified.clone(), val.clone());
         self.env_mut().insert(qualified, val);
+    }
+
+    /// Whether the package that owns the `our_locals` entry `qualified` is the
+    /// one whose lexical scope is executing right now.
+    ///
+    /// An `our` variable's bare lexical alias is created by its declaration and
+    /// torn down when the declaring package block exits
+    /// (`exec_package_scope_op` restores `env`/`locals`), so the owning package
+    /// being in scope is exactly the condition for the alias to be live. A
+    /// nested package is inside its parent's scope, so `M` also covers `M::N`
+    /// and the mangled routine scopes (`M::&f/1`) sub bodies compile under.
+    ///
+    /// An entry with no `::` is a FILE-scope `our` — `qualify_our_variable_name`
+    /// collapses `GLOBAL::x` to the bare `x` — whose lexical scope is the whole
+    /// compilation unit, so it is always in scope.
+    fn our_link_owner_in_scope(&self, qualified: &str) -> bool {
+        let bare = qualified.trim_start_matches(['$', '@', '%', '&']);
+        let Some((owner, _)) = bare.rsplit_once("::") else {
+            // File-scope `our`: visible throughout the unit, nested packages
+            // included.
+            return true;
+        };
+        let cur = self.current_package();
+        cur == owner || cur.starts_with(&format!("{owner}::"))
     }
 
     /// `our $x = <expr>` for a plain untyped scalar (see `OpCode::DeclareOurScalar`
