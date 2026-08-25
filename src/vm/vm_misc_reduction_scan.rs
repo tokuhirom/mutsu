@@ -324,7 +324,30 @@ impl Interpreter {
             }
         }
         for (k, v) in current_env.iter() {
-            if saved_env.contains_key_sym(*k) || k.contains_str("::") {
+            if k.contains_str("::") {
+                restored_env.insert_sym(*k, v.clone());
+                continue;
+            }
+            if !saved_env.contains_key_sym(*k) {
+                continue;
+            }
+            // A bare key the outer scope also had is normally a WRITE the block
+            // made to an enclosing lexical (`my $x = 1; module M { $x = 2 }`),
+            // and must propagate out. But an `our $x` DECLARATION inside this
+            // block also leaves a bare key — its lexical alias — and that is a
+            // NEW binding for the name, not a write to the outer variable.
+            // Copying it back made `my $x = 'top'; module M { our $x = 'our' }`
+            // leave the mainline `$x` reading 'our'.
+            //
+            // The two are told apart by the package-qualified twin: an `our`
+            // declaration publishes `Pkg::x` alongside the bare alias, so a
+            // qualified key this block introduced (absent from `saved_env`)
+            // marks the bare key as this package's own `our` variable. Same
+            // discriminator the `package_lexicals` snapshot above uses, one
+            // condition tighter — the twin must be NEW, so an outer
+            // `$M::x = ...` set before the block does not suppress a genuine
+            // write-through.
+            if !self.package_block_declared_our(&name, *k, &saved_env, &current_env) {
                 restored_env.insert_sym(*k, v.clone());
             }
         }
@@ -337,6 +360,33 @@ impl Interpreter {
         *self.env_mut() = restored_env;
         *ip = body_end;
         Ok(())
+    }
+
+    /// Whether the bare env key `key` is the lexical alias of an `our` variable
+    /// that the just-finished `package`/`module`/`class` block DECLARED, rather
+    /// than a write the block made to an enclosing lexical of the same name.
+    ///
+    /// An `our $x` declaration publishes the package-qualified twin (`Pkg::x`,
+    /// `@Pkg::y` for a container) alongside the bare alias, in both the shared-
+    /// cell shape (`OpCode::DeclareOurScalar`) and the two-store shape
+    /// (`SetGlobal`/`SetGlobalRaw`). Requiring the twin to be NEW — present
+    /// after the body, absent before it — is what makes this "this block
+    /// declared it" and not merely "a package variable of this name exists": an
+    /// `$Pkg::x = ...` performed before the block must not suppress a genuine
+    /// write-through to an outer `my $x`.
+    fn package_block_declared_our(
+        &self,
+        pkg: &str,
+        key: crate::symbol::Symbol,
+        saved_env: &crate::env::Env,
+        current_env: &crate::env::Env,
+    ) -> bool {
+        let bare = key.resolve();
+        let qualified = match bare.chars().next() {
+            Some(sigil @ ('$' | '@' | '%' | '&')) => format!("{sigil}{pkg}::{}", &bare[1..]),
+            _ => format!("{pkg}::{bare}"),
+        };
+        current_env.contains_key(&qualified) && !saved_env.contains_key(&qualified)
     }
 
     pub(super) fn exec_phaser_end_op(&mut self, code: &CompiledCode, idx: u32, site_id: u64) {

@@ -248,6 +248,13 @@ impl Interpreter {
         // local AND persist the cell so a call after the block reads the live value.
         let box_decl_our =
             self.vardecl_context.get() && !code.needs_cell_escaping_our_sub.is_empty();
+        // A DECLARATION must not reverse-sync its slot out to an `our` package
+        // variable: a `my`/`state` is a fresh lexical (and same-named locals
+        // share one slot, so a mainline `my $x` reaches the slot an in-file
+        // `module M { our $x }` linked), while an `our` declaration publishes
+        // itself explicitly right after this store. `vardecl_context` is
+        // consumed inside the inner handler, so snapshot it here.
+        let is_vardecl = self.vardecl_context.get();
         // Container-descriptor naming (`@kh.VAR.name`): a plain `my @x`/`my %h`
         // declaration stamps the variable name into the fresh container below,
         // after the store. A `:=` bind keeps the bound container's original
@@ -282,7 +289,7 @@ impl Interpreter {
                     val.stamp_descriptor_name(&name);
                 }
             }
-            self.sync_our_package_var_from_local(code, idx as usize);
+            self.sync_our_package_var_from_local(code, idx as usize, is_vardecl);
             self.mirror_attr_local_to_cell(code, idx as usize);
             if box_decl
                 && (code
