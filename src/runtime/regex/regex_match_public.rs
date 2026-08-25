@@ -146,6 +146,42 @@ impl Interpreter {
         Some((std::sync::Arc::clone(parsed), sub_pkg.clone()))
     }
 
+    /// A regex `:my $var = EXPR;` — wherever it appears in the pattern, not
+    /// only as a leading declarative-prefix modifier — is documented
+    /// (raku-doc/doc/Language/regexes.rakudoc) to scope its variable "within
+    /// the regex and beyond": on a successful match, its value must persist
+    /// into the caller's enclosing lexical scope, the same way a leading
+    /// `:let` does. An embedded (mid-pattern) `:my` is parsed as a
+    /// `RegexAtom::VarDecl` and only accumulates into the winning match's
+    /// `RegexCaptures.regex_vars` (for `<{ … }>` interpolation and
+    /// reduce-time `make` replay within the same match) — nothing writes it
+    /// back to the caller afterwards. Do that here: for every name in
+    /// `caps.regex_vars` not already handled by the leading-declarator path
+    /// (`already_handled`) and not a dynamic `$*x`/`@*x`/`%*x` var (those are
+    /// owned by the per-rule dynvar machinery), install it into `self.env`
+    /// and log it the same way the `:let` persistence below does, so the
+    /// smartmatch/match-operator call site's `writeback_match_locals`
+    /// reconciles the caller's compiled local slot.
+    fn persist_embedded_my_decls(
+        &mut self,
+        caps: &RegexCaptures,
+        already_handled: &HashSet<String>,
+    ) {
+        for (name, value) in &caps.regex_vars {
+            if already_handled.contains(name)
+                || super::regex_helpers::is_dynamic_regex_var_key(name)
+            {
+                continue;
+            }
+            self.env.insert(name.clone(), value.clone());
+            if let Some(set) = self.carrier_writes.as_mut() {
+                set.insert(name.clone());
+            }
+            self.pending_local_updates
+                .push((name.clone(), value.clone()));
+        }
+    }
+
     pub(in crate::runtime) fn regex_match_with_captures_core(
         &mut self,
         pattern: &str,
@@ -374,7 +410,11 @@ impl Interpreter {
 
         let (declarators, remaining_pattern) = Self::parse_regex_declarative_prefix(pattern);
         if declarators.is_empty() {
-            return self.regex_match_with_captures_core(pattern, text);
+            let result = self.regex_match_with_captures_core(pattern, text);
+            if let Some(caps) = &result {
+                self.persist_embedded_my_decls(caps, &HashSet::new());
+            }
+            return result;
         }
         // ADR-0009 discipline: a declarative-prefix modifier (`:my`/`:let`/
         // `:temp`/`:constant`/`:state`) evaluates its initializer as real
@@ -533,6 +573,12 @@ impl Interpreter {
                 }
             }
         }
+        let leading_declarator_names: HashSet<String> = restore_always
+            .keys()
+            .chain(restore_on_fail.keys())
+            .chain(persist_always.iter())
+            .cloned()
+            .collect();
         self.restore_env_entries(restore_always);
         if !matched {
             self.restore_env_entries(restore_on_fail);
@@ -564,6 +610,14 @@ impl Interpreter {
                     }
                     self.pending_local_updates.push((name, v));
                 }
+            }
+            // A `:my $var = EXPR;` that appears AFTER this leading declarative
+            // prefix (an embedded `RegexAtom::VarDecl` mid-pattern, not one of
+            // the `declarators` handled above) is not covered by the loop
+            // above — persist those too, skipping the leading-declarator names
+            // already handled either way (`restore_always`/`restore_on_fail`).
+            if let Some(caps) = &result {
+                self.persist_embedded_my_decls(caps, &leading_declarator_names);
             }
         }
         result

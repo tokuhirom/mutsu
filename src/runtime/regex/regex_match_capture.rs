@@ -558,6 +558,18 @@ impl Interpreter {
                 let source = format!("{};", code);
                 if let Some(stmts) = self.parse_regex_code_cached(&source) {
                     let mut new_caps = RegexCaptures::default();
+                    // The initializer may reference the regex's own
+                    // in-progress match state — `:my $c = ~$0;` needs `$0`
+                    // bound to the capture matched so far, exactly like a
+                    // plain `{ … }` code block sees it. Install those
+                    // bindings around both evaluation paths below (they are
+                    // restored just before this arm returns).
+                    let capture_env = Self::regex_capture_bindings(current_caps, chars, pos);
+                    let mut capture_saved: Vec<(String, Option<Value>)> = Vec::new();
+                    for (k, v) in &capture_env {
+                        capture_saved.push((k.clone(), self.env.get(k).cloned()));
+                        self.env.insert(k.clone(), v.clone());
+                    }
                     // An initializer that calls a METHOD has to run on the real
                     // interpreter: the scratch one below carries only a lean
                     // registry copy with no classes, so `:my @segs =
@@ -616,6 +628,12 @@ impl Interpreter {
                         new_caps.regex_vars.insert(name.clone(), v);
                     }
                     if scratch_stmts.is_empty() {
+                        for (k, orig) in capture_saved {
+                            match orig {
+                                Some(prev) => self.env.insert(k, prev),
+                                None => self.env.remove(&k),
+                            };
+                        }
                         return Some((pos, new_caps));
                     }
                     let mut interp = Interpreter {
@@ -659,6 +677,12 @@ impl Interpreter {
                         if let Some(v) = interp.env.get(name) {
                             new_caps.regex_vars.insert(name.clone(), v.clone());
                         }
+                    }
+                    for (k, orig) in capture_saved {
+                        match orig {
+                            Some(prev) => self.env.insert(k, prev),
+                            None => self.env.remove(&k),
+                        };
                     }
                     return Some((pos, new_caps));
                 }
