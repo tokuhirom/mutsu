@@ -135,8 +135,25 @@ fn parse_postfix_method_requires_name() {
 }
 
 #[test]
-fn parse_postfix_colon_args_require_expression() {
-    let err = expression("$x.foo:").unwrap_err();
+fn parse_postfix_colon_args_may_be_empty() {
+    // `$x.foo:` with nothing after the colon is a zero-argument call, exactly
+    // as raku parses `say 4.log:   ;`.
+    let (rest, expr) = expression("$x.foo:").unwrap();
+    assert_eq!(rest, "");
+    match expr {
+        Expr::MethodCall { name, args, .. } => {
+            assert_eq!(name, "foo");
+            assert!(args.is_empty());
+        }
+        other => panic!("expected a MethodCall, got {other:?}"),
+    }
+}
+
+#[test]
+fn parse_postfix_colon_args_reject_leading_infix() {
+    // An empty colon-arg list only ends at a terminator; a following infix is
+    // still a parse error ("Preceding context expects a term" in raku).
+    let err = expression("$x.foo: ,").unwrap_err();
     assert!(err.message().contains("expected"));
 }
 

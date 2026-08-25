@@ -2,6 +2,50 @@ use super::*;
 use crate::builtins::string_pos::grapheme_units;
 use crate::symbol::Symbol;
 
+/// Truncate an already-numeric `Value` towards zero.
+fn numeric_value_to_i64(val: &Value) -> i64 {
+    match val.view() {
+        ValueView::Int(i) => i,
+        ValueView::Num(f) => f as i64,
+        ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => n / d,
+        ValueView::BigInt(b) => b.to_string().parse::<i64>().unwrap_or(i64::MAX),
+        ValueView::Bool(b) => i64::from(b),
+        _ => 0,
+    }
+}
+
+/// Numify a `Cool` offset/length argument of `substr` the way rakudo's
+/// `Cool.substr` candidate does: the value is coerced with `.Int`, so a numeric
+/// string is parsed (`"3.7"` is 3, `" 4 "` is 4) and a `Bool` becomes 0/1.
+/// A string that is not a valid number raises `X::Str::Numeric`, matching raku
+/// (`"abc".substr(0, "abc")` dies rather than silently taking the whole rest).
+fn substr_cool_to_i64(val: &Value) -> Result<i64, RuntimeError> {
+    if let Some(s) = val.as_str() {
+        let trimmed = s.trim();
+        if trimmed.is_empty() {
+            return Ok(0);
+        }
+        return match crate::runtime::str_numeric::parse_raku_str_to_numeric(trimmed) {
+            Some(numeric) => Ok(numeric_value_to_i64(&numeric)),
+            None => {
+                let (pos, reason) =
+                    crate::runtime::str_numeric::str_numeric_failure(s).unwrap_or((
+                        0,
+                        "base-10 number must begin with valid digits or '.'".into(),
+                    ));
+                let indicator = crate::runtime::str_numeric::build_source_indicator(s, pos);
+                Err(RuntimeError::typed_msg(
+                    "X::Str::Numeric",
+                    format!("Cannot convert string to number: {reason} {indicator}"),
+                ))
+            }
+        };
+    }
+    Ok(numeric_value_to_i64(&crate::runtime::coerce_to_numeric(
+        val.clone(),
+    )))
+}
+
 impl Interpreter {
     pub(super) fn dispatch_substr_eq(
         &mut self,
@@ -140,6 +184,14 @@ impl Interpreter {
                         ValueView::Rat(n, d) if d != 0 => (n / d).max(0) as usize,
                         _ => 0,
                     };
+                    (start + len).min(total_len)
+                }
+                // A `Cool` length (`"3"`, `True`, an Int-valued enum) is numified
+                // the way rakudo's `Cool.substr` candidate does. This is what
+                // makes raku's own colon-call gotcha reproduce:
+                // `$band.substr: 0, 3 .uc` parses as `$band.substr(0, "3")`.
+                ValueView::Str(_) | ValueView::Bool(_) | ValueView::Enum { .. } => {
+                    let len = substr_cool_to_i64(len_val)?.max(0) as usize;
                     (start + len).min(total_len)
                 }
                 _ => total_len, // default: take rest
@@ -282,6 +334,12 @@ impl Interpreter {
                     ValueView::Rat(n, d) if d != 0 => Ok(n / d),
                     _ => Ok(0),
                 }
+            }
+            // A `Cool` offset is numified like rakudo's `Cool.substr`: `"3.7"`
+            // truncates to 3 and `" 4 "` is 4, rather than failing a strict
+            // `i64` parse and silently starting at 0.
+            ValueView::Str(_) | ValueView::Bool(_) | ValueView::Enum { .. } => {
+                substr_cool_to_i64(pos)
             }
             _ => Ok(pos.to_string_value().parse::<i64>().unwrap_or(0)),
         }
