@@ -526,6 +526,14 @@ impl Compiler {
         // Named subs are always routines — mark the compiled code so
         // call_compiled_closure catches CX::Return at the right boundary.
         sub_compiler.code.is_routine = true;
+        // The routine's declaration line, i.e. the line the `sub`/`method`
+        // keyword sits on: this is the ENCLOSING compiler's `last_source_line`
+        // (the last `Stmt::SetLine` seen before the declaration statement), not
+        // `sub_compiler`'s, which has since advanced through the body. It is the
+        // same line `set_emit_line` seeded the prologue with above, kept here as
+        // declaration metadata so `Code.line` can report it without a second
+        // channel (the closure paths already read `CompiledCode::source_line`).
+        sub_compiler.code.source_line = self.last_source_line;
         sub_compiler.code.compute_needs_env_sync();
         let own_compiled_fns = self.import_compiled_functions(
             &mut sub_compiler.code,

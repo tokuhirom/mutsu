@@ -388,6 +388,17 @@ impl Value {
         compiled_routine: Option<Arc<crate::opcode::CompiledFunction>>,
     ) -> Self {
         let mut data = Self::new_code_object(package, name, params, param_defs, body, is_rw, env);
+        // Declaration source location for `Code.line`/`Code.file`. Both already
+        // ride on the routine's own `CompiledFunction` — the line stamped by
+        // `Compiler::compile_sub_body`, the file by
+        // `registration_sub::adapt_compiled_to_def` — so every construction site
+        // of a declared-routine code object inherits them here rather than
+        // needing its own channel. No extra storage: the `String` is cloned only
+        // when a code object is materialized, not per routine.
+        if let Some(cf) = &compiled_routine {
+            data.source_line = cf.code.source_line.map(|l| l as u32);
+            data.source_file.clone_from(&cf.source_file);
+        }
         data.compiled_routine = compiled_routine;
         Value::Sub(crate::gc::Gc::new(data))
     }

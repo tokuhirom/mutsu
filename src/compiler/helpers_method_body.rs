@@ -36,6 +36,7 @@ impl Compiler {
         apply_auto_positional_slurpy: bool,
         is_rw: bool,
         return_type: Option<&String>,
+        decl_line: Option<i64>,
     ) -> Option<Symbol> {
         let mut effective_param_defs =
             crate::method_signature_shared::effective_method_param_defs(param_defs, is_hidden);
@@ -86,6 +87,11 @@ impl Compiler {
         );
         cc.compute_may_capture_outer_vars();
         cc.compute_needs_env_sync();
+        // Declaration metadata, the same channel `compile_sub_body` and the
+        // closure paths use: `Code.line` reads it back off the `MethodDef`'s
+        // installed `compiled_code`, so no separate per-method line field is
+        // needed anywhere between here and `.^lookup`.
+        cc.source_line = decl_line;
         // ADR-0032 D2: bubble this method body's container-capture edges
         // (recorded in `cc.container_ref_capture_syms` by D1, during
         // `method_compiler`'s own independent compile above) to `self` — the

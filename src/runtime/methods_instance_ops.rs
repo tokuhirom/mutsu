@@ -1970,6 +1970,17 @@ impl Interpreter {
                 ValueView::Routine { package, .. } => Ok(Value::package(package)),
                 _ => Ok(Value::NIL),
             },
+            // `Code.line`/`Code.file` on a `Regex` code object -- a regex
+            // literal (`/abc/`) or a grammar `token`/`rule` body. `Regex` is a
+            // `Code` subtype, so these must answer rather than raise
+            // `X::Method::NotFound`; mutsu records no declaration location for
+            // either shape (a regex literal is a constant in the pool, and
+            // `Registry::token_defs` keeps the declaring file but no line), so
+            // the honest answer is `Nil`. See
+            // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
+            "line" | "file" if args.is_empty() && matches!(target.view(), ValueView::Regex(..)) => {
+                Ok(Value::NIL)
+            }
             // `.is_dispatcher`/`.multi` on a Method/Submethod value obtained from
             // `.^lookup`/`.^find_method`/`.can` (a `Sub`-shaped callable, not the
             // `Method` `Instance` `.^methods` builds -- see

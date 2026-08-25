@@ -1423,6 +1423,12 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Code", "count", 8, 12),
     ("Code", "of", 8, 12),
     ("Code", "returns", 8, 12),
+    // `Code.line`/`Code.file` (declaration source location) are served by the
+    // same slow-path dispatch as `name`/`signature` (`runtime/methods_sub.rs`),
+    // so they carry the identical `N`/`SPECIAL|INTROSPECTABLE` shape -- and,
+    // like those, they ARE real `.^methods`/`.^can` entries on `Code` in Rakudo.
+    ("Code", "line", 8, 12),
+    ("Code", "file", 8, 12),
     ("Code", "Bool", 1, 9),
     ("Code", "Str", 3, 9),
     ("Code", "gist", 8, 13),
