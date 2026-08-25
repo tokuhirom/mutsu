@@ -120,6 +120,61 @@ pub(in crate::parser) fn scan_to_delim_replacement(
     None
 }
 
+/// Does `rest` (the text right after a `:`) open an embedded regex
+/// declaration `:my … ;` / `:our …` / `:constant …` / `:let …` / `:temp …`?
+/// Mirrors the keyword set `regex_parse_ltm::leading_regex_decl_end` uses for
+/// the same construct once the pattern text has already been extracted.
+fn starts_regex_decl(rest: &str) -> bool {
+    ["my ", "our ", "constant ", "let ", "temp "]
+        .iter()
+        .any(|kw| rest.starts_with(kw))
+}
+
+/// Skip an embedded regex declaration clause (`:my $c = $/;`-style), having
+/// already consumed the leading `:`. The clause's RHS is Main-slang code, not
+/// regex text, so the regex-specific delimiter rules do not apply inside it —
+/// in particular a bare `/` (the enclosing regex's own delimiter, e.g. from
+/// `$/`) must NOT end the regex early. Only backslash escapes, quoted
+/// strings, and balanced `()`/`[]`/`{}` nesting matter here; the clause ends
+/// at the first unescaped, unnested `;`. Mirrors
+/// `regex_parse_ltm::leading_regex_decl_end`, which does the same depth
+/// tracking for the already-extracted pattern text. Returns None if the
+/// terminating `;` never arrives.
+fn skip_regex_decl_clause(chars: &mut std::str::CharIndices<'_>) -> Option<()> {
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut brace = 0i32;
+    while let Some((_, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '\'' | '"' => {
+                let quote = c;
+                loop {
+                    match chars.next() {
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some((_, c2)) if c2 == quote => break,
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+            }
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            '{' => brace += 1,
+            '}' => brace -= 1,
+            ';' if paren == 0 && bracket == 0 && brace == 0 => return Some(()),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Skip a balanced `{ ... }` block, having already consumed the opening `{`.
 /// String literals inside are skipped whole so a `}` within a string does not
 /// close the block early. Returns None if the braces never balance.
@@ -337,6 +392,13 @@ fn scan_to_delim_inner(
             // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early. In P5
             // mode `{n,m}` is a quantifier, not code, so this is Raku-only.
             skip_interp_block(&mut chars)?;
+        } else if !p5_mode && c == ':' && starts_regex_decl(&input[i + 1..]) {
+            // `:my $c = $/;` / `:our …` / `:constant …` / `:let …` / `:temp …` —
+            // an embedded declaration whose RHS is Main-slang code, not regex
+            // text. Skip the whole clause (see `skip_regex_decl_clause`) so a
+            // `/` inside it — typically the `/` of `$/` — is not mistaken for
+            // the enclosing regex's own closing delimiter.
+            skip_regex_decl_clause(&mut chars)?;
         } else if !p5_mode && c == '<' && starts_char_class(&input[i + 1..]) {
             // Skip character class <[...]>, <-[...]>, <+[...]>, <![...]> content
             // without interpreting quotes. Handles <['"]>, <-["\\\t]>, etc.
