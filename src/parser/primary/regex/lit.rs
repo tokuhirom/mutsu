@@ -21,7 +21,8 @@ use crate::value::Value;
 use super::adverbs::{
     MatchAdverbs, adverbs_need_value, apply_inline_match_adverbs, build_regex_with_adverbs,
     parse_compact_match_adverbs, parse_match_adverbs, regex_adverb_error,
-    reject_subst_only_adverbs, reject_trailing_p5_modifiers, validate_regex_pattern_or_perror,
+    reject_subst_only_adverbs, reject_trailing_p5_modifiers, starts_with_adverb,
+    validate_regex_pattern_or_perror,
 };
 use super::call_args::{
     has_unescaped_statement_boundary, parse_call_arg_list, parse_colon_method_arg,
@@ -304,7 +305,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     if let Some(after_ss) = input.strip_prefix("ss")
         && !crate::parser::stmt::simple::is_user_declared_sub("ss")
         && let Some(first_ch) = after_ss.chars().next()
-        && (first_ch == ':'
+        && (starts_with_adverb(after_ss)
             || (!first_ch.is_alphanumeric()
                 && first_ch != '_'
                 && first_ch != '('
@@ -312,7 +313,8 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
             || (first_ch.is_whitespace()
                 && after_ss.trim_start().starts_with(['(', '[', '{', '<'])))
     {
-        let (spec, mut adverbs) = if first_ch == ':' {
+        let has_adverbs = starts_with_adverb(after_ss);
+        let (spec, mut adverbs) = if has_adverbs {
             parse_match_adverbs(after_ss)?
         } else {
             (after_ss, MatchAdverbs::default())
@@ -321,7 +323,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         adverbs.samespace = true;
         adverbs.sigspace = true;
         let pre_ws_len = spec.len();
-        let spec = if first_ch == ':' || first_ch.is_whitespace() {
+        let spec = if has_adverbs || first_ch.is_whitespace() {
             ws(spec)?.0
         } else {
             spec
@@ -437,18 +439,22 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // Skip if 's' has been declared as a user sub — UNLESS followed by ':', which is always
     // substitution (per Raku spec: `s:` is always a substitution even when `sub s` exists).
     if let Some(after_s) = input.strip_prefix('s')
-        && let Some(first_ch) = after_s.chars().next()
-        && (!crate::parser::stmt::simple::is_user_declared_sub("s") || first_ch == ':')
+        && !after_s.is_empty()
+        // An adverb may be separated from the `s` by whitespace (`s :g :i/.../.../`),
+        // which still makes this unambiguously a substitution.
+        && (!crate::parser::stmt::simple::is_user_declared_sub("s")
+            || starts_with_adverb(after_s))
     {
         // Parse optional adverbs between s and delimiter
-        let (spec, adverbs) = if first_ch == ':' {
+        let has_adverbs = starts_with_adverb(after_s);
+        let (spec, adverbs) = if has_adverbs {
             parse_match_adverbs(after_s)?
         } else {
             (after_s, MatchAdverbs::default())
         };
         // Allow whitespace between adverbs and delimiter (e.g. s:Perl5 /pattern/)
         let pre_ws_len = spec.len();
-        let spec = if first_ch == ':' { ws(spec)?.0 } else { spec };
+        let spec = if has_adverbs { ws(spec)?.0 } else { spec };
         let had_ws = spec.len() != pre_ws_len;
         if let Some(open_ch) = spec.chars().next() {
             // `(` is only a delimiter after whitespace (`s(a)` is a call).
@@ -653,7 +659,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     if let Some(after_s) = input.strip_prefix('S')
         && !crate::parser::stmt::simple::is_user_declared_type("S")
     {
-        let had_adverbs = after_s.starts_with(':');
+        let had_adverbs = starts_with_adverb(after_s);
         let (spec, adverbs) = parse_match_adverbs(after_s)?;
         // Allow whitespace between adverbs and the delimiter (e.g.
         // `S:g /pattern/replacement/`), mirroring the lowercase `s` parser.

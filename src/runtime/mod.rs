@@ -1622,6 +1622,12 @@ pub struct Interpreter {
     /// `eval_block_value_cached`/`eval_test_block_value`'s `cache_id`
     /// parameter — starts empty per thread (pure recomputable optimization).
     carrier_compile_cache: CarrierCompileCache,
+    /// Parsed `s///` / `S///` replacement plans, keyed by the replacement's
+    /// source text (see `vm::vm_subst_repl`). The replacement is a `qq` quote,
+    /// so it is parsed with the real interpolation grammar; caching keeps a
+    /// `:g` substitution from re-parsing it per match and gives the dynamic
+    /// plan a stable carrier-compile-cache id.
+    pub(crate) subst_repl_plans: HashMap<String, crate::vm::vm_subst_repl::SubstReplPlan>,
     /// The map/grep/`.first` inline-loop fast paths (`resolution_map_grep.rs`)
     /// compile the callback block once per `.map()`/`.grep()`/`.first()` CALL
     /// and then run every item through the same compiled bytecode via

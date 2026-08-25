@@ -323,12 +323,13 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
             }
         }
 
-        // Closure interpolation
+        // Closure interpolation. The body may be a whole statement list
+        // (`qq!{ my $t = 1; $t + 1 }!`), not just one expression, so it goes
+        // through the same helper the `"..."` parser uses.
         if flags.interp_closure()
             && rest.starts_with('{')
             && let Some((after, inner)) = parse_braced_interpolation(rest)
-            && let Ok((remaining, expr)) = expression(inner.trim())
-            && remaining.trim().is_empty()
+            && let Some(expr) = super::string::parse_braced_closure_body(inner.trim())
         {
             if !current.is_empty() {
                 parts.push(Expr::Literal(Value::str(std::mem::take(&mut current))));

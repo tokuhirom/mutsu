@@ -1,6 +1,11 @@
 use super::super::*;
 use super::regex_helpers::{map_pos, strip_marks_pattern, strip_marks_text};
 
+/// One match's span plus every capture text it produced: the positional list
+/// (`$0`, `$1`, ...) and the per-name list (`$<name>`, which is a list because a
+/// quantified named capture matches repeatedly).
+pub(crate) type MatchWithAllCaptures = (usize, usize, Vec<String>, HashMap<String, Vec<String>>);
+
 impl Interpreter {
     /// Ranking key for selecting the best full (anchored) match: prefer the
     /// longest end, then more captures. Equal keys are left to the caller's
@@ -358,6 +363,20 @@ impl Interpreter {
         text: &str,
         min_pos: usize,
     ) -> Option<(usize, usize, Vec<String>)> {
+        self.regex_find_first_from_with_all_captures(pattern, text, min_pos)
+            .map(|(from, to, pos, _named)| (from, to, pos))
+    }
+
+    /// [`regex_find_first_from_with_captures`] including the NAMED capture
+    /// texts. A substitution needs these to bind `$<name>` in its replacement
+    /// (and in the `$/` it leaves behind), which the positional-only variant
+    /// cannot express.
+    pub(crate) fn regex_find_first_from_with_all_captures(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        min_pos: usize,
+    ) -> Option<MatchWithAllCaptures> {
         let parsed = self.parse_regex(pattern)?;
         let pkg = self.current_package();
         let orig_chars: Vec<char> = text.chars().collect();
@@ -394,6 +413,7 @@ impl Interpreter {
                         map_pos(caps.capture_start.unwrap_or(start), &pos_map, orig_len),
                         map_pos(caps.capture_end.unwrap_or(end), &pos_map, orig_len),
                         super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
+                        super::regex_helpers::named_slot_texts(&caps.named, &orig_chars),
                     ));
                 }
             }
@@ -414,6 +434,7 @@ impl Interpreter {
                     caps.capture_start.unwrap_or(start),
                     caps.capture_end.unwrap_or(end),
                     super::regex_helpers::pos_slot_texts(&caps.positional, &orig_chars),
+                    super::regex_helpers::named_slot_texts(&caps.named, &orig_chars),
                 ));
             }
         }
