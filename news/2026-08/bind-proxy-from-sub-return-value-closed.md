@@ -38,8 +38,14 @@ $ mutsu -e 'my $s = 0; my $p := Proxy.new(FETCH => method () { $s * 2 }, STORE =
 
 The one surviving difference — `X::Assignment::RO` where Rakudo uses `X::AdHoc`
 — is not specific to Proxies at all. It is exactly the divergence already
-tracked by `todo/tickets/readonly-variable-assign-uses-ro-instead-of-adhoc.md`,
-which catalogues the same substitution for `my $x := 42; $x = 23`, for readonly
-loop aliases, and for readonly sub parameters, along with the cases where Rakudo
-genuinely does use `X::Assignment::RO`. Fixing that ticket fixes this case with
-it, so this one is closed rather than kept as a duplicate.
+tracked by the readonly-assignment taxonomy ticket, which catalogues the same
+substitution for `my $x := 42; $x = 23`, for readonly loop aliases, and for
+readonly sub parameters, along with the cases where Rakudo genuinely does use
+`X::Assignment::RO`. Fixing that ticket fixes this case with it, so this one is
+closed rather than kept as a duplicate.
+
+(Update: that ticket landed -- see
+[readonly-assign-exception-taxonomy.md](readonly-assign-exception-taxonomy.md).
+The sub-returned-Proxy bind now throws `X::AdHoc` / "Cannot assign to an
+immutable value", matching Rakudo, and is pinned by
+`t/readonly-assign-exception-taxonomy.t`.)
