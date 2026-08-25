@@ -1,41 +1,44 @@
-# `do when COND { BLOCK }` used as an expression gives the wrong value / crashes
+# `do when COND { BLOCK }` used as an expression crashes, and yields the wrong no-match value
 
 Discovered via the doc-diff harness on `raku-doc/doc/Language/control.rakudoc` (around line
 526/537).
 
-## Repro
+**Re-measured on `main` @ `17139dd55` against `raku` v2026.06 (2026-08-25). Both of the
+expected values this ticket originally recorded have drifted, so the table below replaces
+them — do not trust the doc's own narration here.**
 
-```
-$_ = True;
-my $a;
-{ $a = do when .so { "foo" } }
-say $a;
-```
+## Measured behaviour
 
-- raku: `foo`
-- mutsu: crashes with a bare `Runtime error:` (no useful message)
+| case | raku v2026.06 | mutsu |
+| --- | --- | --- |
+| `$_ = True; my $a; { $a = do when .so { "foo" } }; say $a;` | `(Any)` | crashes: bare `Runtime error:` |
+| `$_ = False; my $a; { $a = do when .so { "foo" } }; say $a;` | `False` | `(Any)` |
+| `my $a; given True { $a = do when .so { "foo" } }; say $a;` | `(Any)` | `(Any)` (matches) |
+| `my $a; given False { $a = do when .so { "foo" } }; say $a;` | `False` | `(Any)` |
+| `$_ = True; my $a = do when .so { "foo" }; say $a;` | empty line | crashes: bare `Runtime error:` |
 
-With the topic not matching:
+The original ticket asserted that the matching case yields `foo`. It does not, in either
+implementation: a matching `when` runs its block and then `succeed`s out of the enclosing
+topicalizer, so the pending assignment never completes and `$a` keeps its declared default.
+That is why the matching case is `(Any)` even in `raku`. The `given True` row shows mutsu
+*already agrees* on the matching case when a real topicalizer is present.
 
-```
-$_ = False;
-my $a;
-{ $a = do when .so { "foo" } }
-say $a;
-```
+## What is actually left to fix
 
-- raku: `(Any)` (the `do when` expression evaluates to `Any` when the `when` does not match)
-- mutsu: currently gives an inconsistent result (does not crash but the value is wrong — see
-  investigation notes below); needs re-verification once the crash is fixed.
+1. **The crash.** With the topic set by plain `$_ = True` (no `given`), mutsu dies with a bare
+   `Runtime error:` and no message, where `raku` completes. Two rows above hit it. A
+   no-message runtime error is itself a bug regardless of the value semantics.
+2. **The no-match value.** When the `when` does not match, `raku` evaluates `do when` to the
+   *smartmatch result* (`False`), not to `Any`. mutsu gives `(Any)` in both the bare-block and
+   the `given` form. This is the one genuine value divergence.
 
 ## Root cause (unconfirmed, needs a debugger session)
 
-`do EXPR` normally just evaluates `EXPR` and returns its value. When `EXPR` is a bare `when`
-statement (`do when COND { BLOCK }`), Raku treats this as an expression form: if `COND` matches
-against `$_`, evaluate `BLOCK` and use its value; otherwise the whole `do when` evaluates to
-`Any`. mutsu's `when` is implemented as a control-flow statement (see `vm_control_ops.rs`) that
-presumably assumes it is always used in statement position inside a `given`/loop body, and
-doesn't have a value-producing path when wrapped in `do`.
+`do EXPR` normally evaluates `EXPR` and returns its value. mutsu's `when` is implemented as a
+control-flow statement (`vm_control_ops.rs`) that assumes statement position inside a
+`given`/loop body, so it has no value-producing path when wrapped in `do` — it appears to
+substitute `Any` rather than the smartmatch result, and to have no handler at all when the
+topic was set by assignment rather than by a topicalizer.
 
 ## Affected files (starting point)
 
@@ -45,7 +48,8 @@ doesn't have a value-producing path when wrapped in `do`.
 
 ## Suggested next step
 
-Reproduce under `rust-gdb` per the debugging guidelines to find exactly which opcode sequence
-`do when` compiles to and where the crash originates, then decide whether `do when` needs a
-dedicated compiler path that captures the block's value (or `Any` on no-match) instead of
-relying on the statement-position `when` control flow.
+Reproduce the crashing row under `rust-gdb` per `CLAUDE.md`'s debugging guidance to find which
+opcode sequence `do when` compiles to and where the bare `Runtime error:` originates. Fix the
+crash first; then make the no-match path yield the smartmatch result instead of `Any`, using
+the `given False` row as the pin (it is the cleanest of the four, with a real topicalizer and
+no crash involved).
