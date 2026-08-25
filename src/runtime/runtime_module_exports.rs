@@ -447,7 +447,7 @@ impl Interpreter {
             // registered under their own package, a module's proto was already
             // in `proto_subs` as `GLOBAL::name` and this was invisible.)
             if imported_proto {
-                self.registry_mut().proto_subs.insert(target_single.clone());
+                self.registry_mut().proto_subs_insert(target_single.clone());
             }
 
             // If this exported sub carried a trait-modified value (e.g. a role

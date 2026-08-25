@@ -2489,10 +2489,11 @@ impl Interpreter {
             registry: {
                 // Built-in class definitions (PR-A slice 3: `classes` now lives in the
                 // shared Registry instead of an Interpreter field).
-                let mut registry = Registry {
-                    classes,
-                    ..Registry::default()
-                };
+                // Field-by-field init rather than `Registry { .. }` struct
+                // update: `proto_subs`/`proto_gen` are private (their
+                // mutations must flow through the gen-bumping accessors).
+                let mut registry = Registry::default();
+                registry.classes = classes;
                 registry.seed_builtin_method_entries();
                 // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
                 // now lives in the shared Registry instead of an Interpreter field).
@@ -3058,6 +3059,12 @@ impl Interpreter {
             fn_resolve_cache_gen: 0,
             multi_candidates_cache: Default::default(),
             multi_candidates_cache_gen: 0,
+            has_proto_cache: Default::default(),
+            has_proto_cache_gen: 0,
+            declared_fn_cache: Default::default(),
+            declared_fn_cache_gen: 0,
+            multi_fn_cache: Default::default(),
+            multi_fn_cache_gen: 0,
             fn_base_name_cache: Default::default(),
             fn_base_name_cache_gen: 0,
             light_call_cache: Default::default(),

@@ -331,7 +331,7 @@ impl Interpreter {
         let whenever_inherited_owned = std::mem::take(&mut self.pending_whenever_inherited_owned);
         let let_mark = self.let_saves_len();
         let mut saved_functions = self.registry().functions.clone();
-        let saved_proto_subs = self.registry().proto_subs.clone();
+        let saved_proto_subs = self.registry().proto_subs_snapshot();
         let saved_proto_functions = self.registry().proto_functions.clone();
         let saved_operator_assoc = self.operator_assoc.clone();
         let saved_user_declared_infix_ops = self.user_declared_infix_ops.clone();
@@ -481,7 +481,7 @@ impl Interpreter {
             {
                 let mut reg = self.registry_mut();
                 reg.functions = saved_functions;
-                reg.proto_subs = saved_proto_subs;
+                reg.proto_subs_restore(saved_proto_subs);
                 reg.proto_functions = saved_proto_functions;
             }
             // Invalidate name-keyed resolution caches.

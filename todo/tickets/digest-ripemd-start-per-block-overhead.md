@@ -1,5 +1,61 @@
 # `Digest::RIPEMD` is 11x raku — a `start` per compression block
 
+> **Status update 6 (2026-08-25, dispatch-probe caches — -13.4%
+> instructions on the gate proxy; spawn-shape bench re-verified faster
+> than raku):** re-measured the headline numbers on current `main`
+> first: the spawn-shape microbench (`for ^2000 { await map -> $k {
+> start { $k * 2 } }, 1, 2 }`) runs **0.19s in mutsu vs 0.41s in
+> raku** — the per-`start` lever is confirmed closed (status update 1's
+> campaign held), and the "~17x raku" claim at the bottom of this file
+> is historical. The full `t/ripemd.t` measured **156.6s** (release,
+> idle box, 9/9 pass) against the 120s gate budget.
+>
+> A fresh profile (release-with-debuginfo, `rmd160("a" x 50_000)`)
+> found a new nameable cluster the earlier flat profiles lumped into
+> "malloc + TLS + memcmp": the **per-call bare-name dispatch probes**.
+> Every `CallFunc` dispatch ran `Interpreter::has_proto` up to 3 times
+> (plus `has_declared_function` / `has_multi_function` on the fallback
+> leg), and each probe allocated the `bare_name_packages()`
+> `Vec<String>` and two `format!("{pkg}::{name}")` strings per
+> candidate package — `has_multi_function` additionally resolved EVERY
+> registry function key to a `String` per call. gdb breakpoints on
+> `alloc::fmt::format::format_inner` mid-run attributed the hot
+> formatter traffic to exactly `Registry::has_proto` /
+> `has_declared_function` (via `RADIX_LIST` and the round helpers).
+>
+> Fix (same shape as the existing `multi_candidates_cache`):
+> generation-checked memos for all three probes, keyed by
+> `(current_package, innermost lexical_package, name)` symbols — the
+> exact inputs `bare_name_packages()` derives the search list from, so
+> a hit can never answer for the wrong package scope.
+> `has_declared_function`/`has_multi_function` ride the established
+> `fn_resolve_gen`; `has_proto` gets a new `proto_gen` on a now-private
+> `Registry::proto_subs` whose every mutation flows through
+> gen-bumping accessors (compiler-enforced completeness, per the
+> narrow-audit-scope lesson).
+>
+> **Measured** (interleaved A/B, P-core-pinned `perf stat`, instruction
+> counts are run-to-run stable to 4 digits): the 100k gate proxy drops
+> **215.3B -> 186.4B core instructions (-13.4%)**, cycles -5..-10%,
+> pinned wall 24.3/23.3s -> 22.3/21.8s; the spawn microbench drops
+> 1.55B -> 1.34B instructions (-13.7%). Wall-clock deltas on this
+> thermally-throttled hybrid laptop are noisy (an unpinned run right
+> after a long build read 21s vs the 12.8s cool-box baseline — pure
+> thermal artifact, caught by the pinned interleave); the instruction
+> counts are the trustworthy figure. A back-to-back full `t/ripemd.t`
+> A/B under equal (hot-throttled) conditions measured **223.2s wall /
+> 349 user-s (old) vs 211.8s wall / 328 user-s (new)** — about -5..-6%
+> end-to-end (the non-dispatch half of the profile dilutes the -13.4%).
+> Scaled to the session's cool-box baseline (156.6s) that is ~148s —
+> still over the 120s hard budget, so the file stays un-whitelisted and
+> this ticket stays open.
+>
+> Post-fix profile has no new dominant item: thread-local `LocalKey`
+> (symbol TLS) ~6%, malloc/free ~12%, `memcmp` ~3.9%, nanbox
+> `payload_op`/`gc_op` ~7%, `call_compiled_closure_with_topic` 2.7%.
+> The update-4 inventory items (the `cc.has_calls` exit-path writeback
+> scan, `GetGlobal` env reads) remain the next levers.
+
 > **Status update 5 (2026-08-20, map/grep/`.first` compile-cache lever
 > executed — general win confirmed, `t/ripemd.t` gate itself flat):** update
 > 4's closing note flagged "the `resolution_map_grep` map carrier still

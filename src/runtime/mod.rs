@@ -2643,6 +2643,27 @@ pub struct Interpreter {
     pub(crate) fn_resolve_cache_gen: u64,
     pub(crate) multi_candidates_cache: rustc_hash::FxHashMap<Symbol, bool>,
     pub(crate) multi_candidates_cache_gen: u64,
+    /// Memo for [`Self::has_proto`], keyed by the full bare-name lookup
+    /// context `(current_package, innermost lexical_package, name)` — the
+    /// exact inputs `bare_name_packages()` derives the search list from — so
+    /// a hit can never answer for the wrong package scope. Invalidated by
+    /// `Registry::proto_generation()` (bumped on every `proto_subs`
+    /// mutation; the field is private so a bump can't be missed). This probe
+    /// used to run 3+ times per `CallFunc` dispatch, each walk paying a
+    /// `Vec<String>` + two `format!`s per candidate package.
+    pub(crate) has_proto_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
+    pub(crate) has_proto_cache_gen: u64,
+    /// Memo for [`Self::has_declared_function`], same key shape as
+    /// `has_proto_cache`; guarded by `fn_resolve_gen` like
+    /// `multi_candidates_cache` (the `functions` map is what it reads).
+    pub(crate) declared_fn_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
+    pub(crate) declared_fn_cache_gen: u64,
+    /// Memo for [`Self::has_multi_function`], same key shape as
+    /// `has_proto_cache`; guarded by `fn_resolve_gen`. The uncached probe
+    /// scans EVERY registry function key with a `String` resolve per key,
+    /// per call.
+    pub(crate) multi_fn_cache: rustc_hash::FxHashMap<(Symbol, Option<Symbol>, Symbol), bool>,
+    pub(crate) multi_fn_cache_gen: u64,
     /// Per-name memo of "does ANY registry function key carry this base name?"
     /// (`fn_base_name_registered`). `false` lets `resolve_function_with_types`
     /// return `None` without scanning the whole functions map — the common case

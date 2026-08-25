@@ -384,8 +384,7 @@ impl Interpreter {
         loop {
             let local_proto = self
                 .registry()
-                .proto_subs
-                .contains(&format!("{}::{}", pkg, name));
+                .proto_subs_contains(&format!("{}::{}", pkg, name));
             let probe = [pkg.to_string()];
             if local_proto || self.registry().has_multi_function(&probe, name) {
                 return Some(pkg.to_string());

@@ -196,7 +196,7 @@ impl Interpreter {
             registry.functions.clone(),
             registry.proto_functions.clone(),
             registry.token_defs.clone(),
-            registry.proto_subs.clone(),
+            registry.proto_subs_snapshot(),
             registry.proto_tokens.clone(),
             registry.our_scoped_functions.keys().copied().collect(),
             self.user_declared_infix_ops.clone(),
@@ -321,7 +321,7 @@ impl Interpreter {
         registry.functions = functions;
         registry.proto_functions = proto_functions;
         registry.token_defs = token_defs;
-        registry.proto_subs = proto_subs;
+        registry.proto_subs_restore(proto_subs);
         registry.proto_tokens = proto_tokens;
         for (key, defs) in new_tokens {
             registry.token_defs.insert(key, defs);
