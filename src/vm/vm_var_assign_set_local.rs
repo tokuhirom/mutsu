@@ -551,7 +551,24 @@ impl Interpreter {
                     Some(ValueView::ContainerRef(_))
                 )
             {
-                self.env_mut().insert_sym(sym, Value::NIL);
+                // A package `our` scalar's cell is published under the BARE env
+                // key too (`OpCode::DeclareOurScalar`), so a consumer that
+                // loads the module and then declares its own same-named `my`
+                // lands here. That cell is not an enclosing frame's lexical —
+                // it belongs to the package, and is reachable through its
+                // qualified key and the `our` store regardless — so the key is
+                // REMOVED rather than left holding `Nil`. Leaving a `Nil`
+                // behind poisons the name: it is a live positive env hit that
+                // the env<->locals reconciliation can pull back over this
+                // fresh binding, so `my $s = 'mine'` read as `Nil` after the
+                // next call into the module. Every other cell keeps the
+                // existing `Nil` overwrite, which preserves the key for saved
+                // frame propagation.
+                if self.our_scalar_cell_names.contains(&code.locals[idx]) {
+                    self.env_mut().remove_sym(sym);
+                } else {
+                    self.env_mut().insert_sym(sym, Value::NIL);
+                }
             }
             // Per-iteration freshness for box-on-capture (lever C Slice 2): if a
             // previous iteration's closure boxed this loop-body `my` into a

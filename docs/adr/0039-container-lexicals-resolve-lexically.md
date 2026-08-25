@@ -7,7 +7,11 @@
   fixed separately on 2026-08-23 by a resolution-only change, as §4.1
   predicted it could be — see
   `news/2026-08/our-container-bare-name-prefers-package-mirror.md` and
-  `src/vm/vm_our_package_vars.rs`. Slice 2 (§4.2 — containers resolve by
+  `src/vm/vm_our_package_vars.rs`. Its SCALAR twin — which needed a write gate
+  as well as a resolution preference, because a scalar write replaces a value —
+  followed on 2026-08-25 through the same module's `our` cell; see
+  `news/2026-08/our-scalar-bare-name-resolves-to-the-package-cell.md`.
+  Slice 2 (§4.2 — containers resolve by
   slot/upvalue, not by name, retiring the by-name path at the compiler) is
   still next and still the end state; it now carries no known open
   correctness bug of its own.

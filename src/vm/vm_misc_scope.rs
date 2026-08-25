@@ -106,6 +106,16 @@ impl Interpreter {
             self.env_mut()
                 .insert(format!("GLOBAL::{local_name}"), cell.clone());
         }
+        // A declaration inside a REAL package publishes the cell under a
+        // package-qualified key the module's own routines never spell out (a
+        // sub body compiles under a mangled `Pkg::&sub/arity` scope, so `$x`
+        // stays bare). Record the bare name so the bare-name read/write
+        // chokepoints can find their way back to this cell — see
+        // `vm_our_package_vars`. A file-scope `our $x` collapses `qualified`
+        // to the bare name, has no package to reconstruct, and is skipped.
+        if qualified != local_name {
+            self.our_scalar_cell_names.insert(local_name.clone());
+        }
         // Persist under the qualified key too, matching what every other
         // `our`/package-qualified store already does (stash introspection,
         // `::('name')` symbolic lookups).

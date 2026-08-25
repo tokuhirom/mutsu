@@ -864,6 +864,17 @@ impl Interpreter {
         if let Some(candidate) = Self::package_qualified_candidate(name, &cur)
             && self.get_our_var(&candidate).is_some()
         {
+            // A plain `our $x` keeps its value in ONE shared cell that the
+            // declaring slot, both env keys and this store all point at
+            // (`OpCode::DeclareOurScalar`). Replacing the entry with a plain
+            // value would sever this store from that cell, leaving the two
+            // holding independent values; write THROUGH it instead.
+            if let Some(ValueView::ContainerRef(cell)) =
+                self.get_our_var(&candidate).map(Value::view)
+            {
+                Self::cell_store_preserving_container_identity(&candidate, &cell, val);
+                return true;
+            }
             self.set_our_var(candidate.clone(), val.clone());
             // Keep an existing qualified env entry coherent for a same-frame
             // read by the qualified name (`$P::X`).
@@ -984,6 +995,15 @@ impl Interpreter {
         // AFTER `unit_scope_lexical` so a compunit's file-scope `my` still
         // wins over a same-named package variable. See `vm_our_package_vars`.
         if let Some(v) = self.our_package_container(name) {
+            return Some(v);
+        }
+        // The scalar twin of the redirect above. A scalar has no shared `Gc`
+        // node, so preferring the package mirror on a read is only half the
+        // fix — see `our_package_scalar` and the matching write gate in the
+        // `SetGlobal` arm. Same position in the order, and for the same
+        // reason: a compunit's own file-scope `my` (checked first) still wins
+        // over a same-named package variable.
+        if let Some(v) = self.our_package_scalar(name) {
             return Some(v);
         }
         // Raku allows underscore variants of kebab-case identifiers

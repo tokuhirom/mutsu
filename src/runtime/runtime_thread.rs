@@ -673,6 +673,7 @@ impl Interpreter {
             escaped_our_lexical_cells: self.escaped_our_lexical_cells.clone(),
             escaping_our_lexical_names: self.escaping_our_lexical_names.clone(),
             escaped_our_sub_names: self.escaped_our_sub_names.clone(),
+            our_scalar_cell_names: self.our_scalar_cell_names.clone(),
             state_vars: HashMap::new(),
             // The spawned block's own captured scalars were NOT seeded into the
             // store (the closure machinery owns them per binding), so the child

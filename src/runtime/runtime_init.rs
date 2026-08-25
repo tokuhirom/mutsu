@@ -2908,6 +2908,7 @@ impl Interpreter {
             escaped_our_lexical_cells: HashMap::new(),
             escaping_our_lexical_names: std::collections::HashSet::new(),
             escaped_our_sub_names: std::collections::HashSet::new(),
+            our_scalar_cell_names: std::collections::HashSet::new(),
             state_vars: HashMap::new(),
             thread_redeclared_vars: Box::new(std::cell::RefCell::new(
                 std::collections::HashSet::new(),
