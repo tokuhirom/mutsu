@@ -124,6 +124,7 @@ macro_rules! loan_env {
 
 mod vm_arith_int_ops;
 mod vm_arith_ops;
+mod vm_baghash_mutators;
 mod vm_bitwise_ops;
 mod vm_call_autothread;
 mod vm_call_dispatch;

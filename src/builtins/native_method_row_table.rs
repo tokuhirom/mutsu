@@ -784,6 +784,12 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     // Confirmed by probe: `native_method_arities` returns 0 for a `BagHash`
     // sample. SPECIAL, not omitted, to keep the choice explicit.
     ("BagHash", "grab", 8, 4),
+    // `add`/`remove` are declared on `BagHash` itself in rakudo (NOT on the
+    // `Baggy` role), so only this owner gets them. Served by the Tier-A
+    // mutable-method path (`vm/vm_call_method_mut_ops.rs`), hence
+    // MUTATES_RECEIVER rather than an arity-cascade bit.
+    ("BagHash", "add", 8, 10),
+    ("BagHash", "remove", 8, 10),
     ("BagHash", "pick", 3, 0),
     ("BagHash", "roll", 3, 0),
     ("BagHash", "WHICH", 1, 0),
