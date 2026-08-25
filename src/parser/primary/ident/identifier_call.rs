@@ -1960,7 +1960,10 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
     // `$error and return;` guard kept executing the rest of the sub. A
     // user-declared `\return` term never reaches this fallback (term_literals
     // resolves it first).
-    if name == "return" {
+    // `return-rw` gets the same treatment: a bare `return-rw` returns Nil from
+    // the enclosing routine rather than resolving to an inert BareWord (which
+    // stringified to "return-rw" and let the rest of the sub keep running).
+    if name == "return" || name == "return-rw" {
         return Ok((rest, make_call_expr(name, input, vec![])));
     }
 

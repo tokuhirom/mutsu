@@ -375,6 +375,7 @@ impl Interpreter {
                 self.builtin_index_assign_method_lvalue_nested(&args)
             }
             "__mutsu_assign_named_sub_lvalue" => self.builtin_assign_named_sub_lvalue(&args),
+            "__mutsu_incdec_named_sub_lvalue" => self.builtin_incdec_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),

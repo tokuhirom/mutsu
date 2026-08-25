@@ -421,6 +421,7 @@ mod handle_io;
 mod handle_open;
 mod handle_read;
 mod handle_read_chars;
+mod incdec_rw_sub;
 mod io;
 mod io_doc;
 mod io_env;

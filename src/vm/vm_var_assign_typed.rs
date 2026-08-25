@@ -760,7 +760,7 @@ impl Interpreter {
     }
 
     /// Increment a value, calling .succ() on Instance values with custom methods.
-    pub(super) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn increment_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         // Route user-defined `.succ` through the Interpreter's unified compiled-first
         // dispatch (same entry point `.Str` interpolation already uses) instead
         // of a raw interpreter tree-walk — one method-dispatch path, not two.
@@ -843,7 +843,7 @@ impl Interpreter {
     }
 
     /// Decrement a value, calling .pred() on Instance values with custom methods.
-    pub(super) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
+    pub(crate) fn decrement_value_smart(&mut self, val: &Value) -> Result<Value, RuntimeError> {
         // Route user-defined `.pred` through the Interpreter's unified compiled-first
         // dispatch (see increment_value_smart) instead of a raw interpreter
         // tree-walk — one method-dispatch path, not two.
