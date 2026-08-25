@@ -131,6 +131,19 @@ impl Interpreter {
         if method == "candidates" && args.is_empty() {
             return Some(Ok(Value::array(self.routine_candidate_subs(package, name))));
         }
+        if matches!(method, "line" | "file") && args.is_empty() {
+            // A `Routine` value names a routine by (package, name) and carries
+            // no body of its own — a proto/token reached by name, or a core
+            // builtin/operator implemented in Rust. See `routine_decl_location`
+            // for why the latter answers `Nil` rather than a synthesized
+            // `SETTING::` path.
+            let (line, file) = self.routine_decl_location(package, name);
+            return Some(Ok(if method == "line" {
+                line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
+            } else {
+                file.map(Value::str).unwrap_or(Value::NIL)
+            }));
+        }
         if method == "cando" && args.len() == 1 {
             let call_args = Self::capture_to_call_args(&args[0]);
             let matching = self
@@ -325,6 +338,8 @@ impl Interpreter {
                     | "is_dispatcher"
                     | "multi"
                     | "package"
+                    | "line"
+                    | "file"
             );
             return Some(Ok(Value::truth(can)));
         }
@@ -771,18 +786,21 @@ impl Interpreter {
                 name, sig_part, id
             ))));
         }
-        if method == "line" && args.is_empty() {
-            return Some(Ok(data
-                .source_line
-                .map(|l| Value::int(l as i64))
-                .unwrap_or(Value::NIL)));
-        }
-        if method == "file" && args.is_empty() {
-            return Some(Ok(data
-                .source_file
-                .as_ref()
-                .map(|f| Value::str(f.clone()))
-                .unwrap_or(Value::NIL)));
+        if matches!(method, "line" | "file") && args.is_empty() {
+            // A declared routine, closure or block carries its own declaration
+            // location; a multi *dispatcher* (`&mm` for a `multi sub mm`) is
+            // built by name with no compiled body behind it, so it answers from
+            // its first candidate the way Rakudo does.
+            let (line, file) = if data.source_line.is_some() || data.source_file.is_some() {
+                (data.source_line, data.source_file.clone())
+            } else {
+                self.routine_decl_location(&data.package.resolve(), &data.name.resolve())
+            };
+            return Some(Ok(if method == "line" {
+                line.map(|l| Value::int(l as i64)).unwrap_or(Value::NIL)
+            } else {
+                file.map(Value::str).unwrap_or(Value::NIL)
+            }));
         }
         if matches!(method, "of" | "returns") && args.is_empty() {
             let type_name = self
@@ -1056,6 +1074,8 @@ impl Interpreter {
                     | "is_dispatcher"
                     | "multi"
                     | "package"
+                    | "line"
+                    | "file"
             );
             return Some(Ok(Value::truth(can)));
         }

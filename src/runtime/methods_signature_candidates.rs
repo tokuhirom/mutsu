@@ -120,6 +120,33 @@ impl Interpreter {
         }
     }
 
+    /// `Code.line`/`Code.file` for a code object that carries no declaration
+    /// location of its own: a multi *dispatcher* (built by name, with no
+    /// `CompiledFunction` behind it) or a by-name `Routine` value.
+    ///
+    /// Rakudo answers a dispatcher from its first candidate
+    /// (`&mm.line == &mm.candidates[0].line`), which is what the registry walk
+    /// below reproduces. A routine with no registered candidate at all — a core
+    /// operator or builtin implemented in Rust, e.g. `&infix:<+>` — has no Raku
+    /// source, so both answers are `None`/`Nil`. Rakudo prints a
+    /// `SETTING::src/core.c/...` path there; mutsu has no such setting file, and
+    /// synthesizing a path that looks real would be a fabrication, so the honest
+    /// "unknown" is reported instead.
+    pub(super) fn routine_decl_location(
+        &self,
+        package: &str,
+        name: &str,
+    ) -> (Option<u32>, Option<String>) {
+        for candidate in self.routine_candidate_subs(package, name) {
+            if let ValueView::Sub(data) = candidate.view()
+                && (data.source_line.is_some() || data.source_file.is_some())
+            {
+                return (data.source_line, data.source_file.clone());
+            }
+        }
+        (None, None)
+    }
+
     pub(super) fn routine_candidate_subs(&self, package: &str, name: &str) -> Vec<Value> {
         let exact_local = format!("{package}::{name}");
         let exact_global = format!("GLOBAL::{name}");

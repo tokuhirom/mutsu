@@ -210,6 +210,14 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
+        // `Code.line`/`Code.file`: this builder covers methods with no Raku
+        // declaration mutsu can point at -- a native method implemented in Rust,
+        // and a grammar `token`/`rule` (whose `Registry::token_defs` entry keeps
+        // the declaring file but no line). Both answer `Nil` rather than a
+        // fabricated location; see
+        // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
+        attrs.insert("line".to_string(), Value::NIL);
+        attrs.insert("file".to_string(), Value::NIL);
         // `.WHY` (`dispatch_why`'s `Instance` branch) builds its doc-comment
         // lookup key from these two, the same way it does for a plain user
         // method -- without them, a grammar token/rule/regex's `#|` comment
@@ -305,6 +313,31 @@ impl Interpreter {
         attrs.insert("multi".to_string(), Value::truth(is_multi_candidate));
         attrs.insert("rw".to_string(), Value::truth(method_def.is_rw));
         attrs.insert("readonly".to_string(), Value::truth(!method_def.is_rw));
+        // `Code.line`/`Code.file` — the declaration site, reported for a
+        // `Method` the same way `SubData::source_line`/`source_file` report it
+        // for a `Sub`. The line rides on the method's own compiled body
+        // (stamped by `Compiler::compile_method_body`); the file is the one
+        // registration already recorded on the `MethodDef` for backtrace
+        // attribution. A method with neither (a synthetic/native method, or one
+        // installed through the MOP) reports `Nil`, never a fabricated
+        // location.
+        attrs.insert(
+            "line".to_string(),
+            method_def
+                .compiled_code
+                .as_ref()
+                .and_then(|cc| cc.source_line)
+                .map(Value::int)
+                .unwrap_or(Value::NIL),
+        );
+        attrs.insert(
+            "file".to_string(),
+            method_def
+                .source_file
+                .as_ref()
+                .map(|f| Value::str(f.clone()))
+                .unwrap_or(Value::NIL),
+        );
         // The method name is always recorded so `CALL-ME` on a dispatcher
         // (no single callable of its own) can re-dispatch on the first
         // argument, mirroring the old Sub-shaped dispatcher's

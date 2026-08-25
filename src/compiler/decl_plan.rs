@@ -380,7 +380,18 @@ impl Compiler {
             .collect();
         let package_name = package_name.map(str::to_string);
         let mut keys = Vec::new();
+        // The type body's own `Stmt::SetLine` markers are what tell each method
+        // which line its `method` keyword sits on. The nested `method_compiler`
+        // `compile_method_body` spins up is a bare `Compiler::new()` with no
+        // line history of its own, and the method BODY's first `SetLine` is the
+        // first statement's line (not the declaration's), so the declaration
+        // line has to be tracked here, walking the body in source order.
+        let mut decl_line = self.last_source_line;
         for stmt in flattened {
+            if let Stmt::SetLine(line) = stmt {
+                decl_line = Some(*line);
+                continue;
+            }
             let Stmt::MethodDecl {
                 name,
                 name_expr,
@@ -404,6 +415,7 @@ impl Compiler {
                     apply_auto_positional_slurpy,
                     *is_rw,
                     return_type.as_ref(),
+                    decl_line,
                 ),
                 _ => None,
             };

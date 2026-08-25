@@ -497,7 +497,6 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Type/Code.rakudoc:166,175,195` | `.line`/`.file` reflection methods missing on `Sub`/`Method` | [code-line-file-reflection-missing-on-sub-method.md](../todo/tickets/code-line-file-reflection-missing-on-sub-method.md) |
 | `Type/Code.rakudoc:81` | `$:name` named-placeholder variable fails to interpolate inside a double-quoted string (bare form already works) | [named-placeholder-var-interpolation-in-string-fails.md](../todo/tickets/named-placeholder-var-interpolation-in-string-fails.md) |
 | `Type/DateTime.rakudoc:137` | a `DateTime` day-range-check throws the generic `X::OutOfRange` instead of the already-registered, more specific `X::Temporal::OutOfRange` | [datetime-day-out-of-range-uses-generic-outofrange.md](../todo/tickets/datetime-day-out-of-range-uses-generic-outofrange.md) |
 | `Type/DateTime.rakudoc:281,302` | `.julian-date`/`.modified-julian-date` return `Num` (float noise) instead of an exact `Rat` | [datetime-julian-date-returns-num-not-rat.md](../todo/tickets/datetime-julian-date-returns-num-not-rat.md) |
