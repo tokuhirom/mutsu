@@ -91,8 +91,11 @@ specializes the whole new -> bless -> BUILDALL chain.
   compiled BUILDALL that skips per-phase full-path dispatch + capture-style
   named args). Blast radius measured: 88 files / ~800 `to_map()`/`as_map()`
   sites.**
-- [ ] **S6 (NEW, 2026-08-25 — the actionable residual): extend the
+- [x] **S6 (NEW, 2026-08-25 — the actionable residual): extend the
   compiled-method fast path to simple named/attributive parameter shapes.**
+  **Implemented 2026-08-25 (round 4, see below): −15.9% instructions /
+  −21% wall clock on this bench; the `fast_method_cache` tier and the
+  TWEAK(Dist) closure-body residual remain follow-ups.**
   Instruction-count decomposition (see round 3 below) shows the two
   near-empty TWEAK submethods cost ~240k instructions/construction — 51% of
   the bench — and virtually all of it is full-path dispatch overhead, not
@@ -312,6 +315,83 @@ session with the binding roast set as gate) first; the S4-class
 construction-pipeline campaign (ADR) only after S6 lands and is measured, as
 S6 may take the CI ratio to parity by itself. S2's env_deep_copies remainder
 stays gated on `docs/vm-single-store.md` §3; S3 stays closed.**
+
+## Update (2026-08-25, round 4 — S6 implemented)
+
+S6 landed: the compiled-method fast path (`call_compiled_method` gate +
+`call_compiled_method_fast` binding, src/vm/vm_method_dispatch.rs) now accepts
+**simple named and attributive parameter shapes**, and calls carrying named
+(string-keyed Pair) arguments. What the fast path binds directly:
+
+- plain readonly scalar named params (`:$x`) — Pair args matched by key,
+  rightmost wins, itemized via `itemize_plain_scalar_param` like the binder;
+- attributive named params (`:$!x` / `:$.x` / `:@!a` / `:%!h`) — bound via the
+  same single-key live-cell write `bind_param_value` performs (`@`-sigiled
+  values re-homed through `normalize_positional_param_value`); an unsupplied
+  one binds its type-object default into the attribute (rakudo semantics,
+  verified against v2026.06 and pinned by `t/tweak-named-fast-path.t`);
+- the implicit/explicit `*%_` slurpy — leftover named args, with
+  `implicit_method_named_slurpy` fixed to strip sigil+twigil when computing
+  consumed keys (an attributive `:$!x` now keeps caller key "x" out of `%_`,
+  matching the slow path's `explicit_named_keys` and rakudo);
+- `method new(*%_)`-shaped methods called with all-named args (the custom-new
+  half of the bench) — no eligible-param change needed, only the arg-side gate.
+
+Conservative bails to the full path (all pinned by the new test): named params
+with traits / type constraints / where / sub-signature aliases (`:a(:$b)`) /
+defaults-when-unsupplied / required-when-missing; non-attributive `@`/`%`/`&`
+named params (container-alias semantics); non-string-keyed `ValuePair` args;
+internal `__mutsu_*` pairs; a named container-variable arg feeding a plain
+named scalar param (new `method_shares_container_into_named_scalar_param`,
+mirroring the sub side — `$n.push` writeback stays correct).
+`method_shares_container_into_scalar_param`'s positional alignment was also
+made Pair-aware (it could misalign once Pair args reach the gate). The
+`fast_method_cache` gate (vm_call_method_compiled_cache.rs) is deliberately
+unchanged — extending the *cached* tier to named shapes is a follow-up.
+
+One subtlety the full `make test` run caught: an attributive bind during the
+BUILD phase must be recorded via `record_build_attr_write`, or the post-BUILD
+initializer pass re-applies `has $.a = 5` over an *unpassed* `:$!a` bind — the
+seed comparison alone cannot tell, because an untyped attribute's seed IS the
+same `Any` type object the bind writes (t/build-attr-default-order.t test 8).
+The slow path records this through its exit attr-local sync
+(`write_attr_cell_by_key`); the fast path now records it at bind time.
+
+A second subtlety the first CI run caught (all three roast jobs failed
+identically on S12-class/interface-consistency.t test 5): an `is hidden`
+class's methods get NO implicit `*%_` (`effective_method_param_defs`), so an
+unexpected named argument must die — but the fast path silently dropped
+leftover named args regardless of whether a `%_` slurpy existed to absorb
+them. Fixed with the `named_args_all_land` gate: named-arg calls take the
+fast path only when a `%`-named slurpy exists or every named key is consumed
+by an eligible named param; otherwise the full path raises the proper error.
+Pinned in t/tweak-named-fast-path.t. (No bench cost: normal methods have the
+implicit `*%_`, so the check short-circuits on the slurpy probe.)
+
+**Measured (release, core-pinned `perf stat -e instructions`, 5000 ctors,
+local box):**
+
+| slice                     | before (insns/ctor) | after | delta |
+|---------------------------|--------------------:|------:|------:|
+| full bench                | 474.4k | 399.2k | −75.2k (−15.9%) |
+| custom-new→bless plumbing | 233.8k (no-TWEAK variant) | 211.1k | −22.7k |
+| TWEAK(Spec) (empty body)  | 59.5k | 34.1k | −43% |
+| TWEAK(Dist) (`.map` body) | 181.1k | 154.0k | −15% |
+
+Wall clock (min of 5, `taskset -c 3`): 0.28s → 0.22s whole run, ≈52µs →
+≈40µs/ctor startup-subtracted (−21%). Confirm on bench CI after merge, per the
+measurement notes below.
+
+**Remaining headroom after S6:** TWEAK(Dist) still costs ~154k insns/ctor —
+dominated not by param binding but by its body's closure creation (`*.flat`
+MakeLambda per call), the non-scoped env path (its nested closure disables the
+overlay → the one real O(env) deep copy per ctor survives, still 15002
+env_deep_copies for the run), `flatten_scoped_env` on the nested `.map`
+dispatch, and the exit merge/reconcile. That is the `docs/vm-single-store.md`
+§3 territory round 3 already gated S2 on, plus the S4-class construction
+pipeline. Next actionable, if wanted: extend the `fast_method_cache` tier to
+the same named shapes, and look at per-call closure-literal reuse for
+immediately-invoked WhateverCode.
 
 ## Measurement notes
 

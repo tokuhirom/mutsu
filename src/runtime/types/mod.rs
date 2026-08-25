@@ -470,7 +470,7 @@ impl Interpreter {
     /// not a single element holding the list. Every other value is passed through
     /// untouched, so an ordinary Array keeps sharing the caller's container and a
     /// non-Positional is left for the binder's type check to reject.
-    fn normalize_positional_param_value(value: Value) -> Value {
+    pub(crate) fn normalize_positional_param_value(value: Value) -> Value {
         match value.view() {
             // De-itemize in place: `$[…]` becomes an `Array` and `$(…)` a `List`,
             // so `.raku` still renders the shape the argument had.
