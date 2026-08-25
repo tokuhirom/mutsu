@@ -73,25 +73,9 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
         }
         (r, variants)
     } else if input.starts_with('(') {
-        let (r, _) = parse_char(input, '(')?;
-        let (r, _) = ws(r)?;
-        let mut variants = Vec::new();
-        let mut r = r;
-        loop {
-            if let Some(r2) = r.strip_prefix(')') {
-                r = r2;
-                break;
-            }
-            let (r2, variant) = parse_enum_variant_entry(r)?;
-            variants.push(variant);
-            let (r2, _) = ws(r2)?;
-            if let Some(stripped) = r2.strip_prefix(',') {
-                let (r2, _) = ws(stripped)?;
-                r = r2;
-            } else {
-                r = r2;
-            }
-        }
+        let (r, body) = parse_paren_enum_body(input)?;
+        let variants = enum_variants_from_body(&body)
+            .ok_or_else(|| PError::expected("anonymous enum variants"))?;
         (r, variants)
     } else {
         return Err(PError::expected("anonymous enum variants"));
@@ -200,40 +184,38 @@ fn parse_double_angle_enum_variants(input: &str) -> PResult<'_, Vec<(String, Opt
     }
 }
 
-/// Try to parse all enum variants as static entries inside `(...)`.
-fn parse_static_enum_variants(input: &str) -> PResult<'_, Vec<(String, Option<Expr>)>> {
-    let mut variants = Vec::new();
-    let mut r = input;
-    loop {
-        let (r2, _) = ws(r)?;
-        if let Some(r2) = r2.strip_prefix(')') {
-            return Ok((r2, variants));
-        }
-        let (r2, variant) = parse_enum_variant_entry(r)?;
-        variants.push(variant);
-        let (r2, _) = ws(r2)?;
-        if let Some(stripped) = r2.strip_prefix(',') {
-            let (r2, _) = ws(stripped)?;
-            r = r2;
-        } else {
-            r = r2;
-        }
-    }
+/// Parse an `enum`'s parenthesized body with the ordinary parenthesized-term
+/// grammar rule.
+///
+/// Rakudo's `enum` does not have a variant-list grammar of its own: the body is
+/// just a term, so every separator the parenthesized term supports works here.
+/// In particular a top-level `;` splits the term into sections
+/// (`enum Foo (A => 0; B => 10)`, and the multi-line spelling used by
+/// `Language/nativecall.rakudoc`), a trailing `,`/`;` is a terminator rather
+/// than an extra element, and computed bodies (`1..5 Z=> 'a'..'e'`, `%hash`)
+/// come back as a single expression.
+fn parse_paren_enum_body(input: &str) -> PResult<'_, Expr> {
+    crate::parser::primary::container::paren_expr(input)
 }
 
-fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> {
-    let (rest, expr) = expression(input)?;
+/// Turn one element of an already-parsed enum body into a static variant.
+///
+/// `None` means the element is not a plain name / `name => value` pair, so the
+/// whole body has to stay a computed (`__DYNAMIC__`) expression.
+fn enum_variant_from_expr(expr: Expr) -> Option<(String, Option<Expr>)> {
     match expr {
         // A *bare identifier* inside the parenthesised `(...)` enum body is a
         // term reference, not an autoquoted key (only the `<...>` word-list form
         // autoquotes). If it is not a declared symbol it is X::Undeclared — so
-        // reject it here and let the dynamic-expression fallback re-parse the
-        // body as a value expression, which the undeclared-names check scans.
+        // reject it here and let the computed-body fallback keep the expression,
+        // which the undeclared-names check scans.
         // (Pairs like `A => 1` keep their bare LHS as an autoquoted key below.)
-        Expr::BareWord(_) => Err(PError::expected("enum value (use <...> to autoquote keys)")),
+        Expr::BareWord(_) => None,
         Expr::Literal(lit) if lit.as_str().is_some() => {
-            Ok((rest, (lit.as_str().unwrap().to_string(), None)))
+            Some((lit.as_str().unwrap().to_string(), None))
         }
+        // A single pair is wrapped as a positional pair by the term parser.
+        Expr::PositionalPair(inner) => enum_variant_from_expr(*inner),
         Expr::Binary {
             left,
             op: crate::token_kind::TokenKind::FatArrow,
@@ -245,30 +227,25 @@ fn parse_enum_variant_entry(input: &str) -> PResult<'_, (String, Option<Expr>)> 
                     Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => None,
                     other => Some(other),
                 };
-                Ok((rest, (name, value_expr)))
+                Some((name, value_expr))
             }
-            _ => Err(PError::expected("enum variant name")),
+            _ => None,
         },
-        // Handle PositionalPair wrapping a Pair (e.g., from `"foo" => -42`)
-        Expr::PositionalPair(inner) => match *inner {
-            Expr::Binary {
-                left,
-                op: crate::token_kind::TokenKind::FatArrow,
-                right,
-            } => match *left {
-                Expr::Literal(lit) if lit.as_str().is_some() => {
-                    let name = lit.as_str().unwrap().to_string();
-                    let value_expr = match *right {
-                        Expr::Literal(rl) if matches!(rl.view(), ValueView::Bool(true)) => None,
-                        other => Some(other),
-                    };
-                    Ok((rest, (name, value_expr)))
-                }
-                _ => Err(PError::expected("enum variant name")),
-            },
-            _ => Err(PError::expected("enum variant")),
-        },
-        _ => Err(PError::expected("enum variant")),
+        _ => None,
+    }
+}
+
+/// Decompose a parsed `(...)` enum body into static variants, or `None` when at
+/// least one element is not a static name/pair (the caller then keeps the body
+/// as a computed expression).
+fn enum_variants_from_body(body: &Expr) -> Option<Vec<(String, Option<Expr>)>> {
+    match body {
+        Expr::ArrayLiteral(items) => items
+            .iter()
+            .cloned()
+            .map(enum_variant_from_expr)
+            .collect::<Option<Vec<_>>>(),
+        other => enum_variant_from_expr(other.clone()).map(|variant| vec![variant]),
     }
 }
 
@@ -331,43 +308,29 @@ pub(super) fn parse_enum_decl_body_with_type(
         }
         (r, variants)
     } else if rest.starts_with('(') {
-        let (r, _) = parse_char(rest, '(')?;
-        let (r, _) = ws(r)?;
-        // Try static variant parsing first; if any entry is not a simple
-        // identifier/string/pair, fall back to treating the whole body as
-        // a dynamic expression.
-        if let Ok(static_result) = parse_static_enum_variants(r) {
-            let (r, variants) = static_result;
-            (r, variants)
-        } else {
-            // Dynamic: parse as expression list (may use operators like X~, Z=>, |, etc.)
-            let (r2, expr) = expression(r)?;
-            let (r2, _) = ws(r2)?;
-            if let Some(r3) = r2.strip_prefix(',') {
-                let mut items = vec![expr];
-                let (mut r, _) = ws(r3)?;
-                loop {
-                    let (r2, _) = ws(r)?;
-                    if let Some(r2) = r2.strip_prefix(')') {
-                        r = r2;
-                        break;
-                    }
-                    let (r2, item_expr) = expression(r)?;
-                    items.push(item_expr);
-                    let (r2, _) = ws(r2)?;
-                    if let Some(stripped) = r2.strip_prefix(',') {
-                        let (r2, _) = ws(stripped)?;
-                        r = r2;
-                    } else {
-                        r = r2;
-                    }
-                }
-                let combined = Expr::ArrayLiteral(items);
+        // The body is an ordinary parenthesized term (see `parse_paren_enum_body`).
+        // A failure here is a real syntax error in a construct we are already
+        // committed to (`enum <Name> (`), so report it instead of letting the
+        // statement layer backtrack and re-read the `enum` keyword as a call to
+        // an undeclared routine — that produced the useless
+        // "Undeclared routine: enum used" for every malformed enum body.
+        let (r, body) = parse_paren_enum_body(rest).map_err(|err| {
+            if err.is_fatal() {
+                err
+            } else {
+                PError::fatal_at(format!("Malformed enum body for enum '{name_str}'"), rest)
+            }
+        })?;
+        match enum_variants_from_body(&body) {
+            Some(variants) => (r, variants),
+            None => {
+                // Computed body (operators like `X~`, `Z=>`, `|`, a `%hash`, …):
+                // keep the whole expression and let the runtime build the enum.
                 return Ok((
                     r,
                     Stmt::EnumDecl {
                         name,
-                        variants: vec![("__DYNAMIC__".to_string(), Some(combined))],
+                        variants: vec![("__DYNAMIC__".to_string(), Some(body))],
                         is_export,
                         is_my,
                         base_type: base_type.clone(),
@@ -375,20 +338,6 @@ pub(super) fn parse_enum_decl_body_with_type(
                     },
                 ));
             }
-            let r2 = r2
-                .strip_prefix(')')
-                .ok_or_else(|| PError::expected("closing ')' for enum body"))?;
-            return Ok((
-                r2,
-                Stmt::EnumDecl {
-                    name,
-                    variants: vec![("__DYNAMIC__".to_string(), Some(expr))],
-                    is_export,
-                    is_my,
-                    base_type: base_type.clone(),
-                    language_version: super::super::simple::current_language_version(),
-                },
-            ));
         }
     } else {
         (rest, Vec::new())

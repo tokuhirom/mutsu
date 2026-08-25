@@ -28,7 +28,11 @@ pub(crate) use angle_words::angle_list;
 pub(super) use angle_words::{double_angle_list, find_nested_angle_close_pub, french_quote_list};
 pub(crate) use array::fail_goal_error_at;
 pub(super) use array::{array_literal, percent_hash_literal};
-pub(super) use paren::paren_expr;
+// `paren_expr` is `pub(crate)` (not `pub(super)`) because the `enum` declarator
+// parses its `(...)` body with the very same parenthesized-term rule rakudo
+// uses (`parser::stmt::decl::enum_decl`), which is what makes `;` a variant
+// separator there.
+pub(crate) use paren::paren_expr;
 pub(super) use sigil_context::{
     hash_context_paren_expr, itemized_brace_expr, itemized_bracket_expr,
     itemized_context_paren_expr, itemized_paren_expr, list_context_paren_expr,

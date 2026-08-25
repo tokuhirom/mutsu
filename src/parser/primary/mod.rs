@@ -1,4 +1,4 @@
-mod container;
+pub(crate) mod container;
 // Re-exported so other parser subtrees (e.g. crate::parser::expr postfix
 // parsing) can build the same X::Comp::FailGoal for unterminated brackets.
 pub(crate) use container::angle_words_subscript_index_expr;
