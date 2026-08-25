@@ -1868,6 +1868,17 @@ pub struct Interpreter {
     /// one of these subs — a plain `my sub` that merely shares a captured
     /// variable's name must keep resolving through its own live env capture.
     pub(crate) escaped_our_sub_names: std::collections::HashSet<String>,
+    /// Bare (sigil-less) names of the plain `our` SCALARS whose canonical home
+    /// is a shared `ContainerRef` cell published under a package-qualified key
+    /// (`OpCode::DeclareOurScalar` — see `vm_our_package_vars`). Recorded only
+    /// for a declaration inside a real package (a file-scope `our $x` collapses
+    /// its qualified name to the bare name and is therefore never redirected).
+    ///
+    /// This is a cheap pre-gate, not the resolution itself: a bare-name read or
+    /// write consults `our_package_scalar_*` only when the name is in this set,
+    /// so the ordinary program — which never declares a package `our` scalar —
+    /// pays a single empty-set check on the variable hot path.
+    pub(crate) our_scalar_cell_names: std::collections::HashSet<String>,
     /// Keyed by `(base key symbol, closure scope id)` instead of a formatted
     /// `String` — see `scoped_state_key`/`state_key_display`. The `Option<u64>`
     /// distinguishes an un-scoped (named-sub/module-level) `state` var from one

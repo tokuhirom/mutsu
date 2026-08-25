@@ -1,4 +1,4 @@
-//! Bare-name resolution for a package's `our`-declared `@`/`%` containers.
+//! Bare-name resolution for a package's `our`-declared variables.
 //!
 //! `our @arr` inside `unit module UFL3` is a PACKAGE variable. Its canonical
 //! storage is the package-qualified mirror `@UFL3::arr`: the declaration
@@ -31,6 +31,15 @@
 //! write-through-the-shared-node (ADR-0013 / ADR-0039 §2), so once a read or a
 //! write chokepoint resolves to the mirror's `Gc`, `push` / element-assign /
 //! `:delete` land on the module's own container with no separate write-back.
+//!
+//! SCALARS need one thing more, and it is why they were a separate fix. A
+//! scalar write *replaces* a value rather than mutating a shared node, so a
+//! read-side preference alone leaves the write landing on the bare `env` key —
+//! the loading scope's `my $s`. A plain `our $x` does have a single canonical
+//! home for both halves (`OpCode::DeclareOurScalar`'s `ContainerRef` cell), so
+//! the write chokepoints (`SetGlobal` and the read-modify-write ops, via
+//! `store_scalar_by_name`) write THROUGH that cell and suppress their bare
+//! stores. See `our_package_scalar_cell`.
 
 use super::*;
 
@@ -58,6 +67,15 @@ impl Interpreter {
         if !(name.starts_with('@') || name.starts_with('%')) {
             return None;
         }
+        self.our_package_var_key(name)
+    }
+
+    /// Sigil-agnostic core of [`Self::our_package_container_key`]: reconstruct
+    /// the package-qualified `our_vars` key for a bare name as seen from the
+    /// running routine. Callers own the sigil gate, because the two sigil
+    /// families reach this from different chokepoints with different
+    /// pre-filters (see [`Self::our_package_scalar_cell`]).
+    fn our_package_var_key(&self, name: &str) -> Option<String> {
         // An explicitly-written `@Other::x` is already the package variable it
         // names; anonymous containers are never package variables.
         if name.contains("::") || name.contains("__ANON") {
@@ -98,6 +116,99 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// The shared cell backing a bare `our` SCALAR name, as seen from the
+    /// routine that is running, together with the `our_vars` key it lives
+    /// under.
+    ///
+    /// Why a scalar needs more than the container redirect: a container is one
+    /// `Gc` node published under several names, so preferring the mirror on a
+    /// READ is enough — every mutation writes through the node. A scalar write
+    /// *replaces* a value, so the write chokepoint must reach the same storage
+    /// the read did or the two halves disagree. `our $x` already has exactly
+    /// that storage: `OpCode::DeclareOurScalar` installs ONE `ContainerRef`
+    /// cell into the declaring slot, `env[bare]`, `env[qualified]` and
+    /// `our_vars[qualified]`, so writing through the cell updates every alias
+    /// at once and can never desynchronize them.
+    ///
+    /// Requiring the entry to BE a cell is the gate, not an optimization. It
+    /// is what makes this a redirect to a variable's canonical home rather
+    /// than a name-shaped guess: only a plain `our $x` declaration creates
+    /// one, so a bareword, a type object, an `our constant`, or an
+    /// `our`-scoped sub that happens to share the reconstructed key is never
+    /// mistaken for a package scalar. The shapes `use_our_cell` excludes
+    /// (`our constant`, `:=`-bound, sigil-less, traited) keep their existing
+    /// two-independent-stores behaviour untouched.
+    fn our_package_scalar_cell(
+        &self,
+        name: &str,
+    ) -> Option<(String, crate::gc::Gc<std::sync::Mutex<Value>>)> {
+        // Cheap pre-gate: empty for any program with no package `our` scalar,
+        // so an ordinary variable read pays one hash-set check. It also keeps
+        // the `current_package()` lock read and the `locals` scan below off the
+        // hot path for every unrelated name.
+        if self.our_scalar_cell_names.is_empty() || !self.our_scalar_cell_names.contains(name) {
+            return None;
+        }
+        let key = self.our_package_var_key(name)?;
+        match self.get_our_var(&key).map(Value::view) {
+            Some(ValueView::ContainerRef(cell)) => Some((key, cell.clone())),
+            _ => None,
+        }
+    }
+
+    /// Read companion of [`Self::our_package_scalar_cell`]: the cell's current
+    /// value. Consulted BEFORE `env`, because the bare env key belongs to
+    /// whatever scope loaded the module — a consumer's own `my $s` overwrites
+    /// it (and its redeclaration guard even replaces the module's cell with
+    /// `Nil`), so `env` is not merely stale for this name, it is a different
+    /// variable.
+    pub(crate) fn our_package_scalar(&self, name: &str) -> Option<Value> {
+        let (_, cell) = self.our_package_scalar_cell(name)?;
+        let val = cell.lock().unwrap().clone();
+        Some(val)
+    }
+
+    /// Write companion of [`Self::our_package_scalar_cell`]: store `val` into
+    /// the package scalar's canonical cell and report that the write is fully
+    /// handled, so the caller SKIPS its bare-name `env` / `our_vars` /
+    /// shared-var stores. Suppressing those is the point: the bare key is the
+    /// loading scope's `my $s`, and writing it is what let a module's `our $s`
+    /// assignment land on its consumer's lexical.
+    ///
+    /// Mirrors [`Interpreter::unit_scope_lexical_write`] (ADR-0039 slice 1)
+    /// exactly, one store over: same "resolve to the cell, write through it,
+    /// report handled" contract.
+    pub(crate) fn our_package_scalar_write(&mut self, name: &str, val: &Value) -> bool {
+        let Some((key, cell)) = self.our_package_scalar_cell(name) else {
+            return false;
+        };
+        Self::cell_store_preserving_container_identity(&key, &cell, val);
+        true
+    }
+
+    /// The by-name scalar write tail shared by the three read-modify-write ops
+    /// (`++`, `--`, and the fused compound assignment `AtomicCompoundVar`):
+    /// put `val` where the name's variable actually lives.
+    ///
+    /// These ops are a second by-name scalar write chokepoint alongside
+    /// `SetGlobal`, and they leaked the same way: `$s ~= '+'` inside a module
+    /// routine wrote the bare env key — the loading scope's `my $s`. When the
+    /// name is a package `our` scalar the write goes through its canonical
+    /// cell and the bare stores are skipped; otherwise the ordinary bare-name
+    /// store applies, exactly as before.
+    pub(crate) fn store_scalar_by_name(&mut self, name: &str, val: &Value) {
+        if self.our_package_scalar_write(name, val) {
+            return;
+        }
+        self.set_env_with_main_alias(name, val.clone());
+        // A compound assign / inc-dec to a package-scope free variable (`our $X`
+        // or a `package { my $X }` lexical) reached from inside a named sub uses
+        // the bare name; mirror the value back into the canonical package store
+        // so the mutation persists across calls (the env write above is only the
+        // same-frame view). No-op for non-package-scope names.
+        self.writeback_package_scope_var(name, val);
     }
 
     /// Read companion of [`Self::our_package_container_key`]: the mirror's
@@ -169,6 +280,43 @@ impl Interpreter {
         // call, and therefore alive. Same pattern as `builtins_atomic_shared`
         // and `builtins_dispatch_next`.
         let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
-        code.locals.iter().any(|n| n == name)
+        if code.locals.iter().any(|n| n == name) {
+            return true;
+        }
+        // A closure body does not list the enclosing lexicals it captures in
+        // its own `locals`, but `compute_upvalues` — run ONLY for
+        // anonymous-closure bodies — allocated an upvalue slot for each one.
+        // A name with such a slot is therefore a captured lexical of an
+        // enclosing scope, and it must win over a same-named `our` of the
+        // package the closure happens to be written in:
+        //
+        //     module M {
+        //         our $x = 'our';
+        //         sub f { my $x = 'lex'; sub { $x ~= '!' }(); $x }   # 'lex!'
+        //     }
+        //
+        // Because `compute_upvalues` never runs for a named routine's body,
+        // this cannot mask the case the redirect exists for — a module
+        // routine's bare reference to its own package variable.
+        if !self.upvalues.is_empty()
+            && code
+                .upvalue_syms
+                .iter()
+                .any(|sym| sym.with_str(|n| n == name))
+        {
+            return true;
+        }
+        // `compute_upvalues` only rewrites *pure reads*, so a closure that
+        // assigns its captured variable (`sub { $x ~= '!' }`) gets no upvalue
+        // slot for it. The compile-time capture record covers that shape:
+        // `free_var_parent_slots[i]` is `Some(slot)` exactly when the CREATING
+        // frame declares free variable `i` as one of its own locals — i.e. the
+        // name is a captured enclosing lexical. It is baked only for closure
+        // bodies (`Compiler::add_closure_code_baked`), so a named routine's
+        // body, which is where the redirect must fire, is untouched.
+        code.free_var_syms
+            .iter()
+            .zip(code.free_var_parent_slots.iter())
+            .any(|(sym, parent)| parent.is_some() && sym.with_str(|n| n == name))
     }
 }

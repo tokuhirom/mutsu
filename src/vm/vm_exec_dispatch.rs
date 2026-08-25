@@ -1666,6 +1666,24 @@ impl Interpreter {
                 // this write is exclusive — the env/`our`/shared-var stores below
                 // are skipped for it.
                 let unit_lexical_write = self.unit_scope_lexical_write(&name, &val);
+                // An `our $x` of the package the running routine belongs to is
+                // reached by its BARE name from inside that package's own
+                // routines (the sub-body state-scope package disables
+                // qualification), but the bare env key belongs to whatever
+                // scope loaded the module. Writing it is what made a module's
+                // `our $s = ...` land on the consumer's same-named `my $s`.
+                // The variable's canonical home is the shared cell
+                // `DeclareOurScalar` published under the package-qualified
+                // name, so write THROUGH that cell and skip the bare-name
+                // stores entirely — the same exclusivity `unit_lexical_write`
+                // has, for the same reason. A `:=` bind rebinds the name
+                // rather than assigning the variable, so it keeps the normal
+                // path.
+                let our_scalar_write = !unit_lexical_write
+                    && !is_bind_ctx
+                    && !is_rebind
+                    && bind_source.is_none()
+                    && self.our_package_scalar_write(&name, &val);
                 // A DECLARATION reaching SetGlobal (an expression-position `my`,
                 // e.g. `if (my $file = ...)`) creates a fresh binding — it is
                 // never a write to a carrier-caller's lexical, so it must not
@@ -1679,7 +1697,7 @@ impl Interpreter {
                         .carrier_writes
                         .as_ref()
                         .is_some_and(|s| s.contains(name.as_str()));
-                if unit_lexical_write {
+                if unit_lexical_write || our_scalar_write {
                     // nothing further: the cell is the only home for this name
                 } else if raw_mode && name.starts_with('@') {
                     // For `constant @x`, bypass set_shared_var's List→Array
@@ -1718,7 +1736,7 @@ impl Interpreter {
                 // Persist `our`-scoped variables so they survive block-scope
                 // restoration (which only preserves env keys that existed
                 // before the block).  `::('name')` falls back to this store.
-                if !unit_lexical_write {
+                if !unit_lexical_write && !our_scalar_write {
                     self.set_our_var(name.clone(), val.clone());
                 }
                 // Eager `our`-alias sync: a package-qualified store (`$Foo::b = v`)
@@ -1731,7 +1749,9 @@ impl Interpreter {
                 // inside a named sub must reach the canonical package store too,
                 // otherwise the write lands only on the bare env/our key that the
                 // `GetGlobal` read fallback never consults. No-op otherwise.
-                self.writeback_package_scope_var(&name, &val);
+                if !our_scalar_write {
+                    self.writeback_package_scope_var(&name, &val);
+                }
                 // Track topic mutations for map rw writeback
                 if name == "_" {
                     self.env_mut()
@@ -1739,7 +1759,7 @@ impl Interpreter {
                 }
                 // Sync to shared_vars for cross-thread visibility.
                 // Skip for raw_mode @-variables to preserve List kind.
-                if !(unit_lexical_write || raw_mode && name.starts_with('@')) {
+                if !(unit_lexical_write || our_scalar_write || raw_mode && name.starts_with('@')) {
                     loan_env!(self, set_shared_var(&name, val.clone()));
                 }
                 let mut alias_name = self.env().get(&alias_key).and_then(|v| {

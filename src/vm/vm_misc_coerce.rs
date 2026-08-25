@@ -386,7 +386,7 @@ impl Interpreter {
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.increment_value_smart(&val)?;
         self.check_incdec_type_constraint(name, &new_val)?;
-        self.set_env_with_main_alias(name, new_val.clone());
+        self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);
         // §1.5: mirror into the compile-time-baked slot when present (scope-correct
         // under shadow slots); by-name fallback for a non-local target.
@@ -396,7 +396,6 @@ impl Interpreter {
             }
             _ => self.update_local_if_exists(code, name, &new_val),
         }
-        self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
     }
@@ -506,7 +505,7 @@ impl Interpreter {
         let val = self.normalize_incdec_source_with_type(name, val);
         let new_val = self.decrement_value_smart(&val)?;
         self.check_incdec_type_constraint(name, &new_val)?;
-        self.set_env_with_main_alias(name, new_val.clone());
+        self.store_scalar_by_name(name, &new_val);
         self.sync_anon_state_value(name, &new_val);
         // §1.5: mirror into the compile-time-baked slot when present (scope-correct
         // under shadow slots); by-name fallback for a non-local target.
@@ -516,7 +515,6 @@ impl Interpreter {
             }
             _ => self.update_local_if_exists(code, name, &new_val),
         }
-        self.writeback_package_scope_var(name, &new_val);
         self.stack.push(new_val);
         Ok(())
     }
