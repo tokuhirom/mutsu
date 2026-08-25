@@ -7,8 +7,19 @@ use Test;
 # terminated" because the closing-delimiter scanner had no awareness of the
 # `:my ... ;` declarator clause and saw the `/` of `$/` as the regex's own
 # closing delimiter (only `{ ... }` code blocks were protected before).
+#
+# The first fix for that made a second, distinct construct regress:
+# `:my token NAME { … }` (and `:our`/`:constant`/`:let`/`:temp` + `rule`/
+# `regex`) is a *block-form* declarator -- it declares a lexically-scoped
+# named sub-rule and is terminated by BODY's own closing `}`, NOT by a `;`
+# (`roast/S05-modifier/my.t`'s `:my token SIGN { <[+-]> }` has no trailing
+# `;` at all). A first version of the fix assumed every `:my ...` clause was
+# `;`-terminated and scanned past the whole rest of the file looking for one,
+# breaking that construct with "Regex not terminated" too. The scanner now
+# distinguishes the two shapes (see `block_form_decl_prefix_len` in
+# src/parser/primary/regex/scan.rs).
 
-plan 12;
+plan 16;
 
 lives-ok {
     "aba" ~~ / (a) b {} :my $c = $/; /;
@@ -59,6 +70,45 @@ nok 'foobar' ~~ /foo$/, 'the $ anchor still rejects a non-matching trailing stri
         $s ~~ s/ (a) b {} :my $c = $/; /X/;
     }, 'a :my declarator whose RHS is $/ parses inside a substitution pattern';
     is $s, 'Xa', 'the substitution itself still applied correctly';
+}
+
+# Block-form `:my token NAME { ... }` (regression: an earlier version of this
+# fix assumed every `:my` clause ends in `;`, which broke this construct --
+# see roast/S05-modifier/my.t). This form is only legal inside a
+# {}-bracket-delimited regex literal (raku rejects it inside a slash-
+# delimited one with "Strange text after block"), so it is exercised via
+# `rx { ... }` / `my token NAME { ... }` here, not `/ ... /`.
+lives-ok {
+    "+123.456e10" ~~ rx {
+        :my token SIGN { <[+-]> }
+        :my token MANTISSA { \d+ '.'? \d* | '.' \d+ }
+        :my token EXPONENT { <[eE]> <SIGN>? \d+ }
+        <SIGN>? <MANTISSA> <EXPONENT>?
+    };
+}, 'multiple consecutive block-form :my token declarators (bracket-delimited rx) parse';
+
+ok "+123.456e10" ~~ rx {
+    :my token SIGN { <[+-]> }
+    :my token MANTISSA { \d+ '.'? \d* | '.' \d+ }
+    :my token EXPONENT { <[eE]> <SIGN>? \d+ }
+    <SIGN>? <MANTISSA> <EXPONENT>?
+}, ':my terminates upon }';
+
+# The scalar form must keep working when it appears directly inside a
+# bracket-delimited token body too (not just slash-delimited regexes above).
+lives-ok {
+    my token hasmy {
+        :my $y = ' yack';
+        b $y $y
+    }
+}, 'scalar-form :my (bracket-delimited token) still parses alongside the block form';
+
+{
+    my token hasmy2 {
+        :my $y = ' yack';
+        b $y $y
+    }
+    ok 'b yack yack' ~~ &hasmy2, 'scalar-form :my (bracket-delimited token) still matches correctly';
 }
 
 done-testing;
