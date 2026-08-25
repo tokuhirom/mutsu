@@ -142,7 +142,15 @@ pub(in crate::parser) fn parse_call_arg_list(input: &str) -> PResult<'_, Vec<Exp
             let r = &r[1..];
             let (r, _) = ws(r)?;
             if r.starts_with(')') {
-                // Trailing semicolon before close paren
+                // Trailing semicolon before the close paren still OPENS one more
+                // slice, which stays empty. An argument-list `;` is a separator
+                // between whole argument lists (rakudo's `semiarglist`), not a
+                // statement terminator, and an `arglist` may match nothing — so
+                // `f(1;2;)` passes THREE arguments, the last being the empty
+                // list. (Contrast the parenthesized *term* `(1;2;)`, a statement
+                // list whose final `;` is just a terminator — that is
+                // `container::paren`'s job and stays two elements.)
+                groups.push(Vec::new());
                 return Ok((r, semicolon_groups_to_args(groups, current_group)));
             }
             let (r, arg) = parse_call_arg_expr(r)?;
