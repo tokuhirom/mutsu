@@ -643,6 +643,7 @@ impl Compiler {
                 body,
                 label,
                 rw_block,
+                is_statement_modifier,
                 ..
             } => {
                 self.compile_do_for_expr(
@@ -654,6 +655,7 @@ impl Compiler {
                     *rw_block,
                     body,
                     label,
+                    *is_statement_modifier,
                 );
             }
             Stmt::While { cond, body, label } => {

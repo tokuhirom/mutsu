@@ -299,17 +299,9 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
     let uses_block_magic = consumed_block.contains("&?BLOCK");
     // When no explicit params, collect placeholder variables from the body
     let (param, params) = if param.is_none() && params.is_empty() {
-        let placeholders = collect_placeholders_shallow(&body);
-        match placeholders.len() {
-            0 => (param, params),
-            // A single placeholder binds as the loop param (and also sets `$_`).
-            1 => (Some(placeholders[0].clone()), Vec::new()),
-            // Multiple placeholders make the block arity N, so the loop consumes
-            // N elements per iteration (`for 1..8 { $^a + $^b }` sums pairs).
-            // Bind them all as multi-params with `param = None`, matching the
-            // explicit `-> $^a, $^b` signature form; the single-`param` + extra
-            // `params` split does not correctly bind the 2nd+ placeholder.
-            _ => (None, placeholders),
+        match placeholder_loop_params(&body) {
+            Some(derived) => derived,
+            None => (param, params),
         }
     } else {
         (param, params)
@@ -331,4 +323,24 @@ fn for_stmt_with_mode(input: &str, mode: crate::ast::ForMode) -> PResult<'_, Stm
             uses_block_magic,
         },
     ))
+}
+
+/// Derive a `for` loop's implicit signature from the placeholder variables
+/// (`$^a`, `$^b`, ...) declared by its body block, or `None` when the body
+/// declares none. Shared by the `for LIST { ... }` statement form and by the
+/// `{ ... } for LIST` statement-modifier form, which is the same loop written
+/// the other way round and must derive the same signature.
+pub(crate) fn placeholder_loop_params(body: &[Stmt]) -> Option<(Option<String>, Vec<String>)> {
+    let placeholders = collect_placeholders_shallow(body);
+    match placeholders.len() {
+        0 => None,
+        // A single placeholder binds as the loop param (and also sets `$_`).
+        1 => Some((Some(placeholders[0].clone()), Vec::new())),
+        // Multiple placeholders make the block arity N, so the loop consumes
+        // N elements per iteration (`for 1..8 { $^a + $^b }` sums pairs).
+        // Bind them all as multi-params with `param = None`, matching the
+        // explicit `-> $^a, $^b` signature form; the single-`param` + extra
+        // `params` split does not correctly bind the 2nd+ placeholder.
+        _ => Some((None, placeholders)),
+    }
 }
