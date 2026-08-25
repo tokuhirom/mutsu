@@ -219,22 +219,20 @@ impl Interpreter {
                         let resolved = name.resolve();
                         // A builtin type's `Package` value (e.g. `Hash`, `Array`) is
                         // the SAME shared value for every variable of that type —
-                        // it is not a fresh per-instance metaobject. Writing a
-                        // display-name override keyed by "Hash" would rename the
-                        // type process-wide for every hash, not just the caller's.
-                        // A role-mixed native value's `.WHAT` (the
-                        // `ValueView::Mixin` arm above) is what gives
-                        // `Hash::Restricted` a distinct anonymous type object to
-                        // rename instead; this arm only ever sees the bare shared
-                        // `Package`, so it stays a no-op for builtins — only a
-                        // user-declared class's own `Package` value is safe to
-                        // rename this way.
-                        if !Self::is_builtin_type(&resolved) {
-                            self.type_metadata
-                                .entry(resolved)
-                                .or_default()
-                                .insert("__set_name__".to_string(), Value::str(new_name.clone()));
-                        }
+                        // it is not a fresh per-instance metaobject. Renaming it
+                        // therefore renames the type process-wide for every value
+                        // of it, not just the caller's — which matches real
+                        // Rakudo: `Hash.^set_name("X"); say Hash.^name` reports
+                        // "X" there too (verified against `raku`). A role-mixed
+                        // native value's `.WHAT` (the `ValueView::Mixin` arm
+                        // above) is what gives `Hash::Restricted` a distinct
+                        // per-composition anonymous type object to rename
+                        // instead, when the caller wants a scoped rename rather
+                        // than a global one.
+                        self.type_metadata
+                            .entry(resolved)
+                            .or_default()
+                            .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
                     ValueView::Instance { class_name, .. } => {
                         self.type_metadata
@@ -263,7 +261,7 @@ impl Interpreter {
                     };
                     return Ok(Value::str(name));
                 }
-                Ok(Value::str(match args[0].view() {
+                let name = match args[0].view() {
                     ValueView::Package(name) => self
                         .type_metadata
                         .get(&name.resolve())
@@ -294,8 +292,17 @@ impl Interpreter {
                             .join(",");
                         format!("{}[{}]", base_name, args_str)
                     }
-                    _ => self.dispatch_owner_name(&args[0]).to_string(),
-                }))
+                    // A concrete builtin value (`5`, `"x"`, `%h`, ...): honor
+                    // a process-wide rename of its type via
+                    // `Hash.^set_name(...)` etc. — see
+                    // `Interpreter::builtin_display_name`, the same helper
+                    // `dispatch_caret_name`'s equivalent fallback uses.
+                    _ => {
+                        let owner = self.dispatch_owner_name(&args[0]);
+                        self.builtin_display_name(owner)
+                    }
+                };
+                Ok(Value::str(name))
             }
             "array_type" if !args.is_empty() => {
                 // The element type of a native array-ish container. Derived from

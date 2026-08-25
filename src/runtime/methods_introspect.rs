@@ -685,13 +685,15 @@ impl Interpreter {
         Ok(Value::str(match target.view() {
             ValueView::Package(name) => {
                 let resolved = name.resolve();
-                // `.^set_name` on a user-declared class's own `Package` value
-                // persists a display-name override in `type_metadata` (see
-                // `dispatch_classhow_method`'s "set_name" handler); a plain
-                // `.^name` fast path must consult it too, or the rename never
-                // becomes visible. Builtin types never get an entry here (the
-                // write side refuses to write one), so this lookup is a no-op
-                // for them.
+                // `.^set_name` on a `Package` value (a user-declared class's
+                // own type object, or a builtin's shared type object like
+                // `Hash`/`Array`) persists a display-name override in
+                // `type_metadata` (see `dispatch_classhow_method`'s
+                // "set_name" handler); a plain `.^name` fast path must
+                // consult it too, or the rename never becomes visible. For a
+                // builtin type this is a genuine process-wide rename,
+                // matching real Rakudo (`Hash.^set_name(...)` renames `Hash`
+                // for every hash in the program, not just the caller's).
                 self.type_metadata
                     .get(&resolved)
                     .and_then(|m| m.get("__set_name__"))
@@ -791,9 +793,28 @@ impl Interpreter {
                         _ => {}
                     }
                 }
-                value_type_name(target).to_string()
+                self.builtin_display_name(value_type_name(target))
             }
         }))
+    }
+
+    /// Resolve a builtin type's `.^name` display name, honoring a global
+    /// rename made via `Foo.^set_name(...)` on that type's shared `Package`
+    /// value. `base` is the type's internal name (e.g. `"Hash"`), the same
+    /// key `dispatch_classhow_method`'s `"set_name"` handler writes
+    /// `__set_name__` under for a `ValueView::Package` — including builtins,
+    /// since real Rakudo genuinely renames a builtin type process-wide when
+    /// `.^set_name` is called directly on its shared type object (verified
+    /// against `raku`: `Hash.^set_name("X")` makes every `%h.^name` report
+    /// `"X"`, not just `Hash.^name` itself). Values whose `.^name` is
+    /// resolved elsewhere (`Package`, `Instance`, `Mixin`, ...) have their
+    /// own overrides and never reach this helper.
+    pub(super) fn builtin_display_name(&self, base: &'static str) -> String {
+        self.type_metadata
+            .get(base)
+            .and_then(|m| m.get("__set_name__"))
+            .map(Value::to_string_value)
+            .unwrap_or_else(|| base.to_string())
     }
 
     /// Dispatch .^enum_value_list / .enum_value_list method
