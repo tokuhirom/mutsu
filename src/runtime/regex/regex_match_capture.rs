@@ -569,7 +569,10 @@ impl Interpreter {
                     // statement shape keep the scratch path and its env diff.
                     let mut scratch_stmts: Vec<Stmt> = Vec::new();
                     for stmt in stmts.iter() {
-                        let Stmt::VarDecl { name, expr, .. } = stmt else {
+                        let Stmt::VarDecl {
+                            name, expr, is_our, ..
+                        } = stmt
+                        else {
                             scratch_stmts.push(stmt.clone());
                             continue;
                         };
@@ -582,9 +585,28 @@ impl Interpreter {
                             saved.push((k.clone(), self.env.get(k).cloned()));
                             self.env.insert(k.clone(), v.clone());
                         }
-                        let v = self
-                            .eval_block_value(&[Stmt::Expr(expr.clone())])
-                            .unwrap_or(Value::NIL);
+                        let v = if *is_our {
+                            // `:our $var = ...;` is a real package-scoped
+                            // declaration, not merely a regex-local lexical
+                            // like `:my`/`:constant`/`:temp`/`:let`. Run the
+                            // WHOLE statement (not just its RHS expr) through
+                            // the normal `our` compile path
+                            // (`Compiler::qualify_variable_name` /
+                            // `OpCode::DeclareOurScalar`) so it writes through
+                            // to the package's `our`-scoped storage exactly
+                            // like a plain (non-regex) `our $var = ...;`
+                            // would — see
+                            // todo/tickets/regex-our-declarator-writeback-missing.md.
+                            // `eval_block_value` runs on `self` (the real
+                            // interpreter), so a method-calling initializer
+                            // still dispatches correctly, same as the
+                            // plain-expr branch below.
+                            let _ = self.eval_block_value(std::slice::from_ref(stmt));
+                            self.env.get(name).cloned().unwrap_or(Value::NIL)
+                        } else {
+                            self.eval_block_value(&[Stmt::Expr(expr.clone())])
+                                .unwrap_or(Value::NIL)
+                        };
                         for (k, orig) in saved {
                             match orig {
                                 Some(prev) => self.env.insert(k, prev),

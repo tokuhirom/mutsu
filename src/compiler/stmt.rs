@@ -1469,7 +1469,7 @@ impl Compiler {
                     None
                 };
                 if is_our_redecl_nil {
-                    let qualified = self.qualify_variable_name(name);
+                    let qualified = self.qualify_our_variable_name(name);
                     let idx = self.code.add_constant(Value::str(qualified));
                     self.code.emit(OpCode::GetOurVar(idx));
                 } else if bind_vardecl
@@ -1683,7 +1683,7 @@ impl Compiler {
                         && !scalar_bind_decont
                         && custom_traits.iter().all(|(t, _)| t == "__has_initializer");
                     if use_our_cell {
-                        let qualified = self.qualify_variable_name(name);
+                        let qualified = self.qualify_our_variable_name(name);
                         self.code
                             .our_locals
                             .push((slot as usize, qualified.clone()));
@@ -1762,7 +1762,7 @@ impl Compiler {
                         // an `our` var declared inside a closure leaks the shadowing
                         // value back to the caller.
                         if *is_our && !shadows_outer_constant {
-                            let qualified = self.qualify_variable_name(name);
+                            let qualified = self.qualify_our_variable_name(name);
                             // Track this slot as `our`-scoped so BlockScope restoration
                             // can sync the local from its global after block exit.
                             self.code

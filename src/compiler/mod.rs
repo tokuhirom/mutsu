@@ -1777,6 +1777,61 @@ impl Compiler {
         format!("{}::{}", self.current_package, name)
     }
 
+    /// Like [`Self::qualify_variable_name`], but for an `our`-DECLARATION's own
+    /// storage key specifically (`OpCode::DeclareOurScalar`'s `qualified_idx`,
+    /// and the equivalent two-store `our` sequence) — NOT for general bareword
+    /// resolution.
+    ///
+    /// Sub/method/closure bodies compile with `current_package` overwritten by a
+    /// synthetic state-scope pseudo-package (e.g. `Pkg::&foo/1`) purely for
+    /// `state`-variable key uniqueness (`compile_sub_body`/`compile_closure_body`).
+    /// `qualify_variable_name` deliberately bails out to the BARE name whenever it
+    /// sees that pseudo-package, because most of its callers use the bare-name
+    /// fallback as a GetGlobal lookup for a free/captured lexical that lives in
+    /// `env` under its bare name (not a real package variable) — qualifying those
+    /// against `enclosing_package` would misdirect every closure-captured-variable
+    /// read to a nonexistent package-qualified key
+    /// (`t/qualified-sub-captured-var-writeback-coherence.t` and ~80 other files
+    /// regressed when this was tried as a change to `qualify_variable_name`
+    /// itself).
+    ///
+    /// An `our` DECLARATION is different: it is unambiguously a package variable,
+    /// and `self.enclosing_package` — captured before the state-scope override and
+    /// propagated unchanged through arbitrarily deep sub/method/closure nesting —
+    /// IS the real declaring package (mirrors `Compiler::runtime_current_package`).
+    /// Qualifying the declaration's own storage key against that (instead of the
+    /// bare name) is what makes `our $x = ...;` inside ANY sub/method/closure/regex-
+    /// token body actually write through to `$Pkg::x`, not just a same-named local.
+    pub(crate) fn qualify_our_variable_name(&self, name: &str) -> String {
+        if self.current_package.contains("::&") {
+            let pkg = self
+                .enclosing_package
+                .as_deref()
+                .unwrap_or(&self.current_package);
+            if pkg == "GLOBAL" || name.contains("::") || name.is_empty() {
+                return name.to_string();
+            }
+            let first = name.chars().next().unwrap();
+            if matches!(first, '_' | '/' | '!' | '?' | '*' | '.' | '=')
+                || (first.is_ascii_digit() && name.chars().all(|c| c.is_ascii_digit()))
+            {
+                return name.to_string();
+            }
+            if let Some(sigil) = name.chars().next()
+                && matches!(sigil, '$' | '@' | '%' | '&')
+                && name.len() > 1
+            {
+                let twigil = name[1..].chars().next();
+                if matches!(twigil, Some('_' | '/' | '!' | '?' | '*' | '.' | '=')) {
+                    return name.to_string();
+                }
+                return format!("{sigil}{pkg}::{}", &name[1..]);
+            }
+            return format!("{pkg}::{name}");
+        }
+        self.qualify_variable_name(name)
+    }
+
     /// Record a `my`/`state` declaration name for the innermost active
     /// scope-isolation tracker (see `block_decl_tracker`). No-op when no
     /// scope-isolating do-block is being compiled.
