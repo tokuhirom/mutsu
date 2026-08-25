@@ -141,23 +141,39 @@ impl Interpreter {
         }
     }
 
+    /// The lvalue-assignment target of an `is rw`/`is raw` routine: its trailing
+    /// expression.
+    ///
+    /// A plain `return EXPR` does NOT qualify, even in an `is rw` routine —
+    /// `return` decontainerizes, so Rakudo rejects `sub f() is rw { return $v };
+    /// f() = 5` with "Cannot assign to a readonly variable or a value". Only a
+    /// bare tail expression (`sub f() is rw { $v }`) or an explicit `return-rw`
+    /// hands the caller a container. So a plain `return` tail STOPS the walk and
+    /// yields `None`; it must not fall through to an earlier statement, which
+    /// would make some unrelated expression the assignment target.
     pub(crate) fn rw_sub_target_expr(body: &[Stmt]) -> Option<Expr> {
         for stmt in body.iter().rev() {
             match stmt {
-                Stmt::Expr(expr) | Stmt::Return(expr) => return Some(expr.clone()),
+                Stmt::Expr(expr) => return Some(expr.clone()),
+                Stmt::Return(_) => return None,
                 _ => continue,
             }
         }
         None
     }
 
+    /// Whether a routine's tail is an explicit `return-rw ...`, which makes the
+    /// call result assignable on its own — the `is rw` trait is NOT required
+    /// (`sub f() { return-rw $v }; f() = 5` writes `$v` in Rakudo).
+    ///
+    /// Any single operand counts, not just a bare `Expr::Var`: `return-rw
+    /// Proxy.new(...)` and `return-rw @a[0]` are equally assignable, and
+    /// restricting this to variables made the non-`is rw` spellings of those die
+    /// with "sub is not rw".
     pub(crate) fn is_explicit_return_rw_target(expr: &Expr) -> bool {
         matches!(
             expr,
-            Expr::Call { name, args }
-                if name == "return-rw"
-                    && args.len() == 1
-                    && matches!(&args[0], Expr::Var(_))
+            Expr::Call { name, args } if name == "return-rw" && args.len() == 1
         ) || matches!(
             expr,
             Expr::MethodCall {
@@ -333,6 +349,18 @@ impl Interpreter {
                 };
                 self.eval_block_value(&[Stmt::Expr(assign)])?;
                 Ok(value)
+            }
+            // `sub f() is rw { return-rw $x }`: the tail is the `return-rw`
+            // CALL, not its operand. The container-returning compile path
+            // (`compile_return_rw_arg`) only yields a real container for a
+            // subscript/attribute operand; a bare lexical still returns a plain
+            // value, so the assignment falls back to this caller-side tail
+            // re-interpretation. Unwrap the `return-rw` wrapper and assign
+            // through its operand — otherwise this hit the generic call arm
+            // below and died with "Unknown call: return-rw".
+            Expr::Call { name, args } if name == "return-rw" && args.len() == 1 => {
+                let inner = args[0].clone();
+                self.assign_rw_target_expr(&inner, value)
             }
             Expr::Call { name, args } => {
                 let mut eval_args = Vec::with_capacity(args.len());

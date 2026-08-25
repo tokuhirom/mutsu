@@ -164,7 +164,14 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_return_rw(&self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let value = args.first().cloned().unwrap_or(Value::NIL);
+        // `return-rw $a, $b` returns the whole list, exactly as `return $a, $b`
+        // does (the plain form is lowered to `Stmt::Return(ArrayLiteral)` by the
+        // parser; `return-rw` stays a call, so build the list here).
+        let value = match args {
+            [] => Value::NIL,
+            [single] => single.clone(),
+            multiple => Value::array(multiple.to_vec()),
+        };
         Err(RuntimeError {
             return_value: Some(value),
             ..RuntimeError::new("")

@@ -100,7 +100,9 @@ impl Compiler {
                         // Nested index (e.g. ++$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, true);
                     }
-                } else if !self.compile_prefix_incdec_method_lvalue(expr, true) {
+                } else if !self.compile_prefix_incdec_method_lvalue(expr, true)
+                    && !self.compile_incdec_named_sub_lvalue(expr, true, true)
+                {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::str_from("prefix:<++>"))],
@@ -160,7 +162,9 @@ impl Compiler {
                         // Nested index (e.g. --$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, false);
                     }
-                } else if !self.compile_prefix_incdec_method_lvalue(expr, false) {
+                } else if !self.compile_prefix_incdec_method_lvalue(expr, false)
+                    && !self.compile_incdec_named_sub_lvalue(expr, false, true)
+                {
                     self.compile_expr(&Expr::Call {
                         name: Symbol::intern("__mutsu_incdec_nomatch"),
                         args: vec![Expr::Literal(Value::str_from("prefix:<-->"))],

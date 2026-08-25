@@ -2,6 +2,48 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Compiler {
+    /// Compile `++`/`--` applied to a call of a named routine (`++f()`,
+    /// `f()--`, ...).
+    ///
+    /// Raku's `prefix:<++>` binds its argument `is rw`, so this is legal exactly
+    /// when the routine hands back a container — an `is rw` routine, or one
+    /// whose tail is an explicit `return-rw`. The compiler cannot decide that
+    /// here (the routine may be declared later in the file), so it emits a call
+    /// to `__mutsu_incdec_named_sub_lvalue`, which resolves the routine at
+    /// runtime and falls back to the very same `X::Multi::NoMatch` the plain
+    /// `__mutsu_incdec_nomatch` path raises when it is not rw-capable.
+    ///
+    /// Returns `false` for compiler-internal lowerings, so the caller keeps its
+    /// existing fallback.
+    pub(super) fn compile_incdec_named_sub_lvalue(
+        &mut self,
+        expr: &Expr,
+        inc: bool,
+        prefix: bool,
+    ) -> bool {
+        let Expr::Call { name, args } = expr else {
+            return false;
+        };
+        if name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) {
+            return false;
+        }
+        let op_label = match (prefix, inc) {
+            (true, true) => "prefix:<++>",
+            (true, false) => "prefix:<-->",
+            (false, true) => "postfix:<++>",
+            (false, false) => "postfix:<-->",
+        };
+        self.compile_expr(&Expr::Call {
+            name: Symbol::intern("__mutsu_incdec_named_sub_lvalue"),
+            args: vec![
+                Expr::Literal(Value::str(name.resolve())),
+                Expr::ArrayLiteral(args.clone()),
+                Expr::Literal(Value::str_from(op_label)),
+            ],
+        });
+        true
+    }
+
     /// Compile prefix `++`/`--` on an rw-accessor lvalue (`++$obj.count`).
     ///
     /// The postfix forms already route a method-call target through the
@@ -157,7 +199,7 @@ impl Compiler {
                     args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
                 });
             }
-        } else {
+        } else if !self.compile_incdec_named_sub_lvalue(expr, true, false) {
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("__mutsu_incdec_nomatch"),
                 args: vec![Expr::Literal(Value::str_from("postfix:<++>"))],
@@ -257,7 +299,7 @@ impl Compiler {
                     args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],
                 });
             }
-        } else {
+        } else if !self.compile_incdec_named_sub_lvalue(expr, false, false) {
             self.compile_expr(&Expr::Call {
                 name: Symbol::intern("__mutsu_incdec_nomatch"),
                 args: vec![Expr::Literal(Value::str_from("postfix:<-->"))],

@@ -218,6 +218,55 @@ pub(crate) fn build_compound_assign_expr(
             expr: Box::new(compound_assigned_value_expr(Expr::BareWord(name), op, rhs)),
             is_bind: false,
         },
+        // `f() op= rhs` where `f` is an rw routine (`is rw`, or an explicit
+        // `return-rw` tail): the call result is a container, so the compound
+        // assignment writes through it. Without this arm the LHS fell through to
+        // the `other` arm below and compiled to an unconditional
+        // `__mutsu_assignment_ro`, so `f() += 1` died with "Cannot modify an
+        // immutable value" even though the plain `f() = v` form worked.
+        // `__mutsu_assign_named_sub_lvalue` resolves the routine at runtime and
+        // raises "sub is not rw" when it is not rw-capable.
+        Expr::Call { ref name, ref args }
+            if !name.with_str(|n| n.starts_with("__mutsu_") || n.starts_with("nqp::")) =>
+        {
+            let read_back = Expr::Call {
+                name: *name,
+                args: args.clone(),
+            };
+            let assign_through = |value: Expr| Expr::Call {
+                name: Symbol::intern("__mutsu_assign_named_sub_lvalue"),
+                args: vec![
+                    Expr::Literal(Value::str(name.resolve())),
+                    Expr::ArrayLiteral(args.clone()),
+                    value,
+                ],
+            };
+            // A short-circuit `op=` must not assign at all when it short-circuits
+            // (`$a //= $b` is `$a // ($a = $b)`), so keep the assignment inside
+            // the RHS of the operator rather than always writing the combined
+            // value back. Otherwise `sub f() { 1 }; f() //= 5` — which raku lets
+            // live, because the defined LHS short-circuits before any write —
+            // would die with "sub is not rw".
+            if matches!(
+                op,
+                CompoundAssignOp::KeywordOr
+                    | CompoundAssignOp::KeywordAnd
+                    | CompoundAssignOp::LogicalOr
+                    | CompoundAssignOp::LogicalAnd
+                    | CompoundAssignOp::DefinedOr
+                    | CompoundAssignOp::Orelse
+                    | CompoundAssignOp::Andthen
+                    | CompoundAssignOp::Notandthen
+            ) {
+                Expr::Binary {
+                    left: Box::new(read_back),
+                    op: op.token_kind(),
+                    right: Box::new(assign_through(rhs)),
+                }
+            } else {
+                assign_through(compound_assigned_value_expr(read_back, op, rhs))
+            }
+        }
         Expr::BracketArray(items, tc) => Expr::Binary {
             left: Box::new(Expr::BracketArray(items, tc)),
             op: op.token_kind(),
