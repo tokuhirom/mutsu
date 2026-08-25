@@ -562,11 +562,10 @@ impl Compiler {
     /// Whether an `Index` expression's index is a syntactic shape that
     /// unambiguously produces a *slice* (several elements) rather than a
     /// single element: a `Range` (`1..3`, `1..^3`, ...), a comma list
-    /// (`1, 3`), or bare `Whatever` (`*`). Conservative in the other
-    /// direction: a plain scalar expression is assumed to index a single
-    /// element even though it could dynamically hold a `Range` (Raku itself
-    /// only knows at runtime) — matching this exactly is not needed for
-    /// [`desugar_for_scalar_element_source`]'s purpose.
+    /// (`1, 3`), or bare `Whatever` (`*`). This is only a *fast path*: an
+    /// index that is not one of these shapes may still hold a `Range` or a
+    /// list at runtime (`my $r := 0..2; @a[$r]`), which
+    /// [`desugar_for_scalar_element_source`] handles with a runtime guard.
     fn for_index_is_slice(index: &Expr) -> bool {
         match index {
             Expr::Binary { op, .. } => matches!(
@@ -597,6 +596,24 @@ impl Compiler {
     /// ... }` already gets via `TagElementSource`. `for` over a bare scalar
     /// variable already writes `$_`'s final value back to that variable, so
     /// routing through a temp variable needs no new VM machinery.
+    ///
+    /// Whether the subscript selects ONE element or a slice is a property of
+    /// the subscript's *runtime value* (Rakudo dispatches its
+    /// `postcircumfix:<[ ]>` candidates on `Iterable`), not of the syntax that
+    /// produced it: `@a[0..2]`, `@a[$range]` and `@a[@indices]` are all
+    /// slices. Only a literal index is statically known to be a single
+    /// element; every other shape therefore gets the runtime-guarded form
+    ///
+    ///   my $idx   = <INDEX>;            # evaluated exactly once
+    ///   my $slice = $idx ~~ Iterable;   # Rakudo's own slice/element rule
+    ///   my $tmp   = $slice ?? <ELEM>.Slip !! <ELEM>;
+    ///   for $tmp { ... };               # a Slip flattens, a plain value does not
+    ///   unless $slice { <ELEM> = $tmp } # aliasing writeback: element case only
+    ///
+    /// which iterates a slice element-wise while keeping the single-element
+    /// rw aliasing. The slice branch deliberately skips the writeback: a
+    /// slice topicalizes several elements, so the one-value writeback would
+    /// splatter the last topic across the selected range.
     fn desugar_for_scalar_element_source(&mut self, stmt: &Stmt) -> Option<Vec<Stmt>> {
         let Stmt::For { iterable, .. } = stmt else {
             return None;
@@ -623,20 +640,8 @@ impl Compiler {
             return None;
         }
 
-        let tmp = format!("__for_scalar_elem_src_{}", self.code.constants.len());
-
-        let decl = Stmt::VarDecl {
-            name: tmp.clone(),
-            expr: iterable.clone(),
-            type_constraint: None,
-            is_state: false,
-            is_our: false,
-            is_dynamic: false,
-            is_export: false,
-            export_tags: Vec::new(),
-            custom_traits: vec![("__has_initializer".to_string(), None)],
-            where_constraint: None,
-        };
+        let seq = self.code.constants.len();
+        let tmp = format!("__for_scalar_elem_src_{}", seq);
 
         // The rewritten for-loop iterates the scalar temp; cloning the
         // original For and swapping only its iterable preserves
@@ -650,14 +655,105 @@ impl Compiler {
             *new_iterable = Expr::Var(tmp.clone());
         }
 
-        let writeback = Stmt::Expr(Expr::IndexAssign {
-            target: container.clone(),
-            index: index.clone(),
-            value: Box::new(Expr::Var(tmp)),
-            is_positional: *is_positional,
-        });
+        // A literal subscript can never turn into a slice selector at
+        // runtime, so it keeps the cheap guard-free rewrite.
+        if Self::for_index_is_definite_single(index) {
+            let decl = Self::init_decl(&tmp, iterable.clone());
+            let writeback = Stmt::Expr(Expr::IndexAssign {
+                target: container.clone(),
+                index: index.clone(),
+                value: Box::new(Expr::Var(tmp)),
+                is_positional: *is_positional,
+            });
+            return Some(vec![decl, for_stmt, writeback]);
+        }
 
-        Some(vec![decl, for_stmt, writeback])
+        // Runtime-guarded form: the subscript's value decides slice vs element.
+        let idx_tmp = format!("__for_elem_idx_{}", seq);
+        let slice_tmp = format!("__for_elem_is_slice_{}", seq);
+        let idx_var = Expr::Var(idx_tmp.clone());
+        // `<ELEM>` re-expressed over the once-evaluated index temp, so an
+        // index expression with side effects runs exactly once.
+        let element = Expr::Index {
+            target: container.clone(),
+            index: Box::new(idx_var.clone()),
+            is_positional: *is_positional,
+        };
+
+        let idx_decl = Self::init_decl(&idx_tmp, (**index).clone());
+        let slice_decl = Self::init_decl(
+            &slice_tmp,
+            Expr::Binary {
+                op: crate::token_kind::TokenKind::SmartMatch,
+                left: Box::new(idx_var.clone()),
+                right: Box::new(Expr::BareWord("Iterable".to_string())),
+            },
+        );
+        // A `Slip` in a scalar flattens when iterated, a plain value does not
+        // — that is exactly the slice/element distinction the loop needs, and
+        // it keeps the loop source a plain scalar variable so the existing
+        // per-iteration writeback tagging still applies.
+        let src_decl = Self::init_decl(
+            &tmp,
+            Expr::Ternary {
+                cond: Box::new(Expr::Var(slice_tmp.clone())),
+                then_expr: Box::new(Expr::MethodCall {
+                    target: Box::new(element.clone()),
+                    name: crate::symbol::Symbol::intern("Slip"),
+                    args: Vec::new(),
+                    modifier: None,
+                    quoted: false,
+                }),
+                else_expr: Box::new(element),
+            },
+        );
+
+        let writeback = Stmt::If {
+            cond: Expr::Var(slice_tmp),
+            then_branch: Vec::new(),
+            else_branch: vec![Stmt::Expr(Expr::IndexAssign {
+                target: container.clone(),
+                index: Box::new(idx_var),
+                value: Box::new(Expr::Var(tmp)),
+                is_positional: *is_positional,
+            })],
+            binding_var: None,
+            is_statement_modifier: false,
+        };
+
+        Some(vec![idx_decl, slice_decl, src_decl, for_stmt, writeback])
+    }
+
+    /// Whether an `Index` expression's subscript is a literal that can never
+    /// be a slice selector at runtime (a plain `Int`/`Str`/... constant, as in
+    /// `@a[2]` / `%h<k>`). Anything else — a variable, a call, an arithmetic
+    /// expression — may evaluate to a `Range`/list and needs the runtime
+    /// guard. A literal that *is* a range or a list never reaches here (the
+    /// syntactic [`for_index_is_slice`] fast path caught it already), but the
+    /// check is kept explicit so a folded literal cannot slip through.
+    fn for_index_is_definite_single(index: &Expr) -> bool {
+        match index {
+            Expr::Literal(v) | Expr::LiteralSrc(v, _) => {
+                !v.is_range() && v.as_list_items().is_none()
+            }
+            _ => false,
+        }
+    }
+
+    /// A `my <NAME> = <EXPR>;` declaration for a compiler-synthesized temp.
+    fn init_decl(name: &str, expr: Expr) -> Stmt {
+        Stmt::VarDecl {
+            name: name.to_string(),
+            expr,
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__has_initializer".to_string(), None)],
+            where_constraint: None,
+        }
     }
 
     /// Whether a bare statement expression yields a syntactically fresh rvalue
