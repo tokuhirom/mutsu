@@ -671,10 +671,20 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // installed in the namespace, which the `{...}` form already is.
             // Without this `anon class { ... }` fell through and `anon` was parsed
             // as a BareWord, leaving `sub`/`class` as a separate declaration.
-            if let Ok((r, expr)) = anon_grammar_expr(r_ws)
+            if let Ok((r, mut expr)) = anon_grammar_expr(r_ws)
                 .or_else(|_| anon_class_expr(r_ws))
                 .or_else(|_| anon_role_expr(r_ws))
             {
+                // A NAMED `anon class Foo { ... }` keeps its name (`.^name`,
+                // gist `(Foo)`) but installs no symbol, so declaring the same
+                // name twice in one scope is legal. Mark it `__anon_decl` (the
+                // same internal-marker channel `anon sub NAME` uses) so the
+                // compiler's per-scope class-redeclaration check skips it.
+                if let Expr::DoStmt(stmt) = &mut expr
+                    && let Stmt::ClassDecl { custom_traits, .. } = stmt.as_mut()
+                {
+                    custom_traits.push(("__anon_decl".to_string(), None));
+                }
                 return Ok((r, expr));
             }
             if let Some(after_method) = keyword("method", r_ws) {

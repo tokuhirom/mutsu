@@ -150,7 +150,11 @@ pub(crate) fn anon_grammar_expr(input: &str) -> PResult<'_, Expr> {
     let (rest, name) = if rest.starts_with('{') {
         let id = ANON_CLASS_COUNTER.fetch_add(1, Ordering::Relaxed);
         (rest, format!("__ANON_GRAMMAR_{id}__"))
-    } else if rest.starts_with(|c: char| c.is_ascii_uppercase() || c == '_') {
+    } else if rest.starts_with(crate::parser::helpers::is_raku_identifier_start) {
+        // Same identifier-start class as the class/role expression paths: a
+        // grammar name may begin with any Unicode identifier character, so an
+        // ASCII-only gate here would reject `anon grammar þ { ... }` (and the
+        // postfixed `(grammar þ { ... }).^name`) that the statement path accepts.
         let (r, grammar_name) = parse_qualified_ident_with_hyphens(rest)?;
         let (r, _) = ws(r)?;
         (r, grammar_name)

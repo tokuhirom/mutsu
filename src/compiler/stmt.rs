@@ -4205,14 +4205,22 @@ impl Compiler {
                 self.code.emit(OpCode::RegisterEnum(idx));
             }
             Stmt::ClassDecl { body, .. } if self.emit_block_placeholder_die(body) => {}
-            Stmt::ClassDecl { name, body, .. } => {
+            Stmt::ClassDecl {
+                name,
+                body,
+                custom_traits,
+                ..
+            } => {
                 // Declaring the same class name twice in one lexical scope is an
                 // X::Redeclaration ("Redeclaration of symbol 'A'"), matching Raku's
                 // compile-time check. A stub (`class A {...}`) followed by its real
                 // definition is NOT a redeclaration (the stub carries no full body),
                 // and a same-named class in an inner block shadows rather than
                 // redeclares (the current-scope set is reset on block entry).
-                if !Self::is_stub_class_body(body) {
+                // An `anon class NAME { ... }` installs no symbol at all, so it
+                // neither claims the name nor collides with a previous claim.
+                let is_anon_decl = custom_traits.iter().any(|(t, _)| t == "__anon_decl");
+                if !is_anon_decl && !Self::is_stub_class_body(body) {
                     let cname = name.resolve();
                     // Package blocks share this compiler scope, so key the
                     // declaration by the same package-qualified name that
