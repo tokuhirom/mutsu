@@ -106,6 +106,32 @@ fn flush_held_cr(
     }
 }
 
+/// Build a thrown `X::Proc::Async::*` error.
+///
+/// The exception instance carries only its genuine Raku attributes (`method` /
+/// `handle` / `use`); the human-readable text is produced by
+/// [`crate::builtins::exception_message::format_exception_message`] — the very
+/// table `.message` / `.Str` / `.gist` consult when an exception has no
+/// `message` attribute. Deliberately NOT storing a `message` attribute is what
+/// makes the thrown value and a user-constructed
+/// `X::Proc::Async::MustBeStarted.new(:method<say>)` render identically; the
+/// old code stored the bare class name there, which shadowed the formatter and
+/// made every one of these exceptions stringify as its own type name.
+pub(in crate::runtime) fn proc_async_error(
+    class_name: &str,
+    attrs: &[(&str, Value)],
+) -> RuntimeError {
+    let ex_attrs: AttrMap = attrs.iter().map(|(k, v)| (*k, v.clone())).collect();
+    let message =
+        crate::builtins::exception_message::format_exception_message(class_name, &ex_attrs)
+            .unwrap_or_else(|| class_name.to_string());
+    let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
+    RuntimeError {
+        exception: Some(Box::new(ex)),
+        ..RuntimeError::new(message)
+    }
+}
+
 /// The exception value sent on a `SupplyEvent::Quit` when a Proc::Async output
 /// stream contains malformed UTF-8.
 pub(in crate::runtime) fn malformed_utf8_quit_value() -> Value {
@@ -124,19 +150,6 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<(Value, AttrMap), RuntimeError> {
-        let proc_async_error = |class_name: &str, attrs: &[(&str, Value)]| {
-            let mut ex_attrs = HashMap::new();
-            for (k, v) in attrs {
-                ex_attrs.insert((*k).to_string(), v.clone());
-            }
-            let message = class_name.to_string();
-            ex_attrs.insert("message".to_string(), Value::str(message.clone()));
-            let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
-            RuntimeError {
-                exception: Some(Box::new(ex)),
-                ..RuntimeError::new(message)
-            }
-        };
         match method {
             "start" => {
                 use std::process::{Command, Stdio};
@@ -227,11 +240,48 @@ impl Interpreter {
                 let mut bound_stderr_file =
                     self.proc_async_bound_output_file(bound_stderr.as_ref())?;
 
+                // A stream is captured only when the program actually claimed
+                // it: `.stdout`/`.stderr` (which sets `<h>_selected`), the
+                // merged `.Supply`, or `bind-stdout`/`bind-stderr`. Rakudo
+                // decides exactly this way — at accessor time, not tap time
+                // (a Supply fetched before `.start` and tapped after it still
+                // receives the output), and an unclaimed stream simply
+                // inherits the parent's real fd. mutsu used to pipe both
+                // streams unconditionally, so an unclaimed stream's output was
+                // read into a channel nobody ever drained and silently
+                // vanished instead of appearing on the parent's stdout/stderr.
+                // `get_supply_taps` is folded in as a belt-and-braces union,
+                // because not every claim goes through a `<h>_selected` write:
+                // the read-only `native_proc_async` accessor path has no
+                // `&mut self`, and `whenever $proc { ... }` reaches the merged
+                // Supply by coercion rather than through the `.Supply` method
+                // arm that sets `supply_selected`. A tap on any of the three
+                // supplies therefore counts as a claim on its own — losing a
+                // claim here would silently drop the output.
+                let merged_claimed = attrs.get("supply_selected").is_some_and(|v| v.truthy())
+                    || merged_supply_id.is_some_and(|sid| !get_supply_taps(sid).is_empty());
+                let claimed = |selected_key: &str, bound: &Option<Value>, sid: Option<u64>| {
+                    merged_claimed
+                        || attrs.get(selected_key).is_some_and(|v| v.truthy())
+                        || bound.as_ref().is_some_and(|v| !v.is_nil())
+                        || sid.is_some_and(|sid| !get_supply_taps(sid).is_empty())
+                };
+                let capture_stdout = claimed("stdout_selected", &bound_stdout, stdout_supply_id);
+                let capture_stderr = claimed("stderr_selected", &bound_stderr, stderr_supply_id);
+
                 // Spawn child process synchronously so we get the PID immediately
                 let mut cmd = Command::new(&program);
                 cmd.args(&cmd_args)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped());
+                    .stdout(if capture_stdout {
+                        Stdio::piped()
+                    } else {
+                        Stdio::inherit()
+                    })
+                    .stderr(if capture_stderr {
+                        Stdio::piped()
+                    } else {
+                        Stdio::inherit()
+                    });
                 if w_flag || bound_stdin.is_some() {
                     cmd.stdin(Stdio::piped());
                 }
@@ -445,15 +495,18 @@ impl Interpreter {
                 }
 
                 // Create streaming channels for stdout/stderr
-                // These will be consumed by the react event loop
-                let stdout_channel = stdout_supply_id.map(|sid| {
+                // These will be consumed by the react event loop. An unclaimed
+                // (inherited) stream has no pipe and therefore no reader
+                // thread, so it gets no channel either — otherwise a receiver
+                // nobody can ever feed would be left parked in the global map.
+                let stdout_channel = stdout_supply_id.filter(|_| capture_stdout).map(|sid| {
                     let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
                     if let Ok(mut map) = supply_channel_map().lock() {
                         map.insert(sid, rx);
                     }
                     tx
                 });
-                let stderr_channel = stderr_supply_id.map(|sid| {
+                let stderr_channel = stderr_supply_id.filter(|_| capture_stderr).map(|sid| {
                     let (tx, rx) = super::native_methods::supply_channel::supply_event_channel();
                     if let Ok(mut map) = supply_channel_map().lock() {
                         map.insert(sid, rx);
@@ -925,7 +978,10 @@ impl Interpreter {
                 if attrs.get("w").is_some_and(|v| v.truthy()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
-                        &[("handle", Value::str_from("stdin"))],
+                        &[
+                            ("handle", Value::str_from("stdin")),
+                            ("use", Value::str_from("use :w")),
+                        ],
                     ));
                 }
                 let bound = args.first().cloned().unwrap_or(Value::NIL);
@@ -938,14 +994,28 @@ impl Interpreter {
                 } else {
                     "stderr"
                 };
-                if attrs.get("supply_selected").is_some_and(|v| v.truthy())
-                    || attrs
-                        .get(format!("{}_selected", handle_name))
-                        .is_some_and(|v| v.truthy())
+                // Rakudo distinguishes the two ways the stream was already
+                // claimed: the merged `.Supply` reads as "the output Supply",
+                // the per-stream accessor as "the <handle> Supply".
+                if attrs.get("supply_selected").is_some_and(|v| v.truthy()) {
+                    return Err(proc_async_error(
+                        "X::Proc::Async::BindOrUse",
+                        &[
+                            ("handle", Value::str_from(handle_name)),
+                            ("use", Value::str_from("get the output Supply")),
+                        ],
+                    ));
+                }
+                if attrs
+                    .get(format!("{}_selected", handle_name))
+                    .is_some_and(|v| v.truthy())
                 {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
-                        &[("handle", Value::str_from(handle_name))],
+                        &[
+                            ("handle", Value::str_from(handle_name)),
+                            ("use", Value::str(format!("get the {} Supply", handle_name))),
+                        ],
                     ));
                 }
                 let bound = args.first().cloned().unwrap_or(Value::NIL);
@@ -976,7 +1046,10 @@ impl Interpreter {
                 {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
-                        &[("handle", Value::str_from(method))],
+                        &[
+                            ("handle", Value::str_from(method)),
+                            ("use", Value::str(format!("get the {} Supply", method))),
+                        ],
                     ));
                 }
                 if attrs.get("supply_selected").is_some_and(|v| v.truthy()) {
@@ -1051,13 +1124,19 @@ impl Interpreter {
                 if attrs.get("stdout_bind").is_some_and(|v| !v.is_nil()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
-                        &[("handle", Value::str_from("stdout"))],
+                        &[
+                            ("handle", Value::str_from("stdout")),
+                            ("use", Value::str_from("get the output Supply")),
+                        ],
                     ));
                 }
                 if attrs.get("stderr_bind").is_some_and(|v| !v.is_nil()) {
                     return Err(proc_async_error(
                         "X::Proc::Async::BindOrUse",
-                        &[("handle", Value::str_from("stderr"))],
+                        &[
+                            ("handle", Value::str_from("stderr")),
+                            ("use", Value::str_from("get the output Supply")),
+                        ],
                     ));
                 }
                 if attrs.get("stdout_selected").is_some_and(|v| v.truthy())

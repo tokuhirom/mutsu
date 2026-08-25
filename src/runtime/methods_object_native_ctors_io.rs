@@ -237,10 +237,24 @@ impl Interpreter {
                 ValueView::Pair(key, value) if key == "w" => {
                     w_flag = value.truthy();
                 }
-                ValueView::Pair(key, _value) if key == "out" => {}
                 ValueView::Pair(key, value) if key == "enc" => {
                     enc = Value::str(value.to_string_value());
                 }
+                // Rakudo's signature is `(*@args where .so, *%_)`: EVERY named
+                // argument lands in the slurpy `*%_` and is absorbed, whether
+                // or not `Proc::Async` knows it (`:r`, `:in`, `:translate-nl`,
+                // `:win-verbatim-args`, a typo, ...). Only genuine positionals
+                // become the command. Pushing an unrecognised named `Pair` into
+                // `cmd` used to make it stringify as an argv element ("r\tTrue"),
+                // so `Proc::Async.new(:r, 'echo', 'Raku')` tried to spawn a
+                // program literally called `r\tTrue`.
+                //
+                // `ValueView::Pair` is the named-argument flavour (ADR-0021:
+                // `OpCode::MakeNamedArg`); a data-minted pair written as a real
+                // positional is a `ValuePair` and still becomes an argv element,
+                // matching Rakudo (`Proc::Async.new("echo", ("x" => 1)).args`
+                // keeps the pair).
+                ValueView::Pair(..) => {}
                 _ => positional.push(arg.clone()),
             }
         }

@@ -1,5 +1,4 @@
 use crate::runtime::*;
-use crate::symbol::Symbol;
 
 use super::state::proc_stdin_map;
 use crate::value::AttrMap;
@@ -69,19 +68,7 @@ impl Interpreter {
         method: &str,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let proc_async_error = |class_name: &str, attrs: &[(&str, Value)]| {
-            let mut ex_attrs = HashMap::new();
-            for (k, v) in attrs {
-                ex_attrs.insert((*k).to_string(), v.clone());
-            }
-            let message = class_name.to_string();
-            ex_attrs.insert("message".to_string(), Value::str(message.clone()));
-            let ex = Value::make_instance(Symbol::intern(class_name), ex_attrs);
-            RuntimeError {
-                exception: Some(Box::new(ex)),
-                ..RuntimeError::new(message)
-            }
-        };
+        use crate::runtime::native_proc_async::proc_async_error;
         match method {
             "command" => {
                 let mut cmd = attributes
