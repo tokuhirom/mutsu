@@ -3,6 +3,23 @@ use super::regex_casefold::{casefold_pattern, casefold_text, needs_casefold_expa
 use super::regex_helpers::{strip_marks_pattern, strip_marks_text};
 
 impl Interpreter {
+    /// Write the current (never-restored) values of a `:my`/`:constant`
+    /// declarative-prefix lexical straight into the caller's compiled local
+    /// slots, the same `pending_local_updates`/`carrier_writes` bookkeeping a
+    /// `:let` uses on a successful match — but unconditionally, since `:my`
+    /// persists to the enclosing scope regardless of match success (see the
+    /// `persist_always` comment in `regex_match_with_captures`).
+    fn writeback_persist_always(&mut self, names: &HashSet<String>) {
+        for name in names {
+            if let Some(v) = self.env.get(name).cloned() {
+                if let Some(set) = self.carrier_writes.as_mut() {
+                    set.insert(name.clone());
+                }
+                self.pending_local_updates.push((name.clone(), v));
+            }
+        }
+    }
+
     fn parse_regex_declarative_prefix(pattern: &str) -> (Vec<(String, String)>, String) {
         let mut decls = Vec::new();
         let mut rest = pattern;
@@ -383,6 +400,18 @@ impl Interpreter {
 
         let mut restore_always: HashMap<String, Option<Value>> = HashMap::new();
         let mut restore_on_fail: HashMap<String, Option<Value>> = HashMap::new();
+        // `:my`/`:constant` are plain declarations, not backtracking-sensitive
+        // rebindings: per raku-doc/doc/Language/regexes.rakudoc ("C<:my> helps
+        // scoping the C<$c> variable within the regex and beyond"), a `:my`
+        // lexical (and its later mutations, e.g. from an embedded `{ ++$c }`
+        // block) persists into the caller's enclosing lexical scope
+        // UNCONDITIONALLY — regardless of whether the overall match succeeds
+        // or fails (verified against real raku: `/:my $c = 42; a/` against a
+        // non-matching string still leaves `$c == 42` outside). This is unlike
+        // `:let` (restore-on-fail, persist-on-success) and unlike `:temp`
+        // (always restored at the end of the match). Track their names
+        // separately so they are never restored and always written back.
+        let mut persist_always: HashSet<String> = HashSet::new();
         let saved_token_defs = self.registry().token_defs.clone();
 
         for (decl_name, stmt_src) in declarators {
@@ -430,12 +459,14 @@ impl Interpreter {
                 let eval_src = stmt_src.clone();
                 let Some(stmts) = self.parse_regex_code_cached(&eval_src) else {
                     self.registry_mut().token_defs = saved_token_defs;
+                    self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
                 };
                 if self.eval_block_value(&stmts).is_err() {
                     self.registry_mut().token_defs = saved_token_defs;
+                    self.writeback_persist_always(&persist_always);
                     self.restore_env_entries(restore_always);
                     self.restore_env_entries(restore_on_fail);
                     return None;
@@ -453,7 +484,11 @@ impl Interpreter {
                     changed.insert(key.resolve());
                 }
             }
-            if matches!(decl_name.as_str(), "my" | "constant" | "temp") {
+            if matches!(decl_name.as_str(), "my" | "constant") {
+                for key in changed {
+                    persist_always.insert(key);
+                }
+            } else if decl_name == "temp" {
                 for key in changed {
                     restore_always
                         .entry(key.clone())
@@ -479,7 +514,11 @@ impl Interpreter {
         // (`install_ctx_regex_vars`); without this `/ :my $c = 1; … { make $c } /`
         // reduces with `$c` unset.
         if let Some(caps) = result.as_mut() {
-            for name in restore_always.keys().chain(restore_on_fail.keys()) {
+            for name in restore_always
+                .keys()
+                .chain(restore_on_fail.keys())
+                .chain(persist_always.iter())
+            {
                 // A `:my $*x` is a DYNAMIC variable, not a regex lexical: the
                 // per-rule dynvar machinery (`install_fresh_rule_dynvars`) owns it
                 // and deliberately leaves it installed for the action walk. Only
@@ -497,16 +536,27 @@ impl Interpreter {
         self.restore_env_entries(restore_always);
         if !matched {
             self.restore_env_entries(restore_on_fail);
+            // A `:my`/`:constant` lexical is a plain declaration, not a
+            // backtracking-sensitive rebinding: it persists to the caller's
+            // scope even when the overall match ultimately fails (see the
+            // `persist_always` comment above).
+            self.writeback_persist_always(&persist_always);
         } else {
             // Slice F (regex carrier): a `:let $x = ...` declarative modifier that
-            // survives a successful match wrote a caller lexical straight into
-            // `env` (the `restore_on_fail` keys are the `:let` names), bypassing
-            // `set_env_with_main_alias` and the VM's slot write-through. Log each
-            // persisted name (+ carrier) so the smartmatch site reconciles the
-            // caller's compiled local slot via `writeback_match_locals`, without
-            // relying on the reverse `sync_locals_from_env` pull. Logging a
-            // superset is safe — the writeback filters by the caller's slots.
-            let persisted: Vec<String> = restore_on_fail.keys().cloned().collect();
+            // survives a successful match, and a `:my`/`:constant` declaration
+            // (always), wrote a caller lexical straight into `env` (the
+            // `restore_on_fail` keys are the `:let` names, `persist_always` the
+            // `:my`/`:constant` names), bypassing `set_env_with_main_alias` and
+            // the VM's slot write-through. Log each persisted name (+ carrier) so
+            // the smartmatch site reconciles the caller's compiled local slot via
+            // `writeback_match_locals`, without relying on the reverse
+            // `sync_locals_from_env` pull. Logging a superset is safe — the
+            // writeback filters by the caller's slots.
+            let persisted: Vec<String> = restore_on_fail
+                .keys()
+                .cloned()
+                .chain(persist_always.iter().cloned())
+                .collect();
             for name in persisted {
                 if let Some(v) = self.env.get(&name).cloned() {
                     if let Some(set) = self.carrier_writes.as_mut() {
