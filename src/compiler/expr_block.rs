@@ -762,7 +762,7 @@ impl Compiler {
             // correctly and leaks) and then push the bound variable as the
             // expression's value.
             Stmt::SyntheticBlock(inner)
-                if matches!(inner.first(), Some(Stmt::MarkReadonly(_)))
+                if matches!(inner.first(), Some(Stmt::MarkReadonly(..)))
                     && inner.iter().any(|s| {
                         matches!(s, Stmt::VarDecl { custom_traits, .. }
                             if custom_traits.iter().any(|(t, _)| t == "__scalar_bind"))

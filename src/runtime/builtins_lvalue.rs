@@ -687,6 +687,37 @@ impl Interpreter {
         self.assign_callable_lvalue_with_values(callable, call_args, value)
     }
 
+    /// `__mutsu_var_is_writable('name')` -- does the named scalar have a
+    /// container that can be assigned through?
+    ///
+    /// Used by the `//=` / `||=` / `&&=` short-circuit desugar: when the short
+    /// circuit KEEPS the current value, rakudo returns the LHS *container* if
+    /// it has one (so `my $a = 52; ($a //= 42) += 10` leaves 62 in `$a`) and
+    /// the bare *value* if it does not (so `my $a := 42; ($a //= 42) += 10`
+    /// dies with X::Assignment::RO on the returned value). Only the runtime
+    /// knows which, so the desugar branches on this.
+    pub(super) fn builtin_var_is_writable(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let Some(name) = args.first().map(Value::to_string_value) else {
+            return Ok(Value::TRUE);
+        };
+        if self.readonly_kind(&name).is_some() {
+            return Ok(Value::FALSE);
+        }
+        if crate::env::closure_meta_keys_possible() {
+            let key = crate::runtime::sigilless_readonly_key(&name);
+            if matches!(
+                self.env.get(&key).map(Value::view),
+                Some(ValueView::Bool(true))
+            ) {
+                return Ok(Value::FALSE);
+            }
+        }
+        Ok(Value::TRUE)
+    }
+
     pub(super) fn builtin_assignment_ro(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // When the read-only left-hand side value is supplied (e.g. assigning to
         // a literal `120 = 3`), report its type and representation to match

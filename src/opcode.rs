@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::ast::{Expr, ParamDef, Stmt};
+use crate::ast::{Expr, ParamDef, ReadonlyKind, Stmt};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
@@ -1593,8 +1593,10 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
-    /// Mark a variable as readonly (for `:=` binding).
-    MarkVarReadonly(u32),
+    /// Mark a variable as readonly (for `:=` binding / `constant`). The
+    /// [`ReadonlyKind`] records *why*, which decides the exception an
+    /// assignment through the name throws.
+    MarkVarReadonly(u32, ReadonlyKind),
 
     // -- Loops (compound opcodes) --
     /// While loop. Condition opcodes follow at [ip+1..cond_end).

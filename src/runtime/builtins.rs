@@ -378,6 +378,7 @@ impl Interpreter {
             "__mutsu_incdec_named_sub_lvalue" => self.builtin_incdec_named_sub_lvalue(&args),
             "__mutsu_assign_callable_lvalue" => self.builtin_assign_callable_lvalue(&args),
             "__mutsu_assignment_ro" => self.builtin_assignment_ro(&args),
+            "__mutsu_var_is_writable" => self.builtin_var_is_writable(&args),
             "__mutsu_star_lvalue_rhs" => self.builtin_star_lvalue_rhs(&args),
             "__mutsu_list_assign_rhs" => self.builtin_list_assign_rhs(&args),
             "__mutsu_record_bound_array_len" => self.builtin_record_bound_array_len(&args),

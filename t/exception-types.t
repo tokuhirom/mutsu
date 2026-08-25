@@ -1,6 +1,6 @@
 use Test;
 
-plan 10;
+plan 11;
 
 # X::TypeCheck::Binding::Parameter - exact type match
 throws-like { my &f = sub (Int $x) {}; f("hello") },
@@ -19,10 +19,13 @@ throws-like { my &f = sub (Int $x) {}; f("hello") },
     got => /Str/,
     "binding parameter type check with attribute matchers";
 
-# X::Assignment::RO - readonly variable
+# X::AdHoc - a `:=`-bound literal has no container at all, so rakudo reports
+# the generic "Cannot assign to an immutable value", NOT X::Assignment::RO
+# (which is reserved for modifying an immutable *value*, e.g. a `constant`).
 throws-like { my $x := 42; $x = 43 },
-    X::Assignment::RO,
-    "cannot assign to readonly bound variable";
+    X::AdHoc,
+    "cannot assign to readonly bound variable",
+    message => /'Cannot assign to an immutable value'/;
 
 # X::Assignment::RO - readonly Set
 throws-like { my $s = set <a b c>; $s<d> = True },
@@ -44,11 +47,18 @@ throws-like { my &f = sub (Int $x) {}; f("hello") },
     X::TypeCheck,
     "X::TypeCheck grandparent matches X::TypeCheck::Binding::Parameter";
 
-# X::Assignment::RO with message attribute
+# X::AdHoc with message attribute (a `:=`-bound literal, see above)
 throws-like { my $x := 42; $x = 43 },
-    X::Assignment::RO,
+    X::AdHoc,
     message => /Cannot/,
-    "X::Assignment::RO message attribute matches";
+    "immutable-bind message attribute matches";
+
+# X::Assignment::RO IS the right class for modifying an immutable *value*:
+# a sigilless `constant` term is the value itself, not a variable.
+throws-like { my constant PI = 3.14; PI = 5 },
+    X::Assignment::RO,
+    message => /'Cannot modify an immutable Rat (3.14)'/,
+    "constant term assignment throws X::Assignment::RO";
 
 # Exception - top-level parent matches any exception
 throws-like { my &f = sub (Int $x) {}; f("hello") },

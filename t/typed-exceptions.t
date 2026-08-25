@@ -18,9 +18,12 @@ throws-like { sub f(Int $x) {}; f("hi") }, X::TypeCheck::Argument,
 throws-like { sub f(Int $x) {}; f("hi") }, X::TypeCheck,
     "parent type X::TypeCheck matches Argument subtype";
 
-# X::Assignment::RO - thrown when assigning to a readonly value
-throws-like { sub f($x) { $x = 5 }; f(42) }, X::Assignment::RO,
-    "assignment to readonly parameter throws X::Assignment::RO";
+# X::AdHoc - a non-`is rw` parameter is a readonly *binding*, which rakudo
+# reports as "Cannot assign to a readonly variable or a value" rather than as
+# the immutable-value-specific X::Assignment::RO.
+throws-like { sub f($x) { $x = 5 }; f(42) }, X::AdHoc,
+    "assignment to readonly parameter throws X::AdHoc",
+    message => /'Cannot assign to a readonly variable or a value'/;
 
 # X::TypeCheck should match X::TypeCheck::Assignment (parent type)
 throws-like { my Int $x = "hello" }, X::TypeCheck,

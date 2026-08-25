@@ -1209,9 +1209,9 @@ impl Compiler {
                     self.compile_stmt(s);
                 }
             }
-            Stmt::MarkReadonly(name) => {
+            Stmt::MarkReadonly(name, kind) => {
                 let idx = self.code.add_constant(Value::str(name.clone()));
-                self.code.emit(OpCode::MarkVarReadonly(idx));
+                self.code.emit(OpCode::MarkVarReadonly(idx, *kind));
             }
             Stmt::MarkBoundContainer(name) => {
                 // Record `__mutsu_bound::NAME` = true in env so the whole-var
@@ -2003,9 +2003,35 @@ impl Compiler {
                     self.emit_set_var_type(name, name_idx, tc_idx, *is_our);
                 }
                 // Mark constant variables as readonly so that subsequent
-                // assignments are rejected at runtime.
+                // assignments are rejected at runtime. WHICH exception that
+                // assignment throws depends on whether the constant is a
+                // sigiled *variable* or a bare *term*: rakudo reports
+                // `constant $PI = 3.14; $PI = 5` as X::AdHoc ("Cannot assign
+                // to an immutable value") because the lvalue is a variable
+                // with no container, but `constant PI = 3.14; PI = 5` as
+                // X::Assignment::RO ("Cannot modify an immutable Rat (3.14)")
+                // because the lvalue is the value itself. mutsu's AST strips
+                // the `$` from a scalar constant name, so the source sigil is
+                // recovered from the `__constant_sigil` trait recorded by the
+                // parser (`@`/`%` constants behave like the value form too).
                 if is_constant_decl {
-                    self.code.emit(OpCode::MarkVarReadonly(name_idx));
+                    let sigil = custom_traits
+                        .iter()
+                        .find(|(t, _)| t == "__constant_sigil")
+                        .and_then(|(_, e)| match e {
+                            Some(Expr::Literal(lit)) => match lit.view() {
+                                ValueView::Str(s) => Some(s.to_string()),
+                                _ => None,
+                            },
+                            _ => None,
+                        })
+                        .unwrap_or_default();
+                    let kind = if sigil == "$" {
+                        crate::ast::ReadonlyKind::Immutable
+                    } else {
+                        crate::ast::ReadonlyKind::ImmutableValue
+                    };
+                    self.code.emit(OpCode::MarkVarReadonly(name_idx, kind));
                 }
             }
             Stmt::Assign {
@@ -2525,7 +2551,10 @@ impl Compiler {
                                 d.sigilless || d.traits.iter().any(|t| t == "rw" || t == "copy")
                             });
                             if !p.starts_with('@') && !p.starts_with('%') && !per_param_writable {
-                                bind_prefix.push(Stmt::MarkReadonly(p.clone()));
+                                bind_prefix.push(Stmt::MarkReadonly(
+                                    p.clone(),
+                                    crate::ast::ReadonlyKind::Alias,
+                                ));
                             }
                         }
                     }

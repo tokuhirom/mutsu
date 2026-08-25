@@ -17,12 +17,12 @@ class C {
     method read($x)        { $x * 2 }
 }
 
-dies-ok { C.new.assign(3) },  'method $x = 5 dies (X::Assignment::RO)';
+dies-ok { C.new.assign(3) },  'method $x = 5 dies (X::AdHoc)';
 dies-ok { C.new.subst('ccc') }, 's/// on method $_ param dies';
 dies-ok { C.new.incr(3) },    'method $x++ dies';
 
-throws-like { C.new.assign(3) }, X::Assignment::RO,
-    'method param assignment throws X::Assignment::RO';
+throws-like { C.new.assign(3) }, X::AdHoc,
+    'method param assignment throws X::AdHoc';
 
 is C.new.rw(my $a = 1), 5,   'is rw method param is writable';
 is C.new.copy(7), 5,         'is copy method param is writable';
@@ -34,7 +34,7 @@ is C.new.read(21), 42,       'reading a method param works';
 # same name stays writable afterwards.
 {
     my $x = 1;
-    try C.new.assign(99);  # swallow the X::Assignment::RO
+    try C.new.assign(99);  # swallow the readonly-assignment exception
     $x = 2;
     is $x, 2, 'caller $x stays writable after a method with a $x param';
 }

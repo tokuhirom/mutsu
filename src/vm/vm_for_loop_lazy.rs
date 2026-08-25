@@ -61,7 +61,9 @@ impl Interpreter {
             } else if spec.multi_param_names.is_empty() {
                 // A multi-param loop binds through `$_`; the body's bind statements
                 // must stay writable, so `$_` is not the read-only topic here.
-                self.mark_readonly("_");
+                // The topic aliases the item directly (no container of its own),
+                // so `$_ = ...` is rakudo's "Cannot assign to an immutable value".
+                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
             }
         }
 

@@ -495,14 +495,14 @@ impl Interpreter {
         // usual "Cannot modify an immutable value" error rather than silently
         // bypassing the mark.
         let has_container_source = self.topic_container_source.is_some();
-        let was_ro = self.is_readonly("_");
-        let bypass = was_ro && has_container_source;
+        let was_ro_kind = self.readonly_kind("_");
+        let bypass = was_ro_kind.is_some() && has_container_source;
         if bypass {
             self.unmark_readonly("_");
         }
         let r = self.exec_assign_expr_op(code, name_idx);
         if bypass {
-            self.mark_readonly("_");
+            self.restore_readonly("_", was_ro_kind);
         }
         r?;
         // Whole-container topic (`given @a`/`with %h`): `$_` aliases the container,

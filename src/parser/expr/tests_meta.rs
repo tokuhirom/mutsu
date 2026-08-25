@@ -343,9 +343,12 @@ fn parse_reverse_metaop_oror() {
 fn parse_reverse_meta_compound_assign_rhs_target() {
     let (rest, expr) = expression("10 R+= ($a ||= 42)").unwrap();
     assert_eq!(rest, "");
+    // `$a ||= 42` desugars to a short-circuit ternary (see
+    // `short_circuit_compound_assign_expr`), so the reverse metaop distributes
+    // itself into that ternary's branches rather than producing one assignment.
     assert!(matches!(
         expr,
-        Expr::DoBlock { .. } | Expr::AssignExpr { .. }
+        Expr::DoBlock { .. } | Expr::AssignExpr { .. } | Expr::Ternary { .. }
     ));
 }
 

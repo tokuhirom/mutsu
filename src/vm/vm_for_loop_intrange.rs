@@ -121,7 +121,8 @@ impl Interpreter {
                     self.mark_readonly(name);
                 }
             } else {
-                self.mark_readonly("_");
+                // The topic aliases the item directly (no container of its own).
+                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
             }
         }
 

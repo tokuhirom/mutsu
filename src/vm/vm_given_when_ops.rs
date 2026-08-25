@@ -110,7 +110,9 @@ impl Interpreter {
         // assignment.
         let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly("_");
         if mark_ro {
-            self.mark_readonly("_");
+            // `given 42 { $_ = 1 }`: the topic aliases the value itself, with no
+            // container behind it.
+            self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
         }
 
         // Depth of the pointy-topic scope stack at body entry. A `when`-succeed (or

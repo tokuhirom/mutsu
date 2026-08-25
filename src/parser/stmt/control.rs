@@ -3,7 +3,7 @@ use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, opt_char, parse_char};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::ast::{AssignOp, Expr, ParamDef, Stmt, collect_placeholders_shallow};
+use crate::ast::{AssignOp, Expr, ParamDef, ReadonlyKind, Stmt, collect_placeholders_shallow};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -171,7 +171,10 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
         if pd.traits.iter().any(|t| t == "rw") {
             decl
         } else {
-            Stmt::SyntheticBlock(vec![decl, Stmt::MarkReadonly(pd.name.clone())])
+            Stmt::SyntheticBlock(vec![
+                decl,
+                Stmt::MarkReadonly(pd.name.clone(), ReadonlyKind::Alias),
+            ])
         }
     } else if pd.name.starts_with('&') {
         // A `&`-sigil parameter (`given $code -> &to-run { … }`) declares a
@@ -222,7 +225,7 @@ fn pointy_topic_bind(pd: &ParamDef) -> Stmt {
             && !pd.sigilless
             && !pd.traits.iter().any(|t| t == "rw")
         {
-            stmts.push(Stmt::MarkReadonly(pd.name.clone()));
+            stmts.push(Stmt::MarkReadonly(pd.name.clone(), ReadonlyKind::Alias));
         }
         Stmt::SyntheticBlock(stmts)
     }

@@ -90,7 +90,7 @@ plan 16;
 }
 {
     my @a = 1, 2;
-    throws-like { given @a { $_ = 5 } }, X::Assignment::RO,
+    throws-like { given @a { $_ = 5 } }, X::AdHoc,
         'plain $_ = ... on a read-only container topic still throws';
 }
 {
