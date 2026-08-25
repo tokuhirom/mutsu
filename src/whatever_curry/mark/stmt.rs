@@ -155,7 +155,7 @@ pub(super) fn mark_stmt(stmt: &mut Stmt) {
         // relevant to Whatever-priming (or genuinely rare enough that a
         // missed leaf here is only a cosmetic `.AST` gap, never a runtime
         // behaviour change — see the module doc's safety invariant).
-        Stmt::MarkReadonly(_)
+        Stmt::MarkReadonly(..)
         | Stmt::MarkBoundContainer(_)
         | Stmt::MarkBind
         | Stmt::MarkSigillessReadonly(_)

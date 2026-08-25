@@ -4,6 +4,7 @@ use super::super::stmt::assign::{
     build_compound_assign_expr, build_custom_compound_assign_expr, compound_assign_op_from_name,
     compound_assigned_value_expr, parse_assign_expr_or_comma, parse_compound_assign_op,
     parse_custom_compound_assign_op, parse_meta_compound_assign_op,
+    short_circuit_compound_assign_expr,
 };
 
 use crate::ast::{Expr, Stmt};

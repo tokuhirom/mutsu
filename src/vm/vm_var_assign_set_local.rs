@@ -441,7 +441,10 @@ impl Interpreter {
         {
             let bare = code.locals[idx].trim_start_matches(['$', '@', '%', '&']);
             let bare = bare.to_string();
-            self.mark_readonly(&bare);
+            // A `$` name bound straight to a literal has no container of its
+            // own, so rakudo's assignment error is X::AdHoc "Cannot assign to
+            // an immutable value".
+            self.mark_readonly_with(&bare, crate::ast::ReadonlyKind::Immutable);
         }
         // A sigilless `\target` bound to a multi-dim slice lvalue distributes a
         // plain whole-value reassignment (`target = values`, e.g. as a sub's
@@ -1345,13 +1348,13 @@ impl Interpreter {
             // variable, exactly as `$ro = 3` would be. Writing an unconditional
             // `False` here made the alias writable and silently dropped the store.
             // (The SetGlobal bind path already propagates this.)
-            let source_readonly = self.is_readonly(&resolved_source);
+            let source_kind = self.readonly_kind(&resolved_source);
             self.env_mut().insert(
                 runtime::sigilless_readonly_key(name),
-                Value::truth(source_readonly),
+                Value::truth(source_kind.is_some()),
             );
-            if source_readonly {
-                self.mark_readonly(name);
+            if let Some(kind) = source_kind {
+                self.mark_readonly_with(name, kind);
             }
             self.mark_sigilless_alias_seen();
             // Create a shared ContainerRef for cross-scope binding (source in

@@ -224,6 +224,25 @@ impl Interpreter {
                     return Ok(target);
                 }
             }
+            // A `$` name bound directly to an immutable value has no container
+            // at all in Raku -- `my $b := 1` / `my constant $PI = 3.14` / a
+            // topic aliased to a literal all report `.VAR` as the *value*
+            // (`Int`, `Rat`, ...), not `Scalar`. That is exactly the
+            // `ReadonlyKind::Immutable`/`ImmutableValue` distinction recorded
+            // when the name was marked readonly; a readonly *binding* that does
+            // own a container (`ReadonlyKind::Alias`: a non-`is rw` parameter, a
+            // `for @a -> $v` alias) still reports `Scalar`, as Raku does.
+            if !target_var.starts_with(['@', '%', '&'])
+                && matches!(
+                    self.readonly_kind(target_var.trim_start_matches('$')),
+                    Some(
+                        crate::ast::ReadonlyKind::Immutable
+                            | crate::ast::ReadonlyKind::ImmutableValue
+                    )
+                )
+            {
+                return Ok(target);
+            }
             let class_name = if target_var.starts_with('@') {
                 "Array"
             } else if target_var.starts_with('%') {

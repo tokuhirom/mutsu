@@ -109,7 +109,7 @@ impl Interpreter {
                 if has_arg {
                     self.stack.pop(); // discard unsupported trait argument
                 }
-                self.mark_readonly(name);
+                self.mark_readonly_with(name, crate::ast::ReadonlyKind::ImmutableValue);
                 return Ok(());
             }
             let is_buf_trait = matches!(
@@ -207,7 +207,7 @@ impl Interpreter {
                 self.set_env_with_main_alias(&name_str, tagged);
             }
             // Mark the variable read-only to prevent mutation
-            self.mark_readonly(&name_str);
+            self.mark_readonly_with(&name_str, crate::ast::ReadonlyKind::ImmutableValue);
             return Ok(());
         }
 

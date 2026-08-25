@@ -21,7 +21,7 @@ pub(crate) fn next_role_id() -> u64 {
 }
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, Stmt};
+use crate::ast::{Expr, FunctionDef, ParamDef, PhaserKind, ReadonlyKind, Stmt};
 use crate::env::Env;
 use crate::opcode::{CompiledCode, CompiledFns, CompiledFunction};
 use crate::parse_dispatch;
@@ -690,7 +690,10 @@ pub(crate) struct ClassAttributeDef {
 /// `unmark_readonly`) pays a `memcpy` of `u32`s only when it actually changes
 /// the set while a snapshot is alive. `Symbol` keys also replace the default
 /// hasher's SipHash-over-the-name with a `u32` hash.
-pub(crate) type ReadonlySet = rustc_hash::FxHashSet<Symbol>;
+///
+/// The value records *why* the name is readonly ([`ReadonlyKind`]), which is
+/// what decides the exception an assignment through it throws.
+pub(crate) type ReadonlySet = rustc_hash::FxHashMap<Symbol, ReadonlyKind>;
 
 /// One journaled readonly-set mutation (see `Interpreter::enter_readonly_frame`):
 /// the inverse to replay on scope exit, or a `Scope` sentinel marking a frame
@@ -698,7 +701,9 @@ pub(crate) type ReadonlySet = rustc_hash::FxHashSet<Symbol>;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum ReadonlyUndo {
     Marked(Symbol),
-    Unmarked(Symbol),
+    Unmarked(Symbol, ReadonlyKind),
+    /// The name was already readonly but with a different kind; restore it.
+    Rekinded(Symbol, ReadonlyKind),
     Scope,
 }
 
@@ -737,8 +742,11 @@ pub(crate) fn replay_readonly_undo(
             ReadonlyUndo::Marked(sym) => {
                 vars_ref.remove(&sym);
             }
-            ReadonlyUndo::Unmarked(sym) => {
-                vars_ref.insert(sym);
+            ReadonlyUndo::Unmarked(sym, kind) => {
+                vars_ref.insert(sym, kind);
+            }
+            ReadonlyUndo::Rekinded(sym, kind) => {
+                vars_ref.insert(sym, kind);
             }
             // An abandoned inner scope's sentinel: its exit was skipped by an
             // error unwind (or, prior to this guard's introduction, a Rust

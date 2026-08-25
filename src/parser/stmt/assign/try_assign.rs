@@ -467,6 +467,12 @@ pub(in crate::parser) fn try_parse_assign_expr(input: &str) -> PResult<'_, Expr>
             b'%' => Expr::HashVar(var.to_string()),
             _ => Expr::Var(var.to_string()),
         };
+        if sigil == b'$'
+            && let Some(short) =
+                short_circuit_compound_assign_expr(&name, lhs_expr.clone(), op, rhs.clone())
+        {
+            return Ok((rest, short));
+        }
         return Ok((
             rest,
             Expr::AssignExpr {

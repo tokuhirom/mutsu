@@ -208,23 +208,67 @@ impl Interpreter {
     /// Check if an already-interned name is readonly.
     #[inline]
     pub(crate) fn is_readonly_sym(&self, sym: Symbol) -> bool {
-        self.readonly_vars.borrow().contains(&sym)
+        self.readonly_vars.borrow().contains_key(&sym)
     }
 
-    /// Mark a variable as readonly.
+    /// Why `name` is readonly, or `None` when it is writable.
+    #[inline]
+    pub(crate) fn readonly_kind(&self, name: &str) -> Option<ReadonlyKind> {
+        self.readonly_vars
+            .borrow()
+            .get(&Symbol::intern(name))
+            .copied()
+    }
+
+    /// Mark a variable as readonly *as a binding alias* — a non-`is rw`
+    /// parameter or a `for`-loop alias. See [`ReadonlyKind`] for the other
+    /// kinds and [`Self::mark_readonly_with`] for how to record them.
     pub(crate) fn mark_readonly(&mut self, name: &str) {
         self.mark_readonly_sym(Symbol::intern(name));
     }
 
-    /// Mark an already-interned name as readonly. The membership test comes
-    /// first so a no-op mark (the common case: a recursive/monomorphic call
-    /// re-marking a param the caller's frame already marked) journals nothing.
+    /// Mark a variable as readonly, recording *why*.
+    pub(crate) fn mark_readonly_with(&mut self, name: &str, kind: ReadonlyKind) {
+        self.mark_readonly_sym_with(Symbol::intern(name), kind);
+    }
+
+    /// Put a name back into the state a previous [`Self::readonly_kind`] read
+    /// observed: writable when `kind` is `None`, readonly *with the same kind*
+    /// otherwise. Used by the save/override/restore pairs around a topic
+    /// (`$_`) whose readonly-ness is borrowed from another lvalue.
+    pub(crate) fn restore_readonly(&mut self, name: &str, kind: Option<ReadonlyKind>) {
+        match kind {
+            Some(kind) => self.mark_readonly_with(name, kind),
+            None => self.unmark_readonly(name),
+        }
+    }
+
+    /// Mark an already-interned name as a readonly binding alias.
     #[inline]
     pub(crate) fn mark_readonly_sym(&mut self, sym: Symbol) {
-        if self.readonly_vars.borrow_mut().insert(sym) && self.readonly_frames.get() > 0 {
-            self.readonly_undo
+        self.mark_readonly_sym_with(sym, ReadonlyKind::Alias);
+    }
+
+    /// Mark an already-interned name as readonly with an explicit kind. The
+    /// membership test comes first so a no-op mark (the common case: a
+    /// recursive/monomorphic call re-marking a param the caller's frame
+    /// already marked) journals nothing.
+    #[inline]
+    pub(crate) fn mark_readonly_sym_with(&mut self, sym: Symbol, kind: ReadonlyKind) {
+        let previous = self.readonly_vars.borrow_mut().insert(sym, kind);
+        if self.readonly_frames.get() == 0 {
+            return;
+        }
+        match previous {
+            None => self
+                .readonly_undo
                 .borrow_mut()
-                .push(ReadonlyUndo::Marked(sym));
+                .push(ReadonlyUndo::Marked(sym)),
+            Some(old) if old != kind => self
+                .readonly_undo
+                .borrow_mut()
+                .push(ReadonlyUndo::Rekinded(sym, old)),
+            Some(_) => {}
         }
     }
 
@@ -250,32 +294,54 @@ impl Interpreter {
     /// an outer frame's mark stays journaled so its exit re-marks the name.
     #[inline]
     pub(crate) fn unmark_readonly_sym(&mut self, sym: Symbol) {
-        if self.readonly_vars.borrow_mut().remove(&sym) && self.readonly_frames.get() > 0 {
+        let removed = self.readonly_vars.borrow_mut().remove(&sym);
+        if let Some(kind) = removed
+            && self.readonly_frames.get() > 0
+        {
             let mut undo = self.readonly_undo.borrow_mut();
             if undo.last() == Some(&ReadonlyUndo::Marked(sym)) {
                 undo.pop();
             } else {
-                undo.push(ReadonlyUndo::Unmarked(sym));
+                undo.push(ReadonlyUndo::Unmarked(sym, kind));
             }
         }
     }
 
     /// Check if a variable is readonly and return an error if so.
-    /// Returns Ok(()) if writable, Err with X::Multi::NoMatch for increment/decrement,
-    /// or Err with a generic message for assignment.
+    ///
+    /// Which exception this raises is decided by the [`ReadonlyKind`] recorded
+    /// when the name was marked, mirroring Rakudo's own three-way split:
+    ///
+    /// * [`ReadonlyKind::Alias`] — a readonly binding that still has a
+    ///   container (non-`is rw` parameter, `for` alias): `X::AdHoc`,
+    ///   "Cannot assign to a readonly variable or a value".
+    /// * [`ReadonlyKind::Immutable`] — a sigiled variable bound straight to an
+    ///   immutable value (`my $x := 42`, `constant $PI`, a literal topic):
+    ///   `X::AdHoc`, "Cannot assign to an immutable value".
+    /// * [`ReadonlyKind::ImmutableValue`] — the name denotes the value itself
+    ///   (sigilless `constant PI`, `is List` array): `X::Assignment::RO`,
+    ///   "Cannot modify an immutable TYPE (VALUE)".
     pub(crate) fn check_readonly_for_modify(&self, name: &str) -> Result<(), RuntimeError> {
-        if self.is_readonly(name) {
-            let msg = format!("Cannot assign to a readonly variable ({}) or a value", name);
-            let mut err = RuntimeError::new(msg.clone());
-            let mut attrs = std::collections::HashMap::new();
-            attrs.insert("message".to_string(), Value::str(msg));
-            err.exception = Some(Box::new(Value::make_instance(
-                Symbol::intern("X::Assignment::RO"),
-                attrs,
-            )));
-            return Err(err);
+        match self.readonly_kind(name) {
+            None => Ok(()),
+            Some(ReadonlyKind::Alias) => Err(RuntimeError::readonly_variable()),
+            Some(ReadonlyKind::Immutable) => Err(RuntimeError::immutable_value()),
+            Some(ReadonlyKind::ImmutableValue) => Err(self.immutable_value_error(name)),
         }
-        Ok(())
+    }
+
+    /// `X::Assignment::RO` naming the immutable value `name` currently holds,
+    /// as Rakudo's `infix:<=>` reports it ("Cannot modify an immutable Rat
+    /// (3.14)"). Falls back to the value-less wording when the name cannot be
+    /// resolved to a value from here.
+    pub(crate) fn immutable_value_error(&self, name: &str) -> RuntimeError {
+        match self.env().get(name) {
+            Some(value) => RuntimeError::assignment_ro_typename(
+                crate::runtime::utils::value_type_name(value),
+                &value.to_string_value(),
+            ),
+            None => RuntimeError::assignment_ro(Some(name)),
+        }
     }
 
     /// Check if a variable is readonly for increment/decrement operations.

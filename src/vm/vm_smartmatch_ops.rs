@@ -50,14 +50,10 @@ impl Interpreter {
         // duration when the LHS is an explicit variable other than the topic.
         let topic_ro_override = match lhs {
             Some(SmartMatchLhs::Var { name: v, .. }) if v != "_" => {
-                let saved = self.is_readonly("_");
+                let saved = self.readonly_kind("_");
                 let bare = v.trim_start_matches(['$', '@', '%', '&']);
-                let target_ro = self.is_readonly(v) || self.is_readonly(bare);
-                if target_ro {
-                    self.mark_readonly("_");
-                } else {
-                    self.unmark_readonly("_");
-                }
+                let target_kind = self.readonly_kind(v).or_else(|| self.readonly_kind(bare));
+                self.restore_readonly("_", target_kind);
                 Some(saved)
             }
             // An accessor LHS (`$obj.meth ~~ s///`) targets the accessor's
@@ -65,7 +61,7 @@ impl Interpreter {
             // readonly `_` (e.g. a `for ^N { }` loop topic) must not block the
             // substitution. A non-rw accessor still errors at writeback below.
             Some(SmartMatchLhs::Method { .. }) => {
-                let saved = self.is_readonly("_");
+                let saved = self.readonly_kind("_");
                 self.unmark_readonly("_");
                 Some(saved)
             }
@@ -90,11 +86,7 @@ impl Interpreter {
         // Restore the topic's readonly flag (overridden above for an aliased LHS
         // variable) on every path, including the error path below.
         if let Some(saved) = topic_ro_override {
-            if saved {
-                self.mark_readonly("_");
-            } else {
-                self.unmark_readonly("_");
-            }
+            self.restore_readonly("_", saved);
         }
         rhs_run?;
         let right = self.stack.pop().unwrap_or(Value::NIL);

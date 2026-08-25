@@ -258,11 +258,20 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // Use the sigil-appropriate lvalue expression so `%h ,= %g` / `@a ,= 3`
         // read the current container as a Hash/Array (not a scalar `Var("%h")`),
         // giving the comma operator the two containers to merge/append.
-        let expr = compound_assigned_value_expr(var_expr, op, rhs);
-        let stmt = Stmt::Assign {
-            name: name.clone(),
-            expr,
-            op: AssignOp::Assign,
+        // `//=` / `||=` / `&&=` on a plain scalar must not store when the short
+        // circuit keeps the current value (see
+        // `short_circuit_compound_assign_expr`).
+        let stmt = if matches!(var_expr, Expr::Var(_))
+            && let Some(short) =
+                short_circuit_compound_assign_expr(&name, var_expr.clone(), op, rhs.clone())
+        {
+            Stmt::Expr(short)
+        } else {
+            Stmt::Assign {
+                name: name.clone(),
+                expr: compound_assigned_value_expr(var_expr, op, rhs),
+                op: AssignOp::Assign,
+            }
         };
         let (rest, stmt) = crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(
             rest,

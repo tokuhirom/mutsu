@@ -151,7 +151,7 @@ impl Compiler {
         let readonly_marked_names: Vec<&str> = stmts
             .iter()
             .filter_map(|s| match s {
-                Stmt::MarkReadonly(n) => Some(n.as_str()),
+                Stmt::MarkReadonly(n, _) => Some(n.as_str()),
                 _ => None,
             })
             .collect();

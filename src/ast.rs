@@ -798,6 +798,34 @@ impl PackageKind {
     }
 }
 
+/// Why a name is in the interpreter's readonly set. Rakudo reports three
+/// distinct exceptions for "you cannot assign to this", and which one it
+/// picks is a property of the *lvalue*, not of the assignment site:
+///
+/// * a readonly **binding** that still owns a `Scalar` container (a non-`is rw`
+///   sub/block parameter, a `for`-loop named alias) — `X::AdHoc`,
+///   "Cannot assign to a readonly variable or a value";
+/// * a **sigiled variable** that has no container at all because it was bound
+///   straight to an immutable value (`my $x := 42`, `my constant $PI = 3.14`,
+///   a topic aliased to a literal) — `X::AdHoc`,
+///   "Cannot assign to an immutable value";
+/// * a name that denotes the immutable **value** itself rather than a variable
+///   (a sigilless `constant PI` / `\c` term, an `is List` array) — the
+///   assignment reaches `infix:<=>` on the value, giving the specific
+///   `X::Assignment::RO`, "Cannot modify an immutable TYPE (VALUE)".
+///
+/// Recording the kind where the readonly-ness is *decided* keeps the three
+/// apart without any name-based guessing at the (single, shared) check site.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub(crate) enum ReadonlyKind {
+    /// Readonly binding with a container behind it: parameters, `for` aliases.
+    Alias,
+    /// Sigiled variable bound directly to an immutable value (no container).
+    Immutable,
+    /// The name *is* an immutable value (sigilless term, immutable container).
+    ImmutableValue,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum Stmt {
     VarDecl {
@@ -815,7 +843,9 @@ pub(crate) enum Stmt {
         where_constraint: Option<Box<Expr>>,
     },
     /// Mark a variable as readonly (used for `:=` binding desugaring).
-    MarkReadonly(String),
+    /// The [`ReadonlyKind`] records *why* it is readonly, which decides the
+    /// exception Rakudo reports for an assignment through it.
+    MarkReadonly(String, ReadonlyKind),
     /// Mark a container variable as `:=`-bound via `__mutsu_bound::NAME` env key.
     /// Distinguishes a bound container (writable as a whole, propagating to the
     /// bound source) from a genuinely readonly `constant` container — both end

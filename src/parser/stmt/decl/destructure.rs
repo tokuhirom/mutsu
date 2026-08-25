@@ -610,7 +610,10 @@ fn parse_destructuring_with_rhs(
             stmts.push(Stmt::MarkSigillessReadonly(dvar.name.clone()));
         }
         if is_binding && dvar.name.starts_with(|c: char| c != '@' && c != '%') {
-            stmts.push(Stmt::MarkReadonly(dvar.name.clone()));
+            stmts.push(Stmt::MarkReadonly(
+                dvar.name.clone(),
+                crate::ast::ReadonlyKind::Immutable,
+            ));
         }
     }
     // Yield the assigned list as the block's value (`(my ($a,$b) = 1,2)` is `(1 2)`,

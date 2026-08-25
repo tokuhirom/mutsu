@@ -294,6 +294,21 @@ impl RuntimeError {
         err
     }
 
+    /// X::AdHoc - assignment through a readonly *binding* that still owns a
+    /// container: a non-`is rw` sub/block parameter, or a `for`-loop named
+    /// alias. Rakudo reports this as a plain `X::AdHoc`, not as the specific
+    /// `X::Assignment::RO` it uses for immutable *values*.
+    pub(crate) fn readonly_variable() -> Self {
+        Self::new("Cannot assign to a readonly variable or a value")
+    }
+
+    /// X::AdHoc - assignment to a sigiled variable that has no container at
+    /// all because it is bound straight to an immutable value (`my $x := 42`,
+    /// `my constant $PI = 3.14`, a topic aliased to a literal).
+    pub(crate) fn immutable_value() -> Self {
+        Self::new("Cannot assign to an immutable value")
+    }
+
     /// X::Assignment::RO - Cannot modify an immutable value
     pub(crate) fn assignment_ro(value: Option<&str>) -> Self {
         let msg = if let Some(v) = value {

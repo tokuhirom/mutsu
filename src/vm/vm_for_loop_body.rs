@@ -243,11 +243,11 @@ impl Interpreter {
         // on the `env` snapshot alone silently drops the local-slot restore
         // whenever the outer binding is a pure local
         // (`todo/tickets/for-multi-param-shadow-clobbers-outer-lexical.md`).
-        // (name, saved env value, was readonly, saved sigilless-readonly flag, saved (slot, value))
+        // (name, saved env value, saved readonly kind, saved sigilless-readonly flag, saved (slot, value))
         type SavedMultiParam = (
             String,
             Option<Value>,
-            bool,
+            Option<crate::ast::ReadonlyKind>,
             Option<Value>,
             Option<(usize, Value)>,
         );
@@ -257,7 +257,7 @@ impl Interpreter {
             .enumerate()
             .map(|(i, name)| {
                 let val = self.env().get(name).cloned();
-                let was_readonly = self.is_readonly(name);
+                let was_readonly = self.readonly_kind(name);
                 let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
                 let sigilless_ro = self.env().get(&sigilless_key).cloned();
                 let saved_local = spec
@@ -547,7 +547,11 @@ impl Interpreter {
             // Also set a deep-readonly flag so that method-lvalue
             // assignments like .value = ... are blocked too.
             if topic_readonly {
-                self.mark_readonly("_");
+                // The topic aliases an immutable item directly, with no
+                // container of its own: rakudo throws X::AdHoc "Cannot assign
+                // to an immutable value" (not the readonly-*variable* wording
+                // a named `-> $v` alias gets).
+                self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
                 self.env_mut()
                     .insert("__mutsu_deep_readonly::_".to_string(), Value::TRUE);
             }
@@ -1037,11 +1041,7 @@ impl Interpreter {
             {
                 self.locals[slot] = v;
             }
-            if was_readonly {
-                self.mark_readonly(&name);
-            } else {
-                self.unmark_readonly(&name);
-            }
+            self.restore_readonly(&name, was_readonly);
             let sigilless_key = format!("__mutsu_sigilless_readonly::{}", name);
             if let Some(ro_val) = sigilless_ro {
                 self.env_mut().insert(sigilless_key, ro_val);

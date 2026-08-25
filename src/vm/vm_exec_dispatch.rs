@@ -1365,11 +1365,12 @@ impl Interpreter {
                     // Propagate readonly status from the source variable.
                     // Binding to a readonly parameter should make the target
                     // readonly as well (persisted in env for cross-scope survival).
-                    let source_readonly = self.is_readonly(source_name);
+                    let source_kind = self.readonly_kind(source_name);
+                    let source_readonly = source_kind.is_some();
                     self.env_mut()
                         .insert(readonly_key.clone(), Value::truth(source_readonly));
-                    if source_readonly {
-                        self.mark_readonly(&name);
+                    if let Some(kind) = source_kind {
+                        self.mark_readonly_with(&name, kind);
                     }
                     // Create a shared ContainerRef for cross-scope binding persistence.
                     if !name.starts_with('@')
@@ -5102,14 +5103,17 @@ impl Interpreter {
                         self.env().get(&readonly_key).map(Value::view),
                         Some(ValueView::Bool(true))
                     ) {
-                        return Err(RuntimeError::assignment_ro(Some(name)));
+                        // A sigilless term (`my \\c = 5`) IS the value, so
+                        // rakudo names the value in the error: "Cannot modify
+                        // an immutable Int (5)".
+                        return Err(self.immutable_value_error(name));
                     }
                 }
                 *ip += 1;
             }
-            OpCode::MarkVarReadonly(name_idx) => {
+            OpCode::MarkVarReadonly(name_idx, kind) => {
                 let name = Self::const_str(code, *name_idx).to_string();
-                self.mark_readonly(&name);
+                self.mark_readonly_with(&name, *kind);
                 *ip += 1;
             }
 

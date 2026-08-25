@@ -184,6 +184,115 @@ fn autoviv_compound_lhs(lhs: Expr, op: CompoundAssignOp) -> Expr {
     }
 }
 
+/// Which value of the LHS makes a short-circuiting compound assignment KEEP
+/// the current value instead of storing the RHS.
+#[derive(Clone, Copy)]
+enum ShortCircuitKeep {
+    /// `//=` keeps a DEFINED LHS.
+    Defined,
+    /// `||=` keeps a TRUE LHS.
+    True,
+    /// `&&=` keeps a FALSE LHS.
+    False,
+}
+
+/// Build `$x //= v` / `$x ||= v` / `$x &&= v` as a real short circuit that does
+/// NOT store when the current value is kept.
+///
+/// Rakudo defines these as `$x // ($x = v)`, not as `$x = ($x // v)`: when the
+/// short circuit keeps the LHS, no assignment happens at all. That is
+/// observable whenever the LHS is not assignable — `my $x := 42; $x //= 5`
+/// succeeds in Rakudo (nothing is stored) while `my $x := Any; $x //= 5`
+/// throws, and a `Proxy` LHS must not see a spurious `STORE`. The flat
+/// `$x = ($x // v)` desugar stored unconditionally, so it rejected the
+/// no-op case and, in `($x //= 42) += 10`, reported the *inner* assignment's
+/// error instead of letting the outer metaop fail on the returned value
+/// (roast S03-metaops/misc.t "failure modes").
+///
+/// Only plain named scalar targets take this shape; subscript/attribute targets
+/// keep the flat desugar (they have their own lvalue machinery).
+pub(crate) fn short_circuit_compound_assign_expr(
+    name: &str,
+    lhs: Expr,
+    op: CompoundAssignOp,
+    rhs: Expr,
+) -> Option<Expr> {
+    let keep = match op {
+        CompoundAssignOp::DefinedOr => ShortCircuitKeep::Defined,
+        CompoundAssignOp::LogicalOr => ShortCircuitKeep::True,
+        CompoundAssignOp::LogicalAnd => ShortCircuitKeep::False,
+        _ => return None,
+    };
+    let tmp_name = format!(
+        "__mutsu_compound_lhs_{}",
+        TMP_INDEX_COUNTER.fetch_add(1, Ordering::Relaxed)
+    );
+    let tmp_var = Expr::Var(tmp_name.clone());
+    // Evaluate the LHS exactly once into a temp, then test the temp.
+    let test = match keep {
+        ShortCircuitKeep::Defined => Expr::Call {
+            name: Symbol::intern("defined"),
+            args: vec![tmp_var.clone()],
+        },
+        ShortCircuitKeep::True | ShortCircuitKeep::False => tmp_var.clone(),
+    };
+    let cond = Expr::DoBlock {
+        body: vec![
+            Stmt::VarDecl {
+                name: tmp_name.clone(),
+                expr: lhs,
+                type_constraint: None,
+                is_state: false,
+                is_our: false,
+                is_dynamic: false,
+                is_export: false,
+                export_tags: Vec::new(),
+                custom_traits: Vec::new(),
+                where_constraint: None,
+            },
+            Stmt::Expr(test),
+        ],
+        label: None,
+    };
+    let store = Expr::AssignExpr {
+        name: name.to_string(),
+        expr: Box::new(rhs),
+        is_bind: false,
+    };
+    // What the KEEP branch yields depends on whether the LHS has a container:
+    // rakudo returns the *container* when there is one (so
+    // `my $a = 52; ($a //= 42) += 10` leaves 62 in `$a`) and the bare *value*
+    // when there is not (so `my $a := 42; ($a //= 42) += 10` dies with
+    // X::Assignment::RO on the returned value). Only the runtime knows which,
+    // so branch on it: the lvalue arm is a plain `Var`, which an outer compound
+    // assignment's ternary distribution writes through, while the value arm is
+    // a `DoBlock` that the same distribution treats as a non-lvalue and turns
+    // into the RO error. Both roast S03-metaops/misc.t subtests
+    // ("cover metaop call simplification optimization" and "failure modes")
+    // pin exactly this split.
+    let keep_value = Expr::Ternary {
+        cond: Box::new(Expr::Call {
+            name: Symbol::intern("__mutsu_var_is_writable"),
+            args: vec![Expr::Literal(Value::str(name.to_string()))],
+        }),
+        then_expr: Box::new(Expr::Var(name.to_string())),
+        else_expr: Box::new(Expr::DoBlock {
+            body: vec![Stmt::Expr(tmp_var)],
+            label: None,
+        }),
+    };
+    let (then_expr, else_expr) = match keep {
+        // `&&=` stores when the LHS is TRUE, keeps it otherwise.
+        ShortCircuitKeep::False => (store, keep_value),
+        ShortCircuitKeep::Defined | ShortCircuitKeep::True => (keep_value, store),
+    };
+    Some(Expr::Ternary {
+        cond: Box::new(cond),
+        then_expr: Box::new(then_expr),
+        else_expr: Box::new(else_expr),
+    })
+}
+
 pub(crate) fn compound_assigned_value_expr(lhs: Expr, op: CompoundAssignOp, rhs: Expr) -> Expr {
     if matches!(op, CompoundAssignOp::DefinedOr) {
         let tmp_name = format!(

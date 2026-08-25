@@ -221,11 +221,14 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
         };
     }
     match target {
-        Expr::Var(name) => Expr::AssignExpr {
-            name: name.clone(),
-            expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, value)),
-            is_bind: false,
-        },
+        Expr::Var(name) => {
+            short_circuit_compound_assign_expr(&name, Expr::Var(name.clone()), op, value.clone())
+                .unwrap_or_else(|| Expr::AssignExpr {
+                    name: name.clone(),
+                    expr: Box::new(compound_assigned_value_expr(Expr::Var(name), op, value)),
+                    is_bind: false,
+                })
+        }
         Expr::ArrayVar(name) => Expr::AssignExpr {
             name: format!("@{}", name.clone()),
             expr: Box::new(compound_assigned_value_expr(

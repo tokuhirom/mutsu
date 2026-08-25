@@ -828,7 +828,10 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let stmt = if s.is_array || bound_name.starts_with('%') {
         let mut stmts = Vec::new();
         if bound_name.starts_with('%') {
-            stmts.push(Stmt::MarkReadonly(bound_name.clone()));
+            stmts.push(Stmt::MarkReadonly(
+                bound_name.clone(),
+                crate::ast::ReadonlyKind::ImmutableValue,
+            ));
             // Also record a dedicated bound-container marker so a later whole
             // reassignment (`%a = (...)`) is allowed (it propagates to the bound
             // source), while a `constant %M` — also readonly — stays immutable.
@@ -852,7 +855,10 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         Stmt::SyntheticBlock(stmts)
     } else if mark_scalar_readonly {
-        Stmt::SyntheticBlock(vec![Stmt::MarkReadonly(bound_name), stmt])
+        Stmt::SyntheticBlock(vec![
+            Stmt::MarkReadonly(bound_name, crate::ast::ReadonlyKind::Immutable),
+            stmt,
+        ])
     } else if bind_to_var || bind_to_index {
         Stmt::SyntheticBlock(vec![Stmt::MarkBind, stmt])
     } else {
