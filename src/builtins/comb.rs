@@ -93,12 +93,16 @@ pub(crate) fn native_comb_method(
 ) -> Option<Result<Value, RuntimeError>> {
     let text = target.to_string_value();
 
-    // Separate positional args from the `:match` named pair (regex-only).
+    // Separate positional args from named ones. `.comb` declares only `:match`
+    // (regex-only, irrelevant to this pure path) and swallows every other named
+    // through the implicit `*%_` every Raku method carries, so ALL named-flavour
+    // `Pair`s are dropped -- leaving an unrecognized one in `positional` used to
+    // read it as the `$limit`, numifying to 0 and making `"abc".comb(:nonsense)`
+    // return an empty Seq. A *positional* `Pair` (the `ValuePair` flavour,
+    // ADR-0021) is a real matcher argument and keeps its slot.
     let mut positional: Vec<&Value> = Vec::new();
     for arg in args {
-        if let ValueView::Pair(key, _) = arg.view()
-            && key == "match"
-        {
+        if matches!(arg.view(), ValueView::Pair(..)) {
             continue;
         }
         positional.push(arg);

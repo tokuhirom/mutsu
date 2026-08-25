@@ -326,14 +326,19 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let text = target.to_string_value();
 
-        // Separate positional args from named :match pair
+        // Separate positional args from named ones. `.comb` declares only
+        // `:match`; every other named is swallowed by the implicit `*%_` that
+        // each Raku method carries, so it must NOT fall into `positional` (where
+        // it used to be read as the matcher, turning `"abc".comb(:nonsense)` into
+        // a regex search for ":nonsense"). A *positional* `Pair` -- the
+        // `ValuePair` flavour, ADR-0021 -- is a real matcher argument.
         let mut positional: Vec<&Value> = Vec::new();
         let mut return_match = false;
         for arg in args {
-            if let ValueView::Pair(key, val) = arg.view()
-                && key == "match"
-            {
-                return_match = val.truthy();
+            if let ValueView::Pair(key, val) = arg.view() {
+                if key == "match" {
+                    return_match = val.truthy();
+                }
                 continue;
             }
             positional.push(arg);
