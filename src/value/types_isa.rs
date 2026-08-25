@@ -498,13 +498,37 @@ impl Value {
                         )
                 )
             }
-            "Iterable" => matches!(
-                self.view(),
-                ValueView::Array(..)
-                    | ValueView::LazyList(_)
-                    | ValueView::Hash(..)
-                    | ValueView::Seq(_)
-            ),
+            // A `Range` composes `Iterable` in Raku (`(0..2) ~~ Iterable` and
+            // `Range ~~ Iterable` are both True), and so does a `Slip` (a List
+            // subclass). Both were missing here even though the *type-name*
+            // table in `signature.rs` already lists them, so a role-aware
+            // smart-match disagreed with signature binding. `Set`/`Bag`/`Mix`
+            // are deliberately NOT here: they do `Associative`, and
+            // `(1,2).Set ~~ Iterable` is False in Raku.
+            "Iterable" => {
+                matches!(
+                    self.view(),
+                    ValueView::Array(..)
+                        | ValueView::LazyList(_)
+                        | ValueView::Hash(..)
+                        | ValueView::Seq(_)
+                        | ValueView::Slip(_)
+                        | ValueView::HyperSeq(_)
+                        | ValueView::RaceSeq(_)
+                        | ValueView::Range(_, _)
+                        | ValueView::RangeExcl(_, _)
+                        | ValueView::RangeExclStart(_, _)
+                        | ValueView::RangeExclBoth(_, _)
+                        | ValueView::GenericRange { .. }
+                ) || matches!(
+                    self.view(),
+                    ValueView::Package(name)
+                        if matches!(
+                            name.resolve().as_str(),
+                            "Array" | "List" | "Range" | "Seq" | "Slip" | "Hash" | "Map"
+                        )
+                )
+            }
             _ => false,
         }
     }
