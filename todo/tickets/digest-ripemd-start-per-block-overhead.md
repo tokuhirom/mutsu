@@ -42,9 +42,13 @@
 > thermally-throttled hybrid laptop are noisy (an unpinned run right
 > after a long build read 21s vs the 12.8s cool-box baseline — pure
 > thermal artifact, caught by the pinned interleave); the instruction
-> counts are the trustworthy figure. Expect the full `t/ripemd.t` gate
-> around ~135-140s — still over the 120s hard budget, so the file stays
-> un-whitelisted and this ticket stays open.
+> counts are the trustworthy figure. A back-to-back full `t/ripemd.t`
+> A/B under equal (hot-throttled) conditions measured **223.2s wall /
+> 349 user-s (old) vs 211.8s wall / 328 user-s (new)** — about -5..-6%
+> end-to-end (the non-dispatch half of the profile dilutes the -13.4%).
+> Scaled to the session's cool-box baseline (156.6s) that is ~148s —
+> still over the 120s hard budget, so the file stays un-whitelisted and
+> this ticket stays open.
 >
 > Post-fix profile has no new dominant item: thread-local `LocalKey`
 > (symbol TLS) ~6%, malloc/free ~12%, `memcmp` ~3.9%, nanbox
