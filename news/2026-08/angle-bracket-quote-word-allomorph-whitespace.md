@@ -65,9 +65,11 @@ than a description of mutsu's behaviour.
 Two adjacent findings were split out rather than bundled in, since neither is part of the
 literal-vs-quote-words decision:
 
-- `todo/tickets/angle-bracket-fraction-allomorph-needs-arbitrary-numeric-parts.md` — a quote-words
+- `todo/tickets/angle-bracket-fraction-underscore-numerator-asymmetry.md` — a quote-words
   fraction should divide two *arbitrary* numerics (`<1.5/2>`, `<Inf/2>`, `<1/-3>` are allomorphs in
-  Raku but plain `Str` in mutsu, because the parser only accepts `integer/integer`).
+  Raku but plain `Str` in mutsu, because the parser only accepts `integer/integer`). *(That part
+  has since been fixed; the ticket was renamed on 2026-08-25 and now tracks only the leftover
+  underscore-in-numerator asymmetry.)*
 - `todo/tickets/allomorph-raku-repr-loses-zero-denominator-rat.md` — `RatStr.new(1/0, "1/0").raku`
   renders the numeric half as `Inf`. Display-only and pre-existing (it reproduces with no `<...>`
   involved); the whitespace fix merely made it reachable from `< 1/0 >`.

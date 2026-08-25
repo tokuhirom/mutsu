@@ -65,3 +65,10 @@ would not catch mutsu's exception the way it catches real Raku's.
 - Related, narrower finding already filed: [bind-scalar-literal-var-name-not-int.md](bind-scalar-literal-var-name-not-int.md)
   (the `$b := 1; $b.VAR.^name` should be `Int` gap) — likely the same underlying "bind-to-
   literal is not modeled as containerless" representation gap.
+- A fourth case folded in here on 2026-08-25: binding a `Proxy` returned from a sub call
+  (`my $doubled := double(); $doubled = 4`) also throws mutsu's `X::Assignment::RO` where
+  `raku` v2026.06 throws `X::AdHoc` / "Cannot assign to an immutable value". That was
+  previously tracked separately as a *writability* bug, but both implementations now refuse
+  the assignment, leaving only this exception-class substitution — see
+  `news/2026-08/bind-proxy-from-sub-return-value-closed.md`. Fixing this ticket should cover
+  it, so include that shape when picking the test cases.

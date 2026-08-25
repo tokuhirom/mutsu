@@ -22,8 +22,18 @@ VARIANTS='Int|BigInt|Num|Str|Bool|Range|RangeExcl|RangeExclStart|RangeExclBoth|G
 # The wall is complete when this reaches 0. At 0 the `grep -v` matches nothing
 # and exits 1, which under `set -euo pipefail` would abort the script — so
 # tolerate it and let `wc -l` report the real (zero) count.
-current=$( { grep -rEo "\bValue::(${VARIANTS})\b" src --include='*.rs' \
-    | grep -v '^src/value/' | wc -l; } || true)
+# Whole-line `//` comments are stripped before counting: prose that names a
+# variant (e.g. "a plain `Value::Hash` already has native coverage") is not a
+# wall violation, and a doc comment tripping the ratchet broke `make test` on a
+# clean tree. Only full-line comments are dropped, never a trailing `// ...` on
+# a code line -- a line such as `let u = "https://x"; Value::Int(1)` must still
+# be counted, so the ratchet can never be weakened by appending a comment.
+current=$( { grep -rEn "\bValue::(${VARIANTS})\b" src --include='*.rs' \
+    | grep -v '^src/value/' \
+    | sed -E 's/^[^:]+:[0-9]+://' \
+    | grep -vE '^[[:space:]]*//' \
+    | grep -oE "\bValue::(${VARIANTS})\b" \
+    | wc -l; } || true)
 
 if [[ "${1:-}" == "--update" ]]; then
     echo "$current" > "$BASELINE_FILE"
