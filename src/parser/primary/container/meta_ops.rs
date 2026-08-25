@@ -669,6 +669,32 @@ fn build_sequence_from_seeds(input: &str, seeds: Vec<Expr>) -> PResult<'_, Expr>
     Ok((rest, seq))
 }
 
+/// The body of a bare `{ ... }` block literal, or `None` for anything else
+/// (including a pointy block `-> $x { ... }`, a `sub { ... }`, and the implicit
+/// `@_` form `{ @_ }`, none of which are bare blocks).
+///
+/// A bare block with placeholder parameters (`{ $^a + $^b }`) is built as an
+/// `AnonSubParams` by `make_anon_sub`, so it is told apart from a pointy block
+/// by its parameter list being exactly the placeholders its body declares.
+fn bare_block_body(expr: &Expr) -> Option<Vec<Stmt>> {
+    match expr {
+        Expr::AnonSub {
+            body,
+            is_block: true,
+            ..
+        } => Some(body.clone()),
+        Expr::AnonSubParams {
+            params,
+            body,
+            is_whatever_code: false,
+            ..
+        } if !params.is_empty() && *params == crate::ast::collect_placeholders_shallow(body) => {
+            Some(body.clone())
+        }
+        _ => None,
+    }
+}
+
 /// Try to parse an inline statement modifier inside parenthesized expression.
 /// Handles: ($_ with data), (expr if cond), (expr for list), etc.
 pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PResult<'a, Expr>> {
@@ -683,9 +709,23 @@ pub(crate) fn try_inline_modifier<'a>(input: &'a str, expr: Expr) -> Option<PRes
     if !is_modifier {
         return None;
     }
-    // Wrap expr as Stmt::Expr, apply one or more chained modifiers,
-    // then wrap result as Expr::DoStmt.
-    let stmt = Stmt::Expr(expr);
+    // A bare `{ ... }` block is the *statement* the modifier modifies, not a
+    // closure value handed to it: `({ $_ + 1 } for 1,2,3)` is `(2 3 4)`, not
+    // three uncalled Blocks. Parenthesised content is parsed as an expression
+    // here, so the block arrives as a closure term; hand it to the modifier as
+    // the `Stmt::Block` that statement position would have produced, so both
+    // spellings share one code path.
+    //
+    // `while`/`until` are the documented exception -- rakudo thunks the
+    // statement they modify, so a bare block genuinely stays an uncalled term
+    // there (`raku -e 'my $i = 0; say ({ $i } while $i++ < 3)'` prints three
+    // Blocks). Leave those alone.
+    let keeps_block_as_term =
+        keyword("while", input).is_some() || keyword("until", input).is_some();
+    let stmt = match bare_block_body(&expr).filter(|_| !keeps_block_as_term) {
+        Some(body) => Stmt::Block(body),
+        None => Stmt::Expr(expr),
+    };
     let result = (|| {
         let (mut rest, mut modified_stmt) = parse_statement_modifier(input, stmt)?;
         loop {

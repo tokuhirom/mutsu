@@ -553,7 +553,17 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if r.starts_with("->") || r.starts_with('{') {
             return Ok(None);
         }
-        let loop_stmt = match stmt {
+        let (param, params, body) = match stmt {
+            // `{ ... } for LIST` is the very same loop as `for LIST { ... }`,
+            // so the bare block gives the loop its implicit placeholder
+            // signature exactly as a `for LIST { ... }` body block does.
+            // Without this the loop stayed signature-less and `$^a`/`$^b` never
+            // got bound (`{ $^a ~ $^b } for (1,2),(3,4)` yielded `True/True`).
+            Stmt::Block(ref body) => {
+                let (param, params) = crate::parser::stmt::control::placeholder_loop_params(body)
+                    .unwrap_or((None, Vec::new()));
+                (param, params, vec![stmt])
+            }
             // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
             // @a`) is now `WhateverCurry` rather than a built `Lambda`/
             // `AnonSubParams`, but still needs the same "call it with $_"
@@ -566,19 +576,19 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
                     target: Box::new(expr),
                     args: vec![Expr::Var("_".to_string())],
                 };
-                Stmt::Expr(target)
+                (None, Vec::new(), vec![Stmt::Expr(target)])
             }
-            other => other,
+            other => (None, Vec::new(), vec![other]),
         };
         return Ok(Some((
             r,
             Stmt::For {
                 iterable,
-                param: None,
+                param,
                 param_def: Box::new(None),
-                params: Vec::new(),
+                params,
                 params_def: Vec::new(),
-                body: vec![loop_stmt],
+                body,
                 label: None,
                 mode: crate::ast::ForMode::Normal,
                 rw_block: false,

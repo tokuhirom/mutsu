@@ -267,6 +267,7 @@ impl Compiler {
         rw_block: bool,
         body: &[Stmt],
         label: &Option<String>,
+        is_statement_modifier: bool,
     ) {
         // Parser currently lowers labeled `do { ... }` / labeled bare blocks into
         // a dummy single-iteration `for Nil` with a label. Preserve block semantics
@@ -448,6 +449,14 @@ impl Compiler {
         self.hoist_sub_decls(&loop_body, true);
         // A `for` body is its own Raku call frame (see `callframe_block_depth`).
         self.callframe_block_depth += 1;
+        // A statement MODIFIER's sole block is this loop's own body block,
+        // supplied one element per iteration -- not a separately-invoked,
+        // zero-argument nested block (ADR-0048 D3/D6). Mirrors the statement
+        // form in `stmt.rs`; without it `({ $^a * 2 } for 1, 2, 3)` died with
+        // the nested block's own "Too few positionals passed" arity failure.
+        if is_statement_modifier {
+            self.note_construct_body_block_stmts(&loop_body);
+        }
         self.compile_collected_loop_body(&loop_body);
         self.callframe_block_depth -= 1;
         for n in &newly_registered {
