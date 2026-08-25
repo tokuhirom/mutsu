@@ -246,8 +246,8 @@ impl Interpreter {
         // builtin like `make` skips both. `has_proto` reads a separate map and
         // stays unguarded.
         if (self.fn_base_name_registered(name)
-            && (self.has_declared_function(name) || self.has_multi_function(name)))
-            || self.has_proto(name)
+            && (self.has_declared_function_cached(name) || self.has_multi_function_cached(name)))
+            || self.has_proto_cached(name)
         {
             raw_args
         } else {

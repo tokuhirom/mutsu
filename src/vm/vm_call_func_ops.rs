@@ -98,7 +98,7 @@ impl Interpreter {
             || Self::is_interpreter_carrier_function(name)
             || self.is_interpreter_handled_function(name)
             || self.has_function(name)
-            || self.has_proto(name)
+            || self.has_proto_cached(name)
             || self.has_multi_candidates_cached(name)
         {
             return None;
@@ -691,7 +691,7 @@ impl Interpreter {
             // multi-candidates full-map scan runs last, memoized.
             if !self.fn_base_name_registered(name_str)
                 || !self.has_function(name_str)
-                || self.has_proto(name_str)
+                || self.has_proto_cached(name_str)
                 || self.has_multi_candidates_cached(name_str)
             {
                 None
@@ -1129,7 +1129,7 @@ impl Interpreter {
             loan_env!(self, maybe_fetch_rw_proxy(result, sub_is_rw))?
         } else if let Some(native_result) = self.try_native_function(Symbol::intern(&name), &args) {
             native_result?
-        } else if !self.has_proto(&name)
+        } else if !self.has_proto_cached(&name)
             && let Some(cf) = self.find_compiled_function(compiled_fns, &name, &args)
         {
             let cf_auto_fetch = !cf.is_raw;
@@ -1179,7 +1179,7 @@ impl Interpreter {
             loan_env!(self, maybe_fetch_rw_proxy(result, true))
         } else {
             self.set_pending_call_arg_sources(arg_sources.clone());
-            let compiled = if !self.has_proto(name) {
+            let compiled = if !self.has_proto_cached(name) {
                 self.find_compiled_function(compiled_fns, name, &args)
             } else {
                 None
@@ -1297,7 +1297,7 @@ impl Interpreter {
                 // paths above instead rely on their own scoped-overlay merge to
                 // signal env_dirty only when a captured-outer write happened, so
                 // a pure compiled call no longer forces a per-call locals pull.
-                if self.has_proto(name)
+                if self.has_proto_cached(name)
                     && let Some(def) = self.vm_resolve_trivial_proto_candidate(name, &args)
                 {
                     // VM-native proto dispatch (ledger §D, multi-dispatch VM-ization):
@@ -1315,7 +1315,7 @@ impl Interpreter {
                     let is_raw = def.is_raw;
                     let result = self.compile_and_call_function_def(&def, args, compiled_fns)?;
                     loan_env!(self, maybe_fetch_rw_proxy(result, !is_raw))
-                } else if self.has_proto(name)
+                } else if self.has_proto_cached(name)
                     && let Some(result) =
                         self.vm_try_run_nontrivial_proto_body(name, args.clone(), compiled_fns)
                 {
@@ -1326,7 +1326,7 @@ impl Interpreter {
                     // existing proto-dispatch handler. Non-OTF-eligible protos return
                     // None and fall through to the interpreter unchanged.
                     result
-                } else if self.has_multi_candidates_cached(name) && !self.has_proto(name) {
+                } else if self.has_multi_candidates_cached(name) && !self.has_proto_cached(name) {
                     // User-defined multi candidates take priority over builtins.
                     // Resolve the winning candidate Interpreter-side via the same resolver
                     // call_function_fallback uses (③ PR-3, ledger §2). When the
@@ -1395,7 +1395,7 @@ impl Interpreter {
                     // the interpreter (e.g. a nested `sub` whose `when` control flow
                     // must not escape the enclosing routine — Test::Util's
                     // is-deeply-junction). Those keep tree-walking unchanged.
-                    if !self.has_proto(name)
+                    if !self.has_proto_cached(name)
                         && !self.has_multi_candidates_cached(name)
                         && let Some(def) = loan_env!(self, resolve_function_with_types(name, &args))
                     {

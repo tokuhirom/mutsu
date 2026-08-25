@@ -940,7 +940,7 @@ impl Interpreter {
             // mainline hoist uses the separate `__hoisted` marker.)
             let is_hoisted =
                 is_lexical_hoist || custom_traits.iter().any(|(t, _)| t == "__hoisted");
-            if is_our_scoped && !is_hoisted && !self.registry().proto_subs.contains(&single_key) {
+            if is_our_scoped && !is_hoisted && !self.registry().proto_subs_contains(&single_key) {
                 let mut attrs = std::collections::HashMap::new();
                 attrs.insert("scope".to_string(), Value::str("our".to_string()));
                 attrs.insert(
@@ -1042,7 +1042,7 @@ impl Interpreter {
             .functions
             .keys()
             .any(|k| k.resolve().starts_with(&multi_prefix));
-        let has_proto = self.registry().proto_subs.contains(&single_key);
+        let has_proto = self.registry().proto_subs_contains(&single_key);
         let allow_lexical_shadow = (self.block_scope_depth > 0 || is_lexical_hoist)
             && !matches!(
                 self.env.get("__mutsu_in_eval").map(Value::view),
@@ -1641,7 +1641,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::redeclaration_routine(name));
         }
-        if self.registry().proto_subs.contains(&key) {
+        if self.registry().proto_subs_contains(&key) {
             return Err(RuntimeError::redeclaration_routine(name));
         }
         let prefix = format!("{key}/");
@@ -1651,7 +1651,7 @@ impl Interpreter {
         });
         // Invalidate name-keyed resolution caches.
         self.fn_resolve_gen += 1;
-        self.registry_mut().proto_subs.insert(key);
+        self.registry_mut().proto_subs_insert(key);
         let fq = format!("{}::{}", self.current_package(), name);
         // `proto bar {*}` declares an empty signature; record it so dispatch
         // can reject calls with arguments ("will never work with signature of
@@ -1711,7 +1711,7 @@ impl Interpreter {
         {
             return Err(RuntimeError::redeclaration_routine(name));
         }
-        if self.registry().proto_subs.contains(&key) {
+        if self.registry().proto_subs_contains(&key) {
             // A proto with this name is already visible in GLOBAL. This happens
             // when `is export` on a GLOBAL proto hits both local/global paths,
             // or when an outer (mainline) `proto sub` of the same name already
@@ -1721,7 +1721,7 @@ impl Interpreter {
             // be a spurious redeclaration error, so skip it.
             return Ok(());
         }
-        self.registry_mut().proto_subs.insert(key.clone());
+        self.registry_mut().proto_subs_insert(key.clone());
         let proto_empty_sig = params.is_empty() && param_defs.is_empty() && {
             let (use_pos, use_named) = crate::method_signature_shared::auto_signature_uses(body);
             !use_pos && !use_named

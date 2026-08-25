@@ -701,8 +701,8 @@ impl Interpreter {
                     return self.call_function_compiled_first(&fq, args, fns);
                 }
             }
-            if self.has_function(&name_str)
-                || self.has_proto(&name_str)
+            if self.has_declared_function_cached(&name_str)
+                || self.has_proto_cached(&name_str)
                 || self.has_multi_candidates(&name_str)
             {
                 // A Routine whose name is also a builtin (e.g. `&SETTING::...::not`

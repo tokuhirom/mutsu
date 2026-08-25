@@ -336,8 +336,15 @@ pub(crate) struct Registry {
     /// per-resolution candidate merges) are O(n) refcount bumps rather than
     /// deep clones of the token bodies.
     pub(crate) token_defs: HashMap<Symbol, Vec<std::sync::Arc<FunctionDef>>>,
-    /// `proto sub` declaration markers (existence set).
-    pub(crate) proto_subs: HashSet<String>,
+    /// `proto sub` declaration markers (existence set). Private: every
+    /// mutation must go through the `proto_subs_*` accessors below so the
+    /// `proto_gen` invalidation counter for `Interpreter::has_proto_cached`
+    /// can never miss a write (compiler-enforced completeness).
+    proto_subs: HashSet<String>,
+    /// Monotonic invalidation generation for `proto_subs`. Bumped by every
+    /// accessor that can change the set's contents; compared by
+    /// `Interpreter::has_proto_cached`.
+    proto_gen: u64,
     /// `proto token`/`proto rule` declaration markers (existence set).
     pub(crate) proto_tokens: HashSet<String>,
     /// Whether ANY `proto method`/`proto submethod` has been declared
@@ -1093,6 +1100,45 @@ impl Registry {
         class_name: &str,
     ) -> Option<HashMap<String, Value>> {
         self.class_role_param_bindings.get(class_name).cloned()
+    }
+
+    /// The `proto_subs` invalidation generation (see the field doc).
+    pub(crate) fn proto_generation(&self) -> u64 {
+        self.proto_gen
+    }
+
+    fn bump_proto_gen(&mut self) {
+        self.proto_gen = self.proto_gen.wrapping_add(1);
+    }
+
+    /// Membership test on the raw `proto sub` marker set (fully-qualified key).
+    pub(crate) fn proto_subs_contains(&self, key: &str) -> bool {
+        self.proto_subs.contains(key)
+    }
+
+    /// Insert a `proto sub` marker. Bumps `proto_gen`.
+    pub(crate) fn proto_subs_insert(&mut self, key: String) {
+        self.proto_subs.insert(key);
+        self.bump_proto_gen();
+    }
+
+    /// Retain-filter the `proto sub` markers (module unregistration). Bumps
+    /// `proto_gen`.
+    pub(crate) fn proto_subs_retain<F: FnMut(&String) -> bool>(&mut self, f: F) {
+        self.proto_subs.retain(f);
+        self.bump_proto_gen();
+    }
+
+    /// Owned snapshot of the marker set, for save/restore callers (EVAL
+    /// sandboxing, nested test interpreters, module snapshots).
+    pub(crate) fn proto_subs_snapshot(&self) -> HashSet<String> {
+        self.proto_subs.clone()
+    }
+
+    /// Wholesale-replace the marker set from a snapshot. Bumps `proto_gen`.
+    pub(crate) fn proto_subs_restore(&mut self, set: HashSet<String>) {
+        self.proto_subs = set;
+        self.bump_proto_gen();
     }
 
     /// Whether a `proto sub`/`proto` named `name` is declared, visible from the

@@ -45,7 +45,7 @@ impl Interpreter {
             crate::runtime::ImportScopeSnapshot {
                 functions: reg.functions.keys().copied().collect(),
                 classes: reg.classes.keys().cloned().collect(),
-                proto_subs: reg.proto_subs.iter().cloned().collect(),
+                proto_subs: reg.proto_subs_snapshot().into_iter().collect(),
                 proto_functions: reg.proto_functions.keys().copied().collect(),
                 imported_env_keys: HashSet::new(),
                 newline_mode: self.newline_mode,
@@ -120,7 +120,7 @@ impl Interpreter {
             // the flattened list the core routine expects. Same keep-rule as
             // functions: the module's own `Test::skip` stays for a later
             // re-import, only the `GLOBAL::` alias goes.
-            self.registry_mut().proto_subs.retain(|key| {
+            self.registry_mut().proto_subs_retain(|key| {
                 proto_sub_snapshot.contains(key)
                     || (key.contains("::") && !key.starts_with("GLOBAL::"))
             });

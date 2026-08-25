@@ -55,7 +55,8 @@ impl Interpreter {
                 nested.registry_mut().functions = self.registry().functions.clone();
                 nested.registry_mut().proto_functions = self.registry().proto_functions.clone();
                 nested.registry_mut().token_defs = self.registry().token_defs.clone();
-                nested.registry_mut().proto_subs = self.registry().proto_subs.clone();
+                let proto_snapshot = self.registry().proto_subs_snapshot();
+                nested.registry_mut().proto_subs_restore(proto_snapshot);
                 nested.registry_mut().proto_tokens = self.registry().proto_tokens.clone();
                 nested.registry_mut().classes = self.registry().classes.clone();
                 nested

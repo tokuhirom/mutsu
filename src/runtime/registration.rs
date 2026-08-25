@@ -1006,8 +1006,8 @@ impl Interpreter {
     }
 
     pub(crate) fn user_function_matches_call(&mut self, name: &str, args: &[Value]) -> bool {
-        let has_fn = self.has_function(name);
-        let has_multi = self.has_multi_function(name);
+        let has_fn = self.has_declared_function_cached(name);
+        let has_multi = self.has_multi_function_cached(name);
         if !has_fn && !has_multi {
             return false;
         }

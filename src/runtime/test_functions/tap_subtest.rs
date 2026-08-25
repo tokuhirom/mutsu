@@ -36,7 +36,7 @@ impl Interpreter {
             functions: registry.functions.clone(),
             proto_functions: registry.proto_functions.clone(),
             token_defs: registry.token_defs.clone(),
-            proto_subs: registry.proto_subs.clone(),
+            proto_subs: registry.proto_subs_snapshot(),
             proto_tokens: registry.proto_tokens.clone(),
             classes: registry.classes.clone(),
             class_trusts: registry.class_trusts.clone(),
@@ -70,7 +70,7 @@ impl Interpreter {
             registry.functions = functions;
             registry.proto_functions = proto_functions;
             registry.token_defs = token_defs;
-            registry.proto_subs = proto_subs;
+            registry.proto_subs_restore(proto_subs);
             registry.proto_tokens = proto_tokens;
             registry.classes = classes;
             registry.class_trusts = class_trusts;

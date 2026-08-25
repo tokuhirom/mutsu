@@ -55,6 +55,74 @@ impl Interpreter {
         result
     }
 
+    /// The bare-name lookup context a `has_proto` / `has_declared_function` /
+    /// `has_multi_function` answer depends on: `bare_name_packages()` is fully
+    /// determined by the current package and the innermost routine frame's
+    /// lexical package, so `(those two, name)` is a sound memo key.
+    #[inline]
+    fn bare_name_ctx_key(&self, name_sym: Symbol) -> (Symbol, Option<Symbol>, Symbol) {
+        (
+            self.current_package_sym(),
+            self.routine_stack_top().and_then(|f| f.lexical_package),
+            name_sym,
+        )
+    }
+
+    /// Cached [`Self::has_proto`]. The uncached probe runs 3+ times per
+    /// `CallFunc` dispatch and pays a `Vec<String>` allocation plus two
+    /// `format!`s per candidate package each time — it profiled as the
+    /// `alloc::fmt::format` + `StrSearcher::new` + malloc cluster on the
+    /// ripemd hot loop. Invalidated by `Registry::proto_generation()`;
+    /// package-context sensitivity is carried in the key (see
+    /// [`Self::bare_name_ctx_key`]), so this is strictly conservative.
+    pub(crate) fn has_proto_cached(&mut self, name: &str) -> bool {
+        let pgen = self.registry().proto_generation();
+        if self.has_proto_cache_gen != pgen {
+            self.has_proto_cache.clear();
+            self.has_proto_cache_gen = pgen;
+        }
+        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        if let Some(&cached) = self.has_proto_cache.get(&key) {
+            return cached;
+        }
+        let result = self.has_proto(name);
+        self.has_proto_cache.insert(key, result);
+        result
+    }
+
+    /// Cached [`Self::has_declared_function`]; guarded by `fn_resolve_gen`
+    /// like `multi_candidates_cache`, with the package context in the key.
+    pub(crate) fn has_declared_function_cached(&mut self, name: &str) -> bool {
+        if self.declared_fn_cache_gen != self.fn_resolve_gen {
+            self.declared_fn_cache.clear();
+            self.declared_fn_cache_gen = self.fn_resolve_gen;
+        }
+        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        if let Some(&cached) = self.declared_fn_cache.get(&key) {
+            return cached;
+        }
+        let result = self.has_declared_function(name);
+        self.declared_fn_cache.insert(key, result);
+        result
+    }
+
+    /// Cached [`Self::has_multi_function`]; guarded by `fn_resolve_gen`, with
+    /// the package context in the key. The uncached probe resolves EVERY
+    /// registry function key to a `String` and prefix-compares it, per call.
+    pub(crate) fn has_multi_function_cached(&mut self, name: &str) -> bool {
+        if self.multi_fn_cache_gen != self.fn_resolve_gen {
+            self.multi_fn_cache.clear();
+            self.multi_fn_cache_gen = self.fn_resolve_gen;
+        }
+        let key = self.bare_name_ctx_key(Symbol::intern(name));
+        if let Some(&cached) = self.multi_fn_cache.get(&key) {
+            return cached;
+        }
+        let result = self.has_multi_function(name);
+        self.multi_fn_cache.insert(key, result);
+        result
+    }
+
     /// Try compiled function dispatch first, then native, then on-the-fly compile,
     /// then interpreter fallback. Returns the result of whichever path succeeds.
     pub(super) fn call_function_compiled_first(
