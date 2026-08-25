@@ -27,7 +27,9 @@ bom-test-*
 tempfile*
 wip.txt
 handle-between-threads-*
-proc-async-*
+# Scratch files t/proc-async.t writes into the CWD. Anchored to the repo root on
+# purpose: unanchored, this also swallowed new test FILES named t/proc-async-*.t.
+/proc-async-*
 _tmp-io-colon-invocant-*
 tmp-lock-test-*.txt
 

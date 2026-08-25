@@ -159,6 +159,42 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
             attr_str(attrs, "child"),
             attr_str(attrs, "path")
         )),
+        // The `X::Proc::Async::*` family. Rakudo gives each of these a real
+        // `.message` built from its attributes; mutsu used to stuff the bare
+        // class name into the `message` attribute at throw time, so `.Str` /
+        // `.message` / `.gist` all rendered as the type name. Formatting them
+        // here means both the thrown exception and a user-constructed
+        // `X::Proc::Async::MustBeStarted.new(:method<say>)` render correctly.
+        "X::Proc::Async::AlreadyStarted" => Some("Process has already been started".to_string()),
+        "X::Proc::Async::MustBeStarted" => Some(format!(
+            "Process must be started first before calling '{}'",
+            attr_str(attrs, "method")
+        )),
+        "X::Proc::Async::OpenForWriting" => Some(format!(
+            "Process must be opened for writing with :w to call '{}'",
+            attr_str(attrs, "method")
+        )),
+        "X::Proc::Async::CharsOrBytes" => Some(format!(
+            "Can only tap one of chars or bytes supply for {}",
+            attr_str(attrs, "handle")
+        )),
+        "X::Proc::Async::TapBeforeSpawn" => Some(format!(
+            "To avoid data races, you must tap {} before running the process",
+            attr_str(attrs, "handle")
+        )),
+        "X::Proc::Async::SupplyOrStd" => Some(
+            "Using .Supply on a Proc::Async implies merging stdout and stderr; \
+             .stdout and .stderr cannot therefore be used in combination with it"
+                .to_string(),
+        ),
+        "X::Proc::Async::BindOrUse" => Some(format!(
+            "Cannot both bind {} to a handle and also {}",
+            attr_str(attrs, "handle"),
+            attr_str(attrs, "use")
+        )),
+        "X::Proc::Async::MissingColsRows" => {
+            Some(":pty must be set as follows: :pty(:cols(12), :rows(34))".to_string())
+        }
         _ => None,
     }
 }

@@ -369,8 +369,17 @@ impl Interpreter {
         // Without this, `whenever $supplier { ... }` inside a `supply` block
         // would pass the Supplier object itself as the subscription source,
         // which the tap dispatch code does not recognize (it expects Supply).
+        //
+        // `Proc::Async` needs the same treatment for the same reason:
+        // `whenever $proc { ... }` means `whenever $proc.Supply` (the merged
+        // stdout+stderr stream). Passing the `Proc::Async` instance straight
+        // through registered no tap on any of its supplies at all, so the
+        // body simply never ran — the merged output was collected into a
+        // buffer nobody read and thrown away.
         let supply_val = if let ValueView::Instance { class_name, .. } = supply_val.view()
-            && (class_name == "Supplier" || class_name == "Supplier::Preserving")
+            && (class_name == "Supplier"
+                || class_name == "Supplier::Preserving"
+                || class_name == "Proc::Async")
         {
             self.call_method_with_values(supply_val, "Supply", vec![])?
         } else {
