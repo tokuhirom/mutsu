@@ -37,6 +37,22 @@ pub(crate) fn native_method_1arg(
     {
         return Some(result);
     }
+    // `Backtrace` introspection: `.nice(:oneline)`, `.outer-caller-idx($i)`,
+    // `.next-interesting-index($i)` / `(:named)` / `(:setting)` / `(:noproto)`.
+    if let ValueView::Instance {
+        class_name,
+        attributes,
+        ..
+    } = target.view()
+        && class_name == "Backtrace"
+        && let Some(result) = crate::builtins::backtrace_methods::dispatch(
+            &attributes,
+            method,
+            std::slice::from_ref(arg),
+        )
+    {
+        return Some(result);
+    }
     // Instance with __baggy_data__: delegate to the inner Bag/Set for collection methods
     if let ValueView::Instance { attributes, .. } = target.view()
         && let Some(inner) = attributes.as_map().get("__baggy_data__")

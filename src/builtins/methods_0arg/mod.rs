@@ -1070,40 +1070,9 @@ fn format_temporal_num(f: f64) -> String {
     }
 }
 
-/// Render a `Backtrace::Frame` instance as its `.Str`/`.gist` text.
-/// Shared by the frame's `.Str` handler and by `Backtrace.concise`/`.summary`
-/// so the natively-computed strings stay byte-identical to a `.grep(...).join`.
-fn backtrace_frame_str(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> String {
-    let map = attributes.as_map();
-    let subname = map
-        .get("subname")
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    let file = map
-        .get("file")
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    let line = map
-        .get("line")
-        .map(|v| v.to_string_value())
-        .unwrap_or_else(|| "0".to_string());
-    if subname == "<unit>" {
-        format!("  in block <unit> at {} line {}", file, line)
-    } else {
-        format!("  in sub {} at {} line {}", subname, file, line)
-    }
-}
-
-/// A `Backtrace::Frame` is a "routine" frame when it has a real subname
-/// (not the synthetic `<unit>` bottom frame and not an anonymous block).
-fn backtrace_frame_is_routine(attributes: &crate::gc::Gc<crate::value::InstanceAttrs>) -> bool {
-    let subname = attributes
-        .as_map()
-        .get("subname")
-        .map(|v| v.to_string_value())
-        .unwrap_or_default();
-    !subname.is_empty() && subname != "<unit>"
-}
+use crate::builtins::backtrace_methods::{
+    frame_is_routine as backtrace_frame_is_routine, frame_str as backtrace_frame_str,
+};
 
 /// Re-export raku_value for backward compatibility.
 pub use raku_repr::raku_value;
@@ -1589,12 +1558,10 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                 }
                 "full" => {
                     // .full renders every frame (mutsu tracks no hidden/setting
-                    // frames, so this is the frame list verbatim).
-                    let frames = attributes
-                        .as_map()
-                        .get("frames")
-                        .map(crate::runtime::utils::value_to_list)
-                        .unwrap_or_default();
+                    // frames, so this is the frame list verbatim), one per
+                    // line: each frame's `.Str` is newline-terminated, exactly
+                    // as in Rakudo, so the concatenation is line-separated.
+                    let frames = crate::builtins::backtrace_methods::frames_of(&attributes);
                     let mut out = String::new();
                     for frame in &frames {
                         if let ValueView::Instance { attributes: fa, .. } = frame.view() {
@@ -1602,6 +1569,16 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         }
                     }
                     return Some(Ok(Value::str(out)));
+                }
+                // `.outer-caller-idx` is deliberately absent here: its
+                // `Int $startidx` is mandatory, so a no-argument call must not
+                // silently answer for index 0.
+                "nice" | "next-interesting-index" => {
+                    if let Some(result) =
+                        crate::builtins::backtrace_methods::dispatch(&attributes, method, &[])
+                    {
+                        return Some(result);
+                    }
                 }
                 "list" | "List" | "flat" | "Seq" => {
                     if let Some(frames) = attributes.as_map().get("frames") {

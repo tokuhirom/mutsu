@@ -1,4 +1,5 @@
 pub(crate) mod arith;
+pub(crate) mod backtrace_methods;
 pub(crate) mod buf_bits;
 pub(crate) mod buf_write_int;
 pub(crate) mod buf_write_num;

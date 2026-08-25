@@ -463,7 +463,6 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 | file:line | one-line summary | ticket |
 |---|---|---|
 | `Type/Backtrace.rakudoc:15` | `$!.backtrace[N]` positional indexing always returns `Nil` | [backtrace-frame-indexing-returns-nil.md](../todo/tickets/backtrace-frame-indexing-returns-nil.md) |
-| `Type/Backtrace.rakudoc:72,84,96` | `Backtrace` is missing `.next-interesting-index`, `.outer-caller-idx`, `.nice` | [backtrace-introspection-methods-missing.md](../todo/tickets/backtrace-introspection-methods-missing.md) |
 | `Language/perl-var.rakudoc:154` | `CompUnit::Repository::FileSystem`/`Installation` stringify as `TypeName.new` instead of `inst#<path>` | [compunit-repository-gist-missing-inst-prefix.md](../todo/tickets/compunit-repository-gist-missing-inst-prefix.md) |
 | `Type/Lock/Async.rakudoc:162,202` | `Lock::Async` is missing `.protect-or-queue-on-recursion` and `.with-lock-hidden-from-recursion-check` | [lock-async-recursion-methods-missing.md](../todo/tickets/lock-async-recursion-methods-missing.md) |
 | `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
@@ -498,7 +497,6 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
 | `Language/perl-func.rakudoc:2310` | a role-mixed `.sink` method is never invoked when the value is used in sink context | [role-mixed-sink-method-not-invoked-in-sink-context.md](../todo/tickets/role-mixed-sink-method-not-invoked-in-sink-context.md) |
 | `Type/Formatter.rakudoc:16,32` | `Formatter.new(FORMAT_STRING)` is unimplemented | [formatter-new-unimplemented.md](../todo/tickets/formatter-new-unimplemented.md) |
 | `Type/X/Cannot/Empty.rakudoc:15` | `X::Cannot::Empty.new(:action, :what).message` returns an empty string instead of formatting "Cannot ACTION from an empty WHAT" | [x-cannot-empty-message-not-formatted.md](../todo/tickets/x-cannot-empty-message-not-formatted.md) |
-| `Type/Exception.rakudoc:78` | `.backtrace.full` joins its frame lines without newlines (all frames run together on one line) | [backtrace-full-frames-not-newline-separated.md](../todo/tickets/backtrace-full-frames-not-newline-separated.md) |
 | `Language/nativetypes.rakudoc:172` | `Pointer[T].raku` uses a bare type-parameter name and a named-arg constructor call instead of raku's fully-qualified positional form | [nativecall-pointer-raku-format-mismatch.md](../todo/tickets/nativecall-pointer-raku-format-mismatch.md) |
 | `Type/Compiler.rakudoc:58` | `$*RAKU.compiler.verbose-config` is unimplemented (low priority — the real output is exhaustively MoarVM-build-specific) | [compiler-verbose-config-unimplemented.md](../todo/tickets/compiler-verbose-config-unimplemented.md) |
 | `Type/IO/ArgFiles.rakudoc:34` | `$*ARGFILES.eof`/`.get` loops forever instead of terminating once stdin is exhausted (no file args given) | [argfiles-eof-infinite-loop-on-empty-stdin.md](../todo/tickets/argfiles-eof-infinite-loop-on-empty-stdin.md) |
