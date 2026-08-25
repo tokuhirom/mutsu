@@ -227,6 +227,11 @@ impl Interpreter {
                         adverb = Some(name.clone());
                     }
                 }
+                // Any other NAMED argument is swallowed by the implicit `*%_`
+                // every Raku method carries -- it is not a min/max candidate.
+                // (A *positional* `Pair`, the `ValuePair` flavour of ADR-0021,
+                // still is one: `min((a => 1), (b => 2))` compares Pairs.)
+                ValueView::Pair(..) => {}
                 _ => positional.push(arg.clone()),
             }
         }

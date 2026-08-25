@@ -14,6 +14,15 @@ pub(crate) struct SplitOpts {
 
 impl SplitOpts {
     /// Parse named parameters from args, returning positional args and options.
+    ///
+    /// A named argument never occupies a positional slot: `.split` declares
+    /// `:v`/`:k`/`:kv`/`:p`/`:skip-empty` and swallows every other named through
+    /// the implicit `*%_` every Raku method carries. So an unrecognized
+    /// named-flavour `Pair` is dropped here rather than falling into `positional`
+    /// (where it used to be read as the `$limit` argument, numifying to 0 and
+    /// making `"a,b".split(",", :nonsense)` return an empty Seq). A *positional*
+    /// `Pair` — the `ValuePair` flavour, ADR-0021 — is still a real argument and
+    /// keeps its slot.
     pub(crate) fn from_args(args: &[Value]) -> (Vec<&Value>, SplitOpts) {
         let mut opts = SplitOpts::default();
         let mut positional = Vec::new();
@@ -26,6 +35,7 @@ impl SplitOpts {
                 ValueView::Pair(key, value) if key == "skip-empty" || key == "skip_empty" => {
                     opts.skip_empty = value.truthy()
                 }
+                ValueView::Pair(..) => {}
                 _ => positional.push(arg),
             }
         }

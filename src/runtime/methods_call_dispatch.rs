@@ -86,11 +86,102 @@ impl Interpreter {
         Value::make_instance(crate::symbol::Symbol::intern("HyperConfiguration"), attrs)
     }
 
+    /// Whether `err` is the plain (non-private) `X::Method::NotFound` raised for
+    /// `method` itself — i.e. the whole dispatch chain found no candidate at all,
+    /// as opposed to a method that *was* found and threw something of its own.
+    fn is_method_not_found_for(err: &RuntimeError, method: &str) -> bool {
+        let Some(exc) = err.exception.as_deref() else {
+            return false;
+        };
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = exc.view()
+        else {
+            return false;
+        };
+        if class_name.resolve() != "X::Method::NotFound" {
+            return false;
+        }
+        let map = attributes.as_map();
+        if map.get("private").is_some_and(|v| v.truthy()) {
+            return false;
+        }
+        map.get("method")
+            .is_some_and(|v| v.to_string_value() == method)
+    }
+
+    /// Method dispatch entry point, wrapping [`Self::call_method_with_values_inner`]
+    /// with Raku's implicit `*%_`.
+    ///
+    /// Every Raku *method* (never a sub) carries an implicit `*%_` slurpy named
+    /// parameter, so a named argument the method does not declare is simply
+    /// swallowed: `4.log(:base(2))` is `4.log` (`$base` is *positional*, so the
+    /// colonpair binds nothing) and `"abc".uc(:foo)` is `"abc".uc`. mutsu's native
+    /// methods are dispatched by *arity* instead of by signature, and a named
+    /// argument occupies a positional slot in that count, so the lookup missed
+    /// entirely and the call died with `X::Method::NotFound` (plus a bogus
+    /// "Did you mean ...?").
+    ///
+    /// The nameds cannot simply be stripped up front: a native method that *does*
+    /// read an adverb (`.split(:skip-empty)`, `.substr-eq(:i)`, `.comb(:match)`,
+    /// `.subst(:g)`, ...) reads it straight out of that same argument list, and
+    /// which names each one consumes is implicit in its Rust body rather than
+    /// declared anywhere. So the full argument list is offered first — every call
+    /// that works today keeps working, byte for byte — and only when the dispatch
+    /// chain reports "no such method" (meaning nothing understood this argument
+    /// list) is it retried with the named arguments removed. That retry cannot
+    /// turn a wrong-arity call into a silent success: `"abc".uc("x")` and
+    /// `4.log(1,2,3)` carry no nameds, so they never take this path.
+    ///
+    /// Named-ness is a call-site property (ADR-0021): only the `Pair` flavour is a
+    /// named argument, so a positional `Pair` (`%h.push((a => 1))`) is untouched.
     pub(crate) fn call_method_with_values(
         &mut self,
         target: Value,
         method: &str,
         args: Vec<Value>,
+    ) -> Result<Value, RuntimeError> {
+        if !args.iter().any(|a| a.is_string_pair_value()) {
+            return self.call_method_with_values_inner(target, method, args, true);
+        }
+        let positional: Vec<Value> = args
+            .iter()
+            .filter(|a| !a.is_string_pair_value())
+            .cloned()
+            .collect();
+        // A `Seq` body is single-use, and the retry below re-enters the whole
+        // dispatch chain — so consume/reify it exactly ONCE, here, and tell both
+        // attempts not to touch it again. Otherwise the second attempt would
+        // steal an already-`Taken` body and throw `X::Seq::Consumed` on what is,
+        // to user code, the first call. (Tag probe first: `view()` on a lazy
+        // Match would materialize it.)
+        let pre_reify = !target.is_lazy_match_value()
+            && matches!(target.view(), ValueView::Seq(_))
+            && (method != "sink" || args.is_empty());
+        let (target, reify_seq) = if pre_reify {
+            (
+                self.reify_or_consume_seq_target_authoritative(target, method)?,
+                false,
+            )
+        } else {
+            (target, true)
+        };
+        match self.call_method_with_values_inner(target.clone(), method, args, reify_seq) {
+            Err(err) if Self::is_method_not_found_for(&err, method) => {
+                self.call_method_with_values_inner(target, method, positional, reify_seq)
+            }
+            other => other,
+        }
+    }
+
+    fn call_method_with_values_inner(
+        &mut self,
+        target: Value,
+        method: &str,
+        args: Vec<Value>,
+        reify_seq: bool,
     ) -> Result<Value, RuntimeError> {
         // Augmented native-type dispatch: a plain Array/List/Hash/Str/Range/
         // Set/Bag/Mix/... receiver is not `Instance`/`Package`, so none of this
@@ -562,12 +653,14 @@ impl Interpreter {
         // real Seq `.sink` call).
         let is_seq_sink =
             method == "sink" && args.is_empty() && matches!(target.view(), ValueView::Seq(_));
-        let target = if method != "sink" || args.is_empty() {
+        let target = if reify_seq && (method != "sink" || args.is_empty()) {
             // `_authoritative`, not the plain guard: this function is the
             // one call site every dispatch chain funnels through exactly
             // once (see `reify_or_consume_seq_target_authoritative`'s doc
             // comment) — the only place `.iterator` may actually be
-            // consumed.
+            // consumed. `reify_seq` is false only when the implicit-`*%_`
+            // wrapper above already performed that single touch on our
+            // behalf (it must, because it may call us twice).
             self.reify_or_consume_seq_target_authoritative(target, method)?
         } else {
             target
