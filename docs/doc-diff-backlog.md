@@ -197,7 +197,6 @@ fixes that landed in between):
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Type/Hash.rakudoc:65` | `WHAT {...}` (bare hash-literal block, no parens/var) misparses as two statements | [what-prefix-bare-hash-literal-block-arg.md](../todo/tickets/what-prefix-bare-hash-literal-block-arg.md) |
 | `Type/Hash.rakudoc:336` | `my %h .= push(pair)` should leave `%h` empty, mutsu keeps the pair | [hash-dot-assign-push-result.md](../todo/tickets/hash-dot-assign-push-result.md) |
 | `Type/List.rakudoc:219` | `(gather {...}).list.raku` keeps a spurious `.Seq` suffix when chained directly (no intermediate var) | [gather-chained-list-raku-seq-suffix.md](../todo/tickets/gather-chained-list-raku-seq-suffix.md) |
 | `Type/List.rakudoc:1207` | global `rotor()` routine (`v6.e.PREVIEW`) not implemented; the `.rotor` method already works | [rotor-global-routine-missing.md](../todo/tickets/rotor-global-routine-missing.md) |
