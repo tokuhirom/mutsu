@@ -500,8 +500,17 @@ pub(crate) fn parse_dot_assign<'a>(input: &'a str, expr: Expr) -> PResult<'a, Ex
         // is `($x .=new: 1) andthen $y`, not `$x .=new(1 andthen $y)`.
         let r2 = &r[1..];
         let (r2, _) = ws(r2)?;
-        let (r2, first_arg) = listop_arg_expr_list_infix(r2)?;
-        let mut args = vec![first_arg];
+        // An empty colon-arg list is a plain zero-argument call: `$s .= uc:  ;`
+        // means `$s .= uc`. The list is empty whenever the next token cannot
+        // start a term (statement terminator, closing bracket, end of input).
+        let mut args = Vec::new();
+        let r2 = if r2.is_empty() || r2.starts_with([';', '}', ')', ']']) {
+            r2
+        } else {
+            let (r2, first_arg) = listop_arg_expr_list_infix(r2)?;
+            args.push(first_arg);
+            r2
+        };
         let mut r_inner = r2;
         loop {
             let (r3, _) = ws(r_inner)?;

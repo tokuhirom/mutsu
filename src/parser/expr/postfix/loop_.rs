@@ -1199,12 +1199,15 @@ fn postfix_expr_loop_from(
                     } else {
                         let r3 = &r2[1..];
                         let (r3, _) = ws(r3)?;
-                        // `.method:` immediately before a block-closing `}` is an
-                        // empty colon-arg call — a plain `.method()`. Raku accepts
-                        // the zero-arg colon form only here (`$w = $r.rwid:` then a
-                        // closing `}` in CSV::Table); before `;` / `)` / `]` / EOF it
-                        // still demands a colon-pair, so those keep parsing an arg.
-                        if r3.starts_with('}') {
+                        // A colon-call whose argument list is empty is just a
+                        // plain zero-argument call: raku parses `say 4.log:   ;`
+                        // exactly like `say 4.log;`. The list is empty whenever
+                        // the next token cannot start a term — a statement
+                        // terminator, the close of the enclosing block/group, or
+                        // end of input. (A following infix such as `,` is still
+                        // an error, and falls through to the term parser below so
+                        // the usual "expected a term" diagnostic is produced.)
+                        if r3.is_empty() || r3.starts_with([';', '}', ')', ']']) {
                             r3
                         } else {
                             // A colon-method arg list (`.m: a, b`) is a comma-list at
