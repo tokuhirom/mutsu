@@ -70,9 +70,26 @@ jobs:
           sudo sed -i 's/azure\.archive\.ubuntu\.com/archive.ubuntu.com/g' /etc/apt/sources.list 2>/dev/null || true
 
       - name: Install rakudo (for the ratio baseline)
-        # Best-effort: if the package is unavailable the script records NA
+        # Best-effort: if the download is unavailable the script records NA
         # ratios and the absolute mutsu numbers are still appended.
-        run: sudo apt-get update && sudo apt-get install -y rakudo || true
+        #
+        # NOT `apt-get install rakudo`: Ubuntu noble's universe repo is
+        # pinned to the ancient v2022.12 and is never updated, which made the
+        # ratio baseline compare mutsu against a ~4-year-old Rakudo instead of
+        # a current one. Pull a pinned prebuilt Linux x86_64 archive straight
+        # from rakudo.org instead. Bump RAKUDO_VERSION/RAKUDO_ARCHIVE by hand
+        # occasionally to track new Rakudo releases (see
+        # https://rakudo.org/downloads/rakudo for the current filename).
+        env:
+          RAKUDO_VERSION: "2026.07"
+          RAKUDO_ARCHIVE: "rakudo-moar-2026.07-01-linux-x86_64-gcc.tar.gz"
+        run: |
+          set +e
+          mkdir -p "$HOME/rakudo"
+          curl -fsSL "https://rakudo.org/dl/rakudo/${RAKUDO_ARCHIVE}" \
+            | tar -xz -C "$HOME/rakudo" --strip-components 1 \
+            && echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
+          exit 0
 
       - name: Build (release)
         run: cargo build --release
