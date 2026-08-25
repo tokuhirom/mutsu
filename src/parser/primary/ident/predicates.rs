@@ -140,6 +140,19 @@ pub(crate) fn is_keyword(name: &str) -> bool {
     )
 }
 
+/// Prefix pseudo-routines (`WHAT $x`, `HOW $x`, `VAR $x`, ...) that take a
+/// single term argument without parens, including a bare `{...}` term. Unlike
+/// the generic no-paren-listop fallback, these must accept a `{` argument even
+/// though it is ambiguous with a following statement's block in the general
+/// case — a bare `{...}` right after one of these names is unambiguously its
+/// hash-literal/block argument, never an enclosing construct's body.
+pub(crate) fn is_prefix_pseudo_op(name: &str) -> bool {
+    matches!(
+        name,
+        "WHAT" | "HOW" | "WHO" | "WHICH" | "WHERE" | "DEFINITE" | "VAR"
+    )
+}
+
 /// Check if a name is a listop (can take args without parens).
 pub(crate) fn is_listop(name: &str) -> bool {
     matches!(

@@ -1829,7 +1829,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             || is_user_sub
             || is_imported_sub
             || crate::parser::stmt::simple::is_known_call(&name)
-            || crate::parser::primary::ident::predicates::next_word_is_builtin_term_op(r))
+            || crate::parser::primary::ident::predicates::next_word_is_builtin_term_op(r)
+            // `WHAT {...}` / `HOW {...}` / `VAR {...}` etc: a bare `{` right
+            // after one of these prefix pseudo-routines is unambiguously its
+            // hash-literal/block argument (see `is_prefix_pseudo_op`), unlike
+            // the general "does a following block belong to me or to the
+            // enclosing construct" ambiguity this fallback otherwise avoids.
+            || (next == '{'
+                && crate::parser::primary::ident::predicates::is_prefix_pseudo_op(&name)))
             && let Ok((r2, arg)) = parse_listop_arg(r)
         {
             let (r2, invocant_colon_call) =
