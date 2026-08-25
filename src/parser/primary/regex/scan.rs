@@ -120,6 +120,111 @@ pub(in crate::parser) fn scan_to_delim_replacement(
     None
 }
 
+/// Does `rest` (the text right after a `:`) open an embedded regex
+/// declaration `:my … ;` / `:our …` / `:constant …` / `:let …` / `:temp …`?
+/// Mirrors the keyword set `regex_parse_ltm::leading_regex_decl_end` uses for
+/// the same construct once the pattern text has already been extracted.
+fn starts_regex_decl(rest: &str) -> bool {
+    ["my ", "our ", "constant ", "let ", "temp "]
+        .iter()
+        .any(|kw| rest.starts_with(kw))
+}
+
+/// If `rest` (the text right after a `:`, i.e. starting at the declarator
+/// keyword) opens the *block form* of an embedded regex declaration —
+/// `my token NAME { … }` / `my rule NAME { … }` / `my regex NAME { … }` (and
+/// the `our`/`constant`/`let`/`temp` equivalents) — return the BYTE length of
+/// the prefix up to and including the body's opening `{`. This form declares
+/// a lexically-scoped named sub-rule and is terminated by BODY's own closing
+/// `}`, NOT by a `;` (`roast/S05-modifier/my.t`'s `:my token SIGN { <[+-]> }`
+/// has no trailing `;` at all). Returns None for the scalar `$var = EXPR;`
+/// form, which the caller scans for a terminating `;` instead.
+fn block_form_decl_prefix_len(rest: &str) -> Option<usize> {
+    let (kw_len, after_kw) = ["my ", "our ", "constant ", "let ", "temp "]
+        .iter()
+        .find_map(|kw| rest.strip_prefix(kw).map(|r| (kw.len(), r)))?;
+    for rule_kw in ["token ", "rule ", "regex "] {
+        let Some(after_rule_kw) = after_kw.strip_prefix(rule_kw) else {
+            continue;
+        };
+        let name_len = after_rule_kw
+            .find(|c: char| !(c.is_alphanumeric() || c == '_' || c == '-'))
+            .unwrap_or(after_rule_kw.len());
+        if name_len == 0 {
+            continue;
+        }
+        let after_name = &after_rule_kw[name_len..];
+        let ws_len = after_name.len() - after_name.trim_start().len();
+        let after_ws = &after_name[ws_len..];
+        if after_ws.starts_with('{') {
+            return Some(kw_len + rule_kw.len() + name_len + ws_len + 1);
+        }
+    }
+    None
+}
+
+/// Skip an embedded regex declaration clause, having already consumed the
+/// leading `:`. `rest` is the same text the dispatch site used to recognize
+/// the clause (`&input[i + 1..]`, i.e. `chars`'s remaining text) — a cheap
+/// zero-copy peek used only to classify the clause's shape; `chars` is
+/// advanced to do the actual skipping.
+///
+/// Two shapes exist:
+///  - **scalar form** — `:my $c = $/;` / `:our …;` / `:constant …;` /
+///    `:let …;` / `:temp …;` — the RHS is Main-slang code, not regex text, so
+///    the regex-specific delimiter rules do not apply inside it: in
+///    particular a bare `/` (the enclosing regex's own delimiter, e.g. from
+///    `$/`) must NOT end the regex early. Only backslash escapes, quoted
+///    strings, and balanced `()`/`[]`/`{}` nesting matter; the clause ends at
+///    the first unescaped, unnested `;`. Mirrors
+///    `regex_parse_ltm::leading_regex_decl_end`, which does the same depth
+///    tracking for the already-extracted pattern text.
+///  - **block form** — `:my token NAME { … }` (see
+///    `block_form_decl_prefix_len`) — ends at BODY's own closing `}`.
+///
+/// Returns None if the clause never terminates.
+fn skip_regex_decl_clause(chars: &mut std::str::CharIndices<'_>, rest: &str) -> Option<()> {
+    if let Some(byte_len) = block_form_decl_prefix_len(rest) {
+        let char_count = rest[..byte_len].chars().count();
+        for _ in 0..char_count {
+            chars.next()?;
+        }
+        return skip_interp_block(chars);
+    }
+    let mut paren = 0i32;
+    let mut bracket = 0i32;
+    let mut brace = 0i32;
+    while let Some((_, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '\'' | '"' => {
+                let quote = c;
+                loop {
+                    match chars.next() {
+                        Some((_, '\\')) => {
+                            chars.next();
+                        }
+                        Some((_, c2)) if c2 == quote => break,
+                        Some(_) => {}
+                        None => return None,
+                    }
+                }
+            }
+            '(' => paren += 1,
+            ')' => paren -= 1,
+            '[' => bracket += 1,
+            ']' => bracket -= 1,
+            '{' => brace += 1,
+            '}' => brace -= 1,
+            ';' if paren == 0 && bracket == 0 && brace == 0 => return Some(()),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Skip a balanced `{ ... }` block, having already consumed the opening `{`.
 /// String literals inside are skipped whole so a `}` within a string does not
 /// close the block early. Returns None if the braces never balance.
@@ -337,6 +442,15 @@ fn scan_to_delim_inner(
             // (`/ (\d) { say $/ } \d+ /`) — does not end the regex early. In P5
             // mode `{n,m}` is a quantifier, not code, so this is Raku-only.
             skip_interp_block(&mut chars)?;
+        } else if !p5_mode && c == ':' && starts_regex_decl(&input[i + 1..]) {
+            // `:my $c = $/;` / `:our …` / `:constant …` / `:let …` / `:temp …`
+            // (scalar form) or `:my token NAME { … }` (block form, a
+            // lexically-scoped named sub-rule) — an embedded declaration
+            // whose body is Main-slang code, not regex text. Skip the whole
+            // clause (see `skip_regex_decl_clause`) so a `/` inside it —
+            // typically the `/` of `$/` — is not mistaken for the enclosing
+            // regex's own closing delimiter.
+            skip_regex_decl_clause(&mut chars, &input[i + 1..])?;
         } else if !p5_mode && c == '<' && starts_char_class(&input[i + 1..]) {
             // Skip character class <[...]>, <-[...]>, <+[...]>, <![...]> content
             // without interpreting quotes. Handles <['"]>, <-["\\\t]>, etc.
