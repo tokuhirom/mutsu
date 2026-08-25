@@ -75,14 +75,42 @@ specializes the whole new -> bless -> BUILDALL chain.
   campaign, PLAN §6" no longer exists under that name — PLAN.md §6 is now "QA
   & finalization"; the live tracking doc for this exact mechanism is
   `docs/vm-single-store.md`.)
-- [ ] **S3: GC candidate churn** — ~280 dedup hits per construction is pure
+- [x] **S3: GC candidate churn** — ~280 dedup hits per construction is pure
   overhead; investigate suppressing candidate buffering for
   freshly-constructed containers whose refcount never exceeded 1, or batching
   the thread-local lookups. **2026-08-14: both suggested directions are
-  already implemented — see "S2/S3 investigation" below.**
+  already implemented — see "S2/S3 investigation" below. 2026-08-25 (round
+  3): closed — `MUTSU_GC=off` release A/B shows ~zero wall-clock delta on
+  this bench; see the round-3 update.**
 - [ ] **S4 (ADR territory, long term):** flat attribute slots instead of the
   per-instance hash map (the ADR-0016 "span + shared subject" analog for
-  objects). Only if S1-S3 leave a measurable gap.
+  objects). Only if S1-S3 leave a measurable gap. **2026-08-25 (round 3):
+  reassessed — see below. Flat slots alone buy only ~5-10% on this bench
+  (AttrMap is already `FxHashMap<Symbol, Value>`, no string keys); the real
+  long-term lever is a construction-pipeline campaign (flat slots + a
+  compiled BUILDALL that skips per-phase full-path dispatch + capture-style
+  named args). Blast radius measured: 88 files / ~800 `to_map()`/`as_map()`
+  sites.**
+- [ ] **S6 (NEW, 2026-08-25 — the actionable residual): extend the
+  compiled-method fast path to simple named/attributive parameter shapes.**
+  Instruction-count decomposition (see round 3 below) shows the two
+  near-empty TWEAK submethods cost ~240k instructions/construction — 51% of
+  the bench — and virtually all of it is full-path dispatch overhead, not
+  body work. They can never take `call_compiled_method_fast` today because
+  `has_complex_params` returns true for ANY named (`pd.named`) or attributive
+  (`:$!x`) parameter, and `new(*%_)` is excluded by its slurpy. A fast-path
+  extension that handles (a) named-scalar/array/hash params matched by Pair
+  key, (b) attributive params via the single-key cell write S2-partial
+  already built for the full path, and (c) the implicit `*%_` slurpy (built
+  only when the body references `%_`, which `cc` knows), with conservative
+  bail-to-full-path gates for defaults/constraints/aliases/rw, would remove
+  most of that overhead. Caveats found in round 3: TWEAK(Dist) has
+  `has_calls` (the `.map`) so it cannot `can_skip_merge` — the win there is
+  the env-setup/param-bind half, not the merge; and this is param-binding
+  surgery with many semantic edges (`:name(:$alias)`, boolean shorthand,
+  type coercion), so it needs its own focused session with the binding roast
+  set (`S06-signature/named-*`, `S12-construction/*`) as the gate, not a
+  drive-by.
 - [x] **S5 (deep, general):** closure env capture was O(program symbols) per
   lambda creation — `*.flat` in TWEAK cost ~10% of this bench, and every
   hot-loop `.map({...})` paid it. Fixed by #5571 (`Env::filtered_flat` never
@@ -204,6 +232,86 @@ No code change landed from this investigation — both leads converge on either
 an already-completed optimization or a deliberately-deferred, high-blast-
 radius architectural prerequisite. Landing this write-up (rather than forcing
 either change through) follows this ticket's own guidance.
+
+## Update (2026-08-25, round 3 — independent re-examination of the round-2 conclusions)
+
+A fresh session re-derived rounds 1-2 from scratch rather than trusting them.
+Verdict up front: **round 2's "no safe independent fix" conclusion stands, and
+is now stronger** — but the *reason* for the S2 dead end is different from the
+one round 2 gave, and the decomposition surfaced a new actionable slice (S6
+above) that rounds 1-2 missed.
+
+**1. The closure-upvalue-cell prerequisite has NOT landed.**
+`docs/vm-single-store.md` §3 (indexed upvalue cells) is untouched since
+2026-07-15 and no commit on `main` since round 2 implements it. What DID land
+nearby — ADR-0025 (captured scalar cells, slices 1+2), ADR-0032 (WrapVarRef
+container capture on every closure kind), the `GetUpvalue` read-only-scalar
+rewrite — is capture-edge machinery, not the §3 rework; the overlay gate at
+`vm_method_dispatch.rs` (`cc.closure_compiled_codes.is_empty()`) is unchanged.
+
+**2. S2 via overlay-gate relaxation is a dead end for a REASON ROUND 2 DID NOT
+STATE: even a fully correct relaxation buys ~nothing.** Round 2 rejected
+reusing `closure_escapes[i]` on classifier-vetting grounds. Round 3 examined
+the narrower purpose-built-gate idea and found it moot on cost grounds alone:
+closure *capture* is already scoped-env-safe (`capture_closure_env` walks env
+tiers via `filtered_flat` with shadow/tombstone handling, and closure dispatch
+itself installs its own `scoped_child` unconditionally), so a relaxed gate
+would likely be *correct* — but TWEAK(Dist)'s body calls `.map`, and any
+non-accessor nested dispatch runs `flatten_scoped_env()`
+(`vm_call_method_ops.rs`, placed after the accessor fast path), which
+materializes parent+overlay into a fresh flat map. The O(env) clone the
+overlay would save at `?CLASS`-insert time reappears as the flatten at the
+`.map` — the cost *relocates*, it does not disappear. Any method body with a
+closure AND a genuine nested dispatch (the only shape that hits this gate in
+practice) pays the clone either way. The env_deep_copies residual is
+therefore structurally tied to §3 (upvalue cells make the flatten
+unnecessary), confirming round 2's sequencing conclusion via a different
+route.
+
+**3. S3 re-verified independently, now with a release wall-clock A/B: GC
+contributes ~zero to this bench.** `MUTSU_GC=off` vs default on the fresh
+release build: 0.26-0.29s vs 0.25-0.28s — indistinguishable from noise.
+`Gc::drop` re-read: candidate buffering fires only on `prev > 1`, dedup is a
+single relaxed load — as round 2 said. New detail: all 5 collections on this
+bench reclaim **zero** nodes (the candidates are short-lived temporaries whose
+Weak buffer entries fail to upgrade at drain time), and the ADR-0003 adaptive
+threshold correctly stays at BASE because `2 x revived < 16384`. Release
+`pause_ns_total` is ~10ms across the whole run. A "provably acyclic by
+construction" type-level suppression is not expressible here — every Gc'd
+container kind can hold arbitrary Values — and would buy nothing measurable
+anyway. S3 is closed.
+
+**4. Fresh measurements (2026-08-25, release build == origin/main).**
+- Bench CI (last 30 rows of `bench-history.tsv`): ratio is **bimodal** —
+  fast-mode rows ~1.02-1.13, slow-mode rows ~1.30-1.46, median ~1.09. The
+  ticket's "1.17-1.35" framing undersells the variance; single rows are not
+  meaningful, compare distributions.
+- Debug `MUTSU_VM_STATS` replicates round 2 exactly (env_deep_copies=15002,
+  candidate_pushes≈20.6/ctor, dedup≈220/ctor).
+- **The local raku moved: v2026.06** (bench CI pins Rakudo v2022.12). Against
+  modern rakudo, startup-subtracted per-construction cost is mutsu ~50us vs
+  raku ~9us on a 40k-iteration run — a **~5.6x** real gap that the CI ratio
+  (~1.1) masks via old-rakudo slowness plus startup amortization. The
+  architectural headroom is much larger than the CI number suggests.
+- **Instruction-count phase decomposition** (perf stat, core-pinned, ±0.07%,
+  5000 ctors): baseline 474.7k insns/ctor = TWEAK phase 240.5k (**51%**) +
+  custom-new→bless 122.4k (26%) + plain-ctor-and-loop-body 111.8k (24%).
+  S1 cached the phase *plan*, but each TWEAK invocation still costs ~120k
+  instructions of pure full-path dispatch overhead (frame + env setup +
+  named/attributive param binding + merge) for a near-empty body — that is
+  the S6 finding above, and it is the largest remaining slice by far.
+- A 40k-iteration flat profile (2095 samples) confirms round 2's "no dominant
+  function": NaN-box ops ~16%, malloc/free family ~16%, thread-locals ~5%,
+  hashbrown ~6%, `Symbol::intern`+sip+memcmp ~4% (interning already has a
+  thread-local memo; pre-interned statics for the fixed per-dispatch env keys
+  would buy ~1% — not worth the churn alone), `cow_mut` ~1%. The earlier
+  "string formatting 5-8%" bucket did not reappear as a distinct signal.
+
+**Recommended order: S6 (fast-path named/attributive binding — a focused
+session with the binding roast set as gate) first; the S4-class
+construction-pipeline campaign (ADR) only after S6 lands and is measured, as
+S6 may take the CI ratio to parity by itself. S2's env_deep_copies remainder
+stays gated on `docs/vm-single-store.md` §3; S3 stays closed.**
 
 ## Measurement notes
 
