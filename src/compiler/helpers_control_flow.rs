@@ -553,23 +553,150 @@ impl Compiler {
         }
     }
 
-    /// Returns true if a block body has a `when`/`default` among its *own*
-    /// top-level statements. Such a body is where the succeed a matched `when`
-    /// raises stops unwinding (see `OpCode::SucceedBarrier`); a `when` nested in
-    /// an inner block belongs to that inner block instead, so this deliberately
-    /// does not descend into nested blocks/branches/loops. `SyntheticBlock` is the
-    /// parser's inlined wrapper, not a real scope, so it is descended into — same
-    /// rule as `branch_declares_block_local`.
+    /// Returns true if any of `stmts`' own top-level statements is a
+    /// `when`/`default` clause, or REACHES one through its own expression(s)
+    /// without crossing into a nested scope. `do when COND { ... }` is an
+    /// ordinary term and can appear at any expression-nesting depth (an
+    /// assignment RHS, a call argument, a list element, string
+    /// interpolation, ...), and Raku still absorbs the escaping succeed at
+    /// THIS block boundary regardless of how deep the `when` is buried
+    /// syntactically — a naive scan for the literal `Stmt::When` shape
+    /// missed all of those (see `git blame` on this comment for the crash
+    /// that motivated the deeper scan; `t/succeed-block-boundary-absorption.t`
+    /// pins the fix, `news/2026-08/succeed-absorbing-block-boundary.md`
+    /// records the root cause).
+    ///
+    /// This does NOT descend into a nested block/branch/loop/sub/`given`/
+    /// `do {}`/`try` — those either compute their OWN `SucceedBarrier` need
+    /// independently when THEY compile, or already absorb a succeed
+    /// unconditionally at the VM level regardless of any static scan
+    /// (`given`, `do {}`'s `exec_do_block_expr_op`, `try`'s
+    /// `exec_try_catch_op_inner`, a loop body's own per-iteration catch, a
+    /// sub call's own catch) — a `when` reached through one of those belongs
+    /// to that inner boundary, not this one. Trying to see through them here
+    /// would only cost an unconditional `OpCode::SucceedBarrier` wrap for
+    /// every plain loop/if/block regardless of whether it can ever raise a
+    /// succeed, which showed up as extra JIT bailouts for perfectly ordinary
+    /// code (`tests/jit_diff.rs`'s `unsupported_opcode_bails_out_cleanly`)
+    /// when this was tried unconditionally — so the scan earns its keep by
+    /// staying narrow rather than by being skipped.
     pub(super) fn body_has_toplevel_when(stmts: &[Stmt]) -> bool {
-        stmts.iter().any(|s| match s {
-            Stmt::When { .. } | Stmt::Default(_) => true,
-            Stmt::SyntheticBlock(inner) => Self::body_has_toplevel_when(inner),
-            _ => false,
-        })
+        stmts.iter().any(Self::stmt_reaches_when)
     }
 
-    /// Emit `body` wrapped in a `SucceedBarrier` when it contains a top-level
-    /// `when`/`default`, otherwise emit it unchanged.
+    fn stmt_reaches_when(stmt: &Stmt) -> bool {
+        match stmt {
+            Stmt::When { .. } | Stmt::Default(_) => true,
+            Stmt::SyntheticBlock(inner) => inner.iter().any(Self::stmt_reaches_when),
+            Stmt::Expr(e)
+            | Stmt::Return(e)
+            | Stmt::Die(e)
+            | Stmt::Fail(e)
+            | Stmt::Take(e, _)
+            | Stmt::Goto(e) => Self::expr_reaches_when(e),
+            Stmt::VarDecl { expr, .. } | Stmt::Assign { expr, .. } => Self::expr_reaches_when(expr),
+            Stmt::Call { args, .. } => args.iter().any(|a| match a {
+                CallArg::Positional(e) | CallArg::Invocant(e) | CallArg::Slip(e) => {
+                    Self::expr_reaches_when(e)
+                }
+                CallArg::Named { value: Some(e), .. } => Self::expr_reaches_when(e),
+                CallArg::Named { value: None, .. } => false,
+            }),
+            Stmt::Say(es) | Stmt::Put(es) | Stmt::Print(es) | Stmt::Note(es) => {
+                es.iter().any(Self::expr_reaches_when)
+            }
+            _ => false,
+        }
+    }
+
+    /// The expression-level half of [`Self::stmt_reaches_when`]: recurses
+    /// through ordinary compound expressions looking for a `do when`/`do
+    /// default` term, stopping at anything that introduces its own scope or
+    /// already absorbs a succeed unconditionally (a closure/sub literal,
+    /// `do {}`, `gather`, `try`, `do given`, ...) — see that function's doc
+    /// comment for why those are excluded rather than an oversight.
+    fn expr_reaches_when(expr: &Expr) -> bool {
+        match expr {
+            Expr::DoStmt(stmt) => match stmt.as_ref() {
+                Stmt::When { .. } | Stmt::Default(_) => true,
+                Stmt::SyntheticBlock(inner) => inner.iter().any(Self::stmt_reaches_when),
+                // `do {}` / `do given` already absorb a succeed
+                // unconditionally at the VM level (see the doc comment on
+                // `Self::stmt_reaches_when`); no need to see through them.
+                _ => false,
+            },
+            Expr::Grouped(e)
+            | Expr::PositionalPair(e)
+            | Expr::ZenSlice(e)
+            | Expr::Itemize(e)
+            | Expr::Eager(e)
+            | Expr::Unary { expr: e, .. }
+            | Expr::PostfixOp { expr: e, .. }
+            | Expr::AssignExpr { expr: e, .. }
+            | Expr::Reduction { expr: e, .. }
+            | Expr::IndirectTypeLookup(e)
+            | Expr::SymbolicDeref { expr: e, .. } => Self::expr_reaches_when(e),
+            Expr::Binary { left, right, .. }
+            | Expr::HyperOp { left, right, .. }
+            | Expr::HyperFuncOp { left, right, .. }
+            | Expr::MetaOp { left, right, .. } => {
+                Self::expr_reaches_when(left) || Self::expr_reaches_when(right)
+            }
+            Expr::Ternary {
+                cond,
+                then_expr,
+                else_expr,
+            } => {
+                Self::expr_reaches_when(cond)
+                    || Self::expr_reaches_when(then_expr)
+                    || Self::expr_reaches_when(else_expr)
+            }
+            Expr::Index { target, index, .. } => {
+                Self::expr_reaches_when(target) || Self::expr_reaches_when(index)
+            }
+            Expr::IndexAssign {
+                target,
+                index,
+                value,
+                ..
+            } => {
+                Self::expr_reaches_when(target)
+                    || Self::expr_reaches_when(index)
+                    || Self::expr_reaches_when(value)
+            }
+            Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
+                Self::expr_reaches_when(target) || args.iter().any(Self::expr_reaches_when)
+            }
+            Expr::CallOn { target, args } => {
+                Self::expr_reaches_when(target) || args.iter().any(Self::expr_reaches_when)
+            }
+            Expr::Call { args, .. } | Expr::UserRoutineCall { args, .. } => {
+                args.iter().any(Self::expr_reaches_when)
+            }
+            Expr::ArrayLiteral(es)
+            | Expr::BracketArray(es, _)
+            | Expr::CaptureLiteral(es)
+            | Expr::StringInterpolation(es) => es.iter().any(Self::expr_reaches_when),
+            Expr::Hash(pairs) => pairs
+                .iter()
+                .any(|(_, v)| v.as_ref().is_some_and(Self::expr_reaches_when)),
+            Expr::InfixFunc { left, right, .. } => {
+                Self::expr_reaches_when(left) || right.iter().any(Self::expr_reaches_when)
+            }
+            _ => false,
+        }
+    }
+
+    /// Emit `body` wrapped in a `SucceedBarrier` when it can reach a
+    /// `when`/`default` (see [`Self::body_has_toplevel_when`]), otherwise
+    /// emit it unchanged. A `when`/`default` succeed unwinds to the nearest
+    /// enclosing topicalizer (`given`/`with`) if there is one, otherwise to
+    /// the nearest enclosing block-like construct — a bare block, an
+    /// `if`/`unless` branch, a loop body, a sub body, or (at the true
+    /// mainline) the compilation unit itself. This helper is that boundary
+    /// for `if`/`unless` branches and loop bodies; `Stmt::Block`'s own
+    /// `SucceedBarrier` (`stmt.rs`) is the twin for a bare `{ ... }`, and
+    /// `run()` (`runtime/run.rs`) is the twin for the mainline.
     pub(super) fn with_succeed_barrier(&mut self, stmts: &[Stmt], f: impl FnOnce(&mut Self)) {
         if !Self::body_has_toplevel_when(stmts) {
             f(self);

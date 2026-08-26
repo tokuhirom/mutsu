@@ -973,11 +973,18 @@ impl Compiler {
                 {
                     return;
                 }
-                // A block with a top-level `when`/`default` is where that
-                // `when`'s succeed stops unwinding: `given 5 { { when Int { } };
-                // say "after" }` still runs the `say` (see
-                // `OpCode::SucceedBarrier`). Emitted after the placeholder bail-out
-                // above so the barrier is never left unpatched.
+                // A bare block is where an escaping `when`/`default` succeed
+                // stops unwinding when nothing closer (a `given`, another
+                // bare block, an `if` branch, ...) already caught it:
+                // `given 5 { { when Int { } }; say "after" }` still runs the
+                // `say` (see `OpCode::SucceedBarrier`), and so does a `when`
+                // with no topicalizer at all reached through a nested
+                // expression (`{ $a = do when .so { "x" } }`) — see
+                // `body_has_toplevel_when`'s doc comment for the scan this is
+                // gated on (deeper than a literal top-level `Stmt::When`, but
+                // deliberately not unconditional -- see that comment for why).
+                // Emitted after the placeholder bail-out above so the barrier
+                // is never left unpatched.
                 let succeed_barrier_idx = Self::body_has_toplevel_when(stmts)
                     .then(|| self.code.emit(OpCode::SucceedBarrier { body_end: 0 }));
                 let saved_dynamic_scope = self.push_dynamic_scope_lexical();

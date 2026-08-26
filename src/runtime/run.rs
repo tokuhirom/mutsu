@@ -582,6 +582,24 @@ impl Interpreter {
         // compiled mainline directly (outermost run → fresh registers) instead of
         // the `mem::take(self)` + `VM::new` + `*self = interp` ping-pong.
         let body_result = self.run_top(&code, &compiled_fns);
+        // A `when`/`default` succeed that reaches all the way out here has no
+        // enclosing topicalizer, bare block, `if` branch, loop body, or sub
+        // call left to absorb it (each of those already catches its own --
+        // see `with_succeed_barrier`'s doc comment and
+        // `vm_closure_dispatch.rs`'s sub-call boundary) -- so the
+        // compilation unit itself is the terminal boundary Raku uses: the
+        // mainline simply ends right there, silently, with whatever value
+        // the matched `when` carried (nothing further runs; verified against
+        // real `raku`, which prints nothing at all for
+        // `$_ = True; my $a = do when .so { "foo" }; say $a;`). `run_top`'s
+        // only caller is this true outermost mainline run (a nested EVAL,
+        // sub body, or loop iteration never reaches this function -- see its
+        // own doc comment), so catching it here cannot mask a succeed that
+        // was meant for an enclosing scope.
+        let body_result = match body_result {
+            Err(e) if e.is_succeed() => Ok(e.return_value),
+            other => other,
+        };
         let queue_result = if Self::should_run_success_queue_vm(&body_result, self.env.get("_")) {
             self.run_block_raw(&success_ph)
         } else {
