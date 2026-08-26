@@ -649,11 +649,32 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                         .or_else(|| keyword("our", input))
                         .or_else(|| keyword("state", input))
                         && let Ok((after_kw, _)) = ws1(after_kw)
-                        && let Ok(res) = anon_grammar_expr(after_kw)
+                    {
+                        if let Ok(res) = anon_grammar_expr(after_kw)
                             .or_else(|_| anon_class_expr(after_kw))
                             .or_else(|_| anon_role_expr(after_kw))
-                    {
-                        return Ok(res);
+                        {
+                            return Ok(res);
+                        }
+                        // `my method (...) { ... }` / `my method { ... }` used as
+                        // a TERM (`$obj.&(my method (List:D:) { ... })`). The
+                        // named-declarator parser cannot parse the no-name form,
+                        // so fall through to the anonymous-method term parser the
+                        // bare `method` arm below uses.
+                        if let Some(after_method) = keyword("method", after_kw)
+                            && let Ok((r_ws, _)) = ws(after_method)
+                        {
+                            if r_ws.starts_with('(')
+                                && let Ok(res) = parse_anon_method_with_params(r_ws)
+                            {
+                                return Ok(res);
+                            }
+                            if r_ws.starts_with('{')
+                                && let Ok((r, body)) = parse_block_body_routine(r_ws)
+                            {
+                                return Ok((r, make_anon_method(body)));
+                            }
+                        }
                     }
                 }
             }

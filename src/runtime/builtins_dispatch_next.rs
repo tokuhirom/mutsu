@@ -577,6 +577,84 @@ impl Interpreter {
         self.default_instance_repr(&invocant, &ctx.name, &args)
     }
 
+    /// A user class that inherits from a *builtin* type (`class LoggedVersion
+    /// is Version`) inherits that builtin's `.new` as a real MRO candidate in
+    /// rakudo. mutsu implements those constructors natively, so they are not
+    /// `MethodDef`s and never appear in `resolve_deferral_expansion` — a
+    /// `nextsame` out of the user's `new` override used to skip straight past
+    /// them to `Mu.new`/`bless`, producing a bare `LoggedVersion` instance
+    /// instead of the constructed `Version`.
+    ///
+    /// Walk the receiver's MRO past every user-declared class and hand the
+    /// call to the nearest builtin ancestor that has a native constructor.
+    /// `try_native_builtin_construct` is self-limiting: a builtin with no
+    /// native constructor answers `None` and the `bless` fallback still runs.
+    fn native_builtin_new_next_candidate(
+        &mut self,
+        invocant: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let class_name = match invocant.view() {
+            ValueView::Package(name) => name.resolve(),
+            ValueView::Instance { class_name, .. } => class_name.resolve(),
+            _ => return None,
+        };
+        let mro = self.class_mro(&class_name);
+        for cn in mro.iter() {
+            let name = cn.resolve();
+            if name == "Any" || name == "Mu" {
+                break;
+            }
+            if self.user_declared_classes.contains(&name) {
+                continue;
+            }
+            if let Some(res) = Self::try_native_builtin_construct(*cn, args) {
+                // An Instance-shaped builtin (`Date`, `DateTime`, `Buf`, ...)
+                // is minted under the ANCESTOR's name because that is the name
+                // the constructor was selected by. rakudo hands back an
+                // instance of the *subclass*, so re-tag it — the attributes are
+                // already the ones the native constructor computed.
+                let receiver = *cn;
+                return Some(
+                    res.map(|v| Self::rebless_native_ctor_result(v, receiver, &class_name)),
+                );
+            }
+        }
+        None
+    }
+
+    /// Re-tag an `Instance` produced by a builtin ancestor's native constructor
+    /// with the subclass the caller actually asked for. Native *scalar* results
+    /// (`Version`, `Int`, `Num`, ...) carry no class tag and pass through.
+    fn rebless_native_ctor_result(
+        result: Value,
+        builtin_class: Symbol,
+        target_class_name: &str,
+    ) -> Value {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            id,
+        } = result.view()
+        else {
+            return result;
+        };
+        if class_name != builtin_class {
+            return result;
+        }
+        let target = Symbol::intern(target_class_name);
+        Value::instance_parts(
+            target,
+            crate::gc::Gc::new(crate::value::InstanceAttrs::new(
+                target,
+                attributes.to_map(),
+                id,
+                true,
+            )),
+            id,
+        )
+    }
+
     /// When a user-overridden grammar `parse`/`subparse`/`parsefile` calls
     /// `nextsame`/`nextwith` (or `callsame`/`callwith`) and the user MRO is
     /// exhausted, the NATIVE grammar parse is the final base candidate. It is not
@@ -1317,6 +1395,16 @@ impl Interpreter {
                         })
                         .unwrap_or_default(),
                 };
+                // The nearest builtin ancestor's native constructor is the next
+                // MRO candidate *before* `Mu.new`/`bless` (`class LoggedVersion
+                // is Version { method new(|c) { nextsame } }`).
+                if let Some(res) = self.native_builtin_new_next_candidate(&invocant, &call_args) {
+                    let result = res?;
+                    if tail_call {
+                        return Err(RuntimeError::return_signal(result));
+                    }
+                    return Ok(result);
+                }
                 let result = self.call_method_with_values(invocant, "bless", call_args)?;
                 if tail_call {
                     return Err(RuntimeError::return_signal(result));

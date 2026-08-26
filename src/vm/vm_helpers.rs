@@ -30,9 +30,15 @@ impl Interpreter {
     /// raw value; `@`/`%`/`&` parameters bind the container itself. The
     /// backing Gc is shared — only the container kind flips — so in-place
     /// mutation through the param still reaches the caller's data.
+    ///
+    /// An *invocant* parameter is exempt: `self` is bound raw, so
+    /// `<a b c>.&(method (List:D:) { self.raku })` reports `("a", "b", "c")`,
+    /// not the itemized `$("a", "b", "c")`.
     #[inline]
     pub(crate) fn itemize_plain_scalar_param(pd: &crate::ast::ParamDef, val: Value) -> Value {
         if !pd.sigilless
+            && !pd.is_invocant
+            && !pd.traits.iter().any(|t| t == "invocant")
             && !pd.name.starts_with(['@', '%', '&'])
             && !pd.traits.iter().any(|t| t == "raw" || t == "rw")
         {
