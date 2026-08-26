@@ -728,13 +728,45 @@ fn bind_sub_param_name(interpreter: &mut Interpreter, name: &str, value: Value) 
     interpreter.env.insert(name.to_string(), value);
 }
 
+/// Drop the `Pair` elements of a *list* destructure target: binding a
+/// sub-signature against a list goes through that list's `Capture`, and
+/// `List.Capture` files every `Pair` element under the named lane, whatever
+/// flavour it is (rakudo: `(1, x => 2).Capture` is `\(1, :x(2))`, and so is
+/// `(1, $p).Capture` for a variable-held pair). So `sub bar(\p(Int $y, Str $s?,
+/// *%h))` called as `bar((42, life => 40))` binds 42 to `$y`, leaves `$s`
+/// undefined and hands `life` to `*%h` — it does NOT bind the pair to `$s`.
+///
+/// `named_values_from_unpack_target` already surfaces those pairs by name, so
+/// this is only about not *also* offering them positionally. A target that IS
+/// itself a pair keeps its single positional slot: it destructures by its own
+/// key/value parts (`-> (:$key, :$value)`), which is a different rule.
+fn drop_pairs_captured_as_named(value: &Value, positional: Vec<Value>) -> Vec<Value> {
+    let unwrapped = value.unwrap_varref();
+    if !matches!(
+        unwrapped.view(),
+        ValueView::Array(..) | ValueView::Seq(..) | ValueView::Slip(..)
+    ) {
+        return positional;
+    }
+    positional
+        .into_iter()
+        .filter(|v| {
+            !matches!(
+                v.unwrap_varref().view(),
+                ValueView::Pair(..) | ValueView::ValuePair(..)
+            )
+        })
+        .collect()
+}
+
 pub(in crate::runtime) fn bind_sub_signature_from_value(
     interpreter: &mut Interpreter,
     sub_params: &[ParamDef],
     value: &Value,
 ) -> Result<(), RuntimeError> {
     let value = &interpreter.coerce_via_user_capture(value);
-    let positional = positional_values_from_unpack_target(value);
+    let positional =
+        drop_pairs_captured_as_named(value, positional_values_from_unpack_target(value));
     let mut nested_positional_idx = 0usize;
     // Keys consumed by the non-slurpy named sub-params (outer name plus any
     // `:outer(:$inner)` alias names): a named slurpy (`*%rest`) receives only

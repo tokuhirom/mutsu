@@ -442,6 +442,8 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     let (rest, cond) = condition_expr(rest)?;
     let (rest, _) = ws(rest)?;
+    let (rest, binding_params) = parse_if_binding_params(rest)?;
+    let (rest, _) = ws(rest)?;
     let (rest, body) = block(rest)?;
     // `unless` cannot have else/elsif/orwith. rakudo rejects this at COMPILE
     // time with `X::Syntax::UnlessElse`, carrying the offending `keyword`
@@ -456,6 +458,23 @@ pub(crate) fn unless_stmt(input: &str) -> PResult<'_, Stmt> {
                 kw,
             )));
         }
+    }
+    // `unless COND -> $x { BODY }` binds the condition's OWN value (rakudo:
+    // `unless 0 -> $_ { $_.say }` prints `0`, not the negation). Lower it as
+    // the *else* branch of an un-negated `if`, which is exactly the machinery
+    // `if COND { } else -> $x { }` already uses to hand the else clause the
+    // condition value — rather than negating the condition and binding that.
+    if let Some(params) = binding_params.filter(|p| !p.is_empty()) {
+        let clauses = vec![IfChainClause {
+            cond,
+            then_branch: Vec::new(),
+            binding_var: None,
+        }];
+        let else_clause = ElseClause {
+            binding_params: Some(params),
+            body,
+        };
+        return Ok((rest, lower_if_chain(clauses, Some(else_clause))));
     }
     Ok((
         rest,

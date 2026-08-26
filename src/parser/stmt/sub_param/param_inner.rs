@@ -662,6 +662,22 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             Ok((r, name)) => (r, name),
             Err(_) => (r, String::new()),
         };
+        // An attached sub-signature destructures the argument the same way it
+        // does for a sigiled parameter (`@p (Int, Str)`): `\p(Int, Str)` binds
+        // `p` to the whole argument AND matches its elements against the inner
+        // signature. Recognized directly after the name, before traits, so
+        // `\p(Int) is raw` still parses its trait.
+        let (r_after_name_ws, _) = ws(r)?;
+        let (r, sigilless_sub_signature) = if r_after_name_ws.starts_with('(') {
+            let (r2, _) = parse_char(r_after_name_ws, '(')?;
+            let (r2, _) = ws(r2)?;
+            let (r2, sub_params) = super::super::sub::parse_param_list(r2)?;
+            let (r2, _) = ws(r2)?;
+            let (r2, _) = parse_char(r2, ')')?;
+            (r2, Some(sub_params))
+        } else {
+            (r, None)
+        };
         let (r, _) = ws(r)?;
         // `is copy`, `is rw`, `is readonly`, `is raw` traits
         let (mut r, _) = ws(r)?;
@@ -704,6 +720,7 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         p.type_constraint = type_constraint;
         p.traits = sigilless_traits;
         p.where_constraint = sigilless_where;
+        p.sub_signature = sigilless_sub_signature;
         return Ok((r, p));
     }
 
