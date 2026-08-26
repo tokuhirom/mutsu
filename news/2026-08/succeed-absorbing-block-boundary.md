@@ -93,13 +93,34 @@ third had an absorber whose static detection was incomplete:
   program just ends, silently, right there."
 
 - `src/vm/vm_try_catch_ops.rs` (`exec_try_catch_op_inner`): added a
-  dedicated `Err(e) if e.is_succeed()` arm, ahead of (and removed from) the
-  "propagate control signals through try" arms, that absorbs the succeed —
-  truncating the stack, restoring `when_matched()` to its pre-`try` value
-  (so an enclosing `given`'s own "break the body after every op on a match"
-  bookkeeping isn't fooled into thinking a `when` matched at *its* level),
-  and falling off the end of the `try` like a normal completion. Not routed
-  through `try`'s own CATCH/CONTROL — `succeed` is not an exception.
+  dedicated `Err(e) if e.is_succeed() && control_begin >= end` arm — gated
+  on **no `CONTROL` block being present** — ahead of (and removed from) the
+  no-`CONTROL` "propagate control signals through try" arm, that absorbs
+  the succeed: truncating the stack, restoring `when_matched()` to its
+  pre-`try` value (so an enclosing `given`'s own "break the body after
+  every op on a match" bookkeeping isn't fooled into thinking a `when`
+  matched at *its* level), and falling off the end of the `try` like a
+  normal completion.
+
+  **The `control_begin >= end` guard is the interesting part, and the first
+  attempt got it wrong.** `try`'s own `CATCH`/`CONTROL` handlers are
+  Raku-level constructs that can legitimately want to *observe* a control
+  signal before it is absorbed or propagated — and
+  `roast/S04-exception-handlers/control.t` pins exactly this for succeed:
+  `{ succeed; CONTROL { when CX::Succeed { $ok = 1 } } }` must set `$ok`.
+  The first version of this fix added the absorbing arm unconditionally,
+  ahead of *all* control-signal handling including the existing
+  `CONTROL`-routing arm (which already handled `last`/`next`/`warn`/etc. the
+  same way) — so a `succeed` with a `CONTROL` block present got silently
+  swallowed as a plain fall-off instead of ever reaching `CONTROL`, and CI's
+  `test` job caught the regression (`control.t` test 5). The fix orders it
+  correctly: a `CONTROL` block, when present, gets first refusal at *any*
+  control signal, succeed included — restored `is_succeed()` to the existing
+  `control_begin < end` arm that routes into `CONTROL` — and the new
+  unconditional-fallback absorber only fires when there is no `CONTROL`
+  block to consult. `succeed` is still never routed through `CATCH`
+  (`is_exceptional_block_exit` already treats it as an ordinary completion,
+  not an exception), only through `CONTROL` when one exists.
 
 ## Why this set of boundaries, and not a broader one
 
@@ -121,11 +142,16 @@ that should have gone somewhere else:
   overreach: `try` intercepts a succeed nested inside it *before* it would
   ever reach an enclosing `given`, but a `given` with nothing nearer still
   behaves exactly as it always has.
+- **A `try` with its own `CONTROL` block** (see above) always routes a
+  succeed through `CONTROL` first, exactly like every other control
+  signal `try` already knew how to hand off — the new absorber is strictly
+  the fallback for when there is nothing (topicalizer, `CONTROL`, or
+  anything else) left to consult.
 
-`t/succeed-block-boundary-absorption.t` (15 assertions) pins all of the
+`t/succeed-block-boundary-absorption.t` (16 assertions) pins all of the
 above — the two crashing cases from the original report, the already-correct
 `given` cases, the sub/for/try non-regression cases, the `try`-nested-in-
-`given` precedence case, a regression pin for the pre-existing
-literal-top-level-`when`-in-a-nested-block case, and a deep-expression-
-nesting case (`do when` inside a list literal) — verified to pass under both
-`raku` and mutsu.
+`given` precedence case, the `try`-with-`CONTROL` ordering case, a
+regression pin for the pre-existing literal-top-level-`when`-in-a-nested-
+block case, and a deep-expression-nesting case (`do when` inside a list
+literal) — verified to pass under both `raku` and mutsu.
