@@ -332,6 +332,11 @@ impl Interpreter {
                 && !self.has_multi_function(name)
                 && !self.has_function(last_seg)
                 && !self.has_multi_function(last_seg)
+                // A lowercase last segment usually means a qualified sub call,
+                // but it can equally name a lowercase *package*: `my $foo::bar
+                // = 1` creates the package `foo`, and `OUR::foo` must resolve
+                // to it rather than report a missing `&foo`.
+                && !self.package_namespace_exists(Interpreter::strip_pseudo_packages(name))
             {
                 // The last segment starts with lowercase, indicating a qualified
                 // function/sub call (e.g. `Our::Package::pkg`). If the prefix
@@ -347,7 +352,8 @@ impl Interpreter {
                 if bare != name
                     && (self.has_type(bare)
                         || Self::is_builtin_type(bare)
-                        || Self::is_type_with_smiley(bare, self))
+                        || Self::is_type_with_smiley(bare, self)
+                        || self.package_namespace_exists(bare))
                 {
                     Value::package(Symbol::intern(Self::resolve_type_alias(bare)))
                 } else {

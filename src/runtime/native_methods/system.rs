@@ -295,8 +295,13 @@ impl Interpreter {
     /// releases — enough for consumers that key precomp directories on it
     /// (e.g. Repository::Precomp::Cleanup).
     pub(in crate::runtime) fn compiler_id() -> String {
-        format!("mutsu-{}", env!("CARGO_PKG_VERSION"))
+        format!("{}-{}", Self::COMPILER_NAME, env!("CARGO_PKG_VERSION"))
     }
+
+    /// The compiler's own name and authority, shared by `$*RAKU.compiler`'s
+    /// attributes, `.id`, and `.verbose-config` so they cannot drift apart.
+    pub(in crate::runtime) const COMPILER_NAME: &'static str = "mutsu";
+    pub(in crate::runtime) const COMPILER_AUTH: &'static str = "github.com/tokuhirom";
 
     pub(in crate::runtime) fn native_perl(&self, attributes: &AttrMap, method: &str) -> Value {
         match method {
@@ -306,19 +311,15 @@ impl Interpreter {
             "id" => Value::str(Self::compiler_id()),
             "compiler" => {
                 let mut compiler_attrs = HashMap::new();
-                compiler_attrs.insert("name".to_string(), Value::str_from("mutsu"));
-                compiler_attrs.insert("auth".to_string(), Value::str_from("github.com/tokuhirom"));
+                compiler_attrs.insert("name".to_string(), Value::str_from(Self::COMPILER_NAME));
+                compiler_attrs.insert("auth".to_string(), Value::str_from(Self::COMPILER_AUTH));
+                // Read the real crate version rather than a hardcoded literal:
+                // `.id` was already derived from `CARGO_PKG_VERSION`, so a fixed
+                // `0.1.0` here made `$*RAKU.compiler.version` (v0.1.0) and
+                // `.id` (mutsu-0.22.0) disagree about the same build.
                 compiler_attrs.insert(
                     "version".to_string(),
-                    Value::version(
-                        vec![
-                            crate::value::VersionPart::Num(0),
-                            crate::value::VersionPart::Num(1),
-                            crate::value::VersionPart::Num(0),
-                        ],
-                        false,
-                        false,
-                    ),
+                    Value::version_from_str(env!("CARGO_PKG_VERSION")),
                 );
                 compiler_attrs.insert(
                     "signature".to_string(),
@@ -332,7 +333,10 @@ impl Interpreter {
                     "desc".to_string(),
                     Value::str_from("mutsu Raku interpreter"),
                 );
-                compiler_attrs.insert("release".to_string(), Value::str_from("0.1.0"));
+                compiler_attrs.insert(
+                    "release".to_string(),
+                    Value::str_from(env!("CARGO_PKG_VERSION")),
+                );
                 compiler_attrs.insert("codename".to_string(), Value::str_from("mutsu"));
                 compiler_attrs.insert("id".to_string(), Value::str(Self::compiler_id()));
                 Value::make_instance(Symbol::intern("Compiler"), compiler_attrs)

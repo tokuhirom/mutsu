@@ -176,6 +176,7 @@ impl Interpreter {
                 // argument) as a call rather than two disjoint terms.
                 let user_subs = nested.collect_eval_user_sub_names();
                 let user_types = nested.collect_eval_user_type_names();
+                let user_value_terms = nested.collect_eval_user_value_term_names();
                 let pre_check_result = {
                     let op_names = nested.collect_operator_sub_names();
                     let op_assoc = nested.collect_operator_assoc_map();
@@ -187,6 +188,7 @@ impl Interpreter {
                         &imported_names,
                         &user_subs,
                         &user_types,
+                        &user_value_terms,
                     ) {
                         Ok((stmts, _)) => {
                             for stmt in &stmts {

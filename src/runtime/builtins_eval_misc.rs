@@ -240,6 +240,45 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Control::Caller"), attrs)
     }
 
+    /// The synthesized name of the next `EVAL` compilation unit: `EVAL_0`,
+    /// `EVAL_1`, ... The counter is per process and is consumed only when a
+    /// name is actually synthesized, so an `EVAL ..., :filename` call does not
+    /// advance it (rakudo behaves the same way).
+    fn next_eval_unit_name() -> String {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static EVAL_UNIT_COUNTER: AtomicUsize = AtomicUsize::new(0);
+        format!("EVAL_{}", EVAL_UNIT_COUNTER.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// Absolutify a compilation-unit name for `$?FILE`, which is always an
+    /// absolute path even when the unit's own name is relative (`EVAL_0`,
+    /// or a relative `:filename`). An already-absolute name is left alone.
+    fn absolutify_unit_name(&self, name: &str) -> String {
+        let path = std::path::Path::new(name);
+        if path.is_absolute() {
+            return name.to_string();
+        }
+        // Resolve against `$*CWD` rather than the process CWD so a script that
+        // has changed `$*CWD` still names its EVAL units where it thinks it is.
+        let cwd = self
+            .env
+            .get("*CWD")
+            .map(|v| v.to_string_value())
+            .filter(|s| !s.is_empty())
+            .or_else(|| {
+                std::env::current_dir()
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            });
+        match cwd {
+            Some(cwd) => std::path::Path::new(&cwd)
+                .join(path)
+                .to_string_lossy()
+                .into_owned(),
+            None => name.to_string(),
+        }
+    }
+
     pub(super) fn builtin_evalfile(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let path = args
             .first()
@@ -339,11 +378,34 @@ impl Interpreter {
             self.pending_eval_context_routine.replace(state)
         });
         let check_only = Self::named_value(args, "check").is_some_and(|v| v.truthy());
+        // Each EVAL is its own compilation unit with its own name: the explicit
+        // `:filename` argument, or a synthesized `EVAL_<N>` (N a per-process
+        // counter consumed only when a name is actually synthesized). The name
+        // is what `Code.file` reports, while `$?FILE` reports it absolutified
+        // against `$*CWD` -- the same as-invoked / absolute split the mainline
+        // compilation unit already has.
+        let unit_name = Self::named_value(args, "filename")
+            .map(|v| v.to_string_value())
+            .unwrap_or_else(Self::next_eval_unit_name);
+        let saved_env_file = self.env.get("?FILE").cloned();
+        self.env
+            .insert("?FILE".to_string(), Value::str(unit_name.clone()));
+        let saved_source_file =
+            crate::parser::set_parser_source_file(Some(self.absolutify_unit_name(&unit_name)));
         let result = if check_only {
             self.eval_eval_string_check_only(&code)
         } else {
             self.eval_eval_string(&code)
         };
+        crate::parser::set_parser_source_file(saved_source_file);
+        match saved_env_file {
+            Some(prev) => {
+                self.env.insert("?FILE".to_string(), prev);
+            }
+            None => {
+                self.env.remove("?FILE");
+            }
+        }
         if let Some(saved) = saved_context_routine {
             self.pending_eval_context_routine = saved;
         }

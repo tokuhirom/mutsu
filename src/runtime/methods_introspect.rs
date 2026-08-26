@@ -364,6 +364,19 @@ impl Interpreter {
                 crate::ast::PackageKind::Grammar => "Perl6::Metamodel::GrammarHOW",
             }
         } else if is_type_object
+            && !self.registry().classes.contains_key(&type_name)
+            && !self.registry().roles.contains_key(&type_name)
+            && !self.registry().enum_types.contains_key(&type_name)
+            && !self.registry().subsets.contains_key(&type_name)
+            && !crate::runtime::Interpreter::is_builtin_type(&type_name)
+            && self.package_namespace_exists(&type_name)
+        {
+            // A package created implicitly rather than declared: `my $foo::bar
+            // = 1` brings the package `foo` into being with no `package`
+            // statement, so it has no `package_kinds` entry, but it is still a
+            // package and reports `PackageHOW`, not the default `ClassHOW`.
+            "Perl6::Metamodel::PackageHOW"
+        } else if is_type_object
             && (self.registry().roles.contains_key(&type_name) && !type_name.contains('[')
                 || matches!(
                     type_name.as_str(),

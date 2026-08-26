@@ -45,6 +45,16 @@ pub(crate) fn set_eval_user_type_preseed(names: Vec<String>) {
     });
 }
 
+/// Set sigilless *value* term names (`constant Foo = 1`, `my \\x`) to
+/// re-register after a scope reset. The type preseed above covers class/role/
+/// enum/subset names; this is its constant-term twin, and without it an EVAL'd
+/// snippet reads every outer constant as an undeclared bareword.
+pub(crate) fn set_eval_user_value_term_preseed(names: Vec<String>) {
+    EVAL_USER_VALUE_TERM_PRESEED.with(|preseed| {
+        *preseed.borrow_mut() = names;
+    });
+}
+
 /// Check if a name was declared as a user sub in any enclosing scope.
 pub(crate) fn is_user_declared_sub(name: &str) -> bool {
     SCOPES.with(|s| {

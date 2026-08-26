@@ -78,6 +78,7 @@ pub(in crate::parser) use pragma_preseed::{
     register_user_enum_value, register_user_type, register_user_type_verbatim, reset_package_path,
     set_attributes_pragma, set_eval_imported_function_preseed, set_eval_operator_assoc_preseed,
     set_eval_operator_preseed, set_eval_user_sub_preseed, set_eval_user_type_preseed,
+    set_eval_user_value_term_preseed,
 };
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, is_declared_loop_label, lookup_custom_infix_precedence,
@@ -220,6 +221,12 @@ thread_local! {
     /// declared, re-registered after `reset_user_subs` so an EVAL'd snippet
     /// parses them as declared types rather than undeclared barewords.
     static EVAL_USER_TYPE_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Sigilless *value* term names (a `constant Foo = 1`, a `my \\x`) the
+    /// calling unit has declared, re-registered after `reset_user_subs` for the
+    /// same reason as the type preseed above: without them an EVAL'd snippet
+    /// sees every outer constant as an undeclared bareword, which the `when`
+    /// gobbled-block check reports as a syntax error on valid code.
+    static EVAL_USER_VALUE_TERM_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
     static CURRENT_LANGUAGE_VERSION: RefCell<String> = RefCell::new("6.d".to_string());
     /// Declarator keywords registered by a `use`d module's EXPORTHOW::DECLARE
     /// (`my package EXPORTHOW { package DECLARE { constant kw = SomeHOW } }`):
