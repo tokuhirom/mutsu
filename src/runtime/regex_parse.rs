@@ -53,6 +53,64 @@ thread_local! {
     /// them, the same discipline as `REGEX_PARSE_CACHE`'s `TOKEN_DEFS_GEN`.
     pub(crate) static REGEX_CODE_PARSE_CACHE: RefCell<HashMap<String, CachedCodeParse>> =
         RefCell::new(HashMap::new());
+
+    /// The source text of the regex currently being parsed at TOP level, so a
+    /// `<~~>` found at any nesting depth inside it can record what "recurse into
+    /// myself" refers to. A sub-pattern parse (a group, a lookaround body, an
+    /// alternation branch) re-enters the same parse entry point, and it inherits
+    /// this value instead of overwriting it — Raku's `<~~>` recurses into the
+    /// whole enclosing regex / rule body, not into the bracket it sits in.
+    pub(crate) static PARSING_TOP_LEVEL_SOURCE: RefCell<Option<std::rc::Rc<str>>> =
+        const { RefCell::new(None) };
+
+    /// Active `<~~>` recursions as (enclosing source, start position) pairs. A
+    /// recursion that re-enters the *same* regex at the *same* position cannot
+    /// make progress, so it fails instead of looping forever — the regex
+    /// equivalent of the left-recursion cutoff in `regex_match_atom`.
+    pub(crate) static RECURSE_SELF_STACK: RefCell<Vec<(std::rc::Rc<str>, usize)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// RAII guard that installs `source` as [`PARSING_TOP_LEVEL_SOURCE`] for the
+/// duration of a top-level regex parse. Constructing one while another is
+/// already active is a no-op (the outer parse keeps ownership), so nested
+/// sub-pattern parses see the outermost source.
+pub(crate) struct TopLevelSourceScope(bool);
+
+impl TopLevelSourceScope {
+    pub(crate) fn enter(source: &str) -> Self {
+        // Only a pattern that actually writes `<~~` can need this, and a
+        // sub-pattern of one that does not cannot contain it either — so the
+        // overwhelmingly common case costs one substring search and no
+        // allocation. (`parse_regex_uncached` runs per match for a pattern that
+        // interpolates a variable, so it is on the hot path.)
+        if !source.contains("<~~") {
+            return TopLevelSourceScope(false);
+        }
+        let installed = PARSING_TOP_LEVEL_SOURCE.with(|s| {
+            let mut slot = s.borrow_mut();
+            if slot.is_some() {
+                false
+            } else {
+                *slot = Some(std::rc::Rc::from(source));
+                true
+            }
+        });
+        TopLevelSourceScope(installed)
+    }
+
+    /// The enclosing regex's source text, if a top-level parse is in progress.
+    pub(crate) fn current() -> Option<std::rc::Rc<str>> {
+        PARSING_TOP_LEVEL_SOURCE.with(|s| s.borrow().clone())
+    }
+}
+
+impl Drop for TopLevelSourceScope {
+    fn drop(&mut self) {
+        if self.0 {
+            PARSING_TOP_LEVEL_SOURCE.with(|s| *s.borrow_mut() = None);
+        }
+    }
 }
 
 /// A `REGEX_CODE_PARSE_CACHE` entry: the `registry_write_gen` the code string

@@ -2,7 +2,7 @@ use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
 use crate::parser::parse_result::{PError, PResult, parse_char};
-use crate::token_kind::{lookup_emoji_sequence, lookup_unicode_char_by_name};
+use crate::token_kind::lookup_unicode_name_string;
 
 use super::helpers::literal_str;
 pub(crate) fn single_quoted_string(input: &str) -> PResult<'_, Expr> {
@@ -126,14 +126,10 @@ pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
     let full_name = names_str.trim();
 
     // First try the full content as a single name (handles emoji sequences)
-    if !full_name.contains(',') {
-        if let Some(c) = lookup_unicode_char_by_name(full_name) {
-            return Some((c.to_string(), &rest[end + 1..]));
-        }
-        // Try as emoji sequence name
-        if let Some(s) = lookup_emoji_sequence(full_name) {
-            return Some((s, &rest[end + 1..]));
-        }
+    if !full_name.contains(',')
+        && let Some(s) = lookup_unicode_name_string(full_name)
+    {
+        return Some((s, &rest[end + 1..]));
     }
 
     let mut result = String::new();
@@ -142,9 +138,9 @@ pub(crate) fn parse_backslash_c_bracket(rest: &str) -> Option<(String, &str)> {
         if name.is_empty() {
             continue;
         }
-        // Try as Unicode character name
-        if let Some(c) = lookup_unicode_char_by_name(name) {
-            result.push(c);
+        // Try as a Unicode character name, name alias or named sequence
+        if let Some(s) = lookup_unicode_name_string(name) {
+            result.push_str(&s);
         } else {
             // Try as hex codepoint (e.g. 0x0041)
             let hex = name.strip_prefix("0x").or_else(|| name.strip_prefix("0X"));

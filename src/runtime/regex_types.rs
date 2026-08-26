@@ -504,6 +504,13 @@ pub(crate) enum RegexAtom {
     },
     /// `<at(N)>` — zero-width assertion: match at position N
     AtPosition(usize),
+    /// `<~~>` — recursive self-match: match the *enclosing* regex (or, inside a
+    /// grammar token/rule, that rule's body) again at the current position. The
+    /// payload is the enclosing pattern's source text, which the match-time
+    /// parse cache turns straight back into the same shared tree. Like the
+    /// `<$var>` sub-match family, the recursive invocation gets its own
+    /// discarded `Match`, so its captures do not leak into the caller's `$/`.
+    RecurseSelf(Box<str>),
     /// Internal marker used while rewriting `left ~ goal inner`.
     TildeMarker,
     /// Goal matching produced by `~`: match `inner` first, then `goal`,
@@ -537,6 +544,14 @@ pub(crate) struct CharClass {
 pub(crate) enum ClassItem {
     Range(char, char),
     Char(char),
+    /// The `.` any-character base of a character-class arithmetic expression
+    /// (`<.-[a]-[b]>`, `<.-:letter-:digit>`): a positive item that matches every
+    /// character. Raku's class arithmetic is not true set arithmetic — the
+    /// positive and negative halves are accumulated separately and a character
+    /// matches when it is in the positive half AND NOT in the negative half —
+    /// so the universe has to survive as an *item*, not by collapsing the whole
+    /// positive half (`<.-[a]+[1]>` still excludes `a`).
+    Any,
     Digit,
     NegDigit,
     Word,
@@ -549,5 +564,8 @@ pub(crate) enum ClassItem {
     NegVertSpace,
     NotNewline,
     NamedBuiltin(String),
-    UnicodePropItem { name: String, negated: bool },
+    UnicodePropItem {
+        name: String,
+        negated: bool,
+    },
 }

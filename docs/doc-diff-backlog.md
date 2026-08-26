@@ -327,16 +327,16 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Language/regexes.rakudoc:1331` | `<!:Script<Name>>` negated Unicode-property lookahead doesn't stop the preceding quantifier's backtrack | [regex-script-lookahead-negation-wrong.md](../todo/tickets/regex-script-lookahead-negation-wrong.md) |
-| `Language/regexes.rakudoc:1349` | `<same>` builtin regex subrule is unimplemented | [regex-same-subrule-missing.md](../todo/tickets/regex-same-subrule-missing.md) |
+| `Language/regexes.rakudoc:1331` | ~~`<!:Script<Name>>` negated Unicode-property lookahead doesn't stop the preceding quantifier's backtrack~~ (the real bug was every `<!:Prop>` at end of string) | [resolved](../news/2026-08/regex-script-lookahead-negation-wrong.md) |
+| `Language/regexes.rakudoc:1349` | ~~`<same>` builtin regex subrule is unimplemented~~ | [resolved](../news/2026-08/regex-same-subrule-missing.md) |
 | `Language/regexes.rakudoc:1595` | a regex-embedded `:my $c = $/;` (self-referencing the in-progress match) fails to parse | [regex-embedded-my-decl-self-referential-slash.md](../todo/tickets/regex-embedded-my-decl-self-referential-slash.md) |
 | `Language/regexes.rakudoc:1602` | a regex-embedded `:my $c = ~$0;` captures an empty value instead of the current match text | [regex-embedded-my-decl-value-not-captured.md](../todo/tickets/regex-embedded-my-decl-value-not-captured.md) |
 | `Language/regexes.rakudoc:1612` | a regex-embedded `:our $var = ...;` doesn't write back to the package variable | [regex-our-declarator-writeback-missing.md](../todo/tickets/regex-our-declarator-writeback-missing.md) |
 | `Language/regexes.rakudoc:1966` | a subrule call with a block-literal argument (`<name: { ... }>`) fails entirely | [regex-subrule-block-argument-parse-fail.md](../todo/tickets/regex-subrule-block-argument-parse-fail.md) |
 | `Language/regexes.rakudoc:1543` | capture-group numbering across an alternation branch is wrong | [regex-capture-numbering-across-alternation.md](../todo/tickets/regex-capture-numbering-across-alternation.md) |
 | `Language/regexes.rakudoc:1587` | an embedded code block inside a quantified group doesn't persist its side effect on an outer `:my` variable | [regex-embedded-code-block-quantifier-scope.md](../todo/tickets/regex-embedded-code-block-quantifier-scope.md) |
-| `Language/regexes.rakudoc:2684` | `m:st(...)` regex adverb (starting positions) is unsupported | [regex-st-adverb-unsupported.md](../todo/tickets/regex-st-adverb-unsupported.md) |
-| `Language/regexes.rakudoc:2935` | `<~~>` recursive self-match returns the wrong (inner, not outer) nesting level | [regex-recursive-self-match-wrong-nesting-level.md](../todo/tickets/regex-recursive-self-match-wrong-nesting-level.md) |
+| `Language/regexes.rakudoc:2684` | ~~`m:st(...)` regex adverb (starting positions) is unsupported~~ (`:st`/`:nd`/`:rd`/`:th` are aliases of `:nth`, not positional) | [resolved](../news/2026-08/regex-st-adverb-unsupported.md) |
+| `Language/regexes.rakudoc:2935` | ~~`<~~>` recursive self-match returns the wrong (inner, not outer) nesting level~~ (it was unimplemented) | [resolved](../news/2026-08/regex-recursive-self-match-wrong-nesting-level.md) |
 | `Language/traps.rakudoc:91` | `$++` inside a string-interpolated block doesn't reset per call the way raku's does | [dollar-plusplus-state-scope-in-interpolated-block.md](../todo/tickets/dollar-plusplus-state-scope-in-interpolated-block.md) |
 | `Language/traps.rakudoc:212` | `$.attr *= 2` inside a method throws `X::Assignment::RO` where current raku silently no-ops | [dollar-dot-attr-compound-assign-spurious-ro-error.md](../todo/tickets/dollar-dot-attr-compound-assign-spurious-ro-error.md) |
 | `Language/traps.rakudoc:1948` | `\|«@array` (flatten + hyper prefix combined) fails to parse | [flatten-hyper-prefix-parse-error.md](../todo/tickets/flatten-hyper-prefix-parse-error.md) |
@@ -418,7 +418,7 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
 | `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
 | `Language/experimental.rakudoc:32` | `Buf`/`Blob.contents` method is missing | [buf-contents-method-missing.md](../todo/tickets/buf-contents-method-missing.md) |
 | `Language/experimental.rakudoc:144` | a user-defined custom infix's RHS operand fails to parse when followed by `??...!!` | [custom-infix-rhs-operand-rejects-ternary.md](../todo/tickets/custom-infix-rhs-operand-rejects-ternary.md) |
-| `Language/unicode.rakudoc:190,212,224` | `\c[NAME]` fails to resolve Unicode NameAlias corrections and multi-codepoint named sequences | [c-bracket-character-name-lookup-gaps.md](../todo/tickets/c-bracket-character-name-lookup-gaps.md) |
+| `Language/unicode.rakudoc:190,212,224` | ~~`\c[NAME]` fails to resolve Unicode NameAlias corrections and multi-codepoint named sequences~~ | [resolved](../news/2026-08/c-bracket-character-name-lookup-gaps.md) |
 
 **Excluded from this batch-3 sub-run:**
 - `Language/syntax.rakudoc` [5] (line 763, `%(...)`hash-constructor `.keys.join`) — hash
@@ -655,7 +655,7 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Type/Test.rakudoc:323` | regex char class `<.-:letter-:digit>` (dot base + two chained `-` subtractions) matches everything instead of subtracting | [charclass-dot-base-chained-subtraction-broken.md](../todo/tickets/charclass-dot-base-chained-subtraction-broken.md) |
+| `Type/Test.rakudoc:323` | ~~regex char class `<.-:letter-:digit>` (dot base + two chained `-` subtractions) matches everything instead of subtracting~~ | [resolved](../news/2026-08/charclass-dot-base-chained-subtraction-broken.md) |
 | `Type/Test.rakudoc:400` | `.isa(Numeric)` (and other roles) wrongly returns `True` — `isa_check` conflates nominal class hierarchy with role composition | [isa-conflates-roles-with-nominal-supertypes.md](../todo/deep/isa-conflates-roles-with-nominal-supertypes.md) |
 | `Type/Test.rakudoc:586` | `throws-like`'s `message =>`/`gist =>` matchers are silently skipped when the thrown exception is `X::AdHoc` (e.g. from `fail`/`die` with a string) | [throws-like-message-matcher-skipped-for-adhoc-exception.md](../todo/tickets/throws-like-message-matcher-skipped-for-adhoc-exception.md) |
 | `Type/Metamodel/EnumHOW.rakudoc:139,148,157` | `EnumHOW` is missing `.^enum_values`/`.^enum_from_value` (No such method) and `.^elems` (deterministic stack overflow) | [enumhow-missing-enum-values-elems-enum-from-value.md](../todo/tickets/enumhow-missing-enum-values-elems-enum-from-value.md) |

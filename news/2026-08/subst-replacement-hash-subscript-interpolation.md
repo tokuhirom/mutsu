@@ -22,7 +22,8 @@ The replacement is a `qq` quote and now parses as one, so `%h{$/}`, `%h<a>` and
 
 The one genuinely separate finding here — that `$/` written directly before the
 closing delimiter (`s/(a)/[$/]/`, `s:g/x/$//`) still fails to lex — is recorded
-in `todo/tickets/subst-replacement-slash-var-before-delimiter.md`; it lives in
-the delimiter scanner, not in the interpolation grammar.
+in [subst-replacement-slash-var-before-delimiter.md](subst-replacement-slash-var-before-delimiter.md);
+it lived in the delimiter scanner, not in the interpolation grammar, and has
+since been fixed there.
 
 Pinned by `t/subst-replacement-interpolation.t`.

@@ -15,9 +15,7 @@ pub(crate) fn uniparse_impl(input: &str) -> Result<Value, RuntimeError> {
         if name.is_empty() {
             continue;
         }
-        if let Some(ch) = crate::token_kind::lookup_unicode_char_by_name(name) {
-            result.push(ch);
-        } else if let Some(s) = crate::token_kind::lookup_emoji_sequence(name) {
+        if let Some(s) = crate::token_kind::lookup_unicode_name_string(name) {
             result.push_str(&s);
         } else {
             // Return a Failure wrapping X::Str::InvalidCharName
