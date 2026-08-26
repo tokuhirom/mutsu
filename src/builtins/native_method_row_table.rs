@@ -969,7 +969,12 @@ pub(super) const RAW_ROWS: &[(&str, &str, u8, u8)] = &[
     ("Backtrace::Frame", "is-hidden", 1, 0),
     ("Backtrace::Frame", "file", 1, 0),
     ("Backtrace::Frame", "line", 1, 0),
-    ("Backtrace::Frame", "gist", 1, 0),
+    // `.gist` moved off the fast path: `Backtrace::Frame` has no custom
+    // `.gist` in Rakudo, so it falls back to the same attribute-listing
+    // default `default_instance_repr` gives `.raku` (which needs `&mut
+    // self` to recursively render the synthesized `code` object, so it
+    // cannot live in this pure fast-path cascade). No row here, matching
+    // `.raku`, which was never rowed for this owner either.
     ("Range", "hyper", 1, 8),
     ("Range", "lazy", 1, 8),
     ("Range", "int-bounds", 1, 8),

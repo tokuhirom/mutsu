@@ -20,6 +20,7 @@
 //! Rakudo's absolute frame count is deliberately not attempted.
 
 use crate::gc::Gc;
+use crate::symbol::Symbol;
 use crate::value::{InstanceAttrs, RuntimeError, Value, ValueView};
 
 /// Render a `Backtrace::Frame` instance as its `.Str`/`.gist` text.
@@ -56,6 +57,20 @@ fn frame_entry(subname: &str, file: &str, line: &str) -> String {
     } else {
         format!("  in sub {} at {} line {}", subname, file, line)
     }
+}
+
+/// The `Backtrace::Frame.code` value: mutsu does not retain the actual
+/// routine a frame points into, so this synthesizes a `Routine` carrying just
+/// the frame's `subname` (`.code.name` is the documented use). Shared by the
+/// `code` accessor and the `.raku`/`.gist` renderer so both describe the same
+/// object.
+pub(crate) fn frame_code_value(attributes: &Gc<InstanceAttrs>) -> Value {
+    let subname = attributes
+        .as_map()
+        .get("subname")
+        .map(|v| v.to_string_value())
+        .unwrap_or_default();
+    Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(&subname), false)
 }
 
 /// A `Backtrace::Frame` is a "routine" frame when it has a real subname
