@@ -23,7 +23,7 @@ use Test;
 # placeholder collection) is a plain behavioural check that must hold
 # identically in both.
 
-plan 24;
+plan 30;
 
 # --- .AST rendering: left-nested ApplyInfix, no && / DoBlock ---------------
 #
@@ -146,3 +146,26 @@ is (1 < * < 10)(0), False, '... checking the left end';
 is (1 < * < 10)(5), True, '... and inside the range';
 is (1 < * && * < 10)(0), True,
     'a user-written && over the same operands is NOT a chain -- yields only its right thunk';
+
+# --- a compound-Whatever operand composed into a SmartMatch chain link ------
+#
+# `X ~~ Y` autoprimes a *compound* Whatever RHS into its own independent
+# WhateverCode (`wrap_smartmatch_rhs`), which must stay independent rather
+# than being absorbed into an enclosing chain's arity -- even when that
+# operand sits in a non-final, non-SmartMatch-RHS position of a longer
+# chain. `*.chars` here is its own arity-1 WhateverCode, invoked once by
+# `~~` (Callable-RHS smartmatch), and its Int result compares against `3`
+# uncurried -- the whole expression is a plain Bool, not a WhateverCode.
+is (("foo" ~~ *.chars == 3) ~~ Bool), True,
+    'a SmartMatch-autoprimed operand inside a longer chain stays independent';
+
+# Single-operator comparisons with a Whatever operand (never a
+# `ChainedCompare` -- `chain_ops.len() == 1` stays a plain `Binary`) must
+# keep curring exactly as before, alone or as a `.grep`/`.first` matcher.
+is (* == 3)(3), True, 'bare * == literal curries (arity 1)';
+is (3 == *)(3), True, 'literal == bare * curries (arity 1)';
+is (*.chars < 3)('ab'), True, 'compound * < literal curries (arity 1)';
+is (1, 22, 333).grep(*.chars == 2).join(' '), '22',
+    '.grep(*.chars == 2) uses the curried comparison as its matcher';
+is (1, 22, 333).first(*.chars == 2), 22,
+    '.first(*.chars == 2) likewise';

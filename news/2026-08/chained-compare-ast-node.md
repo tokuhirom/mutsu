@@ -65,22 +65,43 @@ private-access validation, `whenever`-scope detection, phaser lifting/
 reordering, undeclared-routine scanning) needed a new arm — each mirroring
 its existing `Binary` arm's behavior over the new node's `operands` list.
 
-The audit caught one real bug before it shipped: `contains_whatever`'s naive
-first-pass `Expr::ChainedCompare` arm (any operand containing a Whatever
-curries the whole chain) over-curried
-`roast/S03-operators/relational.t`'s `0 == 0 ~~ (* == 0)` — an already-
-materialized `WhateverCurry` sitting as the RHS of a chain's *last* link,
-which should stay independently autoprimed (mirroring the single-`Binary`
-SmartMatch/BangTilde arm's "only the left operand counts" rule) instead of
-promoting the whole chain into one larger closure. The fix generalizes that
-per-operator exemption to the chain: only the chain's *final* operand can
-ever sit in that RHS role (every earlier operand is also the *left* of the
-next link, which always counts regardless of that link's own operator), so
-`contains_whatever`, `count_whatever`, and both `replace_whatever_*`
-functions special-case just the last operand when the chain's last link is
-`~~`/`!~~`. This was caught by a targeted roast sweep, not by the new dual-
-oracle test file (a good example of why the audit and the roast sweep are
-both necessary, not just the new pinned test).
+The audit caught, and CI caught a second time, real bugs in
+`contains_whatever`'s `Expr::ChainedCompare` arm — both around the same
+question: when should an operand that is *already* a `WhateverCurry` marker
+(from an explicit `(* + 1)`, or from `wrap_smartmatch_rhs`'s autoprime of a
+compound SmartMatch RHS) compose into the *enclosing* chain's curry, versus
+stay an independent, already-scoped closure?
+
+A first attempt tried to answer that precisely, by checking
+`is_wrapped_whatevercode` on each operand and special-casing the SmartMatch/
+BangTilde RHS role (mirroring the single-`Binary` SmartMatch arm's "only the
+left operand counts" rule). A local targeted roast sweep caught the
+`roast/S03-operators/relational.t` half of the problem
+(`0 == 0 ~~ (* == 0)` was over-curried into one big closure instead of
+leaving the already-materialized `(*==0)` alone) — but CI then caught a
+second, opposite-direction break the local sweep missed:
+`roast/S03-smartmatch/disorganized.t`'s `("foo" ~~ *.chars == 3) ~~ Bool`
+regressed, because a `WhateverCurry`-wrapped operand in a *non-final,
+non-SmartMatch* chain position (the `~~` in `X ~~ *.chars == 3` is not the
+chain's *last* link) was now composing into the outer chain when it should
+not have.
+
+Measuring against `main`'s pre-existing behaviour (not just against rakudo)
+resolved it: mutsu's old chain expansion ran at *parse time*, and the
+`operands.iter().any(contains_whatever)` gate it used never actually saw
+through a `WhateverCurry`-wrapped operand at all (`contains_whatever` has no
+`Expr::WhateverCurry` arm), regardless of the operand's position or the
+adjacent operator. So a chain never composed an already-wrapped operand in
+main, even for the compositional `1 < (* + 1) < 10` case that a plain
+`Binary` *would* compose (raku itself does compose that one — a real,
+narrower divergence, but not one this ticket introduces or need fix). The
+final `Expr::ChainedCompare` arm restores that exact gate,
+`operands.iter().any(contains_whatever)` with no `is_wrapped_whatevercode`
+check at all, fixing both regressions at once and matching `main`'s
+behaviour byte for byte. `count_whatever` and both `replace_whatever_*`
+still special-case a chain's final operand when its link is `~~`/`!~~` (the
+one case that *is* reachable once some other operand's bare `*` triggers the
+curry), mirroring the pre-existing single-`Binary` SmartMatch arm.
 
 ## Band-aid retirement
 
@@ -120,7 +141,11 @@ The pre-existing pins (`t/whatever-chained-comparison.t`,
 `t/whatever-thunky-operators.t`, `t/rakuast-whatever-code.t`) pass unchanged.
 `make test` (3477 files, 34034 assertions, including `cargo test --workspace`
 at 878 unit tests) is green. A targeted roast sweep covering every
-whitelisted `roast/S03-operators/*.t` (70 files), `roast/S02-types/
-{whatever,hyperwhatever}.t`, and `roast/S12-subset/{multi-dispatch,subtypes,
-type-subset}.t` is green. `cargo clippy -- -D warnings` and `cargo fmt` are
-clean.
+whitelisted `roast/S03-operators/*.t` (70 files), every whitelisted
+`roast/S03-smartmatch/*.t` (22 files, including `disorganized.t`),
+`roast/S02-types/{whatever,hyperwhatever}.t`, and `roast/S12-subset/
+{multi-dispatch,subtypes,type-subset}.t` is green — re-run in full after the
+`contains_whatever` fix above. `cargo clippy -- -D warnings` and `cargo fmt`
+are clean. CI's full `make roast` (which runs the roast suite this PR's local
+sweep did not cover, e.g. `S03-smartmatch/disorganized.t` before it was added
+to the local sweep) caught the second regression described above.
