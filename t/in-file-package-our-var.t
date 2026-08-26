@@ -20,12 +20,6 @@ use Test;
 
 plan 38;
 
-# A statement before the first `my` -- unrelated to this fix, it works around
-# a separate pre-existing defect where a package block resets an outer lexical
-# declared as the very first statement of the unit
-# (todo/tickets/package-block-resets-a-first-statement-outer-lexical.md).
-class Warm { }
-
 # --- the core collision: mainline `my` AFTER the package block --------------
 module M {
     our $x = 'our';
