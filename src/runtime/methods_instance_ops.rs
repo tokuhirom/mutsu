@@ -1358,6 +1358,23 @@ impl Interpreter {
                 }
                 let cn = class_name.resolve();
                 let class_attrs = self.collect_class_attributes(&cn);
+                // A grammar *cursor* -- the invocant Raku hands to `FAILGOAL`
+                // and friends -- is an instance of the grammar itself, and
+                // every grammar inherits Cursor's positional state. mutsu mints
+                // such a cursor with the state in its attribute map, but the
+                // grammar declares no `has $.pos`, so the user-declared-class
+                // rule below would reject `self.pos`. Answer the Cursor
+                // attributes from the stored map instead. A grammar that
+                // declares a method or an attribute of the same name still
+                // wins: the method lookup already failed above, and a declared
+                // attribute is excluded here.
+                if Self::is_cursor_state_attribute(method)
+                    && !class_attrs.iter().any(|attr| attr.name == method)
+                    && let Some(val) = attributes.as_map().get(method)
+                    && self.mro_readonly(&cn).iter().any(|c| c == "Grammar")
+                {
+                    return Ok(val.clone());
+                }
                 // For a *user-declared* class the collected public-attribute list is
                 // authoritative: a `.name` accessor resolves ONLY for a declared
                 // public `has $.name`. An undeclared name (e.g. an unknown named arg

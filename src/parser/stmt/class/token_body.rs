@@ -269,9 +269,10 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
             let next = chars[j..].iter().copied().find(|ch| !ch.is_whitespace());
             if let Some(p) = prev {
                 // A `$` that begins a capture alias / variable (`$<name>=…`,
-                // `$0=…`, `$var`, `${…}`) is a term, not the end-of-string
-                // anchor, so whitespace before it IS significant and must
-                // become `<.ws>`. Normalize such a `$` to a plain term char so
+                // `$0=…`, `$var`, `${…}`, or a twigilled `$*dyn` / `$?COMPILE`
+                // / `$^placeholder` / `$.accessor`) is a term, not the
+                // end-of-string anchor, so whitespace before it IS significant
+                // and must become `<.ws>`. Normalize such a `$` to a plain term char so
                 // `should_insert`'s `(_, '$')` anchor suppression does not fire
                 // (while its prev-based rules — after `(`/`[`/`|` — still do).
                 // A trailing whitespace run with no following atom (right
@@ -284,7 +285,8 @@ pub(crate) fn inject_implicit_rule_ws(pattern: &str) -> String {
                     Some(n)
                         if n == '$'
                             && chars.get(j + 1).is_some_and(|c| {
-                                c.is_alphanumeric() || *c == '_' || *c == '<' || *c == '{'
+                                c.is_alphanumeric()
+                                    || matches!(c, '_' | '<' | '{' | '*' | '?' | '^' | '.')
                             }) =>
                     {
                         'x'
@@ -329,6 +331,7 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
     let mut escaped = false;
     let mut in_single = false;
     let mut in_double = false;
+    let mut brace_depth = 0usize;
     while i < chars.len() {
         let c = chars[i];
         if escaped {
@@ -340,6 +343,20 @@ pub(crate) fn inject_separator_ws(pattern: &str) -> String {
         if c == '\\' {
             out.push(c);
             escaped = true;
+            i += 1;
+            continue;
+        }
+        // A `{ … }` code block (and the body of a `<?{ … }>` assertion) is
+        // main-slang code, so a `%hash` in it is a variable, not the `%`
+        // separator quantifier. Copy it through verbatim — mangling it into
+        // `%[ <.ws>? h <.ws>? ]ash` silently corrupted the block.
+        if !in_single && !in_double && (c == '{' || brace_depth > 0) {
+            if c == '{' {
+                brace_depth += 1;
+            } else if c == '}' {
+                brace_depth -= 1;
+            }
+            out.push(c);
             i += 1;
             continue;
         }

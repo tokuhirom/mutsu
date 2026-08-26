@@ -41,6 +41,9 @@ impl Interpreter {
     /// The returned captures are a DELTA relative to an EMPTY baseline
     /// (ADR-0007); `current_caps` is the engine's accumulated store, passed
     /// for READS only (backrefs, code assertions, code-block contexts).
+    /// See the twin wrapper in `regex_match_atom.rs`: a subrule's
+    /// dynamically-scoped (`$*`) parameters are established for the duration of
+    /// this call and torn down here.
     pub(super) fn regex_match_atom_with_capture_in_pkg(
         &mut self,
         atom: &RegexAtom,
@@ -49,6 +52,33 @@ impl Interpreter {
         current_caps: &RegexCaptures,
         pkg: &str,
         ignore_case: bool,
+    ) -> Option<(usize, RegexCaptures)> {
+        let mut dyn_saved = None;
+        let out = self.regex_match_atom_with_capture_in_pkg_inner(
+            atom,
+            chars,
+            pos,
+            current_caps,
+            pkg,
+            ignore_case,
+            &mut dyn_saved,
+        );
+        if let Some(saved) = dyn_saved {
+            self.restore_subrule_dynamic_params(saved);
+        }
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn regex_match_atom_with_capture_in_pkg_inner(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: &str,
+        ignore_case: bool,
+        dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Option<(usize, RegexCaptures)> {
         let _vars_seed = Self::arm_inline_vars_seed(atom, current_caps);
 
@@ -240,6 +270,7 @@ impl Interpreter {
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::WordBoundary { .. }
+            | RegexAtom::WithinWord { .. }
             | RegexAtom::StartOfLine
             | RegexAtom::EndOfLine
             | RegexAtom::EndOfString
@@ -419,6 +450,7 @@ impl Interpreter {
                         .filter(|(k, _)| !super::regex_helpers::is_dynamic_regex_var_key(k))
                         .map(|(k, v)| (k.clone(), v.clone()))
                         .collect(),
+                    dyn_params: super::regex_dynparams::active_dynamic_params(),
                 };
                 // If eager code block collection is enabled, push immediately
                 // so the block is captured even if the overall match fails later.
@@ -715,6 +747,9 @@ impl Interpreter {
             } else {
                 self.eval_regex_arg_list(&spec.arg_exprs, current_caps)?
             };
+            // Establish the subrule's `$*`-twigil parameters for the whole
+            // resolve-and-match (see `regex_dynparams`); the wrapper restores.
+            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case). Patterns are matched in place with
             // `self` against the whole `chars` starting at `pos` (ADR-0016 P1) —
@@ -769,6 +804,14 @@ impl Interpreter {
                     || (pos == 0 && after_is_word)
                     || (pos == chars.len() && before_is_word);
                 if !at_boundary {
+                    return None;
+                }
+                return Some((pos, RegexCaptures::default()));
+            }
+            if spec.lookup_name == "ww" && !spec.token_lookup {
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                if !(before_is_word && after_is_word) {
                     return None;
                 }
                 return Some((pos, RegexCaptures::default()));

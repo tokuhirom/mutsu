@@ -36,6 +36,12 @@ pub(crate) struct CodeBlockContext {
     /// travel with the block — otherwise `/ :my $c; … { $c = 1 } { make $c } /`
     /// reduces with `$c` unset.
     pub(crate) regex_vars: HashMap<String, Value>,
+    /// The dynamically-scoped rule *parameters* (`token value($*STOPPER = '"')`)
+    /// in force where this block sits. A block mentioning a `$*` variable is
+    /// always deferred to the reduce walk, by which time the rule that bound the
+    /// parameter has returned, so the binding travels with the block. Empty
+    /// unless the grammar declares such a parameter.
+    pub(crate) dyn_params: Vec<(String, Value)>,
 }
 
 /// A single entry in a quantified capture list: (from, to, subcaptures).
@@ -462,6 +468,14 @@ pub(crate) enum RegexAtom {
     /// assertion at a transition between a word char and a non-word char (either
     /// direction), i.e. `<<` or `>>`.
     WordBoundary {
+        negated: bool,
+    },
+    /// `<?ww>` (within word) / `<!ww>` (not within word) — zero-width assertion
+    /// that the position sits *between two word characters*. Unlike
+    /// [`RegexAtom::WordBoundary`] this is not the negation of a boundary: both
+    /// are false in the middle of a run of non-word characters, because a
+    /// position outside the string counts as non-word for either test.
+    WithinWord {
         negated: bool,
     },
     /// `^^` — start of line assertion (zero-width)

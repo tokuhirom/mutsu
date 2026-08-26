@@ -307,9 +307,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 | `Language/regexes.rakudoc:1966` | a subrule call with a block-literal argument (`<name: { ... }>`) fails entirely | [regex-subrule-block-argument-parse-fail.md](../todo/tickets/regex-subrule-block-argument-parse-fail.md) |
 | `Language/regexes.rakudoc:1543` | capture-group numbering across an alternation branch is wrong | [regex-capture-numbering-across-alternation.md](../todo/tickets/regex-capture-numbering-across-alternation.md) |
 | `Language/regexes.rakudoc:1587` | an embedded code block inside a quantified group doesn't persist its side effect on an outer `:my` variable | [regex-embedded-code-block-quantifier-scope.md](../todo/tickets/regex-embedded-code-block-quantifier-scope.md) |
-| `Language/regexes.rakudoc:2623` | a custom grammar `ws` token override with `<!ww>` doesn't match per raku's boundary rules | [grammar-ws-boundary-and-vertical-whitespace.md](../todo/tickets/grammar-ws-boundary-and-vertical-whitespace.md) |
 | `Language/regexes.rakudoc:2684` | `m:st(...)` regex adverb (starting positions) is unsupported | [regex-st-adverb-unsupported.md](../todo/tickets/regex-st-adverb-unsupported.md) |
-| `Language/regexes.rakudoc:2892` | a grammar's `FAILGOAL` method isn't invoked when a goal-matching conjunction (`~`) fails | [grammar-failgoal-not-invoked.md](../todo/tickets/grammar-failgoal-not-invoked.md) |
 | `Language/regexes.rakudoc:2935` | `<~~>` recursive self-match returns the wrong (inner, not outer) nesting level | [regex-recursive-self-match-wrong-nesting-level.md](../todo/tickets/regex-recursive-self-match-wrong-nesting-level.md) |
 | `Language/traps.rakudoc:91` | `$++` inside a string-interpolated block doesn't reset per call the way raku's does | [dollar-plusplus-state-scope-in-interpolated-block.md](../todo/tickets/dollar-plusplus-state-scope-in-interpolated-block.md) |
 | `Language/traps.rakudoc:212` | `$.attr *= 2` inside a method throws `X::Assignment::RO` where current raku silently no-ops | [dollar-dot-attr-compound-assign-spurious-ro-error.md](../todo/tickets/dollar-dot-attr-compound-assign-spurious-ro-error.md) |
@@ -391,7 +389,6 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
 | `Language/grammars.rakudoc:112,132` | `[+]`/`[-]` reduce meta-op silently gives `0` for Match/user-Numeric objects (arith ops bypass the numeric-coercion bridge `.reduce()`/binary `+` use) | [reduce-metaop-numeric-coercion-bypassed.md](../todo/tickets/reduce-metaop-numeric-coercion-bypassed.md) |
 | `Language/grammars.rakudoc:387` | a grammar-embedded custom assertion method (`<.method>`) sees `self` as an uninstantiated type object | [grammar-embedded-custom-assertion-method-self-type-object.md](../todo/tickets/grammar-embedded-custom-assertion-method-self-type-object.md) |
 | `Language/grammars.rakudoc:289` | `.tail ~= ...` on a private class-attribute array silently no-ops instead of mutating the last element | [tail-lvalue-compound-assign-attribute-array-noop.md](../todo/tickets/tail-lvalue-compound-assign-attribute-array-noop.md) |
-| `Language/grammars.rakudoc:509` | a grammar rule with dynamic-variable parameters (`rule TOP ($*word, $*extra)`) + `.parse(..., :args(...))` fails entirely (harness mis-bucketed as drift) | [grammar-dynamic-rule-parameters-args-fail.md](../todo/tickets/grammar-dynamic-rule-parameters-args-fail.md) |
 | `Language/syntax.rakudoc:384` | adverb values needing BEGIN-time evaluation don't resolve (`$a:foo«$c»` for a `constant $c`, `$foo:bar(1+1)`) — the key-less form (`:354`) is fixed, see [news](../news/2026-08/keyless-colon-pair-variable-names.md) | [begin-time-adverb-value-interpolation.md](../todo/deep/begin-time-adverb-value-interpolation.md) |
 | `Language/syntax.rakudoc:429` | `OUR::` pseudo-package doesn't expose file-scope `our`-declared package symbols | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
 | `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
@@ -734,12 +731,11 @@ Found in the 2026-08-22 batch-6 re-run of `Label`/`IO::Spec::Win32`/`Pair`/`Attr
   [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md)
   (`shell()`'s spawned child process's stdout is lost even with **no** `$*OUT` redirection at all
   — confirmed with `shell("raku some-file-that-says-42.raku")` alone); not re-filed.
-- `Language/regexes-best-practices.rakudoc:163` (`token ws { <!ww> \h* }` inside a grammar) —
-  matches the already-open
-  [grammar-ws-boundary-and-vertical-whitespace.md](../todo/tickets/grammar-ws-boundary-and-vertical-whitespace.md),
-  whose repro now also crashes identically on current `main` (`No such method 'ww' for invocant of
-  type 'Match'`, upgraded from the ticket's originally-recorded "silently wrong match" symptom) —
-  ticket updated with this finding rather than re-filed.
+- `Language/regexes-best-practices.rakudoc:163` (`token ws { <!ww> \h* }` inside a grammar) — was
+  the same finding as the then-open `grammar-ws-boundary-and-vertical-whitespace` ticket, whose
+  repro crashed identically (`No such method 'ww' for invocant of type 'Match'`); both are now
+  [resolved](../news/2026-08/grammar-ws-boundary-and-vertical-whitespace.md) — `<?ww>`/`<!ww>` are
+  implemented as real zero-width assertions.
 
 Found in the 2026-08-22 batch-6 re-run of `js-nutshell`/`IO::Spec::Unix`/`py-nutshell`/
 `X::AdHoc`/`Metamodel::Trusting`/`X::Proc::Async::CharsOrBytes`/`Iterable`/

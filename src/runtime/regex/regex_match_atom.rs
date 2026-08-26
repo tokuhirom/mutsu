@@ -122,6 +122,12 @@ impl Interpreter {
         out
     }
 
+    /// Matches `atom`, with any dynamically-scoped (`$*`) parameters a subrule
+    /// atom declares established for the duration of the call and torn down
+    /// afterwards — see `regex_dynparams`. The inner function reports what it
+    /// bound through `dyn_saved` (it can only know once the subrule's arguments
+    /// are evaluated) and returns from a dozen places, so the teardown lives
+    /// here rather than at each of them.
     pub(super) fn regex_match_atom_all_with_capture_in_pkg(
         &mut self,
         atom: &RegexAtom,
@@ -130,6 +136,33 @@ impl Interpreter {
         current_caps: &RegexCaptures,
         pkg: &str,
         ignore_case: bool,
+    ) -> Vec<(usize, RegexCaptures)> {
+        let mut dyn_saved = None;
+        let out = self.regex_match_atom_all_with_capture_in_pkg_inner(
+            atom,
+            chars,
+            pos,
+            current_caps,
+            pkg,
+            ignore_case,
+            &mut dyn_saved,
+        );
+        if let Some(saved) = dyn_saved {
+            self.restore_subrule_dynamic_params(saved);
+        }
+        out
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn regex_match_atom_all_with_capture_in_pkg_inner(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        current_caps: &RegexCaptures,
+        pkg: &str,
+        ignore_case: bool,
+        dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Vec<(usize, RegexCaptures)> {
         // Return value convention: LOWEST PRIORITY FIRST, HIGHEST PRIORITY LAST
         // (the engine iterates the vec in reverse, trying the highest-priority
@@ -476,6 +509,11 @@ impl Interpreter {
                 };
                 values
             };
+            // A `$*`-twigil parameter of the subrule is established in the
+            // dynamic scope *before* its pattern is resolved (the pattern may
+            // interpolate it) and stays there for the whole match, so nested
+            // subrules and code blocks see it. The caller tears it back down.
+            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
             // Resolve + parse the candidates once (memoized for the
             // argument-less common case — see PARSED_TOKEN_CANDIDATES).
             let (candidates, raw_empty) = self.parsed_subrule_candidates(&spec, pkg, &arg_values);

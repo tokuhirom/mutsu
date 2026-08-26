@@ -287,12 +287,22 @@ impl Interpreter {
             .filter(|(k, _)| effective.contains_key(k))
             .collect();
         effective.extend(overrides);
-        let saved: Vec<(String, Option<Value>)> = effective
+        let mut saved: Vec<(String, Option<Value>)> = effective
             .keys()
             .map(|k| ((*k).clone(), self.env.get(k.as_str()).cloned()))
             .collect();
         for (k, v) in effective {
             self.env.insert(k.clone(), v.clone());
+        }
+        // Re-establish the dynamically-scoped rule parameters that were in force
+        // where the block sits. The rule that bound them returned long before
+        // this replay, so the block would otherwise read `Nil` for a `$*` name
+        // its own signature introduced.
+        for (key, value) in &ctx.dyn_params {
+            if !saved.iter().any(|(k, _)| k == key) {
+                saved.push((key.clone(), self.env.get(key.as_str()).cloned()));
+            }
+            self.env.insert(key.clone(), value.clone());
         }
         saved
     }
