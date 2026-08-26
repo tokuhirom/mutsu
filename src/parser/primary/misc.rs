@@ -16,6 +16,7 @@ mod reduction;
 pub(crate) use anon_decl::next_anon_role_name;
 pub(super) use anon_decl::{
     anon_class_expr, anon_grammar_expr, anon_role_expr, indirect_method_call,
+    mark_anon_package_decl,
 };
 pub(super) use lambda::{arrow_lambda, capture_literal};
 pub(super) use reduction::reduction_op;
