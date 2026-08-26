@@ -1,6 +1,5 @@
 use super::*;
 use crate::ast::Expr;
-use crate::parser::expr::expression;
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::token_kind::lookup_unicode_name_string;
 
@@ -285,17 +284,13 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             if end > 0 {
                 let block_src = rest[1..end].trim();
                 if !block_src.is_empty() {
-                    // Use DoStmt(Block) for scope isolation — block-local `my` doesn't leak
-                    if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
-                        && sr.trim().is_empty()
+                    // DoStmt(Block) for scope isolation — block-local `my` doesn't
+                    // leak, and a bare `$` is a `state` of THIS block (see
+                    // `parse_interpolation_block`).
+                    if let Some(block) =
+                        crate::parser::primary::string::parse_interpolation_block(block_src)
                     {
-                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))));
-                    } else if let Ok((expr_rest, expr)) = expression(block_src)
-                        && expr_rest.trim().is_empty()
-                    {
-                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(vec![
-                            crate::ast::Stmt::Expr(expr),
-                        ]))));
+                        parts.push(block);
                     }
                 }
                 rest = &rest[end + 1..];
@@ -430,16 +425,13 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
             if end > 0 {
                 let block_src = rest[1..end].trim();
                 if !block_src.is_empty() {
-                    if let Ok((sr, stmts)) = crate::parser::stmt::stmt_list_pub(block_src)
-                        && sr.trim().is_empty()
+                    // DoStmt(Block) for scope isolation — block-local `my` doesn't
+                    // leak, and a bare `$` is a `state` of THIS block (see
+                    // `parse_interpolation_block`).
+                    if let Some(block) =
+                        crate::parser::primary::string::parse_interpolation_block(block_src)
                     {
-                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(stmts))));
-                    } else if let Ok((expr_rest, expr)) = expression(block_src)
-                        && expr_rest.trim().is_empty()
-                    {
-                        parts.push(Expr::DoStmt(Box::new(crate::ast::Stmt::Block(vec![
-                            crate::ast::Stmt::Expr(expr),
-                        ]))));
+                        parts.push(block);
                     }
                 }
                 rest = &rest[end + 1..];

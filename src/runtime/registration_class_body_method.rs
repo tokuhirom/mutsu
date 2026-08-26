@@ -172,7 +172,15 @@ impl Interpreter {
             is_my: decl.is_submethod,
             role_origin: None,
             original_role: None,
-            return_type: decl.return_type.clone(),
+            // `::?CLASS` is fixed at compile time to the declaring class, in a
+            // RETURN constraint (`method mark(--> ::?CLASS:D)`, the idiom
+            // Language/grammars.rakudoc uses) exactly as in the parameter
+            // constraints substituted above. Left literal, the return check
+            // tried to resolve a type literally named `::?CLASS:D`.
+            return_type: decl
+                .return_type
+                .as_ref()
+                .map(|rt| rt.replace("::?CLASS", cx.name)),
             compiled_code: installed_compiled_code,
             compiled_fns: installed_compiled_fns,
             delegation: None,

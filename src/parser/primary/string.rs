@@ -22,6 +22,7 @@ pub(super) use helpers::{
     quotewords_atom_expr_allomorphic, read_bracketed, unicode_bracket_close_pub,
     unrecognized_backslash_perror,
 };
+pub(in crate::parser::primary) use interp_content::parse_interpolation_block;
 pub(super) use interp_content::{finalize_interpolation, parse_braced_closure_body};
 pub(super) use interp_var::try_interpolate_var;
 pub(super) use q_string::{big_q_string, q_string};

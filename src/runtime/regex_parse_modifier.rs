@@ -355,6 +355,17 @@ impl Interpreter {
                 continue;
             }
             if ch == '$' {
+                // `$$` is the end-of-line anchor, not a scalar reference. It has
+                // to be recognised BEFORE the `${…}` branch below: in `/ . $${ … } /`
+                // the `{` opens a code block, and reading `${ $c = $¢ }` as a
+                // variable named " $c = $¢ " silently replaced the anchor plus the
+                // whole block with the empty interpolation of an unknown name.
+                if i + 1 < chars.len() && chars[i + 1] == '$' {
+                    out.push('$');
+                    out.push('$');
+                    i += 2;
+                    continue;
+                }
                 let inside_sq = is_inside_single_quoted_regex_literal(&chars, i);
                 let mut j = i + 1;
                 if j < chars.len() && chars[j] == '{' {

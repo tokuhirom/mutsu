@@ -20,7 +20,7 @@
 //! same as before.
 
 use super::*;
-use crate::runtime::{CapNode, MatchTarget, SILENT_ACTION_MARKER_PREFIX};
+use crate::runtime::{CapNode, MatchTarget, NamedSlot, PosSlot, SILENT_ACTION_MARKER_PREFIX};
 use std::sync::OnceLock;
 
 /// Interned class symbol for `Match`.
@@ -131,31 +131,7 @@ impl MatchNode {
         let pos_vals: Vec<Value> = kids
             .positional
             .iter()
-            .map(|slot| {
-                // An unmatched optional capture (`(x)?` zero match) renders as Nil.
-                if slot.nil {
-                    return Value::Nil;
-                }
-                if let Some(qlist) = &slot.quantified {
-                    let arr: Vec<Value> = qlist
-                        .iter()
-                        .map(|(qfrom, qto, subcap)| {
-                            if let Some(sc) = subcap {
-                                return self.lazy_child(sc);
-                            }
-                            span_leaf_match(*qfrom, *qto, &self.target)
-                        })
-                        .collect();
-                    return Value::array(arr);
-                }
-                if let Some(subcap) = &slot.subcap {
-                    return self.lazy_child(subcap);
-                }
-                // ADR-0016 P4: every slot carries its span, so a subcap-less
-                // leaf renders with its REAL offsets (pre-P4 this was the
-                // text-only fallback with fabricated `0..len`).
-                span_leaf_match(slot.from, slot.to, &self.target)
-            })
+            .map(|slot| Value::pos_slot_value(slot, &self.target))
             .collect();
 
         // Silent-action captures: hidden `<.foo>` subrule matches (stored
@@ -170,14 +146,7 @@ impl MatchNode {
                 }
                 continue;
             }
-            let vals: Vec<Value> = slot.nodes.iter().map(|sc| self.lazy_child(sc)).collect();
-            if vals.len() == 1 && !slot.quantified {
-                sub_named.insert(key.resolve(), vals[0].clone());
-            } else {
-                // Quantified names (including zero-iteration ones) and
-                // multi-entry captures render as arrays.
-                sub_named.insert(key.resolve(), Value::real_array(vals));
-            }
+            sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
         }
 
         let mut attrs = AttrMap::new();
@@ -235,6 +204,58 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
 }
 
 impl Value {
+    /// Render one positional capture slot exactly as a Match's `.list` exposes
+    /// it: `Nil` for an unmatched optional, an Array for a quantified group,
+    /// a lazy child Match for a group with its own inner captures, otherwise a
+    /// span leaf.
+    ///
+    /// Shared with the regex engine's *mid-match* variable binding, so `$0`
+    /// read from inside an embedded `{ … }` code block is the same `Match` the
+    /// finished `$/[0]` will be (raku: `/ (\d) { say $0 } /` prints `｢1｣`, not
+    /// the bare string). Building the slot's value directly keeps the parent
+    /// cursor lazy — the block may never look at `$/` at all.
+    pub(crate) fn pos_slot_value(slot: &PosSlot, target: &MatchTarget) -> Value {
+        // An unmatched optional capture (`(x)?` zero match) renders as Nil.
+        if slot.nil {
+            return Value::Nil;
+        }
+        if let Some(qlist) = &slot.quantified {
+            let arr: Vec<Value> = qlist
+                .iter()
+                .map(|(qfrom, qto, subcap)| match subcap {
+                    Some(sc) => Value::lazy_match(Arc::clone(sc), target.clone()),
+                    None => span_leaf_match(*qfrom, *qto, target),
+                })
+                .collect();
+            return Value::array(arr);
+        }
+        if let Some(subcap) = &slot.subcap {
+            return Value::lazy_match(Arc::clone(subcap), target.clone());
+        }
+        // ADR-0016 P4: every slot carries its span, so a subcap-less leaf
+        // renders with its REAL offsets (pre-P4 this was the text-only
+        // fallback with fabricated `0..len`).
+        span_leaf_match(slot.from, slot.to, target)
+    }
+
+    /// Render one named capture slot exactly as a Match's `.hash` exposes it:
+    /// a single Match, or an Array when the name was quantified or captured
+    /// more than once. Companion of [`Self::pos_slot_value`].
+    pub(crate) fn named_slot_value(slot: &NamedSlot, target: &MatchTarget) -> Value {
+        let vals: Vec<Value> = slot
+            .nodes
+            .iter()
+            .map(|sc| Value::lazy_match(Arc::clone(sc), target.clone()))
+            .collect();
+        if vals.len() == 1 && !slot.quantified {
+            vals.into_iter().next().unwrap()
+        } else {
+            // Quantified names (including zero-iteration ones) and multi-entry
+            // captures render as arrays.
+            Value::real_array(vals)
+        }
+    }
+
     /// Eager leaf Match for a TEXT-ONLY capture entry (no recorded span).
     /// ADR-0016 P4 removed the stored text axis, so the matcher never
     /// produces these; it survives only for the exploded text-carrier builder
