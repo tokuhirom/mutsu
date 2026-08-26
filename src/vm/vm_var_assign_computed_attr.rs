@@ -236,11 +236,38 @@ impl Interpreter {
         bare: crate::symbol::Symbol,
         is_private: bool,
     ) -> Option<Value> {
-        let self_val = self.get_env_with_main_alias("self")?;
-        let attributes = Self::self_instance_attrs(&self_val)?;
-        let map = attributes.as_map();
-        let key = self.attr_key_in_map(bare, is_private, &map)?;
-        map.get(key).cloned()
+        if let Some(self_val) = self.get_env_with_main_alias("self")
+            && let Some(attributes) = Self::self_instance_attrs(&self_val)
+        {
+            let map = attributes.as_map();
+            if let Some(key) = self.attr_key_in_map(bare, is_private, &map) {
+                return map.get(key).cloned();
+            }
+        }
+        self.read_class_level_attr_cell(bare, is_private)
+    }
+
+    /// Fall back to a class-level attribute (`my $.x` / `our $.x`) when the
+    /// instance-cell lookup above found nothing — either because `self` is a
+    /// type object (`Foo.imm`, no instance at all) or because the bare name is
+    /// simply not one of `self`'s per-instance attributes. A class-level
+    /// attribute is never stored in any instance's cell; it lives in exactly
+    /// one place, `ClassDef::class_level_attrs` on the declaring class, which
+    /// `get_class_level_attr` reads directly through the shared registry (no
+    /// per-call env mirror — see ADR-0013/ADR-0039's "one canonical cell"
+    /// discipline). Only public (`.`-twigil) attributes ever reach
+    /// `class_level_attrs` — a `!`-twigil is a parse error on `my`/`our` — so a
+    /// private lookup can never legitimately land here.
+    fn read_class_level_attr_cell(
+        &self,
+        bare: crate::symbol::Symbol,
+        is_private: bool,
+    ) -> Option<Value> {
+        if is_private {
+            return None;
+        }
+        let owner = self.method_class_stack_top_str()?;
+        self.get_class_level_attr(owner, bare.as_str())
     }
 
     /// The instance class `Symbol` and shared attribute cell for a `self` value,
@@ -368,20 +395,28 @@ impl Interpreter {
     /// Mixin). No-op when `self` is not a concrete instance or the attribute does
     /// not exist on it.
     fn write_attr_cell_by_key(&self, bare: crate::symbol::Symbol, is_private: bool, val: Value) {
-        let Some(self_val) = self.get_env_with_main_alias("self") else {
-            return;
-        };
-        let Some(attributes) = Self::self_instance_attrs(&self_val) else {
-            return;
-        };
-        let key = {
-            let map = attributes.as_map();
-            self.attr_key_in_map(bare, is_private, &map)
-        };
-        if let Some(key) = key {
-            self.record_build_attr_write(&attributes, key);
-            attributes.insert(key, val);
+        if let Some(self_val) = self.get_env_with_main_alias("self")
+            && let Some(attributes) = Self::self_instance_attrs(&self_val)
+        {
+            let key = {
+                let map = attributes.as_map();
+                self.attr_key_in_map(bare, is_private, &map)
+            };
+            if let Some(key) = key {
+                self.record_build_attr_write(&attributes, key);
+                attributes.insert(key, val);
+                return;
+            }
         }
+        // Class-level attribute fallback: see `read_class_level_attr_cell`'s
+        // doc comment for why this is the canonical (not a mirrored) store.
+        if is_private {
+            return;
+        }
+        let Some(owner) = self.method_class_stack_top_str() else {
+            return;
+        };
+        self.set_class_level_attr(owner, bare.as_str(), val);
     }
 
     /// Note that `key` was assigned on `attributes` while that instance's BUILD

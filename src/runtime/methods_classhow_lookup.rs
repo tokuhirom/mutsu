@@ -202,6 +202,40 @@ impl Interpreter {
                 }
             }
         }
+        // Class-level attributes (`my $.x` / `our $.x`) get an auto-generated
+        // accessor too, but they are never `class_def.attributes` entries
+        // (real Raku: `Foo.^attributes` stays empty for one of these — the
+        // declaration is a class-scoped lexical, not an instance attribute;
+        // see the matching comment in `collect_class_methods`). Unlike the
+        // instance-attribute loop above, `has_class_level_attr` already walks
+        // the MRO on its own, so this checks the receiver's class directly
+        // rather than needing a second per-level pass. `Foo.counter = 99`
+        // works even though `rw` is `False` here — assignment is handled by a
+        // dedicated write path (`set_class_level_attr`), not by the
+        // accessor's own `rw`-ness, matching real Raku (`.^lookup('counter')
+        // .rw` is also `False`).
+        if self.has_class_level_attr(&class_name_str, method_name) {
+            let mut env = crate::env::Env::new();
+            env.insert(
+                "__mutsu_callable_type".to_string(),
+                Value::str_from("Method"),
+            );
+            let callable = Value::make_sub(
+                class_name,
+                Symbol::intern(method_name),
+                vec!["self".to_string()],
+                vec![Self::make_invocant_param(&class_name_str)],
+                vec![],
+                false,
+                env,
+            );
+            return Some(Self::wrap_accessor_method_object(
+                method_name,
+                &class_name_str,
+                false,
+                callable,
+            ));
+        }
         // Check grammar token/rule/regex definitions
         let token_key = format!("{}::{}", class_name_str, method_name);
         if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))

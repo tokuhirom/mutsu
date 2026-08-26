@@ -326,7 +326,7 @@ impl Interpreter {
     /// Returns the cached interned-symbol MRO — an `Arc` clone, no per-call
     /// `String` allocations (the old `Vec<String>` clone was a per-dispatch
     /// allocation hot spot).
-    pub(crate) fn class_mro(&mut self, class_name: &str) -> std::sync::Arc<[Symbol]> {
+    pub(crate) fn class_mro(&self, class_name: &str) -> std::sync::Arc<[Symbol]> {
         if let Some(mro) = self.registry().class_mro_readonly(class_name) {
             return mro;
         }
