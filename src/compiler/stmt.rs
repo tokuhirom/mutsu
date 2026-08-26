@@ -4095,7 +4095,7 @@ impl Compiler {
                 }
             }
             Stmt::TokenDecl { .. } | Stmt::RuleDecl { .. } => {
-                let idx = self.code.add_token_decl_plan(stmt);
+                let idx = self.code.add_token_decl_plan(stmt, self.last_source_line);
                 self.code.emit(OpCode::RegisterDecl(idx));
             }
             Stmt::ProtoDecl {

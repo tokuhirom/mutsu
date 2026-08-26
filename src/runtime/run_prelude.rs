@@ -352,6 +352,7 @@ impl Interpreter {
             is_default: false,
             deprecated_message: None,
             source_file: self.current_source_file(),
+            source_line: None,
             decl_order: 0,
             compiled: None,
             body_fp_cache: std::sync::OnceLock::new(),

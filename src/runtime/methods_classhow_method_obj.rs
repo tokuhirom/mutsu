@@ -221,6 +221,22 @@ impl Interpreter {
         owner: &str,
         is_regex: bool,
     ) -> Value {
+        self.make_native_method_object_ex_loc(name, owner, is_regex, None, None)
+    }
+
+    /// [`Self::make_native_method_object_ex`] plus an explicit `Code.line`/
+    /// `Code.file` -- used for a grammar `token`/`rule`/`regex`, whose
+    /// declaration site lives on its `FunctionDef` (`Registry::token_defs`),
+    /// not on a compiled body the way a `Sub`/`Method` carries it (ADR-0009:
+    /// a token/rule has no compiled body at all).
+    pub(super) fn make_native_method_object_ex_loc(
+        &self,
+        name: &str,
+        owner: &str,
+        is_regex: bool,
+        line: Option<i64>,
+        file: Option<String>,
+    ) -> Value {
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
         attrs.insert("is_dispatcher".to_string(), Value::FALSE);
@@ -237,14 +253,19 @@ impl Interpreter {
         );
         attrs.insert("returns".to_string(), Value::package(Symbol::intern("Mu")));
         attrs.insert("of".to_string(), Value::package(Symbol::intern("Mu")));
-        // `Code.line`/`Code.file`: this builder covers methods with no Raku
-        // declaration mutsu can point at -- a native method implemented in Rust,
-        // and a grammar `token`/`rule` (whose `Registry::token_defs` entry keeps
-        // the declaring file but no line). Both answer `Nil` rather than a
-        // fabricated location; see
-        // `todo/tickets/code-line-file-on-regex-and-grammar-token.md`.
-        attrs.insert("line".to_string(), Value::NIL);
-        attrs.insert("file".to_string(), Value::NIL);
+        // `Code.line`/`Code.file`: a native method implemented in Rust has no
+        // Raku declaration to point at, so it answers `Nil` for both (`line`/
+        // `file` stay `None` from every caller but the grammar token/rule
+        // lookup, which passes its `FunctionDef`'s recorded location). Never a
+        // fabricated location.
+        attrs.insert(
+            "line".to_string(),
+            line.map(Value::int).unwrap_or(Value::NIL),
+        );
+        attrs.insert(
+            "file".to_string(),
+            file.map(Value::str).unwrap_or(Value::NIL),
+        );
         // `.WHY` (`dispatch_why`'s `Instance` branch) builds its doc-comment
         // lookup key from these two, the same way it does for a plain user
         // method -- without them, a grammar token/rule/regex's `#|` comment

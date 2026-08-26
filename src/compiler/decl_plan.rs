@@ -645,58 +645,72 @@ impl Compiler {
         body: &[Stmt],
         package_name: &str,
     ) -> Vec<crate::opcode::DeferredBodyOp> {
-        crate::opcode::role_body_plan(body)
-            .into_iter()
-            .filter_map(|op| match op {
-                crate::opcode::RoleBodyOp::Deferred { raw, .. } => Some(raw),
-                _ => None,
-            })
-            // `RoleBodyOp::Deferred`'s catch-all (D7-4) also matches
-            // `SetLine` source-line markers and the `__mutsu_stub_die`/
-            // `__mutsu_stub_warn` stub markers, but `walk_role_body`'s own
-            // runtime dispatch treats neither as a deferred statement
-            // (`Stmt::SetLine(_) => {}` is a silent skip; a stub marker sets
-            // `is_stub_role` instead of deferring). Filtering them out here
-            // keeps `deferred_body_ops` empty exactly when it should be —
-            // without it, a method-only role body (no real deferred
-            // statement) still produced non-empty `deferred_body_ops` from
-            // its `SetLine` markers alone, and D8-2's consumer cutover
-            // would then run `run_composed_role_deferred_body`/
-            // `run_role_body_for_composition` where baseline's
-            // `.is_empty()` early-return skipped it entirely — spuriously
-            // calling `bind_type_capture` on every role param (including
-            // `&`/`$`-sigil VALUE params it was never meant for) and
-            // clobbering a `&f`-typed parameter's env binding with a type
-            // object instead of the callable
+        // Tracks the running `Stmt::SetLine` value across the walk, exactly
+        // like `class_body_plan` does for a class body's own `token`/`rule`
+        // statements — a role's `TokenRule` op carries no line of its own
+        // (see `DeferredBodyOp::source_line`), only the `SetLine` marker
+        // immediately preceding it in the body does. `RoleBodyOp::Deferred`'s
+        // catch-all (D7-4) matches `SetLine` markers too, so they are seen
+        // here before the loop below filters them out (along with the
+        // `__mutsu_stub_die`/`__mutsu_stub_warn` stub markers) the same way
+        // the original `.filter()` did — see that filter's own doc comment,
+        // preserved below, for why both must still be dropped from the
+        // output.
+        let mut decl_line: Option<i64> = None;
+        let mut out = Vec::new();
+        for op in crate::opcode::role_body_plan(body) {
+            let crate::opcode::RoleBodyOp::Deferred { raw, .. } = op else {
+                continue;
+            };
+            if let Stmt::SetLine(line) = raw.as_ref() {
+                decl_line = Some(*line);
+                continue;
+            }
+            // `walk_role_body`'s own runtime dispatch treats neither a
+            // `SetLine` marker (silent skip) nor a stub marker (sets
+            // `is_stub_role` instead of deferring) as a deferred statement.
+            // Dropping them here keeps `deferred_body_ops` empty exactly when
+            // it should be — without it, a method-only role body (no real
+            // deferred statement) still produced non-empty
+            // `deferred_body_ops` from its `SetLine` markers alone, and
+            // D8-2's consumer cutover would then run
+            // `run_composed_role_deferred_body`/`run_role_body_for_composition`
+            // where baseline's `.is_empty()` early-return skipped it
+            // entirely — spuriously calling `bind_type_capture` on every
+            // role param (including `&`/`$`-sigil VALUE params it was never
+            // meant for) and clobbering a `&f`-typed parameter's env binding
+            // with a type object instead of the callable
             // (`t/role-double-parametric-args-distinct.t`'s
             // `role R5[&f] { method v() { f(3) } }` caught this).
-            .filter(|raw| {
-                !matches!(raw.as_ref(), Stmt::SetLine(_))
-                    && !matches!(
-                        raw.as_ref(),
-                        Stmt::Expr(Expr::Call { name, .. })
-                            if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
-                    )
-            })
-            .map(|raw| {
-                let kind = crate::opcode::classify_deferred_body_op_kind(&raw);
-                let chunk = if kind == crate::opcode::DeferredBodyOpKind::TypeDecl {
-                    Some(self.compile_decl_stmts_chunk_in_package(
-                        std::slice::from_ref(raw.as_ref()),
-                        package_name,
-                    ))
-                } else {
-                    None
-                };
-                let declared_vars = crate::opcode::deferred_body_op_declared_vars(&raw);
-                crate::opcode::DeferredBodyOp {
-                    kind,
-                    chunk,
-                    declared_vars,
-                    raw: *raw,
-                }
-            })
-            .collect()
+            if matches!(
+                raw.as_ref(),
+                Stmt::Expr(Expr::Call { name, .. })
+                    if name == "__mutsu_stub_die" || name == "__mutsu_stub_warn"
+            ) {
+                continue;
+            }
+            let kind = crate::opcode::classify_deferred_body_op_kind(&raw);
+            let chunk = if kind == crate::opcode::DeferredBodyOpKind::TypeDecl {
+                Some(self.compile_decl_stmts_chunk_in_package(
+                    std::slice::from_ref(raw.as_ref()),
+                    package_name,
+                ))
+            } else {
+                None
+            };
+            let declared_vars = crate::opcode::deferred_body_op_declared_vars(&raw);
+            let source_line = (kind == crate::opcode::DeferredBodyOpKind::TokenRule)
+                .then_some(decl_line)
+                .flatten();
+            out.push(crate::opcode::DeferredBodyOp {
+                kind,
+                chunk,
+                declared_vars,
+                source_line,
+                raw: *raw,
+            });
+        }
+        out
     }
 
     /// Precompile each `does`/`hides`/`is hidden` clause of a role's own body

@@ -144,6 +144,24 @@ impl Interpreter {
                 return (data.source_line, data.source_file.clone());
             }
         }
+        // A top-level `my token`/`my regex`/`my rule` (or one declared `our`)
+        // has no entry in `registry().functions` at all — its `FunctionDef`
+        // lives in `Registry::token_defs` instead (ADR-0009: no compiled
+        // body). `&top-tok.line` reaches here as a by-name `Routine` value the
+        // same way a bare sub reference does, so check that table too,
+        // reporting the first-declared candidate's location (mirroring the
+        // multi-dispatcher convention above).
+        let exact_local = Symbol::intern(&format!("{package}::{name}"));
+        let exact_global = Symbol::intern(&format!("GLOBAL::{name}"));
+        let registry = self.registry();
+        if let Some(def) = registry
+            .token_defs
+            .get(&exact_local)
+            .or_else(|| registry.token_defs.get(&exact_global))
+            .and_then(|defs| defs.first())
+        {
+            return (def.source_line.map(|l| l as u32), def.source_file.clone());
+        }
         (None, None)
     }
 

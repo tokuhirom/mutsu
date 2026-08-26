@@ -236,12 +236,37 @@ impl Interpreter {
                 callable,
             ));
         }
-        // Check grammar token/rule/regex definitions
-        let token_key = format!("{}::{}", class_name_str, method_name);
-        if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
-            && !defs.is_empty()
-        {
-            return Some(self.make_native_method_object_ex(method_name, &class_name_str, true));
+        // Check grammar token/rule/regex definitions -- walks the MRO like the
+        // class-methods loop above, so a `token`/`rule` declared only on an
+        // ancestor grammar (`grammar Child is Parent {}`) is found too,
+        // exactly as real Raku's `.^lookup` finds an inherited method.
+        // Without this, `Child.^lookup("inherited-tok")` answered `(Mu)`
+        // even though `Child.parse(..., :rule<inherited-tok>)` dispatches to
+        // it correctly -- a pre-existing MRO gap in `.^lookup` alone, not in
+        // token dispatch.
+        for owner_sym in mro.iter() {
+            let owner_str = owner_sym.as_str();
+            let token_key = format!("{owner_str}::{method_name}");
+            if let Some(defs) = self.registry().token_defs.get(&Symbol::intern(&token_key))
+                && let Some(first) = defs.first()
+            {
+                // `Code.line`/`Code.file`: report the first-declared
+                // candidate's location, mirroring how a multi `sub`/`method`
+                // dispatcher reports its first candidate's line (there is no
+                // separate dispatcher-level declaration site to point at
+                // instead). `owner_str` (the DECLARING grammar), not
+                // `class_name_str` (the receiver), both for this and for the
+                // reported `.package` -- matching a method's own "declaring
+                // class wins" rule, and required for the returned callable
+                // to actually resolve back to `Registry::token_defs`.
+                return Some(self.make_native_method_object_ex_loc(
+                    method_name,
+                    owner_str,
+                    true,
+                    first.source_line,
+                    first.source_file.clone(),
+                ));
+            }
         }
         // Check built-in type methods — return a native Method Instance
         // (`__mutsu_method_callable` carries the Routine marker the runtime

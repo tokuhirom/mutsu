@@ -142,6 +142,15 @@ impl Interpreter {
             }
             let r = match &op.chunk {
                 Some(chunk) => self.run_compiled_block_raw(&chunk.code, &chunk.fns),
+                // `TokenRule`: register directly from the raw statement plus
+                // its precomputed `source_line` instead of recompiling it
+                // through `run_block_raw` (a fresh `Compiler::new()` there has
+                // no line history, so the recompile would silently lose
+                // `Code.line`/`Code.file` -- see `register_token_decl_from_stmt`).
+                None if is_regex_decl => {
+                    self.register_token_decl_from_stmt(&op.raw, op.source_line);
+                    Ok(())
+                }
                 None => self.run_block_raw(std::slice::from_ref(&op.raw)),
             };
             if is_type_decl || is_regex_decl {
