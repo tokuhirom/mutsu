@@ -32,6 +32,28 @@ impl Interpreter {
         crate::runtime::utils::coerce_to_hash(value)
     }
 
+    /// [`coerce_attr_value_by_sigil`](Self::coerce_attr_value_by_sigil) for a
+    /// value **supplied by the caller** (`C.new(x => @src)`, `self.bless(|%args)`).
+    ///
+    /// An `@`/`%` attribute IS a container and the object owns it: Raku assigns
+    /// the supplied list's elements INTO the attribute's own container, so a
+    /// later mutation through the attribute (`$o.x.push(9)`, `$o.x = (…)`,
+    /// `$o.h<k> = …`) can never reach the caller's `@src`. Sharing the supplied
+    /// `Gc` made every one of those write straight through to it.
+    ///
+    /// Only the *provided-argument* sites use this; a default expression
+    /// (`has @.x = 1,2`) is re-evaluated per instance and is already the
+    /// object's own container.
+    pub(crate) fn coerce_provided_attr_value_by_sigil(val: Value, sigil: char) -> Value {
+        let coerced = Self::coerce_attr_value_by_sigil(val, sigil);
+        if matches!(sigil, '@' | '%')
+            && let Some(owned) = coerced.detached_container_copy()
+        {
+            return owned;
+        }
+        coerced
+    }
+
     /// Coerce a value based on attribute sigil: @ → Array, % → Hash
     pub(crate) fn coerce_attr_value_by_sigil(val: Value, sigil: char) -> Value {
         match sigil {

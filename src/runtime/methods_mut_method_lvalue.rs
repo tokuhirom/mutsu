@@ -86,6 +86,49 @@ impl Interpreter {
         deref
     }
 
+    /// Write `value` into element `idx` of the array `target` for an
+    /// rw-method lvalue (`@a.head = v`, `@a.tail ~= 'x'`, `@a.first(…) = v`).
+    ///
+    /// The write goes **into the container** (`array_set_in_place`), not into a
+    /// freshly-built array rebound under the target's *name*. Rebinding by name
+    /// only ever reached a plain lexical: a private/public attribute array
+    /// (`@!numbers.tail ~= 'x'`), a closure-captured array, or an array reached
+    /// through any other holder has no env entry under that name to rebind, so
+    /// the mutation was silently dropped. Mutating the one canonical container
+    /// reaches every holder by construction.
+    ///
+    /// The name-keyed `insert_through` is still performed as a *fallback* for
+    /// the shapes where `target` is a detached copy rather than the live
+    /// container (a lazily materialized/native-backed read), so no previously
+    /// working case regresses.
+    fn write_array_slot_lvalue(
+        &mut self,
+        target_var: Option<&str>,
+        target: &Value,
+        kind: crate::value::ArrayKind,
+        idx: usize,
+        value: Value,
+    ) {
+        if target.array_set_in_place(idx, value.clone()) {
+            return;
+        }
+        let ValueView::Array(items, _) = target.view() else {
+            return;
+        };
+        let mut updated = items.to_vec();
+        if idx >= updated.len() {
+            return;
+        }
+        updated[idx] = value;
+        let replacement = Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
+            kind,
+        );
+        if let Some(var_name) = target_var {
+            self.env.insert_through(var_name.to_string(), replacement);
+        }
+    }
+
     pub(crate) fn assign_method_lvalue_with_values(
         &mut self,
         target_var: Option<&str>,
@@ -263,17 +306,7 @@ impl Interpreter {
             if let Some((idx, _)) =
                 self.find_first_match_over_items(func, &items.to_vec(), false)?
             {
-                let mut updated = items.to_vec();
-                if idx < updated.len() {
-                    updated[idx] = value.clone();
-                    let replacement = Value::array_with_kind(
-                        crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                        kind,
-                    );
-                    if let Some(var_name) = target_var {
-                        self.env.insert_through(var_name.to_string(), replacement);
-                    }
-                }
+                self.write_array_slot_lvalue(target_var, &target, kind, idx, value.clone());
             }
             return Ok(value);
         }
@@ -284,15 +317,7 @@ impl Interpreter {
             && !items.is_empty()
         {
             let idx = if method == "head" { 0 } else { items.len() - 1 };
-            let mut updated = items.to_vec();
-            updated[idx] = value.clone();
-            let replacement = Value::array_with_kind(
-                crate::gc::Gc::new(crate::value::ArrayData::new(updated)),
-                kind,
-            );
-            if let Some(var_name) = target_var {
-                self.env.insert_through(var_name.to_string(), replacement);
-            }
+            self.write_array_slot_lvalue(target_var, &target, kind, idx, value.clone());
             return Ok(value);
         }
         // Handle class-level attribute assignment (our $.x / my $.x)
@@ -1307,10 +1332,25 @@ impl Interpreter {
                     };
                     assigned_value = self.tag_container_metadata(assigned_value, info);
                 }
-                // Write through an existing `ContainerRef` slot (preserving any
-                // `:=`-bound alias of the attribute container); otherwise replace
-                // the entry as a bare value.
-                updated.insert_through(attr_key.as_str(), assigned_value.clone());
+                // An `@`/`%` attribute IS a container, and `$obj.attr = (…)` is
+                // a list assignment INTO it — Raku clears and refills the
+                // existing container instead of rebinding the slot to a fresh
+                // one. Storing a new container severed every other share of the
+                // old one, most visibly the `Array`/`Hash` attribute containers
+                // `Mu.clone` deliberately shares between original and clone
+                // ("Hash and Array attribute modifications in clone appear in
+                // original as well"). Keep the container, replace its contents.
+                if matches!(attr_sigil, '@' | '%')
+                    && let Some(existing) = updated.get(&attr_key).map(|v| v.deref_container())
+                    && existing.replace_container_contents(&assigned_value)
+                {
+                    assigned_value = existing;
+                } else {
+                    // Write through an existing `ContainerRef` slot (preserving any
+                    // `:=`-bound alias of the attribute container); otherwise replace
+                    // the entry as a bare value.
+                    updated.insert_through(attr_key.as_str(), assigned_value.clone());
+                }
                 // Always propagate the change into this instance's live shared
                 // cell. This handles chained accessor assignment like
                 // `$outer.inner.arr = ...` where target_var may be None but the

@@ -4283,6 +4283,38 @@ impl Interpreter {
                 );
                 needs_str_key.then(|| self.list_to_capture(target))
             }
+            // `Mu.Capture` on a user-declared object: the named arguments are
+            // the object's PUBLIC attributes, and each one is read through its
+            // accessor *method*, so an explicit `method bar { … }` that
+            // overrides the auto-generated accessor is what the Capture
+            // reports. The pure `value_to_capture` dumped the raw attribute
+            // store instead, which both ignored the override and leaked
+            // private (`$!x`) attributes into the Capture.
+            ValueView::Instance { class_name, .. } => {
+                let cn = class_name.resolve();
+                let attrs = self.collect_class_attributes(&cn);
+                let public: Vec<String> = attrs
+                    .iter()
+                    .filter(|a| a.is_public)
+                    .map(|a| a.name.clone())
+                    .collect();
+                // A class with no declared public attributes (or a built-in
+                // whose `.Capture` has its own spec — `Match`, `Duration`,
+                // `IO::Path`, `Signature`, `Failure`, …) keeps the pure path.
+                if public.is_empty() {
+                    return None;
+                }
+                let mut named = std::collections::HashMap::new();
+                for name in public {
+                    match self.call_method_with_values(target.clone(), &name, vec![]) {
+                        Ok(v) => {
+                            named.insert(name, v);
+                        }
+                        Err(e) => return Some(Err(e)),
+                    }
+                }
+                Some(Ok(Value::capture(vec![], named)))
+            }
             _ => None,
         }
     }

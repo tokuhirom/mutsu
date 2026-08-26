@@ -472,7 +472,7 @@ impl Interpreter {
                         let sigil = plan.class_attrs[i].sigil;
                         attributes.insert(
                             plan.attr_syms[i],
-                            Self::coerce_attr_value_by_sigil(value.clone(), sigil),
+                            Self::coerce_provided_attr_value_by_sigil(value.clone(), sigil),
                         )
                     }
                     // Raku's default BUILDALL ignores a named argument that names
