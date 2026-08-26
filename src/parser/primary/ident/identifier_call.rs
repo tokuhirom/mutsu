@@ -24,8 +24,8 @@ use crate::parser::primary::ident::predicates::{
 };
 use crate::parser::primary::ident::supply::supply_method_call;
 use crate::parser::primary::misc::{
-    anon_class_expr, anon_grammar_expr, anon_role_expr, parse_block_body, parse_block_body_routine,
-    parse_tracked_block_body,
+    anon_class_expr, anon_grammar_expr, anon_role_expr, mark_anon_package_decl, parse_block_body,
+    parse_block_body_routine, parse_tracked_block_body,
 };
 use crate::parser::stmt::keyword;
 use crate::symbol::Symbol;
@@ -719,15 +719,13 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
                 .or_else(|_| anon_role_expr(r_ws))
             {
                 // A NAMED `anon class Foo { ... }` keeps its name (`.^name`,
-                // gist `(Foo)`) but installs no symbol, so declaring the same
-                // name twice in one scope is legal. Mark it `__anon_decl` (the
-                // same internal-marker channel `anon sub NAME` uses) so the
-                // compiler's per-scope class-redeclaration check skips it.
-                if let Expr::DoStmt(stmt) = &mut expr
-                    && let Stmt::ClassDecl { custom_traits, .. } = stmt.as_mut()
-                {
-                    custom_traits.push(("__anon_decl".to_string(), None));
-                }
+                // gist `(Foo)`) but installs no symbol anywhere — not the
+                // enclosing scope, not the current package's stash. Marks the
+                // declaration `__anon_decl` and mangles its registry name so
+                // no env/alias/stash write it triggers is bareword-reachable.
+                // See `mark_anon_package_decl`'s doc comment for the full
+                // mechanism.
+                mark_anon_package_decl(&mut expr);
                 return Ok((r, expr));
             }
             if let Some(after_method) = keyword("method", r_ws) {

@@ -239,6 +239,86 @@ pub(crate) fn anon_role_expr(input: &str) -> PResult<'_, Expr> {
     ))
 }
 
+/// After parsing `anon class`/`anon role`/`anon grammar` via the
+/// expression-position package parsers above (also reached, WITHOUT `anon`,
+/// for the plain `class Foo { ... }.new`-style term form — so this must only
+/// be called from the `anon` keyword's own call site), mark the declaration
+/// as installing no symbol anywhere.
+///
+/// Per `raku-doc/doc/Language/variables.rakudoc` ("The `anon` declarator"), a
+/// NAMED `anon class Foo { ... }` keeps its name for `.^name`/`.gist` but
+/// must not be resolvable as a bareword afterward — not even from inside its
+/// own body (`raku -e 'anon class Foo { method m { Foo.new } }'` is itself an
+/// "Undeclared name" compile error) — and two textually distinct `anon class
+/// Foo { }` declarations are two distinct types that merely share a display
+/// name (`$a === $b` is `False`), even though the SAME site re-executed (a
+/// loop body, a sub called twice) keeps its one identity (`True`).
+///
+/// mutsu's class/role/grammar registration keys every env/alias/stash write
+/// off the declaration's `name` Symbol, so mangling that Symbol at parse time
+/// with a fresh, globally-unique `\u{0}<site-id>` suffix makes every one of
+/// those writes install a key nobody can type as a bareword (`\u{0}` is not a
+/// legal Raku source byte) — this is the exact scheme `my class Foo {}`
+/// already mangles its *storage* name with (ADR-0047), reused here with no
+/// registration-code changes needed. `.^name`/`.gist`/`say` strip the
+/// suffix back off generically (`value::display::user_facing_type_name`), so
+/// the type still displays as `Foo`. The fresh id is drawn once per PARSE of
+/// this declaration (not per execution), so two distinct source sites always
+/// mangle to two distinct keys, while re-executing the same site reuses its
+/// one fixed mangled name — matching the identity behavior above.
+///
+/// A genuinely UNNAMED anon declaration (`anon class { ... }`, whose own
+/// parser already minted a globally-unique `__ANON_CLASS_<n>__`/
+/// `__ANON_ROLE_<n>__`/`__ANON_GRAMMAR_<n>__` marker) is left untouched:
+/// mangling it further would break the `<anon|N>` display, which recognizes
+/// exactly that bare marker shape (`value::display::anon_type_display_name`).
+///
+/// `Stmt::ClassDecl`/`Stmt::RoleDecl` also get the `__anon_decl` custom
+/// trait (the same marker `anon sub NAME` uses) so the compiler's per-scope
+/// class-redeclaration check skips them — though with the name now
+/// site-unique by construction, two `anon class Foo {}` declarations in one
+/// scope would not collide in that check even without the marker.
+/// `Stmt::Package` (the `anon grammar` route) has no `custom_traits` field
+/// and needs no such skip.
+pub(crate) fn mark_anon_package_decl(expr: &mut Expr) {
+    let Expr::DoStmt(stmt) = expr else { return };
+    match stmt.as_mut() {
+        Stmt::ClassDecl {
+            name,
+            custom_traits,
+            ..
+        } => {
+            custom_traits.push(("__anon_decl".to_string(), None));
+            mangle_named_anon_decl(name);
+        }
+        Stmt::RoleDecl {
+            name,
+            custom_traits,
+            ..
+        } => {
+            custom_traits.push(("__anon_decl".to_string(), None));
+            mangle_named_anon_decl(name);
+        }
+        Stmt::Package { name, .. } => {
+            mangle_named_anon_decl(name);
+        }
+        _ => {}
+    }
+}
+
+/// Mangle a NAMED anon declaration's registry name with a fresh,
+/// globally-unique `\u{0}<site-id>` suffix (see `mark_anon_package_decl`).
+/// A no-op for the already-unique internal `__ANON_*__` marker an unnamed
+/// declaration was given by its own parser.
+fn mangle_named_anon_decl(name: &mut Symbol) {
+    let resolved = name.resolve();
+    if crate::value::is_internal_anon_type_name(&resolved) {
+        return;
+    }
+    let id = crate::ast::next_class_decl_id();
+    *name = Symbol::intern(&format!("{resolved}\u{0}{id}"));
+}
+
 /// Indirect object notation: `new Foo:` / `method Type: args` desugars to
 /// `Type.method(args)` (rakudo still accepts this Perl-5-style form —
 /// integration/weird-errors.t 32 uses `$ = new Foo:`). Deliberately narrow:
