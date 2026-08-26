@@ -1,4 +1,5 @@
 mod regex_casefold;
+pub(crate) mod regex_dynparams;
 mod regex_eval;
 mod regex_eval_class;
 mod regex_eval_repeat;

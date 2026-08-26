@@ -518,6 +518,15 @@ impl Interpreter {
         })
     }
 
+    /// The positional state every Raku `Cursor` (and hence every grammar
+    /// cursor) exposes. mutsu mints a cursor as an instance of the grammar
+    /// carrying these in its attribute map; the grammar itself declares none of
+    /// them, so the generic accessor path consults this list before applying the
+    /// "user-declared class has only its declared accessors" rule.
+    pub(crate) fn is_cursor_state_attribute(name: &str) -> bool {
+        matches!(name, "pos" | "orig" | "target" | "from" | "to")
+    }
+
     pub(super) fn collect_class_attributes(&mut self, class_name: &str) -> Vec<ClassAttributeDef> {
         let mro = self.class_mro(class_name);
         let mut attrs: Vec<ClassAttributeDef> = Vec::new();

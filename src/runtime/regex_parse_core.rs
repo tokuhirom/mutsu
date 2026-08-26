@@ -2666,6 +2666,9 @@ impl Interpreter {
                                     } else if negated_name == "wb" || negated_name == ".wb" {
                                         // <!wb> — zero-width assertion: NOT at a word boundary
                                         RegexAtom::WordBoundary { negated: true }
+                                    } else if negated_name == "ww" || negated_name == ".ww" {
+                                        // <!ww> — zero-width assertion: NOT within a word
+                                        RegexAtom::WithinWord { negated: true }
                                     } else {
                                         // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
                                         let clean_name =
@@ -3121,6 +3124,9 @@ impl Interpreter {
                                 } else if trimmed == "?wb" || trimmed == "?.wb" {
                                     // <?wb> — zero-width assertion: at a word boundary
                                     RegexAtom::WordBoundary { negated: false }
+                                } else if trimmed == "?ww" || trimmed == "?.ww" {
+                                    // <?ww> — zero-width assertion: within a word
+                                    RegexAtom::WithinWord { negated: false }
                                 } else if trimmed == "|w" {
                                     // <|w> — zero-width assertion at a boundary of the
                                     // word (`\w`) character class, i.e. `\b`. (YAMLish's

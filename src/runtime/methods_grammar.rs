@@ -208,33 +208,178 @@ impl Interpreter {
     }
 
     fn extract_tilde_goal_from_source(pattern: &str) -> Option<String> {
-        let mut chars = pattern.chars().peekable();
-        while let Some(ch) = chars.next() {
-            if ch != '~' {
-                continue;
+        Self::tilde_goal_texts_from_source(pattern)
+            .into_iter()
+            .next()
+    }
+
+    /// Advance past a run of pattern *separators* — literal whitespace and the
+    /// explicit `<.ws>` / `<ws>` atoms a `rule`'s sigspace compiles source
+    /// whitespace into. Reports whether any `<.ws>`-style atom was among them.
+    fn skip_regex_separators(chars: &[char], mut i: usize) -> (usize, bool) {
+        const WS_FORMS: [&str; 4] = ["<.ws>", "<ws>", "<.ws?>", "<ws?>"];
+        let mut had_ws_rule = false;
+        loop {
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
             }
-            while chars.peek().is_some_and(|c| c.is_whitespace()) {
-                chars.next();
-            }
-            let open = chars.next()?;
-            let close = match open {
-                '\'' => '\'',
-                '"' => '"',
-                '\u{2018}' | '\u{201A}' => '\u{2019}',
-                '\u{201C}' | '\u{201E}' => '\u{201D}',
-                '\u{FF62}' => '\u{FF63}',
-                other => return Some(other.to_string()),
-            };
-            let mut body = String::new();
-            for ch in chars.by_ref() {
-                if ch == close {
-                    break;
+            let rest: String = chars[i..chars.len().min(i + 8)].iter().collect();
+            match WS_FORMS
+                .iter()
+                .find(|form| rest.starts_with(**form))
+                .map(|form| form.chars().count())
+            {
+                Some(len) => {
+                    i += len;
+                    had_ws_rule = true;
                 }
-                body.push(ch);
+                None => return (i, had_ws_rule),
             }
-            return Some(format!("{body:?}"));
         }
-        None
+    }
+
+    /// Every goal a `~` conjunction names in `pattern`, as its *source* text —
+    /// which is what Rakudo hands to `FAILGOAL`. The goal keeps the whitespace
+    /// that separates it from the conjunction's content, so `'[' ~ ']' \w+`
+    /// reports `"']' "` (hence the doubled space in the canonical
+    /// `Cannot find ']'  near position 4`). The matcher's own record is only the
+    /// atom's reconstructed text (`']'`), which cannot carry that spacing.
+    fn tilde_goal_texts_from_source(pattern: &str) -> Vec<String> {
+        let chars: Vec<char> = pattern.chars().collect();
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        while i < chars.len() {
+            match chars[i] {
+                '\\' => {
+                    i += 2;
+                    continue;
+                }
+                '~' => {}
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            }
+            i += 1;
+            // `rule`'s sigspace has already turned the source whitespace around
+            // the goal into explicit `<.ws>` atoms, so skip those too.
+            i = Self::skip_regex_separators(&chars, i).0;
+            if i >= chars.len() {
+                break;
+            }
+            let start = i;
+            match chars[i] {
+                quote @ ('\'' | '"') => {
+                    i += 1;
+                    while i < chars.len() && chars[i] != quote {
+                        if chars[i] == '\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    i = (i + 1).min(chars.len());
+                }
+                '<' => {
+                    let mut depth = 0usize;
+                    while i < chars.len() {
+                        match chars[i] {
+                            '<' => depth += 1,
+                            '>' => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    i += 1;
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                }
+                _ => {
+                    // A bare goal atom (`~ ] ...`, `~ \) ...`) runs to the next
+                    // whitespace.
+                    while i < chars.len() && !chars[i].is_whitespace() {
+                        if chars[i] == '\\' {
+                            i += 1;
+                        }
+                        i += 1;
+                    }
+                    i = i.min(chars.len());
+                }
+            }
+            let atom_end = i;
+            let (next, had_ws_rule) = Self::skip_regex_separators(&chars, i);
+            i = next;
+            let mut goal: String = chars[start..atom_end].iter().collect();
+            if had_ws_rule {
+                // The separator was compiled away into `<.ws>`; the source it
+                // stands for was a single run of whitespace.
+                goal.push(' ');
+            } else {
+                goal.extend(&chars[atom_end..i]);
+            }
+            out.push(goal);
+        }
+        out
+    }
+
+    /// Refine a matcher-recorded goal (`']'`) to the source form Rakudo reports
+    /// (`"']' "`) when `pattern` names the same goal. Falls back to the recorded
+    /// text — a goal that failed inside some *other* rule's pattern is not
+    /// findable in the start rule's source.
+    fn refine_goal_text_from_source(pattern: Option<&str>, recorded: String) -> String {
+        let Some(pattern) = pattern else {
+            return recorded;
+        };
+        Self::tilde_goal_texts_from_source(pattern)
+            .into_iter()
+            .find(|candidate| candidate.trim_end() == recorded)
+            .unwrap_or(recorded)
+    }
+
+    /// A `~` goal-matching conjunction whose opener matched but whose closer was
+    /// never found records the goal (`record_goal_failure`). When the parse then
+    /// fails overall, Raku hands that goal to the grammar's `FAILGOAL` method,
+    /// which typically `die`s with a custom message; without one, the parse just
+    /// reports the missing goal. Returns `None` when no goal failure is pending
+    /// and `pattern` names no goal, leaving the ordinary failure path in charge.
+    fn goal_failure_outcome(
+        &mut self,
+        package_name: &str,
+        pattern: Option<&str>,
+        text: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let (goal, pos) = Self::take_pending_goal_failure().or_else(|| {
+            let pattern = pattern?;
+            let parsed = self.parse_regex(pattern)?;
+            Some((Self::first_goal_name(&parsed)?, text.chars().count()))
+        })?;
+        let goal = Self::refine_goal_text_from_source(pattern, goal);
+        // Rakudo calls `FAILGOAL` on the *cursor*, so the method's `self.pos`
+        // reports where the goal went missing. Mint that cursor as an instance
+        // of the grammar (which is how method resolution finds the grammar's own
+        // `FAILGOAL`) carrying the Cursor positional state.
+        if self
+            .registry()
+            .user_method_overloads(package_name, "FAILGOAL")
+            .is_some()
+        {
+            let mut cursor_attrs = HashMap::new();
+            cursor_attrs.insert("pos".to_string(), Value::int(pos as i64));
+            cursor_attrs.insert("from".to_string(), Value::int(pos as i64));
+            cursor_attrs.insert("to".to_string(), Value::int(pos as i64));
+            cursor_attrs.insert("orig".to_string(), Value::str(text.to_string()));
+            cursor_attrs.insert("target".to_string(), Value::str(text.to_string()));
+            let cursor = Value::make_instance(Symbol::intern(package_name), cursor_attrs);
+            if let Err(err) =
+                self.call_method_with_values(cursor, "FAILGOAL", vec![Value::str(goal.clone())])
+            {
+                return Some(Err(err));
+            }
+        }
+        self.env.insert("/".to_string(), Value::NIL);
+        Some(Ok(self.make_goal_failure_value(&goal, pos)))
     }
 
     fn make_goal_failure_value(&self, goal: &str, pos: usize) -> Value {
@@ -385,6 +530,13 @@ impl Interpreter {
         // dynvars above) is unbound from `self.env` once the body finishes —
         // see `establish_grammar_body_statics`.
         let saved_grammar_body_statics = self.establish_grammar_body_statics(package_name);
+        // A start rule may declare dynamically-scoped parameters
+        // (`rule TOP ($*word, $*extra) { ... }`) that `.parse(:args(...))` fills
+        // in. They must be in the dynamic scope before the rule's own pattern is
+        // built, because that pattern may interpolate them — and they stay there
+        // for the whole parse, so every subrule sees them.
+        let saved_start_rule_dynvars =
+            self.install_subrule_dynamic_params(&start_rule, package_name, &rule_args);
         let candidate_from = start_pos.or(continue_pos).unwrap_or(0);
         let result = (|| -> Result<Value, RuntimeError> {
             let (pattern, start_rule_sym) =
@@ -394,6 +546,19 @@ impl Interpreter {
                         // Check for pending regex error (e.g., <sym> used outside proto regex)
                         if let Some(err) = Self::take_pending_regex_error() {
                             return Err(err);
+                        }
+                        // Candidate selection already ran the start rule's
+                        // pattern, so a `~` conjunction that lost its closer has
+                        // recorded its goal even though we never reach the main
+                        // match below. `FAILGOAL` must still fire.
+                        let start_source = self
+                            .resolve_token_defs(&start_rule)
+                            .and_then(|defs| defs.into_iter().next())
+                            .and_then(|def| Self::token_pattern_from_def(&def));
+                        if let Some(outcome) =
+                            self.goal_failure_outcome(package_name, start_source.as_deref(), &text)
+                        {
+                            return outcome;
                         }
                         self.env.insert("/".to_string(), Value::NIL);
                         if is_full_parse {
@@ -495,26 +660,10 @@ impl Interpreter {
                         None => self.replay_backtracked_reduce_actions(actions, None, &text)?,
                     }
                 }
-                let goal = Self::take_pending_goal_failure().or_else(|| {
-                    self.parse_regex(&pattern)
-                        .and_then(|p| Self::first_goal_name(&p))
-                        .map(|goal| (goal, text.chars().count()))
-                });
-                if let Some((goal, pos)) = goal {
-                    match self.call_method_with_values(
-                        Value::package(Symbol::intern(package_name)),
-                        "FAILGOAL",
-                        vec![Value::str(goal.clone())],
-                    ) {
-                        Ok(_) => {
-                            self.env.insert("/".to_string(), Value::NIL);
-                            return Ok(self.make_goal_failure_value(&goal, pos));
-                        }
-                        Err(err) if err.is_method_not_found() => {}
-                        Err(err) => return Err(err),
-                    }
-                    self.env.insert("/".to_string(), Value::NIL);
-                    return Ok(self.make_goal_failure_value(&goal, pos));
+                if let Some(outcome) =
+                    self.goal_failure_outcome(package_name, Some(&pattern), &text)
+                {
+                    return outcome;
                 }
                 self.env.insert("/".to_string(), Value::NIL);
                 if is_full_parse {
@@ -643,6 +792,10 @@ impl Interpreter {
             Ok(match_obj)
         })();
 
+        // Tear down the start rule's dynamically-scoped parameters.
+        if let Some(saved) = saved_start_rule_dynvars {
+            self.restore_subrule_dynamic_params(saved);
+        }
         // Restore any dynamic vars the grammar's rules established for this parse.
         for (key, prev) in saved_grammar_dynvars {
             match prev {

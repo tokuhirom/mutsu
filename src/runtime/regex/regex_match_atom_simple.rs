@@ -161,6 +161,9 @@ impl Interpreter {
         false
     }
 
+    /// See the twin wrapper in `regex_match_atom.rs`: a subrule's
+    /// dynamically-scoped (`$*`) parameters are established for the duration of
+    /// this call and torn down here.
     pub(super) fn regex_match_atom_in_pkg(
         &mut self,
         atom: &RegexAtom,
@@ -168,6 +171,24 @@ impl Interpreter {
         pos: usize,
         pkg: &str,
         ignore_case: bool,
+    ) -> Option<usize> {
+        let mut dyn_saved = None;
+        let out =
+            self.regex_match_atom_in_pkg_inner(atom, chars, pos, pkg, ignore_case, &mut dyn_saved);
+        if let Some(saved) = dyn_saved {
+            self.restore_subrule_dynamic_params(saved);
+        }
+        out
+    }
+
+    fn regex_match_atom_in_pkg_inner(
+        &mut self,
+        atom: &RegexAtom,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+        ignore_case: bool,
+        dyn_saved: &mut Option<super::regex_dynparams::SavedDynParams>,
     ) -> Option<usize> {
         // ADR-0022 §4.2: see the identical guard in
         // `regex_match_atom_all_with_capture_in_pkg` (`regex_match_atom.rs`) —
@@ -303,6 +324,16 @@ impl Interpreter {
                 } else {
                     None
                 };
+            }
+            RegexAtom::WithinWord { negated } => {
+                // `<?ww>` / `<!ww>`: the position is *within* a word, i.e. it has
+                // a word character on both sides. A position at either end of the
+                // subject is never within a word, so this is NOT the negation of
+                // `<?wb>` — both are false between two non-word characters.
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let at_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                let within = before_is_word && at_is_word;
+                return if within != *negated { Some(pos) } else { None };
             }
             RegexAtom::StartOfLine => {
                 // The char immediately before `pos`. `chars` is always the whole
@@ -441,6 +472,9 @@ impl Interpreter {
             } else {
                 self.eval_regex_arg_list(&spec.arg_exprs, &default_caps)?
             };
+            // Establish the subrule's `$*`-twigil parameters for the whole
+            // resolve-and-match (see `regex_dynparams`); the wrapper restores.
+            *dyn_saved = self.install_subrule_dynamic_params(&spec.lookup_name, pkg, &arg_values);
             let candidates = self.resolve_named_regex_candidates_in_pkg(&spec, pkg, &arg_values);
             if !candidates.is_empty() {
                 let remaining: String = chars[pos..].iter().collect();
@@ -468,6 +502,11 @@ impl Interpreter {
                 } else {
                     None
                 };
+            }
+            if spec.lookup_name == "ww" && !spec.token_lookup {
+                let before_is_word = pos > 0 && is_word_char(chars[pos - 1]);
+                let after_is_word = pos < chars.len() && is_word_char(chars[pos]);
+                return (before_is_word && after_is_word).then_some(pos);
             }
             if spec.lookup_name == "ws" && !spec.token_lookup {
                 let mut next = pos;
@@ -745,6 +784,7 @@ impl Interpreter {
             | RegexAtom::LeftWordBoundary
             | RegexAtom::RightWordBoundary
             | RegexAtom::WordBoundary { .. }
+            | RegexAtom::WithinWord { .. }
             | RegexAtom::StartOfLine
             | RegexAtom::TildeMarker
             | RegexAtom::EndOfLine

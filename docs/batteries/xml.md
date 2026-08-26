@@ -175,7 +175,9 @@ G.parse('x');
 
 `raku`: `STOPPER is "\""`. `mutsu`: `STOPPER is Nil`.
 
-Ticket: [`todo/tickets/grammar-token-param-dynvar-not-visible-in-subrule.md`](../../todo/tickets/grammar-token-param-dynvar-not-visible-in-subrule.md)
+**Resolved** (2026-08-26): [`news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md`](../../news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md).
+A `$*` rule parameter is now established in the dynamic scope for the duration of the
+rule's match. The 13-file count above predates the fix and needs re-measuring.
 
 A second, narrower bug blocks the remaining file pair (`t/emitter.rakutest`,
 `t/make.rakutest`, both needing `XML::Element.append` → `XML::Node.reparent`):

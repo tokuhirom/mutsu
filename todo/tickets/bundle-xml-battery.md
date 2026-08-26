@@ -25,12 +25,15 @@ Both of these must land and be re-verified before starting — `docs/batteries/x
 ["What blocks mutsu today"](../../docs/batteries/xml.md#what-blocks-mutsu-today)
 section has the full repros:
 
-1. [todo/tickets/grammar-token-param-dynvar-not-visible-in-subrule.md](grammar-token-param-dynvar-not-visible-in-subrule.md) —
+1. ~~a token's own dynamic-variable parameter default is not visible inside a
+   subrule it calls~~ — **resolved**, see
+   [news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md](../../news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md).
    `XML::Grammar`'s value-parsing token sets a dynamic variable via its own
-   parameter default (`token value($*STOPPER = '"') {...}`) and a subrule it
-   calls reads that variable back as `Nil` instead of the value the caller
-   set. This breaks nearly every real `XML::Grammar.parse` call — 13 of
-   `XML`'s 15 upstream test files fail this way.
+   parameter default (`token value($*STOPPER = '"') {...}`); a subrule it calls
+   now reads back the value the caller set. This was what broke nearly every real
+   `XML::Grammar.parse` call — 13 of `XML`'s 15 upstream test files. **Re-measure
+   the dist before starting**: the count blocked on item 2 alone may now be much
+   smaller.
 2. [todo/tickets/indirect-type-param-parse-failure-silently-drops-role-method.md](indirect-type-param-parse-failure-silently-drops-role-method.md) —
    `XML::Node::reparent`'s indirect type-name parameter syntax
    (`method reparent(::(q<XML::Element>) $parent)`) is not accepted as a

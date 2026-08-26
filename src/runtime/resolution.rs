@@ -175,6 +175,7 @@ impl Interpreter {
         // which is Rakudo's tie-break for an equal-length LTM tie between
         // proto candidates (`token pp:sym<**>` before `token pp:sym<m>`).
         def.decl_order = next_decl_order();
+        crate::runtime::regex::regex_dynparams::note_token_def_params(&def.param_defs);
         let def = std::sync::Arc::new(def);
         if multi {
             self.registry_mut()
