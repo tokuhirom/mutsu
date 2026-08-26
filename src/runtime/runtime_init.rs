@@ -2654,6 +2654,13 @@ impl Interpreter {
                         "X::RoleApplier::Method",
                         "X::Nominalizable",
                         "X::Role::Attribute",
+                        // Not a marker role like the rest: rakudo mixes
+                        // `X::Promise::Broken` into the *cause* exception that
+                        // `Promise.result` rethrows, producing the anonymous
+                        // mixin type `X::AdHoc+{X::Promise::Broken}`. It is
+                        // registered here so `eval_does_values` can compose it
+                        // and `~~ X::Promise::Broken` answers correctly.
+                        "X::Promise::Broken",
                     ] {
                         roles.insert(
                             role_name.to_string(),

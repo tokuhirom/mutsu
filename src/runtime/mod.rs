@@ -537,6 +537,8 @@ mod ops_reduction;
 mod ops_set;
 mod output_sink;
 pub(crate) mod phasers;
+mod promise_broken_gist;
+mod promise_errors;
 mod react_died;
 pub(crate) mod react_done_handler_depth;
 mod receiver_class;

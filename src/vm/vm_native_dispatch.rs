@@ -69,6 +69,17 @@ impl Interpreter {
             }
         }
         let method_name = method_sym.resolve();
+        // `X::Promise::Broken` (composed into a broken promise's cause by
+        // `Promise.result`) overrides `gist` alone. The role carries no method
+        // table, so the native exception-gist arm below would answer with the
+        // bare cause message; intercept before it. This is the VM's fast-path
+        // twin of the same check in `call_method_with_values`.
+        if method_name == "gist"
+            && args.is_empty()
+            && let Some(result) = self.promise_broken_gist(target)
+        {
+            return Some(result);
+        }
         // An Iterable user instance with its own `iterator` method routes the
         // Any iteration methods through that iterator (the arm in
         // `call_method_with_values`); a native impl (e.g. `flat`) would treat

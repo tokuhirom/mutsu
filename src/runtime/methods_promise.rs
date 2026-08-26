@@ -72,6 +72,9 @@ impl Interpreter {
     ) -> Value {
         let orig = shared.clone();
         let new_promise = SharedPromise::new_with_class(shared.class_name());
+        // The callback's outcome resolves the derived promise, so mutsu holds
+        // its vow: `$p.then({...}).keep` is X::Promise::Vowed in Rakudo.
+        new_promise.mark_vowed();
         let ret = Value::promise(new_promise.clone());
         if orig.is_resolved() {
             let (result, output, stderr) = orig.wait();
@@ -151,7 +154,7 @@ impl Interpreter {
                     // since a name-based "is this an exception" check cannot
                     // see a user class's `is Exception` ancestry.
                     let msg = result.to_string_value();
-                    let ex = if matches!(result.view(), ValueView::Instance { .. }) {
+                    let ex = if Self::is_exception_object(&result) {
                         result
                     } else {
                         let mut attrs = HashMap::new();
@@ -159,6 +162,15 @@ impl Interpreter {
                         attrs.insert("message".to_string(), Value::str(msg.clone()));
                         Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
                     };
+                    // Rakudo composes `X::Promise::Broken` into the cause on
+                    // the way out of `.result`, so the thrown exception is the
+                    // anonymous mixin `X::AdHoc+{X::Promise::Broken}` (or
+                    // `MyEx+{X::Promise::Broken}` for a user exception) while
+                    // `.cause` keeps handing back the *un*mixed original.
+                    // `.message`/`.Str` are unchanged by the mixin; only
+                    // `.gist` gains the "Tried to get the result of a broken
+                    // Promise" wrapper.
+                    let ex = self.compose_promise_broken_role(ex);
                     let mut err = RuntimeError::new(msg);
                     err.exception = Some(Box::new(ex));
                     Err(err)
@@ -186,47 +198,30 @@ impl Interpreter {
                 // .orelse runs callback only if Broken; propagates Kept
                 Ok(self.promise_chain_method(shared, block, |s| s == "Broken", true))
             }
-            "keep" => {
-                let value = args.into_iter().next().unwrap_or(Value::TRUE);
-                if let Err(_status) = shared.try_keep(value) {
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        ),
-                    );
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
-                    let mut err = RuntimeError::new(
-                        "Access denied to keep/break this Promise; already vowed".to_string(),
-                    );
-                    err.exception = Some(Box::new(ex));
-                    Err(err)
-                } else {
-                    Ok(Value::NIL)
+            "keep" | "break" => {
+                // Rakudo's `Promise.keep`/`.break` take the promise's single
+                // vow before resolving it, so the *second* call through the
+                // Promise (and any call after an explicit `.vow`) reports
+                // X::Promise::Vowed rather than X::Promise::Resolved. Only a
+                // promise resolved behind mutsu's back (`Promise.kept`/
+                // `Promise.broken`, whose vow is never taken) can still reach
+                // the X::Promise::Resolved arm below.
+                if !shared.take_vow() {
+                    return Err(Self::promise_vowed_error(shared));
                 }
-            }
-            "break" => {
-                let reason_val = args
-                    .into_iter()
-                    .next()
-                    .unwrap_or_else(|| Value::str_from("Died"));
-                if let Err(_status) = shared.try_break(reason_val) {
-                    let mut attrs = HashMap::new();
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(
-                            "Access denied to keep/break this Promise; already vowed".to_string(),
-                        ),
-                    );
-                    let ex = Value::make_instance(Symbol::intern("X::Promise::Vowed"), attrs);
-                    let mut err = RuntimeError::new(
-                        "Access denied to keep/break this Promise; already vowed".to_string(),
-                    );
-                    err.exception = Some(Box::new(ex));
-                    Err(err)
+                let res = if method == "keep" {
+                    let value = args.into_iter().next().unwrap_or(Value::TRUE);
+                    shared.try_keep(value)
                 } else {
-                    Ok(Value::NIL)
+                    let reason_val = args
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| Value::str_from("Died"));
+                    shared.try_break(reason_val)
+                };
+                match res {
+                    Ok(()) => Ok(Value::NIL),
+                    Err(status) => Err(Self::promise_resolved_error(shared, &status)),
                 }
             }
             "cause" => {
@@ -234,19 +229,13 @@ impl Interpreter {
                 if status != "Broken" {
                     let mut attrs = HashMap::new();
                     attrs.insert("status".to_string(), Value::str(status.clone()));
-                    attrs.insert(
-                        "message".to_string(),
-                        Value::str(format!(
-                            "Can only call '.cause' on a broken promise (status: {})",
-                            status
-                        )),
-                    );
+                    attrs.insert("promise".to_string(), Value::promise(shared.clone()));
                     let ex = Value::make_instance(
                         Symbol::intern("X::Promise::CauseOnlyValidOnBroken"),
                         attrs,
                     );
                     let mut err = RuntimeError::new(format!(
-                        "Can only call '.cause' on a broken promise (status: {})",
+                        "Can only call cause on a broken promise (status: {})",
                         status
                     ));
                     err.exception = Some(Box::new(ex));
@@ -264,7 +253,7 @@ impl Interpreter {
                     // name), so gate on the value shape instead — the same
                     // fix already applied to `Supplier.quit()`'s reason
                     // handling in `native_supplier_methods.rs`.
-                    let is_exc = matches!(result.view(), ValueView::Instance { .. });
+                    let is_exc = Self::is_exception_object(&result);
                     let cause = if is_exc {
                         result
                     } else {
@@ -278,7 +267,12 @@ impl Interpreter {
             }
             "Bool" => Ok(Value::truth(shared.is_resolved())),
             "vow" => {
-                // Return a simple Vow object
+                // A promise has exactly one vow to give away. Taking it twice
+                // — or taking it after `.keep`/`.break` already consumed it —
+                // is X::Promise::Vowed.
+                if !shared.take_vow() {
+                    return Err(Self::promise_vowed_error(shared));
+                }
                 let mut attrs = HashMap::new();
                 attrs.insert("promise".to_string(), target.clone());
                 Ok(Value::make_instance(Symbol::intern("Promise::Vow"), attrs))
@@ -343,20 +337,7 @@ impl Interpreter {
                 };
                 match res {
                     Ok(()) => Ok(Value::NIL),
-                    Err(status) => {
-                        let msg = format!(
-                            "Cannot keep/break a Promise more than once (status: {})",
-                            status
-                        );
-                        let mut attrs = HashMap::new();
-                        attrs.insert("message".to_string(), Value::str(msg.clone()));
-                        attrs.insert("promise".to_string(), Value::promise(shared.clone()));
-                        let ex =
-                            Value::make_instance(Symbol::intern("X::Promise::Resolved"), attrs);
-                        let mut err = RuntimeError::new(msg);
-                        err.exception = Some(Box::new(ex));
-                        Err(err)
-                    }
+                    Err(status) => Err(Self::promise_resolved_error(&shared, &status)),
                 }
             }
             "WHAT" => Ok(Value::package(Symbol::intern("Promise::Vow"))),

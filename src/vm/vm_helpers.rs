@@ -160,6 +160,31 @@ impl Interpreter {
         }
     }
 
+    /// Does the bottom of `stack` already account for the mainline `<unit>`,
+    /// so that no synthetic `<unit>` frame should be appended beneath it?
+    ///
+    /// Two independent reasons it can:
+    ///
+    /// 1. The outermost frame *is* the mainline boundary — the synthetic
+    ///    `<unit>` frame, or an empty-named non-block frame. (A genuine
+    ///    bare-block callframe is empty-named but `is_block`, and the
+    ///    mainline `<unit>` really does sit below it.)
+    /// 2. This interpreter is a **thread clone**. `clone_for_thread` starts
+    ///    the worker with an empty `routine_stack`, so the bottom frame is
+    ///    the thread's entry block and there is no mainline `<unit>` under
+    ///    it at all. Appending one there duplicated the entry block's own
+    ///    line: `Promise.start({ die ... }).cause` rendered
+    ///    `in block <unit> at f line 1` twice, once for the `<pointy-block>`
+    ///    frame and once for the phantom unit frame synthesized beneath it.
+    fn stack_bottom_is_mainline_unit(&self, stack: &[crate::runtime::RoutineFrame]) -> bool {
+        if self.is_thread_clone() {
+            return true;
+        }
+        stack
+            .first()
+            .is_some_and(|f| f.name == "<unit>" || (f.name.is_empty() && !f.is_block))
+    }
+
     /// Build a backtrace string from the interpreter's routine stack.
     /// Each frame is formatted as "  in sub <name> at <file> line <N>".
     ///
@@ -210,11 +235,7 @@ impl Interpreter {
         if stack.is_empty() {
             let location = Self::format_location(current_file.as_deref(), current_line);
             lines.push(format!("  in block <unit>{}", location));
-        } else if !stack.first().is_some_and(|f| {
-            // A genuine bare-block frame is empty-named but `is_block`; the
-            // mainline `<unit>` still sits below it (see `build_backtrace_value`).
-            f.name == "<unit>" || (f.name.is_empty() && !f.is_block)
-        }) {
+        } else if !self.stack_bottom_is_mainline_unit(stack) {
             // The outermost routine frame's stored call-site is where
             // <unit> called it.
             let outermost = &stack[0];
@@ -357,14 +378,7 @@ impl Interpreter {
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,
             ));
-        } else if !stack.first().is_some_and(|f| {
-            // The outermost frame already *is* the mainline boundary (so no extra
-            // `<unit>` is appended) only when it is the synthetic `<unit>`/pointy
-            // frame, or an empty-named *non-block* frame. A genuine bare-block
-            // callframe is empty-named but `is_block`, and the mainline `<unit>`
-            // still sits below it.
-            f.name == "<unit>" || (f.name.is_empty() && !f.is_block)
-        }) {
+        } else if !self.stack_bottom_is_mainline_unit(stack) {
             let outermost = &stack[0];
             let location =
                 Self::format_location(outermost.file.map(|s| s.as_str()), outermost.line);

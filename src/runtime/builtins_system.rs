@@ -185,6 +185,10 @@ impl Interpreter {
         use crate::value::SharedPromise;
 
         let promise = SharedPromise::new_with_class(class_name);
+        // `start { ... }` / `Promise.start` hand back a promise whose vow the
+        // runtime keeps: the worker thread's outcome resolves it, so a user
+        // `.keep`/`.break`/`.vow` on it is X::Promise::Vowed.
+        promise.mark_vowed();
         let ret = Value::promise(promise.clone());
         let thread_interp = self.clone_for_thread_for_block(&block);
         let parent_handles_snapshot: std::collections::HashSet<usize> =
