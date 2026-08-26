@@ -217,6 +217,14 @@ pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
         return Some(c);
     }
     let upper = name.to_uppercase();
+    // The UCD `NameAliases.txt` list: corrected spellings (`LATIN CAPITAL
+    // LETTER GHA`), control names and abbreviations, the `BYTE ORDER MARK`
+    // alternate and the `VS1`..`VS256` variation selectors. `unicode_names2`
+    // only indexes the immutable `Name` property, so none of these resolve
+    // through it.
+    if let Some(c) = crate::builtins::unicode_name_alias_table::lookup_name_alias(&upper) {
+        return Some(c);
+    }
     match upper.as_str() {
         "NULL" | "NUL" => Some('\u{0000}'),
         "START OF HEADING" | "SOH" => Some('\u{0001}'),
@@ -263,11 +271,34 @@ pub(crate) fn lookup_unicode_char_by_name(name: &str) -> Option<char> {
 /// Look up an emoji sequence by its CLDR name (e.g., "woman gesturing OK").
 /// Returns the emoji string (which may contain multiple codepoints for ZWJ sequences).
 pub(crate) fn lookup_emoji_sequence(name: &str) -> Option<String> {
+    // A CLDR short name for a multi-person ZWJ sequence separates its parts
+    // with commas ("family: man, woman, girl, boy"), but `\c[...]` / `uniparse`
+    // split their input on commas before this point, so the name that arrives
+    // here has already lost them ("family: man woman girl boy" — which is
+    // exactly the spelling Rakudo accepts). Compare with commas removed on both
+    // sides so those compound names still resolve.
     let lower = name.to_lowercase();
+    let normalized = lower.replace(',', "");
     for emoji in emojis::iter() {
-        if emoji.name().to_lowercase() == lower {
+        let emoji_lower = emoji.name().to_lowercase();
+        if emoji_lower == lower || emoji_lower.replace(',', "") == normalized {
             return Some(emoji.as_str().to_string());
         }
     }
     None
+}
+
+/// Resolve a `\c[NAME]` / `uniparse` name that may denote more than one
+/// codepoint: a single character (including a `NameAliases.txt` alias), a UCD
+/// *named character sequence* (`NamedSequences.txt`), or a CLDR emoji sequence.
+pub(crate) fn lookup_unicode_name_string(name: &str) -> Option<String> {
+    if let Some(c) = lookup_unicode_char_by_name(name) {
+        return Some(c.to_string());
+    }
+    if let Some(s) =
+        crate::builtins::unicode_named_sequence_table::lookup_named_sequence(&name.to_uppercase())
+    {
+        return Some(s.to_string());
+    }
+    lookup_emoji_sequence(name)
 }

@@ -341,7 +341,25 @@ fn try_consume_quantifier(
     Some((quant, frugal))
 }
 
+/// Split an inner `!` negation off a Unicode-property assertion body:
+/// `<?:!Letter>` is the positive assertion of the *negated* property, and
+/// `<!:!Letter>` negates that again ("there is a character here and it IS a
+/// letter"). Returns the bare property name and whether the inner `!` was present.
+fn strip_inner_prop_negation(prop: &str) -> (&str, bool) {
+    match prop.strip_prefix('!') {
+        Some(rest) => (rest, true),
+        None => (prop, false),
+    }
+}
+
 impl Interpreter {
+    /// Whether `name` resolves to a user-defined token/rule/regex in the current
+    /// package. A grammar that defines its own `token same { … }` shadows the
+    /// builtin assertion of the same name, exactly as it shadows `<alpha>`.
+    fn regex_name_is_grammar_token(&self, name: &str) -> bool {
+        !self.current_package().is_empty() && self.resolve_token_defs(name).is_some()
+    }
+
     /// Build the alternation atom for a `<@var>` array-variable subrule: look up
     /// the array variable named by `env_key` (including its `@` sigil) and
     /// compile each element as a regex pattern, collapsing to a character class
@@ -647,6 +665,13 @@ impl Interpreter {
         } else {
             pattern.to_string()
         };
+        // Remember what `<~~>` would recurse into. The text recorded is the
+        // *interpolated* one (leading `:i`/`:s`/… adverb prefixes included), so
+        // re-parsing it at match time reproduces exactly this tree. Only the
+        // OUTERMOST parse installs a value; sub-pattern parses (groups,
+        // lookaround bodies, alternation branches) re-enter here and inherit it.
+        let _top_level_source =
+            crate::runtime::regex_parse::TopLevelSourceScope::enter(&interpolated);
         let mut source = interpolated.trim_start();
         let mut ignore_case = false;
         let mut ignore_mark = false;
@@ -2604,9 +2629,10 @@ impl Interpreter {
                                     RegexAtom::ZeroWidth
                                 } else if let Some(prop_name) = trimmed.strip_prefix("!:") {
                                     // <!:PropName> — zero-width negative Unicode property assertion
+                                    let (name, inner_neg) = strip_inner_prop_negation(prop_name);
                                     RegexAtom::UnicodePropAssert {
-                                        name: prop_name.to_string(),
-                                        negated: true,
+                                        name: name.to_string(),
+                                        negated: !inner_neg,
                                     }
                                 } else if (trimmed.starts_with("?@") || trimmed.starts_with("!@"))
                                     && mode == RegexParseMode::Validate
@@ -2669,6 +2695,41 @@ impl Interpreter {
                                     } else if negated_name == "ww" || negated_name == ".ww" {
                                         // <!ww> — zero-width assertion: NOT within a word
                                         RegexAtom::WithinWord { negated: true }
+                                    } else if negated_name.starts_with('+')
+                                        || negated_name.starts_with('-')
+                                    {
+                                        // `<!+alpha>`, `<!-alpha>`, `<!+[a..z] -[q]>` — a
+                                        // zero-width negative lookahead over an *enumerated*
+                                        // class expression. Like `<![a]>` (and unlike the
+                                        // `<!:Prop>` character-property form) this is a plain
+                                        // lookaround, so it succeeds at end of string.
+                                        let Some(inner_atom) =
+                                            self.parse_combined_class(negated_name, mode)
+                                        else {
+                                            continue;
+                                        };
+                                        RegexAtom::Lookaround {
+                                            pattern: RegexPattern {
+                                                tokens: vec![RegexToken {
+                                                    atom: inner_atom,
+                                                    quant: RegexQuant::One,
+                                                    named_capture: None,
+                                                    hash_capture: None,
+                                                    secondary_named_capture: None,
+                                                    force_list_capture: false,
+                                                    ratchet: false,
+                                                    frugal: false,
+                                                    separator: None,
+                                                    from_runtime_interpolation: false,
+                                                }],
+                                                anchor_start: false,
+                                                anchor_end: false,
+                                                ignore_case,
+                                                ignore_mark,
+                                            },
+                                            negated: true,
+                                            is_behind: false,
+                                        }
                                     } else {
                                         // <!alpha>, <!digit>, etc. — zero-width negative assertion for named class
                                         let clean_name =
@@ -2852,6 +2913,24 @@ impl Interpreter {
                                     } else {
                                         continue;
                                     }
+                                } else if trimmed
+                                    .strip_prefix('.')
+                                    .is_some_and(|r| r.starts_with('-') || r.starts_with('+'))
+                                {
+                                    // `<.-[a]-[b]>` / `<.-:letter-:digit>` — the `.`
+                                    // any-character base followed by a chain of set
+                                    // `+`/`-` parts. This is ordinary class arithmetic
+                                    // with a universe seed, so it belongs to the same
+                                    // accumulator as `<+alpha -[aeiou]>`. (A single
+                                    // subtraction used to reach the right answer only by
+                                    // accident, via the match-time `Named` fallback that
+                                    // re-reads `-:letter` as a negated property; a chain
+                                    // of two or more parts had no path at all.)
+                                    if let Some(atom) = self.parse_combined_class(trimmed, mode) {
+                                        atom
+                                    } else {
+                                        continue;
+                                    }
                                 } else if trimmed.starts_with('$')
                                     && mode == RegexParseMode::Validate
                                 {
@@ -3014,9 +3093,10 @@ impl Interpreter {
                                 } else if let Some(prop_name) = trimmed.strip_prefix("?:") {
                                     // <?:PropName> — zero-width positive Unicode property assertion
                                     // (the positive twin of `<!:PropName>` above).
+                                    let (name, inner_neg) = strip_inner_prop_negation(prop_name);
                                     RegexAtom::UnicodePropAssert {
-                                        name: prop_name.to_string(),
-                                        negated: false,
+                                        name: name.to_string(),
+                                        negated: inner_neg,
                                     }
                                 } else if trimmed
                                     .strip_prefix('?')
@@ -3127,6 +3207,41 @@ impl Interpreter {
                                 } else if trimmed == "?ww" || trimmed == "?.ww" {
                                     // <?ww> — zero-width assertion: within a word
                                     RegexAtom::WithinWord { negated: false }
+                                } else if matches!(
+                                    trimmed,
+                                    "same" | ".same" | "wb" | ".wb" | "ww" | ".ww"
+                                ) && !self
+                                    .regex_name_is_grammar_token(trimmed.trim_start_matches('.'))
+                                {
+                                    // Bare `<same>` / `<wb>` / `<ww>` are the same
+                                    // zero-width assertions as their `<?...>` spellings,
+                                    // except that — like every other bare subrule call —
+                                    // they also publish a (zero-width) named capture:
+                                    // `'aa' ~~ m/ . <same> /` yields `same => ｢｣`.
+                                    // The `<.name>` spelling suppresses that capture.
+                                    let is_dot_call = trimmed.starts_with('.');
+                                    let bare = trimmed.trim_start_matches('.');
+                                    if !is_dot_call {
+                                        pending_builtin_named_capture = Some(bare.to_string());
+                                    }
+                                    match bare {
+                                        "same" => RegexAtom::SameAssertion { negated: false },
+                                        "wb" => RegexAtom::WordBoundary { negated: false },
+                                        _ => RegexAtom::WithinWord { negated: false },
+                                    }
+                                } else if trimmed == "~~" {
+                                    // `<~~>` — recurse into the enclosing regex (or,
+                                    // inside a grammar token/rule, that rule's body).
+                                    // The enclosing source is captured now; matching
+                                    // re-parses it through the (memoized) pattern cache.
+                                    // `<~~N>` — recursing into a numbered capture — is
+                                    // "not yet implemented" in Rakudo too, so it keeps
+                                    // falling through to the generic subrule path.
+                                    match crate::runtime::regex_parse::TopLevelSourceScope::current(
+                                    ) {
+                                        Some(src) => RegexAtom::RecurseSelf(Box::from(&*src)),
+                                        None => RegexAtom::Named(name),
+                                    }
                                 } else if trimmed == "|w" {
                                     // <|w> — zero-width assertion at a boundary of the
                                     // word (`\w`) character class, i.e. `\b`. (YAMLish's

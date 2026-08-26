@@ -243,7 +243,7 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
         // Reject the bracket form directly with the same exception type.
         if arg.is_none()
             && leading_digits.is_empty()
-            && matches!(name.as_str(), "nth" | "th" | "x")
+            && matches!(name.as_str(), "nth" | "st" | "nd" | "rd" | "th" | "x")
             && r.starts_with('[')
         {
             let message = format!(
@@ -286,6 +286,10 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
                     | "c"
                     | "continue"
                     | "nth"
+                    | "st"
+                    | "nd"
+                    | "rd"
+                    | "th"
                     | "x"
             )
         {
@@ -324,16 +328,16 @@ pub(super) fn parse_match_adverbs(input: &str) -> PResult<'_, MatchAdverbs> {
             adverbs.continue_value = arg.and_then(|s| s.trim().parse::<usize>().ok());
         } else if name.eq_ignore_ascii_case("p5") || name.eq_ignore_ascii_case("perl5") {
             adverbs.perl5 = true;
-        } else if name == "nth" {
-            if let Some(raw) = arg {
-                adverbs.nth = Some(raw.trim().to_string());
-            }
-        } else if (name == "th" || name == "st" || name == "nd" || name == "rd")
-            && !leading_digits.is_empty()
-        {
-            adverbs.nth = Some(leading_digits.clone());
-        } else if name == "th" {
-            if let Some(raw) = arg {
+        } else if matches!(name.as_str(), "nth" | "st" | "nd" | "rd" | "th") {
+            // `:st`, `:nd`, `:rd` and `:th` are exact aliases of `:nth` (S05 /
+            // `Language/regexes.rakudoc`: "There's actually no difference
+            // between the `:nth` adverb and the rest. You choose them only
+            // based on legibility"). Both the ordinal-prefix spelling
+            // (`:1st`, `:2nd`, `:3rd`, `:4th`) and the parenthesised argument
+            // (`:st(1|8)`, `:nth(1,3)`) select the same match ordinal(s).
+            if !leading_digits.is_empty() {
+                adverbs.nth = Some(leading_digits.clone());
+            } else if let Some(raw) = arg {
                 adverbs.nth = Some(raw.trim().to_string());
             }
         } else if name == "x" {

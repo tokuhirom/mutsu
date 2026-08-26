@@ -161,6 +161,41 @@ impl Interpreter {
         false
     }
 
+    /// Match `<~~>`: re-match the enclosing regex (whose source text the atom
+    /// carries) at `pos`. The recursive invocation gets its own discarded
+    /// `Match`, so its captures never reach the caller's `$/`.
+    ///
+    /// A recursion that re-enters the same source at the same position cannot
+    /// consume anything, so it fails rather than looping — without that guard
+    /// `rx/ <~~> a /` would recurse until the stack ran out.
+    pub(super) fn regex_match_recurse_self(
+        &mut self,
+        source: &str,
+        chars: &[char],
+        pos: usize,
+        pkg: &str,
+    ) -> Option<usize> {
+        use crate::runtime::regex_parse::RECURSE_SELF_STACK;
+        let already_active = RECURSE_SELF_STACK.with(|s| {
+            s.borrow()
+                .iter()
+                .any(|(src, at)| *at == pos && &**src == source)
+        });
+        if already_active {
+            return None;
+        }
+        let pattern = self.parse_regex(source)?;
+        let key: std::rc::Rc<str> = std::rc::Rc::from(source);
+        RECURSE_SELF_STACK.with(|s| s.borrow_mut().push((key, pos)));
+        let out = self
+            .regex_match_end_from_caps_in_pkg(&pattern, chars, pos, pkg)
+            .map(|(end, _discarded_caps)| end);
+        RECURSE_SELF_STACK.with(|s| {
+            s.borrow_mut().pop();
+        });
+        out
+    }
+
     /// See the twin wrapper in `regex_match_atom.rs`: a subrule's
     /// dynamically-scoped (`$*`) parameters are established for the duration of
     /// this call and torn down here.
@@ -440,8 +475,14 @@ impl Interpreter {
                 return if pass { Some(pos) } else { None };
             }
             RegexAtom::UnicodePropAssert { name, negated } => {
+                // `<?:Prop>` / `<!:Prop>` are zero-width, but they still test a
+                // character: Rakudo's character-class matcher bounds-checks
+                // *before* it applies the negation, so BOTH polarities fail when
+                // there is no character left. (`'333' ~~ /^^ \d+ <!:L>/` is
+                // `｢33｣`, not `｢333｣` — the greedy `\d+` has to give a character
+                // back so the assertion has something to look at.)
                 if pos >= chars.len() {
-                    return if *negated { Some(pos) } else { None };
+                    return None;
                 }
                 let c = chars[pos];
                 let prop_match = check_unicode_property(name, c);
@@ -461,6 +502,9 @@ impl Interpreter {
             RegexAtom::AtPosition(target) => {
                 // <at(N)> succeeds when current position == N
                 return if pos == *target { Some(pos) } else { None };
+            }
+            RegexAtom::RecurseSelf(source) => {
+                return self.regex_match_recurse_self(source, chars, pos, pkg);
             }
             _ => {}
         }
@@ -791,6 +835,7 @@ impl Interpreter {
             | RegexAtom::EndOfString
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
+            | RegexAtom::RecurseSelf(_)
             | RegexAtom::AtPosition(_) => unreachable!(),
         };
         if matched {

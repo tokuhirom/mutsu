@@ -744,6 +744,15 @@ impl Interpreter {
         // route the class through `CompositeClass` (which does) instead.
         let mut negative_has_grammar_token = false;
         let mut remaining = input.trim();
+        // A leading `.` any-character base (`<.-[a]-[b]>`, `<.-:letter-:digit>`)
+        // seeds the positive half with the universe; the rest of the expression
+        // is the ordinary `+`/`-` part chain.
+        if let Some(rest) = remaining.strip_prefix('.')
+            && (rest.starts_with('-') || rest.starts_with('+'))
+        {
+            positive_items.push(ClassItem::Any);
+            remaining = rest;
+        }
         // A leading bracket class with no sign (`[a..z] +digit`) is an implicit
         // positive first item: the `+`/`-` only separates the subsequent parts.
         let mut implicit_first = remaining.starts_with('[');

@@ -141,6 +141,10 @@ impl Interpreter {
                         break;
                     }
                 }
+                ClassItem::Any => {
+                    matched = true;
+                    break;
+                }
                 ClassItem::NamedBuiltin(name) => {
                     if matches_named_builtin(name, c) {
                         matched = true;

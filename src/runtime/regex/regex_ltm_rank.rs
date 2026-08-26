@@ -95,6 +95,10 @@ pub(super) fn ltm_atom_mode(atom: &RegexAtom) -> LtmAtomMode<'_> {
         }
         // `&` / `&&` conjunction: no NFA method in Rakudo -> fate (terminate).
         RegexAtom::Conjunction(_) => LtmAtomMode::Terminate,
+        // `<~~>` recurses into the enclosing regex, which is exactly the
+        // structure being measured — inlining it would not terminate. Rakudo's
+        // NFA has no method for it either, so it is a fate.
+        RegexAtom::RecurseSelf(_) => LtmAtomMode::Terminate,
         RegexAtom::Lookaround {
             pattern,
             negated,

@@ -24,6 +24,15 @@ fn is_regex_quote_terminator(open: char, ch: char) -> bool {
     }
 }
 
+/// Does `$` immediately followed by `c` spell a Raku special variable? Only
+/// `$/` (the match) and `$!` (the error) qualify: a substitution delimiter is
+/// always a non-word character, so the word-named specials (`$_`, `$0`) can
+/// never arise this way, and no other punctuation delimiter names a variable —
+/// Rakudo diagnoses `s,a,$,,` as "Non-variable $ must be backslashed".
+fn is_special_var_char(c: char) -> bool {
+    matches!(c, '/' | '!')
+}
+
 /// Scan `input` for content delimited by `close_ch`, handling backslash escapes,
 /// single-quoted strings, and paired-delimiter nesting.
 /// Returns `(content, rest_after_close)` or None.
@@ -99,20 +108,26 @@ pub(in crate::parser) fn scan_to_delim_replacement(
                     None => return None,
                 }
             }
-        } else if c == '$' && !is_paired && input[i + 1..].starts_with(close_ch) {
-            // `$/` — the match variable — followed by the close delimiter. When
-            // it is immediately followed by a postfix `.`/`[`/`<` the delimiter
-            // is part of `$/` (e.g. `$/.chars()`, `$/[0]`, `$/<k>`), not the end
-            // of the replacement, so skip it. Mirrors the same disambiguation in
-            // `scan_to_delim`.
-            let after = &input[i + 1..];
-            let after_delim = &after[close_ch.len_utf8()..];
-            if after_delim.starts_with('[')
-                || after_delim.starts_with('.')
-                || after_delim.starts_with('<')
-            {
-                chars.next(); // skip the delimiter char (it is part of $/)
-            }
+        } else if c == '$'
+            && !is_paired
+            && input[i + 1..].starts_with(close_ch)
+            && is_special_var_char(close_ch)
+        {
+            // A `$` immediately followed by the close delimiter, where that
+            // delimiter also spells a Raku special variable (`$/`, `$!`).
+            //
+            // In the REPLACEMENT half there is no competing reading: the
+            // replacement is a `qq` quote, so a trailing `$` is not an anchor and
+            // not a literal either — Rakudo rejects `s/a/x$/` outright with
+            // "Malformed replacement part; couldn't find final /", and accepts
+            // `s/(a)/[$/]/` and `s:g/<[ab]>/$//` because it lexes `$/` as a term
+            // unconditionally. So consume the delimiter as part of the variable
+            // rather than only when a `[`/`.`/`<` postfix follows it.
+            //
+            // A delimiter that does NOT spell a variable (`s,a,$,,`) keeps the
+            // old behaviour of ending the replacement; Rakudo diagnoses that
+            // separately as "Non-variable $ must be backslashed".
+            chars.next(); // skip the delimiter char (it is part of the variable)
         } else if c == '\\' {
             chars.next();
         }

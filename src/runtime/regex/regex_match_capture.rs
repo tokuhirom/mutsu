@@ -276,6 +276,7 @@ impl Interpreter {
             | RegexAtom::EndOfString
             | RegexAtom::WsRule
             | RegexAtom::SameAssertion { .. }
+            | RegexAtom::RecurseSelf(_)
             | RegexAtom::AtPosition(_) => {
                 return self
                     .regex_match_atom_in_pkg(atom, chars, pos, pkg, ignore_case)
