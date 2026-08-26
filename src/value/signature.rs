@@ -686,7 +686,61 @@ fn build_parameter_attrs(p: &SigParam, interp: Option<&Interpreter>) -> HashMap<
             make_params_value_from_sig_params(sub, interp),
         );
     }
+
+    // `.modifier` is the type-definedness smiley the declaration carried
+    // (`Str:U $a` → ":U", `UInt:D $b` → ":D"), or the empty string. mutsu keeps
+    // the smiley on the type-constraint string, so read it back off there.
+    attrs.insert(
+        "modifier".to_string(),
+        Value::str(definedness_modifier(p.type_constraint.as_deref()).to_string()),
+    );
+
+    // `.sub_signature` answers a real `Signature` for a destructuring
+    // parameter (`@array ($first, *@rest)` → `($first, *@rest)`), and the
+    // undefined `Signature` type object otherwise (rakudo prints
+    // `(Signature)`). A *named alias* chain (`:s(:$sort)`) is recorded in the
+    // same `sub_signature` slot internally but is NOT a destructure — rakudo
+    // reports `(Signature)` for it, so it is excluded here.
+    let sub_signature_val = match &p.sub_signature {
+        Some(sub) if !is_named_alias_sub_signature(p, sub) => make_signature_value(
+            SigInfo {
+                params: sub.clone(),
+                return_type: None,
+            },
+            interp,
+        ),
+        _ => Value::Package(Symbol::intern("Signature")),
+    };
+    attrs.insert("sub_signature".to_string(), sub_signature_val);
     attrs
+}
+
+/// The `:U` / `:D` definedness smiley trailing a type-constraint string, or
+/// `""` when the parameter is untyped or carries no smiley. `:_` (explicitly
+/// "either") is a modifier too and reports as written.
+fn definedness_modifier(type_constraint: Option<&str>) -> &'static str {
+    let Some(tc) = type_constraint else {
+        return "";
+    };
+    // Only a trailing smiley counts; a coercion type (`Int(Str)`) or a
+    // parameterized type may contain a colon elsewhere.
+    if tc.ends_with(":U") {
+        ":U"
+    } else if tc.ends_with(":D") {
+        ":D"
+    } else if tc.ends_with(":_") {
+        ":_"
+    } else {
+        ""
+    }
+}
+
+/// Whether a parameter's `sub_signature` slot holds a *named alias* chain
+/// (`:s(:$sort)`) rather than a destructuring sub-signature. The parser
+/// records both in the same slot; only the destructure is a real
+/// `.sub_signature` in rakudo.
+fn is_named_alias_sub_signature(p: &SigParam, sub: &[SigParam]) -> bool {
+    p.named && !sub.is_empty() && sub.iter().all(|s| s.named)
 }
 
 /// Construct the `.raku` string for a Parameter instance from its attributes.

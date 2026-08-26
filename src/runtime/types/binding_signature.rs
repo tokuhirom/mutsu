@@ -830,6 +830,48 @@ impl Interpreter {
                 } else {
                     None
                 };
+                // The same rule for a lone *lazy* argument (`f(1...*)`), which
+                // must never be reified to build the slurpy: `+a` keeps the
+                // generator as a `Seq`, `+@a` re-tags it as a `List` (rakudo:
+                // `sub z(+@s){ @s.^name }; z(1...*)` is "List"). Both stay lazy.
+                let single_lazy = if remaining_positional.len() == 1 && single_seq.is_none() {
+                    let single = unwrap_varref_value(remaining_positional[0].clone());
+                    match single.view() {
+                        ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
+                            if pd.sigilless {
+                                Some(single.clone())
+                            } else {
+                                Some(Value::lazy_list(crate::gc::Gc::new(ll.with_list_context())))
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                if let Some(lazy_value) = single_lazy {
+                    positional_idx = args.len();
+                    if !pd.name.is_empty() {
+                        if pd.sigilless {
+                            self.env
+                                .insert(sigilless_readonly_key(&pd.name), Value::TRUE);
+                            self.env.remove(&sigilless_alias_key(&pd.name));
+                            self.bind_param_value(&pd.name, lazy_value.clone());
+                        } else {
+                            let key = if pd.name.starts_with('@') {
+                                pd.name.clone()
+                            } else {
+                                format!("@{}", pd.name)
+                            };
+                            self.bind_param_value(&key, lazy_value.clone());
+                            self.bind_param_type_constraint(&key, pd.type_constraint.clone());
+                        }
+                    }
+                    if let Some(sub_params) = &pd.sub_signature {
+                        bind_sub_signature_from_value(self, sub_params, &lazy_value)?;
+                    }
+                    continue;
+                }
                 let items = if remaining_positional.len() == 1 {
                     let single = unwrap_varref_value(remaining_positional[0].clone());
                     match single.view() {
@@ -879,8 +921,25 @@ impl Interpreter {
                         // `+@a` binding a lone Seq: a re-iterable List.
                         Value::array(items)
                     }
-                } else {
+                } else if pd.sigilless {
+                    // A *sigilless* single-argument-rule slurpy (`+a`) is not a
+                    // container declaration: rakudo binds the collected
+                    // arguments as a `List`, never an `Array` (`sub z(+a) { a }`
+                    // → `z("x").^name` is "List"). Element identity is preserved
+                    // (no itemization), which is what makes `-> +l { l }(@x)[0]
+                    // =:= @x[0]` True.
+                    Value::array(items)
+                } else if pd.traits.iter().any(|t| t == "raw" || t == "rw") {
+                    // `+@a is raw` / `is rw` deliberately alias the caller's
+                    // element containers, so their cells pass straight through.
                     Value::real_array(items)
+                } else {
+                    // A sigiled `+@a` binds an `Array`, and — exactly like `*@a`
+                    // — each element is a fresh binding rather than an alias of
+                    // the caller's element container: reading through any
+                    // `ContainerRef` cell here is what keeps `-> +@l { @l }(@x)[0]
+                    // =:= @x[0]` False (rakudo).
+                    Value::real_array(items.into_iter().map(Value::into_deref).collect())
                 };
                 if pd.sigilless {
                     // Sigilless single-argument rule slurpy (`+foo`): bind a
@@ -1180,7 +1239,18 @@ impl Interpreter {
                         }
                         positional_idx += 1;
                     }
-                    let slurpy_value = Value::real_array(items);
+                    // A plain `*@a` binds each element as a fresh binding, not
+                    // as an alias of the caller's element container: read
+                    // through any `ContainerRef` cell that a prior `=:=` (or a
+                    // `:=` bind) promoted in the source array, so the slurpy's
+                    // elements are never container-identical to the caller's.
+                    // `*@a is raw` / `is rw` deliberately DO alias, and record
+                    // that through `rw_bindings` — leave those items alone.
+                    let slurpy_value = if is_alias_slurpy {
+                        Value::real_array(items)
+                    } else {
+                        Value::real_array(items.into_iter().map(Value::into_deref).collect())
+                    };
                     if !pd.name.is_empty() {
                         let key = if pd.name.starts_with('@') {
                             pd.name.clone()
