@@ -449,6 +449,13 @@ fn walk_expr(expr: &Expr, ctx: &mut Ctx) {
             walk_expr(left, ctx);
             walk_expr(right, ctx);
         }
+        // `todo/tickets/chained-compare-ast-node.md`: same-scope compound
+        // expression, like `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                walk_expr(o, ctx);
+            }
+        }
         Expr::InfixFunc { left, right, .. } => {
             walk_expr(left, ctx);
             for r in right {

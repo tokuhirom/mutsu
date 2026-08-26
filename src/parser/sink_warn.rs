@@ -236,6 +236,13 @@ fn scan_gathers_expr(expr: &Expr) {
         // ADR-0033: descend into an un-expanded WhateverCurry body the same
         // way as the closure kinds above.
         Expr::WhateverCurry(inner) => scan_gathers_expr(inner),
+        // `todo/tickets/chained-compare-ast-node.md`: each operand can hold a
+        // nested `gather`, same as any other compound expression's operands.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                scan_gathers_expr(o);
+            }
+        }
         _ => {}
     }
 }

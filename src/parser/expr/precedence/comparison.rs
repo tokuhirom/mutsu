@@ -165,16 +165,9 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
         } else {
             structural_comparison_expr_mode(r, mode)?
         };
-        let mut result = Expr::Unary {
-            op: TokenKind::Bang,
-            expr: Box::new(Expr::Binary {
-                left: Box::new(left),
-                op: op.token_kind(),
-                right: Box::new(right.clone()),
-            }),
-        };
-        // Support chaining: "a" !after "b" !after "c" → (!after) && (!after)
-        let mut prev_right = right;
+        let mut operands = vec![left, right];
+        let mut chain_ops: Vec<(TokenKind, bool)> = vec![(op.token_kind(), true)];
+        // Support chaining: "a" !after "b" !after "c" → a chain of length 2
         let mut r = r;
         loop {
             let (r2, _) = ws(r)?;
@@ -191,20 +184,8 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     remaining_len: err.remaining_len.or(Some(r2.len())),
                     exception: None,
                 })?;
-                let next_cmp = Expr::Unary {
-                    op: TokenKind::Bang,
-                    expr: Box::new(Expr::Binary {
-                        left: Box::new(prev_right),
-                        op: cop.token_kind(),
-                        right: Box::new(next_right.clone()),
-                    }),
-                };
-                result = Expr::Binary {
-                    left: Box::new(result),
-                    op: TokenKind::ChainAnd,
-                    right: Box::new(next_cmp),
-                };
-                prev_right = next_right;
+                chain_ops.push((cop.token_kind(), true));
+                operands.push(next_right);
                 r = r2;
                 continue;
             }
@@ -221,22 +202,29 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     remaining_len: err.remaining_len.or(Some(r2.len())),
                     exception: None,
                 })?;
-                let next_cmp = Expr::Binary {
-                    left: Box::new(prev_right),
-                    op: cop.token_kind(),
-                    right: Box::new(next_right.clone()),
-                };
-                result = Expr::Binary {
-                    left: Box::new(result),
-                    op: TokenKind::ChainAnd,
-                    right: Box::new(next_cmp),
-                };
-                prev_right = next_right;
+                chain_ops.push((cop.token_kind(), false));
+                operands.push(next_right);
                 r = r2;
                 continue;
             }
             break;
         }
+        let result = if chain_ops.len() == 1 {
+            make_chain_cmp(
+                operands[0].clone(),
+                chain_ops[0].0.clone(),
+                operands[1].clone(),
+                chain_ops[0].1,
+            )
+        } else {
+            // A real chain: keep it as a marker node, expanded by the
+            // compiler (see the mixed-chaining path below for the same
+            // rationale).
+            Expr::ChainedCompare {
+                operands,
+                ops: chain_ops,
+            }
+        };
         return Ok((r, result));
     }
     if let Some((op, len)) = parse_comparison_op(r) {
@@ -448,18 +436,22 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
                     operands[0].clone(),
                     chain_ops[0].0.clone(),
                     operands[1].clone(),
-                    false,
+                    chain_ops[0].1,
                 ),
             ));
         }
-        let result = if operands.iter().any(contains_whatever) {
-            // Keep the historical `lhs < * && * < rhs` shape so WhateverCode wrapping
-            // can preserve placeholder semantics in expression arguments.
-            build_chain_cmp_expr_with_repeated_middle(&operands, &chain_ops)
-        } else {
-            build_chain_cmp_expr(&operands, &chain_ops, 0, operands[0].clone())
-        };
-        return Ok((r, result));
+        // A real chain (more than one comparison): keep it as a marker node
+        // rather than expanding here. The compiler expands it at compile
+        // time (`crate::chain_compare::expand`), which lets `.AST` render it
+        // as rakudo's left-nested `ApplyInfix` chain instead of the expanded
+        // `&&`/`DoBlock` shape (`todo/tickets/chained-compare-ast-node.md`).
+        return Ok((
+            r,
+            Expr::ChainedCompare {
+                operands,
+                ops: chain_ops,
+            },
+        ));
     }
 
     Ok((rest, left))

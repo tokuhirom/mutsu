@@ -291,6 +291,12 @@ fn check_bare_var_expr(expr: &Expr, var_name: &str, found: &mut bool) {
             check_bare_var_expr(left, var_name, found);
             check_bare_var_expr(right, var_name, found);
         }
+        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                check_bare_var_expr(o, var_name, found);
+            }
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
             check_bare_var_expr(expr, var_name, found)
         }
@@ -639,6 +645,12 @@ fn order_check_expr(expr: &Expr, state: &mut OrderState) {
         Expr::Binary { left, right, .. } => {
             order_check_expr(left, state);
             order_check_expr(right, state);
+        }
+        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                order_check_expr(o, state);
+            }
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => order_check_expr(expr, state),
         Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {

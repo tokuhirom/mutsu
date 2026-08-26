@@ -73,6 +73,9 @@ pub(crate) fn expr_uses_attr_twigil(expr: &Expr) -> bool {
         // ADR-0033: an un-expanded WhateverCurry body can still reference
         // `$!attr` (e.g. `$!x + *`, `*.=foo` mutating an attribute).
         Expr::WhateverCurry(inner) => expr_uses_attr_twigil(inner),
+        // `todo/tickets/chained-compare-ast-node.md`: `$!x < $!y < $!z` can
+        // reference an attribute in any operand, same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_uses_attr_twigil),
         Expr::Try { body, catch } => {
             body.iter().any(stmt_uses_attr_twigil)
                 || catch

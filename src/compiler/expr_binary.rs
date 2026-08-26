@@ -368,7 +368,7 @@ impl Compiler {
         }
         // Short-circuit operators
         match op {
-            TokenKind::AndAnd | TokenKind::AndWord | TokenKind::ChainAnd => {
+            TokenKind::AndAnd | TokenKind::AndWord => {
                 self.compile_expr(left);
                 self.code.emit(OpCode::Dup);
                 let jump_end = self.code.emit(OpCode::JumpIfFalse(0));

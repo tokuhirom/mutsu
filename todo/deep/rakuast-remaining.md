@@ -161,12 +161,12 @@ independent arity-1 ones; a ternary primed nothing at all. `src/whatever_curry/p
 now owns the barrier rule (`&&`/`||`/`//`/`and`/`or`/`andthen`/`orelse`/`notandthen`/
 ternary), and the barrier is *opaque* to the enclosing scope, which is what let the ~50
 parser planting sites fall into line without being rewritten. The ADR's "Phase-4
-prerequisite" (the chained-comparison `&&`-duplication trap) was resolved with a dedicated
-`TokenKind::ChainAnd` rather than the heavier `Expr::ChainedCompare` node — that node is
-still worth having for RakuAST rendering fidelity and is filed as
-[`todo/tickets/chained-compare-ast-node.md`](../tickets/chained-compare-ast-node.md). See
-the ADR's "Phase 4 outcome" section for the full account, including the `xor` / `^^`
-re-measurement and a latent de-duplication bug the prerequisite flushed out.
+prerequisite" (the chained-comparison `&&`-duplication trap) was first resolved with a
+dedicated `TokenKind::ChainAnd`; the heavier `Expr::ChainedCompare` node it deferred (for
+RakuAST rendering fidelity) shipped 2026-08-26 and retired `ChainAnd` in the process — see
+[`news/2026-08/chained-compare-ast-node.md`](../../news/2026-08/chained-compare-ast-node.md).
+See the ADR's "Phase 4 outcome" section for the full account of the original prerequisite,
+including the `xor` / `^^` re-measurement and a latent de-duplication bug it flushed out.
 
 **Phase 3 (RakuAST write / `EVAL` of a hand-constructed `WhateverCode::Argument` tree) is
 the only part of ADR-0033 still open.** It remains designed only at the ADR's outline

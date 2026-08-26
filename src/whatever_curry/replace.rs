@@ -9,7 +9,6 @@
 //! already-built `Lambda`/`AnonSubParams` closure and rename its parameter(s)
 //! to fit the enclosing numbering scheme.
 
-use super::build::{count_whatever, exprs_structurally_eq};
 use crate::ast::Expr;
 use crate::parser::is_whatever;
 use crate::token_kind::TokenKind;
@@ -30,53 +29,39 @@ pub(crate) fn replace_whatever_numbered(expr: &Expr, counter: &mut usize) -> Exp
         // it belongs to the enclosing closure's parameter list. Clone it
         // through untouched. ADR-0033 Phase 4.
         e if super::plant::is_thunk_barrier(e) => e.clone(),
-        // `ChainAnd`: the parser's synthesized chained-comparison conjunction,
-        // whose middle operand is duplicated by the expansion.
-        Expr::Binary {
-            left,
-            op: TokenKind::ChainAnd,
-            right,
-        } => {
-            if let (
-                Expr::Binary {
-                    left: ll,
-                    op: lop,
-                    right: lr,
-                },
-                Expr::Binary {
-                    left: rl,
-                    op: rop,
-                    right: rr,
-                },
-            ) = (left.as_ref(), right.as_ref())
-                && exprs_structurally_eq(lr, rl)
-                && count_whatever(lr) > 0
-            {
-                // Chained comparison expanded to `(ll OP m) && (m OP rr)`: assign
-                // params left-to-right (ll, then the shared middle once, then rr)
-                // and reuse the same replaced middle in both comparisons so each
-                // distinct operand maps to its own positional argument.
-                let new_ll = replace_whatever_numbered(ll, counter);
-                let new_mid = replace_whatever_numbered(lr, counter);
-                let new_rr = replace_whatever_numbered(rr, counter);
-                return Expr::Binary {
-                    left: Box::new(Expr::Binary {
-                        left: Box::new(new_ll),
-                        op: lop.clone(),
-                        right: Box::new(new_mid.clone()),
-                    }),
-                    op: TokenKind::ChainAnd,
-                    right: Box::new(Expr::Binary {
-                        left: Box::new(new_mid),
-                        op: rop.clone(),
-                        right: Box::new(new_rr),
-                    }),
-                };
-            }
-            Expr::Binary {
-                left: Box::new(replace_whatever_numbered(left, counter)),
-                op: TokenKind::ChainAnd,
-                right: Box::new(replace_whatever_numbered(right, counter)),
+        // `todo/tickets/chained-compare-ast-node.md`: unlike the retired
+        // `TokenKind::ChainAnd` expansion, each operand appears exactly once
+        // in `operands`, so no shared-middle detection/dedup is needed —
+        // replace each operand in place and keep the node a `ChainedCompare`
+        // (it re-enters this same arm — or this whole match, via
+        // `WhateverCurry` — when its own `Expr::ChainedCompare` compiler arm
+        // later expands it). The final operand is exempt when the chain's
+        // last link is a SmartMatch/BangTilde, mirroring the SmartMatch arm
+        // below and the matching `count_whatever` arm (numbering must agree
+        // with `count_whatever`'s, which visits operands in the same order).
+        Expr::ChainedCompare { operands, ops } => {
+            let n = operands.len();
+            let last_is_smartmatch_rhs = ops
+                .last()
+                .is_some_and(|(op, _)| matches!(op, TokenKind::SmartMatch | TokenKind::BangTilde));
+            let new_operands = operands
+                .iter()
+                .enumerate()
+                .map(|(i, o)| {
+                    if i == n - 1 && last_is_smartmatch_rhs {
+                        if is_whatever(o) {
+                            replace_whatever_numbered(o, counter)
+                        } else {
+                            o.clone()
+                        }
+                    } else {
+                        replace_whatever_numbered(o, counter)
+                    }
+                })
+                .collect();
+            Expr::ChainedCompare {
+                operands: new_operands,
+                ops: ops.clone(),
             }
         }
         // SmartMatch/BangTilde: a compound RHS Whatever is left untouched (it's
@@ -211,6 +196,30 @@ pub(crate) fn replace_whatever_single(expr: &Expr) -> Expr {
     match expr {
         e if is_whatever(e) || matches!(e, Expr::HyperWhatever) => Expr::Var("_".to_string()),
         Expr::WhateverCurry(inner) => replace_whatever_single(inner),
+        // See the matching arm in `replace_whatever_numbered`: the final
+        // operand is exempt when the chain's last link is a
+        // SmartMatch/BangTilde.
+        Expr::ChainedCompare { operands, ops } => {
+            let n = operands.len();
+            let last_is_smartmatch_rhs = ops
+                .last()
+                .is_some_and(|(op, _)| matches!(op, TokenKind::SmartMatch | TokenKind::BangTilde));
+            let new_operands = operands
+                .iter()
+                .enumerate()
+                .map(|(i, o)| {
+                    if i == n - 1 && last_is_smartmatch_rhs && !is_whatever(o) {
+                        o.clone()
+                    } else {
+                        replace_whatever_single(o)
+                    }
+                })
+                .collect();
+            Expr::ChainedCompare {
+                operands: new_operands,
+                ops: ops.clone(),
+            }
+        }
         // See the matching arm in `replace_whatever_numbered`: a thunk barrier's
         // operands are separate priming scopes and must not be substituted into
         // the enclosing closure's body. ADR-0033 Phase 4.

@@ -1,5 +1,6 @@
 mod ast;
 mod builtins;
+pub(crate) mod chain_compare;
 mod compiler;
 pub mod crash_report;
 pub mod doc_mode;

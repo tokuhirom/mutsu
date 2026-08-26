@@ -135,6 +135,9 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             items.iter().any(contains_xx_with_bare_whatever)
         }
         Expr::CaptureLiteral(items) => items.iter().any(contains_xx_with_bare_whatever),
+        Expr::ChainedCompare { operands, .. } => {
+            operands.iter().any(contains_xx_with_bare_whatever)
+        }
         _ => false,
     }
 }
@@ -288,6 +291,35 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                     .iter()
                     .any(|e| contains_whatever(e) || is_wrapped_whatevercode(e))
         }
+        // `todo/tickets/chained-compare-ast-node.md`: a chained comparison is
+        // a single priming scope spanning every operand (measured against
+        // rakudo: `(1 < * < 10)(0)` is `False`, one arity-1 `WhateverCode`).
+        // A *bare* `*` in any operand makes the whole chain curry (recursing
+        // via `contains_whatever` naturally finds it). Deliberately NOT
+        // checked here: `is_wrapped_whatevercode` on an operand. Unlike the
+        // generic `Expr::Binary` arm below (where an already-materialized
+        // `(* - 1)` composes into `(* - 1) - 1`'s enclosing curry), a chain
+        // is expanded well after parsing (`crate::chain_compare::expand`,
+        // at compile time), by which point an operand that is itself a
+        // `WhateverCurry` marker -- whether from an explicit `(* + 1)` or
+        // from `wrap_smartmatch_rhs`'s autoprime of a compound SmartMatch
+        // RHS -- must stay an independent, already-scoped closure rather
+        // than being absorbed into the outer chain's arity: mirrors mutsu's
+        // own pre-existing behaviour, where a chain never saw through to an
+        // operand's already-built closure in the first place, because by
+        // the time the old code's `&&`/`DoBlock` expansion reached the
+        // enclosing `should_wrap_whatevercode` check, it was already a
+        // shape `contains_whatever` does not recurse into. (This does mean
+        // mutsu still does not compose a parenthesized curry like
+        // `1 < (* + 1) < 10` across the whole chain the way rakudo does --
+        // a narrower, pre-existing divergence this ticket does not fix,
+        // since fixing it would need to re-derive composition rules this
+        // gate never had to begin with.) Verified against both raku and the
+        // behaviour before this ticket for the case that DOES matter here:
+        // `("foo" ~~ *.chars == 3) ~~ Bool` is `True` (`*.chars` stays its
+        // own WhateverCode, invoked once by `~~`, `False` compares against
+        // `3` uncurried) -- roast/S03-smartmatch/disorganized.t.
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_whatever),
         // R meta-operators with Whatever: `5 R- *` should curry.
         // X/Z meta-operators with bare * in list contexts mean "extend" rather
         // than WhateverCode, so only enable for R (reverse) meta-ops.

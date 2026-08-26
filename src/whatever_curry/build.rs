@@ -146,6 +146,7 @@ fn contains_hyperwhatever(expr: &Expr) -> bool {
         Expr::HyperWhatever => true,
         Expr::WhateverCurry(inner) => contains_hyperwhatever(inner),
         e if super::plant::is_thunk_barrier(e) => false,
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(contains_hyperwhatever),
         Expr::Binary { left, right, .. } => {
             contains_hyperwhatever(left) || contains_hyperwhatever(right)
         }
@@ -181,36 +182,27 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
         // markers by `super::plant`), so they contribute no placeholder to the
         // arity of whatever encloses them. ADR-0033 Phase 4.
         e if super::plant::is_thunk_barrier(e) => 0,
-        // `ChainAnd` is the parser's *synthesized* chained-comparison
-        // conjunction, not a user-written `&&` — it is deliberately not a thunk
-        // barrier, and its middle operand is duplicated by the expansion.
-        Expr::Binary {
-            left,
-            op: TokenKind::ChainAnd,
-            right,
-        } => {
-            if let (
-                Expr::Binary {
-                    left: ll,
-                    right: lr,
-                    ..
-                },
-                Expr::Binary {
-                    left: rl,
-                    right: rr,
-                    ..
-                },
-            ) = (left.as_ref(), right.as_ref())
-                && exprs_structurally_eq(lr, rl)
-                && count_whatever(lr) > 0
-            {
-                // Chained comparison `a OP m OP b` is expanded to
-                // `(a OP m) && (m OP b)` with the middle `m` duplicated. Count the
-                // shared middle's placeholders once so the WhateverCode arity is
-                // the number of distinct operands, not double the middle.
-                return count_whatever(ll) + count_whatever(lr) + count_whatever(rr);
-            }
-            count_whatever(left) + count_whatever(right)
+        // `todo/tickets/chained-compare-ast-node.md`: unlike the retired
+        // `TokenKind::ChainAnd` expansion, `operands` is never duplicated —
+        // each distinct operand appears exactly once — so the arity is simply
+        // the sum of each operand's own count, EXCEPT the final operand when
+        // the chain's last link is a SmartMatch/BangTilde (mirrors the
+        // SmartMatch/BangTilde arm below: only a bare `*` RHS counts, a
+        // compound one autoprimes independently). See the matching
+        // `contains_whatever` arm for why only the *last* operand can ever
+        // be in that RHS role.
+        Expr::ChainedCompare { operands, ops } => {
+            let last_is_smartmatch_rhs = ops
+                .last()
+                .is_some_and(|(op, _)| matches!(op, TokenKind::SmartMatch | TokenKind::BangTilde));
+            let (init, last) = operands.split_at(operands.len() - 1);
+            let init_sum: usize = init.iter().map(count_whatever).sum();
+            let last_contrib = if last_is_smartmatch_rhs {
+                usize::from(is_whatever(&last[0]))
+            } else {
+                count_whatever(&last[0])
+            };
+            init_sum + last_contrib
         }
         // For range operators: count Whatever in endpoints only when
         // the endpoint contains compound Whatever (not bare *).
@@ -284,14 +276,6 @@ pub(crate) fn count_whatever(expr: &Expr) -> usize {
     }
 }
 
-/// Structural equality of two expressions, used to detect the shared middle
-/// term of an expanded chained comparison (`a OP m OP b` => `(a OP m) && (m OP
-/// b)`). `Expr` cannot derive `PartialEq` (it embeds `Value`), and this only runs
-/// while wrapping a WhateverCode, so a `Debug`-string comparison is sufficient.
-pub(crate) fn exprs_structurally_eq(a: &Expr, b: &Expr) -> bool {
-    format!("{a:?}") == format!("{b:?}")
-}
-
 /// Check if an expression contains a reference to $_ (the topic variable).
 /// Used to determine whether a WhateverCode lambda should avoid using $_ as its param.
 pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
@@ -299,6 +283,7 @@ pub(crate) fn expr_contains_topic(expr: &Expr) -> bool {
         Expr::Var(name) if name == "_" => true,
         Expr::Whatever | Expr::WhateverArg => false,
         Expr::WhateverCurry(inner) => expr_contains_topic(inner),
+        Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_contains_topic),
         Expr::Binary { left, right, .. } => expr_contains_topic(left) || expr_contains_topic(right),
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => expr_contains_topic(expr),
         Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {

@@ -23,7 +23,7 @@ pub(crate) fn token_kind_to_op_name(op: &TokenKind) -> String {
         TokenKind::Lte => "<=".to_string(),
         TokenKind::Gt => ">".to_string(),
         TokenKind::Gte => ">=".to_string(),
-        TokenKind::AndAnd | TokenKind::ChainAnd => "&&".to_string(),
+        TokenKind::AndAnd => "&&".to_string(),
         TokenKind::OrOr => "||".to_string(),
         TokenKind::XorXor => "^^".to_string(),
         TokenKind::SmartMatch => "~~".to_string(),

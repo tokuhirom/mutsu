@@ -140,6 +140,14 @@ fn walk_expr(expr: &Expr, in_scope: bool, line: &mut i64, found: &mut Option<i64
         // body.
         Expr::WhateverCurry(inner) => walk_expr(inner, in_scope, line, found),
 
+        // `todo/tickets/chained-compare-ast-node.md`: a chain operand can
+        // itself be a block-valued expression carrying `whenever`.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                walk_expr(o, in_scope, line, found);
+            }
+        }
+
         // Inline block-valued expressions preserve scope.
         Expr::Block(body) | Expr::Gather(body) => walk_stmts(body, in_scope, line, found),
         Expr::DoBlock { body, .. } => walk_stmts(body, in_scope, line, found),

@@ -201,6 +201,9 @@ fn expr_leads_with_whatever(expr: &Expr) -> bool {
         | Expr::HyperOp { left, .. }
         | Expr::MetaOp { left, .. }
         | Expr::InfixFunc { left, .. } => expr_leads_with_whatever(left),
+        // `todo/tickets/chained-compare-ast-node.md`: `{ * < 2 < 5 }` leads
+        // with `*` in its first operand, same as an ordinary `Binary` left.
+        Expr::ChainedCompare { operands, .. } => expr_leads_with_whatever(&operands[0]),
         Expr::MethodCall { target, .. }
         | Expr::HyperMethodCall { target, .. }
         | Expr::DynamicMethodCall { target, .. }

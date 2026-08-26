@@ -12,7 +12,6 @@ use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use super::contains_whatever;
 use super::operators::*;
@@ -21,8 +20,6 @@ use super::precedence_meta_ops::{
     concat_expr, multiplicative_expr, op_str_to_token_kind, parse_bracket_infix_op,
     parse_infix_func_op, parse_meta_op, power_expr, strip_sequence_op, structural_expr,
 };
-
-static CHAIN_CMP_TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 mod assign;
 mod chain_cmp;
@@ -59,10 +56,7 @@ pub(crate) use assign::{
     assign_to_target_expr, build_compound_assign_target_expr, list_lvalue_assign_expr,
     parse_assignment_rhs_mode, unwrap_grouped_lvalue,
 };
-pub(crate) use chain_cmp::{
-    build_chain_cmp_expr, build_chain_cmp_expr_with_repeated_middle, make_chain_cmp,
-    wrap_smartmatch_rhs,
-};
+pub(crate) use chain_cmp::{make_chain_cmp, wrap_smartmatch_rhs};
 pub(crate) use comparison::comparison_expr_mode;
 pub(crate) use custom_infix::{ListInfixOperand, parse_flipflop_infix};
 pub(crate) use errors::{

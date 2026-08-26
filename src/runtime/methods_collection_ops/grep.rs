@@ -108,6 +108,9 @@ impl Interpreter {
                 | Expr::MetaOp { left, right, .. } => {
                     expr_contains_last(left) || expr_contains_last(right)
                 }
+                // `todo/tickets/chained-compare-ast-node.md`: an operand can
+                // be a `do { last }`-shaped block, same as `Binary` above.
+                Expr::ChainedCompare { operands, .. } => operands.iter().any(expr_contains_last),
                 Expr::InfixFunc { left, right, .. } => {
                     expr_contains_last(left) || right.iter().any(expr_contains_last)
                 }

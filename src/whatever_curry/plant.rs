@@ -37,22 +37,22 @@
 //!    that primes. For the ternary this is a strict *gain*: mutsu planted no
 //!    scope there at all before.
 //!
-//! # Why the synthesized chain conjunction is excluded
+//! # Why a chained comparison is not a thunk barrier
 //!
-//! `src/parser/expr/precedence/chain_cmp.rs` expands `a < m < b` into
-//! `(a < m) && (m < b)` with the middle operand duplicated. That `&&` is a
-//! compiler artefact, not a user-written thunk barrier, and treating it as one
-//! would break chained comparison outright: rakudo makes the whole chain a
-//! single priming scope (`(1 < * < 10)(0)` is `False`) while a genuine
-//! user-written `&&` yields its right operand (`(1 < * && * < 10)(0)` is
-//! `True`). ADR-0033's "Phase-4 prerequisite" section calls for making the
-//! expansion distinguishable; mutsu does that with a dedicated
-//! [`TokenKind::ChainAnd`], which is deliberately absent from
-//! [`is_thunk_barrier`]. (Giving the expansion a whole `Expr::ChainedCompare`
-//! node — the ADR's other suggestion, which would additionally let RakuAST
-//! render `1 < * < 10` faithfully — is tracked separately; it needs an arm in
-//! every `Expr` walker, whereas the token keeps the `Expr::Binary` shape every
-//! existing walker already handles.)
+//! `a < m < b` parses to `Expr::ChainedCompare { operands, ops }`
+//! (`todo/tickets/chained-compare-ast-node.md`, closing ADR-0033's
+//! "Phase-4 prerequisite"), not an `Expr::Binary`, so it never reaches
+//! [`is_thunk_barrier`]'s `Expr::Binary` arm in the first place — the whole
+//! chain stays one priming scope by construction. This is what rakudo does
+//! too: the whole chain is a single priming scope (`(1 < * < 10)(0)` is
+//! `False`), while a genuine user-written `&&` over the same operands yields
+//! only its right operand (`(1 < * && * < 10)(0)` is `True`). The compiler
+//! expands `ChainedCompare` into a `&&`-conjunction only at compile time
+//! (`crate::chain_compare::expand`, plain `TokenKind::AndAnd`), well after
+//! this scope decision and every Whatever-curry walker have already run on
+//! the un-expanded node — so no dedicated token is needed to keep a
+//! synthesized chain conjunction distinguishable from a user-written `&&`
+//! (the earlier design, `TokenKind::ChainAnd`, is retired).
 //!
 //! # Not barriers
 //!
@@ -71,7 +71,8 @@ use crate::token_kind::TokenKind;
 /// True for an expression whose operands are *thunks*, and therefore each a
 /// Whatever-priming scope of their own rather than part of the enclosing one.
 ///
-/// Note `TokenKind::ChainAnd` is absent on purpose — see the module docs.
+/// A chained comparison (`Expr::ChainedCompare`) never matches here — see the
+/// module docs.
 pub(crate) fn is_thunk_barrier(expr: &Expr) -> bool {
     match expr {
         Expr::Ternary { .. } => true,

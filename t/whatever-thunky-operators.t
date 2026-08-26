@@ -76,11 +76,13 @@ is (* ?? 1 !! 2).WHAT.^name, 'Int', 'a bare * condition is a truthy Whatever val
 
 # --- chained comparison must NOT be split (the Phase-4 prerequisite) --------
 #
-# `a < m < b` is expanded by the parser into `(a < m) && (m < b)` with the
-# middle duplicated. That synthesized conjunction is a distinct operator
-# (`TokenKind::ChainAnd`), NOT a thunk barrier: rakudo keeps the whole chain as
-# a single priming scope. Contrast the user-written `&&` immediately below --
-# the two must not collapse into each other.
+# `a < m < b` parses to `Expr::ChainedCompare` (a distinct AST marker, see
+# todo/tickets/chained-compare-ast-node.md), NOT a thunk barrier: rakudo keeps
+# the whole chain as a single priming scope. Contrast the user-written `&&`
+# immediately below -- the two must not collapse into each other. (The
+# earlier design synthesized a `(a < m) && (m < b)` conjunction tagged with a
+# dedicated `TokenKind::ChainAnd`; that token is retired now that the chain
+# has its own node.)
 
 is (0 <= * <= 5)(3), True, 'a chained comparison is ONE arity-1 curry (inside)';
 is (0 <= * <= 5)(9), False, '... and both ends are checked (outside)';
