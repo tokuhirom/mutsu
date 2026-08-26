@@ -7,6 +7,7 @@ mod socket_inet_proc;
 mod socket_thread;
 pub(crate) mod sort;
 mod tail_rotate;
+mod thread_ops;
 mod unique_squish;
 
 use super::*;
@@ -94,6 +95,62 @@ static THREAD_HANDLES: std::sync::LazyLock<
 > = std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
 static NEXT_THREAD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+/// Ids of `Thread`s whose code has been handed to an OS thread, so
+/// `Thread.run` can refuse to start the same `Thread` twice (rakudo: "it is an
+/// error to run a thread that has already been started"). Separate from
+/// `THREAD_HANDLES`, which a `.finish`/`.join` empties and which never holds an
+/// `app_lifetime` thread at all.
+static STARTED_THREADS: std::sync::LazyLock<Mutex<std::collections::HashSet<u64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
+
+/// Allocate the next process-unique `Thread` id. `Thread.new` allocates one up
+/// front (rakudo reports a real `.id` on a not-yet-run thread), and
+/// `Thread.start` allocates one as it spawns.
+pub(in crate::runtime) fn next_thread_id() -> u64 {
+    NEXT_THREAD_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+/// Mark `thread_id` as started. Returns false if it already was.
+pub(in crate::runtime) fn claim_thread_start(thread_id: u64) -> bool {
+    STARTED_THREADS
+        .lock()
+        .map(|mut set| set.insert(thread_id))
+        .unwrap_or(true)
+}
+
+/// Join every still-running non-`app_lifetime` `Thread`.
+///
+/// Rakudo's `Thread.new`/`.start` default `:!app_lifetime` means "the process
+/// will only terminate when the thread has finished" (`Type/Thread.rakudoc`),
+/// so the mainline running out of statements is *not* enough to end the
+/// program. Verified against raku v2026.06: a fire-and-forget
+/// `Thread.start({ sleep 1; say "..." })` reliably prints before exit, while
+/// the same thread with `:app_lifetime` never does, and neither `exit` nor an
+/// uncaught exception waits.
+pub(crate) fn join_outstanding_threads() {
+    loop {
+        let handle = {
+            let mut handles = match THREAD_HANDLES.lock() {
+                Ok(handles) => handles,
+                Err(_) => return,
+            };
+            let next = handles.keys().min().copied();
+            match next {
+                Some(id) => handles.remove(&id),
+                None => return,
+            }
+        };
+        match handle {
+            // STW-aware, exactly like `Thread.finish`: a thread blocked joining
+            // counts as quiescent for the GC's cooperative stop-the-world.
+            Some(handle) => {
+                let _ = crate::gc::block_quiescent(|| handle.join());
+            }
+            None => return,
+        }
+    }
+}
 
 /// The OS thread ID of the initial (main) thread, captured at first access.
 static INITIAL_THREAD_ID: std::sync::LazyLock<std::thread::ThreadId> =

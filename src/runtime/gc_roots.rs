@@ -131,6 +131,12 @@ impl Interpreter {
     /// Multi/method dispatch stacks and wrap chains — all hold live invocants
     /// and arguments for a dispatch in progress.
     fn visit_dispatch_state(&self, visitor: &mut dyn RootVisitor) {
+        // Blocks queued by a recursive `Lock::Async
+        // .protect-or-queue-on-recursion` and not yet drained by the outer
+        // frame (see `runtime::lock_async_recursion`).
+        for (_, block, _) in &self.lock_async_deferred {
+            visitor.visit_value(block);
+        }
         for (_, _, args, _, _) in &self.multi_dispatch_stack {
             visit_slice(visitor, args);
         }

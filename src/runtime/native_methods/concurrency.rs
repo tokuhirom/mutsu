@@ -418,7 +418,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         match method {
             "finish" => self.dispatch_thread_finish(attributes),
-            "id" => Ok(attributes
+            "id" | "Numeric" => Ok(attributes
                 .get("id")
                 .or_else(|| attributes.get("thread_id"))
                 .cloned()

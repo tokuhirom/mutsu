@@ -440,6 +440,7 @@ mod io_sysinfo_vm_config;
 mod iterator_protocol;
 pub(crate) mod json;
 mod listop_functions;
+mod lock_async_recursion;
 mod lock_reentry;
 pub(crate) mod loop_handler_depth;
 mod lvalue_container_return;
@@ -1627,6 +1628,17 @@ pub struct Interpreter {
     /// TODO: entries are never reclaimed; acceptable as predictive Seqs are rare.
     predictive_seq_iters: HashMap<usize, Value>,
     protect_block_cache: ProtectBlockCache,
+    /// Lock ids this caller chain has entered through
+    /// `Lock::Async.protect-or-queue-on-recursion` (see
+    /// `runtime::lock_async_recursion`). A spawned thread starts with an empty
+    /// stack, which is precisely the "the lock is held by something outside the
+    /// caller chain" case that method distinguishes.
+    lock_async_recursion: Vec<u64>,
+    /// Blocks queued by a *recursive* `protect-or-queue-on-recursion` call,
+    /// drained by the outermost such frame once it has released the lock.
+    /// Held here (rather than in a thread-local) so the queued `Value`s are
+    /// enumerated by `visit_roots` while they wait.
+    lock_async_deferred: Vec<(u64, Value, crate::value::SharedPromise)>,
     /// See `CarrierCompileCache`: reuses `eval_block_value_inner`'s carrier
     /// compile across repeated calls to the same `SubData` id instead of
     /// recompiling its AST every time. Opt-in per call site via

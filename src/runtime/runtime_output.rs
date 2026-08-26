@@ -133,6 +133,29 @@ impl Interpreter {
         self.halted
     }
 
+    /// True when the program asked to `exit` rather than running off its end.
+    /// rakudo's `exit` terminates the process immediately, without waiting for
+    /// outstanding non-`app_lifetime` `Thread`s — see
+    /// [`Self::join_outstanding_threads`].
+    pub fn exit_requested(&self) -> bool {
+        self.halted
+    }
+
+    /// Wait for every still-running non-`app_lifetime` `Thread` before the
+    /// process terminates (`Type/Thread.rakudoc`: with `:!app_lifetime`, the
+    /// default, "the process will only terminate when the thread has
+    /// finished"). Called from `main` on the normal-completion path only —
+    /// verified against raku v2026.06, neither `exit` nor an uncaught
+    /// exception waits.
+    pub fn join_outstanding_threads(&mut self) {
+        crate::runtime::methods_collection_ops::join_outstanding_threads();
+        // Same post-join synchronization `Thread.finish` performs: publish the
+        // threads' shared-variable writes and flush anything they buffered
+        // (e.g. TAP lines from a thread spawned inside a subtest).
+        self.sync_shared_vars_to_env();
+        self.drain_shared_thread_output();
+    }
+
     pub(crate) fn is_thread_clone(&self) -> bool {
         self.output_sink().is_thread_clone
     }

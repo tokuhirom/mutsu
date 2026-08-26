@@ -180,6 +180,7 @@ impl Interpreter {
                 method_name,
                 "finish"
                     | "id"
+                    | "Numeric"
                     | "name"
                     | "is-initial-thread"
                     | "app_lifetime"

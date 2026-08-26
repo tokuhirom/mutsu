@@ -971,6 +971,42 @@ impl Interpreter {
             return Ok(());
         }
 
+        // `Lock::Async.protect-or-queue-on-recursion` /
+        // `.with-lock-hidden-from-recursion-check`: the recursion-aware
+        // siblings of `.protect`. See `runtime::lock_async_recursion`.
+        if matches!(
+            method,
+            "protect-or-queue-on-recursion" | "with-lock-hidden-from-recursion-check"
+        ) && args.len() == 1
+            && let ValueView::Instance {
+                class_name,
+                attributes,
+                ..
+            } = target.view()
+            && class_name.resolve() == "Lock::Async"
+        {
+            crate::vm::vm_stats::record_dispatch_entry_intercept(
+                "callmethod",
+                "lock-async-recursion",
+            );
+            let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
+                Some(ValueView::Int(id)) if id > 0 => id as u64,
+                _ => {
+                    return Err(RuntimeError::new(format!(
+                        "Lock::Async.{method} called on a Lock without lock-id"
+                    )));
+                }
+            };
+            let code_val = args.into_iter().next().unwrap_or(Value::NIL);
+            let result = if method == "protect-or-queue-on-recursion" {
+                self.exec_lock_protect_or_queue_on_recursion(lock_id, code_val)?
+            } else {
+                self.exec_lock_with_lock_hidden_from_recursion_check(lock_id, code_val)?
+            };
+            self.stack.push(result);
+            return Ok(());
+        }
+
         // When the method name was quoted (e.g. ."DEFINITE"()), skip the native
         // pseudo-method fast path so user-defined methods are called instead.
         let mut skip_native = method == "VAR"
