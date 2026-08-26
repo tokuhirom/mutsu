@@ -170,8 +170,28 @@ impl Interpreter {
             "*RAKU" | "?RAKU" => Self::cached_raku_instance(),
             "$*VM" | "*VM" | "?VM" => Self::cached_vm_instance(),
             "*KERNEL" | "?KERNEL" => Self::cached_kernel_instance(),
+            "$*COLLATION" | "*COLLATION" => Self::cached_collation_instance(),
             _ => return None,
         })
+    }
+
+    /// The process-wide `$*COLLATION` singleton, materialized on first read.
+    ///
+    /// Rakudo declares `$*COLLATION` in `PROCESS::` as one mutable `Collation`
+    /// object with every level enabled (`collation-level => 85`), and
+    /// `Collation.set` mutates *that* object and returns it — so a `.set` made
+    /// anywhere is observed everywhere afterwards, including inside a called sub
+    /// and by the `coll`/`unicmp` operators. Handing out clones of one cached
+    /// `Value` reproduces exactly that: an instance's attributes live in a shared
+    /// `Gc<InstanceAttrs>` cell that `Value::write_back_sharing` (the `set` arm in
+    /// `collation_temporal.rs`) commits into in place, so every holder — and every
+    /// later read of the magic var — sees the update. A `my $*COLLATION =
+    /// Collation.new` still shadows it lexically, exactly as in rakudo.
+    fn cached_collation_instance() -> Value {
+        static CACHE: OnceLock<Value> = OnceLock::new();
+        CACHE
+            .get_or_init(|| Self::make_collation_instance(1, 1, 1, 1))
+            .clone()
     }
 
     /// Process-constant `Distro` instance (docs/per-task-clone-slimming.md

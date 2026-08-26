@@ -66,4 +66,6 @@ The lexical hash counterpart (`my %h is default(42); %h = (a => 1, b => Nil)`) s
 `decay_nil_hash_value` hardcodes it at hash-build time, before any assignment target is known. That
 needs threading the target default through `build_hash_from_items`, which has many value-level
 callers, so it was split out to
-`todo/tickets/lexical-hash-default-not-applied-to-nil-pair-value.md`.
+`todo/tickets/lexical-hash-default-not-applied-to-nil-pair-value.md` (since fixed at the
+assignment site instead — see
+`news/2026-08/lexical-hash-default-not-applied-to-nil-pair-value.md`).

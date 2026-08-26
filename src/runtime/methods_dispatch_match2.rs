@@ -291,7 +291,7 @@ impl Interpreter {
                     None
                 }
             }
-            "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation") => {
+            "set" | "primary" | "secondary" | "tertiary" | "quaternary" | "gist" | "raku" if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Collation") => {
                 Some(self.dispatch_collation_method(target, method, &args))
             }
             "collate" if args.is_empty() => Some(self.dispatch_collate(target)),

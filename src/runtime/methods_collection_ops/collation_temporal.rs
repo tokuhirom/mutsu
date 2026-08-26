@@ -72,6 +72,20 @@ impl Interpreter {
                     settings.quaternary
                 )))
             }
+            // Rakudo's `Collation` holds one `$!collation-level` attribute and
+            // derives `primary`/`secondary`/`tertiary`/`quaternary` from its
+            // bits, so its `.raku` is `Collation.new(collation-level => N)`.
+            // mutsu stores the four levels separately, so the generic
+            // instance `.raku` would list all four (and, with no declared
+            // attributes on the class, actually listed none). Re-encode the
+            // level here, exactly as the `gist` arm above does.
+            "raku" => {
+                let settings = crate::builtins::collation::CollationSettings::from_value(&target);
+                Ok(Value::str(format!(
+                    "Collation.new(collation-level => {})",
+                    settings.collation_level()
+                )))
+            }
             _ => Err(RuntimeError::new(format!(
                 "Unknown Collation method '{}'",
                 method

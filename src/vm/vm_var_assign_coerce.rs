@@ -154,6 +154,38 @@ impl Interpreter {
         }
     }
 
+    /// Replace a `Nil` *pair value* in a hash-initializer list with `default`,
+    /// leaving keys, non-pair items and nested containers untouched. Used by
+    /// `coerce_hash_var_value` so a `Nil` in `%h = (a => 1, b => Nil)` lands in
+    /// the target's `is default(...)` container value rather than being decayed
+    /// to `Any` by the value-level hash builders (which have no access to the
+    /// assignment target). Both `Pair` flavours are handled — ADR-0021 makes
+    /// named-ness a call-site marker, not a semantic difference here.
+    fn substitute_nil_pair_values(value: &Value, default: &Value) -> Value {
+        let map_item = |item: &Value| -> Value {
+            match item.view() {
+                ValueView::Pair(k, v) if v.deref_container().is_nil() => {
+                    Value::pair(k.clone(), default.clone())
+                }
+                ValueView::ValuePair(k, v) if v.deref_container().is_nil() => {
+                    Value::value_pair(k.clone(), default.clone())
+                }
+                _ => item.clone(),
+            }
+        };
+        match value.view() {
+            ValueView::Array(items, kind) => Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(
+                    items.iter().map(map_item).collect::<Vec<_>>(),
+                )),
+                kind,
+            ),
+            ValueView::Seq(items) => Value::seq(items.iter().map(map_item).collect::<Vec<_>>()),
+            ValueView::Slip(items) => Value::slip(items.iter().map(map_item).collect::<Vec<_>>()),
+            _ => value.clone(),
+        }
+    }
+
     pub(super) fn coerce_hash_var_value(
         &mut self,
         name: &str,
@@ -263,6 +295,25 @@ impl Interpreter {
                     data.default = default;
                 });
                 rebuilt
+            }
+            _ => value,
+        };
+        // `%h = (a => 1, b => Nil)` assigns each pair value INTO a fresh element
+        // container of the target hash, so a `Nil` takes that container's
+        // `is default(...)` value (raku: `my %h is default(42); %h = (a => 1, b
+        // => Nil)` is `{a => 1, b => 42}`) — exactly as the `@`-sigil path does
+        // in `exec_set_local_op_inner`. The substitution has to happen HERE, on
+        // the incoming pair list, because `build_hash_from_items` decays any
+        // surviving `Nil` to `Any` (an untyped hash's own default) and the
+        // target's default would then be unrecoverable. Only a genuine `Nil`
+        // is substituted: an explicit `Any` pair value stays `Any` in raku, and
+        // so does a `Nil` that a *Hash* RHS already decayed (`%h = %(b => Nil)`).
+        let target_default = self
+            .container_default(current.as_ref().unwrap_or(&Value::NIL))
+            .or_else(|| self.var_default(name).cloned());
+        let value = match (&target_default, value.view()) {
+            (Some(default), ValueView::Array(..) | ValueView::Seq(_) | ValueView::Slip(_)) => {
+                Self::substitute_nil_pair_values(&value, default)
             }
             _ => value,
         };

@@ -280,7 +280,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Type/Any.rakudoc:961` | ~~`.categorize`/`.classify` into an untyped Hash mis-renders a non-Str bucket key when the source array holds class instances~~ (the real bug was hash-gist rendering: the dispatching gist path ignored object-hash typed keys) | [resolved](../news/2026-08/categorize-into-hash-instance-bool-key-corruption.md) |
 | `Type/Any.rakudoc:1525` | ~~`.snip` with multiple positional predicates silently drops all but the first~~ | [resolved](../news/2026-08/snip-multiple-positional-matchers-dropped.md) |
 | `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
-| `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
+| `Type/Any.rakudoc:1420` | ~~`$*COLLATION.set(...)` does not persist / is not honored by `coll`~~ (the real bug was that `$*COLLATION` was never seeded at all, so it read `Nil`) | [resolved](../news/2026-08/collation-set-not-persisted.md) |
 | `Language/objects.rakudoc:1132` | ~~a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute~~ (nothing was truncated: the role's own method was outranked by the accessor of the role's own attribute) | [resolved](../news/2026-08/role-multi-method-trailing-literal-dropped.md) |
 | `Language/objects.rakudoc:1526` | `is default(0 but role :: {...})` on a typed Hash drops the role mixin on the default value | [hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md) |
 | `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
@@ -365,7 +365,7 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Type/IO/Handle.rakudoc:385` | global `lines(IO_object)` sub form doesn't open/read the file, just wraps the path arg | [lines-sub-form-io-object-not-read.md](../todo/tickets/lines-sub-form-io-object-not-read.md) |
+| `Type/IO/Handle.rakudoc:385` | ~~global `lines(IO_object)` sub form doesn't open/read the file, just wraps the path arg~~ (`words` had the same gap) | [resolved](../news/2026-08/lines-sub-form-io-object-not-read.md) |
 | `Type/IO/Handle.rakudoc:761` | `.open` stores the CWD-absolutized path instead of the path as given (`.Str`/`.path`) | [io-handle-open-stores-absolute-not-given-path.md](../todo/tickets/io-handle-open-stores-absolute-not-given-path.md) |
 | `Type/IO/Handle.rakudoc:959,1013` | custom `IO::Handle` subclasses overriding `WRITE`/`READ`/`EOF` are never dispatched to by native print/say/read | [custom-io-handle-write-read-not-dispatched.md](../todo/deep/custom-io-handle-write-read-not-dispatched.md) |
 | `Language/structures.rakudoc:233` | ~~calling an undefined `Any`-typed value as a function throws instead of returning the args~~ | [resolved](../news/2026-08/undefined-any-called-as-sub-throws.md) |
@@ -375,7 +375,7 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 | `Language/mop.rakudoc:93` | `.HOW.^name` on a hash literal is missing the `+{<anon>}` mixin suffix | [how-gist-missing-anon-mixin-suffix.md](../todo/tickets/how-gist-missing-anon-mixin-suffix.md) |
 | `Type/independent-routines.rakudoc:110` | ~~`EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg~~ | [resolved](../news/2026-08/eval-dollar-question-file-not-synthesized.md) |
 | `Type/independent-routines.rakudoc:148` | `repl()` global routine is unimplemented (mutsu already has REPL machinery to reuse) | [repl-routine-unimplemented.md](../todo/tickets/repl-routine-unimplemented.md) |
-| `Type/independent-routines.rakudoc:473` | `open(:w, PATH)` — a named adverb before the positional path breaks argument parsing | [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md) |
+| `Type/independent-routines.rakudoc:473` | ~~`open(:w, PATH)` — a named adverb before the positional path breaks argument parsing~~ | [resolved](../news/2026-08/open-named-adverb-before-positional-path.md) |
 | `Type/independent-routines.rakudoc:312` | ~~hyper method call (`».method`) / `.map` on a `gather {...}` Seq returns empty instead of forcing it~~ (the real bug was `.is-lazy` being re-derived in three places; a plain `gather` is not lazy) | [resolved](../news/2026-08/gather-hyper-method-call-empty-result.md) |
 
 **Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
@@ -383,7 +383,7 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
   `/proc/$*PID/statm` numbers are PID-dependent and don't match the doc's stated numbers), but the
   *shape* of mutsu's output underneath that drift (wrapping the literal path instead of reading the
   file at all) is a real, separate bug — filed above as
-  [lines-sub-form-io-object-not-read.md](../todo/tickets/lines-sub-form-io-object-not-read.md).
+  [lines-sub-form-io-object-not-read.md](../news/2026-08/lines-sub-form-io-object-not-read.md) (since resolved).
 - `Language/structures.rakudoc` [36], [45] (`.WHICH` addresses) — `raku-drift`, pointer values are
   inherently non-reproducible.
 - `Language/structures.rakudoc` [95], [108] (`%hash.list[0]`, `<a b c d>.Hash.kv` ordering) — the
@@ -439,7 +439,7 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
 | `Type/Mu.rakudoc:119` | ~~`.Capture` reads a raw stored attribute value instead of calling an overriding accessor method~~ (it also leaked private `$!` attributes) | [resolved](../news/2026-08/capture-coercion-uses-stored-attribute-not-accessor-method.md) |
 | `Type/Mu.rakudoc:515` | ~~`next` thrown mid-evaluation of a `FIRST`-phaser comma expression corrupts later `take slip(...)` calls in the same `gather`~~ (the real bug was the FIRST "already ran" flag being cleared *after* the body, so FIRST re-fired every iteration) | [resolved](../news/2026-08/next-inside-comma-expression-corrupts-following-take-slip.md) |
 | `Type/Mu.rakudoc:531` | `take-rw` doesn't preserve a mutable container alias through `gather` (the `take-rw @a[0]` subscript form is fixed; `take-rw $_` / `take-rw $x` need ADR-0045's element-container bind) | [take-rw-loses-mutable-container-alias.md](../todo/tickets/take-rw-loses-mutable-container-alias.md) |
-| `Language/subscripts.rakudoc:418` | a chained hash-then-array autovivification (`$h{"k"}[0] = v`) leaves the root variable showing `Any` on `.raku` | [nested-autovivification-then-raku-shows-any.md](../todo/tickets/nested-autovivification-then-raku-shows-any.md) |
+| `Language/subscripts.rakudoc:418` | ~~a chained hash-then-array autovivification (`$h{"k"}[0] = v`) leaves the root variable showing `Any` on `.raku`~~ (exactly the *two*-level chains; one and three-plus already worked) | [resolved](../news/2026-08/nested-autovivification-then-raku-shows-any.md) |
 | `Language/subscripts.rakudoc:964` | `my @var is CustomClass = ...` never dispatches the class's `STORE`/overridden `Str` methods (custom Proxy-like container binding) | [is-typename-custom-container-store-protocol-unimplemented.md](../todo/deep/is-typename-custom-container-store-protocol-unimplemented.md) |
 
 **Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
@@ -593,7 +593,7 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
   positional path) itself fails and returns a `Failure` in mutsu, which then gets assigned to
   `$*OUT`, so `say` silently keeps writing to the original stdout — this is a downstream
   consequence of the already-filed
-  [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md),
+  [open-named-adverb-before-positional-path.md](../news/2026-08/open-named-adverb-before-positional-path.md) (since resolved),
   not a separate bug; not re-filed.
 
 Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamodel::Documenting`/
@@ -707,7 +707,7 @@ Found in the 2026-08-22 batch-6 re-run of `Label`/`IO::Spec::Win32`/`Pair`/`Attr
   a separate ticket.
 - `Type/Attribute.rakudoc` [2] (line 186, `is built(:bind)` + `my Foo:D $foo .= new: ...`) — the
   crash is the already-filed
-  [lexical-typed-var-dot-equals-init-fails.md](../todo/tickets/lexical-typed-var-dot-equals-init-fails.md)
+  [lexical-typed-var-dot-equals-init-fails.md](../news/2026-08/lexical-typed-var-dot-equals-init-fails.md) (since resolved)
   (`my Type:D $var .= new;` fails to strip the `:D` smiley before building the `.=` call target);
   confirmed with the minimal two-line repro (`class Foo {}; my Foo:D $foo .= new;`) — not re-filed.
 - `Type/Attribute.rakudoc` [3] (line 418, `.?DEPRECATED`) — `raku-drift-from-doc` (mutsu prints

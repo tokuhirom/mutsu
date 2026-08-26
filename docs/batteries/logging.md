@@ -121,7 +121,8 @@ the literal type name `Lock:D` and fails
 (`X::Method::NotFound: ... new on Lock:D`). This is unrelated to logging
 specifically — it reproduces for any `my Type:D $x .= new;` declaration —
 filed as
-[lexical-typed-var-dot-equals-init-fails.md](../../todo/tickets/lexical-typed-var-dot-equals-init-fails.md).
+[lexical-typed-var-dot-equals-init-fails.md](../../news/2026-08/lexical-typed-var-dot-equals-init-fails.md)
+(since fixed).
 Working around that still leaves `Log::Dispatch` blocked on the same
 `Terminal::ANSI` / `unit monitor` gap as `Log::Async`
 ([unit-monitor-declarator-not-supported.md](../../todo/tickets/unit-monitor-declarator-not-supported.md)).
