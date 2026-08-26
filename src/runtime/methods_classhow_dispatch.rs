@@ -121,6 +121,32 @@ fn array_element_type_name(type_name: &str) -> &str {
 }
 
 impl Interpreter {
+    /// Whether `value` is a genuine role reference: a role's own type object
+    /// (`ValueView::Package` whose name is a role, not a class — including a
+    /// role that happens to ALSO have been punned to a class of the same
+    /// name, since a bareword role mention always stays `Package`, never the
+    /// `Mixin` `Interpreter::punned_role_type_object` builds), a
+    /// parameterised role (`ValueView::ParametricRole`), or one of
+    /// `.^candidates`' own per-candidate `Instance` objects.
+    ///
+    /// `.^candidates` (and any other role-group-only MOP method) is only
+    /// defined on `ParametricRoleGroupHOW`/`ParametricRoleHOW`/`CurriedRoleHOW`,
+    /// never on `ClassHOW` — so a punned role's class (a `Mixin`) or an
+    /// ordinary class (a `Package` whose name is not a role) must NOT match,
+    /// and instead fall through to the `X::Method::NotFound` default at the
+    /// bottom of `dispatch_classhow_method`, matching Rakudo
+    /// (`R.^pun.^candidates` throws; `R.^candidates` answers `((R))`).
+    fn is_role_reference_value(&self, value: &Value) -> bool {
+        match value.view() {
+            ValueView::Package(name) => self.is_role_type_name(&name.resolve()),
+            ValueView::ParametricRole { .. } => true,
+            ValueView::Instance { attributes, .. } => {
+                attributes.as_map().contains_key("__mutsu_role_base_name")
+            }
+            _ => false,
+        }
+    }
+
     /// Resolve a nominalizable type name to its nominal base type
     /// (`^nominalize`): strip `:D`/`:U`/`:_` definiteness, unwrap a coercion
     /// type (`Int(Rat)` -> `Int`), and walk a subset chain to the first
@@ -602,10 +628,7 @@ impl Interpreter {
                     Ok(Value::array(mro))
                 } else {
                     let mro = self.classhow_mro_names(&args[0]);
-                    let mut values = mro
-                        .into_iter()
-                        .map(|s| Value::package(Symbol::intern(&s)))
-                        .collect::<Vec<_>>();
+                    let mut values = self.mro_names_to_values(mro)?;
                     // The head of an MRO is the invocant's own type object
                     // (`C.^mro[0] === C`, `$o.^mro[0] === $o.WHAT`). Naming it
                     // by the class name is only equivalent while the name has
@@ -723,11 +746,7 @@ impl Interpreter {
                     Ok(Value::array(filtered))
                 } else {
                     let mro = self.classhow_mro_unhidden_names(&args[0]);
-                    Ok(Value::array(
-                        mro.into_iter()
-                            .map(|s| Value::package(Symbol::intern(&s)))
-                            .collect::<Vec<_>>(),
-                    ))
+                    Ok(Value::array(self.mro_names_to_values(mro)?))
                 }
             }
             "can" if args.len() >= 2 => {
@@ -1281,11 +1300,10 @@ impl Interpreter {
                     ValueView::Instance { class_name, .. } => class_name.resolve(),
                     _ => args[0].to_string_value(),
                 };
-                self.ensure_role_punned_to_class(&role_name)?;
-                Ok(Value::package(Symbol::intern(&role_name)))
+                self.punned_role_type_object(&role_name)
             }
             "roles" if !args.is_empty() => self.dispatch_classhow_roles(&args),
-            "candidates" if !args.is_empty() => {
+            "candidates" if !args.is_empty() && self.is_role_reference_value(&args[0]) => {
                 let base_name = match args[0].view() {
                     ValueView::Package(name) => name.resolve(),
                     ValueView::ParametricRole { base_name, .. } => base_name.resolve(),

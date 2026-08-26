@@ -33,13 +33,13 @@ correctly. `C.^mro[0] === C` for a class and `$o.^mro[0] === $o.WHAT` for an ins
 exactly Rakudo's rule, so this also fixed `(1 but R).^mro[0].^name`, which reported `Int`
 instead of `Int+{R}`.
 
-## Known remaining gap
+## Known remaining gap (closed)
 
-`R.^pun` still returns the role group's `Package("R")` rather than the punned class type
-object, so `R.^pun.HOW` reports the group HOW and `R.^pun === R.new.WHAT` is `False`
-(Rakudo: `ClassHOW` and `True`). That is a different entry point with its own
-representation problem — filed separately as
-`todo/tickets/role-pun-metamethod-returns-role-group.md`.
+`R.^pun` used to still return the role group's `Package("R")` rather than the punned
+class type object, so `R.^pun.HOW` reported the group HOW and `R.^pun === R.new.WHAT`
+was `False` (Rakudo: `ClassHOW` and `True`). That was a different entry point with its
+own representation problem, filed separately and since fixed — see
+`news/2026-08/role-pun-metamethod-returns-punned-class.md`.
 
 Fixed alongside `role-declaration-expression-yields-group-not-parametric-role.md` and
 `metamodel-parametricrolehow-new-type-wrong-how.md`; pinned by

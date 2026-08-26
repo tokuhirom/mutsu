@@ -56,6 +56,34 @@ impl Interpreter {
         mro
     }
 
+    /// Turn an MRO name list (from [`Self::classhow_mro_names`] /
+    /// [`Self::classhow_mro_unhidden_names`]) into `Value`s, one per level.
+    ///
+    /// A level whose name is ALSO a registered role is only possible when a
+    /// role was punned into a class and used as an `is` parent (`class C is
+    /// SomeRole { }` — a plain `does`-composed role never becomes a bare MRO
+    /// entry, see `classhow_mro_unhidden_names`'s doc comment). That level
+    /// resolves to the same composition-keyed type object `SomeRole.^pun`
+    /// returns ([`Self::punned_role_type_object`]), not a bare `Package`, so
+    /// an `is-deeply`/`eqv` comparison against a `.^pun` RHS holds
+    /// (`roast/6.c/S12-class/mro-6c.t`). An ordinary class level is
+    /// unaffected.
+    pub(super) fn mro_names_to_values(
+        &mut self,
+        names: Vec<String>,
+    ) -> Result<Vec<Value>, RuntimeError> {
+        names
+            .into_iter()
+            .map(|name| {
+                if self.registry().roles.contains_key(&name) {
+                    self.punned_role_type_object(&name)
+                } else {
+                    Ok(Value::package(Symbol::intern(&name)))
+                }
+            })
+            .collect()
+    }
+
     /// Build MRO with roles interleaved (for :roles or :concretizations).
     /// For each class in the MRO, insert its composed roles right after it.
     /// For :roles mode, use base role names. For :concretizations, use as-is.

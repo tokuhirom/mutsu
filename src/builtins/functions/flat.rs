@@ -154,6 +154,29 @@ pub(crate) fn flat_val(v: &Value, out: &mut Vec<Value>, flatten_arrays: bool) {
                 out.push(map.typed_pair(k, val.clone()));
             }
         }
+        // A role-mixed value flattens according to its INNER value's shape: a
+        // container inner (Array/Seq/Slip/Range/Hash) flattens through
+        // exactly as the bare container would (`(%h does R).flat` spills
+        // `%h`'s pairs — role composition on the container does not carry
+        // over to its individual elements) — but a NON-container inner (Int,
+        // a type object, Str, ...) is not itself flatten-worthy, so the WHOLE
+        // mixin stays the flat element rather than the bare unwrapped inner:
+        // raku preserves `(1 but R).flat[0].^name` as `Int+{R}`, and a punned
+        // role's type object flattens to itself
+        // (`Iterable.^pun.flat[0] === Iterable.^pun`, verified against raku).
+        ValueView::Mixin(inner, _) => match inner.as_ref().view() {
+            ValueView::Slip(_)
+            | ValueView::Array(..)
+            | ValueView::Seq(_)
+            | ValueView::LazyList(_)
+            | ValueView::Range(..)
+            | ValueView::RangeExcl(..)
+            | ValueView::RangeExclStart(..)
+            | ValueView::RangeExclBoth(..)
+            | ValueView::GenericRange { .. }
+            | ValueView::Hash(_) => flat_val(inner, out, flatten_arrays),
+            _ => out.push(v.clone()),
+        },
         _ => out.push(v.clone()),
     }
 }
