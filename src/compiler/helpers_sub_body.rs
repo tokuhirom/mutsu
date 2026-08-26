@@ -609,6 +609,17 @@ impl Compiler {
         self.code
             .named_sub_captures
             .push((nf_writes, cf.code.needs_cell_named_sub_free.clone()));
+        // Contribute this named sub's full free-variable set (reads AND
+        // writes) to the enclosing scope's ordinary closure-capture set, the
+        // way `add_closure_code_baked` already does for a nested anonymous
+        // closure's `free_var_syms`. A named sub has no runtime
+        // closure-creation op, so this compile-time channel is the only way a
+        // variable referenced ONLY inside its body reaches this scope's own
+        // `free_var_syms` (see `named_sub_free_reads`'s doc comment and
+        // `news/2026-08/nested-named-sub-free-var-capture.md`).
+        self.code
+            .named_sub_free_reads
+            .push(cf.code.free_var_syms.clone());
         // An `our sub` is installed into the package registry and outlives its
         // declaring block, but a registry routine has no per-sub closure env. So
         // every lexical it READS or WRITES must be boxed into a shared cell at its

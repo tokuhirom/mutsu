@@ -3941,6 +3941,23 @@ pub(crate) struct CompiledCode {
     /// unrelated same-named local in a sibling block (which would wrongly box e.g.
     /// a `let`-restored variable; same-named `my` locals share one slot).
     pub(crate) named_sub_captures: Vec<(Vec<Symbol>, Vec<Symbol>)>,
+    /// Full free-variable set (reads AND writes) of each directly-nested named
+    /// sub's finalized `CompiledCode` (`CompiledFunction::code.free_var_syms`),
+    /// one entry per nested `sub`/`multi sub` declared in this scope. Unlike
+    /// `named_sub_captures` (writes only, drives cell-boxing), this feeds
+    /// `compute_free_vars`'s ordinary `free` set the same way a nested
+    /// anonymous closure's `free_var_syms` already does (see the
+    /// `closure_compiled_codes` fold below) — a named sub has no runtime
+    /// closure-creation op, so this compile-time channel is the only way a
+    /// variable referenced ONLY from inside a nested named sub's body reaches
+    /// this scope's own capture set. Without it, such a variable is silently
+    /// missing from the closure env this code snapshots when treated as a
+    /// Callable value (`MakeBlockClosure`/`MakeAnonSub`), and the named sub
+    /// reads `Nil`/`Any` at call time even though the ordinary "own local
+    /// referenced by a nested named sub" case (handled by
+    /// `compute_needs_env_sync`'s `defines_lazy_body` env-sync gate) works
+    /// fine (see `news/2026-08/nested-named-sub-free-var-capture.md`).
+    pub(crate) named_sub_free_reads: Vec<Vec<Symbol>>,
     /// Own locals that a directly-nested named sub WRITES (computed from
     /// `named_sub_captures`). The VM boxes these into a shared `ContainerRef` cell
     /// at their declaration site (`box_decl_local_cell`). Distinct from
@@ -4513,6 +4530,7 @@ impl CompiledCode {
             free_var_writes: Vec::new(),
             free_var_container_writes: Vec::new(),
             named_sub_captures: Vec::new(),
+            named_sub_free_reads: Vec::new(),
             needs_cell_named_sub: Vec::new(),
             needs_cell_ref_capture_slots: Vec::new(),
             container_ref_capture_syms: Vec::new(),
@@ -5990,6 +6008,23 @@ impl CompiledCode {
             for sym in &nested.rw_arg_env_sync_syms {
                 if !sym.with_str(|s| nested.locals.iter().any(|l| l == s)) {
                     self.rw_arg_env_sync_syms.insert(*sym);
+                }
+            }
+        }
+        // Fold directly-nested named subs' free variables into `free` the same
+        // way a nested closure's `free_var_syms` was just folded above -- see
+        // `named_sub_free_reads`'s doc comment. A named sub has no runtime
+        // closure-creation op, so without this fold a variable referenced ONLY
+        // from inside a nested named sub's body never lands in this code's own
+        // capture set, and is silently absent from the closure env snapshotted
+        // when this code is later invoked as a Callable value. Deliberately
+        // does NOT touch `self_mutated`/`free_writes` here: named-sub write
+        // tracking (mutation -> shared-cell boxing) is already handled by the
+        // separate `named_sub_captures` channel below.
+        for syms in &self.named_sub_free_reads {
+            for sym in syms {
+                if !sym.with_str(|s| own.contains(s)) {
+                    free.insert(*sym);
                 }
             }
         }
