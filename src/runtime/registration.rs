@@ -555,7 +555,7 @@ impl Interpreter {
                 .class_trusts
                 .get(canonical_owner)
                 .is_some_and(|trusted| {
-                    trusted.contains(caller_class)
+                    trusted.iter().any(|t| t == caller_class)
                         || trusted.iter().any(|t| {
                             self.resolve_private_class_name(canonical_owner, t) == caller_class
                         })
@@ -573,10 +573,58 @@ impl Interpreter {
         caller_class: Option<&str>,
         owner_class: &str,
     ) -> (String, bool) {
-        let canonical_owner = match caller_class {
+        self.resolve_and_check_private_owner_on(caller_class, owner_class, None)
+    }
+
+    /// [`Self::resolve_and_check_private_owner`] with the invocant's own class
+    /// available as a second resolution source.
+    ///
+    /// The lexical resolution above is right for a top-level or `our`-scoped
+    /// class, but blind to a `my class` declared inside ANOTHER class's body:
+    ///
+    /// ```raku
+    /// class A {
+    ///     my class B { trusts A; method !p() { ... } }
+    ///     method go { B.new()!B::p() }
+    /// }
+    /// ```
+    ///
+    /// `B` registers under the mangled lexical storage name
+    /// `A::B\u{0}<decl-id>` (ADR-0047 P1), and by the time `A.go` runs the bare
+    /// name `B` is no longer bound in the env `resolve_private_class_name`
+    /// consults, so the owner canonicalized to the dead bare name `B` — never a
+    /// key in `class_trusts`, so `B`'s own `trusts A` never matched and every
+    /// such call was wrongly denied.
+    ///
+    /// The invocant settles it: `Owner` has to name a type in the invocant's
+    /// own MRO for `$o!Owner::meth` to resolve at all. So when the lexically
+    /// resolved name is absent from that MRO, match the name as written
+    /// against each MRO entry's user-facing spelling (mangling stripped),
+    /// accepting a full-name match or a trailing `::Owner` segment.
+    pub(super) fn resolve_and_check_private_owner_on(
+        &self,
+        caller_class: Option<&str>,
+        owner_class: &str,
+        invocant_class: Option<&str>,
+    ) -> (String, bool) {
+        let mut canonical_owner = match caller_class {
             Some(c) => self.resolve_private_class_name(c, owner_class),
             None => owner_class.to_string(),
         };
+        if let Some(invocant_class) = invocant_class
+            && let Some(mro) = self.registry().class_mro_cached(invocant_class)
+        {
+            let mro: Vec<String> = mro.iter().map(crate::symbol::Symbol::resolve).collect();
+            if !mro.contains(&canonical_owner) {
+                let suffix = format!("::{owner_class}");
+                if let Some(found) = mro.iter().find(|entry| {
+                    let shown = crate::value::user_facing_type_name(entry);
+                    shown == owner_class || shown.ends_with(&suffix)
+                }) {
+                    canonical_owner = found.clone();
+                }
+            }
+        }
         let trusted = self.private_owner_trusts_caller(caller_class, &canonical_owner);
         (canonical_owner, trusted)
     }

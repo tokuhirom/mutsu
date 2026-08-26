@@ -1,6 +1,16 @@
 use super::*;
 use crate::symbol::Symbol;
 
+/// The "no such method" answer of `Metamodel::MethodContainer`'s `.^lookup`
+/// and `.^find_method`: Rakudo hands back the **`Mu` type object**, not `Nil`.
+/// `Int.^lookup("does-not-exist")` gists as `(Mu)` and `.defined` is `False`,
+/// so a caller's `//` / boolean test behaves the same either way -- but
+/// `.^name`, `.raku` and an `=== Mu` identity check do not, which is what the
+/// `Metamodel/MethodContainer.rakudoc` example asserts.
+fn mop_absent_method() -> Value {
+    Value::package(Symbol::intern("Mu"))
+}
+
 /// `.^add_method`/`.^add_multi_method`'s callable argument used to always be
 /// a plain `Sub` (`X.^lookup('other')`'s old return shape). ADR-0019 Phase F
 /// box F1 made `.^lookup`/`.^find_method` return a Method/Submethod
@@ -243,6 +253,99 @@ impl Interpreter {
                     _ => {}
                 }
                 Ok(Value::str(new_name))
+            }
+            // `Metamodel::Versioning`'s write side. `.^set_ver`/`.^set_auth`/
+            // `.^set_api` are the runtime equivalents of the declarative
+            // `class C:ver<1.0>:auth<foo>:api<2>` adverbs, and Rakudo stores
+            // both in the same slot -- so they land in the very
+            // `type_metadata` entry the `:ver(...)` adverb writes and the
+            // `"ver"`/`"auth"`/`"api"` readers below already consult. They
+            // stay callable after `.^compose` (Rakudo imposes no
+            // post-composition lock on metadata), which is what makes the
+            // documented `BEGIN { C.^set_ver: v0.0.1 }` idiom work.
+            "set_ver" | "set_auth" | "set_api" if args.len() == 2 => {
+                let key = method.trim_start_matches("set_").to_string();
+                let name = self.mop_receiver_owner(&args[0]);
+                let stored = if key == "ver" {
+                    Self::version_from_value(args[1].clone())
+                } else {
+                    Value::str(args[1].to_string_value())
+                };
+                self.type_metadata
+                    .entry(name)
+                    .or_default()
+                    .insert(key, stored.clone());
+                Ok(stored)
+            }
+            // `Metamodel::Documenting`: `.^set_why` attaches a pod object to
+            // the METACLASS, so unlike an attribute write it is not blocked
+            // once the type is composed. `.WHY` reads it back, both on the
+            // HOW (`Documented.HOW.WHY`) and on the type object itself
+            // (`Documented.WHY`, via `dispatch_why`).
+            "set_why" if args.len() == 2 => {
+                let name = self.mop_receiver_owner(&args[0]);
+                self.type_metadata
+                    .entry(name)
+                    .or_default()
+                    .insert("__set_why__".to_string(), args[1].clone());
+                Ok(args[1].clone())
+            }
+            "WHY" if args.len() == 1 => {
+                let name = self.mop_receiver_owner(&args[0]);
+                if let Some(why) = self
+                    .type_metadata
+                    .get(&name)
+                    .and_then(|m| m.get("__set_why__"))
+                {
+                    return Ok(why.clone());
+                }
+                let target = args[0].clone();
+                self.dispatch_why(&target)
+            }
+            // `Metamodel::Trusting`: the list of types this class declared
+            // `trusts` on, in declaration order. Rakudo answers with a `List`
+            // of type objects (empty for a class with no `trusts`), and only
+            // `ClassHOW` has the method at all -- a role's
+            // `ParametricRoleGroupHOW` throws `X::Method::NotFound`, which is
+            // what the `is_classhow_method` gate plus this arm's registry
+            // check reproduce.
+            "trusts" if args.len() == 1 => {
+                // Rakudo composes `Metamodel::Trusting` into `ClassHOW` only
+                // (and therefore into `GrammarHOW`, which subclasses it):
+                // `module M {}; M.^trusts`, `enum E <a b>; E.^trusts` and
+                // `subset S of Int; S.^trusts` all throw `X::Method::NotFound`
+                // while `Int.^trusts` and `G.^trusts` answer `()`. Ask the
+                // metaobject itself rather than re-deriving the taxonomy here,
+                // so a new HOW kind cannot silently gain the method.
+                let how = self.dispatch_how(&args[0], &[])?;
+                let how_is_class_like = matches!(
+                    how.view(),
+                    ValueView::Instance { class_name, .. }
+                        if matches!(
+                            class_name.as_str(),
+                            "Perl6::Metamodel::ClassHOW" | "Perl6::Metamodel::GrammarHOW"
+                        )
+                );
+                if !how_is_class_like {
+                    return Err(RuntimeError::new(
+                        "X::Method::NotFound: Unknown method value dispatch (fallback disabled): trusts",
+                    ));
+                }
+                let name = self.mop_receiver_owner(&args[0]);
+                let trusted = self
+                    .registry()
+                    .class_trusts
+                    .get(&name)
+                    .cloned()
+                    .unwrap_or_default();
+                let types = trusted
+                    .iter()
+                    .map(|t| {
+                        let canonical = self.resolve_private_class_name(&name, t);
+                        Value::package(Symbol::intern(&canonical))
+                    })
+                    .collect::<Vec<_>>();
+                Ok(Value::array(types))
             }
             "name" if args.len() == 1 => {
                 if let ValueView::Mixin(inner, mixins) = args[0].view() {
@@ -653,7 +756,7 @@ impl Interpreter {
                 let method_name = args.last().unwrap().to_string_value();
                 Ok(self
                     .classhow_lookup(invocant, &method_name)
-                    .unwrap_or(Value::NIL))
+                    .unwrap_or_else(mop_absent_method))
             }
             "find_method" if args.len() >= 2 => {
                 let invocant = &args[0];
@@ -666,12 +769,12 @@ impl Interpreter {
                     .rev()
                     .find(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
                 else {
-                    return Ok(Value::NIL);
+                    return Ok(mop_absent_method());
                 };
                 let method_name = name_arg.to_string_value();
                 Ok(self
                     .classhow_find_method(invocant, &method_name)
-                    .unwrap_or(Value::NIL))
+                    .unwrap_or_else(mop_absent_method))
             }
             "parameterize" if args.len() >= 2 => {
                 // `$type.^parameterize($T, ...)` — the metamodel form of the

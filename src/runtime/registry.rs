@@ -182,8 +182,10 @@ pub(crate) struct Registry {
     pub(crate) package_kinds: HashMap<String, crate::ast::PackageKind>,
     /// `is hidden` parents deferred until the parent is fully declared.
     pub(crate) hidden_defer_parents: HashMap<String, HashSet<String>>,
-    /// `trusts` relationships: class -> set of trusted classes.
-    pub(crate) class_trusts: HashMap<String, HashSet<String>>,
+    /// `trusts` relationships: class -> trusted classes, in declaration
+    /// order (`Metamodel::Trusting`'s `.^trusts` answers an ordered `List`,
+    /// so a set would lose the order the source declared).
+    pub(crate) class_trusts: HashMap<String, Vec<String>>,
     /// Per-class metaclass (`HOW`) value override.
     pub(crate) class_how_values: HashMap<String, Value>,
     /// Type name -> the NATIVE `Perl6::Metamodel::*HOW` metaclass that type

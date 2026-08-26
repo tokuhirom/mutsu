@@ -419,11 +419,16 @@ impl Interpreter {
         is_stub_body: bool,
     ) -> Result<bool, RuntimeError> {
         for trusted_class in trusts {
-            self.registry_mut()
-                .class_trusts
-                .entry(name.to_string())
-                .or_default()
-                .insert(trusted_class.resolve());
+            let trusted = trusted_class.resolve();
+            let mut reg = self.registry_mut();
+            let entry = reg.class_trusts.entry(name.to_string()).or_default();
+            // Declaration order is observable through `.^trusts`, so append
+            // rather than inserting into a set -- but keep it de-duplicated so
+            // a re-registered class body (an `augment`, a re-`EVAL`) does not
+            // grow the list.
+            if !entry.contains(&trusted) {
+                entry.push(trusted);
+            }
         }
         // Make the class visible while its body executes so introspection calls
         // like `A.^add_method(...)` inside the declaration can resolve `A`.

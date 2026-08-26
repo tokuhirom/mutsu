@@ -20,6 +20,65 @@ impl Interpreter {
             || cn == "Perl6::Metamodel::CoercionHOW"
     }
 
+    /// Build the argument list for a HOW method called on a metaobject
+    /// receiver whose attributes are `attributes`.
+    ///
+    /// A HOW method takes the introspected object as its first argument
+    /// (`$obj.^name` desugars to `$obj.HOW.name($obj)`). Two adjustments are
+    /// needed before handing the list to [`Self::dispatch_classhow_method`]:
+    ///
+    /// * The explicit `Int.HOW.name` form passes NO object at all, so supply
+    ///   the type name recorded on the receiving HOW.
+    /// * The introspected object may itself be a metaobject
+    ///   (`my $m = Str.HOW; $m.can($m, 'uc')` — the worked example in
+    ///   `Language/structures.rakudoc`). Rakudo's `Metamodel::MethodContainer`
+    ///   methods read `self`'s own cached MRO and method table and ignore
+    ///   `$obj`, so a HOW in that slot stands for the type its RECEIVER
+    ///   describes, not for the `Perl6::Metamodel::*HOW` class the argument
+    ///   literally is. Without this, `$m.can($m, 'uc')` answered `()`,
+    ///   `$m.name($m)` answered `Perl6::Metamodel::ClassHOW` and `$m.mro($m)`
+    ///   answered the metaclass's own MRO.
+    ///
+    /// Deliberately narrowed to a *metaobject* argument: an ordinary value
+    /// argument still drives dispatch, which is what keeps `(1 but R).^mro[0]`
+    /// reporting the mixin type `Int+{R}` rather than the plain `name`
+    /// attribute cached on the HOW (see
+    /// `news/2026-08/role-instance-how-wrong-metaclass.md`).
+    pub(super) fn how_dispatch_args(
+        &self,
+        attributes: &crate::value::InstanceAttrs,
+        method: &str,
+        args: &[Value],
+    ) -> Vec<Value> {
+        let mut how_args = args.to_vec();
+        let how_target = match attributes.as_map().get("name").map(|v| v.view()) {
+            Some(ValueView::Str(type_name)) => type_name.to_string(),
+            _ => return how_args,
+        };
+        let target_package = || Value::package(Symbol::intern(&how_target));
+        // `Metamodel::Documenting.set_why($why)` is the one HOW mutator whose
+        // Rakudo signature has NO `$obj` parameter: `C.^set_why($pod)` is an
+        // arity error there ("expected 2 arguments but got 3") and
+        // `C.HOW.set_why($pod)` is the only spelling. Prepend the receiver's
+        // own type so the dispatcher still sees the uniform
+        // `(invocant, value)` shape every other mutator arm uses.
+        if method == "set_why" {
+            how_args.insert(0, target_package());
+            return how_args;
+        }
+        match how_args.first().map(Value::view) {
+            None => how_args.insert(0, target_package()),
+            Some(ValueView::Instance { class_name, .. })
+                if Self::is_metamodel_how(&class_name)
+                    || self.is_metamodel_how_class(&class_name.resolve()) =>
+            {
+                how_args[0] = target_package();
+            }
+            _ => {}
+        }
+        how_args
+    }
+
     /// Check if a method name is a ClassHOW method.
     pub(crate) fn is_classhow_method(method: &str) -> bool {
         matches!(
@@ -45,6 +104,18 @@ impl Interpreter {
                 | "ver"
                 | "auth"
                 | "api"
+                // `Metamodel::Versioning`'s write side, and
+                // `Metamodel::Documenting`/`Metamodel::Trusting`.
+                | "set_ver"
+                | "set_auth"
+                | "set_api"
+                | "set_why"
+                // `$type.HOW.WHY` reads back what `.^set_why` attached to the
+                // METACLASS. Routed here so it does not fall through to the
+                // ordinary `.WHY` declarator-comment lookup, which would only
+                // ever see the `Perl6::Metamodel::ClassHOW` instance itself.
+                | "WHY"
+                | "trusts"
                 | "mro"
                 | "mro_unhidden"
                 | "methods"

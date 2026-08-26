@@ -3833,19 +3833,7 @@ impl Interpreter {
             && Self::is_metamodel_how(&class_name)
             && Self::is_classhow_method(method)
         {
-            let mut how_args = args.to_vec();
-            // A HOW method takes the introspected object as its first argument
-            // (`$obj.^name` desugars to `$obj.HOW.name($obj)`). When the explicit
-            // `$obj.HOW.name(...)` form is called with NO object argument, supply
-            // the type name recorded on the HOW so `Int.HOW.name` still works.
-            // Only do this when no argument was passed — an explicitly-passed
-            // object may be any value (e.g. `1.HOW.name(1)`), not just a Package.
-            if how_args.is_empty()
-                && let Some(ValueView::Str(type_name)) =
-                    attributes.as_map().get("name").map(|v| v.view())
-            {
-                how_args.insert(0, Value::package(Symbol::intern(&type_name)));
-            }
+            let how_args = self.how_dispatch_args(&attributes, method, &args);
             return self.dispatch_classhow_method(method, how_args);
         }
 

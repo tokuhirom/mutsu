@@ -793,8 +793,12 @@ impl Interpreter {
             // `owner_class` may be the short name as written in source
             // (`$a!A::foo = ...`); canonicalize it relative to the caller's
             // package chain before comparing/looking up trusts.
-            let (owner_class, caller_allowed) =
-                self.resolve_and_check_private_owner(caller_class.as_deref(), &owner_class);
+            let invocant_class = class_name.resolve();
+            let (owner_class, caller_allowed) = self.resolve_and_check_private_owner_on(
+                caller_class.as_deref(),
+                &owner_class,
+                Some(&invocant_class),
+            );
             if !caller_allowed {
                 return Err(RuntimeError::new(format!(
                     "X::Method::Private::Permission: Cannot call private method '{}' on {} because it does not trust {}",
