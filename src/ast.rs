@@ -1096,6 +1096,9 @@ pub(crate) enum Stmt {
         is_my: bool,
         /// Base type constraint (e.g., `my Str enum ...` has base_type = Some("Str"))
         base_type: Option<String>,
+        /// Roles composed by a `does Role` clause on the declaration
+        /// (`enum Flags does Weird (A => 1)`), in declaration order.
+        roles: Vec<String>,
         /// Language version active when this enum was declared (e.g., "6.c", "6.d", "6.e")
         language_version: String,
     },

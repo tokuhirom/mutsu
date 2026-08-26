@@ -69,12 +69,19 @@ impl Interpreter {
             is_export,
             is_my,
             base_type,
+            roles,
             language_version,
         } = stmt
         {
             let result = loan_env!(
                 self,
-                register_enum_decl(&name.resolve(), variants, *is_export, base_type.as_deref(),)
+                register_enum_decl(
+                    &name.resolve(),
+                    variants,
+                    *is_export,
+                    base_type.as_deref(),
+                    roles,
+                )
             )?;
             // A `my enum` is lexical: its type name and every variant name die
             // with the enclosing block, so record them the way `DeclareVar`

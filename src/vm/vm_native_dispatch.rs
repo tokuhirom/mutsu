@@ -492,6 +492,13 @@ impl Interpreter {
         {
             return Some(result);
         }
+        // `Range.int-bounds($from is rw, $to is rw --> Bool)`: writes the bounds
+        // into the caller's containers, so it needs `&mut self` and the call
+        // site's arg-source names (see `vm/vm_range_int_bounds.rs`). The
+        // zero-argument candidate stays in the pure arity cascade below.
+        if Self::is_range_int_bounds_rw(target, &method_name, args) {
+            return Some(self.range_int_bounds_rw(target));
+        }
         let mut result = if args.len() == 2 {
             crate::builtins::native_method_2arg(target, method_sym, &args[0], &args[1])
         } else if args.len() == 1 {

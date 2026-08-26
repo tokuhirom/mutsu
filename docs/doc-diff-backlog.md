@@ -230,11 +230,8 @@ fixes that landed in between):
 |---|---|---|
 | `Type/Hash.rakudoc:336` | `my %h .= push(pair)` should leave `%h` empty, mutsu keeps the pair | [hash-dot-assign-push-result.md](../todo/tickets/hash-dot-assign-push-result.md) |
 | `Type/List.rakudoc:219` | `(gather {...}).list.raku` keeps a spurious `.Seq` suffix when chained directly (no intermediate var) | [gather-chained-list-raku-seq-suffix.md](../todo/tickets/gather-chained-list-raku-seq-suffix.md) |
-| `Type/List.rakudoc:1207` | global `rotor()` routine (`v6.e.PREVIEW`) not implemented; the `.rotor` method already works | [rotor-global-routine-missing.md](../todo/tickets/rotor-global-routine-missing.md) |
 | `Type/Map.rakudoc:62` | `Map.new(a, 1, :b(2))` — bare colon-pair should bind as a named arg to `.new`, not a positional Pair | [map-new-bare-colonpair-named-arg.md](../todo/tickets/map-new-bare-colonpair-named-arg.md) |
 | `Type/Range.rakudoc:80` | `@arr[$range-var]` doesn't flatten into `for` iteration (literal `@arr[0..2]` does) | [array-subscript-range-var-list-context-slip.md](../todo/tickets/array-subscript-range-var-list-context-slip.md) |
-| `Type/Range.rakudoc:266` | `Range.int-bounds` method not implemented | [range-int-bounds-method-missing.md](../todo/tickets/range-int-bounds-method-missing.md) |
-| `Type/Range.rakudoc:284` | `Range.minmax` on excluded-end Range should throw `X::AdHoc`, mutsu returns bounds silently | [range-minmax-excluded-ends-should-throw.md](../todo/tickets/range-minmax-excluded-ends-should-throw.md) |
 
 **Known harness false positive (not ticketed):** `Hash.rakudoc:21`, `Map.rakudoc:18`,
 `Map.rakudoc:122` all flagged as `output-mismatch` on `.keys`/`.kv` iteration order.
@@ -291,7 +288,6 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
 | `Language/objects.rakudoc:1397` | a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message | [parametric-role-self-referential-attribute-typecheck.md](../todo/tickets/parametric-role-self-referential-attribute-typecheck.md) |
 | `Language/typesystem.rakudoc:657` | a custom `.gist` on a role-mixed native value is skipped when gisted inside an array/list | [role-mixed-value-gist-skipped-in-array.md](../todo/tickets/role-mixed-value-gist-skipped-in-array.md) |
-| `Language/typesystem.rakudoc:846` | `enum ... does Role`'s overriding `ACCEPTS` is never dispatched by `~~`, plus a spurious `=>` warning | [enum-does-role-accepts-not-dispatched.md](../todo/tickets/enum-does-role-accepts-not-dispatched.md) |
 | `Language/typesystem.rakudoc:611` | a forward-declared role stub used by another role is never upgraded to its real body | [forward-declared-role-stub-not-upgraded.md](../todo/tickets/forward-declared-role-stub-not-upgraded.md) |
 | `Language/typesystem.rakudoc:644` | a role parameter's `fail(...)` default expression is never evaluated/enforced | [role-parameter-fail-default-not-enforced.md](../todo/tickets/role-parameter-fail-default-not-enforced.md) |
 
@@ -658,7 +654,6 @@ Found in the 2026-08-22 batch-5 re-run of `Test`/`Metamodel::EnumHOW`/`Sub`/`ipc
 | `Type/Test.rakudoc:323` | regex char class `<.-:letter-:digit>` (dot base + two chained `-` subtractions) matches everything instead of subtracting | [charclass-dot-base-chained-subtraction-broken.md](../todo/tickets/charclass-dot-base-chained-subtraction-broken.md) |
 | `Type/Test.rakudoc:400` | `.isa(Numeric)` (and other roles) wrongly returns `True` — `isa_check` conflates nominal class hierarchy with role composition | [isa-conflates-roles-with-nominal-supertypes.md](../todo/deep/isa-conflates-roles-with-nominal-supertypes.md) |
 | `Type/Test.rakudoc:586` | `throws-like`'s `message =>`/`gist =>` matchers are silently skipped when the thrown exception is `X::AdHoc` (e.g. from `fail`/`die` with a string) | [throws-like-message-matcher-skipped-for-adhoc-exception.md](../todo/tickets/throws-like-message-matcher-skipped-for-adhoc-exception.md) |
-| `Type/Metamodel/EnumHOW.rakudoc:139,148,157` | `EnumHOW` is missing `.^enum_values`/`.^enum_from_value` (No such method) and `.^elems` (deterministic stack overflow) | [enumhow-missing-enum-values-elems-enum-from-value.md](../todo/tickets/enumhow-missing-enum-values-elems-enum-from-value.md) |
 | `Type/Sub.rakudoc:19` | a user `sub Int(...)` wrongly shadows the built-in `Int(...)` type-coercion call syntax (only `&Int(...)` should reach it) | [user-sub-named-int-shadows-builtin-coercion-call.md](../todo/tickets/user-sub-named-int-shadows-builtin-coercion-call.md) |
 | `Type/Sub.rakudoc:78` | `is foo[1,2,3]` custom variable-trait bracket-argument sugar is misparsed as `is Set[Int]`-style type parameterization, folding the args into the (bogus) trait name | [variable-trait-bracket-argument-misparsed-as-type-param.md](../todo/tickets/variable-trait-bracket-argument-misparsed-as-type-param.md) |
 | `Language/ipc.rakudoc:14` | `run`/`shell` discard the child's stdout/stderr by default (`Stdio::null()`) instead of inheriting the parent's | [run-shell-discard-stdout-stderr-by-default.md](../todo/deep/run-shell-discard-stdout-stderr-by-default.md) |

@@ -4084,6 +4084,14 @@ impl Interpreter {
             return self.materialize_exception_message_in_result(result);
         }
 
+        // `enum X does Role`: a composed role's method wins over the built-in
+        // enum method of the same name (`multi method ACCEPTS` overriding the
+        // enum's identity ACCEPTS is the documented use), exactly as a role
+        // composed onto a class overrides the class's inherited method.
+        if let Some(result) = self.dispatch_enum_role_method(&target, method, &args) {
+            return result;
+        }
+
         // Enum dispatch
         if let Some(result) = self.dispatch_enum_method(&target, method, &args) {
             return result;

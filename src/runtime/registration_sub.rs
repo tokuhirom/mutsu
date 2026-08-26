@@ -1769,6 +1769,7 @@ impl Interpreter {
         variants: &[(String, Option<Expr>)],
         is_export: bool,
         base_type: Option<&str>,
+        roles: &[String],
     ) -> Result<Value, RuntimeError> {
         // Handle dynamic enum body: `enum Stuff (@variable)`
         let expanded;
@@ -1897,6 +1898,11 @@ impl Interpreter {
         self.registry_mut()
             .enum_types
             .insert(enum_type_name.to_string(), enum_variants.clone());
+        // `enum Flags does Weird (...)`: record the composition the same way a
+        // class's `does` does, so type checks (`A ~~ Weird`), method dispatch on
+        // the enum's values and type object, and the smartmatch `ACCEPTS`
+        // protocol all see the role.
+        self.compose_roles_onto_enum(enum_type_name, roles)?;
         if !is_anonymous {
             self.env
                 .insert(name.to_string(), Value::package(Symbol::intern(name)));

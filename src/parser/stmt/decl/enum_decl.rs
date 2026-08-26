@@ -24,6 +24,23 @@ fn register_enum_values(variants: &[(String, Option<Expr>)]) {
     }
 }
 
+/// Skip a balanced `[...]` role-parameterization argument. Returns the input
+/// past the closing `]`, or `None` when the input does not start with `[`.
+fn skip_balanced_brackets(input: &str) -> Option<&str> {
+    let mut rest = input.strip_prefix('[')?;
+    let mut depth = 1u32;
+    while depth > 0 {
+        let c = rest.chars().next()?;
+        rest = &rest[c.len_utf8()..];
+        match c {
+            '[' => depth += 1,
+            ']' => depth -= 1,
+            _ => {}
+        }
+    }
+    Some(rest)
+}
+
 /// Parse `anon enum` declaration.
 pub(crate) fn anon_enum_decl(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("anon", input).ok_or_else(|| PError::expected("anon enum declaration"))?;
@@ -96,6 +113,7 @@ fn parse_anon_enum_body(input: &str) -> PResult<'_, Stmt> {
             is_export: false,
             is_my: false,
             base_type: None,
+            roles: Vec::new(),
             language_version: super::super::simple::current_language_version(),
         },
     ))
@@ -268,22 +286,51 @@ pub(super) fn parse_enum_decl_body_with_type(
     super::super::simple::register_user_type(&name_str);
     let (rest, _) = ws(rest)?;
 
-    // Parse `is <trait>` clauses (e.g., `is export`)
+    // Parse the declaration's trait clauses — `is <trait>` (e.g. `is export`)
+    // and `does <Role>` — which may appear in any order and repeat
+    // (`enum E does A does B is export <x y>`). Without the `does` arm the
+    // clause was left unconsumed, the `(...)`/`<...>` body was never read as the
+    // enum's value list, and the leftover `does Role (A => 1, B => 2)` parsed as
+    // a plain expression statement — which is where the spurious
+    // "Useless use of '=>' in sink context" warning came from, and why the enum
+    // ended up with no values at all.
     let mut rest = rest;
     let mut is_export = false;
-    while let Some(r) = keyword("is", rest) {
-        let (r, _) = ws1(r)?;
-        let (r, trait_name) = ident(r)?;
-        if trait_name == "export" {
-            is_export = true;
+    let mut roles: Vec<String> = Vec::new();
+    loop {
+        if let Some(r) = keyword("is", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, trait_name) = ident(r)?;
+            if trait_name == "export" {
+                is_export = true;
+            }
+            // Consume an optional parenthesized trait argument, e.g.
+            // `is export(:traits)` — without this, the variant parser mistakes
+            // the `(:traits)` for the enum's `(...)` body and the real
+            // `<values>` list after it is left dangling.
+            let r = super::super::super::helpers::skip_balanced_parens(r);
+            let (r, _) = ws(r)?;
+            rest = r;
+            continue;
         }
-        // Consume an optional parenthesized trait argument, e.g.
-        // `is export(:traits)` — without this, the variant parser mistakes the
-        // `(:traits)` for the enum's `(...)` body and the real `<values>` list
-        // after it is left dangling.
-        let r = super::super::super::helpers::skip_balanced_parens(r);
-        let (r, _) = ws(r)?;
-        rest = r;
+        if let Some(r) = keyword("does", rest) {
+            let (r, _) = ws1(r)?;
+            let (r, role_name) = qualified_ident(r)?;
+            // A parameterized role (`does R[Int]`) keeps its argument list in
+            // the recorded name, the same spelling class composition uses.
+            let (r, role_name) = match skip_balanced_brackets(r) {
+                Some(after) => {
+                    let consumed = &r[..r.len() - after.len()];
+                    (after, format!("{role_name}{consumed}"))
+                }
+                None => (r, role_name),
+            };
+            roles.push(role_name);
+            let (r, _) = ws(r)?;
+            rest = r;
+            continue;
+        }
+        break;
     }
 
     // Enum variants in << >>, « », <> or ()
@@ -334,6 +381,7 @@ pub(super) fn parse_enum_decl_body_with_type(
                         is_export,
                         is_my,
                         base_type: base_type.clone(),
+                        roles,
                         language_version: super::super::simple::current_language_version(),
                     },
                 ));
@@ -355,6 +403,7 @@ pub(super) fn parse_enum_decl_body_with_type(
             is_export,
             is_my,
             base_type,
+            roles,
             language_version: super::super::simple::current_language_version(),
         },
     ))

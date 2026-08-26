@@ -450,6 +450,15 @@ impl Interpreter {
         if let ValueView::Seq(items) = target.view() {
             items.mark_cache_requested();
         }
+        // `elems` takes no arguments. An argument-carrying call reaching here is
+        // a MOP-shaped one (`$obj.HOW.elems($obj)`) that no HOW serves; the
+        // `call_function` delegation below would bounce straight back into this
+        // arm via `builtin_elems` (which is defined AS `$x.elems`) and recurse
+        // until the stack overflowed. Decline instead, so the dispatcher reports
+        // a real missing-method error.
+        if !args.is_empty() {
+            return None;
+        }
         Some(self.call_function("elems", vec![target]))
     }
 
