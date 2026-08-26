@@ -23,6 +23,20 @@ impl Interpreter {
                 result.push(self.make_native_method_object(&attr.name, class_name));
             }
         }
+        // Class-level attributes (`my $.x` / `our $.x`) also get a reader
+        // accessor, but they are never entries of `class_def.attributes`
+        // (real Raku: `Foo.^attributes` is empty for one of these — the
+        // declaration is a class-scoped lexical, not an instance attribute).
+        // Every name here is public by construction (a `!`-twigil is a parse
+        // error on `my`/`our`), so no `is_public` gate is needed.
+        for attr_name in class_def.class_level_attrs.keys() {
+            if registry
+                .user_method_overloads(class_name, attr_name)
+                .is_none()
+            {
+                result.push(self.make_native_method_object(attr_name, class_name));
+            }
+        }
         // Then add explicit methods. The overload data comes from the
         // canonical `Registry::method_entries[(owner, name)].user_candidates`
         // table (ADR-0019 Phase F box F1 item 1); the name enumeration itself
@@ -95,6 +109,19 @@ impl Interpreter {
                 table.insert(
                     attr.name.clone(),
                     self.make_native_method_object(&attr.name, class_name),
+                );
+            }
+        }
+        // Class-level attributes (`my $.x` / `our $.x`) — see the matching
+        // comment in `collect_class_methods`.
+        for attr_name in class_def.class_level_attrs.keys() {
+            if registry
+                .user_method_overloads(class_name, attr_name)
+                .is_none()
+            {
+                table.insert(
+                    attr_name.clone(),
+                    self.make_native_method_object(attr_name, class_name),
                 );
             }
         }
@@ -722,6 +749,18 @@ impl Interpreter {
                     break;
                 }
             }
+        }
+        // Class-level attributes (`my $.x` / `our $.x`) get a reader accessor
+        // too, but they are never in `collect_class_attributes` (they are not
+        // instance attributes at all — see `collect_class_methods`'s matching
+        // comment), so probe `class_level_attrs` (with its own MRO walk)
+        // directly.
+        if results.is_empty() && self.has_class_level_attr(&class_name, method_name) {
+            results.push(Value::routine_parts(
+                Symbol::intern(&class_name),
+                Symbol::intern(method_name),
+                false,
+            ));
         }
         // Also check for native/builtin methods if no user-defined methods found.
         // For built-in types, consult the native-method-row catalog to see if

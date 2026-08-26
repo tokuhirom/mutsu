@@ -446,11 +446,7 @@ impl Interpreter {
 
     /// Look up a class-level attribute (declared with `our $.x` or `my $.x`).
     /// Searches the class and its MRO.
-    pub(crate) fn get_class_level_attr(
-        &mut self,
-        class_name: &str,
-        attr_name: &str,
-    ) -> Option<Value> {
+    pub(crate) fn get_class_level_attr(&self, class_name: &str, attr_name: &str) -> Option<Value> {
         // Check own class first
         if let Some(class_def) = self.registry().classes.get(class_name)
             && let Some(val) = class_def.class_level_attrs.get(attr_name)
@@ -473,14 +469,14 @@ impl Interpreter {
     }
 
     /// Check if a class (or its MRO) has a class-level attribute.
-    pub(crate) fn has_class_level_attr(&mut self, class_name: &str, attr_name: &str) -> bool {
+    pub(crate) fn has_class_level_attr(&self, class_name: &str, attr_name: &str) -> bool {
         self.get_class_level_attr(class_name, attr_name).is_some()
     }
 
     /// Set a class-level attribute value. Searches the class and its MRO to find
     /// where the attribute is defined, then updates it.
     pub(crate) fn set_class_level_attr(
-        &mut self,
+        &self,
         class_name: &str,
         attr_name: &str,
         value: Value,
