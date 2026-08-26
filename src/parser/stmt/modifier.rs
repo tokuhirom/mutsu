@@ -2,7 +2,7 @@ use super::super::expr::expression;
 use super::super::helpers::{ws, ws1};
 use super::super::parse_result::{PError, PResult, merge_expected_messages};
 
-use crate::ast::{CallArg, Expr, Stmt};
+use crate::ast::{CallArg, Expr, ParamDef, Stmt};
 use crate::symbol::Symbol;
 use crate::token_kind::TokenKind;
 use crate::value::Value;
@@ -396,6 +396,49 @@ pub(crate) fn parse_statement_modifier(input: &str, stmt: Stmt) -> PResult<'_, S
     }
 }
 
+/// The `(param, param_def, params, params_def, rw_block, explicit_zero_params)`
+/// shape `Stmt::For` uses to describe a loop's own signature.
+type ForParamShape = (
+    Option<String>,
+    Box<Option<ParamDef>>,
+    Vec<String>,
+    Vec<ParamDef>,
+    bool,
+    bool,
+);
+
+/// Turn a closure's own explicit signature into the shape `Stmt::For` uses, so
+/// a pointy-block/`sub (...) { ... }` operand of the `for` statement modifier
+/// consumes N elements per iteration according to its own arity -- exactly like
+/// `for LIST -> SIG { ... }` already does for the identical signature written
+/// the other way round. Mirrors how `parse_for_params` (for_params.rs) and
+/// `arrow_lambda_inner` (lambda.rs) shape a single named param into the
+/// singular `param`/`param_def` slot and a multi-param signature into the
+/// plural `params`/`params_def` slot; an explicit empty signature (`-> {}`,
+/// `sub () { }`) sets `explicit_zero_params` instead.
+fn closure_signature_as_for_params(
+    params: Vec<String>,
+    param_defs: Vec<ParamDef>,
+    is_rw: bool,
+) -> ForParamShape {
+    match params.len() {
+        0 => (None, Box::new(None), Vec::new(), Vec::new(), is_rw, true),
+        1 => {
+            let param = params.into_iter().next();
+            let param_def = param_defs.into_iter().next();
+            (
+                param,
+                Box::new(param_def),
+                Vec::new(),
+                Vec::new(),
+                is_rw,
+                false,
+            )
+        }
+        _ => (None, Box::new(None), params, param_defs, is_rw, false),
+    }
+}
+
 /// Try to parse a single statement modifier. Returns None if no modifier matched.
 fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>, PError> {
     // Whether the statement being modified itself ends in a `{ ... }` block
@@ -553,46 +596,95 @@ fn parse_single_modifier(rest: &str, stmt: Stmt) -> Result<Option<(&str, Stmt)>,
         if r.starts_with("->") || r.starts_with('{') {
             return Ok(None);
         }
-        let (param, params, body) = match stmt {
-            // `{ ... } for LIST` is the very same loop as `for LIST { ... }`,
-            // so the bare block gives the loop its implicit placeholder
-            // signature exactly as a `for LIST { ... }` body block does.
-            // Without this the loop stayed signature-less and `$^a`/`$^b` never
-            // got bound (`{ $^a ~ $^b } for (1,2),(3,4)` yielded `True/True`).
-            Stmt::Block(ref body) => {
-                let (param, params) = crate::parser::stmt::control::placeholder_loop_params(body)
-                    .unwrap_or((None, Vec::new()));
-                (param, params, vec![stmt])
-            }
-            // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
-            // @a`) is now `WhateverCurry` rather than a built `Lambda`/
-            // `AnonSubParams`, but still needs the same "call it with $_"
-            // treatment as those, to keep `* + 1 for @a` meaning `($_ + 1)
-            // for @a` rather than discarding an uncalled closure value.
-            Stmt::Expr(expr @ Expr::WhateverCurry(_))
-            | Stmt::Expr(expr @ Expr::AnonSubParams { .. })
-            | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
-                let target = Expr::CallOn {
-                    target: Box::new(expr),
-                    args: vec![Expr::Var("_".to_string())],
-                };
-                (None, Vec::new(), vec![Stmt::Expr(target)])
-            }
-            other => (None, Vec::new(), vec![other]),
-        };
+        let (param, param_def, params, params_def, rw_block, explicit_zero_params, body) =
+            match stmt {
+                // `{ ... } for LIST` is the very same loop as `for LIST { ... }`,
+                // so the bare block gives the loop its implicit placeholder
+                // signature exactly as a `for LIST { ... }` body block does.
+                // Without this the loop stayed signature-less and `$^a`/`$^b` never
+                // got bound (`{ $^a ~ $^b } for (1,2),(3,4)` yielded `True/True`).
+                Stmt::Block(ref body) => {
+                    let (param, params) =
+                        crate::parser::stmt::control::placeholder_loop_params(body)
+                            .unwrap_or((None, Vec::new()));
+                    (param, Box::new(None), params, Vec::new(), false, false, vec![stmt])
+                }
+                // ADR-0033 Phase 1: a bare Whatever-curried statement (`* + 1 for
+                // @a`) is now `WhateverCurry` rather than a built `Lambda`/
+                // `AnonSubParams`, but still needs the same "call it with $_"
+                // treatment as a single-param pointy block, to keep `* + 1 for
+                // @a` meaning `($_ + 1) for @a` rather than discarding an
+                // uncalled closure value. It is always arity-1 (one `*`
+                // placeholder threads through the whole expression), so it must
+                // NOT become the loop's own signature.
+                Stmt::Expr(expr @ Expr::WhateverCurry(_))
+                // The single-param pointy block form (`-> $x { ... }`) is
+                // already exactly arity 1 under a plain call with the topic, so
+                // it keeps working unchanged.
+                | Stmt::Expr(expr @ Expr::Lambda { .. }) => {
+                    let target = Expr::CallOn {
+                        target: Box::new(expr),
+                        args: vec![Expr::Var("_".to_string())],
+                    };
+                    (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![Stmt::Expr(target)])
+                }
+                // A genuine multi-/zero-/slurpy-param signature written as a
+                // pointy block or `sub (...) { ... }`: make the closure's own
+                // signature the loop's signature and its body the loop's body,
+                // so `Stmt::For`'s existing multi-param handling consumes N
+                // elements per iteration -- the same lowering the bare
+                // placeholder-block case above already uses. Excludes the
+                // implicit-`@_` bare-block shape (`{ @_ } for LIST`, guarded
+                // below): rakudo invokes that one element at a time even though
+                // its only parameter is a synthesized slurpy `*@_`, so its
+                // signature must NOT become the loop's own (mirrors
+                // `bare_block_body` in meta_ops.rs, which excludes this exact
+                // shape from the placeholder-block conversion for the same
+                // reason).
+                Stmt::Expr(Expr::AnonSubParams {
+                    params,
+                    param_defs,
+                    body,
+                    is_rw,
+                    ..
+                }) if !(params.len() == 1
+                    && params[0] == "@_"
+                    && param_defs.first().is_some_and(|d| d.block_param)) =>
+                {
+                    let (param, param_def, params, params_def, rw_block, explicit_zero_params) =
+                        closure_signature_as_for_params(params, param_defs, is_rw);
+                    (
+                        param,
+                        param_def,
+                        params,
+                        params_def,
+                        rw_block,
+                        explicit_zero_params,
+                        body,
+                    )
+                }
+                Stmt::Expr(expr @ Expr::AnonSubParams { .. }) => {
+                    let target = Expr::CallOn {
+                        target: Box::new(expr),
+                        args: vec![Expr::Var("_".to_string())],
+                    };
+                    (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![Stmt::Expr(target)])
+                }
+                other => (None, Box::new(None), Vec::new(), Vec::new(), false, false, vec![other]),
+            };
         return Ok(Some((
             r,
             Stmt::For {
                 iterable,
                 param,
-                param_def: Box::new(None),
+                param_def,
                 params,
-                params_def: Vec::new(),
+                params_def,
                 body,
                 label: None,
                 mode: crate::ast::ForMode::Normal,
-                rw_block: false,
-                explicit_zero_params: false,
+                rw_block,
+                explicit_zero_params,
                 is_statement_modifier: true,
                 uses_block_magic: false,
             },
