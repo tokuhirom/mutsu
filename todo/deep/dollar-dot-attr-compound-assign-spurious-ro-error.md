@@ -1,5 +1,14 @@
 # `$.attr` inside a method is an *itemized* accessor read — mutsu has both halves of the RO rule backwards
 
+> **Moved from `todo/tickets/` to `todo/deep/` on 2026-08-26.** Per `todo/README.md`,
+> `tickets/` is for small, self-contained slices that need no design work. This one asks for
+> a semantic change to what *every* public accessor returns (a container rather than a value),
+> which moves `$obj.attr.VAR`, `=:=`-on-clones and `is rw` write-back all at once — and the
+> ticket's own "The right fix" section asks for an ADR before starting. That is the definition
+> of a `deep/` item, and filing it under `tickets/` was causing it to be picked up by the
+> oldest-first ticket pipeline and deferred again on each pass (it has now been deferred twice
+> for exactly this reason).
+
 Discovered via the doc-diff harness on `raku-doc/doc/Language/traps.rakudoc`
 (around line 212). The doc's own `# OUTPUT:` comment is stale (it says the trap
 *should* throw "Cannot assign to an immutable value"); current `raku` does not
