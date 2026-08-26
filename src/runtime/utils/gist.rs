@@ -268,6 +268,16 @@ pub(crate) fn gist_value(value: &Value) -> String {
             attributes,
             ..
         } if class_name == "Match" => match_gist(&(attributes).as_map(), 0),
+        // An `is Str` subclass instance gists as its string payload
+        // (`Foo.new(:value("hi")).gist` → `hi`), not the generic `Class.new` —
+        // `Str.gist` is the string itself.
+        ValueView::Instance { attributes, .. } if attributes.contains_key("__mutsu_str_value") => {
+            attributes
+                .as_map()
+                .get("__mutsu_str_value")
+                .map(crate::value::Value::to_string_value)
+                .unwrap_or_default()
+        }
         // An `is Array` subclass instance gists as its backing array elements
         // (`Vector.new(1,2,3).gist` → `[1 2 3]`), not the generic `Class.new`.
         ValueView::Instance { attributes, .. }

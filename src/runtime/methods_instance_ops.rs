@@ -83,6 +83,12 @@ impl Interpreter {
         if !((method == "raku" || method == "perl" || gist_default) && args.is_empty()) {
             return None;
         }
+        // An `is Str` subclass delegates `.raku`/`.gist` to its string payload,
+        // so `class Foo is Str {}; Foo.new(:value("hi")).raku` is `"hi"` —
+        // mirrors the `is Array`/`is Hash` backing-storage delegation below.
+        if let Some(payload) = attributes.as_map().get("__mutsu_str_value").cloned() {
+            return Some(self.call_method_with_values(payload, method, vec![]));
+        }
         if let Some(storage) = attributes.as_map().get("__mutsu_array_storage").cloned() {
             return Some(self.call_method_with_values(storage, method, vec![]));
         }

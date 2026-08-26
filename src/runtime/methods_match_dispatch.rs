@@ -33,7 +33,9 @@ impl Interpreter {
                     global = true;
                 } else if key == "x" {
                     if !Self::is_valid_match_x_arg(value) {
-                        return Err(Self::str_match_x_error("match", value));
+                        // Rakudo's `Str.match` *returns* the Failure rather than
+                        // throwing eagerly; it only blows up when used.
+                        return Ok(Self::str_match_x_failure(value));
                     }
                     repeat_bounds = Self::parse_match_repeat_bounds(value);
                 } else if key == "nth" || key == "st" || key == "nd" || key == "rd" || key == "th" {

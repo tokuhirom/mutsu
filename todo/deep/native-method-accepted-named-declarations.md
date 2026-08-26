@@ -16,6 +16,13 @@ never takes the retry path — and it fixed every case where an unknown named ma
 the arity-keyed native lookup *miss* (`4.log(:base(2))`, `"abc".uc(:foo)`, and
 22 more measured against `raku`).
 
+Re-confirmed 2026-08-26 while closing
+`todo/tickets/str-comb-named-arg-only-dispatch-missing.md`: `.comb(:match)` —
+which that ticket suspected would need the per-method declaration described
+below — is entirely on the *loud* side and is already fixed by the retry. It
+needs no accepted-named table. The scope of this ticket is unchanged: only the
+silent-wrong-arm cases listed next.
+
 ## What is still wrong
 
 The retry cannot help when the wrong arm *hits*. If a native arm accepts the

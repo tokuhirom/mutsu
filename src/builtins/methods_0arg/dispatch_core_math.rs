@@ -400,6 +400,16 @@ pub(super) fn dispatch(
                 }
             }
             ValueView::FatRat(n, d) => Some(Ok(make_rat(n, d))),
+            // A non-numeric string yields the same lazy `X::Str::Numeric` Failure
+            // `.Int`/`.Num`/`.FatRat` produce (`"foo".Rat.^name` is `Failure`).
+            // Without this guard `str_to_rat` silently fell back to `0/1`.
+            ValueView::Str(s)
+                if crate::runtime::str_numeric::parse_raku_str_to_numeric(s.trim()).is_none() =>
+            {
+                Some(Ok(
+                    crate::builtins::methods_0arg::dispatch_core_coerce::str_numeric_failure(&s),
+                ))
+            }
             ValueView::Str(s) => Some(Ok(str_to_rat(&s))),
             ValueView::Complex(r, im) => {
                 if im.abs() <= 1e-15 {

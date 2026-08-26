@@ -71,6 +71,29 @@ doc) are version skew, not mutsu bugs — lowest priority.
 ## Triaged
 
 ### Resolved (will drop from the next sweep)
+- `Cool.rakudoc:1416` — `"foo".Rat` returned a silent `Rat` `0` instead of the lazy
+  `X::Str::Numeric` `Failure` every sibling coercion already produced; the guard was
+  simply missing from the `"Rat"` arm —
+  [news](../news/2026-08/str-rat-coercion-should-fail.md).
+- `X/Str/Match/x.rakudoc:15` — `.match(…, :x(BAD))` accepted a plain `Str` and then
+  silently ignored the adverb; the accept-list is `Numeric`/`Range`/`*` (so `<2>` is
+  in and `"2"` is out), `.match` returns the `Failure` while `.subst` throws, and the
+  message always names `Str.match` —
+  [news](../news/2026-08/str-match-x-adverb-type-not-validated.md).
+- `independent-routines.rakudoc:687,692` — `.printf` had no method form, and the
+  Junction handling was dispatch-shaped rather than directive-shaped: only `printf`
+  has a `Junction:D` argument candidate, while the `Str(Cool) $format` parameter
+  autothreads in both `printf` and `sprintf` —
+  [news](../news/2026-08/printf-method-form-and-junction-autothread-missing.md).
+- `Str.rakudoc:647` — `.comb(:match)` (named-arg-only) already dispatches: closed by
+  the implicit-`*%_` retry, with the ticket's expected output corrected (raku returns
+  plain `Str`s, not `Match`es, when no matcher is given) —
+  [news](../news/2026-08/str-comb-named-arg-only-dispatch-missing.md).
+- `objects.rakudoc:1067` — a `class Foo is Str {}` instance lost the parent's string
+  payload; `Mu.new`'s `:value` named argument now lands in a reserved
+  `__mutsu_str_value` attribute, the string twin of the existing
+  `__mutsu_array_storage`/`__mutsu_int_value` payloads —
+  [news](../news/2026-08/str-subclass-loses-native-stringify.md).
 - `$.name()` self-accessor interpolation left `()` literal — **#4979**.
 - Harness scratch-file race producing phantom findings — **#4982** (this is why the
   survey below supersedes every earlier scan).
@@ -204,7 +227,6 @@ fixes that landed in between):
 | `Type/Range.rakudoc:80` | `@arr[$range-var]` doesn't flatten into `for` iteration (literal `@arr[0..2]` does) | [array-subscript-range-var-list-context-slip.md](../todo/tickets/array-subscript-range-var-list-context-slip.md) |
 | `Type/Range.rakudoc:266` | `Range.int-bounds` method not implemented | [range-int-bounds-method-missing.md](../todo/tickets/range-int-bounds-method-missing.md) |
 | `Type/Range.rakudoc:284` | `Range.minmax` on excluded-end Range should throw `X::AdHoc`, mutsu returns bounds silently | [range-minmax-excluded-ends-should-throw.md](../todo/tickets/range-minmax-excluded-ends-should-throw.md) |
-| `Type/Str.rakudoc:647` | `.comb(:match)` (named-arg-only call) fails to dispatch at all; plain `.comb` and other arities work | [str-comb-named-arg-only-dispatch-missing.md](../todo/tickets/str-comb-named-arg-only-dispatch-missing.md) |
 
 **Known harness false positive (not ticketed):** `Hash.rakudoc:21`, `Map.rakudoc:18`,
 `Map.rakudoc:122` all flagged as `output-mismatch` on `.keys`/`.kv` iteration order.
@@ -259,7 +281,6 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Type/Any.rakudoc:1525` | `.snip` with multiple positional predicates silently drops all but the first | [snip-multiple-positional-matchers-dropped.md](../todo/tickets/snip-multiple-positional-matchers-dropped.md) |
 | `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
 | `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
-| `Language/objects.rakudoc:1067` | a user class `is Str` (or other native type) doesn't inherit native stringification | [str-subclass-loses-native-stringify.md](../todo/tickets/str-subclass-loses-native-stringify.md) |
 | `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
 | `Language/objects.rakudoc:1185` | attribute order in a `.new`/gist under multiple inheritance is wrong (deterministic, not hash-order noise) | [multi-inheritance-attribute-gist-order.md](../todo/tickets/multi-inheritance-attribute-gist-order.md) |
 | `Language/objects.rakudoc:1457` | `but`-mixing a role onto a `List` breaks its `Positional` binding | [list-but-role-loses-positional-binding.md](../todo/tickets/list-but-role-loses-positional-binding.md) |
@@ -357,7 +378,6 @@ Found in the 2026-08-22 batch-3 re-run of `IO::Handle`/`structures`/`mop`/`indep
 | `Type/independent-routines.rakudoc:110` | `EVAL` doesn't synthesize an `EVAL_N` filename for `$?FILE`, and ignores the `:filename` arg | [eval-dollar-question-file-not-synthesized.md](../todo/tickets/eval-dollar-question-file-not-synthesized.md) |
 | `Type/independent-routines.rakudoc:148` | `repl()` global routine is unimplemented (mutsu already has REPL machinery to reuse) | [repl-routine-unimplemented.md](../todo/tickets/repl-routine-unimplemented.md) |
 | `Type/independent-routines.rakudoc:473` | `open(:w, PATH)` — a named adverb before the positional path breaks argument parsing | [open-named-adverb-before-positional-path.md](../todo/tickets/open-named-adverb-before-positional-path.md) |
-| `Type/independent-routines.rakudoc:687,692` | `.printf` method form is unimplemented on Str, and format directives don't autothread over a Junction | [printf-method-form-and-junction-autothread-missing.md](../todo/tickets/printf-method-form-and-junction-autothread-missing.md) |
 | `Type/independent-routines.rakudoc:312` | hyper method call (`».method`) / `.map` on a `gather {...}` Seq returns empty instead of forcing it | [gather-hyper-method-call-empty-result.md](../todo/tickets/gather-hyper-method-call-empty-result.md) |
 
 **Excluded from this batch-3 sub-run (already deferred/resolved/drift/false-positive):**
@@ -602,7 +622,6 @@ Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamod
 | `Language/signatures.rakudoc:849` | single-argument-rule slurpy parameter (`+name`) always yields a plain `Array` instead of `List`/passing a `Seq` through unchanged | [single-arg-rule-slurpy-type-wrong.md](../todo/tickets/single-arg-rule-slurpy-type-wrong.md) |
 | `Language/signatures.rakudoc:1151,1159` | a sigilless parameter with an attached sub-signature (`\p(Int, Str)`) fails to parse; the sigiled equivalent (`@p (Int, Str)`) already works | [sigilless-param-sub-signature-parse-fails.md](../todo/tickets/sigilless-param-sub-signature-parse-fails.md) |
 | `Type/Cool.rakudoc:932` | `(0..0x1FFFF).sort(*.uniname.chars)` is ~18x slower than raku and times out under the harness's 10s budget (correct result, just too slow) | [uniname-sort-performance-gap.md](../todo/tickets/uniname-sort-performance-gap.md) |
-| `Type/Cool.rakudoc:1416` | `"foo".Rat` should return a `Failure` (matching `"foo".Num`'s error behavior); mutsu silently returns `Rat` `0` | [str-rat-coercion-should-fail.md](../todo/tickets/str-rat-coercion-should-fail.md) |
 | `Type/Metamodel/Documenting.rakudoc:30` | manual `Metamodel::ClassHOW.new_type`/`.compose` construction: `.HOW.set_why` after `.HOW.compose` fails with "Cannot modify an immutable ... type object" | [metamodel-how-set-why-after-compose-immutable.md](../todo/tickets/metamodel-how-set-why-after-compose-immutable.md) |
 | `Type/Baggy.rakudoc:197` | `classify-list` with an array mapper renders an out-of-range key as `Nil` instead of `(Any)` (plain `.classify` with a block mapper already gets this right) | [classify-list-array-mapper-out-of-range-shows-nil.md](../todo/tickets/classify-list-array-mapper-out-of-range-shows-nil.md) |
 | `Type/Buf.rakudoc:84` | `subbuf-rw($buf, from, len) = value` (bare function-call form) silently doesn't mutate; the method-call form (`$buf.subbuf-rw(from, len) = value`) already works | [subbuf-rw-function-form-lvalue-not-mutating.md](../todo/tickets/subbuf-rw-function-form-lvalue-not-mutating.md) |
@@ -780,7 +799,6 @@ Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`f
 | `Type/Metamodel/MethodContainer.rakudoc:73` | `.^lookup("nonexistent")` returns `Nil` instead of the `Mu` type object | [classhow-lookup-missing-method-returns-nil-not-mu.md](../todo/tickets/classhow-lookup-missing-method-returns-nil-not-mu.md) |
 | `Language/faq.rakudoc:359` | a custom `postcircumfix:<[...]>` operator's `+@slurpy` args are wrong when called via subscript syntax, though the identical logic works fine as a plain sub call | [custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md](../todo/tickets/custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md) |
 | `Language/faq.rakudoc:1108` | repeated big-Int addition (growing-magnitude Fibonacci-style loop) is ~14x slower than raku, timing out under the harness budget at 100k iterations | [bigint-repeated-addition-performance-gap.md](../todo/tickets/bigint-repeated-addition-performance-gap.md) |
-| `Type/X/Str/Match/x.rakudoc:15` | `.match(pattern, :x(BAD_TYPE))` doesn't validate the `:x` adverb's value type, so `X::Str::Match::x` is never thrown | [str-match-x-adverb-type-not-validated.md](../todo/tickets/str-match-x-adverb-type-not-validated.md) |
 | `Type/Real.rakudoc:31` | adding two custom `Real`-subclass instances (via `.Bridge`) produces an exact `Rat` where raku produces an approximate `Num` | [real-subclass-generic-plus-produces-exact-rat-not-num.md](../todo/tickets/real-subclass-generic-plus-produces-exact-rat-not-num.md) |
 | `Type/Associative.rakudoc:53` | `.of` on a class statically `does`-ing a parametric `Associative[Cool,DateTime]` reports `(Mu)` instead of the declared value type `(Cool)` | [associative-of-static-does-parametric-role-wrong-value-type.md](../todo/tickets/associative-of-static-does-parametric-role-wrong-value-type.md) |
 | `Language/grammar_tutorial.rakudoc:679` | a grammar `rule` with multiple embedded code blocks and subrule calls executes them out of the declared left-to-right order | [grammar-rule-embedded-actions-execute-out-of-order.md](../todo/tickets/grammar-rule-embedded-actions-execute-out-of-order.md) |

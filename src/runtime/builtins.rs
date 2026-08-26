@@ -183,6 +183,16 @@ impl Interpreter {
         Ok(Value::make_instance(Symbol::intern("Scalar"), attributes))
     }
 
+    /// `sprintf`/`printf` declare their format as `Str(Cool) $format`, and a
+    /// `Junction` autothreads through that coercion. Returns the junction kind
+    /// and its eigenstates when the format argument is a `Junction`.
+    fn sprintf_format_junction(args: &[Value]) -> Option<(crate::value::JunctionKind, Vec<Value>)> {
+        match args.first()?.view() {
+            ValueView::Junction { kind, values } => Some((kind, values.iter().cloned().collect())),
+            _ => None,
+        }
+    }
+
     pub(super) fn has_invalid_anonymous_rw_trait(code: &str) -> bool {
         let bytes = code.as_bytes();
         let mut i = 0usize;
@@ -1087,33 +1097,52 @@ impl Interpreter {
             // (chrs routed through native_function_variadic; ords/unival/univals
             // via native_function_1arg) and reached via call_function_fallback.
             "sprintf" | "zprintf" => {
-                // If the first arg is a Junction, thread through it:
-                // call .Str on each element and concatenate.
-                if let Some(ValueView::Junction { values, .. }) = args.first().map(Value::view) {
-                    let mut content = String::new();
-                    for v in values.iter() {
-                        content.push_str(&self.render_str_value(v));
+                // `sprintf(Str(Cool) $format, *@args)`: a Junction *format*
+                // autothreads through the `Str(Cool)` coercion, yielding a
+                // Junction of formatted strings (`sprintf("%s"|"[%s]", 5)` is
+                // `any("5", "[5]")`). A Junction in `@args` does not autothread
+                // — the slurpy is untyped, so the directive rejects it.
+                if let Some((kind, formats)) = Self::sprintf_format_junction(&args) {
+                    let mut results = Vec::with_capacity(formats.len());
+                    for f in formats {
+                        let mut threaded = args.clone();
+                        threaded[0] = f;
+                        results.push(self.builtin_sprintf(&threaded, name == "zprintf")?);
                     }
-                    Ok(Value::str(content))
+                    Ok(Value::junction(kind, results))
                 } else {
                     self.builtin_sprintf(&args, name == "zprintf")
                 }
             }
             "printf" => {
-                // If the first arg is a Junction, thread through it:
-                // call .Str on each element and print the result.
-                if let Some(ValueView::Junction { values, .. }) = args.first().map(Value::view) {
-                    let mut content = String::new();
-                    for v in values.iter() {
-                        content.push_str(&self.render_str_value(v));
+                // Same format autothreading as `sprintf`, plus Rakudo's extra
+                // `:(Str(Cool) $format, Junction:D \j)` candidate: a *single*
+                // Junction argument autothreads over its eigenstates, printing
+                // the format once per member (`printf("%.2f ", 1/3|1/4|3/4)`).
+                // Two Junction arguments hit the slurpy candidate and die, so
+                // only the exactly-one-argument shape threads.
+                if let Some((kind, formats)) = Self::sprintf_format_junction(&args) {
+                    let mut results = Vec::with_capacity(formats.len());
+                    for f in formats {
+                        let mut threaded = args.clone();
+                        threaded[0] = f;
+                        results.push(self.call_function(name, threaded)?);
                     }
-                    self.write_to_named_handle("$*OUT", &content, false)?;
-                    Ok(Value::TRUE)
-                } else {
-                    let formatted = self.builtin_sprintf(&args, false)?;
-                    self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
-                    Ok(Value::TRUE)
+                    return Ok(Value::junction(kind, results));
                 }
+                if args.len() == 2
+                    && let ValueView::Junction { kind, values } = args[1].view()
+                {
+                    let members: Vec<Value> = values.iter().cloned().collect();
+                    let mut results = Vec::with_capacity(members.len());
+                    for v in members {
+                        results.push(self.call_function(name, vec![args[0].clone(), v])?);
+                    }
+                    return Ok(Value::junction(kind, results));
+                }
+                let formatted = self.builtin_sprintf(&args, false)?;
+                self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
+                Ok(Value::TRUE)
             }
             "split" => self.handle_split_function(args),
             "parse-base" => {

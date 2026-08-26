@@ -177,14 +177,26 @@ impl Interpreter {
 
     /// Parse :x(...) style repeat bounds.
     /// Returns (min_required, max_to_return). `max_to_return = None` means unbounded.
-    /// The `:x` adverb to `.match` / `s///` must be an Int or a Range. Anything
-    /// else (e.g. an Array) is an X::Str::Match::x error.
+    /// The `:x` adverb to `.match` / `s///` must be a `Numeric` (which covers
+    /// `Int`, `Bool`, the numeric allomorphs, `Rat` and `Num`), a `Range`, or
+    /// `*`. Anything else — notably a plain `Str`, which is *not* `Numeric`
+    /// even when it spells a number — is an `X::Str::Match::x` error, exactly
+    /// as Rakudo reports it (`:x("2")` is rejected while `:x(<2>)` is not).
     pub(in crate::runtime) fn is_valid_match_x_arg(value: &Value) -> bool {
+        // A numeric allomorph (`<2>`) is a `Mixin` wrapping the numeric value;
+        // it is `Numeric`, so it is accepted while the bare `Str` "2" is not.
+        if let ValueView::Mixin(inner, _) = value.view() {
+            return Self::is_valid_match_x_arg(inner.as_ref());
+        }
         matches!(
             value.view(),
             ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Bool(_)
                 | ValueView::Num(_)
-                | ValueView::Str(_)
+                | ValueView::Rat(_, _)
+                | ValueView::BigRat(_, _)
+                | ValueView::FatRat(_, _)
                 | ValueView::Whatever
                 | ValueView::Range(_, _)
                 | ValueView::RangeExcl(_, _)
@@ -194,18 +206,34 @@ impl Interpreter {
         )
     }
 
-    /// Build the X::Str::Match::x error for an invalid `:x` adverb value.
-    pub(in crate::runtime) fn str_match_x_error(routine: &str, got: &Value) -> RuntimeError {
+    /// Build the `X::Str::Match::x` exception value for an invalid `:x` adverb.
+    /// Rakudo's message always names `Str.match`, even when the adverb reached
+    /// it through `.subst`/`s///`.
+    pub(in crate::runtime) fn str_match_x_exception(got: &Value) -> Value {
         let type_name = crate::value::types::what_type_name(got);
         let mut attrs = std::collections::HashMap::new();
         attrs.insert("got".to_string(), got.clone());
         let message = format!(
-            "in Str.{}, got invalid value of type {} for :x, must be Int or Range",
-            routine, type_name
+            "in Str.match, got invalid value of type {} for :x, must be Int or Range",
+            type_name
         );
         attrs.insert("message".to_string(), Value::str(message));
-        let ex = Value::make_instance(Symbol::intern("X::Str::Match::x"), attrs);
-        RuntimeError::from_exception_value(ex)
+        Value::make_instance(Symbol::intern("X::Str::Match::x"), attrs)
+    }
+
+    /// Build the X::Str::Match::x error for an invalid `:x` adverb value.
+    pub(in crate::runtime) fn str_match_x_error(got: &Value) -> RuntimeError {
+        RuntimeError::from_exception_value(Self::str_match_x_exception(got))
+    }
+
+    /// `Str.match` *returns* a `Failure` for an invalid `:x` (it does not throw
+    /// eagerly), so `my $r = "ab".match("a", :x<z>)` yields a `Failure` and only
+    /// blows up when the result is used. `.subst` throws instead.
+    pub(in crate::runtime) fn str_match_x_failure(got: &Value) -> Value {
+        let mut failure_attrs = std::collections::HashMap::new();
+        failure_attrs.insert("exception".to_string(), Self::str_match_x_exception(got));
+        failure_attrs.insert("handled".to_string(), Value::FALSE);
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
     pub(in crate::runtime) fn parse_match_repeat_bounds(
@@ -213,8 +241,14 @@ impl Interpreter {
     ) -> Option<(usize, Option<usize>)> {
         fn parse_non_negative_int(v: &Value) -> Option<i64> {
             match v.view() {
+                // Numeric allomorph (`<2>`): read the numeric value it wraps.
+                ValueView::Mixin(inner, _) => parse_non_negative_int(inner.as_ref()),
                 ValueView::Int(i) => Some(i.max(0)),
-                ValueView::Num(n) if n.is_finite() && n.fract() == 0.0 => Some((n as i64).max(0)),
+                ValueView::Bool(b) => Some(i64::from(b)),
+                // A fractional bound truncates toward zero, like Rakudo's `.Int`
+                // coercion of the adverb (`:x(1.5)` selects exactly one match).
+                ValueView::Num(n) if n.is_finite() => Some((n as i64).max(0)),
+                ValueView::Rat(n, d) | ValueView::FatRat(n, d) if d != 0 => Some((n / d).max(0)),
                 ValueView::Str(s) => s.trim().parse::<i64>().ok().map(|i| i.max(0)),
                 ValueView::Whatever => Some(i64::MAX),
                 _ => None,

@@ -103,6 +103,23 @@ impl Interpreter {
             "printf" if args.is_empty() && !Self::is_io_cathandle(&target) => {
                 Some(self.dispatch_printf(&target))
             }
+            // Method form `$format.printf(*@args)` == `printf($format, @args)`,
+            // the same `Cool` convention `.sprintf` already follows (documented
+            // in `Type/independent-routines.rakudoc`). Restricted to non-`Instance`
+            // receivers so `$*OUT.printf(...)` / `IO::CatHandle.printf(...)` keep
+            // their own handle-writing dispatch. Note this is `Cool.printf`, which
+            // has no `Junction:D` candidate — a Junction argument is a directive
+            // error here, exactly as in Rakudo, so it must NOT autothread.
+            "printf" if !matches!(target.view(), ValueView::Instance { .. }) => {
+                let mut full = Vec::with_capacity(args.len() + 1);
+                full.push(target.clone());
+                full.extend(args.iter().cloned());
+                Some((|| {
+                    let formatted = self.builtin_sprintf(&full, false)?;
+                    self.write_to_named_handle("$*OUT", &formatted.to_string_value(), false)?;
+                    Ok(Value::TRUE)
+                })())
+            }
             "sprintf" if args.is_empty() => Some(self.dispatch_sprintf(&target)),
             "sprintf" => {
                 // Method form `$format.sprintf(*@args)` == `sprintf($format, @args)`.

@@ -937,6 +937,20 @@ impl Value {
                 .get("after")
                 .map(|v: &Value| v.to_string_value())
                 .unwrap_or_default(),
+            // A subclass of native `Str` (`class Foo is Str {}`) carries its
+            // string payload in the reserved `__mutsu_str_value` attribute, the
+            // twin of `__mutsu_int_value` for `is Int`. Stringifying it must
+            // yield that payload, not the generic `Foo()` placeholder — which is
+            // also what makes `.chars`/`.uc`/`eq` work on such an instance.
+            ValueView::Instance { attributes, .. }
+                if attributes.contains_key("__mutsu_str_value") =>
+            {
+                attributes
+                    .as_map()
+                    .get("__mutsu_str_value")
+                    .map(Value::to_string_value)
+                    .unwrap_or_default()
+            }
             ValueView::Instance { class_name, .. } => format!("{}()", class_name),
             ValueView::Junction { kind, values } => {
                 let kind_str = match kind {
