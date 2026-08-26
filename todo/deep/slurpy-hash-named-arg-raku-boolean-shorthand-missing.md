@@ -1,5 +1,15 @@
 # `.raku` on a `Hash` populated from slurpy `*%h` named-arg binding doesn't abbreviate Bool::True pairs
 
+> **Moved from `todo/tickets/` to `todo/deep/` on 2026-08-26**, acting on this file's own
+> conclusion. The 2026-08-26 re-measurement below establishes that the signal rakudo consults is
+> per-value Scalar-containerness, so matching it requires per-element containers in `HashData` —
+> the associative half of [element-itemization-lost-in-scalar-binding.md](element-itemization-lost-in-scalar-binding.md),
+> touching every read, write, iteration, `.pairs`/`.Map`/`.kv` path and every `.raku`/`.gist`
+> consumer. The file already says "fold this into the element-itemization deep item rather than
+> fixing `Hash.raku` in isolation" and names the tempting shortcut as provably wrong. A ticket
+> whose own recommendation is "do not fix this as a ticket" does not belong in the oldest-first
+> ticket queue, where it can only be picked up and deferred again.
+
 Found by the doc-diff harness re-run (`docs/doc-diff-backlog.md`, `Type/Pair.rakudoc:61`).
 
 **Re-measured 2026-08-26 against raku v2026.06. The original "root cause
