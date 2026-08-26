@@ -365,7 +365,29 @@ impl Interpreter {
             }
         }
         self.locals = saved_locals;
+        // Only pull a slot's value back from `env` when the compiler actually
+        // keeps that slot's env mirror live (`code.needs_env_sync`,
+        // `compute_needs_env_sync` in `opcode.rs`). `env`'s bare keys are
+        // pre-seeded with a decl-seed placeholder (`Any`) for every mainline
+        // lexical before any of them run, and the (B) per-store env-write gate
+        // means a "slot-authoritative" local (the common case — nothing reads
+        // it by name) never overwrites that placeholder on assignment. Reading
+        // `env` unconditionally here — for every declared local in the whole
+        // compiled unit, not just the ones this package/module body could
+        // plausibly have touched — copied that stale placeholder straight over
+        // a live, correctly-assigned local the block never went near
+        // (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`):
+        // `my $x = "top"; module M { }; say $x` read back `(Any)`. Gating on
+        // `needs_env_sync` is the same test the write side already trusts, so
+        // a slot whose env mirror IS kept current (referenced inside this or
+        // another package-scope body, closed over, etc.) still reconciles
+        // exactly as before — including the write-through case this loop
+        // exists for (`my $x = 1; module M { $x = 2 }`, which the compiler
+        // marks needs_env_sync via `EnvConsumerSlots::package_scope`).
         for (idx, local_name) in code.locals.iter().enumerate() {
+            if !code.needs_env_sync.get(idx).copied().unwrap_or(true) {
+                continue;
+            }
             if let Some(val) = restored_env.get(local_name).cloned() {
                 self.locals[idx] = val;
             }

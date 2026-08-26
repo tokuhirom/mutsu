@@ -2342,6 +2342,17 @@ pub(crate) struct EnvConsumerSlots {
     pub(crate) block_local_scope: Vec<bool>,
     pub(crate) gather: Vec<bool>,
     pub(crate) whenever: Vec<bool>,
+    /// Slots read/written (by name or by local index) inside a `package`/
+    /// `module`/`class`-via-`Stmt::Package` body (`OpCode::PackageScope`).
+    /// `exec_package_scope_op` reconciles its outer scope through `env`
+    /// exactly the way `BlockScope`/`BlockLocalScope` do (see its own
+    /// `restored_env` bookkeeping), but this case was missing from the
+    /// pre-ADR-0018 fold entirely — a plain scalar referenced ONLY inside such
+    /// a body defaulted to `needs_env_sync = false`, so its per-store env
+    /// mirror was skipped and `exec_package_scope_op`'s restore read a stale
+    /// decl-seed placeholder out of `env` instead of the slot's live value
+    /// (`todo/tickets/package-block-resets-an-outer-lexical-declared-before-any-env-flush.md`).
+    pub(crate) package_scope: Vec<bool>,
 }
 
 /// A declaration-time expression lowered to its own bytecode chunk (ADR-0019 C5).
@@ -4742,11 +4753,13 @@ impl CompiledCode {
         let mut has_block_local_scope = false;
         let mut has_gather = false;
         let mut has_whenever = false;
+        let mut has_package_scope = false;
         let mut for_loop_slots = vec![false; n];
         let mut block_scope_slots = vec![false; n];
         let mut block_local_scope_slots = vec![false; n];
         let mut gather_slots = vec![false; n];
         let mut whenever_slots = vec![false; n];
+        let mut package_scope_slots = vec![false; n];
         for (op_idx, op) in self.ops.iter().enumerate() {
             match op {
                 OpCode::ForLoop(spec) => {
@@ -4800,6 +4813,19 @@ impl CompiledCode {
                     has_whenever = true;
                     self.mark_closure_parent_slots(*analysis_cc_idx, &mut whenever_slots);
                 }
+                OpCode::PackageScope { body_end, .. } => {
+                    has_package_scope = true;
+                    self.mark_name_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut package_scope_slots,
+                    );
+                    self.mark_local_access_slots(
+                        op_idx + 1,
+                        *body_end as usize,
+                        &mut package_scope_slots,
+                    );
+                }
                 _ => {}
             }
         }
@@ -4812,6 +4838,14 @@ impl CompiledCode {
         }
         if has_block_local_scope {
             self.mark_same_named_slot_peers(&mut block_local_scope_slots);
+        }
+        // `exec_package_scope_op` restores the SAME "every simultaneously live
+        // peer" way `BlockScope`/`BlockLocalScope` do (its `restored_env`
+        // reconciliation reads/writes bare env keys, not slot indices, so a
+        // same-named peer slot is indistinguishable from the one actually
+        // referenced in the body).
+        if has_package_scope {
+            self.mark_same_named_slot_peers(&mut package_scope_slots);
         }
         if has_for_loop {
             self.env_consumer_slots.for_loop = for_loop_slots;
@@ -4827,6 +4861,9 @@ impl CompiledCode {
         }
         if has_whenever {
             self.env_consumer_slots.whenever = whenever_slots;
+        }
+        if has_package_scope {
+            self.env_consumer_slots.package_scope = package_scope_slots;
         }
         // §1.4 shadow slots: flag every slot whose name occupies more than one
         // `locals` slot (a genuine inner-block shadow under MUTSU_SHADOW_SLOTS)
@@ -5150,6 +5187,12 @@ impl CompiledCode {
                 || self
                     .env_consumer_slots
                     .whenever
+                    .get(slot)
+                    .copied()
+                    .unwrap_or(false)
+                || self
+                    .env_consumer_slots
+                    .package_scope
                     .get(slot)
                     .copied()
                     .unwrap_or(false);
