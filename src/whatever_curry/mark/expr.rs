@@ -70,6 +70,15 @@ pub(super) fn mark_expr(expr: &mut Expr) {
                 mark_expr(right);
             }
         },
+        // `todo/tickets/chained-compare-ast-node.md`: each operand is an
+        // ordinary argument position, same as a `Binary` comparison's
+        // operands (the chain as a whole is one priming scope, not a thunk
+        // barrier — see `is_thunk_barrier`/`contains_whatever`).
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                mark_expr(o);
+            }
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => mark_expr(expr),
         Expr::MethodCall {
             target, name, args, ..

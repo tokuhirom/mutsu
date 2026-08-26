@@ -2,9 +2,13 @@
 
 - **Status**: Phase 1 shipped (2026-08-19). Phase 2 shipped (2026-08-20, see "Phase 2
   outcome" below). **Phase 4 shipped (2026-08-23, see "Phase 4 outcome" below)** — the
-  thunk-barrier priming correctness fix, plus its chained-comparison prerequisite. Phase 3
-  (RakuAST write / `EVAL`) not started; it has no roast or correctness payoff of its own
-  and was deliberately left until after Phase 4.
+  thunk-barrier priming correctness fix, plus its chained-comparison prerequisite. The
+  chained-comparison `Expr::ChainedCompare` node the Phase 4 outcome deferred to
+  `todo/tickets/chained-compare-ast-node.md` **shipped 2026-08-26** (see `news/2026-08/
+  chained-compare-ast-node.md`): `TokenKind::ChainAnd` is retired now that a real AST node
+  exists, and `.AST` renders a chain as rakudo's left-nested `ApplyInfix` instead of the
+  expanded `&&`/`DoBlock` shape. Phase 3 (RakuAST write / `EVAL`) not started; it has no
+  roast or correctness payoff of its own and was deliberately left until after Phase 4.
 - **Scope**: Owns the `WhateverCode` item of
   [`todo/deep/rakuast-remaining.md`](../../todo/deep/rakuast-remaining.md) — both its
   read-direction half ("`* + 1` has no `.AST`") and its lowering half ("`EVAL` of a
@@ -606,8 +610,9 @@ free-variable analysis) would simply stop seeing the chain's operands. `ChainAnd
 the `Expr::Binary` shape every existing walker already handles, so its audit is the
 bounded set of 20 `TokenKind::AndAnd` sites, all inspected. The node form remains worth
 doing for its *other* benefit — rendering `1 < * < 10` faithfully in RakuAST instead of as
-the expanded `&&` — and is tracked as
-[`todo/tickets/chained-compare-ast-node.md`](../../todo/tickets/chained-compare-ast-node.md).
+the expanded `&&` — and was tracked as `todo/tickets/chained-compare-ast-node.md`, shipped
+2026-08-26 (see the Status line above and
+[`news/2026-08/chained-compare-ast-node.md`](../../news/2026-08/chained-compare-ast-node.md)).
 
 A bonus correctness fix came with it: the `count_whatever` / `replace_whatever_numbered`
 de-duplication special case, which used to fire on *any* `AndAnd` whose two operands

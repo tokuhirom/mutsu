@@ -487,6 +487,13 @@ fn lift_phasers_from_expr_inner(
             lift_phasers_from_expr(left, begin, check, init);
             lift_phasers_from_expr(right, begin, check, init);
         }
+        // `todo/tickets/chained-compare-ast-node.md`: an operand can hold a
+        // `CHECK`/`INIT`/`BEGIN` phaser expression, same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands.iter_mut() {
+                lift_phasers_from_expr(o, begin, check, init);
+            }
+        }
         Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
             lift_phasers_from_expr(inner, begin, check, init);
         }
@@ -1148,6 +1155,12 @@ fn recurse_into_expr(expr: &mut Expr) {
         | Expr::MetaOp { left, right, .. } => {
             recurse_into_expr(left);
             recurse_into_expr(right);
+        }
+        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands.iter_mut() {
+                recurse_into_expr(o);
+            }
         }
         Expr::Unary { expr: inner, .. } | Expr::PostfixOp { expr: inner, .. } => {
             recurse_into_expr(inner);

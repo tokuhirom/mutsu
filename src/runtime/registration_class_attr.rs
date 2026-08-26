@@ -163,6 +163,13 @@ impl Interpreter {
                 Self::validate_attr_in_expr(ctx, left)?;
                 Self::validate_attr_in_expr(ctx, right)?;
             }
+            // `todo/tickets/chained-compare-ast-node.md`: `$!x < $!y < $!z`
+            // can reference an attribute in any operand.
+            Expr::ChainedCompare { operands, .. } => {
+                for o in operands {
+                    Self::validate_attr_in_expr(ctx, o)?;
+                }
+            }
             Expr::Ternary {
                 cond,
                 then_expr,

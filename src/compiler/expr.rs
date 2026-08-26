@@ -75,6 +75,15 @@ impl Compiler {
                 let closure = crate::whatever_curry::build_closure(body);
                 self.compile_expr(&closure);
             }
+            // `todo/tickets/chained-compare-ast-node.md`: expand the marker
+            // into the same `&&`-conjunction shape the parser used to build
+            // eagerly (`chain_compare::expand`, formerly
+            // `build_chain_cmp_expr`), then compile that. No new OpCode, no
+            // new runtime path — mirrors the `WhateverCurry` arm above.
+            Expr::ChainedCompare { operands, ops } => {
+                let expanded = crate::chain_compare::expand(operands, ops);
+                self.compile_expr(&expanded);
+            }
             // A source-preserving literal compiles exactly like its inner value;
             // the recorded source text only matters to the sink-warning pass.
             Expr::LiteralSrc(v, _) => {

@@ -709,6 +709,14 @@ impl Interpreter {
                 self.validate_private_access_in_expr(caller_class, left)?;
                 self.validate_private_access_in_expr(caller_class, right)?;
             }
+            // `todo/tickets/chained-compare-ast-node.md`: `$a !private-method
+            // < b < c`-shaped chains can hold a private-method access in any
+            // operand, same as `Binary` above.
+            Expr::ChainedCompare { operands, .. } => {
+                for o in operands {
+                    self.validate_private_access_in_expr(caller_class, o)?;
+                }
+            }
             Expr::Ternary {
                 cond,
                 then_expr,
@@ -937,6 +945,12 @@ impl Interpreter {
             | Expr::HyperOp { left, right, .. } => {
                 self.check_private_calls_exist_expr(class_name, class_def, left)?;
                 self.check_private_calls_exist_expr(class_name, class_def, right)?;
+            }
+            // `todo/tickets/chained-compare-ast-node.md`: same as `Binary`.
+            Expr::ChainedCompare { operands, .. } => {
+                for o in operands {
+                    self.check_private_calls_exist_expr(class_name, class_def, o)?;
+                }
             }
             Expr::Unary { expr, .. }
             | Expr::PostfixOp { expr, .. }

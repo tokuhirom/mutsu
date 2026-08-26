@@ -128,16 +128,6 @@ pub(crate) enum TokenKind {
     Gt,
     Gte,
     AndAnd,
-    /// The conjunction the parser *synthesizes* when it expands a chained
-    /// comparison (`a < m < b` => `(a < m) && (m < b)`). Runtime semantics are
-    /// identical to `AndAnd`, but it must stay distinguishable from a
-    /// user-written `&&`: ADR-0033 Phase 4 makes `&&` a Whatever-priming thunk
-    /// barrier, and a synthesized chain conjunction is *not* one — the whole
-    /// chain is a single priming scope (`(1 < * < 10)(0)` is `False`, one
-    /// arity-1 `WhateverCode`, where the user-written `(1 < * && * < 10)(0)` is
-    /// `True` because `&&` returns its right-hand `WhateverCode`). Both
-    /// measured against rakudo.
-    ChainAnd,
     OrOr,
     XorXor, // ^^
     OrWord,

@@ -934,6 +934,15 @@ fn convert_expr(expr: &Expr) -> Result<RakuAstNode, RuntimeError> {
         Expr::ArrayVar(name) => Ok(var_lexical("@", name)),
         Expr::HashVar(name) => Ok(var_lexical("%", name)),
         Expr::CodeVar(name) => Ok(var_lexical("&", name)),
+        // `todo/tickets/chained-compare-ast-node.md`: rakudo has no AST-level
+        // `&&` for a chained comparison — `Q[1 < 2 < 3].AST` is a left-nested
+        // `ApplyInfix(ApplyInfix(1, "<", 2), "<", 3)` with no wrapper, the
+        // chaining semantics coming from the operator's chaining precedence at
+        // rakudo's own codegen (measured). Render the same shape here instead
+        // of the compiler's `&&`/`DoBlock` expansion, which is a compile-time
+        // implementation detail (`crate::chain_compare::expand`) this
+        // converter never sees.
+        Expr::ChainedCompare { operands, ops } => convert_chained_compare(operands, ops),
         // List-associative infixes (`andthen`/`orelse`/`notandthen`) render as a
         // single flat `ApplyListInfix` in raku; mutsu nests them left-associatively,
         // so flatten a same-operator left chain into one operand list.
@@ -1737,6 +1746,48 @@ fn operator_node(class: RakuAstClass, op: &crate::token_kind::TokenKind) -> Raku
         class,
         fields: vec![leaf_field(None, Value::str(token_kind_to_op_name(op)))],
     }
+}
+
+/// Render a chained comparison as rakudo's left-nested `ApplyInfix`
+/// (`todo/tickets/chained-compare-ast-node.md`): `ops[i]` links
+/// `operands[i]` and `operands[i+1]`, folded left-to-right so `a < b < c`
+/// becomes `ApplyInfix(ApplyInfix(a, "<", b), "<", c)`, matching
+/// `Q[1 < 2 < 3].AST` measured against rakudo. A negated link (`!before`)
+/// renders with the same `ApplyPrefix("!", ApplyInfix(...))` shape a
+/// standalone negated comparison uses (the `Expr::Unary` arm above) —
+/// matching rakudo's own `RakuAST::MetaInfix::Negate` is a separate,
+/// pre-existing gap (`1 !before 2` already renders as `ApplyPrefix` today)
+/// that this ticket does not close.
+fn convert_chained_compare(
+    operands: &[Expr],
+    ops: &[(crate::token_kind::TokenKind, bool)],
+) -> Result<RakuAstNode, RuntimeError> {
+    let mut node = convert_expr(&operands[0])?;
+    for (i, (op, negated)) in ops.iter().enumerate() {
+        let infix = RakuAstNode {
+            class: RakuAstClass::ApplyInfix,
+            fields: vec![
+                node_field(Some("left"), node),
+                node_field(Some("infix"), operator_node(RakuAstClass::Infix, op)),
+                node_field(Some("right"), convert_expr(&operands[i + 1])?),
+            ],
+        };
+        node = if *negated {
+            RakuAstNode {
+                class: RakuAstClass::ApplyPrefix,
+                fields: vec![
+                    node_field(
+                        Some("prefix"),
+                        operator_node(RakuAstClass::Prefix, &crate::token_kind::TokenKind::Bang),
+                    ),
+                    node_field(Some("operand"), infix),
+                ],
+            }
+        } else {
+            infix
+        };
+    }
+    Ok(node)
 }
 
 /// True for the list-associative infixes raku renders as `ApplyListInfix`

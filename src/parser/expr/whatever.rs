@@ -135,6 +135,9 @@ fn contains_xx_with_bare_whatever(expr: &Expr) -> bool {
             items.iter().any(contains_xx_with_bare_whatever)
         }
         Expr::CaptureLiteral(items) => items.iter().any(contains_xx_with_bare_whatever),
+        Expr::ChainedCompare { operands, .. } => {
+            operands.iter().any(contains_xx_with_bare_whatever)
+        }
         _ => false,
     }
 }
@@ -287,6 +290,30 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 || right
                     .iter()
                     .any(|e| contains_whatever(e) || is_wrapped_whatevercode(e))
+        }
+        // `todo/tickets/chained-compare-ast-node.md`: a chained comparison is
+        // a single priming scope spanning every operand (measured against
+        // rakudo: `(1 < * < 10)(0)` is `False`, one arity-1 `WhateverCode`),
+        // so any operand containing a `*` makes the whole chain curry --
+        // EXCEPT the final operand when the chain's last link is a
+        // SmartMatch/BangTilde: that mirrors the SmartMatch/BangTilde arm
+        // above (only the left operand of `X ~~ Y` counts; a RHS Whatever
+        // autoprimes independently at runtime, `wrap_smartmatch_rhs`), and
+        // that RHS role can only ever land on the chain's *last* operand
+        // (every earlier operand is also the *left* of the next link, which
+        // always counts regardless of that link's operator). Getting this
+        // wrong silently over-curries `0 == 0 ~~ (* == 0)` into one big
+        // WhateverCode instead of leaving the already-materialized `(*==0)`
+        // closure alone (roast/S03-operators/relational.t).
+        Expr::ChainedCompare { operands, ops } => {
+            let last_is_smartmatch_rhs = ops
+                .last()
+                .is_some_and(|(op, _)| matches!(op, TokenKind::SmartMatch | TokenKind::BangTilde));
+            let (init, last) = operands.split_at(operands.len() - 1);
+            init.iter()
+                .any(|o| contains_whatever(o) || is_wrapped_whatevercode(o))
+                || (!last_is_smartmatch_rhs
+                    && (contains_whatever(&last[0]) || is_wrapped_whatevercode(&last[0])))
         }
         // R meta-operators with Whatever: `5 R- *` should curry.
         // X/Z meta-operators with bare * in list contexts mean "extend" rather

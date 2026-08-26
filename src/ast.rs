@@ -635,6 +635,20 @@ pub(crate) enum Expr {
         op: TokenKind,
         right: Box<Expr>,
     },
+    /// A chained comparison `a OP1 b OP2 c ...` (e.g. `1 < 2 < 3`,
+    /// `a !before b before c`). `operands.len() == ops.len() + 1`; `ops[i]`
+    /// (operator, negated) links `operands[i]` and `operands[i+1]`. This is a
+    /// marker only, mirroring `Expr::WhateverCurry`: the compiler's
+    /// `Expr::ChainedCompare` arm expands it into the runtime `&&`-conjunction
+    /// shape (`crate::chain_compare::expand`) at compile time, evaluating each
+    /// operand exactly once, so no operand is duplicated in the durable AST.
+    /// Only actual chains (more than one comparison) use this node; a lone
+    /// comparison stays a plain `Binary`/`Unary`, matching rakudo's own
+    /// `ApplyInfix` rendering.
+    ChainedCompare {
+        operands: Vec<Expr>,
+        ops: Vec<(TokenKind, bool)>,
+    },
     Hash(Vec<(String, Option<Expr>)>),
     Call {
         name: Symbol,
@@ -2141,6 +2155,13 @@ fn collect_ph_expr(expr: &Expr, out: &mut Vec<String>) {
             collect_ph_expr(left, out);
             collect_ph_expr(right, out);
         }
+        // `todo/tickets/chained-compare-ast-node.md`: `{ $^a < $^b < $^c }`
+        // must see every operand, same as a plain `Binary` comparison.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                collect_ph_expr(o, out);
+            }
+        }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => collect_ph_expr(expr, out),
         Expr::MethodCall { target, args, .. } | Expr::HyperMethodCall { target, args, .. } => {
             collect_ph_expr(target, out);
@@ -2751,6 +2772,13 @@ fn collect_ph_expr_shallow(expr: &Expr, out: &mut Vec<String>) {
         Expr::Binary { left, right, .. } => {
             collect_ph_expr_shallow(left, out);
             collect_ph_expr_shallow(right, out);
+        }
+        // `todo/tickets/chained-compare-ast-node.md`: `{ $^a < $^b < $^c }`
+        // must see every operand, same as a plain `Binary` comparison.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                collect_ph_expr_shallow(o, out);
+            }
         }
         Expr::Unary { expr, .. } | Expr::PostfixOp { expr, .. } => {
             collect_ph_expr_shallow(expr, out)

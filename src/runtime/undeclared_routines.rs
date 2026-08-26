@@ -479,6 +479,12 @@ fn walk_expr(expr: &Expr, scan: &mut Scan) {
             walk_expr(left, scan);
             walk_expr(right, scan);
         }
+        // `todo/tickets/chained-compare-ast-node.md`: same as `Binary` above.
+        Expr::ChainedCompare { operands, .. } => {
+            for o in operands {
+                walk_expr(o, scan);
+            }
+        }
         Expr::InfixFunc { left, right, .. } => {
             walk_expr(left, scan);
             for r in right {

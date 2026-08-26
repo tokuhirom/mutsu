@@ -882,6 +882,10 @@ impl Interpreter {
             Expr::Binary { left, right, .. } => self
                 .find_undeclared_name_in_expr(left, local_classes, declared)
                 .or_else(|| self.find_undeclared_name_in_expr(right, local_classes, declared)),
+            // `todo/tickets/chained-compare-ast-node.md`: same as `Binary`.
+            Expr::ChainedCompare { operands, .. } => operands
+                .iter()
+                .find_map(|o| self.find_undeclared_name_in_expr(o, local_classes, declared)),
             Expr::Unary { expr, .. } => {
                 self.find_undeclared_name_in_expr(expr, local_classes, declared)
             }
