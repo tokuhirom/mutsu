@@ -34,10 +34,11 @@ impl Interpreter {
         // `exec_call_func_op`'s native dispatch here so the check applies
         // regardless of which opcode a given callsite compiled to.
         if !self.native_call_specs.is_empty() {
-            let spec = self.native_call_specs.get(&name).cloned().or_else(|| {
-                name.rsplit_once("::")
-                    .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
-            });
+            // `resolve_native_call_spec` honors a same-scope plain-sub shadow
+            // of a bare-name native descriptor (Raku: a local declaration
+            // shadows a same-named imported/needed symbol) — see its doc
+            // comment.
+            let spec = self.resolve_native_call_spec(&name);
             if let Some(mut spec) = spec {
                 self.resolve_native_ret_struct(&mut spec);
                 let mut call_args = args;

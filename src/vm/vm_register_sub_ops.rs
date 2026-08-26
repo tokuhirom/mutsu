@@ -935,12 +935,13 @@ impl Interpreter {
         // is also called by its package-qualified name, and the callsite looks
         // the descriptor up by exactly the name it wrote — so register the
         // qualified name too. Without this, a qualified call misses the native
-        // path and runs the stub `{ * }` body instead.
+        // path and runs the stub `{ * }` body instead. Always record the
+        // `pkg::name` key (including `GLOBAL::name`) so
+        // `resolve_native_call_spec` can walk `bare_name_packages()` and find
+        // this declaration at its own scope even when `pkg == "GLOBAL"`.
         let pkg = self.current_package();
-        if pkg != "GLOBAL" {
-            self.native_call_specs
-                .insert(format!("{pkg}::{name}"), spec.clone());
-        }
+        self.native_call_specs
+            .insert(format!("{pkg}::{name}"), spec.clone());
         self.native_call_specs.insert(name.to_string(), spec);
         Ok(())
     }

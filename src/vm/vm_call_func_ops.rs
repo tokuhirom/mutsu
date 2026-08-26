@@ -285,12 +285,11 @@ impl Interpreter {
             // package-qualified callsite (`OpenSSL::EVP::EVP_aes_128_cbc`) may
             // therefore need the short-name fallback — `unit module` subs are
             // registered while `current_package` is still GLOBAL, so only the
-            // short name is present.
-            let spec = self.native_call_specs.get(name_str).cloned().or_else(|| {
-                name_str
-                    .rsplit_once("::")
-                    .and_then(|(_, short)| self.native_call_specs.get(short).cloned())
-            });
+            // short name is present. `resolve_native_call_spec` also honors a
+            // same-scope plain-sub shadow of a bare-name native descriptor
+            // (Raku: a local declaration shadows a same-named
+            // imported/needed symbol).
+            let spec = self.resolve_native_call_spec(name_str);
             if let Some(mut spec) = spec {
                 self.resolve_native_ret_struct(&mut spec);
                 let arity_usize = arity as usize;
