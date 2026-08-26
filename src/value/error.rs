@@ -125,6 +125,18 @@ pub struct RuntimeErrorCold {
     /// Source text immediately after a parse failure's eject point (current
     /// line only, matching rakudo's `X::Comp.post`).
     pub post_context: Option<String>,
+    /// For a parse failure that occurred while parsing a `use`d module (or
+    /// any other file distinct from the top-level entry point): the file
+    /// that actually failed to compile, and its full source text. `line`/
+    /// `column` above are always relative to *this* file when set, not to
+    /// whatever source the CLI's entry point happens to be running. Without
+    /// this, a parse error inside a `use`d module renders under the
+    /// entry-point's own name/source (e.g. "at -e:498" for a failure that is
+    /// really on line 5 of the imported module), which is both a wrong file
+    /// label and — since the entry-point source is usually much shorter —
+    /// often suppresses the source snippet entirely.
+    pub source_file: Option<String>,
+    pub source_text: Option<String>,
 }
 
 #[derive(Debug)]
@@ -211,6 +223,14 @@ impl RuntimeError {
     pub fn backtrace(&self) -> Option<&str> {
         self.cold.as_ref().and_then(|c| c.backtrace.as_deref())
     }
+    /// See `RuntimeErrorCold::source_file`.
+    pub fn source_file(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.source_file.as_deref())
+    }
+    /// See `RuntimeErrorCold::source_text`.
+    pub fn source_text(&self) -> Option<&str> {
+        self.cold.as_ref().and_then(|c| c.source_text.as_deref())
+    }
 
     /// Move the container name out of the error, leaving it `None`.
     pub(crate) fn take_container_name(&mut self) -> Option<String> {
@@ -254,6 +274,14 @@ impl RuntimeError {
     }
     pub(crate) fn set_backtrace(&mut self, v: Option<String>) {
         self.cold_mut().backtrace = v;
+    }
+    /// Record which file (and its full source) actually failed to parse, for
+    /// a failure inside a `use`d module rather than the entry-point script.
+    /// See `RuntimeErrorCold::source_file`.
+    pub(crate) fn set_source_file_text(&mut self, file: String, text: String) {
+        let cold = self.cold_mut();
+        cold.source_file = Some(file);
+        cold.source_text = Some(text);
     }
     pub(crate) fn set_pre_post_context(&mut self, pre: String, post: String) {
         let cold = self.cold_mut();

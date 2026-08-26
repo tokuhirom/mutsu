@@ -156,6 +156,18 @@ pub fn render_error(
         return out;
     }
 
+    // A parse failure inside a `use`d module carries its own file/source
+    // (set by `parse_module_source`): its line/column are relative to that
+    // module, not to the entry-point script, so prefer them over whatever
+    // the CLI passed in — otherwise the error renders under the wrong file
+    // name with a source snippet sliced from the wrong text (or none at all,
+    // if the entry-point source happens to be shorter than the module's
+    // failing line number).
+    let (source, program_name) = match (err.source_text(), err.source_file()) {
+        (Some(text), Some(file)) => (Some(text), Some(file)),
+        _ => (source, program_name),
+    };
+
     // For parse errors with source context, show a nice snippet
     if let (Some(code), Some(src), Some(name)) = (err.code(), source, program_name)
         && code.is_parse()
