@@ -49,6 +49,51 @@ impl Interpreter {
             || component.starts_with('&')
     }
 
+    /// Whether a single-segment (no `::`), package-qualification-stripped env
+    /// key names a genuine member of the GLOBAL/root package stash, as
+    /// opposed to a dynamic variable (`*CWD`), compile-time magical
+    /// (`?FILE`), POD marker (`=pod`), internal bookkeeping key, or a `my`
+    /// lexical that merely happens to live in the same flat env store.
+    /// Sigiled array/hash/sub/scalar keys (`@arr`, `%h`, `&f`, `$x`) and
+    /// uppercase bare names (types, constants, enum values -- always visible
+    /// from the enclosing package in Raku) are kept; a lowercase bare name is
+    /// a `my` lexical (genuine `our` scalars are covered separately, via the
+    /// dedicated `our_vars` loop in `package_stash_value`).
+    fn is_global_root_symbol(rest: &str) -> bool {
+        if rest.starts_with("__mutsu_") {
+            return false;
+        }
+        // A dynamic var / compile-time magical is mirrored into the env
+        // store both bare (`*CWD`) and pre-sigiled (`$*CWD`) -- see
+        // `io_env.rs`'s `$*ARGFILES` / `*ARGFILES` pair -- so the twigil
+        // check must look past a single leading sigil either way.
+        let after_sigil = rest.strip_prefix(['$', '@', '%', '&']).unwrap_or(rest);
+        if after_sigil.starts_with('*')
+            || after_sigil.starts_with('?')
+            || after_sigil.starts_with('!')
+            || after_sigil.starts_with('=')
+        {
+            return false;
+        }
+        if rest.starts_with('@')
+            || rest.starts_with('%')
+            || rest.starts_with('&')
+            || rest.starts_with('$')
+        {
+            return true;
+        }
+        // An uppercase bare name is a type, constant, or enum-member --
+        // legitimately in the env store directly (not via the classes
+        // registry, so `user_declared_classes` below cannot vet it). But a
+        // *well-known built-in* type name (e.g. runtime init's internal
+        // `env.insert("Any", ...)` sentinel) is not a user symbol just
+        // because it happens to be mirrored into env; only a name the
+        // interpreter does not already recognize as a core type is a
+        // genuine root-package member.
+        rest.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+            && !crate::runtime::utils::is_known_type_constraint(rest)
+    }
+
     fn stash_member_tail<'a>(key: &'a str, package: &str) -> Option<&'a str> {
         let package = package.trim_end_matches("::");
         if package == "GLOBAL" {
@@ -492,8 +537,36 @@ impl Interpreter {
         // package must not vacuum up every bare `our` name.
         if package_name == "GLOBAL" || package_name.is_empty() {
             for (key, val) in self.our_vars_iter() {
+                // `our_vars` carries both a bare mirror (`o`) and a
+                // fully-qualified one (`GLOBAL::o`) for a root-scope `our`
+                // declaration. The qualified spelling is the *same* symbol,
+                // not a sub-package member named literally "GLOBAL" -- strip
+                // the self-qualification before deciding what kind of member
+                // this is (a genuine cross-package key like `Mod::modvar`
+                // still yields its head as a sub-package, same as the env
+                // scan below).
+                let effective_key = key.strip_prefix("GLOBAL::").unwrap_or(key.as_str());
+                if let Some((head, _)) = effective_key.split_once("::") {
+                    // `our_vars` also carries internal bookkeeping markers
+                    // qualified the same way a real sub-package would be
+                    // (e.g. `__mutsu_sigilless_readonly::EvalPreseedTerm`);
+                    // these are not user-visible symbols.
+                    if head.is_empty()
+                        || Self::env_tail_has_sigil(head)
+                        || head.starts_with("__mutsu_")
+                    {
+                        continue;
+                    }
+                    symbols.entry(head.to_string()).or_insert_with(|| {
+                        Value::package(Symbol::intern(&Self::qualify_stash_name(
+                            &package_name,
+                            head,
+                        )))
+                    });
+                    continue;
+                }
                 symbols
-                    .entry(Self::add_sigil_prefix(key))
+                    .entry(Self::add_sigil_prefix(effective_key))
                     .or_insert_with(|| val.clone());
             }
         }
@@ -519,7 +592,16 @@ impl Interpreter {
             if self.is_my_scoped_package_item(&key_s) {
                 continue;
             }
-            if let Some(rest) = Self::stash_member_tail(&key_s, &package_name) {
+            // GLOBAL's env scan sees the self-qualified mirror of a root
+            // `our` (`GLOBAL::o` alongside bare `o`, see the `our_vars` loop
+            // above) -- strip it so it is recognized as the same symbol
+            // rather than a sub-package named literally "GLOBAL".
+            let effective_key: &str = if package_name == "GLOBAL" {
+                key_s.strip_prefix("GLOBAL::").unwrap_or(&key_s)
+            } else {
+                &key_s
+            };
+            if let Some(rest) = Self::stash_member_tail(effective_key, &package_name) {
                 // A member whose tail is itself qualified (`foo::bar` seen from
                 // GLOBAL) does not name a symbol of THIS package -- it names a
                 // symbol of a *sub-package*. The stash member is that
@@ -528,13 +610,34 @@ impl Interpreter {
                 // `OUR::.keys` == `(foo)` and `OUR::<foo>.WHO.keys` == `($bar)`,
                 // not a flat `foo::bar` key).
                 if let Some((head, _)) = rest.split_once("::") {
-                    if head.is_empty() || Self::env_tail_has_sigil(head) {
+                    // `__mutsu_constant_var::C` and similar internal markers
+                    // are qualified-looking but are not a real sub-package --
+                    // only GLOBAL's unconditional `stash_member_tail` match
+                    // makes them reach this branch at all.
+                    if head.is_empty()
+                        || Self::env_tail_has_sigil(head)
+                        || head.starts_with("__mutsu_")
+                    {
                         continue;
                     }
                     let qualified = Self::qualify_stash_name(&package_name, head);
                     symbols
                         .entry(head.to_string())
                         .or_insert_with(|| Value::package(Symbol::intern(&qualified)));
+                    continue;
+                }
+                // GLOBAL is the root package: every flat env key would
+                // otherwise pass through unconditionally (`stash_member_tail`
+                // treats GLOBAL specially since there is no `GLOBAL::` prefix
+                // to strip), which drags in dynamic variables (`$*CWD`),
+                // compile-time magicals (`$?FILE`), POD markers (`$=pod`),
+                // and internal bookkeeping keys. Real Raku keeps all of
+                // those outside the user's own GLOBAL stash. A plain
+                // lowercase bare name is a `my` lexical -- genuine `our`
+                // scalars are already covered by the dedicated loop above,
+                // so this flat mirror would only be a harmless-but-wrong
+                // duplicate at best.
+                if package_name == "GLOBAL" && !Self::is_global_root_symbol(rest) {
                     continue;
                 }
                 let stash_key = Self::stash_symbol_key_from_env_tail(rest);
@@ -613,6 +716,16 @@ impl Interpreter {
             {
                 continue;
             }
+            // GLOBAL is the root package: `stash_member_tail` treats every
+            // registered class as a match (there is no `GLOBAL::` prefix to
+            // require), which otherwise drags every builtin type (`Int`,
+            // `Promise`, `Thread`, ...) into the user's own GLOBAL stash. Real
+            // Raku keeps core types in the setting, not the user's GLOBAL --
+            // only a class the user actually declared (`class`/`package`/
+            // `module`/`grammar`) is a genuine GLOBAL member.
+            if package_name == "GLOBAL" && !self.user_declared_classes.contains(class_name) {
+                continue;
+            }
             // Skip my-scoped classes (they should not appear in the package stash)
             if self.is_my_scoped_package_item(class_name) {
                 continue;
@@ -644,6 +757,13 @@ impl Interpreter {
             if package_name != "MY"
                 && package_name != "GLOBAL"
                 && self.package_stash_hidden.contains(role_name)
+            {
+                continue;
+            }
+            // GLOBAL is the root package: same reasoning as the classes loop
+            // above -- only a role the user actually declared is a genuine
+            // GLOBAL member, not every built-in role (`Positional`, `Iterable`, ...).
+            if package_name == "GLOBAL" && !self.registry().user_declared_roles.contains(role_name)
             {
                 continue;
             }
