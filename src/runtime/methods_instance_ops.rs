@@ -38,9 +38,9 @@ impl Interpreter {
     /// Mu's default `.gist`/`.raku`/`.perl` rendering for a plain user
     /// instance (`ClassName.new(...)`, with special cases for `is Array`
     /// subclasses, `ObjAt`/`ValueObjAt`, `X::AdHoc`, schedulers,
-    /// `IO::Path::Parts`, `Stash`). Returns `None` when `method`/`args`
-    /// don't qualify (e.g. `.Str`, or a non-empty arg list) or `target`
-    /// isn't an Instance.
+    /// `IO::Path::Parts`, `Stash`, `Backtrace::Frame`). Returns `None` when
+    /// `method`/`args` don't qualify (e.g. `.Str`, or a non-empty arg list)
+    /// or `target` isn't an Instance.
     ///
     /// Factored out of `dispatch_instance_and_fallback`'s no-user-override
     /// fast path below so `native_any_base_next_candidate`
@@ -174,6 +174,41 @@ impl Interpreter {
                 return Some(Ok(Value::str(
                     crate::builtins::methods_0arg::raku_repr::raku_value(&symbols),
                 )));
+            }
+            // Rakudo's `Backtrace::Frame` has no custom `.gist`, so it falls
+            // back to the default `Backtrace::Frame.new(file => ..., line =>
+            // ..., code => ..., subname => ...)` rendering for BOTH `.gist`
+            // and `.raku` -- unlike the plain `.Str` text (`  in block ... at
+            // ... line N`), which `Str`/`gist`'s native fast path already
+            // handles and this arm never sees. `code` has no attribute of its
+            // own (it is synthesized on demand by the frame's `code`
+            // accessor), so it is rebuilt here the same way and rendered
+            // through the ordinary Code `.raku` dispatch.
+            "Backtrace::Frame" => {
+                let attr_map = attributes.as_map();
+                let file_value = attr_map
+                    .get("file")
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(String::new()));
+                let line_value = attr_map.get("line").cloned().unwrap_or(Value::int(0));
+                let subname_value = attr_map
+                    .get("subname")
+                    .cloned()
+                    .unwrap_or_else(|| Value::str(String::new()));
+                let code_value = crate::builtins::backtrace_methods::frame_code_value(&attributes);
+                let raku_of = |interp: &mut Interpreter, v: Value| -> String {
+                    interp
+                        .call_method_with_values(v.clone(), "raku", vec![])
+                        .map(|r| r.to_string_value())
+                        .unwrap_or_else(|_| v.to_string_value())
+                };
+                let file = raku_of(self, file_value);
+                let line = raku_of(self, line_value);
+                let code = raku_of(self, code_value);
+                let subname = raku_of(self, subname_value);
+                return Some(Ok(Value::str(format!(
+                    "Backtrace::Frame.new(file => {file}, line => {line}, code => {code}, subname => {subname})"
+                ))));
             }
             _ => {}
         }

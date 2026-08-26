@@ -1661,22 +1661,23 @@ fn dispatch_core(target: &Value, method: &str) -> Option<Result<Value, RuntimeEr
                         .cloned()
                         .unwrap_or(Value::int(0))));
                 }
-                "Str" | "gist" => {
+                // `.raku`/`.gist` are NOT handled here: Rakudo's
+                // `Backtrace::Frame` renders both as
+                // `Backtrace::Frame.new(file => ..., line => ..., code => ...,
+                // subname => ...)` (it has no custom `.gist`, so it falls back
+                // to the default `.raku`-shaped one), which needs `&mut self`
+                // to recursively render the synthesized `code` object -- see
+                // `default_instance_repr`'s `"Backtrace::Frame"` arm
+                // (`runtime/methods_instance_ops.rs`).
+                "Str" => {
                     return Some(Ok(Value::str(backtrace_frame_str(&attributes))));
                 }
                 "code" => {
                     // The Code object for this frame. mutsu does not retain the
                     // actual routine, so synthesize a Routine carrying the name
                     // (`.code.name` is the documented use).
-                    let subname = attributes
-                        .as_map()
-                        .get("subname")
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_default();
-                    return Some(Ok(Value::routine_parts(
-                        Symbol::intern("GLOBAL"),
-                        Symbol::intern(&subname),
-                        false,
+                    return Some(Ok(crate::builtins::backtrace_methods::frame_code_value(
+                        &attributes,
                     )));
                 }
                 "name" => {

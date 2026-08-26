@@ -4,23 +4,16 @@ Found by the doc-diff harness re-run (`docs/doc-diff-backlog.md`, `Type/Backtrac
 
 ## Status
 
-This ticket originally covered two gaps. **Gap 1 (positional indexing) is
-fixed** — see `news/2026-08/backtrace-positional-indexing.md`. Only gap 2, the
-frame-count difference, remains open, and it is deliberately deferred (see
-"Why this is deferred" below).
+This ticket originally covered three gaps:
 
-- [x] **Gap 1 — `$bt[N]` returned `Nil`.** Positional indexing into a
-  `Backtrace` always answered `Nil`/`Any` regardless of the index, because no
-  arm of the subscript dispatch knew about the `frames` attribute. The
-  subscript now delegates to the stored `frames` List, so every index shape
-  (single index, `[*-1]`, `[0,1]` slices, `[^2]`/`[0 .. *-1]` ranges, `[*]`,
-  and out-of-range reading back as `Nil`) behaves exactly as it does on a
-  List. `$bt.AT-POS($i)` was implemented alongside it. Pinned by
-  `t/backtrace-positional-index.t`, which passes unmodified under both `raku`
-  and `mutsu`.
-- [ ] **Gap 2 — fewer frames than Rakudo.** Still open, lower priority.
+- **Gap 1 — `$bt[N]` returned `Nil`.** Fixed — see
+  `news/2026-08/backtrace-positional-indexing.md`.
+- **`Backtrace::Frame.gist`/`.raku` divergence.** Fixed — see
+  `news/2026-08/backtrace-frame-gist-raku-attribute-shape.md`.
+- **Gap 2 — fewer frames than Rakudo.** Still open (this file), deliberately
+  deferred — see "Why this is deferred" below.
 
-## Repro (gap 2)
+## Repro
 
 ```raku
 sub zipi { { { die "Something bad happened" }() }() };
@@ -59,20 +52,6 @@ make `.gist`/`.full` output *less* useful for mutsu users rather than more.
 The practical consequence is that a given index `N` refers to a different frame
 in mutsu than in Rakudo. Code that indexes from the end (`[*-1]`) is unaffected;
 code that hardcodes a small index expecting a setting frame will differ.
-
-## Related smaller divergence noticed while fixing gap 1
-
-`Backtrace::Frame.gist` / `.raku` do not match Rakudo's rendering:
-
-- `raku`: `Backtrace::Frame.new(file => "...", line => 3, code => -> { ... }, subname => "<unit>")`
-- `mutsu` `.gist`: the frame's `.Str` text (`  in block <unit> at f.raku line 3`)
-- `mutsu` `.raku`: a bare `Backtrace::Frame.new` with no attributes
-
-`.Str` itself matches Rakudo — including its trailing newline, since
-`news/2026-08/backtrace-full-frames-not-newline-separated.md`. Faithfully
-reproducing the gist is partly impossible (Rakudo's `code =>` renders a `Block`
-with its memory address) and partly the same frame-model question, so it is
-recorded here rather than fixed.
 
 ## What the introspection work relies on this ticket for
 
