@@ -167,6 +167,15 @@ impl Interpreter {
             let arr = crate::value::gc_data_mut(items);
             if indices.len() == 1 {
                 Value::assign_element_slot(&mut arr[i], val);
+                // Record the write in the embedded `initialized` set so
+                // `ArrayData::hole_at` (ADR-0049 §1.6/§4 slice 5) can tell an
+                // explicitly-assigned `Any`/type-object value apart from a
+                // genuine gap -- mirrors `mark_initialized_index`'s
+                // single-dimension bookkeeping, which this multidim leaf
+                // write path bypasses entirely.
+                arr.initialized
+                    .get_or_insert_with(Default::default)
+                    .insert(i);
             } else {
                 Self::assign_array_multidim(&mut arr[i], &indices[1..], val)?;
             }

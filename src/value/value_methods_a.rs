@@ -270,6 +270,18 @@ impl Value {
         data.initialized = Some(set);
         Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
     }
+    /// Create a true (non-shaped) Array value whose slots are all
+    /// *unassigned* -- the multidim-autoviv counterpart of
+    /// [`Value::real_array_initialized_at`], used when a nested `@a[i;j] = …`
+    /// write autovivifies a fresh row: every gap-marker slot is a hole
+    /// (`ArrayData::hole_at`, ADR-0049 §1.6/§4 slice 5) until a later write
+    /// marks its index, same convention as [`Value::shaped_array_unassigned`]
+    /// but for `ArrayKind::Array` rather than `ArrayKind::Shaped`.
+    pub fn real_array_unassigned(items: Vec<Value>) -> Self {
+        let mut data = ArrayData::new(items);
+        data.initialized = Some(std::collections::HashSet::new());
+        Value::Array(crate::gc::Gc::new(data), ArrayKind::Array)
+    }
     /// Create a shaped (multidimensional) Array value.
     pub fn shaped_array(items: Vec<Value>) -> Self {
         Value::Array(crate::gc::Gc::new(ArrayData::new(items)), ArrayKind::Shaped)

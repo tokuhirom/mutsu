@@ -1058,10 +1058,20 @@ impl Interpreter {
                 && let Some(i) = Self::index_to_usize(&key)
             {
                 Self::ensure_array_size(target, i + 1);
+                let rest_is_leaf = rest.is_empty();
                 target
                     .with_array_mut(|items, _| {
                         let items = crate::value::gc_data_mut(items);
-                        self.multi_dim_assign_slice(&mut items[i], rest, values, vi)
+                        let r = self.multi_dim_assign_slice(&mut items[i], rest, values, vi);
+                        // See the matching comment in `multi_dim_assign_scalar`
+                        // (ADR-0049 §1.6/§4 slice 5).
+                        if rest_is_leaf {
+                            items
+                                .initialized
+                                .get_or_insert_with(Default::default)
+                                .insert(i);
+                        }
+                        r
                     })
                     .transpose()?;
             } else if let ValueView::Str(s) = key.view() {
@@ -1112,10 +1122,24 @@ impl Interpreter {
             && let Some(i) = Self::index_to_usize(&key)
         {
             Self::ensure_array_size(target, i + 1);
+            let rest_is_leaf = rest.is_empty();
             target
                 .with_array_mut(|items, _| {
                     let items = crate::value::gc_data_mut(items);
-                    self.multi_dim_assign_scalar(&mut items[i], rest, value)
+                    let r = self.multi_dim_assign_scalar(&mut items[i], rest, value);
+                    // Record the write in the embedded `initialized` set
+                    // (ADR-0049 §1.6/§4 slice 5) exactly when this array is
+                    // the *immediate* parent of the just-written leaf, so
+                    // `ArrayData::hole_at` tells an explicitly-assigned
+                    // `Any`/type-object value apart from a genuine gap --
+                    // this multidim autoviv path otherwise never marks it.
+                    if rest_is_leaf {
+                        items
+                            .initialized
+                            .get_or_insert_with(Default::default)
+                            .insert(i);
+                    }
+                    r
                 })
                 .transpose()?;
         } else if let ValueView::Str(s) = key.view() {
@@ -1242,11 +1266,21 @@ impl Interpreter {
         if target
             .with_array_mut(|items, _| {
                 if items.len() < min_size {
+                    let old_len = items.len();
                     let items = crate::value::gc_data_mut(items);
                     items.resize(
                         min_size,
                         Value::package(crate::symbol::Symbol::intern("Any")),
                     );
+                    // The newly appended slots are unassigned gaps
+                    // (`ArrayData::hole_at`, ADR-0049 §1.6/§4 slice 5). An
+                    // array that never tracked gaps (`initialized: None`,
+                    // "bulk-constructed, no gaps") keeps that guarantee for
+                    // its pre-existing prefix by marking it explicitly, so
+                    // only the freshly grown tail reads as holes.
+                    if items.initialized.is_none() {
+                        items.initialized = Some((0..old_len).collect());
+                    }
                 }
             })
             .is_none()
@@ -1257,7 +1291,10 @@ impl Interpreter {
                 min_size,
                 Value::package(crate::symbol::Symbol::intern("Any")),
             );
-            *target = Value::real_array(items);
+            // A brand-new autovivified array/row: every slot is an
+            // unassigned gap until a later multidim leaf write marks its
+            // index (see `multi_dim_assign_scalar`'s `initialized.insert`).
+            *target = Value::real_array_unassigned(items);
         }
     }
 }

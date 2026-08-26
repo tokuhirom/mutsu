@@ -783,16 +783,28 @@ Slices 0-2 landed:
   (`vm_var_delete_ops.rs`) folded onto `arr.hole_at(i)` directly, which also fixes the name-keyed
   `var_type_constraint(var_name)` vs. embedded `value_type` divergence the ADR flagged (a bound/aliased
   array's own metadata now answers the question, matching ADR-0042's direction).
-  `builtins_multidim_ops.rs:415-419`'s `multidim_exists_adverb_multi` predicate was investigated and
-  deliberately left alone: folding it onto `hole_at` needs `(ArrayData, index)` context that its
-  shared `multidim_collect_leaves` leaf-collector does not carry today (only the extracted leaf VALUE),
-  and threading that through would touch its `Vec<(Vec<Value>, Value)>` output type and all six call
-  sites across `builtins_multidim_ops.rs` for a narrow benefit (only multidim + `Whatever`/list-index
-  `:exists` combined with a typed array or an explicitly-assigned `Any` value) with no roast coverage
-  found. Recorded as `todo/tickets/multidim-exists-adverb-blind-to-initialized-and-typed-holes.md`. The
-  fourth site the ADR named, the parameterized shaped `Array[T].new(:shape(...), :data(...))` marker
-  loss at `methods_object_dispatch_new.rs:1327`, was measured directly against real `raku` and found to
-  NOT reproduce: both `Array[Int].new(:shape(3))` and `Array[Int].new(:shape(3), :data(1,2))` report
+  `builtins_multidim_ops.rs:415-419`'s `multidim_exists_adverb_multi` predicate was deliberately left
+  alone at the time (recorded as
+  `todo/tickets/multidim-exists-adverb-blind-to-initialized-and-typed-holes.md`) because folding it
+  onto `hole_at` needed `(ArrayData, index)` context its shared `multidim_collect_leaves` leaf-collector
+  did not carry (only the extracted leaf VALUE). **This is now done** (see
+  `news/2026-08/multidim-exists-adverb-canonical-hole-predicate.md`):
+  `multidim_collect_leaves`'s output grew a per-leaf `is_hole` flag computed from `hole_at` at each
+  `Array`-level iteration/index step and threaded through the recursion (including the
+  `ContainerRef`/`Scalar` deref arm), consumed by all six original call sites plus two further
+  single-coordinate (`!has_multi_indices`) predicates in the same file that had the identical bug
+  (`builtin_multidim_subscript_adverb`'s and `builtin_multidim_exists_adverb`'s non-multi branches, via
+  a new `multidim_index_with_hole` companion to `multidim_index`) -- closing every open-coded hole
+  predicate in `builtins_multidim_ops.rs`, not just the one originally named. Making the read side
+  precise surfaced a companion write-side gap: multidim element assignment (`@a[i;j] = v`, both the
+  shaped `assign_array_multidim` and the autoviv/non-shaped `multi_dim_assign_scalar`/
+  `multi_dim_assign_slice` paths) never recorded the write in `ArrayData::initialized` at all, so even
+  the corrected predicate had no accurate data for an explicitly-assigned `Any` at a multidim
+  coordinate; fixed alongside (and `multidim_delete`'s matching gap on removal, needed once the read
+  side stopped treating every `Package("Any")` as an unconditional hole). The fourth site the ADR
+  named, the parameterized shaped `Array[T].new(:shape(...), :data(...))` marker loss at
+  `methods_object_dispatch_new.rs:1327`, was measured directly against real `raku` and found to NOT
+  reproduce: both `Array[Int].new(:shape(3))` and `Array[Int].new(:shape(3), :data(1,2))` report
   `:exists` `True` for every cell in RAKU ITSELF (not just mutsu), for both a `:data`-seeded and an
   unseeded shaped array. The ADR's claim of a divergence here was stale/incorrect by direct
   measurement (per the project's `trap-todo-and-adr-root-cause-often-wrong` lesson) -- no fix was made,

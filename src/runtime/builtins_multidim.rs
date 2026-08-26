@@ -128,9 +128,22 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
             .with_array_mut(|items, kind| {
                 let is_shaped = *kind == ArrayKind::Shaped;
                 let items = crate::value::gc_data_mut(items);
-                let mut out = Vec::with_capacity(items.len());
+                let is_leaf_dim = indices.len() == 1;
+                let len = items.len();
+                let mut out = Vec::with_capacity(len);
                 for item in items.iter_mut() {
                     out.push(multidim_delete(item, &indices[1..]));
+                }
+                if is_leaf_dim {
+                    // `*` was the final dimension: every element at this
+                    // level was just wiped to the hole marker. Materialize
+                    // `initialized` (if this array never tracked gaps) and
+                    // clear it, mirroring `unmark_initialized_indices`'s
+                    // Whatever handling (ADR-0049 §1.6/§4 slice 5).
+                    items
+                        .initialized
+                        .get_or_insert_with(|| (0..len).collect())
+                        .clear();
                 }
                 // Truncate trailing Any values -- never on a shaped array,
                 // which is fixed-size (see the indexed arm below).
@@ -207,6 +220,17 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                     items[i].clone()
                 };
                 items[i] = default();
+                // Record the deletion in the embedded `initialized` set
+                // (materializing it first if this array never tracked gaps)
+                // so `ArrayData::hole_at` recognizes the freshly-emptied slot
+                // as a hole -- mirrors `unmark_initialized_indices`'s
+                // single-dim delete bookkeeping, which this multidim path
+                // otherwise never performs (ADR-0049 §1.6/§4 slice 5).
+                let len = items.len();
+                items
+                    .initialized
+                    .get_or_insert_with(|| (0..len).collect())
+                    .remove(&i);
                 // Truncate trailing Any values -- but a shaped array is
                 // fixed-size, so its emptied slots stay. Trimming one turned
                 // `my @a[2;2]; @a[0;1]:delete` into a ragged `[[], [Any, Any]]`
@@ -248,24 +272,40 @@ pub(super) fn make_key_tuple(indices: &[Value]) -> Value {
     )
 }
 
-/// Collect (path, value) leaves from a multi-dimensional array or hash,
-/// expanding Whatever and Array indices along the way. Path elements are the
-/// concrete index/key values (`Int` for array levels, `Str` for hash keys), so
-/// the `:k`/`:kv`/`:p` adverbs can rebuild the key tuple losslessly.
+/// Collect (path, value, is_hole) leaves from a multi-dimensional array or
+/// hash, expanding Whatever and Array indices along the way. Path elements
+/// are the concrete index/key values (`Int` for array levels, `Str` for hash
+/// keys), so the `:k`/`:kv`/`:p` adverbs can rebuild the key tuple
+/// losslessly. `is_hole` is the canonical `ArrayData::hole_at` verdict for
+/// this leaf in its *immediate* parent array (always `false` when the
+/// immediate parent is a Hash, since hash absence is already precisely
+/// captured by the leaf value being `Value::NIL`) -- see ADR-0049 §1.6/§4
+/// slice 5: this is the third of the "three divergent hole predicates"
+/// folded onto `hole_at`.
 pub(super) fn multidim_collect_leaves(
     target: &Value,
     indices: &[Value],
     prefix: &[Value],
-    out: &mut Vec<(Vec<Value>, Value)>,
+    out: &mut Vec<(Vec<Value>, Value, bool)>,
+) {
+    multidim_collect_leaves_inner(target, indices, prefix, false, out)
+}
+
+fn multidim_collect_leaves_inner(
+    target: &Value,
+    indices: &[Value],
+    prefix: &[Value],
+    is_hole: bool,
+    out: &mut Vec<(Vec<Value>, Value, bool)>,
 ) {
     if let ValueView::ContainerRef(_) | ValueView::Scalar(_) = target.view() {
         return target.with_deref(|inner| {
             let inner = inner.descalarize();
-            multidim_collect_leaves(inner, indices, prefix, out)
+            multidim_collect_leaves_inner(inner, indices, prefix, is_hole, out)
         });
     }
     if indices.is_empty() {
-        out.push((prefix.to_vec(), target.clone()));
+        out.push((prefix.to_vec(), target.clone(), is_hole));
         return;
     }
     let head = &indices[0];
@@ -277,7 +317,7 @@ pub(super) fn multidim_collect_leaves(
                 for (i, item) in items.iter().enumerate() {
                     let mut p = prefix.to_vec();
                     p.push(Value::int(i as i64));
-                    multidim_collect_leaves(item, rest, &p, out);
+                    multidim_collect_leaves_inner(item, rest, &p, items.hole_at(i), out);
                 }
             }
             // Hash level: `*` walks every entry, recording the (typed) key.
@@ -285,7 +325,7 @@ pub(super) fn multidim_collect_leaves(
                 for (k, v) in map.iter() {
                     let mut p = prefix.to_vec();
                     p.push(map.typed_key(k));
-                    multidim_collect_leaves(v, rest, &p, out);
+                    multidim_collect_leaves_inner(v, rest, &p, false, out);
                 }
             }
             _ => {}
@@ -296,15 +336,86 @@ pub(super) fn multidim_collect_leaves(
         for idx in idx_items.iter() {
             let mut p = prefix.to_vec();
             p.push(idx.clone());
-            let child = multidim_index(target, std::slice::from_ref(idx));
-            multidim_collect_leaves(&child, rest, &p, out);
+            let (child, child_is_hole) = multidim_index_step(target, idx);
+            multidim_collect_leaves_inner(&child, rest, &p, child_is_hole, out);
         }
         return;
     }
     let mut p = prefix.to_vec();
     p.push(head.clone());
-    let child = multidim_index(target, std::slice::from_ref(head));
-    multidim_collect_leaves(&child, rest, &p, out);
+    let (child, child_is_hole) = multidim_index_step(target, head);
+    multidim_collect_leaves_inner(&child, rest, &p, child_is_hole, out);
+}
+
+/// One level of `multidim_index`'s single-index navigation (the tail of that
+/// function), also reporting whether the resolved Array slot is a hole
+/// (`ArrayData::hole_at`). `target` is assumed already dereferenced
+/// (`ContainerRef`/`Scalar`), matching every call site in
+/// `multidim_collect_leaves_inner`. Mirrors `multidim_index`'s behaviour
+/// exactly: a Hash lookup or an out-of-range/non-numeric Array index is never
+/// itself a "hole" in the `ArrayData::initialized` sense -- a missing Hash
+/// key is already precisely represented by the resulting `Value::NIL` leaf.
+fn multidim_index_step(target: &Value, head: &Value) -> (Value, bool) {
+    if let ValueView::Hash(map) = target.view() {
+        let key = head.to_string_value();
+        return match map.get(&key) {
+            Some(val) => (val.clone(), false),
+            None => (Value::NIL, false),
+        };
+    }
+    let ValueView::Array(items, ..) = target.view() else {
+        return (Value::NIL, false);
+    };
+    let i = match head.view() {
+        ValueView::Int(n) => {
+            if n < 0 {
+                let len = items.len() as i64;
+                if -n > len {
+                    return (Value::NIL, false);
+                }
+                (len + n) as usize
+            } else {
+                n as usize
+            }
+        }
+        ValueView::Str(s) => s.parse::<usize>().unwrap_or(0),
+        ValueView::Num(f) => f as usize,
+        ValueView::Rat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::FatRat(n, d) => (n as f64 / d as f64) as usize,
+        ValueView::BigRat(_, _) => to_float_value(head).unwrap_or(0.0) as usize,
+        _ => return (Value::NIL, false),
+    };
+    if i >= items.len() {
+        return (Value::NIL, false);
+    }
+    (items[i].clone(), items.hole_at(i))
+}
+
+/// `multidim_index`, additionally reporting whether the resolved slot is a
+/// hole (`ArrayData::hole_at`) in its immediate parent array. Every index
+/// must be a concrete scalar (not `Whatever` or an Array-of-indices) --
+/// callers gate on `!has_multi_indices(indices)`, same as `multidim_index`'s
+/// own single-coordinate callers. This is the single-value counterpart of
+/// `multidim_collect_leaves`'s per-leaf `is_hole` (ADR-0049 §1.6/§4 slice 5).
+pub(super) fn multidim_index_with_hole(target: &Value, indices: &[Value]) -> (Value, bool) {
+    if matches!(
+        target.view(),
+        ValueView::ContainerRef(_) | ValueView::Scalar(_)
+    ) {
+        return target.with_deref(|inner| {
+            let inner = inner.descalarize();
+            multidim_index_with_hole(inner, indices)
+        });
+    }
+    if indices.is_empty() {
+        return (target.clone(), false);
+    }
+    let (child, is_hole) = multidim_index_step(target, &indices[0]);
+    if indices.len() == 1 {
+        (child, is_hole)
+    } else {
+        multidim_index_with_hole(&child, &indices[1..])
+    }
 }
 
 /// Build the key tuple for one collected leaf path: a single-dimension path is
