@@ -12,14 +12,25 @@ impl Interpreter {
         // The last declaration that can receive trailing #= comments
         // (doc_key, kind, decl_line, callable_type_override, is_proto, return_type)
         #[allow(clippy::type_complexity)]
-        let mut last_declarant: Option<(
+        type Declarant = (
             String,
             super::DocDeclKind,
             u32,
             Option<&'static str>,
             bool,
             Option<String>,
-        )> = None;
+        );
+        let mut last_declarant: Option<Declarant> = None;
+        // Declarations whose block body is still open, paired with the brace
+        // depth their declaration line started at. A `#=` written after the
+        // body's closing brace documents the declaration the body belongs to
+        // (`sub f { ...; }` on its own lines, then `#= doc`), so the closing
+        // brace restores it as `last_declarant` instead of clearing it —
+        // the body's own statement lines have cleared it by then. Nested
+        // non-declaration blocks (an `if` inside the body) push nothing, so
+        // their closing braces restore nothing.
+        let mut open_block_declarants: Vec<(i32, Declarant)> = Vec::new();
+        let mut brace_depth: i32 = 0;
         // Track the current class scope for method doc keys
         let mut current_class: Option<String> = None;
         // Stack of class scopes for nested classes
@@ -122,11 +133,15 @@ impl Interpreter {
         ) -> Option<(String, usize, bool)> {
             let trimmed = lines.get(start)?.trim_start();
             let rest = trimmed.strip_prefix(prefix)?;
-            let rest = rest.trim_start();
-            if rest.is_empty() {
+            if rest.trim().is_empty() {
                 return Some((String::new(), start + 1, false));
             }
 
+            // The bracketed block form requires the opening bracket to follow
+            // the `#|`/`#=` immediately: `#|(text)` is a block whose payload is
+            // `text`, while `#| (text)` is a one-line comment whose payload
+            // keeps its parentheses. So the bracket probe must run on the
+            // untrimmed remainder.
             let mut chars = rest.chars();
             let open = chars.next()?;
             let Some(close) = matching_bracket(open) else {
@@ -232,7 +247,15 @@ impl Interpreter {
                         continue;
                     }
                     let before = line[..i].to_string();
-                    let raw = line[i + 2..].trim();
+                    // The block form's bracket must follow `#=` immediately —
+                    // `#= (text)` is a one-line comment that keeps its
+                    // parentheses (see `parse_doc_comment`).
+                    let raw = &line[i + 2..];
+                    let raw = if raw.starts_with(['{', '(', '[', '<']) {
+                        raw
+                    } else {
+                        raw.trim()
+                    };
                     // Handle block form #={...} / #=(...)  / #=[...] / #=<...>
                     let after = if let Some(inner) = raw.strip_prefix('{') {
                         inner.strip_suffix('}').unwrap_or(inner).trim().to_string()
@@ -712,6 +735,15 @@ impl Interpreter {
                 continue;
             }
 
+            // Running brace depth, used to pair a closing brace with the
+            // declaration whose body it ends (see `open_block_declarants`).
+            // Only code lines are counted — blank lines, plain comments, doc
+            // comments and `#\`(...)` embedded comments all `continue` above.
+            let depth_before_line = brace_depth;
+            brace_depth = (brace_depth + trimmed.matches('{').count() as i32
+                - trimmed.matches('}').count() as i32)
+                .max(0);
+
             // Closing brace tracking for class scope
             // Handle lines that are just "}" or start with "}" (possibly with trailing content)
             if let Some(after_close) = trimmed.strip_prefix('}') {
@@ -721,6 +753,12 @@ impl Interpreter {
                     current_class = None;
                 }
                 last_declarant = None;
+                while open_block_declarants
+                    .last()
+                    .is_some_and(|(depth, _)| *depth >= brace_depth)
+                {
+                    last_declarant = open_block_declarants.pop().map(|(_, d)| d);
+                }
                 // If the line is just "}" or "};" or "} # comment", skip it entirely
                 let after_brace = after_close.trim();
                 if after_brace.is_empty() || after_brace == ";" || after_brace.starts_with('#') {
@@ -837,14 +875,20 @@ impl Interpreter {
                     }
                 }
                 // Always set last_declarant so trailing #= on the next line can attach
-                last_declarant = Some((
+                let declarant: Declarant = (
                     doc_key,
                     kind.clone(),
                     (idx + 1) as u32,
                     callable_type_ovr,
                     dispatch == DispatchPrefix::Proto,
                     return_type_ovr,
-                ));
+                );
+                // A declaration that opens a block body remembers itself so the
+                // matching closing brace can restore it for a trailing `#=`.
+                if brace_depth > depth_before_line {
+                    open_block_declarants.push((depth_before_line, declarant.clone()));
+                }
+                last_declarant = Some(declarant);
                 // Track the current function for parameter scoping
                 if kind == super::DocDeclKind::Sub {
                     current_sub = Some(name.clone());
@@ -1220,6 +1264,6 @@ impl Interpreter {
             pod_entries.push(pod_entry);
         }
         self.env
-            .insert("=pod".to_string(), Value::array(pod_entries));
+            .insert("=pod".to_string(), Value::real_array(pod_entries));
     }
 }

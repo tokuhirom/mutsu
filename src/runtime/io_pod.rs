@@ -2,13 +2,6 @@ use super::*;
 use crate::symbol::Symbol;
 
 impl Interpreter {
-    pub(crate) fn make_pod_block(contents: Vec<Value>) -> Value {
-        let mut attrs = HashMap::new();
-        attrs.insert("contents".to_string(), Value::array(contents));
-        attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-        Value::make_instance(Symbol::intern("Pod::Block"), attrs)
-    }
-
     pub(crate) fn make_pod_named(name: &str, contents: Vec<Value>) -> Value {
         Self::make_pod_named_with_config(name, contents, HashMap::new())
     }
@@ -20,7 +13,7 @@ impl Interpreter {
     ) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("name".to_string(), Value::str(name.to_string()));
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Named"), attrs)
     }
@@ -35,8 +28,16 @@ impl Interpreter {
         config: HashMap<String, Value>,
     ) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("level".to_string(), Value::str(level.to_string()));
-        attrs.insert("contents".to_string(), Value::array(contents));
+        // `Pod::Heading.level` is an `Int` in rakudo (`=head2` -> `level => 2`),
+        // which `Pod::To::Text`'s `given $pod.level { when 1 {...} }` and any
+        // arithmetic on it rely on. `parse_heading_level` only ever hands us
+        // ASCII digits, so the fallback is unreachable in practice.
+        let level_value = match level.parse::<i64>() {
+            Ok(n) => Value::int(n),
+            Err(_) => Value::str(level.to_string()),
+        };
+        attrs.insert("level".to_string(), level_value);
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Heading"), attrs)
     }
@@ -62,7 +63,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "contents".to_string(),
-            Value::array(vec![Value::str(content)]),
+            Value::real_array(vec![Value::str(content)]),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Comment"), attrs)
@@ -72,7 +73,7 @@ impl Interpreter {
         let mut attrs = HashMap::new();
         attrs.insert(
             "contents".to_string(),
-            Value::array(lines.into_iter().map(Value::str).collect::<Vec<_>>()),
+            Value::real_array(lines.into_iter().map(Value::str).collect::<Vec<_>>()),
         );
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
@@ -83,258 +84,14 @@ impl Interpreter {
     pub(crate) fn make_pod_para_with_formatting(text: &str) -> Value {
         let contents = Self::parse_formatting_codes(text);
         let mut attrs = HashMap::new();
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         Value::make_instance(Symbol::intern("Pod::Block::Para"), attrs)
     }
 
-    /// Parse Pod formatting codes (e.g. `C<code>`, `B<bold>`) within text.
-    /// Returns a list of Value items: plain strings and Pod::FormattingCode instances.
-    fn parse_formatting_codes(text: &str) -> Vec<Value> {
-        let result = Self::parse_formatting_codes_inner(text);
-        // Merge adjacent strings
-        let mut merged: Vec<Value> = Vec::new();
-        for val in result {
-            if let ValueView::Str(s) = val.view()
-                && let Some(ValueView::Str(prev)) = merged.last().map(Value::view)
-            {
-                let combined = format!("{}{}", &**prev, &**s);
-                let len = merged.len();
-                merged[len - 1] = Value::str(combined);
-                continue;
-            }
-            merged.push(val);
-        }
-        merged
-    }
-
-    /// Inner recursive parser for formatting codes.
-    fn parse_formatting_codes_inner(text: &str) -> Vec<Value> {
-        let mut result = Vec::new();
-        let mut rest = text;
-        while let Some(pos) = rest.find(|c: char| c.is_ascii_uppercase())
-            && pos < rest.len()
-        {
-            let after_letter = &rest[pos + 1..];
-            let letter = &rest[pos..pos + 1];
-            // Check for double-angle `<<` delimiter
-            if let Some(stripped) = after_letter.strip_prefix("<<")
-                && let Some(close) = stripped.find(">>")
-            {
-                let before = &rest[..pos];
-                if !before.is_empty() {
-                    result.push(Value::str(before.to_string()));
-                }
-                let inner = &stripped[..close];
-                result.push(Self::make_formatting_code(letter, inner));
-                rest = &stripped[close + 2..];
-                continue;
-            }
-            // Check for single-angle `<` delimiter
-            if let Some(inside) = after_letter.strip_prefix('<')
-                && let Some(close) = Self::find_formatting_close(inside)
-            {
-                let before = &rest[..pos];
-                if !before.is_empty() {
-                    result.push(Value::str(before.to_string()));
-                }
-                let inner = &inside[..close];
-                result.push(Self::make_formatting_code(letter, inner));
-                rest = &inside[close + 1..];
-                continue;
-            }
-            // Not a formatting code, include up to and past the letter
-            let end = pos + 1;
-            result.push(Value::str(rest[..end].to_string()));
-            rest = &rest[end..];
-        }
-        if !rest.is_empty() {
-            result.push(Value::str(rest.to_string()));
-        }
-        result
-    }
-
-    /// Create a Pod::FormattingCode value from a type letter and inner text.
-    /// For V<> (verbatim), returns a plain string Value instead.
-    fn make_formatting_code(letter: &str, inner: &str) -> Value {
-        // V<> is special: it produces plain text, not a FormattingCode
-        if letter == "V" {
-            return Value::str(inner.to_string());
-        }
-
-        let mut fc_attrs = HashMap::new();
-        fc_attrs.insert("type".to_string(), Value::str(letter.to_string()));
-        fc_attrs.insert("config".to_string(), Value::hash(HashMap::new()));
-
-        match letter {
-            "L" => {
-                // Link: split on `|` — left is display contents, right is meta
-                if let Some(pipe_pos) = Self::find_unescaped_pipe(inner) {
-                    let display = &inner[..pipe_pos];
-                    let meta = &inner[pipe_pos + 1..];
-                    let contents = Self::parse_formatting_codes(display);
-                    fc_attrs.insert("contents".to_string(), Value::array(contents));
-                    fc_attrs.insert("meta".to_string(), Value::str(meta.to_string()));
-                } else {
-                    let contents = Self::parse_formatting_codes(inner);
-                    fc_attrs.insert("contents".to_string(), Value::array(contents));
-                    fc_attrs.insert("meta".to_string(), Value::str(String::new()));
-                }
-            }
-            "E" => {
-                // Escape code: convert to the actual character
-                let ch = Self::resolve_pod_escape(inner);
-                fc_attrs.insert("contents".to_string(), Value::array(vec![Value::str(ch)]));
-            }
-            _ => {
-                // All other codes: recursively parse contents
-                let contents = Self::parse_formatting_codes(inner);
-                fc_attrs.insert("contents".to_string(), Value::array(contents));
-            }
-        }
-
-        Value::make_instance(Symbol::intern("Pod::FormattingCode"), fc_attrs)
-    }
-
-    /// Find `|` in formatting code inner text not inside nested `<>`.
-    fn find_unescaped_pipe(text: &str) -> Option<usize> {
-        let mut depth = 0usize;
-        for (i, ch) in text.char_indices() {
-            match ch {
-                '<' => depth += 1,
-                '>' => {
-                    depth = depth.saturating_sub(1);
-                }
-                '|' if depth == 0 => return Some(i),
-                _ => {}
-            }
-        }
-        None
-    }
-
-    /// Resolve a Pod E<> escape code to the actual character string.
-    fn resolve_pod_escape(code: &str) -> String {
-        let trimmed = code.trim();
-        // Decimal integer
-        if let Ok(n) = trimmed.parse::<u32>()
-            && let Some(ch) = char::from_u32(n)
-        {
-            return ch.to_string();
-        }
-        // Hex integer (0x...)
-        if let Some(hex) = trimmed.strip_prefix("0x")
-            && let Ok(n) = u32::from_str_radix(hex, 16)
-            && let Some(ch) = char::from_u32(n)
-        {
-            return ch.to_string();
-        }
-        // Octal integer (0o...)
-        if let Some(oct) = trimmed.strip_prefix("0o")
-            && let Ok(n) = u32::from_str_radix(oct, 8)
-            && let Some(ch) = char::from_u32(n)
-        {
-            return ch.to_string();
-        }
-        // Binary integer (0b...)
-        if let Some(bin) = trimmed.strip_prefix("0b")
-            && let Ok(n) = u32::from_str_radix(bin, 2)
-            && let Some(ch) = char::from_u32(n)
-        {
-            return ch.to_string();
-        }
-        // HTML5 named entities
-        if let Some(ch) = Self::resolve_html5_entity(trimmed) {
-            return ch;
-        }
-        // Unicode character name lookup
-        if let Some(ch) = Self::resolve_unicode_name(trimmed) {
-            return ch.to_string();
-        }
-        // Fallback: return the code itself
-        trimmed.to_string()
-    }
-
-    /// Resolve common HTML5 named entities.
-    fn resolve_html5_entity(name: &str) -> Option<String> {
-        let ch = match name {
-            "amp" => "&",
-            "lt" => "<",
-            "gt" => ">",
-            "quot" => "\"",
-            "apos" => "'",
-            "nbsp" => "\u{00A0}",
-            "mdash" => "\u{2014}",
-            "ndash" => "\u{2013}",
-            "laquo" => "\u{00AB}",
-            "raquo" => "\u{00BB}",
-            "bull" => "\u{2022}",
-            "hellip" => "\u{2026}",
-            "copy" => "\u{00A9}",
-            "reg" => "\u{00AE}",
-            "trade" => "\u{2122}",
-            "hearts" => "\u{2665}",
-            "spades" => "\u{2660}",
-            "clubs" => "\u{2663}",
-            "diams" => "\u{2666}",
-            "Assign" => "\u{2254}",
-            "sup1" => "\u{00B9}",
-            "sup2" => "\u{00B2}",
-            "sup3" => "\u{00B3}",
-            "frac12" => "\u{00BD}",
-            "frac14" => "\u{00BC}",
-            "frac34" => "\u{00BE}",
-            "times" => "\u{00D7}",
-            "divide" => "\u{00F7}",
-            "lsquo" => "\u{2018}",
-            "rsquo" => "\u{2019}",
-            "ldquo" => "\u{201C}",
-            "rdquo" => "\u{201D}",
-            "larr" => "\u{2190}",
-            "rarr" => "\u{2192}",
-            "uarr" => "\u{2191}",
-            "darr" => "\u{2193}",
-            "harr" => "\u{2194}",
-            _ => return None,
-        };
-        Some(ch.to_string())
-    }
-
-    /// Resolve a Unicode character name to a char.
-    fn resolve_unicode_name(name: &str) -> Option<char> {
-        let upper = name.to_uppercase();
-        match upper.as_str() {
-            "LATIN CAPITAL LETTER A" => Some('A'),
-            "LATIN CAPITAL LETTER B" => Some('B'),
-            "LATIN CAPITAL LETTER C" => Some('C'),
-            "LATIN SMALL LETTER A" => Some('a'),
-            "LATIN SMALL LETTER B" => Some('b'),
-            "LATIN SMALL LETTER C" => Some('c'),
-            "SPACE" => Some(' '),
-            "LINE FEED" | "LINE FEED (LF)" => Some('\n'),
-            "CARRIAGE RETURN" | "CARRIAGE RETURN (CR)" => Some('\r'),
-            "HORIZONTAL TABULATION" | "CHARACTER TABULATION" => Some('\t'),
-            _ => None,
-        }
-    }
-
-    /// Find the closing `>` for a formatting code, accounting for nested `<>`.
-    fn find_formatting_close(text: &str) -> Option<usize> {
-        let mut depth = 0usize;
-        for (i, ch) in text.char_indices() {
-            match ch {
-                '<' => depth += 1,
-                '>' => {
-                    if depth == 0 {
-                        return Some(i);
-                    }
-                    depth -= 1;
-                }
-                _ => {}
-            }
-        }
-        None
-    }
-
+    /// An *implicit* (indented) code block: rakudo keeps its body as one
+    /// joined string in `contents` (roast S26-documentation/04-code.t pins
+    /// `is $r.contents[1].contents, "While this is not\nThis is a code block"`).
     pub(crate) fn make_pod_code(text: String) -> Value {
         Self::make_pod_code_with_config(text, HashMap::new())
     }
@@ -346,9 +103,87 @@ impl Interpreter {
         } else {
             vec![Value::str(text)]
         };
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Block::Code"), attrs)
+    }
+
+    /// An *explicitly*-marked code block (`=begin code` / `=for code` /
+    /// `=code`). Unlike the indented form, rakudo keeps one `contents`
+    /// element per source line followed by a literal `"\n"` element, so the
+    /// block's trailing newline survives `Pod::To::Text`'s
+    /// `$pod.contents>>.&pod2text.join`. With `:allow`, each line is parsed
+    /// for the permitted formatting codes first.
+    pub(crate) fn make_pod_code_block(
+        code_lines: Vec<String>,
+        config: HashMap<String, Value>,
+    ) -> Value {
+        let allow = config.contains_key("allow");
+        let mut contents: Vec<Value> = Vec::new();
+        for line in code_lines {
+            if allow {
+                contents.extend(Self::parse_formatting_codes(&line));
+            } else if !line.is_empty() {
+                contents.push(Value::str(line));
+            }
+            contents.push(Value::str("\n".to_string()));
+        }
+        let mut attrs = HashMap::new();
+        attrs.insert("contents".to_string(), Value::real_array(contents));
+        attrs.insert("config".to_string(), Value::hash(config));
+        Value::make_instance(Symbol::intern("Pod::Block::Code"), attrs)
+    }
+
+    /// Strip the common leading indentation from an explicitly-marked code
+    /// block's lines and drop its trailing blank lines.
+    pub(crate) fn dedent_pod_code_lines(code_lines: &[&str]) -> Vec<String> {
+        let min_indent = code_lines
+            .iter()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.len() - l.trim_start().len())
+            .min()
+            .unwrap_or(0);
+        let mut out: Vec<String> = code_lines
+            .iter()
+            .map(|l| {
+                if l.len() >= min_indent {
+                    l[min_indent..].to_string()
+                } else {
+                    l.trim_start().to_string()
+                }
+            })
+            .collect();
+        while out.last().is_some_and(|l| l.trim().is_empty()) {
+            out.pop();
+        }
+        out
+    }
+
+    /// Collect the verbatim body of a code *paragraph* (`=for code` / the
+    /// abbreviated `=code`): the remainder of the directive line, then every
+    /// line up to the next blank line or Pod directive, dedented.
+    pub(crate) fn collect_pod_code_paragraph(
+        lines: &[&str],
+        mut idx: usize,
+        inline: &str,
+        end_target: Option<&str>,
+    ) -> (Vec<String>, usize) {
+        let mut body: Vec<&str> = Vec::new();
+        while idx < lines.len() {
+            if lines[idx].trim().is_empty()
+                || Self::active_pod_directive(lines[idx], end_target).is_some()
+            {
+                break;
+            }
+            body.push(lines[idx]);
+            idx += 1;
+        }
+        let mut out = Self::dedent_pod_code_lines(&body);
+        let inline = inline.trim_end();
+        if !inline.is_empty() {
+            out.insert(0, inline.to_string());
+        }
+        (out, idx)
     }
 
     pub(crate) fn make_pod_config(type_name: &str, config: HashMap<String, Value>) -> Value {
@@ -360,7 +195,7 @@ impl Interpreter {
 
     pub(crate) fn make_pod_item(level: i64, contents: Vec<Value>) -> Value {
         let mut attrs = HashMap::new();
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(HashMap::new()));
         attrs.insert("level".to_string(), Value::int(level));
         Value::make_instance(Symbol::intern("Pod::Item"), attrs)
@@ -369,7 +204,7 @@ impl Interpreter {
     fn make_pod_defn(term: String, contents: Vec<Value>, config: HashMap<String, Value>) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("term".to_string(), Value::str(term));
-        attrs.insert("contents".to_string(), Value::array(contents));
+        attrs.insert("contents".to_string(), Value::real_array(contents));
         attrs.insert("config".to_string(), Value::hash(config));
         Value::make_instance(Symbol::intern("Pod::Defn"), attrs)
     }

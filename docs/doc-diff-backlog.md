@@ -424,7 +424,6 @@ Found in the 2026-08-22 batch-3 re-run of `Parameter`/`Match`/`Mu`/`subscripts`/
 | `Type/Match.rakudoc:40` | `$0` read inside a regex-embedded code block returns the raw string instead of a `Match` object | [dollar-numbered-capture-in-embedded-regex-block-returns-raw-value.md](../todo/tickets/dollar-numbered-capture-in-embedded-regex-block-returns-raw-value.md) |
 | `Type/Mu.rakudoc:238` | default `.clone()` doesn't share Array/Hash-typed attribute containers with the original (found while investigating a raku-drift-bucketed example — the drift bucketing itself is correct, but a real bug was hiding in the same example) | [clone-array-hash-attribute-containers-not-shared.md](../todo/tickets/clone-array-hash-attribute-containers-not-shared.md) |
 | `Type/Mu.rakudoc:267` | assigning a list through a `%`-sigil `rw` accessor doesn't coerce it to Hash pairs the way a direct `%var = list` does | [hash-attribute-rw-accessor-list-assignment-not-coerced-to-pairs.md](../todo/tickets/hash-attribute-rw-accessor-list-assignment-not-coerced-to-pairs.md) |
-| `Type/Mu.rakudoc:435` | `.WHY`'s `Pod::Block::Declarator` doesn't stringify to the leading/trailing doc-comment text | [pod-why-declarator-object-not-stringified.md](../todo/tickets/pod-why-declarator-object-not-stringified.md) |
 | `Type/Mu.rakudoc:119` | `.Capture` reads a raw stored attribute value instead of calling an overriding accessor method | [capture-coercion-uses-stored-attribute-not-accessor-method.md](../todo/tickets/capture-coercion-uses-stored-attribute-not-accessor-method.md) |
 | `Type/Mu.rakudoc:515` | `next` thrown mid-evaluation of a `FIRST`-phaser comma expression corrupts later `take slip(...)` calls in the same `gather` | [next-inside-comma-expression-corrupts-following-take-slip.md](../todo/tickets/next-inside-comma-expression-corrupts-following-take-slip.md) |
 | `Type/Mu.rakudoc:531` | `take-rw` doesn't preserve a mutable container alias through `gather` | [take-rw-loses-mutable-container-alias.md](../todo/tickets/take-rw-loses-mutable-container-alias.md) |
@@ -574,7 +573,6 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
 | `Type/Metamodel/Mixins.rakudoc:18,63` | `my Type:D $var .= new: ...;` fails — the `.=` implicit invocant keeps the `:D` definedness smiley baked into the type-name bareword | [dot-assign-target-keeps-definedness-smiley.md](../todo/tickets/dot-assign-target-keeps-definedness-smiley.md) |
 | `Type/Metamodel/Mixins.rakudoc:112` | `but`-mixing a role onto a class instance: `.^name` correctly shows `Foo+{Bar}`, but the default `.gist`/`say` output still shows plain `Foo.new` | [but-mixin-object-gist-missing-plus-suffix.md](../todo/tickets/but-mixin-object-gist-missing-plus-suffix.md) |
 | `Type/BagHash.rakudoc:112` | ~~`.add`/`.remove` methods are unimplemented on `BagHash` (subscript-based mutation already works)~~ FIXED | [news/2026-08/baghash-add-remove-methods.md](../news/2026-08/baghash-add-remove-methods.md) |
-| `Language/pod.rakudoc:908` | `$=pod` items are plain `List`s wrapping a generic `Pod::Block::Named`, not the flattened `Pod::Heading`/`Pod::Block::Para` objects raku produces; `.contents` fails | [dollar-equals-pod-item-not-iterable-block-object.md](../todo/tickets/dollar-equals-pod-item-not-iterable-block-object.md) |
 | `Type/Block.rakudoc:17` | `.signature` of a bare `{;}` block (implicit `$_` parameter) gists as the garbled `($$_?)` instead of `(;; $_? is raw = OUTER::<$_>)` | [implicit-topic-block-signature-gist-wrong.md](../todo/tickets/implicit-topic-block-signature-gist-wrong.md) |
 | `Type/CompUnit/Repository/FileSystem.rakudoc:45` | `.files(name, :ver)` introspection method is unimplemented | [compunit-repository-filesystem-files-method-missing.md](../todo/tickets/compunit-repository-filesystem-files-method-missing.md) |
 
@@ -587,10 +585,11 @@ Found in the 2026-08-22 batch-5 re-run of `SetHash`/`Metamodel::Mixins`/`BagHash
   repeated `raku` runs of the identical `new-from-pairs` example gave `("b","c")` twice and
   `("c","b")` once.
 - `Language/pod.rakudoc` [1] (line 170, `Magician.WHY`/`&duel.WHY.leading`/`.trailing`) —
-  duplicates the already-filed
-  [pod-why-declarator-object-not-stringified.md](../todo/tickets/pod-why-declarator-object-not-stringified.md)
-  (same root cause: `Pod::Block::Declarator`'s `.Str`/`.gist` isn't implemented, so both the
-  bare-stringify and the `.leading`/`.trailing` accessor symptoms trace to the same gap).
+  duplicated `pod-why-declarator-object-not-stringified` (same root cause: `Pod::Block::
+  Declarator`'s `.gist` wasn't implemented, so both the bare-stringify and the
+  `.leading`/`.trailing` accessor symptoms traced to the same gap). FIXED — see
+  [news/2026-08/pod-why-declarator-object-not-stringified.md](../news/2026-08/pod-why-declarator-object-not-stringified.md);
+  re-verified directly that this example's output now matches `raku`.
 - `Language/containers.rakudoc` [1], [3], [4], [5] — `raku-drift` (exception-message wording
   drift, object-address/generated-variable-name text, and big-Int-seed-dependent `.raku` gist,
   all version/environment-specific).
@@ -624,10 +623,12 @@ Found in the 2026-08-22 batch-5 re-run of `Routine`/`signatures`/`Cool`/`Metamod
 
 **Excluded from this batch-5 sub-run:**
 - `Type/Metamodel/Documenting.rakudoc` [1] (line 16, `#\|[...]`/`#=[...]` class-level declarator
-  comments, `say Documented.WHY`) — duplicate of the already-filed
-  `todo/tickets/pod-why-declarator-object-not-stringified.md` (same root cause: `Pod::Block::
-  Declarator`'s `.Str`/`.gist` isn't implemented; that ticket's repro uses a `sub`, this one a
-  `class`, but both hit the identical `Pod::Block::Declarator.new` gist fallback).
+  comments, `say Documented.WHY`) — duplicated `pod-why-declarator-object-not-stringified` (same
+  root cause: `Pod::Block::Declarator`'s `.gist` wasn't implemented; that ticket's repro uses a
+  `sub`, this one a `class`, but both hit the identical `Pod::Block::Declarator.new` gist
+  fallback). FIXED — see
+  [news/2026-08/pod-why-declarator-object-not-stringified.md](../news/2026-08/pod-why-declarator-object-not-stringified.md);
+  re-verified directly that this example's output now matches `raku`.
 - `Type/Baggy.rakudoc` [1], [4] (lines 43/355, `.grab`/`.hash` type-parameterization) —
   `raku-drift-from-doc`: raku's own current output no longer matches the doc's `# OUTPUT` text
   (floating precision / `Hash[UInt,Mu,Any]` vs the doc's stale `Hash[Any,Any]`), lower priority.
@@ -705,7 +706,6 @@ Found in the 2026-08-22 batch-6 re-run of `Label`/`IO::Spec::Win32`/`Pair`/`Attr
 | `Type/Pair.rakudoc:61` | `.raku` on a `Hash` populated via slurpy `*%h` named-arg binding doesn't abbreviate `Bool::True`-valued pairs to `:key` the way real raku does | [slurpy-hash-named-arg-raku-boolean-shorthand-missing.md](../todo/tickets/slurpy-hash-named-arg-raku-boolean-shorthand-missing.md) |
 | `Type/Attribute.rakudoc:58` | `has @.attr is default(V) is rw` — assigning `Nil` resets the array to `[Any]` instead of `[V]` | [array-attribute-default-not-applied-on-nil-assign.md](../todo/tickets/array-attribute-default-not-applied-on-nil-assign.md) |
 | `Language/traits.rakudoc:42` | a class-scoped `my $.counter` (dot-twigil'd `my` variable, not a `has` attribute) doesn't persist mutations across method calls | [class-scoped-my-dot-attribute-doesnt-persist.md](../todo/tickets/class-scoped-my-dot-attribute-doesnt-persist.md) |
-| `Language/glossary.rakudoc:1024` | `Pod::FormattingCode.raku` prints only the bare class name, omitting `type`/`meta`/`config`/`contents` | [pod-formattingcode-raku-missing-attributes.md](../todo/tickets/pod-formattingcode-raku-missing-attributes.md) |
 | `Type/Metamodel/Versioning.rakudoc:27` | `.^set_ver`/`.^set_auth`/`.^set_api` are unimplemented on `Perl6::Metamodel::ClassHOW` | [metamodel-classhow-set-ver-auth-api-missing.md](../todo/tickets/metamodel-classhow-set-ver-auth-api-missing.md) |
 
 **Excluded from this batch-6 sub-run (already deferred/resolved/drift/false-positive/duplicate):**

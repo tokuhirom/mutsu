@@ -121,6 +121,15 @@ impl Interpreter {
             ))));
         }
         match class_name.resolve().as_str() {
+            // A declarator block *is* its documentation text: rakudo renders
+            // the `#|` leading and `#=` trailing comments (newline-joined) for
+            // both `.Str` and `.gist`, so `say &foo.WHY` prints the doc rather
+            // than the generic `TypeName.new` instance repr. `.raku` keeps the
+            // instance repr — its `WHEREFORE` is the documented routine, whose
+            // own `.raku` embeds a per-run object address.
+            "Pod::Block::Declarator" if method == "gist" => {
+                return Some(Ok(Value::str(target.to_string_value())));
+            }
             cls @ ("ThreadPoolScheduler" | "CurrentThreadScheduler") => {
                 return Some(Ok(Value::str(
                     crate::builtins::methods_0arg::raku_repr::scheduler_raku_repr(cls),
