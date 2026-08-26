@@ -246,6 +246,29 @@ impl RuntimeError {
             let what = what.strip_suffix('.').unwrap_or(what);
             attrs.insert("what".to_string(), Value::str_from(what));
         }
+        // `X::Syntax::Confused`'s message IS its `.reason` in rakudo (which
+        // defaults to "Confused"); mutsu spells the same diagnosis as
+        // "Confused. {reason}", so recover the reason from the text rather than
+        // storing it twice (same derive-don't-duplicate rule as above).
+        if class_name == "X::Syntax::Confused" {
+            let reason = text
+                .strip_prefix("Confused. ")
+                .unwrap_or_else(|| text.trim_end_matches('.'));
+            attrs.insert("reason".to_string(), Value::str_from(reason));
+        }
+        // `X::Syntax::InfixInTermPosition`'s message IS
+        // `Preceding context expects a term, but found infix {infix} instead.`
+        // in rakudo. The parser builds this diagnosis with a real `infix`
+        // attribute, but it is raised SOFTLY (see `PError::infix_in_term_position`)
+        // and only its `"X::Type: text"` message survives the alternative-driven
+        // promotion, so re-derive the attribute here.
+        if class_name == "X::Syntax::InfixInTermPosition"
+            && let Some(rest) =
+                text.strip_prefix("Preceding context expects a term, but found infix ")
+            && let Some(infix) = rest.strip_suffix(" instead.")
+        {
+            attrs.insert("infix".to_string(), Value::str_from(infix));
+        }
         // rakudo's whole X::Comp family carries `.pre`/`.post` (source text
         // around the eject point); `parse_program` computes these for every
         // typed parse diagnosis. Without them, a `throws-like …, X::…, pre =>

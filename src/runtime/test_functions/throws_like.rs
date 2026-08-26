@@ -59,6 +59,15 @@ impl Interpreter {
                 nested.registry_mut().role_type_params = self.registry().role_type_params.clone();
                 nested.registry_mut().class_role_param_bindings =
                     self.registry().class_role_param_bindings.clone();
+                // Which packages the caller has actually DECLARED decides how an
+                // unresolved qualified call is reported: raku names a known
+                // package bare (`Could not find symbol '&nope' in 'M'`) and an
+                // unknown one under `GLOBAL::` (see `is_known_package`). Without
+                // these two the nested interpreter had never heard of the
+                // caller's `module M { }`, so `throws-like 'M::nope()'` produced
+                // the `GLOBAL::M` spelling that a direct `EVAL` got right.
+                nested.registry_mut().package_kinds = self.registry().package_kinds.clone();
+                nested.registry_mut().package_stubs = self.registry().package_stubs.clone();
                 nested.registry_mut().subsets = self.registry().subsets.clone();
                 nested.registry_mut().enum_types = self.registry().enum_types.clone();
                 nested.type_metadata = self.type_metadata.clone();
@@ -416,30 +425,34 @@ impl Interpreter {
                 } else {
                     err.message.contains(expected_normalized)
                 };
+                // Named matchers are answered off the exception OBJECT the way
+                // rakudo's `$x."$k"()` is, so use the very value `$!` / `CATCH`
+                // would see. `err.exception` alone is `None` for every error
+                // that only carries the `"X::Type: text"` message convention,
+                // and `exception_value()` is what turns that convention into a
+                // real instance (deriving `.what`, `.typename`, `.pre`/`.post`,
+                // ... from the text). Reading the raw field instead left those
+                // attributes invisible here even though `$!.typename` answered
+                // them correctly two lines outside the `throws-like`.
                 (
                     type_matched,
-                    err.exception.as_ref().map(|e| e.as_ref().clone()),
+                    Some(err.exception_value()),
                     err.message.clone(),
                 )
             }
         };
 
-        // Only structured exception objects reliably expose arbitrary attribute matchers.
-        // X::AdHoc is excluded because it wraps ad-hoc die() values and doesn't
-        // carry the attributes of the expected exception type.
-        let has_structured_exception = exception_val.as_ref().is_some_and(|ex| {
-            if let ValueView::Instance { class_name, .. } = ex.view() {
-                let cn = class_name.resolve();
-                cn.starts_with("X::") && cn != "X::AdHoc"
-            } else {
-                false
-            }
-        });
-        let named_checks: Vec<(String, Value)> = if has_structured_exception {
-            named_matchers
-        } else {
-            Vec::new()
-        };
+        // Rakudo's `throws-like` calls `$x."$k"()` on the thrown exception for
+        // EVERY named matcher and always plans `2 + %matcher.elems` tests, so a
+        // matcher is never skipped. mutsu used to drop the whole matcher list
+        // unless the exception's class name started with `X::` and was not
+        // `X::AdHoc`; that made every `message => ...` assertion against a plain
+        // `die "..."` / `fail "..."` (both `X::AdHoc`) and every matcher against a
+        // user-defined exception class (`class MyErr is Exception`) pass
+        // *vacuously*, and it undercounted the subtest plan (2 instead of 3).
+        // Run them all — `X::AdHoc` really does answer `.payload`/`.message`, and
+        // the `message`/`gist` fallback below covers the carrier-only case.
+        let named_checks: Vec<(String, Value)> = named_matchers;
 
         let ctx = self.begin_subtest();
         let total = 2 + named_checks.len();
@@ -453,48 +466,46 @@ impl Interpreter {
             false,
         )?;
         for (attr_name, expected_val) in &named_checks {
-            let actual_val = exception_val.as_ref().and_then(|ex| {
+            let mut actual_val = exception_val.as_ref().and_then(|ex| {
                 if let ValueView::Instance { attributes, .. } = ex.view() {
                     attributes.as_map().get(attr_name).cloned()
                 } else {
                     None
                 }
             });
-            // Fall back to err.message for the "message" and "gist" matchers:
-            // neither is stored as an attribute, and an X:: exception's `.gist`
-            // renders its message (plus suggestions), so the message text is the
-            // substring the `gist => /.../` matchers look for. When the thrown
-            // exception is a *user-defined* type that overrides `message`/`gist`
-            // (e.g. a module's own X:: class), invoke that method so the matcher
-            // sees the computed text. Built-in X:: carriers already render their
-            // text into `err_message`, so prefer that for them — a built-in's
-            // native `.message` can differ from the carrier string and would
-            // otherwise regress (e.g. X::Phaser::PrePost).
+            // No stored attribute: ask the exception object itself, the way
+            // rakudo's `$x."$k"()` does. Only a *user-defined* method is invoked
+            // here — a built-in X:: carrier already renders its text into
+            // `err_message`, and a built-in's native `.message` can differ from
+            // the carrier string (e.g. X::Phaser::PrePost), which would regress.
+            if actual_val.is_none() {
+                let cls = exception_val.as_ref().and_then(|ex| match ex.view() {
+                    ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
+                    _ => None,
+                });
+                if let Some(cn) = cls
+                    && self.has_user_method(&cn, attr_name)
+                    && let Some(ex) = exception_val.clone()
+                {
+                    actual_val = self.call_method_with_values(ex, attr_name, vec![]).ok();
+                }
+            }
+            // Neither `message` nor `gist` is stored as an attribute on a
+            // built-in exception carrier, and an X:: exception's `.gist` renders
+            // its message (plus suggestions), so the carrier text is the string
+            // both matchers look for.
             let actual_str = if let Some(v) = actual_val.as_ref() {
                 v.to_string_value()
             } else if attr_name == "message" || attr_name == "gist" {
-                let user_method = exception_val
-                    .as_ref()
-                    .and_then(|ex| match ex.view() {
-                        ValueView::Instance { class_name, .. } => Some(class_name.resolve()),
-                        _ => None,
-                    })
-                    .is_some_and(|cn| self.has_user_method(&cn, attr_name));
-                if user_method {
-                    exception_val
-                        .as_ref()
-                        .and_then(|ex| {
-                            self.call_method_with_values(ex.clone(), attr_name, vec![])
-                                .ok()
-                        })
-                        .map(|v| v.to_string_value())
-                        .unwrap_or_else(|| err_message.clone())
-                } else {
-                    err_message.clone()
-                }
+                err_message.clone()
             } else {
                 String::new()
             };
+            // Hand a Callable / Junction matcher the real text to inspect
+            // (`message => { $_.contains("x") }` gets the message, not Nil).
+            if actual_val.is_none() && (attr_name == "message" || attr_name == "gist") {
+                actual_val = Some(Value::str(actual_str.clone()));
+            }
             let matched = self.matcher_accepts(expected_val, &actual_str, actual_val.as_ref());
             let expected_display = match expected_val.view() {
                 ValueView::Regex(pattern) => format!("/{}/", *pattern),
