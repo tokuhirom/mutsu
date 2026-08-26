@@ -3435,6 +3435,18 @@ pub(crate) struct CompiledRoleDeclPlan {
     /// execution path every composition entry point runs (ADR-0019 D8-2).
     /// See [`DeferredBodyOp`].
     pub(crate) deferred_body_ops: Vec<DeferredBodyOp>,
+    /// This role declaration's identity, minted once here at plan-lowering
+    /// (compile) time rather than freshly on every runtime execution of the
+    /// registration op. A role body inside a repeatedly-invoked sub/block
+    /// re-registers on every call (Rakudo re-runs role composition/attribute
+    /// setup each time too), but the role's *identity* — used to key a
+    /// `but`/`does` mixin's `.WHAT` (see `mixin_composition_key`) — must stay
+    /// stable across those re-registrations, matching Rakudo's declaration-
+    /// site-stable identity for both named and anonymous roles. Minting a
+    /// fresh id per plan (not per registration) still gives two textually
+    /// distinct `my role A {}` declarations in different scopes distinct
+    /// ids, since each is its own AST node / plan entry.
+    pub(crate) role_id: u64,
 }
 
 /// A package-level `proto sub`/`proto rule`/`proto token` declaration lowered
@@ -7088,6 +7100,7 @@ impl CompiledCode {
             parent_ops,
             body_plan,
             deferred_body_ops,
+            role_id: crate::runtime::next_role_id(),
         });
         let idx = self.decl_plans.len() as u32;
         self.decl_plans.push(CompiledDeclPlanRef::Role(plan_idx));
