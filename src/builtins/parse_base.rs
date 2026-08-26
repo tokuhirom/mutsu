@@ -16,17 +16,7 @@ use num_traits::{One, Zero};
 use std::collections::HashMap;
 
 fn radix_out_of_range(radix: i64) -> RuntimeError {
-    let msg = format!(
-        "Radix must be in range 2..36, not {} (use :{}[...] notation for radices outside this range)",
-        radix, radix
-    );
-    let mut attrs = HashMap::new();
-    attrs.insert("radix".to_string(), Value::int(radix));
-    attrs.insert("message".to_string(), Value::str(msg.clone()));
-    let ex = Value::make_instance(Symbol::intern("X::Syntax::Number::RadixOutOfRange"), attrs);
-    let mut err = RuntimeError::new(&msg);
-    err.exception = Some(Box::new(ex));
-    err
+    RuntimeError::radix_out_of_range(radix)
 }
 
 fn str_numeric_error(source: &str, pos: usize, radix: i64) -> RuntimeError {

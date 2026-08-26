@@ -263,10 +263,13 @@ pub(super) fn my_decl_inner(input: &str, apply_modifier: bool) -> PResult<'_, St
             // rule is about the digit *property*, not about ASCII: `my $১০kinds`
             // opens with Bengali digits and Raku rejects it the same way.
             if after.starts_with(|c: char| c.is_numeric()) {
+                // rakudo distinguishes this from the signature twin
+                // (`sub f($0) { }`, see `reject_numeric_param`) through
+                // `.what`, which `roast/S32-exceptions/misc2.t` matches on.
                 return Err(illegal_my_var_error(
                     "X::Syntax::Variable::Numeric",
                     "Cannot declare a numeric variable",
-                    &[],
+                    &[("what", "variable")],
                 ));
             }
             // `my $<combining mark>a` — an identifier may not open with a

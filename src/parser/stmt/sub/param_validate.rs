@@ -274,8 +274,43 @@ pub(crate) fn validate_signature_params(params: &[ParamDef]) -> Result<(), PErro
             return Err(PError::fatal_with_exception(msg, Box::new(ex)));
         }
         if pd.traits.iter().any(|t| t == "rw") && (pd.optional_marker || pd.default.is_some()) {
-            return Err(PError::fatal(
-                "X::Trait::Invalid: Cannot make an 'is rw' parameter optional".to_string(),
+            // rakudo raises `X::Trait::Invalid` here with the trait split into
+            // `.type` ("is") and `.subtype` ("rw"), plus `.declaring` and the
+            // parameter `.name`; its message is composed from exactly those
+            // four (`Cannot use '{type} {subtype}' on {declaring} '{name}'.`),
+            // which `roast/S06-signature/optional.t` matches on
+            // (`:type('is'), :subtype('rw')`). Verified against
+            // `raku -e 'sub foo($x? is rw) {}'`.
+            // `ParamDef::name` keeps the `@`/`%`/`&` sigil but not a leading
+            // `$`, so restore it for the user-facing spelling rakudo uses.
+            let display_name = if pd.name.starts_with(['$', '@', '%', '&']) {
+                pd.name.clone()
+            } else {
+                format!("${}", pd.name)
+            };
+            let msg = format!("Cannot use 'is rw' on optional parameter '{display_name}'.");
+            let mut attrs = std::collections::HashMap::new();
+            attrs.insert("message".to_string(), crate::value::Value::str(msg.clone()));
+            attrs.insert("name".to_string(), crate::value::Value::str(display_name));
+            attrs.insert(
+                "type".to_string(),
+                crate::value::Value::str("is".to_string()),
+            );
+            attrs.insert(
+                "subtype".to_string(),
+                crate::value::Value::str("rw".to_string()),
+            );
+            attrs.insert(
+                "declaring".to_string(),
+                crate::value::Value::str("optional parameter".to_string()),
+            );
+            let ex = crate::value::Value::make_instance(
+                crate::symbol::Symbol::intern("X::Trait::Invalid"),
+                attrs,
+            );
+            return Err(PError::fatal_with_exception(
+                format!("X::Trait::Invalid: {msg}"),
+                Box::new(ex),
             ));
         }
         // X::Parameter::TypedSlurpy: a slurpy *array* (`*@`, `**@`, `+@`) or

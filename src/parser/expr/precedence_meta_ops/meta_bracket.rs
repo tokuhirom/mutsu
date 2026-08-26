@@ -228,8 +228,81 @@ pub(crate) fn cannot_meta_ternary_error(
         Some(idx) => &after_letter[..idx + 2],
         None => after_letter,
     };
+    Some(cannot_meta_error(
+        meta_word,
+        operand_text,
+        "conditional",
+        input.len(),
+    ))
+}
+
+/// rakudo's own phrase for what each metaop letter does, as it appears in an
+/// `X::Syntax::CannotMeta` message and in the exception's `.meta` attribute.
+/// `S` has no other meaning as a metaop letter (see `cannot_meta_ternary_error`).
+fn meta_letter_phrase(letter: char) -> Option<&'static str> {
+    Some(match letter {
+        'R' => "reverse the args of",
+        'Z' => "zip with",
+        'X' => "cross with",
+        'S' => "sequence the args of",
+        _ => return None,
+    })
+}
+
+/// Infix operators looser than assignment. `[OP]=` only composes into an
+/// assignment metaop when `OP` is *tighter* than assignment, so for these the
+/// `=` stays a plain assignment operator — and a metaop letter in front then
+/// has nothing but that `=` left to meta, which rakudo refuses.
+const LOOSER_THAN_ASSIGNMENT: &[&str] =
+    &["and", "andthen", "notandthen", "or", "orelse", "xor", ","];
+
+/// Detect `R[and]= 42` and friends — a metaop letter over a bracketed infix
+/// that is looser than assignment, followed by `=`. rakudo names the leftover
+/// `=` itself: "Cannot reverse the args of = because assignment operator
+/// operators are too fiddly" (`roast/S03-metaops/reverse.t`, which matches
+/// `.meta` / `.operator` / `.reason`). Verified against
+/// `raku -e 'my $a; $a R[and]= 42'` and its `Z`/`X`/`S` and
+/// `or`/`xor`/`orelse`/`,` variants; the tighter `R[+]= 42` really does
+/// compose and must keep parsing.
+///
+/// What follows the `=` does not matter — rakudo raises this for `R[and]== 42`
+/// and `R[and]=> 42` alike.
+pub(crate) fn cannot_meta_loose_bracket_assign_error(
+    input: &str,
+) -> Option<crate::parser::parse_result::PError> {
+    let phrase = meta_letter_phrase(input.chars().next()?)?;
+    let r = &input[1..];
+    if !r.starts_with('[') {
+        return None;
+    }
+    let end = find_matching_bracket(r)?;
+    if !LOOSER_THAN_ASSIGNMENT.contains(&r[1..end].trim()) {
+        return None;
+    }
+    if !r[end + 1..].starts_with('=') {
+        return None;
+    }
+    Some(cannot_meta_error(
+        phrase,
+        "=",
+        "assignment operator",
+        input.len(),
+    ))
+}
+
+/// Build the `X::Syntax::CannotMeta` rakudo raises for a metaop it refuses to
+/// compose. `operand_text` is the operator spelling that both the message and
+/// the `.operator` attribute name; `dba` is rakudo's own category word for it
+/// ("conditional", "assignment operator", ...), which the message repeats as
+/// "{dba} operators are too fiddly".
+fn cannot_meta_error(
+    meta_word: &str,
+    operand_text: &str,
+    dba: &str,
+    remaining_len: usize,
+) -> crate::parser::parse_result::PError {
     let message =
-        format!("Cannot {meta_word} {operand_text} because conditional operators are too fiddly");
+        format!("Cannot {meta_word} {operand_text} because {dba} operators are too fiddly");
     let mut attrs = std::collections::HashMap::new();
     attrs.insert(
         "message".to_string(),
@@ -247,20 +320,17 @@ pub(crate) fn cannot_meta_ternary_error(
         "reason".to_string(),
         crate::value::Value::str("too fiddly".to_string()),
     );
-    attrs.insert(
-        "dba".to_string(),
-        crate::value::Value::str("conditional".to_string()),
-    );
+    attrs.insert("dba".to_string(), crate::value::Value::str(dba.to_string()));
     let exception = crate::value::Value::make_instance(
         crate::symbol::Symbol::intern("X::Syntax::CannotMeta"),
         attrs,
     );
     let mut err = crate::parser::parse_result::PError::raw(
         format!("X::Syntax::CannotMeta: {message}"),
-        Some(input.len()),
+        Some(remaining_len),
     );
     err.exception = Some(Box::new(exception));
-    Some(err)
+    err
 }
 
 /// Parse meta operator: R-, X+, Zcmp, R[+], Z[~], R[R[R-]], RR[R-], etc.

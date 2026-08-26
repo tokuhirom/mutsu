@@ -71,7 +71,9 @@ A name mutsu can produce *nothing* for is still skipped rather than failed — b
 now the subtest says so out loud (`# SKIPPED matcher '.multiness': mutsu's
 X::Anon::Multi carries no such attribute`), because that is a
 missing-*attribute* bug rather than a bad test. The full remaining list is
-tracked in `todo/tickets/exception-attributes-missing-for-throws-like.md`.
+tracked in `todo/tickets/exception-attributes-missing-for-throws-like.md`
+(all ten now implemented — see
+`news/2026-08/exception-attributes-missing-for-throws-like.md`).
 
 ## What the un-skipped matcher immediately caught
 

@@ -530,26 +530,35 @@ pub(super) fn is_ident_char(b: Option<u8>) -> bool {
     }
 }
 
-/// Check if a byte could start a variable name after a sigil.
-/// Unlike `is_ident_char`, this returns false for digits because variable
-/// names cannot start with a digit (e.g. `%7` is modulo-7, not a hash var).
-/// Includes twigil characters that can appear after a sigil.
-pub(super) fn could_start_var_name(b: Option<u8>) -> bool {
-    match b {
-        Some(c) => {
-            c.is_ascii_alphabetic()
-                || c == b'_'
-                || c == b'!'
-                || c == b'*'
-                || c == b'?'
-                || c == b'.'
-                || c == b'^'
-                || c == b':'
-                || c == b'='
-                || c == b'~'
-                || c >= 0x80 // non-ASCII (Unicode letters)
-        }
-        None => false,
+/// Check whether the text immediately after a sigil could start a variable
+/// name. Unlike `is_ident_char`, a digit returns false because variable names
+/// cannot start with one (`%7` is modulo-7, not a hash var).
+///
+/// A twigil only counts when a NAME actually follows it: rakudo reads
+/// `1 %^1` as `1 % ^1` and `1 %.5` as `1 % .5`, not as a variable called
+/// `%^1` / `%.5`. Accepting the bare twigil character was what made mutsu
+/// refuse `1%^^1` (rakudo's `X::Syntax::DuplicatedPrefix` case in
+/// `roast/S03-operators/misc.t`) as an undeclared `%^^1` instead.
+pub(super) fn could_start_var_name(after_sigil: &str) -> bool {
+    let ident_start = |b: u8| b.is_ascii_alphabetic() || b == b'_' || b >= 0x80;
+    let mut bytes = after_sigil.bytes();
+    let Some(c) = bytes.next() else {
+        return false;
+    };
+    if ident_start(c) {
+        return true;
+    }
+    match c {
+        // Twigils: `%*ENV`, `%?LANG`, `%!attr`, `%.accessor`, `%^placeholder`.
+        b'!' | b'*' | b'?' | b'.' | b'^' => bytes.next().is_some_and(ident_start),
+        // `%::Foo::bar` (package-qualified) and `%::('name')` (indirect name).
+        b':' => bytes
+            .next()
+            .is_some_and(|b| ident_start(b) || b == b':' || b == b'('),
+        // NOT twigils -- these guard the compound-assignment spellings `%=`
+        // and `%~...`, which the assignment parser has to see whole.
+        b'=' | b'~' => true,
+        _ => false,
     }
 }
 

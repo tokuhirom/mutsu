@@ -399,6 +399,29 @@ impl Interpreter {
         if err.message.starts_with("X::Parameter::RW:") {
             return err;
         }
+        // A signature with a generic type capture (`sub c(::T $x, T $y, $z)`)
+        // cannot be checked at compile time at all -- what `T` means is only
+        // known once `$x` binds -- so rakudo reports a plain RUNTIME
+        // `X::TypeCheck::Binding::Parameter` for it, never the compile-time
+        // "Calling c(Str, Int, Str) will never work with declared signature"
+        // shape this wrapper models. (The `has_type_captures` test below
+        // already refuses to *reclassify* such an error as the compile-time
+        // `X::TypeCheck::Argument`; the message has to stay honest too.)
+        //
+        // A capture is recorded as the DECLARING parameter's
+        // `type_constraint` (`::T $x` is `ParamDef { name: "x",
+        // type_constraint: Some("::T") }`), not as a parameter of its own.
+        let signature_has_type_captures = param_defs.iter().any(|pd| {
+            pd.name.starts_with("::")
+                || pd.name == "__type_capture__"
+                || pd
+                    .type_constraint
+                    .as_deref()
+                    .is_some_and(|tc| tc.starts_with("::"))
+        });
+        if signature_has_type_captures {
+            return err;
+        }
         // Capture the hint before `err.exception` is (possibly) moved out below,
         // so the later `set_hint` does not clash with that partial move.
         let hint = err.take_hint();

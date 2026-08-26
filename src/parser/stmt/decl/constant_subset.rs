@@ -53,7 +53,13 @@ pub(in crate::parser::stmt) fn constant_decl(input: &str) -> PResult<'_, Stmt> {
         register_term_symbol_from_decl_name(&inner);
         (r, inner)
     } else {
-        let (r, n) = ident(rest)?;
+        // `constant * = 3;` — the declarator is committed by now, so a name
+        // that is not an identifier is a definite diagnosis, not a reason to
+        // let another statement parser try. rakudo reports exactly the same
+        // `X::Syntax::Missing` it uses for the initializer-less form (its
+        // `constant` rule never gets past the name to the `=`), which is what
+        // the `constant (` guard above already does.
+        let (r, n) = ident(rest).map_err(|_| missing_initializer_error())?;
         register_term_symbol_from_decl_name(&n);
         (r, n)
     };
@@ -231,7 +237,16 @@ pub(in crate::parser::stmt) fn constant_stmt(input: &str) -> PResult<'_, Stmt> {
 fn missing_initializer_error() -> PError {
     let msg = "X::Syntax::Missing: Missing initializer on constant declaration".to_string();
     let mut attrs = std::collections::HashMap::new();
-    attrs.insert("what".to_string(), Value::str("initializer".to_string()));
+    // rakudo's `X::Syntax::Missing` message IS `Missing {what}`, so `.what` is
+    // the whole tail — not just "initializer".
+    // `roast/S32-exceptions/misc2.t` matches BOTH `what => /initializer/` (for
+    // `constant foo;`) and `what => /constant/` (for `constant * = 3;`) against
+    // this same diagnosis, which only the full phrase satisfies. Verified
+    // against `raku -e 'constant * = 3;'`.
+    attrs.insert(
+        "what".to_string(),
+        Value::str("initializer on constant declaration".to_string()),
+    );
     attrs.insert("message".to_string(), Value::str(msg.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Syntax::Missing"), attrs);
     PError::fatal_with_exception(msg, Box::new(ex))

@@ -2633,6 +2633,14 @@ impl Interpreter {
                         // registered here so `eval_does_values` can compose it
                         // and `~~ X::Promise::Broken` answers correctly.
                         "X::Promise::Broken",
+                        // Also not a marker role: rakudo's
+                        // `X::AdHoc.from-slurpy(...)` mixes this into the
+                        // `Capture` it stores as `.payload`, so the payload's
+                        // `.^name` is `Capture+{X::AdHoc::SlurpySentry}` and
+                        // `.Str` knows to concatenate rather than render the
+                        // capture. Registered here so the composition can
+                        // happen at all.
+                        "X::AdHoc::SlurpySentry",
                     ] {
                         roles.insert(
                             role_name.to_string(),

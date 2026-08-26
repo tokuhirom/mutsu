@@ -76,6 +76,20 @@ pub fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Option<Str
             let action = attr_str(attrs, "action");
             Some(format!("Cannot {} a lazy list", action))
         }
+        // rakudo's `X::Cannot::Empty` formats its message from `:action`/`:what`
+        // at read time, so user code that raises the documented
+        // `X::Cannot::Empty.new(:action<pop>, :what(self.^name))` gets a real
+        // message. mutsu's internal throw sites all pass a pre-built `message`
+        // attribute (which shadows this table), so only the user-constructed
+        // form reaches here -- it used to answer the empty string.
+        // Neither attribute has a default in rakudo (an omitted `:what`
+        // stringifies to the empty string, with an uninitialized-value
+        // warning), so neither gets one here.
+        "X::Cannot::Empty" => {
+            let action = attr_str(attrs, "action");
+            let what = attr_str(attrs, "what");
+            Some(format!("Cannot {} from an empty {}", action, what))
+        }
         "X::ControlFlow::Return" => Some("Attempt to return outside of any Routine".to_string()),
         "X::OutOfRange" => {
             let what = attr_str_or(attrs, "what", "Argument");

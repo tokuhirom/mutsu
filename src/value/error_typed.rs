@@ -6,6 +6,65 @@ use super::{RuntimeError, Value};
 use std::collections::HashMap;
 
 impl RuntimeError {
+    /// X::Syntax::Number::RadixOutOfRange - a radix outside 2..36, either in a
+    /// `:45<abcd>` literal (compile time) or in `.parse-base(45)` (run time).
+    /// rakudo's message IS `Radix {radix} out of range (allowed: 2..36)` for
+    /// both, and `roast/S32-exceptions/misc2.t` matches `radix => 45`.
+    /// Verified against `raku -e ':45<abcd>'` and `raku -e '"z".parse-base(45)'`.
+    pub(crate) fn radix_out_of_range(radix: i64) -> Self {
+        let msg = format!("Radix {radix} out of range (allowed: 2..36)");
+        let mut attrs = HashMap::new();
+        attrs.insert("radix".to_string(), Value::int(radix));
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::Syntax::Number::RadixOutOfRange"),
+            attrs,
+        );
+        let mut err = Self::new(&msg);
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
+    /// X::Method::InvalidQualifier - `1.List::join`: a qualified method call
+    /// whose qualifier is neither inherited nor done by the invocant.
+    ///
+    /// rakudo carries the real `invocant` VALUE (not its type name) and the
+    /// `qualifier-type` TYPE OBJECT (not its name) alongside the method name,
+    /// and `roast/S32-exceptions/misc2.t` matches on all three
+    /// (`invocant => 1`, `qualifier-type => List`) — so neither can be
+    /// re-derived from the message text, which only holds the two type names.
+    /// The message itself is rakudo's verbatim wording, verified against
+    /// `raku -e '1.List::join'`.
+    pub(crate) fn invalid_qualifier(
+        method: &str,
+        qualifier: &str,
+        invocant: Value,
+        invocant_type: &str,
+    ) -> Self {
+        let msg = format!(
+            "Cannot dispatch to method {} on {} because it is not inherited or done by {}",
+            method, qualifier, invocant_type
+        );
+        let mut attrs = HashMap::new();
+        attrs.insert("message".to_string(), Value::str(msg.clone()));
+        attrs.insert("method".to_string(), Value::str(method.to_string()));
+        attrs.insert("invocant".to_string(), invocant);
+        attrs.insert(
+            "qualifier-type".to_string(),
+            Value::package(crate::symbol::Symbol::intern(qualifier)),
+        );
+        let ex = Value::make_instance(
+            crate::symbol::Symbol::intern("X::Method::InvalidQualifier"),
+            attrs,
+        );
+        // Keep the `"X::Type: text"` message spelling the previous plain
+        // `RuntimeError` here used, so anything matching on the rendered text
+        // (and the type-name recovery in `exception_value`) is unaffected.
+        let mut err = Self::new(format!("X::Method::InvalidQualifier: {msg}"));
+        err.exception = Some(Box::new(ex));
+        err
+    }
+
     /// X::Undeclared - Undeclared name
     #[allow(dead_code)]
     pub(crate) fn undeclared(what: &str, name: &str) -> Self {

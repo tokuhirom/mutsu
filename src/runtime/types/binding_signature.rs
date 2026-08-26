@@ -399,14 +399,24 @@ impl Interpreter {
                     )
                     .with_parameter_object(pd, Some(&*self)));
                 }
-                return Err(RuntimeError::typecheck_binding_parameter(
-                    &display_name,
+                // rakudo's wording for a runtime parameter binding failure is
+                // `Type check failed in binding to parameter '$y'; expected
+                // Int but got Str ("s")` -- the same shape the subset branch
+                // just above already spells, with the sigil restored and an
+                // anonymous parameter named `<anon>`. Verified against
+                // `raku -e 'sub f(::T $x, T $y) {}; f(1, "s")'` and its
+                // anonymous-parameter twin.
+                let param_display = if pd.name == "__type_only__" {
+                    "<anon>".to_string()
+                } else if pd.name.starts_with(['$', '@', '%', '&']) {
+                    pd.name.clone()
+                } else {
+                    format!("${}", pd.name)
+                };
+                return Err(RuntimeError::typecheck_binding_parameter_with_repr(
+                    &param_display,
                     &resolved_constraint,
-                    got,
-                    Some(format!(
-                        "{}: Type check failed for {}: expected {}, got {}",
-                        type_error_kind, display_name, resolved_constraint, got
-                    )),
+                    &value,
                 )
                 .with_parameter_object(pd, Some(&*self)));
             } else {

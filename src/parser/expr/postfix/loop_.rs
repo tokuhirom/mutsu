@@ -162,6 +162,21 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             crate::value::RuntimeError::duplicated_prefix(prefixes),
         ));
     }
+    // A single `!` prefix in front of the run is still the same ambiguity, and
+    // it cannot be resolved by recursing into `prefix_expr` on the tail:
+    // `parse_prefix_unary_op` deliberately refuses to take the `!` of `!~~`
+    // (so the infix `!~~` survives at infix position), which left
+    // `555 ~~!~~ 666` -- rakudo's own `roast/S03-operators/misc.t` case --
+    // reported as the generic parse-error blob. rakudo names the run itself
+    // (`prefixes => "~~"`, not `"!~~"`), so report the tail.
+    if let Some(after_bang) = input.strip_prefix('!')
+        && !input.starts_with("!!")
+        && let Some(prefixes) = duplicated_prefix_run(after_bang)
+    {
+        return Err(PError::from_typed(
+            crate::value::RuntimeError::duplicated_prefix(prefixes),
+        ));
+    }
     if let Some(rest) = input.strip_prefix("++⚛") {
         let (rest, expr) = postfix_expr(rest)?;
         if let Some(name) = atomic_var_name(&expr) {

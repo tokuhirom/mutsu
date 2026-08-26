@@ -448,6 +448,7 @@ mod main_args;
 mod match_target;
 mod metamodel;
 mod methods;
+mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
 mod methods_call_dispatch;
 mod methods_call_helpers;

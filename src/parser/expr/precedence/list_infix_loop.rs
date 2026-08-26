@@ -73,6 +73,14 @@ fn parse_list_infix_loop_impl<'a>(
         if let Some(err) = cannot_meta_ternary_error(r) {
             return Err(err);
         }
+        // `$a R[and]= 42` — a metaop letter over a bracketed infix looser than
+        // assignment. Checked here, before the metaop scanner takes `R[and]`
+        // as a plain infix and strands the `=`, which is what left rakudo's
+        // own `roast/S03-metaops/reverse.t` case reported as the generic
+        // parse-error blob instead of `X::Syntax::CannotMeta`.
+        if let Some(err) = cannot_meta_loose_bracket_assign_error(r) {
+            return Err(err);
+        }
         if r.starts_with("X.") && !r.starts_with("X..") {
             let after = &r[2..];
             let after_trimmed = after.trim_start();

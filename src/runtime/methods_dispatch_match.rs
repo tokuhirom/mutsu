@@ -229,6 +229,14 @@ impl Interpreter {
             "at" => self.dispatch_promise_at(&target, &args),
             "kept" => self.dispatch_promise_kept(&target, &args),
             "broken" => self.dispatch_promise_broken(&target, &args),
+            // `X::AdHoc.from-slurpy(3, False, "Not here")` — the documented
+            // class method that builds an `X::AdHoc` out of a slurpy argument
+            // list. Sits alongside the other native class methods on builtin
+            // type objects (`Promise.allof`, `Promise.in`, ...) rather than in
+            // the arity-keyed native tables, because it is variadic.
+            "from-slurpy" if matches!(target.view(), ValueView::Package(n) if n == "X::AdHoc") => {
+                Some(self.dispatch_adhoc_from_slurpy(&args))
+            }
             "allof" => self.dispatch_promise_allof(&target, &args),
             "anyof" => self.dispatch_promise_anyof(&target, &args),
             "WHAT" if args.is_empty() && !quoted_pseudo => Some(self.dispatch_what(&target, args)),
