@@ -315,3 +315,5 @@ only via `scripts/update-vendor.sh` (see [docs/vendoring.md](docs/vendoring.md))
 - [Raku documentation](https://docs.raku.org/)
 - [Roast (official Raku test suite)](https://github.com/Raku/roast)
 - [The mutsu site](https://tokuhirom.github.io/mutsu/) — Raku introduction, tutorial and playground (source in `site/`)
+- [Raptor](https://github.com/xyzzyapps/raptor) — a Perl5 subset of Raku in Go, on top of MoarVM
+- [Raku++ (rakupp)](https://github.com/ash/rakupp) — a Raku interpreter and compiler written from scratch in C++17, validated against Roast
