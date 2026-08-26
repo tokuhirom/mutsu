@@ -283,7 +283,6 @@ Found in the same 2026-08-22 batch-2 re-run, `Type/Any.rakudoc` / `Language/obje
 | `Type/Any.rakudoc:1549,1559` | `.snitch` (v6.e.PREVIEW debugging method) is entirely unimplemented | [snitch-method-unimplemented.md](../todo/tickets/snitch-method-unimplemented.md) |
 | `Type/Any.rakudoc:1420` | `$*COLLATION.set(...)` does not persist / is not honored by `coll` | [collation-set-not-persisted.md](../todo/tickets/collation-set-not-persisted.md) |
 | `Language/objects.rakudoc:1132` | a role's 0-arg `multi method` loses its trailing string literal, only when the composing class has its own extra attribute | [role-multi-method-trailing-literal-dropped.md](../todo/tickets/role-multi-method-trailing-literal-dropped.md) |
-| `Language/objects.rakudoc:1185` | attribute order in a `.new`/gist under multiple inheritance is wrong (deterministic, not hash-order noise) | [multi-inheritance-attribute-gist-order.md](../todo/tickets/multi-inheritance-attribute-gist-order.md) |
 | `Language/objects.rakudoc:1526` | `is default(0 but role :: {...})` on a typed Hash drops the role mixin on the default value | [hash-default-role-mixin-dropped.md](../todo/tickets/hash-default-role-mixin-dropped.md) |
 | `Language/objects.rakudoc:65` | colon-call syntax with zero arguments (`.method:` immediately followed by `;`) fails to parse | [colon-call-empty-args-parse-error.md](../todo/tickets/colon-call-empty-args-parse-error.md) |
 | `Language/objects.rakudoc:1397` | a parameterized role with a self-referential attribute type fails a spurious type-check, with a malformed error message | [parametric-role-self-referential-attribute-typecheck.md](../todo/tickets/parametric-role-self-referential-attribute-typecheck.md) |
@@ -736,7 +735,7 @@ Found in the 2026-08-22 batch-6 re-run of `js-nutshell`/`IO::Spec::Unix`/`py-nut
 
 | file:line | one-line summary | ticket |
 |---|---|---|
-| `Language/js-nutshell.rakudoc:384` | a user `multi prefix:<++>($a) is default {...}` wins the dispatch tie against the builtin `++`, where raku keeps the builtin | [multi-is-default-loses-to-user-candidate-over-builtin.md](../todo/tickets/multi-is-default-loses-to-user-candidate-over-builtin.md) |
+| `Language/js-nutshell.rakudoc:384` | a user `multi prefix:<++>($a)` wins over the builtin `++` for `Int`/`Bool`/`Num` (the types raku's builtin has a *typed* candidate for); `is default` is not involved and the decision is made at parse time | [multi-is-default-loses-to-user-candidate-over-builtin.md](../todo/tickets/multi-is-default-loses-to-user-candidate-over-builtin.md) |
 | `Language/js-nutshell.rakudoc:613` | `next`/`last LABEL` inside a labeled `repeat {} while` loop throws `X::ControlFlow` instead of being caught | [labeled-next-last-in-repeat-while-loop-throws.md](../todo/tickets/labeled-next-last-in-repeat-while-loop-throws.md) |
 | `Type/IO/Spec/Unix.rakudoc:230,291` | `IO::Spec::Unix.split`/`.splitpath` mishandle all-slash, empty, and bare-`.` path inputs | [iospec-unix-split-splitpath-edge-cases-wrong.md](../todo/tickets/iospec-unix-split-splitpath-edge-cases-wrong.md) |
 | `Language/py-nutshell.rakudoc:541` | `{ BLOCK } for LIST` (bare block as a `for` statement-modifier operand) parses as an uncalled closure term instead of being invoked per iteration with `$_` | [bare-block-for-statement-modifier-not-invoked-as-loop-body.md](../todo/tickets/bare-block-for-statement-modifier-not-invoked-as-loop-body.md) |
@@ -779,8 +778,6 @@ Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`f
 | `Type/Metamodel/DefiniteHOW.rakudoc:18,27,80` | a bare `Type:D`/`Type:U` term loses its definiteness constraint entirely — `.^name`, `~~`, and `.^base_type` all treat it as the plain unconstrained type | [definiteness-constrained-type-object-identity-lost.md](../todo/deep/definiteness-constrained-type-object-identity-lost.md) |
 | `Type/Junction.rakudoc:266` | `Junction.new("one", 1..6)` doesn't flatten a `Range` values-argument into individual elements, so `.Bool` is wrong | [junction-new-range-argument-not-flattened.md](../todo/tickets/junction-new-range-argument-not-flattened.md) |
 | `Type/Junction.rakudoc:205` | a self-referential `$j = any (gather $j».take)...` combined with a value-producing `when` in a helper sub crashes with a stack overflow | [junction-self-referential-gather-stack-overflow.md](../todo/tickets/junction-self-referential-gather-stack-overflow.md) |
-| `Language/functions.rakudoc:1291` | `nextsame` from a user subclass `.new` into a built-in `Version.new` doesn't reach the built-in constructor | [nextsame-into-builtin-version-new-broken.md](../todo/tickets/nextsame-into-builtin-version-new-broken.md) |
-| `Type/Metamodel/MethodContainer.rakudoc:15`, `Type/Method.rakudoc:18` | `method` literal invocant-declaration syntax is broken: a named invocant (`method ($x:) {...}`) never binds `$x`, and a type-only unnamed invocant (`method (List:D:) {...}`) is a hard parse error | [method-literal-invocant-declaration-syntax-broken.md](../todo/tickets/method-literal-invocant-declaration-syntax-broken.md) |
 | `Type/Metamodel/MethodContainer.rakudoc:40` | `.^methods(:all)` ignores the `:all` adverb — returns own methods only, same as the plain call | [metaclass-methods-all-flag-ignored.md](../todo/tickets/metaclass-methods-all-flag-ignored.md) |
 | `Language/faq.rakudoc:359` | a custom `postcircumfix:<[...]>` operator's `+@slurpy` args are wrong when called via subscript syntax, though the identical logic works fine as a plain sub call | [custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md](../todo/tickets/custom-postcircumfix-slurpy-args-wrong-in-subscript-form.md) |
 | `Language/faq.rakudoc:1108` | repeated big-Int addition (growing-magnitude Fibonacci-style loop) is ~14x slower than raku, timing out under the harness budget at 100k iterations | [bigint-repeated-addition-performance-gap.md](../todo/tickets/bigint-repeated-addition-performance-gap.md) |
@@ -806,11 +803,9 @@ Found in the 2026-08-22 batch-6 re-run of `Metamodel::DefiniteHOW`/`Junction`/`f
 - `Type/Junction.rakudoc` [2], [3], [4] — `raku-drift-from-doc` (stale doc `# OUTPUT` text for
   the string-concatenation-junction example, the `:exists` junction-key example, and the
   `+any(...)` numeric-coercion-failure example's exception message format).
-- `Type/Method.rakudoc` [1] — the named-invocant repro (`method ($invocant: $param) {...}`) is
-  the same root cause as
-  [method-literal-invocant-declaration-syntax-broken.md](../todo/tickets/method-literal-invocant-declaration-syntax-broken.md)'s
-  Bug 1, and the type-only-invocant repro (`method (List:D:) {...}`) is that same ticket's Bug 2;
-  both folded into the one ticket above rather than being filed separately.
+- `Type/Method.rakudoc` [1] — the named-invocant repro (`method ($invocant: $param) {...}`) and the
+  type-only-invocant repro (`method (List:D:) {...}`) were one ticket, now FIXED; see
+  [news/2026-08/method-literal-invocant-declaration-syntax-broken.md](../news/2026-08/method-literal-invocant-declaration-syntax-broken.md).
 
 ### Deferred / deep (tracked elsewhere — do not re-open as a shallow slice)
 These root causes account for a large share of the survey's `mism`/`crash` and are

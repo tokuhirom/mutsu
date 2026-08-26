@@ -1294,9 +1294,10 @@ impl Interpreter {
         // attribute list is what `.raku`/`.gist` enumerate, so it must carry
         // the same names, sigils and ORDER rakudo emits -- e.g.
         // `Pod::Heading.new(level => 1, config => {}, contents => [...])`.
-        // `collect_class_attributes` walks the MRO base-first and moves a
-        // redeclared name to the end, so repeating `config`/`contents` after
-        // each subclass's own attributes reproduces rakudo's order exactly.
+        // `collect_class_attributes_display_order` walks the MRO forwards
+        // (most-derived first) and keeps a redeclared name at its most-derived
+        // position, so each subclass listing its own attributes before
+        // `config`/`contents` reproduces rakudo's order exactly.
         // A `%`/`@` sigil also keeps the rendered value un-itemized
         // (`config => {}`, not `config => ${}`).
         /// `(class name, parent names, declared `(attribute, sigil)` pairs)`.

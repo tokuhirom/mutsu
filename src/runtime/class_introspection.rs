@@ -544,6 +544,44 @@ impl Interpreter {
         attrs
     }
 
+    /// Collect a class's attributes in *introspection* order — the order
+    /// `.^attributes`, `.raku` and the default `.gist` enumerate them in.
+    ///
+    /// This is deliberately NOT `collect_class_attributes`' order. Rakudo has
+    /// two distinct attribute orders and mutsu needs both:
+    ///
+    /// * construction / `BUILDALL` order is base-class first (least-derived
+    ///   attributes initialised before the ones that may depend on them) —
+    ///   that is `collect_class_attributes`;
+    /// * introspection order walks the MRO *forwards*, most-derived first,
+    ///   each class's own attributes in declaration order — this function.
+    ///
+    /// So `class Taurus is Bull is Automobile {}` renders as
+    /// `Taurus.new(castrated => Bool::False, direction => Any)`, matching
+    /// `Taurus.^attributes`.
+    ///
+    /// A name declared by more than one class in the MRO keeps its
+    /// most-derived position (rakudo lists both copies; mutsu's instance
+    /// attribute map is keyed by bare name, so only one slot exists).
+    pub(super) fn collect_class_attributes_display_order(
+        &mut self,
+        class_name: &str,
+    ) -> Vec<ClassAttributeDef> {
+        let mro = self.class_mro(class_name);
+        let mut attrs: Vec<ClassAttributeDef> = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for cn in mro.iter() {
+            if let Some(class_def) = self.registry().classes.get(cn.as_str()) {
+                for attr in &class_def.attributes {
+                    if seen.insert(attr.name.clone()) {
+                        attrs.push(attr.clone());
+                    }
+                }
+            }
+        }
+        attrs
+    }
+
     /// Collect per-class attributes for all classes in the MRO.
     /// Returns `(declaring_class, ClassAttributeDef)` pairs.
     /// Unlike `collect_class_attributes`, this does NOT deduplicate by name —

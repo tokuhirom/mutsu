@@ -2806,7 +2806,7 @@ impl Interpreter {
         class_name: &str,
         attributes: &AttrMap,
     ) -> Vec<String> {
-        let class_attrs = self.collect_class_attributes(class_name);
+        let class_attrs = self.collect_class_attributes_display_order(class_name);
         let mut parts = Vec::new();
         for attr in &class_attrs {
             let (attr_name, is_public, sigil) = (&attr.name, attr.is_public, attr.sigil);

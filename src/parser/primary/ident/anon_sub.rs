@@ -43,11 +43,87 @@ pub(crate) fn parse_anon_method_with_params(input: &str) -> PResult<'_, Expr> {
     let (r, _) = parse_char(input, '(')?;
     let (r, _) = ws(r)?;
     let (r, (param_defs, return_type)) = crate::parser::stmt::parse_param_list_with_return_pub(r)?;
+    // A method literal carries its receiver in a leading synthetic `self`
+    // parameter, because the invocant reaches the closure binder as the first
+    // positional argument. An *explicitly declared* invocant (`method ($x: $p)`,
+    // `method (List:D:)`) names that same receiver -- it is NOT an extra
+    // positional. Keeping both in the list made the signature one parameter too
+    // long ("Too few positionals passed; expected 3 arguments but got 2"), so
+    // fold the declaration into the single `self` parameter: its type/`where`
+    // constraint moves onto `self` (so `method (List:D:)` still type-checks the
+    // invocant), and a user-chosen name is bound to `self` in the body.
+    let mut invocant = invocant_param_def();
+    let mut invocant_aliases: Vec<String> = Vec::new();
+    let mut rest_params: Vec<crate::ast::ParamDef> = Vec::new();
+    let mut seen_positional = false;
+    for pd in param_defs {
+        let declares_invocant =
+            pd.is_invocant || pd.traits.iter().any(|t| t == "invocant") || pd.name == "self";
+        if !seen_positional && declares_invocant {
+            if pd.type_constraint.is_some() {
+                invocant.type_constraint = pd.type_constraint;
+            }
+            if pd.where_constraint.is_some() {
+                invocant.where_constraint = pd.where_constraint;
+            }
+            if !pd.name.is_empty() && pd.name != "self" {
+                invocant_aliases.push(pd.name);
+            }
+            continue;
+        }
+        seen_positional = true;
+        rest_params.push(pd);
+    }
     let mut params = vec!["self".to_string()];
-    params.extend(param_defs.iter().map(|p| p.name.clone()));
-    let mut method_param_defs = vec![invocant_param_def()];
-    method_param_defs.extend(param_defs);
-    parse_anon_sub_rest(r, params, method_param_defs, return_type)
+    params.extend(rest_params.iter().map(|p| p.name.clone()));
+    let mut method_param_defs = vec![invocant];
+    method_param_defs.extend(rest_params);
+    let (r, expr) = parse_anon_sub_rest(r, params, method_param_defs, return_type)?;
+    Ok((r, bind_invocant_aliases(expr, &invocant_aliases)))
+}
+
+/// Prepend `my $NAME := self;` for every user-named invocant of a method
+/// literal, so `method ($x: $p) { ... }` can read the receiver as `$x` while
+/// `self` keeps working (rakudo binds both).
+fn bind_invocant_aliases(expr: Expr, aliases: &[String]) -> Expr {
+    if aliases.is_empty() {
+        return expr;
+    }
+    let Expr::AnonSubParams {
+        params,
+        param_defs,
+        return_type,
+        body,
+        is_rw,
+        is_whatever_code,
+    } = expr
+    else {
+        return expr;
+    };
+    let mut new_body: Vec<crate::ast::Stmt> = aliases
+        .iter()
+        .map(|name| crate::ast::Stmt::VarDecl {
+            name: name.clone(),
+            expr: Expr::BareWord("self".to_string()),
+            type_constraint: None,
+            is_state: false,
+            is_our: false,
+            is_dynamic: false,
+            is_export: false,
+            export_tags: Vec::new(),
+            custom_traits: vec![("__scalar_bind".to_string(), None)],
+            where_constraint: None,
+        })
+        .collect();
+    new_body.extend(body);
+    Expr::AnonSubParams {
+        params,
+        param_defs,
+        return_type,
+        body: new_body,
+        is_rw,
+        is_whatever_code,
+    }
 }
 
 pub(crate) fn parse_anon_sub_rest(
