@@ -11,12 +11,15 @@ use Test;
 # `body_has_toplevel_when` scan only looked for the literal `Stmt::When`
 # shape. `do when` is an ordinary term and can appear at any expression
 # nesting depth, so that scan was fundamentally incomplete; the fix makes
-# every one of these absorbing boundaries unconditional instead
+# the scan recurse through the actual expression tree instead
 # (`SucceedBarrier` in `compiler/stmt.rs`/`compiler/helpers_control_flow.rs`,
-# the mainline catch in `runtime/run.rs`, and a dedicated arm in
-# `vm/vm_try_catch_ops.rs` for `try`, which turned out to have never
-# absorbed a `when`'s succeed at all -- see
-# news/2026-08/succeed-absorbing-block-boundary.md).
+# gated on `body_has_toplevel_when` as before -- an UNCONDITIONAL wrap was
+# tried first and regressed `jit_diff::unsupported_opcode_bails_out_cleanly`,
+# since `SucceedBarrier` sits outside the JIT's supported opcode set and the
+# helper backs nearly every loop/if in the language), the mainline catch in
+# `runtime/run.rs`, and a dedicated arm in `vm/vm_try_catch_ops.rs` for
+# `try`, which turned out to have never absorbed a `when`'s succeed at all --
+# see news/2026-08/succeed-absorbing-block-boundary.md).
 #
 # The "matching `when` yields its body's value" intuition is a trap: a
 # MATCHING `when` never lets that value flow into a pending assignment --
@@ -25,7 +28,7 @@ use Test;
 # default (`Any`) whenever the `when` matches, in both raku and mutsu; only
 # the NON-matching path assigns the (falsy) smartmatch result.
 
-plan 15;
+plan 16;
 
 # --- bare block, no topicalizer ---
 
@@ -162,6 +165,18 @@ plan 15;
     @log.push("outer");
     is @log.join(","), "outer",
         'a do-when nested arbitrarily deep in an expression is still caught by the block boundary';
+}
+
+# --- a block-level CONTROL handler must get first refusal: it observes the
+# succeed as CX::Succeed before the block boundary is allowed to absorb it
+# as a plain fall-off (roast/S04-exception-handlers/control.t test 5 pins
+# this upstream; an earlier version of this fix broke it by absorbing
+# unconditionally, ahead of CONTROL) ---
+
+{
+    my $ok = 0;
+    { succeed; CONTROL { when CX::Succeed { $ok = 1; } } }
+    ok $ok, 'a block with its own CONTROL handler still observes CX::Succeed';
 }
 
 # --- mainline with nothing enclosing at all: the compilation unit itself is

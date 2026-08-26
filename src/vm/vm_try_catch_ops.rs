@@ -210,31 +210,42 @@ impl Interpreter {
                 }
             }
             // A `when`/`default` succeed with nothing closer inside this
-            // `try`'s own body to catch it is absorbed HERE, exactly like a
-            // bare block: `given 5 { try { when 5 { "x" } }; say "after" }`
-            // still runs `say "after"` in real Raku — the succeed never
-            // reaches the outer `given` because `try` is the nearer
-            // boundary, taking precedence over it the same way a bare block
-            // does. This is deliberately its own arm, ahead of (and no
-            // longer part of) the "control signals propagate through try"
-            // arms below: `succeed` is not an exception
-            // (`is_exceptional_block_exit` already treats it as an ordinary
-            // completion), so it is not routed through this try's own
-            // CATCH/CONTROL either — it simply ends the try, like a normal
-            // fall-off.
-            Err(e) if e.is_succeed() => {
+            // `try`'s own body to catch it, AND no `CONTROL` block that might
+            // want to observe it (`roast/S04-exception-handlers/control.t`:
+            // `{ succeed; CONTROL { when CX::Succeed { ... } } }` must still
+            // reach the CONTROL block below, not be absorbed here), is
+            // absorbed HERE, exactly like a bare block: `given 5 { try {
+            // when 5 { "x" } }; say "after" }` still runs `say "after"` in
+            // real Raku — the succeed never reaches the outer `given`
+            // because `try` is the nearer boundary, taking precedence over
+            // it the same way a bare block does. Deliberately its own arm,
+            // ahead of (and no longer part of) the "control signals
+            // propagate through try" arm below: `succeed` is not an
+            // exception (`is_exceptional_block_exit` already treats it as an
+            // ordinary completion), so absent a CONTROL block it is not
+            // routed through this try's CATCH either — it simply ends the
+            // try, like a normal fall-off.
+            Err(e) if e.is_succeed() && control_begin >= end => {
                 self.discard_let_saves(let_mark);
                 self.stack.truncate(saved_depth);
                 loan_env!(self, set_when_matched(saved_when_matched));
                 *ip = end;
                 Ok(())
             }
-            Err(e) if e.return_value.is_some() && !e.is_warn() && !e.is_take() && !e.is_emit() => {
+            Err(e)
+                if e.return_value.is_some()
+                    && !e.is_succeed()
+                    && !e.is_warn()
+                    && !e.is_take()
+                    && !e.is_emit() =>
+            {
                 self.discard_let_saves(let_mark);
                 Err(e)
             }
             // Control signals (warn, last, next, redo, etc.) without a CONTROL
-            // block must propagate up — `try` alone does not catch them.
+            // block must propagate up — `try` alone does not catch them. A
+            // `succeed` with no CONTROL block never reaches here (the
+            // dedicated arm above already returned).
             Err(e)
                 if (e.is_last()
                     || e.is_next()
@@ -256,11 +267,17 @@ impl Interpreter {
                 self.discard_let_saves(let_mark);
                 Err(e)
             }
+            // A `succeed` (or another control signal) WITH a CONTROL block
+            // present always runs that CONTROL block, exactly like
+            // last/next/warn/etc. -- `{ succeed; CONTROL { when CX::Succeed
+            // { ... } } }` must observe `CX::Succeed`, not have it silently
+            // absorbed as a plain `try` fall-off.
             Err(e)
                 if (e.is_last()
                     || e.is_next()
                     || e.is_redo()
                     || e.is_proceed()
+                    || e.is_succeed()
                     || e.is_warn()
                     || e.is_take()
                     || e.is_emit()
