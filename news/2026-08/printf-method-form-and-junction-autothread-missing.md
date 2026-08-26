@@ -49,6 +49,41 @@ and discarded the remaining arguments, so `sprintf("%s"|"[%s]", 5)` returned the
 literal `"%s[%s]"`. Both now thread the format properly, re-running the whole
 format per eigenstate and returning a `Junction` of the results.
 
+## The bug the first attempt uncovered: the format was never coerced
+
+Threading the format per eigenstate initially made `roast/S16-io/print.t`
+("Str-using routines do not thread Junctions") fail, and the reason turned out
+to be a separate, pre-existing gap rather than anything about Junctions.
+
+Both sprintf entry points read the format as
+
+```rust
+let fmt = match args.first().map(Value::view) {
+    Some(ValueView::Str(s)) => s.to_string(),
+    _ => String::new(),          // <-- silently empty
+};
+```
+
+so a format that was not *already* a `Str` produced the empty string:
+`sprintf(42)` was `""` where raku gives `"42"`. That is the `Str(Cool) $format`
+coercion simply not being applied. It went unnoticed because the old
+Junction branch stringified the eigenstates itself before ever reaching this
+code; threading exposed it, since each eigenstate of that roast test's junction
+is a `Cool` subclass whose `.Str` is a user method.
+
+`Interpreter::builtin_sprintf` now coerces a non-`Str` format through
+`render_str_value` (which dispatches a user `.Str`), and the pure-native
+`native_sprintf` fast path — which cannot dispatch one — returns `None` for a
+non-`Str` format so the interpreter-aware path takes over. A bare type object
+keeps its existing `""`, matching today's behaviour. With that in place the
+roast file passes with *cleaner* output than before: the format junction's
+eigenstates now render as their own `.Str` rather than leaking `all(`/`any(`
+gist fragments into the printed text.
+
+A Junction *invocant* of `.printf`/`.sprintf` is the format, so it autothreads
+too; both method arms route a Junction receiver through `call_function` where
+that threading lives.
+
 ## Result
 
 `$fmt.printf(...)` works, `printf($fmt, $junction)` autothreads and returns a
