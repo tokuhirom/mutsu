@@ -20,6 +20,11 @@ pub(crate) fn keyword<'a>(kw: &str, input: &'a str) -> Option<&'a str> {
 /// declaration (the semicolon, rest-of-unit form), whose following statements
 /// must be captured as the type's body. `unit module`/`unit package` are
 /// deliberately excluded — their package context is set compiler-side instead.
+///
+/// A declarator keyword registered by a `use`d module's `EXPORTHOW::DECLARE`
+/// block (`monitor`, from the bundled `OO::Monitors`) is a package declarator
+/// peer to `class` and counts too: `unit monitor Foo;` must capture the rest of
+/// the file as `Foo`'s body exactly like `unit class Foo;` does.
 pub(crate) fn starts_unit_class_role_grammar(input: &str) -> bool {
     let Some(r) = keyword("unit", input) else {
         return false;
@@ -27,7 +32,12 @@ pub(crate) fn starts_unit_class_role_grammar(input: &str) -> bool {
     let Ok((r, _)) = ws1(r) else {
         return false;
     };
-    keyword("class", r).is_some() || keyword("role", r).is_some() || keyword("grammar", r).is_some()
+    keyword("class", r).is_some()
+        || keyword("role", r).is_some()
+        || keyword("grammar", r).is_some()
+        || super::simple::declare_keyword_names()
+            .iter()
+            .any(|kw| keyword(kw, r).is_some())
 }
 
 /// Parse an identifier (alphanumeric, _, -).

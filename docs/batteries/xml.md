@@ -15,18 +15,42 @@ candidate must support both parsing and generating XML** (build a tree in memory
 serialize it back to an XML string), not reading alone — the same rule that
 disqualified `CSV::Parser` in [csv.md](csv.md).
 
-## Status: selected, not yet bundled
+## Status: selected, not yet bundled — 5/15 as of 2026-08-26
 
 `XML` wins the field over `LibXML` per the [Recommendation](#recommendation) below: 45
 dependents (the highest ecosystem-standing signal of any battery survey to date) versus
 `LibXML`'s 7, zero runtime dependencies versus a hard `libxml2` system-library
 dependency, and no exposure to the kind of native-library maintenance risk discussed in
 ["A note on the no-native-dependency rule"](#a-note-on-the-no-native-dependency-rule)
-below. It is **not usable on mutsu today** — see
-[What blocks mutsu today](#what-blocks-mutsu-today) — so shipping it means fixing its
-two filed blockers first. The mechanical vendoring follow-up, once those clear, is
-tracked in
+below. The mechanical vendoring follow-up is tracked in
 [todo/tickets/bundle-xml-battery.md](../../todo/tickets/bundle-xml-battery.md).
+
+**Re-measured 2026-08-26** against a release build, running the upstream suite from the
+dist's own directory (`raku`: 15/15, unchanged):
+
+| Point in time | mutsu |
+| --- | --- |
+| Original survey (2026-08-22) | **1/15** |
+| After the two filed blockers were fixed | **2/15** |
+| After the group-backreference fix landed with this re-measurement | **5/15** |
+
+Both blockers this record originally filed are fixed (the grammar dynamic-variable
+parameter, and the indirect type-name parameter constraint). Re-measuring found a
+**third**, which had been hidden behind the first: a backreference written inside a
+`[...]` group did not resolve against the enclosing pattern's captures, so
+`XML::Grammar`'s `element` token — which closes with
+`[ '/>' | '>' <child>* '</' $<name> '>' ]` — could not match *any* element with a
+closing tag. That is fixed too (`news/2026-08/regex-backref-inside-a-group.md`,
+pinned by `t/regex-backref-in-group.t`), which is what took the count to 5/15.
+
+The dominant remaining blocker is
+[todo/deep/lexical-self-collides-with-invocant.md](../../todo/deep/lexical-self-collides-with-invocant.md):
+`XML::Element.AT-POS` returns a `Proxy` whose `FETCH` closes over `my $self = self`,
+and mutsu stores a `$self` *scalar* under the same env key as a method's invocant, so
+inside `FETCH` `$self` resolves to the Proxy and the fetch recurses until the stack
+overflows. That alone aborts 7 of the 10 remaining files, on the very common
+`$doc.root[0]` shape. Three others remain unbisected (`t/make.rakutest`,
+`t/namespaces.rakutest`, `t/open-xml.rakutest`).
 
 ## A note on the no-native-dependency rule
 
@@ -101,7 +125,7 @@ The real candidates, after excluding the noise above:
 
 | Candidate | Version | Released | License | Runtime deps | Read+generate? | Native/C dep? | Dependents¹ | GitHub | raku | **mutsu** |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`XML`** | 0.3.6 | 2025-02-21 | Artistic-2.0² | none | ✅ both — full DOM tree, `.Str`/`.emit` serialization | none (pure Raku) | **45** | [raku-community-modules/XML](https://github.com/raku-community-modules/XML) — ★31, last push 2025-02-26, not archived | **15/15** (149 tests) | **1/15** ❌ — see below |
+| **`XML`** | 0.3.6 | 2025-02-21 | Artistic-2.0² | none | ✅ both — full DOM tree, `.Str`/`.emit` serialization | none (pure Raku) | **45** | [raku-community-modules/XML](https://github.com/raku-community-modules/XML) — ★31, last push 2025-02-26, not archived | **15/15** (149 tests) | **5/15** (was 1/15 at survey time) — see below |
 | **`LibXML`** | 0.11.3 | 2026-06-10 | Artistic-2.0² | `File::Temp`, `Method::Also`, `W3C::DOM`, `XML` (+build-time `LibraryMake`) | ✅ both — full DOM/SAX/XPath, `.Str` serialization | **libxml2 (native)** | **7** | [libxml-raku/LibXML-raku](https://github.com/libxml-raku/LibXML-raku) — ★13, **last push 2026-06-10** (most recent in this survey), not archived | **70/70** (723 tests) | **0/70** ❌ — see below |
 | `XML::Writer` | * (2017) | 2017-05-26 | Artistic-2.0² | none | ❌ generate-only — **disqualified** | none | 0 | [masak/xml-writer](https://github.com/masak/xml-writer) — ★8, last push 2017-05-26, not archived | **2/2** (11 tests) | **2/2** ✅ (11/11) |
 | `XML::Fast` | 0.0.3 | 2023-09-12 | Artistic-2.0 | `LibXML` | ❌ read-only (XML→Hash deserializer) — **disqualified** | libxml2 (via `LibXML`) | 0 | [jonathanstowe/XML-Fast](https://github.com/jonathanstowe/XML-Fast) — not checked³ | **3/3** (5 tests) | not measured⁴ |

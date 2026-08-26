@@ -1165,6 +1165,7 @@ impl Interpreter {
                     continue;
                 }
                 if let Ok(idx) = digits.parse::<usize>() {
+                    crate::runtime::regex::regex_helpers::note_regex_backref_lowered();
                     tokens.push(RegexToken {
                         atom: RegexAtom::Backref(idx),
                         quant: RegexQuant::One,
@@ -1203,6 +1204,7 @@ impl Interpreter {
                     }
                 }
                 // $<name> without `=` is a backreference to a named capture
+                crate::runtime::regex::regex_helpers::note_regex_backref_lowered();
                 tokens.push(RegexToken {
                     atom: RegexAtom::NamedBackref(capture_name),
                     quant: RegexQuant::One,

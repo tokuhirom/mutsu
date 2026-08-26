@@ -116,6 +116,99 @@ thread_local! {
     /// atom match to skip the `RefCell` entirely on the overwhelmingly common path
     /// where no regex in flight declares a `:my`/`:let` lexical.
     pub(crate) static INLINE_REGEX_VARS_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    /// The enclosing pattern level's captures to seed the *next* capture store
+    /// with, so a backreference written inside an inline sub-pattern still sees
+    /// them (see [`crate::runtime::OuterBackrefCaps`]). Armed *empty* by every
+    /// non-inline atom — a subrule reference above all — which is what keeps a
+    /// different regex's backreferences scoped to itself.
+    pub(crate) static INLINE_OUTER_CAPS_SEED: RefCell<Option<std::sync::Arc<OuterBackrefCaps>>> = const { RefCell::new(None) };
+}
+
+/// Set the first time the regex parser lowers a `$0` / `$<name>` backreference
+/// atom anywhere in the process. Until then, none of the outer-capture seeding
+/// below can matter, so the whole mechanism (including the per-atom sub-pattern
+/// scan) is skipped with a single relaxed load. Process-global rather than
+/// thread-local on purpose: a grammar is often parsed on one thread and matched
+/// on another.
+pub(crate) static REGEX_BACKREF_LOWERED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Called by the regex parser when it emits a backreference atom.
+pub(crate) fn note_regex_backref_lowered() {
+    REGEX_BACKREF_LOWERED.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn any_regex_backref_lowered() -> bool {
+    REGEX_BACKREF_LOWERED.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Arms [`INLINE_OUTER_CAPS_SEED`] for the duration of one atom match,
+/// restoring the enclosing atom's seed on drop.
+pub(crate) struct OuterCapsSeed {
+    prev: Option<std::sync::Arc<OuterBackrefCaps>>,
+    armed: bool,
+}
+
+impl OuterCapsSeed {
+    /// Publish `next` (or, with `None`, a barrier that hides every enclosing
+    /// level) for the nested stores this atom's match is about to build.
+    pub(crate) fn arm(next: Option<std::sync::Arc<OuterBackrefCaps>>) -> Self {
+        let prev = INLINE_OUTER_CAPS_SEED.with(|s| std::mem::replace(&mut *s.borrow_mut(), next));
+        OuterCapsSeed { prev, armed: true }
+    }
+
+    /// Leave the enclosing atom's seed in place untouched.
+    pub(crate) fn inert() -> Self {
+        OuterCapsSeed {
+            prev: None,
+            armed: false,
+        }
+    }
+}
+
+impl Drop for OuterCapsSeed {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let prev = self.prev.take();
+        INLINE_OUTER_CAPS_SEED.with(|s| *s.borrow_mut() = prev);
+    }
+}
+
+/// The enclosing-level captures a freshly built capture store should read
+/// backreferences through (see [`INLINE_OUTER_CAPS_SEED`]).
+pub(crate) fn take_inline_outer_caps_seed() -> Option<std::sync::Arc<OuterBackrefCaps>> {
+    if !any_regex_backref_lowered() {
+        return None;
+    }
+    INLINE_OUTER_CAPS_SEED.with(|s| s.borrow().clone())
+}
+
+/// Does this atom's sub-pattern contain a backreference anywhere inside it?
+/// Only such an atom needs to pay for snapshotting the enclosing captures.
+pub(crate) fn atom_contains_backref(atom: &RegexAtom) -> bool {
+    fn pattern_has(pattern: &RegexPattern) -> bool {
+        pattern.tokens.iter().any(|tok| {
+            atom_contains_backref(&tok.atom)
+                || tok
+                    .separator
+                    .as_ref()
+                    .is_some_and(|sep| pattern_has(&sep.pattern))
+        })
+    }
+    match atom {
+        RegexAtom::Backref(_) | RegexAtom::NamedBackref(_) => true,
+        RegexAtom::Group(p)
+        | RegexAtom::CaptureGroup(p)
+        | RegexAtom::CaptureIsolatedGroup(p)
+        | RegexAtom::Lookaround { pattern: p, .. } => pattern_has(p),
+        RegexAtom::Alternation(alts)
+        | RegexAtom::SequentialAlternation(alts)
+        | RegexAtom::Conjunction(alts) => alts.iter().any(pattern_has),
+        RegexAtom::GoalMatch { goal, inner, .. } => pattern_has(goal) || pattern_has(inner),
+        _ => false,
+    }
 }
 
 /// Arms the [`INLINE_REGEX_VARS_SEED`] for the duration of one atom match,

@@ -1,0 +1,28 @@
+{
+  "auth": "cpan:bduggan",
+  "authors": [
+    "Brian Duggan"
+  ],
+  "description": "ANSI escape sequences",
+  "name": "Terminal::ANSI",
+  "license": "MIT",
+  "perl": "6.d",
+  "provides": {
+    "Terminal::ANSI": "lib/Terminal/ANSI.rakumod",
+    "Terminal::ANSI::OO": "lib/Terminal/ANSI/OO.rakumod",
+    "Terminal::ANSI::Virtual": "lib/Terminal/ANSI/Virtual.rakumod",
+    "Terminal::ANSI::State": "lib/Terminal/ANSI/State.rakumod"
+  },
+  "repo-type": "git",
+  "source-url": "https://git.sr.ht/~bduggan/raku-terminal-ansi",
+  "tags": [
+    "Terminal"
+  ],
+  "depends" : [
+    "OO::Monitors"
+  ],
+  "test-depends": [
+    "Test"
+  ],
+  "version": "0.0.25"
+}

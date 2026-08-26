@@ -15,29 +15,53 @@ as an actual battery — once its blockers clear. It is intentionally separate
 from the blockers themselves so none of those interpreter fixes is scoped to
 also cover packaging/docs/CI work.
 
+## Current measurement (2026-08-26)
+
+Re-measured from a fresh REA fetch of both dists, running each upstream suite
+from its own directory (`Config::TOML` with `Crane` on `MUTSULIB`) against a
+release build:
+
+| Suite | raku | mutsu |
+| --- | --- | --- |
+| `Config::TOML` v0.1.3 | 19/19 files | **0/19** |
+| `Crane` v0.1.2 | 15/15 files | **3/15** |
+
+Unchanged from the 2026-08-22 numbers: none of the fixes that landed since then
+(grammar dynamic-variable rule parameters, `FAILGOAL`, `<?ww>`, NativeCall typed
+pointers, the `:ver<0.4.0+>` selector, quote-vs-declared-term, the
+group-backreference fix that came out of this same re-measurement) touch what
+`Crane` needs. This tracker is **not** ready to start.
+
+`Crane` passing: `at`, `flatten`, `test`. The dominant failure across the rest
+is `✗ Crane error: associative key does not exist`, plus a hard parse error in
+`t/patch.rakutest` (`Confused. expected statement`). Because `Config::TOML`
+builds every result through `Crane.set`/`Crane.exists`, a `Crane` descent that
+answers from an empty container makes its own duplicate-key guard fire on every
+document — which is why the file-level count is a flat zero rather than a
+partial pass.
+
 ## Blocked on
 
-The original blocker (bare-identifier adverb declaration names) landed on
-2026-08-22, so `Config::TOML` now loads and its grammar parses correctly. It is
-still 0/19 at the file level; `docs/batteries/toml.md`'s **remaining work
-list** carries the current blockers, largest first:
+`docs/batteries/toml.md`'s **remaining work list** carries the detail. Largest
+first:
 
-1. `todo/deep/deferred-vivification-token-is-hash-only.md` — the `is rw` lvalue
-   return itself landed 2026-08-22 (ADR-0059), so `Crane.set` works for hash
-   paths; the deferred vivification token is still hash-only, so Crane's
-   `Positional` candidates vivify a `Hash` keyed `"0"` where an `Array` belongs.
-2. ~~The `||`-alternation losing-branch code block~~ and ~~`push` with a slip
-   in sink context~~ both landed 2026-08-22
-   (`news/2026-08/ordered-alternation-loser-branch-code-block.md`,
-   `news/2026-08/listop-slip-arg-sink-context.md`). One residue: the 8-hex
-   `\UXXXXXXXX` escape still fails.
-3. Assorted un-bisected per-assertion failures (see the record).
+1. `Crane`'s array-path descent: `.add`/`.copy` must deep-clone ("Original
+   container is unchanged"), `X::Crane::PositionalIndexInvalid` is not raised by
+   `Crane::Utils`' classifier multis, and WhateverCode (`*-0`) indices do not
+   survive the descent. (The `is rw` lvalue return and the typed deferred
+   vivification token both landed 2026-08-22 — ADR-0059 and
+   `news/2026-08/deferred-vivification-path-steps-are-typed.md` — so those two
+   are no longer the gate.)
+2. `t/patch.rakutest` fails to *parse* under mutsu; not yet bisected.
+3. The 8-hex `\UXXXXXXXX` string escape still reports
+   "bad string escape sequence 「U」", blocking `grammar/04` and
+   `grammar-actions/04`.
+4. `t/grammar/03-inline-tables.rakutest` times out (90s) rather than failing.
 
-**Do not start this ticket before those are merged and `Config::TOML` +
-`Crane`'s suites have been re-run to confirm they now pass** (or at least pass
-enough files to be worth a per-file whitelist, the same way
-`CBOR::Simple`/`Log::Timeline` ship as "Sufficient for Cro" with partial
-coverage).
+**Do not start this ticket before those are fixed and both suites have been
+re-run to confirm they now pass** — or at least pass enough files to be worth a
+per-file whitelist, the way `CBOR::Simple`/`Log::Timeline`/`Log::Async` ship
+with partial coverage. At 0/19 there is nothing a whitelist could gate.
 
 ## Steps (once unblocked)
 

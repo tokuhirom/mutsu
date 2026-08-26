@@ -1,4 +1,4 @@
-# Vendor and bundle `XML` once its two remaining core blockers are fixed
+# Vendor and bundle `XML` once its remaining core blocker is fixed
 
 ## What this is
 
@@ -8,94 +8,101 @@ parse+generate battery-slot survey — see
 metrics table, and why it beat `LibXML` (a `libxml2` NativeCall binding: 7
 dependents vs. `XML`'s 45, plus a hard system-library dependency `XML`
 doesn't carry). It is recorded in `BATTERIES.md` §7 as **Selected, not yet
-bundled**: the decision is made, but the module does not run on mutsu yet,
-so there is nothing to vendor or gate today.
+bundled**.
 
 This ticket is the **follow-up mechanical step** — vendoring + wiring it up
 as an actual battery — once its blockers clear. It is intentionally separate
-from the blockers themselves so neither interpreter fix is scoped to also
-cover packaging/docs/CI work (same split already used for `Config::TOML`'s
-[bundle-config-toml-once-parser-fixed.md](bundle-config-toml-once-parser-fixed.md)
-and `Log::Async`'s
-[bundle-log-async-battery.md](bundle-log-async-battery.md)).
+from the blockers themselves so no interpreter fix is scoped to also cover
+packaging/docs/CI work.
 
-## Blocked on
+## Current measurement (2026-08-26)
 
-Both of these must land and be re-verified before starting — `docs/batteries/xml.md`'s
-["What blocks mutsu today"](../../docs/batteries/xml.md#what-blocks-mutsu-today)
-section has the full repros:
+Re-measured from a fresh REA fetch of v0.3.6, running the upstream suite from
+the dist's own directory against a release build. `raku`: **15/15** files.
 
-1. ~~a token's own dynamic-variable parameter default is not visible inside a
-   subrule it calls~~ — **resolved**, see
+| Point in time | mutsu |
+| --- | --- |
+| Original survey (2026-08-22) | 1/15 |
+| After the two originally-filed blockers were fixed | 2/15 |
+| After the group-backreference fix (2026-08-26) | **5/15** |
+
+Passing: `comments`, `emitter`, `numeric-entities`, `preamble`, `quotes`.
+
+### Blockers cleared since the survey
+
+1. ~~A token's own dynamic-variable parameter default is not visible inside a
+   subrule it calls.~~ **Fixed** —
    [news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md](../../news/2026-08/grammar-token-param-dynvar-not-visible-in-subrule.md).
-   `XML::Grammar`'s value-parsing token sets a dynamic variable via its own
-   parameter default (`token value($*STOPPER = '"') {...}`); a subrule it calls
-   now reads back the value the caller set. This was what broke nearly every real
-   `XML::Grammar.parse` call — 13 of `XML`'s 15 upstream test files. **Re-measure
-   the dist before starting**: the count blocked on item 2 alone may now be much
-   smaller.
-2. [todo/tickets/indirect-type-param-parse-failure-silently-drops-role-method.md](indirect-type-param-parse-failure-silently-drops-role-method.md) —
-   `XML::Node::reparent`'s indirect type-name parameter syntax
-   (`method reparent(::(q<XML::Element>) $parent)`) is not accepted as a
-   parameter type constraint; inside a role body mutsu silently drops just
-   that one method instead of erroring, so `XML::Element.append` fails at
-   call time with `No such method 'reparent'`. Blocks the remaining 2 files
-   (`t/emitter.rakutest`, `t/make.rakutest`).
+   Re-verified 2026-08-26 with the record's own minimal repro.
+2. ~~An indirect type-name parameter constraint silently drops a role method.~~
+   **Fixed** — `XML::Node::reparent` composes, and `t/emitter.rakutest` passes.
+3. ~~A backreference inside a `[...]` group does not resolve against the
+   enclosing pattern's captures.~~ **Found and fixed during this
+   re-measurement** —
+   [news/2026-08/regex-backref-inside-a-group.md](../../news/2026-08/regex-backref-inside-a-group.md).
+   This was hidden behind blocker 1: `XML::Grammar`'s `element` token closes
+   with `[ '/>' | '>' <child>* '</' $<name> '>' ]`, so no element with a
+   closing tag matched at all (`<root/>` parsed, `<root></root>` did not).
 
-**Do not start this ticket until both are merged and `XML`'s own upstream
-suite has been re-run to confirm the pass count actually improved** — per
-`selection-method.md`, a readiness claim nobody just re-measured is not
-evidence. A partial improvement (e.g. bug 1 fixed but bug 2 still open) is
-fine to act on if the remaining 2 files are worth gating separately, same as
-`CBOR::Simple`/`Log::Timeline` ship as "Sufficient for Cro" with partial
-coverage — but re-measure first either way.
+### What still blocks it
+
+1. **[todo/deep/lexical-self-collides-with-invocant.md](../deep/lexical-self-collides-with-invocant.md)
+   — 7 of the 10 remaining files.** `XML::Element` implements `AT-POS` and
+   `AT-KEY` with the standard `my $self = self;` + `Proxy` idiom. mutsu stores
+   a `$self` scalar under the same env key as a method's invocant, so inside
+   the Proxy's `FETCH` method `$self` resolves to the Proxy itself and the
+   fetch recurses until the stack overflows. `$doc.root[0]` — the most ordinary
+   operation on a parsed document — aborts the process. This needs a design
+   decision (which of the two keys moves) before any code, hence `deep/`.
+2. **Three files not yet bisected**: `t/make.rakutest` (`make-xml worked.`
+   fails), `t/namespaces.rakutest` (2 assertions: default-namespace content,
+   `elements(:URI)`), `t/open-xml.rakutest` (exits 255).
+
+Blocker 1 is the real gate: it is a general interpreter bug with a
+three-line repro that has nothing to do with XML, and it is worth fixing on
+its own merits regardless of this battery.
+
+**Re-measure before starting** — per `selection-method.md`, a readiness claim
+nobody just re-measured is not evidence.
 
 ## Steps (once unblocked)
 
 Follow the standard vendoring recipe,
 [BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution), using
-`docs/batteries/csv.md` (`Text::CSV`) as the shape of a finished record and
-PR:
+`docs/batteries/logging.md` (`Log::Async`, bundled 2026-08-26) as the shape of
+a finished record and PR — it is the most recent worked example, including a
+partial-whitelist battery and a re-vendoring recipe.
 
-1. **Re-run the survey** to get a current pass count: fetch `XML` fresh (the
-   REA `source-url` is in `docs/batteries/xml.md`'s field table) and run its
-   upstream `t/*.rakutest` suite under a release `target/release/mutsu`
-   build from the dist's own directory (`-I lib`). Confirm how many of the
-   15 files pass now.
+1. **Re-run the survey** to get a current pass count (fetch fresh from the REA
+   `source-url` in `docs/batteries/xml.md`, run its `t/*.rakutest` under a
+   release build from the dist's own directory with `-I lib`).
 2. **Vendor** `lib/` + `META6.json` + `LICENSE` + `README.md` into
-   `modules/XML/` (new directory, following the `modules/<Dist-Name>/`
-   naming already used by every other bundled battery). Exclude upstream
-   `t/`, `xt/`, `.github/`, precomp artifacts.
-3. **Register the default module search path** entry the same way every
-   other bundled module is wired — no new mechanism needed, this is adding
-   one more directory to the existing `modules/` tree registration
-   ([BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution)).
-4. **`batteries.lock`**: add an entry for `XML` pinned to the v0.3.6 commit,
-   then run `scripts/battery-testsuite.sh --update` and review the
+   `modules/XML/`. Exclude upstream `t/`, `xt/`, `.github/`, and any
+   `.precomp` artifacts (a `raku` run inside the checkout leaves those
+   behind — check before copying).
+3. **No wiring code is needed**: `resolve_bundled_lib_paths()` registers every
+   `modules/<Dist>/lib` that exists, so creating the directory is the whole
+   registration step.
+4. **`batteries.lock`**: add a row for `XML` pinned to the v0.3.6 commit, then
+   run `scripts/battery-testsuite.sh --update` and review the
    `batteries-whitelist.txt` diff — a test file that doesn't make the
    whitelist is a gap to note in the record, not silently drop.
 5. **Smoke test**: `t/xml-battery.t` — parse a small XML string into a DOM
    tree, walk it, and round-trip it back to a string via `.Str`/`.emit`
-   (round-tripping exercises both the parse and generate halves the slot's
-   selection criterion requires).
-6. **Update `docs/batteries/xml.md`**: flip the header's `**Kind:**` from
-   `Selected, not yet bundled` to `Adopted`, rewrite the
-   ["Status" section](../../docs/batteries/xml.md#status-selected-not-yet-bundled)
-   to match whatever the re-run actually shows, and fill in the real
-   vendored commit hash in a provenance section (add one if the record
-   doesn't have one yet — follow `docs/batteries/uuid.md`'s shape).
-7. **Update `BATTERIES.md` §7**'s XML row: change `Kind` from `**Selected,
-   not yet bundled**` to `Adopted`, and rewrite the summary cell to match.
-8. **`site/batteries.html`**: add the XML row per
-   [BATTERIES.md §5](../../BATTERIES.md#5-documentation-requirement) — only
-   once it is actually "Working", not before.
-9. Regenerate the manifest if one exists for the bundle
-   (`python3 scripts/gen-batteries-manifest.py`, same as the
-   `Template::Mustache` recipe).
+   (round-tripping exercises both halves the slot's selection criterion
+   requires).
+6. **Update `docs/batteries/xml.md`**: flip `**Kind:**` from `Selected, not yet
+   bundled` to `Adopted`, rewrite the Status section to match the re-run, and
+   fill in a provenance section with the vendored commit plus the exact
+   re-vendoring recipe (BATTERIES.md §3 requires the recipe).
+7. **Update `BATTERIES.md` §7**'s XML row to Adopted with the real numbers.
+8. **`site/batteries.html`**: add the sidecar entry to
+   `scripts/gen-batteries-manifest.py` and re-run
+   `python3 scripts/gen-batteries-manifest.py` — the page is generated from
+   `modules/*/META6.json`, not hand-edited.
 
 ## Why this is a `tickets/` item, not `deep/`
 
-No design decision is needed — the candidate, its license, and the
-vendoring recipe are all already fully decided and documented in
-`docs/batteries/xml.md`. This is pure mechanical follow-through once its
-two blocking bugs are fixed.
+No design decision is needed for the *bundling*: the candidate, its license,
+and the vendoring recipe are all decided and documented. The remaining
+interpreter blocker is `deep/`, and lives there.

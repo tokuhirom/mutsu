@@ -218,6 +218,9 @@ impl Interpreter {
             // seed is take-once, so only the store the arming site is about to
             // build gets it.
             regex_vars: super::regex_helpers::take_inline_regex_vars_seed(),
+            // Backreference read-through to the enclosing pattern level (see
+            // `OuterBackrefCaps`). Never published outward — cleared below.
+            outer_backref: super::regex_helpers::take_inline_outer_caps_seed(),
             ..Default::default()
         });
         let mut matches = Vec::new();
@@ -228,6 +231,11 @@ impl Interpreter {
             first_only,
         };
         self.walk_tokens(&ctx, 0, start, &mut store, &mut matches);
+        for m in &mut matches {
+            // The link is a read-only view of the *parent* walk; it must not
+            // travel out with this level's captures.
+            m.1.outer_backref = None;
+        }
         matches
     }
 
