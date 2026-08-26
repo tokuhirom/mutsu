@@ -1016,7 +1016,19 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             .copied()
             .is_none_or(|c| !((c as char).is_ascii_alphanumeric() || c == b'_'))
     };
-    if rest.starts_with('&')
+    // `& (Str --> Bool)`: an anonymous Callable parameter whose signature is
+    // written inline, separated from `&` by (possibly commented) whitespace
+    // rather than the `:` that `&:(...)` uses. Without this check the plain
+    // whitespace-terminator case just below would swallow the `&` as a bare
+    // anonymous callable and leave `(...)` unparsed, so peek past the
+    // whitespace/comments for a `(` and, if found, fall through to the
+    // general var_name + "sub-signature after variable" path — the same
+    // path that already handles the named form `&cb (Str --> Bool)`.
+    let bare_amp_paren_follows = rest.starts_with('&')
+        && matches!(rest.as_bytes().get(1), Some(b' ' | b'\t' | b'\n'))
+        && matches!(ws(&rest[1..]), Ok((r, _)) if r.starts_with('('));
+    if !bare_amp_paren_follows
+        && rest.starts_with('&')
         && (rest.len() == 1
             || rest.as_bytes()[1] == b','
             || rest.as_bytes()[1] == b')'

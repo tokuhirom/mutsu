@@ -496,6 +496,16 @@ impl Interpreter {
         // `parser::stmt::stmtlist`), so no post-parse surgery is needed here.
         let mut stmts = result.map(|(stmts, _)| stmts).map_err(|mut err| {
             err.message = format!("Failed to parse module '{}': {}", module, err.message);
+            // The parser's line/column above are relative to THIS module's own
+            // source (`preprocessed`), not the entry-point script that
+            // transitively `use`d it. Attach the module's own file and source
+            // so the CLI renders "at <module file>:<line>" with the correct
+            // snippet instead of misattributing the failure to the
+            // entry-point's file (see error_render::render_error).
+            err.set_source_file_text(
+                source_path.to_string_lossy().to_string(),
+                preprocessed.to_string(),
+            );
             err
         })?;
         // A module that uses NativeCall and references `Pointer` needs the
