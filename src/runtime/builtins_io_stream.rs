@@ -2,6 +2,40 @@
 use super::*;
 
 impl Interpreter {
+    /// `lines`/`words` in *sub* form take an `IO()`-coercible positional exactly
+    /// like `slurp` does, so an `IO::Path` argument must open and read the file
+    /// rather than being stringified into a one-element list
+    /// (raku: `lines($path)` is `$path.lines`). Delegating to
+    /// `try_io_path_content_read` — the single implementation the `.lines`/`.words`
+    /// *method* forms already use — keeps the two spellings in agreement instead
+    /// of growing a second read+split path here.
+    fn try_io_path_content_sub(
+        &self,
+        args: &[Value],
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        let first = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..)))?;
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = first.view()
+        else {
+            return None;
+        };
+        if !Self::is_io_path_lexical_class(&class_name.resolve()) {
+            return None;
+        }
+        let rest: Vec<Value> = args
+            .iter()
+            .filter(|a| !std::ptr::eq(*a, first))
+            .cloned()
+            .collect();
+        self.try_io_path_content_read(&attributes.to_map(), method, &rest)
+    }
+
     pub(super) fn builtin_print(
         &mut self,
         name: &str,
@@ -136,6 +170,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_lines(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.try_io_path_content_sub(args, "lines") {
+            return result;
+        }
         // Named args (`:chomp`, `:count`) may appear before or after the string
         // argument (`lines(:!chomp, "a\nb")`), so partition them out first and
         // treat the first *positional* argument as the string/handle.
@@ -240,6 +277,9 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_words(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        if let Some(result) = self.try_io_path_content_sub(args, "words") {
+            return result;
+        }
         let handle = if args.is_empty() {
             self.default_input_handle()
         } else if args.first().and_then(Self::handle_id_from_value).is_some() {

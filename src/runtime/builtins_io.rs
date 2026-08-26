@@ -381,6 +381,19 @@ impl Interpreter {
     }
 
     pub(super) fn builtin_open(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        // Raku lets a named argument precede a positional one at the call site,
+        // so `open :w, $path` and `open $path, :w` produce the same call — but
+        // the first spelling puts the `:w` Pair in `args[0]`. The path is
+        // therefore the first *non-Pair* argument, not literally `args[0]`, and
+        // every Pair is a flag regardless of where it appears.
+        let path_arg = args
+            .iter()
+            .find(|a| !matches!(a.view(), ValueView::Pair(..)));
+        let flag_args: Vec<Value> = args
+            .iter()
+            .filter(|a| !path_arg.is_some_and(|p| std::ptr::eq(*a, p)))
+            .cloned()
+            .collect();
         let (
             read,
             write,
@@ -393,7 +406,7 @@ impl Interpreter {
             enc,
             _create,
             _exclusive,
-        ) = self.parse_io_flags_values(&args[1..]);
+        ) = self.parse_io_flags_values(&flag_args);
 
         // IO::Special is a sentinel for an already-open standard stream, not
         // a path named "IO::Special()". Reopen it as a fresh IO::Handle so
@@ -402,7 +415,7 @@ impl Interpreter {
             class_name,
             attributes,
             ..
-        }) = args.first().map(Value::view)
+        }) = path_arg.map(|v| v.view())
             && class_name == "IO::Special"
             && let Some(what) = attributes.as_map().get("what")
         {
@@ -423,7 +436,7 @@ impl Interpreter {
                 } else if read {
                     // With no explicit mode, retain the stream's natural
                     // direction (stdout/stderr are writable by default).
-                    if args[1..].iter().any(|arg| {
+                    if flag_args.iter().any(|arg| {
                         matches!(arg.view(), ValueView::Pair(name, value) if name == "r" && value.truthy())
                     }) {
                         IoHandleMode::Read
@@ -454,7 +467,7 @@ impl Interpreter {
         // `open` takes an `IO()`-coercible path. When handed an IO::Handle
         // (e.g. `open(IO::Handle.new(:path($p)))`), coerce it to its `.path`
         // so the underlying file is opened, matching rakudo.
-        let path = match args.first() {
+        let path = match path_arg {
             Some(v) => match v.view() {
                 ValueView::Instance {
                     class_name,

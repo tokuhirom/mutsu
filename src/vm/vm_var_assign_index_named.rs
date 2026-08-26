@@ -2989,11 +2989,25 @@ impl Interpreter {
             }
         }
 
-        if !self.env().contains_key(&var_name) {
-            // Autovivify the variable as Array if the inner subscript was
-            // positional (`[...]`), otherwise as Hash. For sigiled vars
-            // (`@x`, `%h`) the sigil already constrains the kind, so this
-            // mainly matters for scalar `$x` autoviv.
+        // Autovivify the root. A declared-but-undefined scalar (`my $x;` holds
+        // the `Any` type object) needs this just as much as a wholly absent
+        // variable does: raku vivifies a *chained* subscript write through an
+        // undefined scalar (`my $x; $x<a><b> = 1` is `${:a(${:b(1)})}`), and
+        // without this the write went into a throwaway temporary and `$x` was
+        // left reading `Any`. The deeper (3+ level) op already retried its walk
+        // against a non-container root, which is why only the two-level chain
+        // dropped the write. A *defined* value is left alone — raku dies with
+        // "does not support associative indexing" there, which is a separate
+        // gap, not something to paper over by clobbering the value.
+        let root_needs_viv = match self.env().get(&var_name) {
+            None => true,
+            // Undefined == `Nil` or a type object, matching `.defined`.
+            Some(v) => matches!(v.view(), ValueView::Nil | ValueView::Package(_)),
+        };
+        if root_needs_viv {
+            // Array if the inner subscript was positional (`[...]`), otherwise
+            // Hash. For sigiled vars (`@x`, `%h`) the sigil already constrains
+            // the kind, so this mainly matters for scalar `$x` autoviv.
             let init = if var_name.starts_with('@') {
                 Value::real_array(Vec::new())
             } else if var_name.starts_with('%') {
@@ -3002,6 +3016,15 @@ impl Interpreter {
                 Value::real_array(Vec::new())
             } else {
                 Value::hash(std::collections::HashMap::new())
+            };
+            // A container autovivified into a `$` scalar is held by a Scalar
+            // container, so it itemizes (`$x.raku` is `${...}` / `$[...]`,
+            // not `{...}` / `[...]`) — the same rule `itemize_for_element_store`
+            // applies to a nested autovivified element.
+            let init = if var_name.starts_with(['@', '%']) {
+                init
+            } else {
+                init.itemize_for_element_store()
             };
             self.env_mut().insert(var_name.clone(), init);
         }
