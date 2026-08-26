@@ -124,7 +124,7 @@ dispatch #5942) brought it to **~119s local (2026-08-05)** — right at the
 budget line, but the gate is a hard `timeout 120`, so it stays
 un-whitelisted until one more lever gives real margin on slower CI
 runners. Tracked in
-`todo/tickets/digest-ripemd-start-per-block-overhead.md`.
+`todo/perf/digest-ripemd-start-per-block-overhead.md`.
 
 ## Provenance and update procedure
 

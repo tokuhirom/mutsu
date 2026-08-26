@@ -20,7 +20,7 @@
   `String`s, `Arc<RegexCaptures>` subcap allocations, `RegexCaptures::default` zeroing,
   one `snapshot()` per complete inner end. This ADR is the decision about how that
   ceremony is removed.
-- **Ticket**: `todo/tickets/yaml-parse-throughput.md`. Benchmarks:
+- **Ticket**: `todo/perf/yaml-parse-throughput.md`. Benchmarks:
   `benchmarks/bench-yaml-parse.raku`, `benchmarks/bench-grammar-parse{,-deep}.raku`.
 
 ## Problem
@@ -43,7 +43,7 @@ single dominant function left**. It is dominated by libc:
 
 (`benchmarks/bench-yaml-parse.raku`, `--profile profiling`, `perf -F 4000`, 20 184
 samples, on an idle box — "idle" is load-bearing here; see the measurement caveat in
-`todo/tickets/yaml-parse-throughput.md` for the session whose local A/B numbers a
+`todo/perf/yaml-parse-throughput.md` for the session whose local A/B numbers a
 3-day-old CPU spinner invalidated. Shares are *shape* evidence, not an A/B claim;
 magnitudes for any fix must come from `bench-history.tsv` on `bench-data`.)
 
@@ -439,6 +439,6 @@ the local A/B.
 - ADR-0007 (trail matcher) — the immediate predecessor; its "residual per-subrule ceremony"
   paragraph is the problem this ADR solves.
 - ADR-0001 — phase order: this is Phase A work, not blocked on GC or Track B.
-- `todo/tickets/yaml-parse-throughput.md` — measurements and the three landed rounds.
+- `todo/perf/yaml-parse-throughput.md` — measurements and the three landed rounds.
 - `news/2026-07/match-object-orig-arc-share.md`, `.../regex-code-block-writeback-by-identity.md`,
   `.../grammar-actions-skip-dispatch-for-missing-methods.md`.

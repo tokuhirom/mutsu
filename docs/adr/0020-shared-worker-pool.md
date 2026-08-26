@@ -2,14 +2,14 @@
 
 - Status: **Accepted** (all implementation slices landed 2026-08-05; the companion
   per-task clone slimming is out of scope here — see
-  `todo/tickets/digest-ripemd-start-per-block-overhead.md`)
+  `todo/perf/digest-ripemd-start-per-block-overhead.md`)
 - Date: 2026-08-05
 - Context: extracted from PLAN.md §5 via `todo/deep/shared-worker-pool-adr.md` (2026-08-02);
   groundwork measured 2026-07-17 on main `159a30cb0` and re-measured 2026-08-05 on main
   `a85d464a3` (release builds, 12 cores, raku 2026.06 on the same host).
 - Related: [ADR-0008](0008-push-based-supply-event-delivery.md) (push supply delivery),
   [ADR-0010](0010-cross-thread-lexical-sharing-scope.md) (spawn-lineage lexical sharing),
-  `todo/tickets/digest-ripemd-start-per-block-overhead.md` (the motivating battery gap).
+  `todo/perf/digest-ripemd-start-per-block-overhead.md` (the motivating battery gap).
 
 ## 1. Context
 
@@ -46,7 +46,7 @@ bundled-`Digest` battery gate turned it into a **§1 (main-effort) blocker**:
 `t/ripemd.t` is the one upstream `Digest` file that cannot be whitelisted — ~513s vs raku's
 ~46s, over the gate's 120s per-file budget — and the measured lever is exactly per-`start`
 overhead (~17× raku on the 2-task `await map … start` shape that `rmd160` runs 15,625 times
-per MB). See `todo/tickets/digest-ripemd-start-per-block-overhead.md`.
+per MB). See `todo/perf/digest-ripemd-start-per-block-overhead.md`.
 
 ### 1.3 Where the per-start money actually goes (decomposition, 2026-08-05)
 
@@ -77,7 +77,7 @@ thread-machinery share plus the register churn, and it fixes the resource pathol
 (§1.1's thread-count/VmSize rows). Closing the ripemd gap needs the companion lever:
 **make the per-task clone cheap** (lazy/COW env snapshot, or seed-once lineage reuse across
 same-lineage spawns). That work is scoped in
-`todo/tickets/digest-ripemd-start-per-block-overhead.md` and is deliberately OUT of this
+`todo/perf/digest-ripemd-start-per-block-overhead.md` and is deliberately OUT of this
 ADR's decision — but the pool is its prerequisite: a warm worker is what makes a cheap
 clone observable at all, and the pool's task boundary is where a reusable clone cache
 would live.

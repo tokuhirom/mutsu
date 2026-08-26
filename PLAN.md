@@ -146,7 +146,7 @@ bench CI, never a local run.
 
 - [ ] **The one axis where mutsu is genuinely slower than raku** — the interpreter function-call path
       in hot loops (the JIT bails at the call boundary):
-      [todo/deep/interpreter-call-path-in-hot-loops.md](todo/deep/interpreter-call-path-in-hot-loops.md).
+      [todo/perf/interpreter-call-path-in-hot-loops.md](todo/perf/interpreter-call-path-in-hot-loops.md).
 - [ ] Grammar/regex per-subrule ceremony (~25× vs raku per matched character; the exponential and
       accumulated-state halves are fixed):
       [ADR-0007](docs/adr/0007-grammar-parse-trail-matcher.md) §Implementation outcome.
@@ -162,7 +162,7 @@ The [shared worker pool](docs/adr/0020-shared-worker-pool.md) is done (Accepted,
 2026-08-05) — do not re-plan it. Its only open follow-up: the pool alone recovered only ~10% of
 per-`start` cost, so whitelisting Digest's `t/ripemd.t` still needs per-call-site compile-cache
 levers, tracked in
-[todo/tickets/digest-ripemd-start-per-block-overhead.md](todo/tickets/digest-ripemd-start-per-block-overhead.md)
+[todo/perf/digest-ripemd-start-per-block-overhead.md](todo/perf/digest-ripemd-start-per-block-overhead.md)
 (actively worked, see its own status log). The whole-`locals` clone/restore in `BlockScope` is also
 already gone under the default shadow-slots path (`exec_block_scope_op`, `vm/vm_misc_scope.rs`,
 closed via [ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md)) —

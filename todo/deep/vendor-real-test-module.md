@@ -599,7 +599,7 @@ Two different causes hide in there, and they need different answers:
   the native provider and 40.3 s under the module's, for byte-identical user
   code. Isolated: a block invoked through an imported sub costs ~1.5× more per
   iteration, and a callee declared *inside* that block costs another 1.7–3.8×.
-  Recorded in `todo/deep/interpreter-call-path-in-hot-loops.md`; that is the
+  Recorded in `todo/perf/interpreter-call-path-in-hot-loops.md`; that is the
   real blocker of the two.
 
 So step 3 needs the call path as well as the 185 correctness gaps.
@@ -2682,7 +2682,7 @@ What still blocks step 3 (flipping `runtime_module.rs`), in priority order:
    two.
 4. Un-whitelist (or fudge) the native-provider-only files named above; implement
    the `#?rakudo eval` fudge directive while doing it.
-5. `todo/deep/interpreter-call-path-in-hot-loops.md` — still the perf blocker
+5. `todo/perf/interpreter-call-path-in-hot-loops.md` — still the perf blocker
    the 2026-08-03 measurement named (`S04-declarations/state.t`: 3.7 s native,
    61.8 s real, 0.9 s raku). Not re-measured this round.
 

@@ -1,7 +1,7 @@
 # todo/ — open findings, one file per finding
 
 Discovered bugs and missing features that are too large to fix right now live
-here, **one file per finding**, split into two directories by the *nature* of
+here, **one file per finding**, split into three directories by the *nature* of
 the work:
 
 - **`todo/tickets/`** — small, self-contained, well-scoped items. A "TICKETS.md
@@ -11,6 +11,20 @@ the work:
   needs design or an ADR before touching (dual-store decoupling, GC, large
   refactors, gnarly semantics). Capture the analysis so a future session can
   pick it up cold.
+- **`todo/perf/`** — mutsu is *correct but slow* at something. Split out because
+  the **process** differs, not just the size: a perf finding needs profiling
+  rather than a guessed code change, its numbers must come from the bench CI
+  (see "Benchmark numbers in documents" in `CLAUDE.md`), and its implementation
+  agent must run **solo** — parallel perf agents produce results that drift and
+  never converge. Batching several into one profiling-heavy session amortizes
+  the profiler setup.
+
+**Which directory a finding belongs in.** `perf/` is decided by the *next step*,
+not by the flavour: a finding lives there only if its own next step is
+measurement/profiling, or the fix is perf-only, or it is blocked purely on a
+design/perf tradeoff. **A perf-flavoured finding that also fixes a genuinely
+wrong answer stays in `tickets/` or `deep/`** — correctness ranks above speed,
+and burying it under `perf/` would hide a real bug behind a benchmark.
 
 One file per finding (`<kebab-slug>.md`). A brand-new file conflicts with
 nothing on merge — that is the whole point. Appending these to PLAN.md collided
@@ -19,7 +33,7 @@ per-entry `news/YYYY-MM/` files already solved. So a finding is a new file,
 never an edit to a shared list.
 
 Splitting by directory lets you tally the backlog with no frontmatter and no
-script: `ls todo/tickets/ | wc -l` and `ls todo/deep/ | wc -l`.
+script: `ls todo/tickets/ | wc -l`, `ls todo/deep/ | wc -l`, `ls todo/perf/ | wc -l`.
 
 **Which one to pick up next: see [TRIAGE.md](TRIAGE.md)** — a dated,
 periodically-regenerated snapshot that ranks every open finding by goal axis
@@ -41,12 +55,14 @@ covering:
 
 ## Lifecycle
 
-- **open** → a file under `todo/tickets/` or `todo/deep/`.
+- **open** → a file under `todo/tickets/`, `todo/deep/`, or `todo/perf/`.
 - **resolved** → `git mv` it to `news/YYYY-MM/<slug>.md` (flat, chronological)
   and rewrite it as an accomplishment.
 - **evaporated / no longer real** → delete it.
 - A `deep/` problem that turns out to be a quick fix can move to `tickets/`
-  first, or just be fixed directly — the split is a guide, not a wall.
+  first, or just be fixed directly — the split is a guide, not a wall. Likewise
+  a `perf/` finding that profiling reveals to be a wrong answer rather than a
+  slow one moves *out* of `perf/`.
 
 `todo/` holds only *open* findings. PLAN.md stays for planned strategic /
 campaign work; ad-hoc discovered findings go here.

@@ -118,7 +118,7 @@ This is a small, structurally-safe change (pre-sizing a `HashMap` never changes 
 it was not gated on a clean local measurement — the project convention is that documented bench
 numbers come from the bench CI trend (`bench-history.tsv`), not local runs, and this container's
 load made a tight local confirmation unreliable regardless. Left this ticket open rather than
-closing it: `env_deep_copies` (S2, `todo/tickets/bench-ctor-construction-parity.md`) and the
+closing it: `env_deep_copies` (S2, `todo/perf/bench-ctor-construction-parity.md`) and the
 GC-candidate-push family are still diffuse cost, matching the "no single hot function dominates"
 conclusion from the earlier profile. Next dedicated-session step is still the counting-allocator
 build (previous section) if further attribution is wanted, or checking the bench-CI trend after

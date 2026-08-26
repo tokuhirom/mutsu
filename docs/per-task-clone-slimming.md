@@ -10,7 +10,7 @@
   (Tier A JIT bails on the bitwise opcodes), handed off to
   `todo/tickets/jit-bitwise-tier-a-coverage.md`. Do not reopen spawn-side
   work from this plan. News: `news/2026-08/per-task-clone-slimming-campaign.md`.
-- Owner ticket: `todo/tickets/digest-ripemd-start-per-block-overhead.md`
+- Owner ticket: `todo/perf/digest-ripemd-start-per-block-overhead.md`
 - Context: [ADR-0020](adr/0020-shared-worker-pool.md) §1.3 identified the per-task
   `Interpreter` clone as the dominant per-`start` cost that the worker pool
   deliberately did NOT address. This document is the implementation plan for that
