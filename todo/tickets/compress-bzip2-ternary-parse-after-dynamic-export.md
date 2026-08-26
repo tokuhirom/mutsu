@@ -45,7 +45,7 @@ call, consuming the `!!` and everything after it as arguments" — i.e. it
 looks exactly like what happens when `BZ_RUN` is **not yet known to the
 parser as a declared constant** at that point, so the parser falls back to
 treating it as a call. That would point at the same underlying gap as
-[nativecall-sizeof-cstruct-repr-unsupported.md](nativecall-sizeof-cstruct-repr-unsupported.md)'s
+[nativecall-sizeof-cstruct-repr-unsupported.md](../../news/2026-08/nativecall-sizeof-cstruct-repr-unsupported.md)'s
 sibling area — dynamic `sub EXPORT` built from `MY::` package-symbol-table
 introspection (rather than a static list of `is export`-tagged declarations)
 not registering its exported names as parse-time terms in the importing

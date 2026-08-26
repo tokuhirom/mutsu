@@ -94,6 +94,14 @@ doc) are version skew, not mutsu bugs — lowest priority.
   `__mutsu_str_value` attribute, the string twin of the existing
   `__mutsu_array_storage`/`__mutsu_int_value` payloads —
   [news](../news/2026-08/str-subclass-loses-native-stringify.md).
+- `nativecall.rakudoc:598` — `Pointer[T].deref` was missing on a `--> Pointer[T]`
+  native return (and SEGFAULTed for `Pointer[Str]` even where it existed);
+  `.deref` is now `nativecast(.of, self)` as in Rakudo. See
+  [news](../news/2026-08/nativecall-pointer-deref-method-missing.md).
+- `nativetypes.rakudoc:172` — `Pointer[T].raku` rendered a bare type parameter and
+  a named-arg constructor; `.raku`/`.gist`/`.^name` now all derive from one
+  fully-qualified, parameterised name. See
+  [news](../news/2026-08/nativecall-pointer-raku-format-mismatch.md).
 - `$.name()` self-accessor interpolation left `()` literal — **#4979**.
 - Harness scratch-file race producing phantom findings — **#4982** (this is why the
   survey below supersedes every earlier scan).
@@ -408,7 +416,6 @@ Found in the 2026-08-22 batch-3 re-run of `grammars`/`syntax`/`Proc::Async`/`nat
 | `Language/syntax.rakudoc:384` | adverb values needing BEGIN-time evaluation don't resolve (`$a:foo«$c»` for a `constant $c`, `$foo:bar(1+1)`) — the key-less form (`:354`) is fixed, see [news](../news/2026-08/keyless-colon-pair-variable-names.md) | [begin-time-adverb-value-interpolation.md](../todo/deep/begin-time-adverb-value-interpolation.md) |
 | `Language/syntax.rakudoc:429` | `OUR::` pseudo-package doesn't expose file-scope `our`-declared package symbols | [our-pseudopackage-missing-file-scope-symbols.md](../todo/tickets/our-pseudopackage-missing-file-scope-symbols.md) |
 | `Language/syntax.rakudoc:1091` | a colon-call's trailing `.method` (`.substr: 0, 3  .uc`) binds to the wrong operand | [colon-call-trailing-dot-method-binds-wrong-operand.md](../todo/tickets/colon-call-trailing-dot-method-binds-wrong-operand.md) |
-| `Language/nativecall.rakudoc:598` | `Pointer[T].deref` method is missing (the FFI call itself succeeds) | [nativecall-pointer-deref-method-missing.md](../todo/tickets/nativecall-pointer-deref-method-missing.md) |
 | `Language/experimental.rakudoc:32` | `Buf`/`Blob.contents` method is missing | [buf-contents-method-missing.md](../todo/tickets/buf-contents-method-missing.md) |
 | `Language/experimental.rakudoc:144` | a user-defined custom infix's RHS operand fails to parse when followed by `??...!!` | [custom-infix-rhs-operand-rejects-ternary.md](../todo/tickets/custom-infix-rhs-operand-rejects-ternary.md) |
 | `Language/unicode.rakudoc:190,212,224` | `\c[NAME]` fails to resolve Unicode NameAlias corrections and multi-codepoint named sequences | [c-bracket-character-name-lookup-gaps.md](../todo/tickets/c-bracket-character-name-lookup-gaps.md) |
@@ -494,7 +501,6 @@ Found in the 2026-08-22 batch-4 re-run of `Code`/`DateTime`/`perl-func`/
 | `Type/DateTime.rakudoc:281,302` | `.julian-date`/`.modified-julian-date` return `Num` (float noise) instead of an exact `Rat` | [datetime-julian-date-returns-num-not-rat.md](../todo/tickets/datetime-julian-date-returns-num-not-rat.md) |
 | `Type/Formatter.rakudoc:16,32` | `Formatter.new(FORMAT_STRING)` is unimplemented | [formatter-new-unimplemented.md](../todo/tickets/formatter-new-unimplemented.md) |
 | `Type/X/Cannot/Empty.rakudoc:15` | `X::Cannot::Empty.new(:action, :what).message` returns an empty string instead of formatting "Cannot ACTION from an empty WHAT" | [x-cannot-empty-message-not-formatted.md](../todo/tickets/x-cannot-empty-message-not-formatted.md) |
-| `Language/nativetypes.rakudoc:172` | `Pointer[T].raku` uses a bare type-parameter name and a named-arg constructor call instead of raku's fully-qualified positional form | [nativecall-pointer-raku-format-mismatch.md](../todo/tickets/nativecall-pointer-raku-format-mismatch.md) |
 | `Type/Compiler.rakudoc:58` | `$*RAKU.compiler.verbose-config` is unimplemented (low priority — the real output is exhaustively MoarVM-build-specific) | [compiler-verbose-config-unimplemented.md](../todo/tickets/compiler-verbose-config-unimplemented.md) |
 | `Type/IO/ArgFiles.rakudoc:34` | `$*ARGFILES.eof`/`.get` loops forever instead of terminating once stdin is exhausted (no file args given) | [argfiles-eof-infinite-loop-on-empty-stdin.md](../todo/tickets/argfiles-eof-infinite-loop-on-empty-stdin.md) |
 

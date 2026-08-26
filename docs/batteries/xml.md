@@ -246,11 +246,15 @@ Cannot locate native library 'lib(Str).so': lib(Str).so.2: dlopen failed
 ```
 
 Minimal repro: `my $CLIB = Str; $CLIB.&cglobal("malloc", Pointer)` throws on mutsu,
-returns a valid pointer on raku. Ticket:
-[`todo/tickets/nativecall-cglobal-undefined-str-library-mistokenized.md`](../../todo/tickets/nativecall-cglobal-undefined-str-library-mistokenized.md).
-This means fixing the role bug alone would not make `LibXML` fully green — this second
-bug is an independent blocker for at least this one file, and possibly others using the
-same `$CLIB` pattern.
+returns a valid pointer on raku.
+
+**FIXED 2026-08-26** — see
+[`news/2026-08/nativecall-cglobal-undefined-str-library-mistokenized.md`](../../news/2026-08/nativecall-cglobal-undefined-str-library-mistokenized.md).
+`cglobal` had its own library-name resolution that just stringified its argument;
+it now shares one resolver with the `is native(...)` trait, which already mapped an
+undefined argument to the process's own symbol space. `LibXML` is therefore back to
+being blocked by the role/parser bug alone — that one still has to be fixed before
+`use LibXML;` works, but this second, independent blocker on `t/000sanity.t` is gone.
 
 ### Building the `LibXML` native shim worked cleanly
 

@@ -45,10 +45,24 @@ class GLOBAL::Pointer {
     method Int(--> Int) { $!address }
     method Numeric(--> Int) { $!address }
     method Bool(--> Bool) { $!address != 0 }
+    # Rakudo renders the address in hex and prefixes the object's OWN name, so
+    # a typed `Pointer[T]` shows its parameterisation
+    # (`NativeCall::Types::Pointer[NativeCall::Types::void]<0x1f7453f0>`).
+    # `.^name` re-attaches `[T]` from the `of` attribute (ADR-0056), so both
+    # this and `.raku` below follow it automatically.
+    # An undefined invocant is the bare type object: it has no `$!address` to
+    # read, and Rakudo renders it as just its name (`(Pointer)` for `.gist`).
     method gist(--> Str) {
-        $!address == 0
-            ?? 'NativeCall::Types::Pointer<NULL>'
-            !! sprintf('NativeCall::Types::Pointer<0x%x>', $!address)
+        self.defined
+            ?? ($!address == 0
+                ?? self.^name ~ '<NULL>'
+                !! self.^name ~ sprintf('<0x%x>', $!address))
+            !! '(' ~ self.^name ~ ')'
+    }
+    # `Pointer.new` takes a POSITIONAL address in Rakudo, and `.raku` renders
+    # the round-trippable form: `NativeCall::Types::Pointer[T].new(12345)`.
+    method raku(--> Str) {
+        self.defined ?? self.^name ~ '.new(' ~ $!address ~ ')' !! self.^name
     }
     method Str(--> Str) { self.gist }
 }

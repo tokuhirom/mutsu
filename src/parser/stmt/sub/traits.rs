@@ -268,8 +268,26 @@ pub(crate) fn parse_sub_traits(mut input: &str) -> PResult<'_, SubTraits> {
                     let paren_content = &before_parens[1..before_parens.len() - r.len() - 1];
                     let paren_content = paren_content.trim();
                     if !paren_content.is_empty()
-                        && let Ok((_, expr)) = expression(paren_content)
+                        && let Ok((after, expr)) = expression(paren_content)
                     {
+                        // `is native('foo', v1)` is the documented ABI/API
+                        // version form (`Language/nativecall.rakudoc`), and it
+                        // is the one trait here that genuinely takes two
+                        // arguments. `expression` parses only the first, so the
+                        // version was being silently dropped; re-parse the whole
+                        // content as a parenthesized list, which is the same
+                        // shape the equally documented `my List $lib = ('foo',
+                        // 'v1'); is native($lib)` spelling produces.
+                        let expr = if trait_name == "native" && after.trim_start().starts_with(',')
+                        {
+                            let wrapped = format!("({paren_content})");
+                            match expression(&wrapped) {
+                                Ok((_, list_expr)) => list_expr,
+                                Err(_) => expr,
+                            }
+                        } else {
+                            expr
+                        };
                         // Update the last custom trait entry with the parsed argument
                         if let Some(pos) = custom_traits.iter().rposition(|(t, _)| t == trait_name)
                         {

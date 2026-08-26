@@ -148,7 +148,8 @@ to target.
 Every ergonomic (non-`::Raw`) candidate in both tables is blocked by a real,
 reproducible mutsu bug — the low-level `::Raw`/`Bzip2::Raw` 1:1 C bindings
 work perfectly, but the moment a higher-level Raku wrapper adds its own logic
-on top, something breaks. Four distinct, independently-filed bugs:
+on top, something breaks. Four distinct, independently-filed bugs (two of
+which have since been fixed — see their entries):
 
 1. **[`nativecall-local-sub-shadows-imported-same-name.md`](../../todo/tickets/nativecall-local-sub-shadows-imported-same-name.md)**
    — `Compress::Zlib.pm6` declares its own `sub compress(Blob $data, Int
@@ -157,22 +158,32 @@ on top, something breaks. Four distinct, independently-filed bugs:
    rule). mutsu resolves the *imported* symbol instead, so every call
    fails with an arity mismatch (`NativeCall: 'compress' expects 4
    argument(s), got 1`). Blocks `Compress::Zlib` entirely (0/3 files).
-2. **[`nativecall-sizeof-cstruct-repr-unsupported.md`](../../todo/tickets/nativecall-sizeof-cstruct-repr-unsupported.md)**
-   — `nativesizeof()` on a `class ... is repr('CStruct')` reports the class
-   as `P6opaque` instead of recognizing its `CStruct` repr. A second,
-   independent `Compress::Zlib` blocker (its streaming API, `t/02-stream.t`/
-   `t/03-wrap.t`) — fixing bug 1 alone will not unblock these two files.
-3. **[`nativecall-cpointer-repr-typed-param-returns-whatever.md`](../../todo/tickets/nativecall-cpointer-repr-typed-param-returns-whatever.md)**
-   — passing a `repr('CPointer')`-typed value (an opaque native handle) as
-   an argument to a *second* native call makes that call return `Whatever`
-   instead of running and returning its declared type. This is the single
-   blocker for the entire `Archive::Libarchive`/`Archive::Libarchive::Raw`
-   pair — everything past the trivial `use`/version-string tests fails this
-   way (1/6 files vs raku's 6/6). **This is the highest-leverage fix in this
-   survey**: `Archive::Libarchive` is otherwise the strongest candidate found
-   (Artistic-2.0, actively maintained — last push 2025-04-29, more recent
-   than any other candidate in either table — 4 dependents, and covers
-   zip/tar/gzip/bzip2/xz uniformly through one library).
+2. ~~`nativecall-sizeof-cstruct-repr-unsupported.md`~~ — **FIXED 2026-08-26**
+   ([news](../../news/2026-08/nativecall-sizeof-cstruct-repr-unsupported.md)).
+   The repr trait was recorded correctly all along; the struct *layout* aborted
+   on `z_stream`'s bare, unparameterised `has CArray $.next-in` field, and the
+   layout failure was then reported with the misleading "P6opaque" message.
+   `nativesizeof(z_stream)` is 112 under both mutsu and raku now, and
+   `Compress::Zlib::Raw`'s own `t/01-basic.t` is 7/7. `Compress::Zlib` itself is
+   still 0/3, now blocked by bug 1 alone.
+3. ~~`nativecall-cpointer-repr-typed-param-returns-whatever.md`~~ — **FIXED
+   2026-08-26**
+   ([news](../../news/2026-08/nativecall-cpointer-repr-typed-param-returns-whatever.md)).
+   Two causes, neither the one the ticket guessed: the native-handle shape
+   heuristic consulted only `cstruct_classes`, so libarchive's *lowercase*
+   `class archive is repr('CPointer')` was rejected and the whole `sub`
+   silently skipped native registration (leaving the `{ * }` stub, whose
+   `Whatever` then failed the sub's own return check); and `constant LIB =
+   ('archive', v13)` — the documented `(name, version)` library spelling — was
+   stringified whole into `libarchive 13.so`.
+   `Archive::Libarchive::Raw` v0.1.5 is now **5/6 files** (was 1/6; raku 6/6).
+   The remaining file needs NativeCall callbacks
+   ([`nativecall-callback-parameter-marshalling.md`](../../todo/tickets/nativecall-callback-parameter-marshalling.md))
+   and `$*USER`/`$*GROUP`
+   ([`user-group-dynamic-variables-missing.md`](../../todo/tickets/user-group-dynamic-variables-missing.md)).
+   `Archive::Libarchive` remains the strongest candidate found (Artistic-2.0,
+   last push 2025-04-29, 4 dependents, covers zip/tar/gzip/bzip2/xz uniformly)
+   and is now much closer to reach.
 4. Two parser failures, each real but not yet root-caused to a minimal
    repro — **[`compress-bzip2-ternary-parse-after-dynamic-export.md`](../../todo/tickets/compress-bzip2-ternary-parse-after-dynamic-export.md)**
    (a `?? BAREWORD !! BAREWORD` ternary misparses as a bareword-swallows-`!!`
@@ -191,11 +202,11 @@ on top, something breaks. Four distinct, independently-filed bugs:
 
 None of these four bugs are compression/archive-specific — they are general
 NativeCall and parser gaps that happened to surface here, in the same spirit
-as the CSV survey's shared heredoc-in-sub-body bug ([csv.md](csv.md)). Fixing
-bug 3 in particular would likely also help any other NativeCall binding that
-threads an opaque CPointer handle through a chain of calls (a very common
-NativeCall idiom — file handles, DB connections, compiled-regex handles, …),
-not just `Archive::Libarchive`.
+as the CSV survey's shared heredoc-in-sub-body bug ([csv.md](csv.md)). That
+generality is exactly how bug 3 turned out: fixing it helps any NativeCall
+binding whose opaque handle class happens to be lowercase, or that names its
+library in the documented `(name, version)` form — both common idioms well
+beyond `Archive::Libarchive`.
 
 ## Ruled out before a full measurement
 
@@ -270,12 +281,11 @@ If/when those are fixed, the shape of a future decision:
    chain: `Compress::Zlib` + `::Raw` + `IO::Glob` + `CompUnit::Util`, versus
    `Archive::Libarchive`'s 2-dist chain) and has its own separate parser
    blocker (bug 4b) to clear too.
-3. Whoever next picks up NativeCall work should treat **bug 3
-   (`nativecall-cpointer-repr-typed-param-returns-whatever.md`)** as the
-   highest-leverage single fix in this survey — it is both the sole blocker
-   for the strongest archive candidate and a general pattern (opaque
-   CPointer handle threaded through a call chain) likely to recur in other
-   NativeCall-based batteries, not just this slot.
+3. Bugs 2 and 3 are **fixed** (2026-08-26) — see their entries above. The next
+   NativeCall pick for this slot is
+   **[`nativecall-callback-parameter-marshalling.md`](../../todo/tickets/nativecall-callback-parameter-marshalling.md)**,
+   the last blocker on `Archive::Libarchive::Raw`'s own suite, and bug 1
+   (the local-sub-shadows-import rule) for `Compress::Zlib`.
 
 Re-run this survey (or at least re-measure the four filed bugs) before acting
 on any of the above — per selection-method.md, a readiness claim nobody just

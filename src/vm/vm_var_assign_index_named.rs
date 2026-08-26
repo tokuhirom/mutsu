@@ -1815,6 +1815,19 @@ impl Interpreter {
                     idx.to_string_value()
                 };
                 let array_elem_constraint = loan_env!(self, var_type_constraint(&var_name));
+                // For a `$`-sigil variable a CONTAINER type describes the whole
+                // container, not its elements — but a PARAMETERISED one says
+                // exactly what its elements must be, and Rakudo checks each
+                // element against that parameter (`my array[uint8] $a; $a[0] =
+                // "x"` is X::TypeCheck, `$a[0] = 7` is not). Comparing the
+                // stored value against the whole `array[uint8]` spelling
+                // rejected every legal store.
+                let array_elem_constraint = match array_elem_constraint {
+                    Some(c) if !var_name.starts_with('@') && !var_name.starts_with('%') => {
+                        self.scalar_container_element_constraint(&c)
+                    }
+                    other => other,
+                };
                 // A `%h is BagHash`/`MixHash`/`SetHash` (or `Bag`/`Mix`/`Set`)
                 // variable IS that QuantHash: the constraint names the *whole*
                 // container, not the element type, and `%h<k> = weight` sets a
@@ -1862,23 +1875,16 @@ impl Interpreter {
                         ));
                     }
                 }
+                // (`scalar_container_element_constraint` above has already
+                // reduced a `$`-sigil container constraint to the element type
+                // it implies, or dropped it when it implies none. For `@`/`%`
+                // variables the constraint IS the element/value type and is
+                // enforced as written — `my Array @x; @x[0] = 1` is a type
+                // error.)
                 if let Some(constraint) = array_elem_constraint
                     && !target_is_quanthash
                     && !val.is_nil()
                     && !self.type_matches_value(&constraint, &val)
-                    // For `$`-sigil variables holding a container (e.g. a `Hash $h`
-                    // parameter), a container type constraint describes the whole
-                    // container, not its elements, so element assignment like
-                    // `$h<k> = v` must not be checked against it. For `@`/`%`
-                    // variables the constraint IS the element/value type and must
-                    // be enforced (e.g. `my Array @x; @x[0] = 1` is a type error).
-                    && (var_name.starts_with('@')
-                        || var_name.starts_with('%')
-                        || !(matches!(
-                            constraint.as_str(),
-                            "Hash" | "Array" | "Map" | "List" | "Bag" | "Set" | "Mix"
-                                | "BagHash" | "SetHash" | "MixHash" | "Seq"
-                        ) || self.is_container_subclass(&constraint)))
                 {
                     return Err(runtime::utils::type_check_element_typed_error(
                         &var_name,

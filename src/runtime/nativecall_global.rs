@@ -81,13 +81,20 @@ impl Interpreter {
         // `is native(&lib-name)` may supply the library through a code object;
         // `cglobal` takes the library "in the same ways that they can be to the
         // native trait" (nativecall.rakudoc), so resolve a callable the same way.
-        let lib_name = match library.view() {
-            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => self
-                .call_sub_value(library.clone(), Vec::new(), true)?
-                .to_string_value(),
-            _ => library.to_string_value(),
+        //
+        // The name is resolved exactly as `is native(...)` resolves its trait
+        // argument, so an UNDEFINED library (`my $CLIB = Str; $CLIB.&cglobal(
+        // 'malloc', Pointer)`, the standard idiom for a symbol already linked
+        // into every process) means the process's own symbol space rather than
+        // a file literally named after the type object.
+        let lib_value = match library.view() {
+            ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {
+                self.call_sub_value(library.clone(), Vec::new(), true)?
+            }
+            _ => library.clone(),
         };
-        let (lib, lib_name) = crate::runtime::nativecall::load_declared_library(&Some(lib_name))?;
+        let lib_name = crate::runtime::nativecall::library_name_from_value(&lib_value);
+        let (lib, lib_name) = crate::runtime::nativecall::load_declared_library(&lib_name)?;
         // SAFETY: looking a symbol up in a dlopen'd library. The handle is
         // leaked to `'static` by `load_library_cached`, so the address stays
         // valid for the rest of the process.
@@ -169,6 +176,11 @@ impl Interpreter {
         let Some(name) = spec.ret_struct.clone() else {
             return;
         };
+        // A `--> Pointer[T]` return keeps its whole parameterised spelling in
+        // `ret_struct`; it names no class and must not be "resolved" to one.
+        if crate::runtime::cstruct_layout::pointer_parameter(&name).is_some() {
+            return;
+        }
         if self.registry().classes.contains_key(&name) {
             return;
         }
