@@ -3382,9 +3382,16 @@ impl Compiler {
                 }
                 self.code.patch_body_end(given_idx);
             }
-            Stmt::When { cond, body } => {
+            Stmt::When {
+                cond,
+                body,
+                is_statement_modifier,
+            } => {
                 self.compile_expr(cond);
-                let when_idx = self.code.emit(OpCode::When { body_end: 0 });
+                let when_idx = self.code.emit(OpCode::When {
+                    body_end: 0,
+                    statement_modifier: *is_statement_modifier,
+                });
                 let block_local_idx = Self::branch_declares_block_local(body).then(|| {
                     self.code.emit(OpCode::BlockLocalScope {
                         body_end: 0,

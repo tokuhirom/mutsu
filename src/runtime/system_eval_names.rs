@@ -503,7 +503,7 @@ impl Interpreter {
                     Self::collect_type_refs_in_stmt(s, out);
                 }
             }
-            Stmt::When { cond, body } => {
+            Stmt::When { cond, body, .. } => {
                 Self::collect_type_refs_in_expr(cond, out);
                 for s in body {
                     Self::collect_type_refs_in_stmt(s, out);

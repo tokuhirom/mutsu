@@ -381,6 +381,23 @@ fn paren_expr_inner(input: &str) -> PResult<'_, Expr> {
         if !saw_semicolon && let Some(seq) = try_parse_sequence_in_paren(input, &items) {
             return seq;
         }
+        // A statement modifier terminating the list: `(1, 2 if True, 3)`. The
+        // content of `(...)` is a semilist of *statements*, so the whole
+        // comma expression parsed so far is the modified statement and the
+        // modifier's condition is itself a full comma expression — hence
+        // `(1, 2 if True, 3)` is `(1, 2)` and `(1, 2 unless False, 3)` is
+        // `Empty` (the condition `(False, 3)` is a truthy 2-element list).
+        // The single-item spelling is handled before the loop; this is the
+        // multi-item one, which used to die with "',' or ';' in parenthesized
+        // list".
+        if !saw_semicolon
+            && let Some(result) = try_inline_modifier(input, finalize_paren_list(items.clone()))
+        {
+            let (rest, modified_expr) = result?;
+            let (rest, _) = ws(rest)?;
+            let (rest, _) = parse_char(rest, ')')?;
+            return Ok((rest, modified_expr));
+        }
         let sep = if input.starts_with(',') {
             ','
         } else if input.starts_with(';') && !input.starts_with(";;") {

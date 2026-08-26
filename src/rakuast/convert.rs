@@ -318,7 +318,7 @@ fn convert_stmt(stmt: &Stmt) -> Result<Option<RakuAstNode>, RuntimeError> {
             }
         }
         // `when Y { ... }` -> Statement::When(condition, body => plain Block).
-        Stmt::When { cond, body } => Ok(Some(RakuAstNode {
+        Stmt::When { cond, body, .. } => Ok(Some(RakuAstNode {
             class: RakuAstClass::StatementWhen,
             fields: vec![
                 node_field(Some("condition"), convert_expr(cond)?),

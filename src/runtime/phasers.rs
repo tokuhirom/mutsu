@@ -251,7 +251,7 @@ fn lift_phasers_from_stmt(
             lift_phasers_from_current_expr(cond, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             lift_phasers_from_current_expr(cond, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
@@ -669,7 +669,7 @@ fn lift_phasers_from_closure_stmt(
             lift_phasers_from_closure_stmts(then_branch, begin, check, init);
             lift_phasers_from_closure_stmts(else_branch, begin, check, init);
         }
-        Stmt::While { cond, body, .. } | Stmt::When { cond, body } => {
+        Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
             lift_phasers_from_expr(cond, begin, check, init);
             lift_phasers_from_closure_stmts(body, begin, check, init);
         }
@@ -1083,7 +1083,7 @@ fn recurse_into_stmt(stmt: &mut Stmt) {
             reorder_recursive(then_branch, false);
             reorder_recursive(else_branch, false);
         }
-        Stmt::While { cond, body, .. } | Stmt::When { cond, body } => {
+        Stmt::While { cond, body, .. } | Stmt::When { cond, body, .. } => {
             recurse_into_expr(cond);
             reorder_recursive(body, false);
         }

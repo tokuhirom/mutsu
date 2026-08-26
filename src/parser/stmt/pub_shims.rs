@@ -132,6 +132,20 @@ pub(crate) fn given_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::given_stmt(input)
 }
 
+/// Public accessor for the `when` statement parser. Raku's `(...)` is a semilist
+/// of *statements*, so a `when`/`default` clause is a legal term there
+/// (`$_ == 42 and (default { ... })` — control.rakudoc). Both clauses signal a
+/// match by raising `succeed`, which unwinds the enclosing topicalizer exactly
+/// as the statement form does.
+pub(crate) fn when_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::when_stmt(input)
+}
+
+/// Public accessor for the `default` statement parser — see `when_stmt_pub`.
+pub(crate) fn default_stmt_pub(input: &str) -> PResult<'_, Stmt> {
+    control::default_stmt(input)
+}
+
 pub(crate) fn labeled_loop_stmt_pub(input: &str) -> PResult<'_, Stmt> {
     control::labeled_loop_stmt(input)
 }

@@ -62,7 +62,14 @@ pub(crate) fn when_stmt(input: &str) -> PResult<'_, Stmt> {
         return Err(gobbled_block_error(name, rest.len()));
     }
     let (rest, body) = block(rest)?;
-    Ok((rest, Stmt::When { cond, body }))
+    Ok((
+        rest,
+        Stmt::When {
+            cond,
+            body,
+            is_statement_modifier: false,
+        },
+    ))
 }
 
 /// Whether a bareword `when` matcher names something the parser already knows,

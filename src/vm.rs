@@ -279,6 +279,11 @@ pub(crate) struct ControlHandlerEntry {
     /// Present only for `resume_safe` handlers: the bytecode + range + function
     /// table needed to run the handler INLINE at a deep `warn` raise site.
     pub handler: Option<ControlHandlerCode>,
+    /// Whether this handler has an arm that can match a `CX::Take` (see
+    /// `OpCode::TryCatch::control_handles_take`). Read by `exec_take_op` to
+    /// decide whether a `take` inside a `gather` must raise the control
+    /// exception instead of appending to the gather buffer directly.
+    pub handles_take: bool,
 }
 
 /// Self-contained bytecode for running a `resume_safe` CONTROL handler inline.

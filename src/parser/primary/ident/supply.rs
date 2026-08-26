@@ -247,9 +247,14 @@ fn rewrite_supply_stmt(stmt: Stmt, emitter_name: &str) -> Stmt {
             body: rewrite_supply_body(body, emitter_name),
             is_statement_modifier,
         },
-        Stmt::When { cond, body } => Stmt::When {
+        Stmt::When {
+            cond,
+            body,
+            is_statement_modifier,
+        } => Stmt::When {
             cond,
             body: rewrite_supply_body(body, emitter_name),
+            is_statement_modifier,
         },
         Stmt::Default(body) => Stmt::Default(rewrite_supply_body(body, emitter_name)),
         Stmt::Catch(body) => Stmt::Catch(rewrite_supply_body(body, emitter_name)),

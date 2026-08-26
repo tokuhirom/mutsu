@@ -222,12 +222,8 @@ Found in the 2026-08-22 batch-2 re-run of `regexes`/`traps`/`variables`/`control
 | file:line | one-line summary | ticket |
 |---|---|---|
 | `Language/control.rakudoc:526,537` | `do when COND { BLOCK }` used as an expression crashes / gives the wrong value | [control-do-when-expression-value.md](../todo/tickets/control-do-when-expression-value.md) |
-| `Language/control.rakudoc:717` | `race for` doesn't collect the loop's per-iteration results | [control-race-for-drops-results.md](../todo/tickets/control-race-for-drops-results.md) |
 | `Language/control.rakudoc:388` | `unless COND -> $x { }` rejects the pointy-block parameter that `if`/`while`/`with` already accept | [unless-pointy-block-param.md](../todo/tickets/unless-pointy-block-param.md) |
-| `Language/control.rakudoc:854` | `default { }` cannot be used as a term nested inside an expression | [control-default-term-expression-position.md](../todo/tickets/control-default-term-expression-position.md) |
-| `Language/control.rakudoc:973` | `proceed` inside a bare block with a trailing `when` modifier doesn't skip the enclosing `when` | [control-nested-when-proceed-skip.md](../todo/tickets/control-nested-when-proceed-skip.md) |
 | `Language/control.rakudoc:1375` | `return-rw` doesn't return a mutable container | [control-return-rw-not-mutable.md](../todo/tickets/control-return-rw-not-mutable.md) |
-| `Language/control.rakudoc:263` | statement-modifier `if` mid-comma-list inside parens is a hard parse failure | [control-if-modifier-mid-comma-list-parse-fail.md](../todo/tickets/control-if-modifier-mid-comma-list-parse-fail.md) |
 | `Type/IO/Path.rakudoc:128,290,423` | `IO::Path::Win32` inconsistently normalizes `/` vs `\` separators | [iopath-win32-separator-normalization.md](../todo/tickets/iopath-win32-separator-normalization.md) |
 | `Type/IO/Path.rakudoc:561` | `~~ :w`/`:r`/`:x` smart-match ignores effective per-user permission (raw mode bits instead of `access()`) | [iopath-filetest-smartmatch-wrong-permission-check.md](../todo/tickets/iopath-filetest-smartmatch-wrong-permission-check.md) |
 
@@ -454,7 +450,6 @@ Found in the 2026-08-22 batch-4 re-run of `Backtrace`/`Scalar`/`perl-var`/
 | `Type/Lock/Async.rakudoc:162,202` | `Lock::Async` is missing `.protect-or-queue-on-recursion` and `.with-lock-hidden-from-recursion-check` | [lock-async-recursion-methods-missing.md](../todo/tickets/lock-async-recursion-methods-missing.md) |
 | `Type/X/Method/InvalidQualifier.rakudoc:14` | `X::Method::InvalidQualifier` message says "a method" instead of naming the actual method | [invalid-qualifier-error-message-missing-method-name.md](../todo/tickets/invalid-qualifier-error-message-missing-method-name.md) |
 | `Type/IO/Path/Parts.rakudoc:71` | `$parts[]` (empty postcircumfix index) on `IO::Path::Parts` shows the whole-object gist instead of iterating its 3 positional elements | [io-path-parts-empty-subscript-not-positional.md](../todo/tickets/io-path-parts-empty-subscript-not-positional.md) |
-| `Language/phasers.rakudoc:401` | a `CONTROL { when CX::Take {...} }` handler is never invoked for `take` inside `gather` (unlike `CX::Warn`/`CX::Done`, which work) | [control-phaser-cx-take-not-intercepted.md](../todo/tickets/control-phaser-cx-take-not-intercepted.md) |
 | `Type/Metamodel/TypePretense.rakudoc:15,47` | `Role ~~ Cool` is `False` (should be `True`, same as `Mu`/`Any`), and `.HOW.pretending_to_be` is unimplemented | [role-type-pretense-cool-incomplete.md](../todo/tickets/role-type-pretense-cool-incomplete.md) |
 
 **Excluded from this batch-4 sub-run (already deferred/resolved/drift/false-positive/environment):**

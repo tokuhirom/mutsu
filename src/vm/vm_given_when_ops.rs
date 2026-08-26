@@ -374,6 +374,7 @@ impl Interpreter {
         &mut self,
         code: &CompiledCode,
         body_end: u32,
+        statement_modifier: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
@@ -431,6 +432,15 @@ impl Interpreter {
             let mut did_proceed = false;
             match self.run_range(code, body_start, end, compiled_fns) {
                 Ok(()) => {}
+                // A postfix `STMT when COND` is not a `when` clause (Rakudo
+                // lowers it to a plain conditional), so it must NOT consume a
+                // `proceed`: the signal keeps unwinding to the nearest real
+                // `when` clause. Record the match first, exactly as the
+                // catch-all arm below does for any other control signal.
+                Err(e) if e.is_proceed() && statement_modifier => {
+                    loan_env!(self, set_when_matched(true));
+                    return Err(e);
+                }
                 Err(e) if e.is_proceed() => {
                     did_proceed = true;
                 }

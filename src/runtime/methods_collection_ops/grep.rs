@@ -66,7 +66,7 @@ impl Interpreter {
                 Stmt::Given { topic, body, .. } => {
                     expr_contains_last(topic) || body.iter().any(stmt_contains_last)
                 }
-                Stmt::When { cond, body } => {
+                Stmt::When { cond, body, .. } => {
                     expr_contains_last(cond) || body.iter().any(stmt_contains_last)
                 }
                 Stmt::ClassDecl { body, .. }

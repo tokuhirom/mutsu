@@ -403,7 +403,7 @@ fn walk_stmt(stmt: &Stmt, scan: &mut Scan) {
             walk_expr(topic, scan);
             walk_stmts(body, scan);
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             walk_expr(cond, scan);
             walk_stmts(body, scan);
         }

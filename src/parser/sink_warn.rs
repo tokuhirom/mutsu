@@ -102,7 +102,7 @@ fn scan_gathers_stmt(stmt: &Stmt) {
             scan_gathers_expr(topic);
             scan_gathers_stmts(body);
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             scan_gathers_expr(cond);
             scan_gathers_stmts(body);
         }

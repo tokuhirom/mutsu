@@ -85,6 +85,7 @@ fn lower_stmt_inner(node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
         RakuAstClass::StatementWhen => Ok(Stmt::When {
             cond: lower_expr(named_child(node, "condition")?)?,
             body: lower_block(named_child(node, "body")?)?,
+            is_statement_modifier: false,
         }),
         RakuAstClass::StatementDefault => {
             Ok(Stmt::Default(lower_block(named_child(node, "body")?)?))

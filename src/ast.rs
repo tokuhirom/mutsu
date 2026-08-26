@@ -1061,6 +1061,16 @@ pub(crate) enum Stmt {
     When {
         cond: Expr,
         body: Vec<Stmt>,
+        /// True for the postfix `STMT when COND` spelling. Rakudo lowers that
+        /// modifier to a plain conditional (`COND.ACCEPTS($_) ?? STMT !! Nil`),
+        /// so it is NOT a `when` *clause*: it never abandons the enclosing
+        /// block on a match, and — the observable difference this flag exists
+        /// for — a `proceed` raised inside it is not consumed by it but keeps
+        /// unwinding to the nearest real `when` clause. mutsu builds the
+        /// modifier as a synthetic `Given { is_statement_modifier: true }`
+        /// wrapping this `When` so the match's `succeed` still has a catcher;
+        /// this flag stops the `When` itself from swallowing a `proceed`.
+        is_statement_modifier: bool,
     },
     Default(Vec<Stmt>),
     Die(Expr),
@@ -1988,7 +1998,7 @@ fn collect_ph_stmt(stmt: &Stmt, out: &mut Vec<String>) {
                 collect_ph_stmt(s, out);
             }
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             collect_ph_expr(cond, out);
             for s in body {
                 collect_ph_stmt(s, out);
@@ -2633,7 +2643,7 @@ fn collect_ph_stmt_shallow(stmt: &Stmt, out: &mut Vec<String>) {
                 }
             }
         }
-        Stmt::When { cond, body } => {
+        Stmt::When { cond, body, .. } => {
             collect_ph_expr_shallow(cond, out);
             if matches!(
                 placeholder_body_kind(stmt),

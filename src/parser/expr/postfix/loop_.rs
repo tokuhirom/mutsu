@@ -453,6 +453,26 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
             },
         ));
     }
+    // race prefix: the unordered sibling of `hyper` (same surface semantics as
+    // `.race`). In *expression* position the statement-prefix form is not
+    // reachable, so `my $r = race for ^10 { ... }` used to parse `race` as a
+    // bare listop term and leave the `for` behind as a separate, sunk
+    // statement. Mirrors the `hyper` arm directly above.
+    if input.starts_with("race") && !is_ident_char(input.as_bytes().get(4).copied()) {
+        let r = &input[4..];
+        let (r, _) = ws(r)?;
+        let (r, expr) = parse_prefix_listop_operand(r)?;
+        return Ok((
+            r,
+            Expr::MethodCall {
+                target: Box::new(expr),
+                name: Symbol::intern("race"),
+                args: Vec::new(),
+                modifier: None,
+                quoted: false,
+            },
+        ));
+    }
     // eager prefix: force lazy evaluation
     if input.starts_with("eager") && !is_ident_char(input.as_bytes().get(5).copied()) {
         let r = &input[5..];

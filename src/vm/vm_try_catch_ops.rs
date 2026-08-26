@@ -11,6 +11,7 @@ impl Interpreter {
         body_end: u32,
         explicit_catch: bool,
         resume_safe: bool,
+        control_handles_take: bool,
         is_bare_block: bool,
         traps: bool,
         ip: &mut usize,
@@ -56,6 +57,7 @@ impl Interpreter {
             body_end,
             explicit_catch,
             resume_safe,
+            control_handles_take,
             traps,
             ip,
             compiled_fns,
@@ -85,6 +87,7 @@ impl Interpreter {
         body_end: u32,
         explicit_catch: bool,
         resume_safe: bool,
+        control_handles_take: bool,
         traps: bool,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
@@ -120,6 +123,7 @@ impl Interpreter {
             self.control_handlers.push(crate::vm::ControlHandlerEntry {
                 resume_safe,
                 handler,
+                handles_take: control_handles_take,
             });
         }
         // Guard the protected body with a panic->X:: boundary so an internal
@@ -330,6 +334,7 @@ impl Interpreter {
                                 self.control_handlers.push(crate::vm::ControlHandlerEntry {
                                     resume_safe,
                                     handler,
+                                    handles_take: control_handles_take,
                                 });
                             }
                             let body_result =
