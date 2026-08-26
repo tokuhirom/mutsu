@@ -651,7 +651,15 @@ fn handle_method_call_assign(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
             }
         }
         Some(c) if s.name.starts_with('%') => Expr::BareWord(format!("Hash[{c}]")),
-        Some(c) => Expr::BareWord(c.clone()),
+        // A definedness smiley constrains the *variable*, not the invocant of
+        // the `.=` call: `my Pod::Block::Declarator:D $pod .= new` calls
+        // `Pod::Block::Declarator.new`, and a literal `K:D` bareword resolves
+        // to no type at all ("no such method new on K:D"). The `@`/`%` arms
+        // above deliberately keep the smiley, because there the constraint is
+        // the *element* type and `Array[Int:D]` is the real container type.
+        Some(c) => {
+            Expr::BareWord(crate::parser::stmt::decl::strip_type_smiley_suffix(c).to_string())
+        }
         // Untyped: `.= new` desugars to `$var = $var.new(...)`, so the invocant is
         // the variable itself, NOT a type named after it. Using a `@c`-named
         // `BareWord` mis-dispatched (e.g. `my @c .= new(:shape(2,2), ...)` built

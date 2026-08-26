@@ -1126,8 +1126,15 @@ impl Interpreter {
                         )));
                     }
                 }
-                // Reject assignment to immutable type objects (e.g., `Foo .= new`)
-                if !name.starts_with('$')
+                // Reject assignment to immutable type objects (e.g., `Foo .= new`).
+                // A `constant` DECLARATION (`raw_mode`) is exempt: it binds the
+                // name rather than modifying whatever the name currently means,
+                // so `constant Int = 5` shadows the builtin (raku prints 5) and
+                // `our Mu constant D = Metamodel::ClassHOW.new_type(:name<D>)`
+                // -- the documented manual-MOP idiom, whose RHS registers a
+                // class literally named `D` before the binding runs -- is legal.
+                if !raw_mode
+                    && !name.starts_with('$')
                     && !name.starts_with('@')
                     && !name.starts_with('%')
                     && !name.starts_with('&')

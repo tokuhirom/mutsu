@@ -2346,7 +2346,8 @@ impl Interpreter {
                     "callmethodmutwithvalues",
                     "classhow",
                 );
-                return self.dispatch_classhow_method(method, args.to_vec());
+                let how_args = self.how_dispatch_args(&attributes, method, &args);
+                return self.dispatch_classhow_method(method, how_args);
             }
             if crate::runtime::utils::is_buf_like_class(&class_name.resolve())
                 && matches!(method, "write-ubits" | "write-bits")

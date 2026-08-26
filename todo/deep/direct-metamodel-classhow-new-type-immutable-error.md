@@ -52,6 +52,41 @@ In real Rakudo, `Metamodel::ClassHOW.new_type(...)` returns a fresh, still-mutab
 type object; it does not itself bind any global/package name. The name only comes into
 existence when the surrounding `constant`/`my`/`our` binding assigns it.
 
+## UPDATE (2026-08-26): the headline "immutable" error is fixed; the remaining gap is narrower
+
+The `constant`-binding half of this ticket is closed. The guard in
+`src/vm/vm_exec_dispatch.rs` now exempts a `constant` DECLARATION (`raw_mode`) from
+the immutable-type-object rejection: a declaration *binds* the name, it does not
+modify whatever the name currently means. Both isolations above now behave:
+
+```
+$ mutsu -e 'constant Zorp := Metamodel::ClassHOW.new_type(name => "Zorp"); say Zorp.^name'
+Zorp
+```
+
+The root-cause hypothesis above was right about the mechanism (`new_type` eagerly
+registers the class, so the binding looked like a reassignment) but the *fix* did not
+need `new_type` reworked — Rakudo allows `constant Int = 5` to shadow a builtin type
+too, so the guard was simply over-broad. Shipped alongside the `Metamodel::Documenting`
+work (see `news/2026-08/metamodel-how-set-why-after-compose-immutable.md`), which needs
+the same `our Mu constant Documented = Metamodel::ClassHOW.new_type(...)` idiom.
+
+What is still broken in the doc's full example is the *call*, not the binding:
+
+```raku
+constant A := Metamodel::ClassHOW.new_type(name => 'A');
+A.^add_method('x', my method x(A:) { say 42 });
+A.^compose;
+say A.^methods.elems;      # 1        (the method IS registered)
+say A.^lookup('x').^name;  # Method   (and IS findable)
+A.x();                     # raku: 42 ; mutsu: silently nothing
+```
+
+So `.^add_method` + `.^compose` on a hand-minted type record the method correctly, but
+invoking it on the resulting type object is a no-op. That is a method-dispatch gap on
+a `new_type`-minted `Package`, not a registration or immutability gap — retarget the
+remaining investigation there.
+
 ## Why this is deep
 
 Fixing this requires understanding (and probably reworking) how mutsu's

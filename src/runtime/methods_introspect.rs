@@ -448,6 +448,18 @@ impl Interpreter {
         {
             return Ok(pod.clone());
         }
+        // A pod object attached at the meta level with `.^set_why`
+        // (`Metamodel::Documenting`) is what the type object's own `.WHY`
+        // reports too -- `Documented.HOW.WHY` and `Documented.WHY` are the
+        // same answer in Rakudo.
+        if let ValueView::Package(name) = target.view()
+            && let Some(why) = self
+                .type_metadata
+                .get(&name.resolve())
+                .and_then(|m| m.get("__set_why__"))
+        {
+            return Ok(why.clone());
+        }
         // Return declarator doc comment attached to this type/package/sub
         let keys: Vec<String> = match target.view() {
             ValueView::Package(name) => vec![name.resolve()],

@@ -287,8 +287,13 @@ impl Interpreter {
                         // check and for the actual MRO lookup below — an
                         // uncanonicalized short name never matches a fully
                         // qualified MRO entry (`"A" != "M::A"`).
+                        let invocant_class = class_name.resolve();
                         let (canonical_owner, caller_allowed) = self
-                            .resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
+                            .resolve_and_check_private_owner_on(
+                                caller_class.as_deref(),
+                                owner_class,
+                                Some(&invocant_class),
+                            );
                         if !caller_allowed {
                             return Err(make_private_permission_error(
                                 pm_name,
@@ -1641,8 +1646,13 @@ impl Interpreter {
                     // the caller's package chain before using it both for
                     // the trust check and the MRO lookup below — a short
                     // name never matches a fully qualified MRO entry.
-                    let (canonical_owner, caller_allowed) =
-                        self.resolve_and_check_private_owner(caller_class.as_deref(), owner_class);
+                    let invocant_class = name.resolve();
+                    let (canonical_owner, caller_allowed) = self
+                        .resolve_and_check_private_owner_on(
+                            caller_class.as_deref(),
+                            owner_class,
+                            Some(&invocant_class),
+                        );
                     if !caller_allowed {
                         return Err(make_private_permission_error(
                             pm_name,

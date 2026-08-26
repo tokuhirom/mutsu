@@ -105,7 +105,7 @@ fn wrap_with_will_leave(
     Stmt::SyntheticBlock(stmts)
 }
 
-fn strip_type_smiley_suffix(type_name: &str) -> &str {
+pub(super) fn strip_type_smiley_suffix(type_name: &str) -> &str {
     type_name
         .strip_suffix(":U")
         .or_else(|| type_name.strip_suffix(":D"))

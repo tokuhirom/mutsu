@@ -21,7 +21,7 @@ pub(crate) struct SubtestDeclSnapshot {
     proto_subs: FxHashSet<String>,
     proto_tokens: FxHashSet<String>,
     classes: FxHashMap<String, ClassDef>,
-    class_trusts: FxHashMap<String, FxHashSet<String>>,
+    class_trusts: FxHashMap<String, Vec<String>>,
     roles: FxHashMap<String, RoleDef>,
     subsets: FxHashMap<String, SubsetDef>,
     loaded_modules: HashSet<String>,
