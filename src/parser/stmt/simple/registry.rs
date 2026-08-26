@@ -15,6 +15,38 @@ pub(crate) fn register_user_sub(name: &str) {
     }
 }
 
+/// Record a loop label declaration (`MY-LABEL: for ... { }`) so that a later
+/// `next`/`last`/`redo MY-LABEL` in the loop body recognises its argument.
+///
+/// A Raku loop label is an ordinary identifier: `MY-LABEL`, `my-label` and
+/// `Outer` are all legal, and there is no shape that distinguishes one from any
+/// other bareword. The label is always written before the body that references
+/// it, so the declaration is already registered by the time the reference is
+/// parsed. Registered in the *current* scope; the loop body pushes a nested
+/// scope, and `is_declared_loop_label` searches outwards.
+pub(crate) fn register_loop_label(name: &str) {
+    SCOPES.with(|s| {
+        let mut scopes = s.borrow_mut();
+        let current = scopes
+            .last_mut()
+            .expect("scope stack should never be empty");
+        current.loop_labels.insert(name.to_string());
+    });
+    // `next FOO` parses differently once `FOO` is a known label, so a memoized
+    // parse of the body taken before the declaration must not be reused.
+    crate::parser::invalidate_all_memos();
+}
+
+/// Whether `name` was declared as a loop label in any enclosing scope.
+pub(crate) fn is_declared_loop_label(name: &str) -> bool {
+    SCOPES.with(|s| {
+        s.borrow()
+            .iter()
+            .rev()
+            .any(|scope| scope.loop_labels.contains(name))
+    })
+}
+
 pub(crate) fn register_user_infix_assoc(name: &str, assoc: &str) {
     SCOPES.with(|s| {
         let mut scopes = s.borrow_mut();

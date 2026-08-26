@@ -562,9 +562,24 @@ pub(super) fn could_start_var_name(after_sigil: &str) -> bool {
     }
 }
 
-/// Loop/control-flow labels use all-caps identifier style and may include digits.
-/// Examples: `OUTER`, `L1`, `_RETRY`.
+/// Whether `name` may be the label argument of `next`/`last`/`redo`.
+///
+/// A Raku loop label is an ordinary identifier, with no restriction on case or
+/// hyphens — `raku-doc/doc/Type/Label.rakudoc` uses `MY-LABEL:` in its own
+/// canonical example, and a lowercase `my-label:` is legal too. So the primary
+/// test is whether the name was actually *declared* as a label earlier in the
+/// enclosing lexical scope (labels always precede the body that references
+/// them), which `is_declared_loop_label` answers exactly.
+///
+/// The all-caps shape test is kept as a fallback for labels the declaration-site
+/// registry never saw — a label crossing an `EVAL`/module boundary, or one
+/// attached to a form `labeled_loop_stmt` does not register. It is only ever
+/// consulted for names that are *not* registered, so it can add label
+/// recognition but never take it away.
 pub(super) fn is_loop_label_name(name: &str) -> bool {
+    if crate::parser::stmt::simple::is_declared_loop_label(name) {
+        return true;
+    }
     let mut chars = name.chars();
     let Some(first) = chars.next() else {
         return false;

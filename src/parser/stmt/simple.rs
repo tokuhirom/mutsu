@@ -80,17 +80,18 @@ pub(in crate::parser) use pragma_preseed::{
     set_eval_operator_preseed, set_eval_user_sub_preseed, set_eval_user_type_preseed,
 };
 pub(in crate::parser) use registry::{
-    declare_keywords_snapshot, lookup_custom_infix_precedence, lookup_postfix_precedence,
-    lookup_prefix_precedence, lookup_user_infix_assoc, register_op_precedence,
-    register_user_infix_assoc, register_user_sub, register_user_test_assertion_sub,
-    reset_user_subs, resolve_op_precedence, restore_declare_keywords,
-    set_eval_language_version_preseed,
+    declare_keywords_snapshot, is_declared_loop_label, lookup_custom_infix_precedence,
+    lookup_postfix_precedence, lookup_prefix_precedence, lookup_user_infix_assoc,
+    register_loop_label, register_op_precedence, register_user_infix_assoc, register_user_sub,
+    register_user_test_assertion_sub, reset_user_subs, resolve_op_precedence,
+    restore_declare_keywords, set_eval_language_version_preseed,
 };
 pub(in crate::parser) use slang_modes::{restore_slang_modes, slang_modes_snapshot};
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use user_ops::{
-    is_circumfix_close_delimiter, is_user_declared_prefix_sub, is_user_declared_value_term,
-    is_user_defined_infix, match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
+    is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
+    is_user_declared_prefix_sub, is_user_declared_value_term, is_user_defined_infix,
+    match_user_declared_circumfix_op, match_user_declared_infix_symbol_op,
     match_user_declared_postcircumfix_op, match_user_declared_postfix_op,
     match_user_declared_prefix_op, match_user_declared_term_symbol,
     register_user_callable_term_symbol, register_user_term_symbol,
@@ -143,6 +144,13 @@ struct LexicalScope {
     /// `mark_current_scope_routine_body`. Drives the mint-time classification
     /// of anonymous state variables — see `anon_state_is_per_call`.
     is_routine_body: bool,
+    /// Loop labels declared in this scope (`MY-LABEL: for ... { }`). A Raku loop
+    /// label is an ordinary identifier — hyphens and lowercase included — so
+    /// `next`/`last`/`redo` cannot recognise its argument by shape alone. The
+    /// label always appears textually before the loop body that references it,
+    /// so recording it at the declaration site is enough for the reference site
+    /// to resolve it. See `is_declared_loop_label`.
+    loop_labels: HashSet<String>,
     /// Names of the anonymous state variables (`$++` / `++$`) minted DIRECTLY in
     /// this scope. When the block finishes parsing, each becomes an implicit
     /// `state` declaration at the top of its statement list — Raku's bare `$` is

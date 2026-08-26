@@ -481,112 +481,24 @@ fn parse_list_infix_loop_impl<'a>(
         }
         // User-defined infix words (typically via my &infix:<...> = ...),
         // e.g. `42 same-in-Int "42"`.
+        //
+        // Only operators explicitly pushed down to (or below) the list-infix
+        // level with `is looser` are handled here. A trait-less custom infix
+        // defaults to ADDITIVE precedence in rakudo, so it is handled by
+        // `additive_expr` instead — which is why `1 op 2 ?? "y" !! "n"` is
+        // `(1 op 2) ?? ...` and not a parse error.
+        //
         // Do not span statement boundaries across newlines.
         if !ws_before.contains('\n')
-            && let Some((name, len)) = parse_custom_infix_word(r)
-            && crate::parser::stmt::simple::lookup_custom_infix_precedence(&name)
-                .is_none_or(|level| level <= crate::parser::stmt::simple::PREC_SEQUENCE)
+            && let Some(new_rest) = super::custom_infix::try_custom_infix_word(
+                r,
+                left,
+                i32::MIN,
+                crate::parser::stmt::simple::PREC_SEQUENCE,
+                &|s| operand.parse_single(s),
+            )?
         {
-            let mut r = &r[len..];
-            let (r2, _) = ws(r)?;
-            // A user infix word handled here is at the list-infix precedence
-            // level, so its operand absorbs the whole tighter expression
-            // (junctions, comparison, ...): `1 op 2 | 3` is `1 op (2 | 3)`.
-            let (r2, right) = operand.parse_single(r2).map_err(|err| {
-                enrich_expected_error(err, "expected expression after infix operator", r.len())
-            })?;
-            let assoc = crate::parser::stmt::simple::lookup_user_infix_assoc(&name)
-                .unwrap_or_else(|| "left".to_string());
-            let mut args = vec![left.clone(), right];
-            r = r2;
-            // Only genuine associativity values collect the full operand run here:
-            // `list` (pass all to the routine), `right` (right-fold), `non` (reject
-            // >2), and `chain` (expanded pairwise downstream). The precedence-trait
-            // placeholders `equiv`/`tighter`/`looser` are NOT associativity and must
-            // fold left-associatively via the outer loop like `left`: a user operator
-            // never chains merely because `is equiv(&infix:<==>)` copied a built-in
-            // chain op's precedence — rakudo keeps it non-chaining, so `6 op 4 op 2`
-            // is `(6 op 4) op 2`, not one n-ary `op(6,4,2)` call.
-            if matches!(assoc.as_str(), "list" | "right" | "non" | "chain") {
-                loop {
-                    let (r_ws, _) = ws(r)?;
-                    let ws_between = &r[..r.len() - r_ws.len()];
-                    if ws_between.contains('\n') {
-                        break;
-                    }
-                    let Some((next_name, next_len)) = parse_custom_infix_word(r_ws) else {
-                        break;
-                    };
-                    if next_name != name {
-                        break;
-                    }
-                    let r_after_op = &r_ws[next_len..];
-                    let (r_after_op, _) = ws(r_after_op)?;
-                    let (r_after_arg, arg) = operand.parse_single(r_after_op).map_err(|err| {
-                        enrich_expected_error(
-                            err,
-                            "expected expression after infix operator",
-                            r_after_op.len(),
-                        )
-                    })?;
-                    args.push(arg);
-                    r = r_after_arg;
-                }
-            }
-            // Collect trailing colonpair adverbs (e.g., `3 zin 4 :x(5)`)
-            loop {
-                let (r_ws, _) = ws(r)?;
-                if r_ws.starts_with(':')
-                    && !r_ws.starts_with("::")
-                    && let Ok((r3, adverb)) = crate::parser::primary::colonpair_expr(r_ws)
-                {
-                    args.push(adverb);
-                    r = r3;
-                } else {
-                    break;
-                }
-            }
-            *left = match assoc.as_str() {
-                "right" => {
-                    let mut iter = args.into_iter().rev();
-                    let mut acc = iter
-                        .next()
-                        .unwrap_or(Expr::Literal(crate::value::Value::NIL));
-                    for lhs in iter {
-                        acc = Expr::InfixFunc {
-                            name: name.clone(),
-                            left: Box::new(lhs),
-                            right: vec![acc],
-                            modifier: None,
-                        };
-                    }
-                    acc
-                }
-                "list" | "chain" => Expr::InfixFunc {
-                    name: name.clone(),
-                    left: Box::new(args[0].clone()),
-                    right: args[1..].to_vec(),
-                    modifier: None,
-                },
-                "non" => {
-                    if args.len() > 2 {
-                        return Err(non_associative_error(&name));
-                    }
-                    Expr::InfixFunc {
-                        name: name.clone(),
-                        left: Box::new(args[0].clone()),
-                        right: args[1..].to_vec(),
-                        modifier: None,
-                    }
-                }
-                _ => Expr::InfixFunc {
-                    name: name.clone(),
-                    left: Box::new(args[0].clone()),
-                    right: args[1..].to_vec(),
-                    modifier: None,
-                },
-            };
-            rest = r;
+            rest = new_rest;
             continue;
         }
         break;

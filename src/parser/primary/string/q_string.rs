@@ -23,11 +23,9 @@ pub(crate) fn big_q_string(input: &str) -> PResult<'_, Expr> {
     // with `role Q { }` in scope, `$c does Q; say "x";` is a `does` against the
     // role, not a `Q`-quote delimited by `;` that swallows the next statement.
     // (`raku -e 'say Q;abc;'` prints `abc`; adding `role Q {}` makes it complain
-    // that the routine `abc` is undeclared.)
-    let word_end = input
-        .find(|c: char| !c.is_ascii_alphabetic())
-        .unwrap_or(input.len());
-    if crate::parser::stmt::simple::is_user_declared_type(&input[..word_end]) {
+    // that the routine `abc` is undeclared.) The rule is not type-specific — an
+    // enum value, a `constant`, or a `sub` named `Q` shadows it just the same.
+    if crate::parser::quote_shadow::quote_lang_shadowed(input) {
         return Err(PError::expected("Q string"));
     }
 
@@ -183,10 +181,7 @@ pub(crate) fn q_string(input: &str) -> PResult<'_, Expr> {
     // A declared symbol wins over the quoting language, as in raku — see the
     // note in `big_q_string`. `class qw { }` is unusual but legal, and once
     // declared, `qw` is that type everywhere.
-    let word_end = input
-        .find(|c: char| !c.is_ascii_alphabetic())
-        .unwrap_or(input.len());
-    if crate::parser::stmt::simple::is_user_declared_type(&input[..word_end]) {
+    if crate::parser::quote_shadow::quote_lang_shadowed(input) {
         return Err(PError::expected("q string"));
     }
     let mut after_q = &input[1..];

@@ -13,6 +13,7 @@ mod memo;
 mod outer_redecl;
 mod parse_result;
 mod primary;
+mod quote_shadow;
 mod sink_warn;
 mod stmt;
 pub(crate) mod stmt_ending_brace;

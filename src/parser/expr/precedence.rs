@@ -40,7 +40,7 @@ mod ternary;
 
 // ---- Re-exports preserving each public function's original visibility ----
 pub(super) use chain_cmp::range_expr;
-pub(super) use custom_infix::parse_custom_infix_word;
+pub(super) use custom_infix::{parse_custom_infix_word, try_custom_infix_word};
 pub(super) use operands::{loose_prefix_operand, multiplicative_operand, power_operand};
 pub(super) use ternary::{ternary, ternary_mode, ternary_no_assign};
 // These take `pub(super)` types (ComparisonOp/FeedOp), so re-export at the same

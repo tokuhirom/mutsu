@@ -176,16 +176,25 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
             rest = r;
             continue;
         }
-        // Custom infix ops at additive level exactly (is equiv<+>)
+        // Custom infix ops at additive level: `is equiv(&infix:<+>)` and — the
+        // common case — every trait-less `sub infix:<...>`, whose default
+        // precedence in rakudo is additive. Handling them here (rather than at
+        // the much looser list-infix layer) is what makes `1 op 2 ~ 3` parse as
+        // `(1 op 2) ~ 3` and `1 op 2 ?? "y" !! "n"` as `(1 op 2) ?? "y" !! "n"`.
         {
             use crate::parser::stmt::simple::PREC_ADDITIVE;
-            if let Some(new_rest) = try_custom_infix_at_level(
-                r,
-                &mut left,
-                PREC_ADDITIVE - 1,
-                PREC_ADDITIVE,
-                multiplicative_expr,
-            )? {
+            // A custom infix *word* must not span a statement boundary: a bare
+            // identifier opening the next line is a new statement, not an infix.
+            let crossed_newline = rest[..rest.len() - r.len()].contains('\n');
+            if !crossed_newline
+                && let Some(new_rest) = crate::parser::expr::precedence::try_custom_infix_word(
+                    r,
+                    &mut left,
+                    PREC_ADDITIVE - 1,
+                    PREC_ADDITIVE,
+                    &multiplicative_expr,
+                )?
+            {
                 rest = new_rest;
                 continue;
             }

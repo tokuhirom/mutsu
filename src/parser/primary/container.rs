@@ -27,7 +27,10 @@ pub(crate) use angle_words::angle_words_subscript_index_expr;
 pub(crate) use angle_words::angle_list;
 pub(super) use angle_words::{double_angle_list, find_nested_angle_close_pub, french_quote_list};
 pub(crate) use array::fail_goal_error_at;
-pub(super) use array::{array_literal, percent_hash_literal};
+pub(super) use array::percent_hash_literal;
+// `is foo[1,2,3]` variable-trait argument sugar parses its bracket as an array
+// literal, from `parser::stmt::decl::my_decl`.
+pub(in crate::parser) use array::array_literal;
 // `paren_expr` is `pub(crate)` (not `pub(super)`) because the `enum` declarator
 // parses its `(...)` body with the very same parenthesized-term rule rakudo
 // uses (`parser::stmt::decl::enum_decl`), which is what makes `;` a variant

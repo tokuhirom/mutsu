@@ -97,6 +97,20 @@ impl ParamDef {
     /// A plain destructuring parameter `($a, $b)` — also recorded under the
     /// synthetic `__subsig__` name but NOT slurpy — consumes exactly one
     /// positional argument and is deliberately excluded.
+    /// True for every parameter that binds a *variable* number of arguments:
+    /// `*@a` / `*%h` (`slurpy`), `**@a` (`double_slurpy`), and the
+    /// single-argument-rule `+@a` / `+%h` (`onearg`).
+    ///
+    /// `+@a` is a slurpy in rakudo — it differs from `*@a` only in the
+    /// single-argument rule — but mutsu's parser records it as a plain `@`
+    /// parameter carrying `onearg`, so anything reasoning about arity has to ask
+    /// for all three flags. Asking only about `slurpy` made multi dispatch treat
+    /// `multi f($s, +@i)` as a fixed two-argument candidate, so `f("x", 1, 2)`
+    /// found no candidate at all while the identical non-`multi` sub bound fine.
+    pub(crate) fn is_variadic(&self) -> bool {
+        self.slurpy || self.double_slurpy || self.onearg
+    }
+
     pub(crate) fn is_capture_subsignature(&self) -> bool {
         self.sub_signature.is_some()
             && self.type_constraint.is_none()

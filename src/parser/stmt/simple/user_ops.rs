@@ -280,6 +280,31 @@ pub(crate) fn is_user_declared_value_term(name: &str) -> bool {
     })
 }
 
+/// Whether `name` is declared, in any enclosing parse scope, as *any* kind of
+/// symbol whose bare occurrence is a term: a routine, a type (class / role /
+/// grammar / enum / subset), a value of a user-declared enum, a sigilless term
+/// symbol (`my \foo`, `constant foo`, `term:<foo>`), or a sigilless value term
+/// imported from a scanned module.
+///
+/// This is the union the quote-language shadowing rule needs (see
+/// `crate::parser::quote_shadow`): rakudo lets *any* declaration of a name kill
+/// the quote language spelled that way, so asking about one registry at a time
+/// — as the old per-quote-name guards did — could only ever be half right.
+pub(crate) fn is_declared_symbol_name(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    SCOPES.with(|s| {
+        s.borrow().iter().rev().any(|scope| {
+            scope.user_subs.contains(name)
+                || scope.user_types.contains(name)
+                || scope.user_enum_values.contains(name)
+                || scope.term_symbols.contains_key(name)
+                || scope.imported_value_terms.contains(name)
+        })
+    })
+}
+
 pub(crate) fn register_user_callable_term_symbol(name: &str) {
     let Some(symbol) = name
         .strip_prefix("term:<")
@@ -426,6 +451,34 @@ pub(crate) fn match_user_declared_postcircumfix_op(input: &str) -> Option<(Strin
             }
         }
         best
+    })
+}
+
+/// Whether `word` is *exactly* the closing delimiter of an in-scope circumfix or
+/// postcircumfix operator.
+///
+/// The unanchored [`is_circumfix_close_delimiter`] cannot be used to vet an
+/// identifier: with `circumfix:<foo bar>` in scope it also answers `true` for
+/// `barbecue`. This one compares the whole word, so it can be consulted by
+/// parsers that have already tokenised an identifier — notably the permissive
+/// custom-infix-word matcher, which would otherwise eat the closer of
+/// `foo 5 bar` / `α 5 ω` as an infix operator and leave the circumfix unclosed.
+pub(crate) fn is_circumfix_close_delimiter_word(word: &str) -> bool {
+    if word.is_empty() {
+        return false;
+    }
+    SCOPES.with(|s| {
+        s.borrow().iter().rev().any(|scope| {
+            scope.user_subs.iter().any(|name| {
+                name.strip_prefix("circumfix:<")
+                    .or_else(|| name.strip_prefix("postcircumfix:<"))
+                    .and_then(|d| d.strip_suffix('>'))
+                    .is_some_and(|delims| {
+                        let parts: Vec<&str> = delims.split_whitespace().collect();
+                        parts.len() == 2 && parts[1] == word
+                    })
+            })
+        })
     })
 }
 

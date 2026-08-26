@@ -26,6 +26,18 @@ pub(crate) fn labeled_loop_stmt(input: &str) -> PResult<'_, Stmt> {
     }
     let (rest, _) = ws(rest)?;
 
+    // Record the label before its body is parsed, so a `next`/`last`/`redo
+    // <label>` inside the body recognises it. Only the loop/block forms below
+    // are labels — the generic `IDENT: <expr>` tail can still turn out to be a
+    // colon-listop call (`trim: "x"`), which must not register a label.
+    if rest.starts_with('{')
+        || ["for", "while", "until", "loop", "repeat", "do"]
+            .iter()
+            .any(|kw| keyword(kw, rest).is_some())
+    {
+        crate::parser::stmt::simple::register_loop_label(&label);
+    }
+
     // Check which loop keyword follows
     if let Some(r) = keyword("for", rest) {
         let (r, _) = ws1(r)?;

@@ -145,6 +145,14 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
         return Err(PError::obsolete("qr for regex quoting", "rx//"));
     }
 
+    // A declared symbol shadows every named quote language spelled the same way
+    // — `m`, `s`, `S`, `tr`, `TR`, `rx` alike. One check up front, rather than a
+    // different ad-hoc guard per construct below. See
+    // `crate::parser::quote_shadow` for the rule and its adverb exception.
+    if crate::parser::quote_shadow::quote_lang_shadowed(input) {
+        return Err(PError::expected("regex literal"));
+    }
+
     // rx/pattern/ or rx{pattern}
     if let Ok((rest, _)) = parse_tag(input, "rx") {
         // `rx(o)` without whitespace before `(` should be parsed as an
@@ -436,14 +444,10 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // s with arbitrary delimiter: s/pattern/replacement/, s^pattern^replacement^, etc.
     // Also supports adverbs: s:mm/pattern/replacement/, s:i:g/pattern/replacement/
-    // Skip if 's' has been declared as a user sub — UNLESS followed by ':', which is always
-    // substitution (per Raku spec: `s:` is always a substitution even when `sub s` exists).
+    // A declared `s` (of any kind) is handled by the `quote_lang_shadowed` check
+    // at the top of this function, including its `s:g/.../.../` adverb exception.
     if let Some(after_s) = input.strip_prefix('s')
         && !after_s.is_empty()
-        // An adverb may be separated from the `s` by whitespace (`s :g :i/.../.../`),
-        // which still makes this unambiguously a substitution.
-        && (!crate::parser::stmt::simple::is_user_declared_sub("s")
-            || starts_with_adverb(after_s))
     {
         // Parse optional adverbs between s and delimiter
         let has_adverbs = starts_with_adverb(after_s);
@@ -654,11 +658,9 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
 
     // S/pattern/replacement/ — non-destructive substitution
     // Supports adverbs before the delimiter: S:i/.../.../
-    // Skip if 'S' has been declared as a user type (class/role/grammar) —
-    // it should be parsed as a type object, not substitution.
-    if let Some(after_s) = input.strip_prefix('S')
-        && !crate::parser::stmt::simple::is_user_declared_type("S")
-    {
+    // A declared `S` is handled by the `quote_lang_shadowed` check at the top of
+    // this function.
+    if let Some(after_s) = input.strip_prefix('S') {
         let had_adverbs = starts_with_adverb(after_s);
         let (spec, adverbs) = parse_match_adverbs(after_s)?;
         // Allow whitespace between adverbs and the delimiter (e.g.
@@ -947,11 +949,12 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
     // m/pattern/ or m{pattern} or m[pattern]
     // m with arbitrary delimiter: m/.../, m{...}, m[...], m^...^, m!...!, etc.
     // Also allow modifiers before delimiter: m:2x/.../, m:x(2)/.../, m:g:i/.../
-    // Skip if 'm' has been declared as a user sub — it should be parsed as a function call.
+    // A declared `m` is handled by the `quote_lang_shadowed` check at the top of
+    // this function (which, unlike the old `is_user_declared_sub("m")` guard,
+    // still lets the unambiguous adverb form `m:i/.../` through).
     if let Some(after_m) = input.strip_prefix('m')
         && !after_m.starts_with("=>")
         && !after_m.starts_with("::")
-        && !crate::parser::stmt::simple::is_user_declared_sub("m")
     {
         let (spec, mut adverbs) = parse_match_adverbs(after_m)?;
         let spec = parse_compact_match_adverbs(spec, &mut adverbs);
