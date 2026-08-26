@@ -5176,7 +5176,26 @@ impl CompiledCode {
                 | OpCode::SymbolicDeref { .. }
                 | OpCode::SymbolicDerefStore(_)
                 | OpCode::IndirectCodeLookup(_) => true,
-                OpCode::CallFunc { name_idx, .. } | OpCode::CallFuncNamed { name_idx, .. } => {
+                // `EVAL`/`EVALFILE` are reflective regardless of which call
+                // shape the call site compiled to: a statement-position call
+                // (`EVAL q[...];`, whose value is discarded) reaches
+                // `ExecCall`/`ExecCallPairs`, not just the tail/expression
+                // forms `CallFunc`/`CallFuncNamed`. Missing the statement
+                // forms here left the READ side of EVAL's caller-lexical
+                // visibility working only when an EVAL happened to also
+                // appear in tail position somewhere in the same compiled
+                // chunk (see `todo/tickets/repl-routine-unimplemented.md` /
+                // `news/2026-08/eval-read-side-caller-lexicals.md`): with no
+                // tail-form EVAL anywhere, this flag never latched, so a
+                // plain lexical's `SetLocal` never mirrored into `env` and a
+                // later `EVAL 'say $x'` -- which resolves `$x` by name
+                // against `env`, having no compile-time knowledge of the
+                // caller's local slots -- read the stale placeholder instead
+                // of the live value.
+                OpCode::CallFunc { name_idx, .. }
+                | OpCode::CallFuncNamed { name_idx, .. }
+                | OpCode::ExecCall { name_idx, .. }
+                | OpCode::ExecCallPairs { name_idx, .. } => {
                     matches!(
                         self.constants.get(*name_idx as usize).map(Value::view),
                         Some(ValueView::Str(name)) if name.as_str() == "EVAL" || name.as_str() == "EVALFILE"
