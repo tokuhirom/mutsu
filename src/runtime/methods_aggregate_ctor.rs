@@ -326,14 +326,28 @@ impl Interpreter {
         type_args: &Option<Vec<String>>,
         args: &[Value],
     ) -> Result<Value, RuntimeError> {
-        // NOTE: Hash/Map deliberately do NOT strip named args here.
-        // rakudo eats them (`Hash.new(:42a) eqv {}`), but roast
-        // hash.t (rakudo issue #3211) asserts `Hash.new(:42a, :666b)`
-        // equals the positional `Hash.new((:42a, :666b))` — i.e. the
-        // named args should become data. mutsu already does that, so
-        // keep it (only the QuantHash constructors eat named args).
+        // `Hash.new`/`Map.new` take `*@args` and let named arguments fall into
+        // the implicit `%_`, but rakudo also honours the all-named call as data
+        // — the rule, derived by probing raku, is: **named arguments are data
+        // only when there is no positional argument at all**.
+        //
+        //   Map.new(:42a, :7c)        -> (:a(42), :c(7))   all named  -> data
+        //   Map.new("b", 3, :42a)     -> (:b(3))           positional -> named dropped
+        //   Map.new(@empty, :42a)     -> ()                @empty IS a positional
+        //   Map.new((:42a), :7c)      -> (:a(42))          parens make it positional
+        //
+        // That reconciles the two data points this code has to satisfy at once:
+        // roast hash.t (rakudo issue #3211) asserts `Hash.new(:42a, :666b)` eqv
+        // `Hash.new((:42a, :666b))` — the all-named case, still data — while
+        // `Type/Map.rakudoc`'s own "WRONG" example, `Map.new('a', 1, :b(2))`,
+        // must yield just `a`. Named-ness is the call-site property of
+        // ADR-0021, read off the `Pair` flavour bit.
+        let named_are_data = !args.iter().any(|a| !a.is_string_pair_value());
         let mut flat = Vec::new();
         for arg in args {
+            if !named_are_data && arg.is_string_pair_value() {
+                continue;
+            }
             // A blessed Associative object (`class Foo does Associative`, e.g. a
             // Hash::Agnostic tied hash) is NOT enumerable by `value_to_list`, which
             // would keep it as one scalar item and turn it into a bogus

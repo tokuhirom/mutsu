@@ -2385,6 +2385,12 @@ impl Interpreter {
                             | "elems"
                             | "end"
                             | "List"
+                            // `.list` is `.List`'s lower-case sibling and was
+                            // missing here, so `$v.list` on an `is Array`
+                            // subclass wrapped the instance in a one-element
+                            // list while the non-mut `CallMethod` path (which
+                            // delegates unconditionally) returned the elements.
+                            | "list"
                             | "Array"
                             | "Seq"
                             | "Slip"

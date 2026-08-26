@@ -285,6 +285,13 @@ pub(in crate::parser) fn process_content_with_flags(content: &str, flags: &Quote
         // Backslash handling
         if rest.starts_with('\\') && rest.len() > 1 {
             if flags.full_backslash() {
+                // `\q[...]`/`\qq[...]`/`\qw[...]` re-quote their body; they
+                // produce an expression, so they are tried before the
+                // char-level escape handler (which only appends to `current`).
+                if let Some(r) = process_q_escape(rest, &mut parts, &mut current) {
+                    rest = r;
+                    continue;
+                }
                 if let Some(r) = process_b_mode_escape(rest, &mut current, flags) {
                     rest = r;
                     continue;
@@ -388,7 +395,7 @@ fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
 
     while !rest.is_empty() {
         if rest.starts_with('\\') && rest.len() > 1 {
-            if let Some(r) = process_q_escape(&mut rest, &mut parts, &mut current) {
+            if let Some(r) = process_q_escape(rest, &mut parts, &mut current) {
                 rest = r;
                 continue;
             }
@@ -415,15 +422,24 @@ fn process_q_mode_with_escapes(content: &str, flags: &QuoteFlags) -> Expr {
     finalize_interpolation(parts, current)
 }
 
-/// Handle \qq[...] and \q:adverb{...} escapes.
-/// Returns Some(remaining) if an escape was handled.
-fn process_q_escape<'a>(
-    rest: &mut &'a str,
+/// Handle the embedded-quote escape family — `\q[...]`, `\qq[...]`,
+/// `\q:adverbs[...]`, `\qw[...]`, `\qqw[...]` — at the start of `input`,
+/// pushing the re-quoted body onto `parts` and returning the remainder.
+/// Returns `None` when `input` does not start with such an escape.
+///
+/// `Language/quoting.rakudoc` ("Escaping") makes these legal inside EVERY
+/// quoting construct, `q`, `qq`, `"..."` and heredocs alike, so this is the one
+/// implementation all of the interpolation walks call: `double_quoted_string`
+/// (and its smart-quote twin), `interpolate_string_content_with_modes`, and
+/// `process_content_with_flags` in both its `:b` (qq) and `q` branches. They
+/// used to disagree — only the `q`-with-adverbs walk knew the escape at all, so
+/// `"a\qq[1+1]b"` and an `s///` replacement (which now runs on the shared `qq`
+/// walk) died with "Unrecognized backslash sequence: '\q'".
+pub(in crate::parser::primary) fn process_q_escape<'a>(
+    input: &'a str,
     parts: &mut Vec<Expr>,
     current: &mut String,
 ) -> Option<&'a str> {
-    let input = *rest;
-
     // \qqw[...] / \qw[...] — embedded quote-words (checked before \qq so the
     // trailing `w` isn't consumed as a plain \qq delimiter).
     if let Some((after, words)) = super::string::try_embedded_qw(input) {
@@ -578,11 +594,7 @@ fn process_q_escape_in_interpolating<'a>(
             current.push(c);
             Some(after_escape)
         }
-        'q' => {
-            // \qq[...] or \q:adverb{...}
-            let mut dummy_rest = rest;
-            process_q_escape(&mut dummy_rest, parts, current)
-        }
+        'q' => process_q_escape(rest, parts, current),
         _ => None,
     }
 }

@@ -62,3 +62,27 @@ stop seeing the chain's operands, with no diagnostic.
 `t/whatever-chained-comparison.t`, `t/whatever-thunky-operators.t` (its last four
 assertions are exactly the chain-vs-`&&` distinction, dual-oracle against raku), and
 `t/rakuast-whatever-code.t`.
+
+## Re-verified 2026-08-26 (deferred, not started)
+
+Re-checked against `raku` v2026.06 while landing the sibling parser tickets in
+`t/parser-expression-gaps.t`. Everything above still holds, with two
+clarifications worth having before someone picks this up:
+
+- **Runtime semantics are already correct and were re-confirmed**, so nothing
+  user-visible is broken: `1 < m() < 3` evaluates the middle exactly once in
+  both implementations, and `5 < q1() < 100` short-circuits after the first
+  comparison in both (middle ran once, second comparison skipped). This is
+  purely the RakuAST rendering gap the ticket describes.
+- **The `Q[1 < 2 < 3]` example in the ticket body is slightly off.** Even the
+  all-literal chain — where the "pure middle" duplication path should apply —
+  renders as the `StatementPrefix::Do` temp-binding shape in mutsu today, not as
+  a duplicated `&&`. rakudo renders it as the plain left-nested
+  `ApplyInfix(ApplyInfix(1,"<",2), "<", 3)` with no `&&` and no block, exactly
+  as described. So the divergence is the DoBlock shape in both the pure and the
+  effectful case.
+
+Deferred deliberately: this is the expensive half (a new `Expr` variant plus the
+41-file walker audit ADR-0033 Phase 1 needed, with a silent failure mode for any
+walker carrying a `_ => {}` catch-all) and buys only rendering fidelity, so it
+did not belong in a batch of behavioural parser fixes.

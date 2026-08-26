@@ -1,7 +1,6 @@
 use super::*;
 use crate::ast::Expr;
 use crate::parser::expr::expression;
-use crate::parser::parse_result::PError;
 use crate::value::ValueView;
 
 use super::helpers::literal_str;
@@ -39,6 +38,16 @@ pub(crate) fn interpolate_string_content_with_modes(
 
     while !rest.is_empty() {
         if rest.starts_with('\\') && rest.len() > 1 {
+            // `\q[...]` / `\qq[...]` / `\qw[...]` re-quote their body into a
+            // whole expression, so they run before the char-level handler.
+            if let Some(r) = crate::parser::primary::quote_adverbs::process_q_escape(
+                rest,
+                &mut parts,
+                &mut current,
+            ) {
+                rest = r;
+                continue;
+            }
             match process_escape_sequence(rest, &mut current, &[]) {
                 Ok(Some((r, needs_continue))) => {
                     rest = r;
@@ -231,40 +240,14 @@ pub(crate) fn parse_single_quote_qq(content: &str) -> Expr {
     let mut rest = content;
 
     while !rest.is_empty() {
-        if let Some((after, words)) = try_embedded_qw(rest) {
-            if !current.is_empty() {
-                parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
-            }
-            parts.push(words);
-            rest = after;
-            continue;
-        }
-        if let Some(after_qq) = rest.strip_prefix("\\qq")
-            && let Some(open) = after_qq.chars().next()
-            && !open.is_alphanumeric()
-            && !open.is_whitespace()
+        // The whole `\q`/`\qq`/`\qw`/`\qqw` family goes through the one shared
+        // implementation (see `quote_adverbs::process_q_escape`); this walk used
+        // to carry its own partial copy that knew `\qq` and `\qw` but not `\q`.
+        if let Some(r) =
+            crate::parser::primary::quote_adverbs::process_q_escape(rest, &mut parts, &mut current)
         {
-            let parsed = if let Some(close) = unicode_bracket_close(open) {
-                read_bracketed(after_qq, open, close, true)
-                    .map(|(after, inner)| (after, interpolate_string_content(inner)))
-            } else {
-                let body = &after_qq[open.len_utf8()..];
-                body.find(open)
-                    .map(|end| {
-                        let inner = &body[..end];
-                        let after = &body[end + open.len_utf8()..];
-                        (after, interpolate_string_content(inner))
-                    })
-                    .ok_or_else(|| PError::expected("closing qq delimiter"))
-            };
-            if let Ok((after, interpolated)) = parsed {
-                if !current.is_empty() {
-                    parts.push(Expr::Literal(literal_str(std::mem::take(&mut current))));
-                }
-                parts.push(interpolated);
-                rest = after;
-                continue;
-            }
+            rest = r;
+            continue;
         }
 
         if let Some(after_backslash) = rest.strip_prefix('\\')

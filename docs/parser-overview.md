@@ -68,6 +68,30 @@ In `src/parser/expr.rs`, `expression()` starts at ternary/fat-arrow level and de
 
 Raku's named quote constructs (`Q`, `q`, `qq`, `qw`, `qx`, `m`, `s`, `S`, `tr`, `TR`, `rx`, ...) are spelled as ordinary identifiers, and a **declared** symbol of that name unconditionally removes the quote language spelled that way. `src/parser/quote_shadow.rs` is the single, name-agnostic implementation; every named quote entry point (`big_q_string`, `q_string`, `qx_string`, and `regex_lit` once at the top) calls `quote_lang_shadowed()`. Do NOT add a per-letter guard. The one exception is an explicit adverb (`s:g/…/…/`, `m:i/…/`, `q:w/…/`), which is unambiguously the quote language and wins over any declaration.
 
+## Postcircumfix `{ }` after a term
+
+A `{` glued directly onto a just-parsed term (no intervening whitespace) is
+`postcircumfix:<{ }>`, unconditionally — the whitespace is the only thing that
+distinguishes a following bare block. Normally the remainder carries that
+distinction by itself (with a space it starts with the space, not with `{`), but
+several term parsers eat their own trailing whitespace — an inline `my $x`
+declaration, the `gather EXPR` statement prefix — and for those the space is
+gone by the time the postfix loop looks. So the loop tracks whether the span
+consumed for the current term ended on whitespace and feeds that to
+`brace_is_postcircumfix` (`expr/postfix/loop_.rs`), which restores the
+distinction for every such parser at once.
+
+Do NOT reintroduce a per-`Expr`-shape allow-list here — it used to be one, and
+every new term shape that reached this point silently lost its subscript (the
+`{...}` became a disconnected block statement, not an error) until someone hit
+it and appended the variant by hand. The only shape-based exception left is an
+inline `my`/`our`/`state` declaration, which is never subscripted directly in
+expression context.
+
+The `{**}` hyperslice, `{||@keys}` dimension splat and the `Type{ ... }`
+constructor shorthand are separate arms tried *before* this one and keep their
+own narrower conditions.
+
 ## Token/operator model
 
 - Shared token/operator enum: `src/token_kind.rs` (`TokenKind`)

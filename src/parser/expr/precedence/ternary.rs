@@ -334,6 +334,11 @@ pub(crate) fn ternary_mode(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             && !crate::parser::stmt::simple::is_user_declared_type(name)
             && !crate::parser::stmt::simple::is_user_declared_value_term(name)
             && !crate::parser::stmt::simple::is_user_declared_enum_value(name)
+            // A `constant` a `use`d module exports is just as complete a nullary
+            // term as a locally declared one; the module scan files those under
+            // `imported_value_terms`, a different registry from the local
+            // `my \foo` one, so both have to be asked. (`when` already asks both.)
+            && !crate::parser::stmt::simple::is_imported_value_term(name)
         {
             // A bare identifier in then-position is usually the head of a listop
             // call (`?? is-deeply $x, $y !! ...`) whose comma args were not yet
