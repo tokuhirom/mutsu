@@ -2,7 +2,9 @@ use crate::ast::Expr;
 use crate::parser::expr::operators::{
     enrich_expected_error, parse_additive_op, parse_multiplicative_op,
 };
-use crate::parser::expr::postfix::{postfix_expr_continue, postfix_expr_tight_pub, prefix_expr};
+use crate::parser::expr::postfix::{
+    postfix_expr_continue_from, postfix_expr_tight_pub, prefix_expr,
+};
 use crate::parser::helpers::ws;
 use crate::parser::parse_result::{PError, PResult};
 use crate::parser::stmt::assign::parse_meta_compound_assign_op;
@@ -264,7 +266,7 @@ fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
             return Ok((rest, expr));
         }
     }
-    postfix_expr_continue(rest, expr)
+    postfix_expr_continue_from(input, rest, expr)
 }
 
 /// Multiplication/division: * / % div mod gcd lcm

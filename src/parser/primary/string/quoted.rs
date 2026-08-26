@@ -218,6 +218,16 @@ pub(crate) fn double_quoted_string(input: &str) -> PResult<'_, Expr> {
             break;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
+            // `\q[...]` / `\qq[...]` / `\qw[...]` re-quote their body into a
+            // whole expression, so they run before the char-level handler.
+            if let Some(r) = crate::parser::primary::quote_adverbs::process_q_escape(
+                rest,
+                &mut parts,
+                &mut current,
+            ) {
+                rest = r;
+                continue;
+            }
             match process_escape_sequence(rest, &mut current, &['"', '{', '}']) {
                 Ok(Some((r, needs_continue))) => {
                     rest = r;
@@ -379,6 +389,14 @@ pub(crate) fn smart_double_quoted_string(input: &str) -> PResult<'_, Expr> {
             continue;
         }
         if rest.starts_with('\\') && rest.len() > 1 {
+            if let Some(r) = crate::parser::primary::quote_adverbs::process_q_escape(
+                rest,
+                &mut parts,
+                &mut current,
+            ) {
+                rest = r;
+                continue;
+            }
             match process_escape_sequence(rest, &mut current, &['\u{201D}', '{', '}']) {
                 Ok(Some((r, needs_continue))) => {
                     rest = r;

@@ -402,6 +402,33 @@ impl Compiler {
             Expr::UserRoutineCall { name, args } => {
                 self.compile_expr_user_routine_call(name, args);
             }
+            // `(EXPR).method` is exactly `EXPR.method`. Parentheses in Raku are
+            // pure grouping: they never introduce a container and never strip
+            // one, so a parenthesized target must reach the SAME specialised
+            // dispatch arms below that a bare target does. Peel the wrapper
+            // here rather than teaching each arm about `Grouped` — without it
+            // `($x).VAR` fell through to the generic value-level dispatch and
+            // reported the contained value's type (`Int`) where raku reports
+            // the container (`Scalar`).
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier,
+                quoted,
+            } if matches!(target.as_ref(), Expr::Grouped(_)) => {
+                let Expr::Grouped(inner) = target.as_ref() else {
+                    unreachable!()
+                };
+                let peeled = Expr::MethodCall {
+                    target: inner.clone(),
+                    name: *name,
+                    args: args.clone(),
+                    modifier: *modifier,
+                    quoted: *quoted,
+                };
+                self.compile_expr(&peeled);
+            }
             // Method call on mutable variable target (needs writeback)
             Expr::MethodCall {
                 target,

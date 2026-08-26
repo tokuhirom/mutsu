@@ -11,24 +11,67 @@ use std::sync::atomic::Ordering;
 use super::arith::{OpPrecedence, additive_expr, classify_base_op, try_custom_infix_at_level};
 use super::meta_bracket::block_newline_terminates;
 
+/// The right-delimiter markers a hyper operator may close with, paired with the
+/// `dwim_right` they imply and their byte length. An "outward pointing" closer
+/// (`>>` / `\u{00BB}`) is the DWIM one; an inward `<<` / `\u{00AB}` is strict.
+const HYPER_RIGHT_MARKERS: [(&str, bool, usize); 4] = [
+    (">>", true, 2),
+    ("<<", false, 2),
+    ("\u{00BB}", true, 2),
+    ("\u{00AB}", false, 2),
+];
+
+/// Consume a hyper *left* delimiter, returning `(dwim_left, len, remainder)`.
+fn strip_hyper_left(input: &str) -> Option<(bool, usize, &str)> {
+    if let Some(r) = input.strip_prefix('\u{00BB}') {
+        // \u{00BB} = >> (non-DWIM left)
+        Some((false, '\u{00BB}'.len_utf8(), r))
+    } else if let Some(r) = input.strip_prefix('\u{00AB}') {
+        // \u{00AB} = << (DWIM left)
+        Some((true, '\u{00AB}'.len_utf8(), r))
+    } else if let Some(r) = input.strip_prefix(">>") {
+        Some((false, 2, r))
+    } else if let Some(r) = input.strip_prefix("<<") {
+        Some((true, 2, r))
+    } else {
+        None
+    }
+}
+
 /// Parse hyper operator: >>op<<, >>op>>, <<op<<, <<op>>
 /// Also supports Unicode variants: \u{00BB}op\u{00AB}, \u{00BB}op\u{00BB}, \u{00AB}op\u{00AB}, \u{00AB}op\u{00BB}
 /// and mixed forms like >>op\u{00AB}, \u{00BB}op<<, etc.
 fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     // Determine left delimiter and dwim_left
-    let (dwim_left, left_len, after_left) = if let Some(r) = input.strip_prefix('\u{00BB}') {
-        // \u{00BB} = >> (non-DWIM left)
-        (false, '\u{00BB}'.len_utf8(), r)
-    } else if let Some(r) = input.strip_prefix('\u{00AB}') {
-        // \u{00AB} = << (DWIM left)
-        (true, '\u{00AB}'.len_utf8(), r)
-    } else if let Some(r) = input.strip_prefix(">>") {
-        (false, 2, r)
-    } else if let Some(r) = input.strip_prefix("<<") {
-        (true, 2, r)
-    } else {
-        return None;
-    };
+    let (dwim_left, left_len, after_left) = strip_hyper_left(input)?;
+
+    // A hyper operator's *base* operator may itself be spelled as a hyper
+    // operator: `@a \u{00BB}>>+<<\u{00BB} @b` wraps `>>+<<` in an outer
+    // `\u{00BB}...\u{00BB}` pair (Language/operators.rakudoc). rakudo builds a
+    // `MetaInfix::Hyper` whose `infix` is another `MetaInfix::Hyper`, but the
+    // nesting is semantically inert — hyper already descends into nested
+    // structures, and only the OUTERMOST pair's dwim flags govern the
+    // dimension-mismatch rules (verified against raku: `((1,2),(3,4))
+    // \u{00BB}>>+<<\u{00BB} ((10,20),(30,40,50))` behaves exactly like
+    // `\u{00BB}+\u{00BB}`, and `\u{00BB}<<+>>\u{00AB}` throws
+    // X::HyperOp::NonDWIM exactly like `\u{00BB}+\u{00AB}`). So unwrap the
+    // inner spelling recursively and keep the outer dwim flags. Without this the
+    // candidate scan below took the inner `<<` as the closing marker and produced
+    // the bogus operator `>>+`.
+    if strip_hyper_left(after_left).is_some()
+        && let Some((inner_op, _, _, inner_len)) = parse_hyper_op(after_left)
+        && !inner_op.is_empty()
+        && let Some((_, dwim_right, right_len)) = HYPER_RIGHT_MARKERS
+            .iter()
+            .find(|(marker, ..)| after_left[inner_len..].starts_with(*marker))
+    {
+        return Some((
+            inner_op,
+            dwim_left,
+            *dwim_right,
+            left_len + inner_len + right_len,
+        ));
+    }
 
     // Search for right delimiter within the operator string
     let mut search_limit = after_left.len().min(10);
@@ -47,12 +90,7 @@ fn parse_hyper_op(input: &str) -> Option<(String, bool, bool, usize)> {
     // candidates in order and skip any that resolve to an invalid op instead
     // of bailing out on the first (possibly overlapping) match.
     let mut candidates: Vec<(usize, bool, usize)> = Vec::new(); // (byte_offset, dwim_right, marker_len)
-    for (marker, dwim_right, marker_len) in [
-        (">>", true, 2usize),
-        ("<<", false, 2),
-        ("\u{00BB}", true, '\u{00BB}'.len_utf8()),
-        ("\u{00AB}", false, '\u{00AB}'.len_utf8()),
-    ] {
+    for &(marker, dwim_right, marker_len) in HYPER_RIGHT_MARKERS.iter() {
         let mut from = 0;
         while let Some(rel_pos) = search[from..].find(marker) {
             let pos = from + rel_pos;

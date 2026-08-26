@@ -230,7 +230,7 @@ fixes that landed in between):
 |---|---|---|
 | `Type/Hash.rakudoc:336` | `my %h .= push(pair)` should leave `%h` empty, mutsu keeps the pair | [hash-dot-assign-push-result.md](../todo/tickets/hash-dot-assign-push-result.md) |
 | `Type/List.rakudoc:219` | `(gather {...}).list.raku` keeps a spurious `.Seq` suffix when chained directly (no intermediate var) | [gather-chained-list-raku-seq-suffix.md](../todo/tickets/gather-chained-list-raku-seq-suffix.md) |
-| `Type/Map.rakudoc:62` | `Map.new(a, 1, :b(2))` — bare colon-pair should bind as a named arg to `.new`, not a positional Pair | [map-new-bare-colonpair-named-arg.md](../todo/tickets/map-new-bare-colonpair-named-arg.md) |
+| `Type/Map.rakudoc:62` | ~~`Map.new(a, 1, :b(2))` — bare colon-pair should bind as a named arg to `.new`, not a positional Pair~~ (named args are data only when the call has no positional at all) | [resolved](../news/2026-08/map-new-bare-colonpair-named-arg.md) |
 | `Type/Range.rakudoc:80` | `@arr[$range-var]` doesn't flatten into `for` iteration (literal `@arr[0..2]` does) | [array-subscript-range-var-list-context-slip.md](../todo/tickets/array-subscript-range-var-list-context-slip.md) |
 
 **Known harness false positive (not ticketed):** `Hash.rakudoc:21`, `Map.rakudoc:18`,
@@ -337,7 +337,7 @@ Found in the same 2026-08-22 batch-2 re-run, `Language/regexes.rakudoc` /
 | `Language/traps.rakudoc:1067` | `for EXPR ~~ /regex/ { BLOCK }` executes `BLOCK` where raku produces no output | [for-loop-over-smartmatch-result-executes-unexpectedly.md](../todo/tickets/for-loop-over-smartmatch-result-executes-unexpectedly.md) |
 | `Language/traps.rakudoc:406`, `Language/variables.rakudoc:853` | ~~a scalar's container isn't aliased when pushed into a collection without `.clone` — mutsu snapshots by value where raku aliases~~ (two causes: `.item` compiled as an ordinary method call lost the container, and a positional `PositionalPair` argument had its pair capture suppressed as if it were a named argument) | [resolved](../news/2026-08/container-aliasing-not-preserved-into-collection.md) |
 | `Language/variables.rakudoc:1551` | ~~`».&?BLOCK` (hyper-call with a block self-reference) dispatches an empty method name~~ | [resolved](../news/2026-08/hyper-call-block-self-reference-empty-method.md) |
-| `Language/variables.rakudoc:134` | `my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift) | [paren-single-var-decl-var-scalar-name.md](../todo/tickets/paren-single-var-decl-var-scalar-name.md) |
+| `Language/variables.rakudoc:134` | ~~`my ($g) = LIST;` gives `$g.VAR.^name` of `Int` instead of `Scalar` (harness mis-bucketed as drift)~~ (the declaration was fine: any `(EXPR).method` lost the container) | [resolved](../news/2026-08/paren-single-var-decl-var-scalar-name.md) |
 | `Language/variables.rakudoc:768` | `anon class`/`anon sub` with a non-ASCII name fails to parse; `anon sub NAME` also gists without the `&` sigil | [anon-class-sub-non-ascii-name-and-sub-gist.md](../todo/tickets/anon-class-sub-non-ascii-name-and-sub-gist.md) |
 | `Language/variables.rakudoc:1765` | ~~`$*RAKU` reports the wrong metaclass name (`Perl`) and inconsistent stringification~~ (`.put` also ignored a custom `.Str` -- a general bug) | [resolved](../news/2026-08/dollar-raku-wrong-metaclass-and-stringify.md) |
 | `Language/variables.rakudoc:318` | ~~`$?FILE` reports the relative invocation path instead of an absolute path~~ | [resolved](../news/2026-08/dollar-question-file-relative-not-absolute.md) |
@@ -512,7 +512,7 @@ Found in the 2026-08-22 batch-4 re-run of `operators`/`MixHash`/`Phaser::PrePost
 |---|---|---|
 | `Language/operators.rakudoc:3177` | `infix:<Z>(...)` function-call form dies at runtime ("Two terms in a row"), other `infix:<...>` ops work | [infix-z-function-call-form-parse-fails.md](../todo/tickets/infix-z-function-call-form-parse-fails.md) |
 | `Language/operators.rakudoc:482` | `«=»` hyper-assignment to a nested-tuple destructuring target silently no-ops | [Fixed](../news/2026-08/hyper-assign-nested-destructuring-target-not-applied.md) |
-| `Language/operators.rakudoc:567` | a hyper-operator wrapping another hyper-operator (`»>>+<<»`) fails to parse | [nested-hyper-operator-parse-fail.md](../todo/tickets/nested-hyper-operator-parse-fail.md) |
+| `Language/operators.rakudoc:567` | ~~a hyper-operator wrapping another hyper-operator (`»>>+<<»`) fails to parse~~ | [resolved](../news/2026-08/nested-hyper-operator-parse-fail.md) |
 | `Language/operators.rakudoc:707` | `.raku` on a nested array-literal element drops the `$`-itemization prefix | [array-literal-nested-element-itemization-lost-in-raku.md](../todo/tickets/array-literal-nested-element-itemization-lost-in-raku.md) |
 | `Language/operators.rakudoc:1675` | `[∘]` (empty-operand function-composition reduce) doesn't produce an identity `Callable` | [compose-reduce-empty-list-not-identity-callable.md](../todo/tickets/compose-reduce-empty-list-not-identity-callable.md) |
 | `Type/X/Phaser/PrePost.rakudoc:15` | `X::Phaser::PrePost`'s message drops the failed `PRE`/`POST` condition's source text | [phaser-pre-post-message-drops-condition-source-text.md](../todo/tickets/phaser-pre-post-message-drops-condition-source-text.md) |

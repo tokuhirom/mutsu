@@ -1,5 +1,5 @@
 use Test;
-plan 19;
+plan 20;
 
 # `class ... is Array` subclass with a custom `new` that redispatches the
 # positional args to the base Array construction via `nextwith(|@values)`.
@@ -79,6 +79,10 @@ is @position.subtract(@destination).magnitude, 5, 'hyper op + reduce chain';
     my @seen;
     @seen.push($_) for @$v;
     is-deeply @seen, [1, 2, 3], 'for @$v iterates storage elements';
+    # `.list` is `.List`'s lower-case sibling and must delegate to the backing
+    # storage the same way, whether it is dispatched through the mutating
+    # variable path (`$v.list`) or the plain value path.
+    is-deeply $v.list.List, (1, 2, 3), '$v.list delegates to storage';
 }
 
 # push still works and grows storage.

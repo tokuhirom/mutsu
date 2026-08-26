@@ -575,6 +575,20 @@ pub(in crate::parser) fn postfix_expr_continue(input: &str, expr: Expr) -> PResu
     postfix_expr_loop(input, expr, true)
 }
 
+/// [`postfix_expr_continue`], told where the term started so it can see whether
+/// the term's own parser consumed the whitespace before the remainder — the
+/// distinction `brace_is_postcircumfix` needs to tell `gather EXPR { ... }`
+/// (a block) from `EXPR{ ... }` (a subscript).
+pub(in crate::parser) fn postfix_expr_continue_from<'a>(
+    term_start: &str,
+    rest: &'a str,
+    expr: Expr,
+) -> PResult<'a, Expr> {
+    let ends_with_ws =
+        consumed_span(term_start, rest).is_some_and(|c| c.ends_with(char::is_whitespace));
+    postfix_expr_loop_from(rest, expr, true, (false, false), ends_with_ws)
+}
+
 /// Postfix: method calls (.method), indexing ([]), ++, --
 pub(super) fn postfix_expr(input: &str) -> PResult<'_, Expr> {
     postfix_expr_inner(input, true)
@@ -609,8 +623,13 @@ fn postfix_expr_inner(input: &str, allow_ws_dot: bool) -> PResult<'_, Expr> {
     // inside a `given` must call `.append` on the topic (Cro's serializer
     // tests do exactly this); a `}`-final hash composer behaves the same in
     // rakudo, while a `)`-final call keeps chaining across the newline.
-    let brace_state = consumed_span(input, rest).map_or((false, false), brace_newline_state);
-    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_state)
+    let consumed = consumed_span(input, rest);
+    let brace_state = consumed.map_or((false, false), brace_newline_state);
+    // Several term parsers consume their own trailing whitespace (an inline
+    // `my $x`, the `gather EXPR` statement prefix); record it so a following
+    // `{ ... }` is still recognised as a separate block, not a subscript.
+    let ends_with_ws = consumed.is_some_and(|c| c.ends_with(char::is_whitespace));
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, brace_state, ends_with_ws)
 }
 
 /// The span of `input` consumed to reach `rest`, IF `rest` really is a suffix
@@ -672,8 +691,36 @@ fn illegal_decimal_point_error() -> PError {
     PError::comp_group_with_panic(sorrow, false, panic, group_message)
 }
 
+/// Whether a `{` sitting at the head of the postfix loop's remainder is a
+/// postcircumfix `{ }` subscript on the term just parsed.
+///
+/// In Raku the rule is purely lexical: `{` **glued** to a term (no intervening
+/// whitespace) is `postcircumfix:<{ }>`, and whitespace before it makes it a
+/// separate block. Normally the remainder itself carries that distinction —
+/// with a space the remainder starts with the space, not with `{`. But several
+/// of mutsu's term parsers eat their own trailing whitespace (an inline
+/// `my $x` declaration, the `gather EXPR` statement prefix, ...), and for those
+/// the space has already vanished by the time we look. `term_ends_with_ws` is
+/// the just-consumed span's own answer to "did I end on whitespace", which
+/// restores the distinction for every such parser at once.
+///
+/// This used to be an ever-growing allow-list of `Expr` shapes instead, which
+/// meant every new term shape reaching this point silently lost its subscript
+/// (the `{...}` was left behind as a disconnected block statement, not an
+/// error) until someone hit it and appended the variant by hand: `Binary`,
+/// `Ternary`, `Hash`, `Whatever` and the hyper-method-call variants were each
+/// added that way. Do NOT reintroduce a shape list here.
+fn brace_is_postcircumfix(expr: &Expr, term_ends_with_ws: bool) -> bool {
+    // An inline `my`/`our`/`state` declaration is never subscripted directly in
+    // expression context even when the whitespace check cannot see the space
+    // (`while my $done {...}`); write `(my %h){key}` for that, which arrives
+    // here as the parenthesized term.
+    !term_ends_with_ws
+        && !matches!(expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
+}
+
 fn postfix_expr_loop(rest: &str, expr: Expr, allow_ws_dot: bool) -> PResult<'_, Expr> {
-    postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false))
+    postfix_expr_loop_from(rest, expr, allow_ws_dot, (false, false), false)
 }
 
 fn postfix_expr_loop_from(
@@ -681,8 +728,13 @@ fn postfix_expr_loop_from(
     mut expr: Expr,
     allow_ws_dot: bool,
     brace_state: (bool, bool),
+    ends_with_ws: bool,
 ) -> PResult<'_, Expr> {
     let (mut brace_final, mut newline_after_brace) = brace_state;
+    // Whether the span consumed to produce the CURRENT `expr` ended on
+    // whitespace — see `brace_is_postcircumfix`. Recomputed alongside
+    // `brace_final` below as each postfix op moves the term along.
+    let mut term_ends_with_ws = ends_with_ws;
     let mut last_iter_start: Option<&str> = None;
     loop {
         // A postfix op consumed in the previous iteration moves the
@@ -694,6 +746,7 @@ fn postfix_expr_loop_from(
             && !consumed.is_empty()
         {
             (brace_final, newline_after_brace) = brace_newline_state(consumed);
+            term_ends_with_ws = consumed.ends_with(char::is_whitespace);
         }
         last_iter_start = Some(rest);
         // Allow whitespace before dotty postfix call in expression context:
@@ -735,6 +788,9 @@ fn postfix_expr_loop_from(
                     || scan.starts_with(">>")
                     || scan.starts_with('\u{00BB}')
                 {
+                    // Unspace deliberately glues the postfix onto the term, so
+                    // the whitespace it just skipped must NOT count as a gap.
+                    term_ends_with_ws = false;
                     rest = scan;
                 }
             }
@@ -2043,57 +2099,7 @@ fn postfix_expr_loop_from(
         // Hash indexing with braces: %hash{"key"}, %hash{$var}, @a[0]{"key"}, etc.
         // Also handles sigilless variables (BareWord) that are declared term symbols,
         // and literal values (e.g. 5{'c'} which should produce a Failure).
-        if rest.starts_with('{')
-            && matches!(
-                &expr,
-                Expr::HashVar(_)
-                    | Expr::Var(_)
-                    | Expr::BareWord(_)
-                    | Expr::Index { .. }
-                    | Expr::MethodCall { .. }
-                    // A hyper method call may be directly subscripted, just like a
-                    // plain method call: `@a>>.b{$k}` is `(@a>>.b){$k}` (raku applies
-                    // `postcircumfix:<{ }>` to the hyper-dispatch result). Without
-                    // this the `{$k}` was left as a separate block statement, which
-                    // silently truncated the enclosing declaration list (e.g. a role
-                    // body would drop every method after such a call).
-                    | Expr::HyperMethodCall { .. }
-                    | Expr::HyperMethodCallDynamic { .. }
-                    | Expr::Call { .. }
-                    | Expr::Literal(_)
-                    | Expr::DoStmt(_)
-                    | Expr::Grouped(_)
-                    // A parenthesized binary expression is returned UNWRAPPED by
-                    // paren_expr (only barewords/vars/feeds/junctions keep their
-                    // Grouped shell), so `($a // $b){$key}` reaches this arm as a
-                    // bare Binary. raku applies postcircumfix `{ }` to any
-                    // parenthesized term (Cro::HTTP::Router relies on it); without
-                    // this the `{$key}` was left behind as a separate block
-                    // statement — a parse error in statement position.
-                    | Expr::Binary { .. }
-                    | Expr::Ternary { .. }
-                    // A hash literal `%(...)` is a term and may be directly
-                    // subscripted: `%(a=>1,b=>2){"a"}` is `1`. (Angle subscript
-                    // `%(...)<a>` already works because that handler is
-                    // unguarded.) Whitespace before `{` still parses as a block,
-                    // since this check requires `{` at the start of `rest`.
-                    | Expr::Hash(_)
-                    // `*{"key"}` is a WhateverCode hash-subscript (`*.{"key"}`),
-                    // just like `*<key>` / `*[0]`; the resulting `Index{Whatever}`
-                    // is wrapped into a closure by `contains_whatever`. Without
-                    // this the `{...}` was left as a separate block, so
-                    // `.classify(*{$col})` (ML::SparseMatrixRecommender) failed to
-                    // parse as a call argument.
-                    | Expr::Whatever
-            )
-            // An inline `my`/`our`/`state` declaration must not be hash-
-            // subscripted: the declaration parser consumes the whitespace after
-            // the variable name, so `while my $done { ... }` would otherwise eat
-            // the loop body `{ ... }` as a `$done{ ... }` subscript. A bare
-            // declaration is never subscripted in expression context — wrap it in
-            // parens (`(my %h){key}`) for that, which parses as Grouped.
-            && !matches!(&expr, Expr::DoStmt(s) if matches!(s.as_ref(), Stmt::VarDecl { .. }))
-        {
+        if rest.starts_with('{') && brace_is_postcircumfix(&expr, term_ends_with_ws) {
             let r = &rest[1..];
             let (r, _) = ws(r)?;
             // Empty hash subscript (%h{}) is a zen slice — returns the hash itself

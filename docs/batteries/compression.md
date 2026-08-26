@@ -185,11 +185,16 @@ which have since been fixed — see their entries):
    last push 2025-04-29, 4 dependents, covers zip/tar/gzip/bzip2/xz uniformly)
    and is now much closer to reach.
 4. Two parser failures, each real but not yet root-caused to a minimal
-   repro — **[`compress-bzip2-ternary-parse-after-dynamic-export.md`](../../todo/tickets/compress-bzip2-ternary-parse-after-dynamic-export.md)**
+   repro — ~~**`compress-bzip2-ternary-parse-after-dynamic-export.md`**
    (a `?? BAREWORD !! BAREWORD` ternary misparses as a bareword-swallows-`!!`
    listop call, in a file whose constants come from a dynamic `sub EXPORT`
    built via `MY::` package introspection rather than static `is export`
-   tags — blocks `Compress::Bzip2`, 0/1) and
+   tags — blocks `Compress::Bzip2`, 0/1)~~ (**fixed** 2026-08-26: the ternary's
+   gobbled-listop guard never consulted the `imported_value_terms` registry
+   that a `use`d module's constants land in — see
+   [news](../../news/2026-08/compress-bzip2-ternary-parse-after-dynamic-export.md);
+   `use Compress::Bzip2` compiles now and the dist reaches its 5th assertion
+   before hitting unrelated NativeCall trouble) and
    **[`archive-simplezip-samewith-placeholder-slurpy-parse.md`](../../todo/tickets/archive-simplezip-samewith-placeholder-slurpy-parse.md)**
    (a `.map:` block combining a `$^a` placeholder, `samewith(...)`
    redispatch, and a forwarded `|c` slurpy capture, followed by `;
