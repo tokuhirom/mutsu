@@ -337,3 +337,87 @@ an unregistered GC mutator of exactly the class §4 ruled out for the `Proc::Asy
 simply did not cover the slang path. Filed as
 `todo/tickets/slang-activation-thread-is-unregistered-and-default-stack.md`. It is not a candidate
 explanation for this ticket (`stress.t` loads no slang module), but it is a live soundness gap.
+
+## 8. The recurrence §7.3 was waiting for arrived — and wrote no crash report, 2026-08-26
+
+§7.3 closed slice 4 with "the underlying heap corruption remains un-root-caused and still awaits a
+recurrence **under the named-thread reports**". That recurrence has now happened, and the important
+part of it is that the named-thread report mechanism **did not fire**.
+
+### 8.1 What was observed
+
+CI run [32968762746](https://github.com/tokuhirom/mutsu/actions/runs/32968762746), attempt 1,
+`test` job (id 98177315406), on PR #7018's branch:
+
+```
+roast/integration/advent2014-day05.t   (Wstat: 35584 (exited 139) Tests: 5 Failed: 0)
+  Non-zero exit status: 139
+  Parse errors: Bad plan.  You planned 7 tests but ran 5.
+Result: FAIL
+```
+
+`139 = 128 + 11`, i.e. SIGSEGV, surfaced as an exit status because roast runs each file through
+`scripts/run-roast-test.sh`. As in every prior instance this is `Failed: 0` — no assertion failed;
+the interpreter died partway through.
+
+Three things distinguish this instance from the SIGABRT one recorded in `flaky-tests.txt`:
+
+1. **It is SIGSEGV, not SIGABRT-inside-the-allocator.** The earlier instance
+   (CI run 32116354874, `tmp/crash/49110.txt`) aborted inside glibc's allocator, which is the
+   heap-corruption signature. This one segfaulted.
+2. **It died after test 5, not at test 3.** Test 3 is the `#?rakudo skip "sometimes hangs, sometimes
+   segfaults"` case that the quarantine reason is written around, and with `MUTSU_FUDGE=1` that skip
+   IS honoured (the serial verbose re-run in the same job shows `ok 3 - # SKIP sometimes hangs,
+   sometimes segfaults`). Five tests emitted, so the death is in the tail of the file — the
+   `Supplier`/`.act` tap section that tests 6 and 7 cover — not in the racy `$*SCHEDULER.cue` block.
+3. **The retry machinery behaved correctly.** #6695's rule held: the signal death was not laundered
+   green, and the job failed. The `Failed roast files — serial verbose re-run` diagnostic step then
+   ran the file alone and it passed 7/7, which is the usual shape.
+
+### 8.2 The actionable finding: no crash report was produced
+
+`MUTSU_CRASH_DIR` was set for the job (`/home/runner/work/mutsu/mutsu/tmp/crash`), and
+`scripts/report-crash-reports.sh` ran. It found **exactly one** report, and that report is unrelated
+to this file — it is the deliberate, allowlisted NativeCall crash:
+
+```
+mutsu crash report
+signal: 11 (SIGSEGV)   si_code: 1   fault-addr: 0x0
+thread: mutsu-main
+argv: target/release/mutsu -e use NativeCall; sub strdup(int64) is native(Str) {*}; strdup(0)
+  4: strdup
+  5: ffi_call_unix64
+  ...
+  9: mutsu::runtime::nativecall::call_native_with_out_args
+```
+
+```
+-> known deliberate crash (argv matches the allowlist), not treated as a failure.
+All 1 crash report(s) match the allowlist (deliberate, expected crashes) -- not failing the job.
+```
+
+So the `advent2014-day05.t` process died of SIGSEGV and left **no** report behind. That is the gap
+worth chasing next, because it is what makes every future recurrence uninformative: the diagnostic
+this ticket has been waiting on is not capturing the very crash it was installed for. Candidate
+explanations, in the order they are cheapest to eliminate:
+
+- The fault happened on a thread with no handler installed, or on one whose alternate signal stack
+  was unavailable, so the handler could not run. §4/§7.4 already establish that not every
+  user-code-running thread goes through `spawn_registered_thread`.
+- The handler ran but faulted itself (a second fault inside `write_report` is fatal and silent).
+- `MUTSU_CRASH_DIR` did not reach that process, or the report was written somewhere the collector
+  step does not look.
+
+Note this is a *diagnostics* bug and can be attacked on its own, without reproducing the underlying
+crash: install a deliberate fault on each thread class mutsu spawns and assert that a report appears
+for each. `tests/crash_report.rs` already exercises the mechanism, so extending it to cover
+non-`mutsu-main` threads is a contained piece of work.
+
+### 8.3 Is it a regression?
+
+Almost certainly not. It surfaced on PR #7018 (`my`/`our $.x` class-level attributes inside method
+bodies), which touches class-level attribute storage and has no connection to the scheduler, to
+`Supplier`, or to thread spawning. The file has a documented history of intermittent signal deaths on
+unrelated PRs (§7.3, and the roast test's own `sometimes hangs, sometimes segfaults` skip comment),
+and the same job passed the file cleanly on re-run. Recorded here so the evidence is not lost to a
+green re-run, per `CLAUDE.md`'s rule that a crash-class failure is never dismissed as noise.
