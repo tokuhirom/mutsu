@@ -80,6 +80,19 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
                 && !pd.name.starts_with('.')
         })
         .unwrap_or(false);
+    // An explicit `-> $_` pointy parameter names the TOPIC. Binding it as an
+    // ordinary lexical (`my $_ = $tmp`) writes the enclosing scope's topic slot
+    // and leaves the value behind after the block, so it is routed through
+    // `given` instead — the same fresh-topic-scope treatment the parameterless
+    // form already gets, and the same fix as `if COND -> $_` in
+    // `conditionals.rs`. Sub-signature / sigilless / attributive params keep
+    // their own binding.
+    let pointy_is_topic = param_name
+        .as_deref()
+        .is_some_and(|p| p.trim_start_matches('$') == "_")
+        && param_def
+            .as_ref()
+            .is_none_or(|pd| !pd.sigilless && pd.sub_signature.is_none());
     let use_given_alias = cond_is_lvalue && (param_name.is_none() || pointy_routes_through_given);
     // A non-lvalue, non-literal topic (`with foo()`) with no pointy parameter is
     // run under `given $tmp` (the once-evaluated condition value), so `$_` is
@@ -114,6 +127,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
     // here for those.
     if let Some(ref pname) = param_name
         && !(use_given_alias && pointy_routes_through_given)
+        && !pointy_is_topic
     {
         // Attributive parameter (`-> $!foo` / `-> $.foo`): bind the value to
         // self's attribute via an attribute assignment. This must be checked
@@ -231,7 +245,11 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
         // (`@p := $_` for aliasing, `@p = $_.list` for `is copy`) so the `given`
         // mechanism handles topic-source writeback (alias) or a flattened fresh
         // copy (matching `given @a -> @p`).
-        if pointy_routes_through_given && let Some(ref pd) = param_def {
+        // `-> $_` needs no bind at all: `given` already installs the topic.
+        if pointy_routes_through_given
+            && !pointy_is_topic
+            && let Some(ref pd) = param_def
+        {
             given_body.insert(0, pointy_topic_bind(pd));
         }
         with_body = vec![Stmt::Given {
@@ -239,7 +257,7 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             body: given_body,
             is_statement_modifier: false,
         }];
-    } else if route_through_given_tmp {
+    } else if route_through_given_tmp || pointy_is_topic {
         with_body = vec![Stmt::Given {
             topic: tmp_var.clone(),
             body,
@@ -338,7 +356,12 @@ pub(crate) fn with_stmt(input: &str) -> PResult<'_, Stmt> {
             // (a fresh topic scope) so it is not blocked by an enclosing `for`'s
             // read-only `$_` (see the orwith branch above).
             let mut else_given_body = Vec::new();
-            if let Some(ref pname) = else_param {
+            // `else -> $_` names the topic the enclosing `given` already
+            // installs; declaring it as an ordinary lexical would leave the
+            // value behind after the block (same reason as `pointy_is_topic`).
+            if let Some(ref pname) = else_param
+                && pname.trim_start_matches('$') != "_"
+            {
                 else_given_body.push(Stmt::VarDecl {
                     name: pname.clone(),
                     expr: tmp_var.clone(),

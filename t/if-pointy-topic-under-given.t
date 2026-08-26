@@ -14,11 +14,11 @@ my $s = 'keep';
 given $s { if [1, 2] -> $_ { } }
 is $s, 'keep', "if -> \$_ does not clobber a scalar given topic";
 
-# `with` form. (The `with EXPR -> $_` desugar emits `my $_ = tmp` in the branch
-# via a separate parser path that still clobbers — tracked separately.)
+# `with` form. Its own parser path used to emit `my $_ = tmp` in the branch and
+# clobber the topic the same way; it now routes a `-> $_` parameter through
+# `given` too (news/2026-08/conditional-pointy-topic-param-leaks-scope.md).
 my $t = 'keep2';
 given $t { with [3, 4] -> $_ { } }
-todo 'with EXPR -> $_ desugar still clobbers the given topic';
 is $t, 'keep2', "with -> \$_ does not clobber the given topic";
 
 # Hash-element given topic (the Mustache shape).

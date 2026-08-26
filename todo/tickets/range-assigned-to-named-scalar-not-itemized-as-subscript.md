@@ -37,6 +37,14 @@ pattern-matches on `ValueView::Range*` after reading a `$` variable (arithmetic,
 `.min`/`.max`, smart-match, `for` iteration of a bound range, ...), so it needs the
 container-model work rather than a local patch at the subscript site.
 
+## Re-verified 2026-08-26
+
+Still reproduces exactly as written (`@n[$assigned].raku` yields
+`(8, 15, 16)`; the anonymous `my $ = 1..3` and `$(1,2)` forms are still
+correct). Confirmed as a member of
+`todo/deep/element-itemization-lost-in-scalar-binding.md` — that file now names
+this ticket as one of its blocked dependents. Do not patch the subscript site.
+
 ## Affected files
 
 - `src/vm/vm_var_index_ops.rs` (`exec_index_op_with_positional`, the itemized-subscript

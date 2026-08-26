@@ -306,6 +306,20 @@ pub(crate) struct ForLoopSpec {
     /// it after, but only when this flag is set — hot numeric loops (the common
     /// case, no nested `sub`) skip the snapshot entirely and pay zero cost.
     pub(crate) body_declares_routines: bool,
+    /// When true, every item this loop yields is provably a bare VALUE with no
+    /// container of its own — the iterable is a list built entirely out of
+    /// literals (`for 1, 2`, `for <a b>`) or a `.keys` read. Raku aliases the
+    /// implicit topic `$_` straight to such an item, so `$_ = ...` is
+    /// X::AdHoc "Cannot assign to an immutable value" and `$_.VAR.^name` is the
+    /// item's own type rather than `Scalar`.
+    ///
+    /// Deliberately a *provable* compile-time property rather than a runtime
+    /// "is this a container?" test: mutsu stores real `Array`/`Hash` elements
+    /// bare (see `todo/deep/element-itemization-lost-in-scalar-binding.md` /
+    /// ADR-0040), so a runtime test would also mark genuinely writable element
+    /// topics (`for @a[0..1]`, `for @a.map(...)`) read-only. A mixed list
+    /// (`for 1, $a`) stays writable, which is lax but never wrong.
+    pub(crate) source_items_are_bare: bool,
 }
 
 /// Precompiled replacements for `CompiledAttrDecl::from_stmt`'s AST-only

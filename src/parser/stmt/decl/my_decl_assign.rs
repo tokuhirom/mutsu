@@ -835,18 +835,29 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     };
     let stmt = if s.is_array || bound_name.starts_with('%') {
         let mut stmts = Vec::new();
-        if bound_name.starts_with('%') {
-            stmts.push(Stmt::MarkReadonly(
-                bound_name.clone(),
-                crate::ast::ReadonlyKind::ImmutableValue,
-            ));
-            // Also record a dedicated bound-container marker so a later whole
+        let hash_bind = bound_name.starts_with('%');
+        if hash_bind {
+            // Record a dedicated bound-container marker so a later whole
             // reassignment (`%a = (...)`) is allowed (it propagates to the bound
             // source), while a `constant %M` — also readonly — stays immutable.
             stmts.push(Stmt::MarkBoundContainer(bound_name.clone()));
             stmts.push(Stmt::MarkBind);
         }
         stmts.push(stmt);
+        if hash_bind {
+            // AFTER the declaration: the declaration resets this bare name's
+            // readonly state (so a stale marking from an earlier same-named
+            // binding cannot poison it), which would erase a marking emitted
+            // before it. See `vm_var_assign_set_local.rs`'s `is_vardecl` block.
+            stmts.push(Stmt::MarkReadonly(
+                bound_name.clone(),
+                crate::ast::ReadonlyKind::ImmutableValue,
+            ));
+            // A `SyntheticBlock` yields its LAST statement's value, so re-read
+            // the now-bound hash to keep `my %h := %src` usable in expression
+            // position (mirrors the array branch's trailing read below).
+            stmts.push(Stmt::Expr(Expr::Var(bound_name.clone())));
+        }
         if s.is_array {
             stmts.push(Stmt::Expr(Expr::Call {
                 name: Symbol::intern("__mutsu_record_bound_array_len"),
@@ -863,6 +874,14 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
         }
         Stmt::SyntheticBlock(stmts)
     } else if mark_scalar_readonly {
+        // Note: a declaration resets the bare name's readonly state (see
+        // `vm_var_assign_set_local.rs`'s `is_vardecl` block), so this marking is
+        // erased again by the declaration that follows it and is re-applied by
+        // that same store's `bind_marks_immutable` arm — which covers exactly
+        // the literal kinds `scalar_binding_rhs_is_readonly` accepts. It is kept
+        // here (rather than moved after the declaration) because a
+        // `SyntheticBlock` yields its LAST statement's value, and `my $x := 5`
+        // must still evaluate to `5` in expression position.
         Stmt::SyntheticBlock(vec![
             Stmt::MarkReadonly(bound_name, crate::ast::ReadonlyKind::Immutable),
             stmt,

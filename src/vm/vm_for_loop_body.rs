@@ -431,23 +431,30 @@ impl Interpreter {
         // while keeping $_ writable for a *mutable* QuantHash (MixHash/BagHash —
         // `for $b.values { $_ = X }` / `.value = X for $b.pairs` must write back),
         // expression results, multi-param loops, and Scalar containers.
+        //
+        // A source whose items are provably bare values (`for 1, 2`,
+        // `for <a b>`, `for %h.keys` — see
+        // `ForLoopSpec::source_items_are_bare`) gets the same treatment: the
+        // topic aliases the item itself, with no container behind it, so raku
+        // rejects `$_ = ...` and reports the item's own type from `.VAR`.
         let topic_readonly =
             !spec.is_rw && param_name.is_none() && spec.multi_param_names.is_empty() && {
-                match &container_binding {
-                    None => false,
-                    Some(name) => {
-                        if let Some(val) = self.get_env_with_main_alias(name) {
-                            matches!(
-                                val.view(),
-                                ValueView::Mix(_, false)
-                                    | ValueView::Set(_, false)
-                                    | ValueView::Bag(_, false)
-                            )
-                        } else {
-                            false
+                spec.source_items_are_bare
+                    || match &container_binding {
+                        None => false,
+                        Some(name) => {
+                            if let Some(val) = self.get_env_with_main_alias(name) {
+                                matches!(
+                                    val.view(),
+                                    ValueView::Mix(_, false)
+                                        | ValueView::Set(_, false)
+                                        | ValueView::Bag(_, false)
+                                )
+                            } else {
+                                false
+                            }
                         }
                     }
-                }
             };
         let total_items = chunked_items.len();
         // `is copy` loop param (is_rw set, do_writeback suppressed): the param

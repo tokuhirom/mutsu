@@ -18,8 +18,6 @@ p "bound list elem",  { my @a := (1,2,3); @a[0] = 9 };      # raku: X::Assignmen
 p "assign to Nil",    { Nil = 5 };                   # raku: X::Assignment::RO, Cannot modify an immutable Nil value
 p "assign to type",   { Int = 5 };                   # raku: X::Assignment::RO, Cannot modify an immutable 'Int' type object
 p "assign to enum",   { enum Fo <A B>; A = 3 };      # raku: X::Assignment::RO, Cannot modify an immutable Fo (A)
-p "for literal topic",{ for 1,2 { $_ = 5 } };        # raku: X::AdHoc, Cannot assign to an immutable value
-p "for keys topic",   { my %h=a=>1; for %h.keys { $_ = 5 } };   # raku: X::AdHoc
 p "map literal topic",{ (1,2).map({ $_ = 5 }).eager };          # raku: X::AdHoc
 p "grep topic",       { (1,2).grep({ $_ = 5 }).eager };         # raku: X::AdHoc
 p "block arg topic",  { my $s = { $_ = 5 }; $s(7) };            # raku: X::AdHoc
@@ -30,10 +28,46 @@ p "bind list assign", { my $x := (1,2,3); $x = 5 };  # raku: X::AdHoc, Cannot as
 p "bound array elem", { my @a := (1,2,3); @a.push(4) };  # raku: X::Immutable, Cannot call 'push' on an immutable 'List'
 ```
 
-The topic cases share one cause: mutsu only marks `$_` readonly for *some*
-immutable sources. `for 1..2 { $_ = 5 }` and `given 5 { $_ = 6 }` are correctly
-rejected, but a bare comma list, `%h.keys`, `map`/`grep` blocks and a plain block
-invocation are not — see the `topic_readonly` computation in
+## Status update (2026-08-26)
+
+Four topic rows are now **fixed** and moved out of this list:
+`for 1,2`, `for (1,2)`, `for <a b>` and `for %h.keys` throw `X::AdHoc` "Cannot
+assign to an immutable value", matching raku
+(`news/2026-08/topic-var-name-still-scalar-for-literal-alias.md`). The mechanism
+is `ForLoopSpec::source_items_are_bare`, a *provable* compile-time property
+(`Compiler::for_iterable_yields_bare_items`).
+
+The remaining topic rows — `map`/`grep` block topics, a plain block invocation
+(`my $s = { $_ = 5 }; $s(7)`), a pointy block parameter (`-> $v { $v = 1 }`) and
+`for %h` (whose items are immutable `Pair`s) — could **not** be closed the same
+way, and the measurement explains why. Raku's rule is per item: the topic is
+writable exactly when the item is a container.
+
+```
+for @a         Scalar      for 1,2        Int
+for @a.values  Scalar      for (1,2)      Int
+for $a, $b     Scalar      for <a b>      Str
+for @a[0..1]   Scalar      for %h.keys    Str
+for @a.map({}) Scalar      for %h         Pair
+```
+
+mutsu cannot evaluate that at runtime because real `Array`/`Hash` elements are
+stored **bare** — see `todo/deep/element-itemization-lost-in-scalar-binding.md`
+and ADR-0040. `vm_for_loop_lazy.rs` already applies the correct runtime test
+(`item.is_container_ref()`), which is why `for gather { … }` is rejected
+correctly; applying the same test on the eager path would additionally mark
+`for @a[0..1]` and `for @a.map(…)` read-only, inventing throws raku does not
+have. **These rows are therefore blocked on ADR-0040's store-side element
+itemization, not on the topic-marking code.**
+
+The `map`/`grep`/block-argument rows are a *different* blocker: those topics are
+bound by the block invocation path, not the loop, and none of those paths marks
+the bound topic at all. `sub f($x) { $x = 1 }` is correctly rejected, but the
+pointy-block form `-> $v { $v = 1 }` is not — named routines mark their params
+(`vm_call_light.rs`), the closure-call path does not.
+
+The original note, for reference: mutsu only marks `$_` readonly for *some*
+immutable sources — see the `topic_readonly` computation in
 `src/vm/vm_for_loop_body.rs` and the corresponding sites in
 `vm_for_loop_intrange.rs` / `vm_for_loop_lazy.rs` / `vm_given_when_ops.rs`.
 
