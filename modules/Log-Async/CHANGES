@@ -1,0 +1,37 @@
+0.0.17 2026-03-09
+  - fix parsing of --log=XXX
+
+0.0.16 2025-11-10
+  - flaky test
+
+0.0.15 2025-11-09
+  - make cli an alias for use-args
+  - better examples
+
+0.0.14 2025-09-18
+  - fix documentation
+  - only send color to ttys
+  - add logfile option
+  - rename CHANGES file
+
+0.0.13 2025-05-26
+   - text fixes
+
+0.0.12 2025-05-20
+   - add use-args to allow command line options with usage
+
+0.0.11 2025-05-09
+   - add import options
+
+0.0.10 2024-01-11
+   - refactor test and fix CI
+
+0.0.9 2024-01-10
+   - update to be raku not p6
+   - add ci pipeline
+
+0.0.8 2022-03-14
+  - Fix race condition in tests (niner)
+  - first Changes file
+  - replace Perl 6 with Raku
+

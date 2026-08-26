@@ -175,7 +175,21 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
     let (rest, _) = ws1(rest)?;
     // unit class Name;
     // unit class Name is Parent does Role;
-    if let Some(r) = keyword("class", rest) {
+    //
+    // A declarator registered through a `use`d module's `EXPORTHOW::DECLARE`
+    // block (`monitor`, from the bundled `OO::Monitors`) is a package
+    // declarator peer to `class` and accepts the same file-scope form —
+    // `Terminal::ANSI::Virtual.rakumod` is written as
+    // `unit monitor Terminal::ANSI::Virtual;`. It parses exactly like
+    // `unit class` and only differs by the `__mutsu_declare_how` marker trait
+    // that tells registration which HOW to attach, so both share this arm.
+    let class_kw = keyword("class", rest).map(|r| (r, None));
+    let declare_kw = || {
+        super::super::simple::declare_keyword_names()
+            .into_iter()
+            .find_map(|kw| keyword(&kw, rest).map(|r| (r, Some(kw))))
+    };
+    if let Some((r, declare_how)) = class_kw.or_else(declare_kw) {
         let (r, _) = ws1(r)?;
         let (r, name) = qualified_ident(r)?;
         check_pseudo_package_in_decl(&name)?;
@@ -287,6 +301,12 @@ pub(crate) fn unit_module_stmt(input: &str) -> PResult<'_, Stmt> {
             break;
         }
         let (r, _) = opt_char(r, ';');
+        if let Some(kw) = declare_how {
+            custom_traits.push((
+                "__mutsu_declare_how".to_string(),
+                Some(crate::ast::Expr::Literal(Value::str(kw))),
+            ));
+        }
         return Ok((
             r,
             with_meta_stmts(

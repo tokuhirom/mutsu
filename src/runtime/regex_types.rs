@@ -131,6 +131,53 @@ impl NamedSlot {
     }
 }
 
+/// The enclosing pattern level's captures, as seen by a **backreference inside
+/// an inline sub-pattern**. A group / alternation / lookaround body is matched
+/// by its own nested engine walk with its own (empty) capture store, so
+/// `$0` / `$<name>` written inside one would otherwise resolve against nothing
+/// — `/ $<x>=(\w) [ $<x> ] /` failed where raku matches. Each level links to
+/// the one outside it, so a backreference at any nesting depth still sees every
+/// capture the *same regex* has taken so far. A subrule call (a different
+/// regex) deliberately gets `None` instead of a link, so its own backreferences
+/// stay scoped to itself.
+pub(crate) struct OuterBackrefCaps {
+    pub(crate) named: HashMap<Symbol, NamedSlot>,
+    pub(crate) positional: Vec<PosSlot>,
+    pub(crate) parent: Option<Arc<OuterBackrefCaps>>,
+}
+
+impl OuterBackrefCaps {
+    /// The most recent entry recorded for `name` at this level or any enclosing
+    /// one (innermost wins, matching the accumulate-then-read order the flat
+    /// non-grouped case has).
+    pub(crate) fn lookup_named(self: &Arc<Self>, name: &Symbol) -> Option<&Arc<CapNode>> {
+        let mut cur: &Arc<Self> = self;
+        loop {
+            if let Some(node) = cur.named.get(name).and_then(|slot| slot.nodes.last()) {
+                return Some(node);
+            }
+            match cur.parent.as_ref() {
+                Some(p) => cur = p,
+                None => return None,
+            }
+        }
+    }
+
+    /// The positional slot at `idx` at this level or any enclosing one.
+    pub(crate) fn lookup_positional(self: &Arc<Self>, idx: usize) -> Option<&PosSlot> {
+        let mut cur: &Arc<Self> = self;
+        loop {
+            if let Some(slot) = cur.positional.get(idx) {
+                return Some(slot);
+            }
+            match cur.parent.as_ref() {
+                Some(p) => cur = p,
+                None => return None,
+            }
+        }
+    }
+}
+
 /// Prefix marking a `named_subcaps` entry as a *silent action capture*: the
 /// match of a silent subrule (`<.foo>`) that is hidden from `.hash` but whose
 /// grammar action method (and its descendants') must still fire. The prefix is a
@@ -312,6 +359,11 @@ pub(crate) struct RegexCaptures {
     /// engine itself never touches it. Consumers derive captured text from
     /// recorded spans through it instead of a stored `matched` string.
     pub(crate) target: Option<crate::runtime::MatchTarget>,
+    /// The enclosing pattern level's captures, for backreference READS only
+    /// (see [`OuterBackrefCaps`]). Set once on a nested walk's base store and
+    /// never merged, propagated, or published — it is a read-through link to
+    /// the parent walk, not a capture of this level.
+    pub(crate) outer_backref: Option<Arc<OuterBackrefCaps>>,
 }
 
 #[cfg(test)]

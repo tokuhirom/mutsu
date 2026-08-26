@@ -1,0 +1,26 @@
+{
+    "name" : "Log::Async",
+    "source-url" : "git://github.com/bduggan/raku-log-async.git",
+    "raku" : "6.*",
+    "build-depends" : [ ],
+    "provides" : {
+        "Log::Async" : "lib/Log/Async.rakumod",
+        "Log::Async::CommandLine" : "lib/Log/Async/CommandLine.rakumod",
+        "Log::Async::Context" : "lib/Log/Async/Context.rakumod"
+    },
+    "tags" : [
+            "log", "logging", "logger",
+            "async", "asynchronous"
+        ],
+    "depends" : [
+      "Terminal::ANSI"
+    ],
+    "description" : "Asynchronous logging with supplies and taps",
+    "test-depends" : [ ],
+    "version" : "0.0.17",
+    "license" : "Artistic-1.0-Perl",
+    "auth" : "zef:bduggan",
+    "authors" : [
+        "Brian Duggan"
+    ]
+}

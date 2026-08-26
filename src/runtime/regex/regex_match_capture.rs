@@ -23,18 +23,79 @@ impl Interpreter {
         )
     }
 
-    /// Publish (or deliberately withhold) the in-regex lexicals for the sub-pattern
-    /// matches this atom is about to run. See
-    /// [`super::regex_helpers::INLINE_REGEX_VARS_SEED`].
+    /// Publish (or deliberately withhold) the in-regex lexicals **and** the
+    /// enclosing level's captures for the sub-pattern matches this atom is
+    /// about to run. See [`super::regex_helpers::INLINE_REGEX_VARS_SEED`] and
+    /// [`super::regex_helpers::INLINE_OUTER_CAPS_SEED`].
     pub(super) fn arm_inline_vars_seed(
         atom: &RegexAtom,
         current_caps: &RegexCaptures,
-    ) -> super::regex_helpers::InlineVarsSeed {
-        if Self::atom_is_inline_subpattern(atom) {
+    ) -> (
+        super::regex_helpers::InlineVarsSeed,
+        super::regex_helpers::OuterCapsSeed,
+    ) {
+        let inline = Self::atom_is_inline_subpattern(atom);
+        let vars = if inline {
             super::regex_helpers::InlineVarsSeed::arm(&current_caps.regex_vars)
         } else {
             super::regex_helpers::InlineVarsSeed::arm(&HashMap::new())
+        };
+        (vars, Self::arm_outer_caps_seed(atom, current_caps))
+    }
+
+    /// Is this atom's sub-pattern matched *in the same capture scope* as the
+    /// pattern containing it, as far as a backreference is concerned?
+    ///
+    /// Verified against real `raku`: a non-capturing group, either flavour of
+    /// alternation, a conjunction and a `~` goal all see the enclosing level's
+    /// captures (`/ $<x>=(\w) [ $<x> ] /` matches "aa"), while a **capturing**
+    /// group and a lookaround do NOT — rakudo gives each of those its own
+    /// cursor, so `/ $<x>=(\w) ( $<x> ) /` and
+    /// `/ $<x>=(\w) <?before $<x>> . /` both fail there. Those two therefore
+    /// arm a barrier rather than a read-through, and the barrier also hides the
+    /// outer level from anything nested deeper inside them
+    /// (`/ $<x>=(\w) ( [ $<x> ] ) /` fails in raku too).
+    fn atom_shares_backref_scope(atom: &RegexAtom) -> bool {
+        matches!(
+            atom,
+            RegexAtom::Group(_)
+                | RegexAtom::Alternation(_)
+                | RegexAtom::SequentialAlternation(_)
+                | RegexAtom::Conjunction(_)
+                | RegexAtom::GoalMatch { .. }
+        )
+    }
+
+    /// Backreference read-through for the nested walks this atom will run.
+    ///
+    /// A same-capture-scope sub-pattern that actually contains a backreference
+    /// publishes a snapshot of the captures taken so far, linked to whatever
+    /// the enclosing level published; one that contains none leaves the
+    /// enclosing seed alone (so a deeper sub-pattern still chains correctly)
+    /// and pays nothing. Every other atom — a subrule reference above all —
+    /// arms a `None` *barrier*, so a different regex's (or a capturing group's)
+    /// `$0` / `$<name>` never resolves against this level's captures.
+    fn arm_outer_caps_seed(
+        atom: &RegexAtom,
+        current_caps: &RegexCaptures,
+    ) -> super::regex_helpers::OuterCapsSeed {
+        use super::regex_helpers::{
+            OuterCapsSeed, any_regex_backref_lowered, atom_contains_backref,
+        };
+        if !any_regex_backref_lowered() {
+            return OuterCapsSeed::inert();
         }
+        if !Self::atom_shares_backref_scope(atom) {
+            return OuterCapsSeed::arm(None);
+        }
+        if !atom_contains_backref(atom) {
+            return OuterCapsSeed::inert();
+        }
+        OuterCapsSeed::arm(Some(std::sync::Arc::new(OuterBackrefCaps {
+            named: current_caps.named.clone(),
+            positional: current_caps.positional.clone(),
+            parent: current_caps.outer_backref.clone(),
+        })))
     }
 
     /// Single-candidate atom matcher: the atom's highest-priority match only.
@@ -513,7 +574,15 @@ impl Interpreter {
                 // every iteration's span; a plain slot's is its own span. Both
                 // compare against the same `chars` the spans were recorded in,
                 // so no text is materialized (ADR-0016 P4).
-                let slot = current_caps.positional.get(*idx)?;
+                // A backreference inside an inline sub-pattern resolves against
+                // the enclosing level's captures too (`/ (\w) [ $0 ] /`).
+                let slot = match current_caps.positional.get(*idx) {
+                    Some(slot) => slot,
+                    None => current_caps
+                        .outer_backref
+                        .as_ref()
+                        .and_then(|outer| outer.lookup_positional(*idx))?,
+                };
                 let mut cursor = pos;
                 let compare_span = |a: usize, b: usize, cursor: &mut usize| -> bool {
                     let (a, b) = (a.min(chars.len()), b.min(chars.len()));
@@ -542,10 +611,19 @@ impl Interpreter {
             RegexAtom::NamedBackref(name) => {
                 // Span comparison against the engine's own chars — same
                 // alloc-free scheme as the positional Backref (ADR-0016 P4).
+                let sym = Symbol::intern(name);
                 let node = current_caps
                     .named
-                    .get(&Symbol::intern(name))
-                    .and_then(|slot| slot.nodes.last());
+                    .get(&sym)
+                    .and_then(|slot| slot.nodes.last())
+                    // Same enclosing-level read-through as the positional
+                    // `Backref` arm above (`/ $<x>=(\w) [ $<x> ] /`).
+                    .or_else(|| {
+                        current_caps
+                            .outer_backref
+                            .as_ref()
+                            .and_then(|outer| outer.lookup_named(&sym))
+                    });
                 if let Some(node) = node {
                     let (a, b) = (node.from.min(chars.len()), node.to.min(chars.len()));
                     let (a, b) = (a, b.max(a));

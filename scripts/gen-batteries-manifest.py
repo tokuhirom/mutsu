@@ -189,6 +189,14 @@ SIDECAR = {
         # META6.json has no license key; the dist ships an MIT LICENSE file.
         "license": "MIT",
     },
+    "Log::Async": {
+        "slot": "General application logging (debug/info/warn/error)",
+        "record": "docs/batteries/logging.md",
+    },
+    "Terminal::ANSI": {
+        "slot": "General application logging (debug/info/warn/error)",
+        "record": "docs/batteries/logging.md",
+    },
 }
 
 

@@ -3,7 +3,7 @@
 **Slot:** Structured application logging (debug/info/warn/error, distinct from
 `Log::Timeline`'s task/event-timeline instrumentation) · **Selected:**
 `Log::Async` v0.0.17 (`auth<zef:bduggan>`, Artistic-1.0-Perl) · **Kind:**
-Selected, not yet bundled (blocked on a parser gap in its own dependency) ·
+Adopted (vendored verbatim, `modules/Log-Async/` + `modules/Terminal-ANSI/`) ·
 **Yardstick:** [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) —
 license (hard gate) → dependency weight → maintainer stewardship → proven
 behaviour on mutsu → API fit → "a small web blog can be written with the
@@ -11,18 +11,53 @@ bundle alone"
 
 Procedure: [selection-method.md](selection-method.md).
 
-## Status: selected, not yet bundled
-
-`Log::Async` won the field on ecosystem standing and API simplicity, but its
-only runtime dependency, `Terminal::ANSI`, ships one file written in a parser
-form mutsu does not yet support (`unit monitor ...;`) — see
-[Why it currently fails on mutsu](#why-it-currently-fails-on-mutsu) below.
+## Status: bundled — working, with a partial gate baseline
 
 ```raku
 use Log::Async <trace>;
 trace 'starting up';
-error 'connection refused';   # not yet runnable on mutsu
+error 'connection refused';
 ```
+
+runs against the shipped binary with no `-I` and no `mzef install`.
+
+The blocker that kept this slot unbundled — the file-scope `unit monitor …;`
+declarator form its `Terminal::ANSI` dependency is written in — was fixed on
+2026-08-26 (`news/2026-08/unit-form-exporthow-declare-keyword.md`). Measured
+immediately before and after that fix, from each dist's own directory, against
+a release build:
+
+| Suite | raku | mutsu (before) | mutsu (after) |
+| --- | --- | --- | --- |
+| `Log::Async` v0.0.17 | 17/17 files | **2/17** | **11/17** |
+| `Terminal::ANSI` v0.0.25 | 8/8 files | **2/8** | **5/8** |
+
+Both are gated at that per-file baseline in `batteries-whitelist.txt` — the
+same "ship the working subset, pin it, keep the gaps written down" shape
+`CBOR::Simple` and `Log::Timeline` use
+([cro-deps.md](cro-deps.md)). The smoke test is
+[`t/log-async-battery.t`](../../t/log-async-battery.t) (all five severity
+levels through a custom `add-tap` sink, message shape, ordered severity enum);
+it passes identically under `raku` and mutsu.
+
+### What still fails (not gated)
+
+Six `Log::Async` files and three `Terminal::ANSI` files remain, none of them in
+the core log-a-message path:
+
+- `10-formatter.rakutest`, `12-context.rakutest` — `logger.send-to($io-path)`
+  dies with `Invalid IO::Handle`, so nothing reaches the temp file the test
+  then slurps. The default and custom `:formatter` code paths themselves are
+  untested as a result.
+- `14-frame.rakutest` — `callframe(1)`'s file/line for the caller of a
+  `hidden-from-backtrace` routine is not what rakudo reports.
+- `01-basic.rakutest` (`version is > 0.0.0`), `04-filter.rakutest` (one
+  `not severe` assertion), `07-done.rakutest` (`found first in output`).
+- `Terminal::ANSI`: `04-oo` (one `home` assertion), `06-state`, `07-atomic`.
+
+These are ordinary interpreter gaps, not packaging problems; they belong in
+`todo/` as they are bisected, and the whitelist is the record of exactly which
+files must not regress meanwhile.
 
 ## What it is not: `Log::Timeline`
 
@@ -45,7 +80,7 @@ Enumerated from `~/.zef/store/rea/rea.json` (~14,834 dist names), filtered on
 
 | Candidate | Version | Released | License | auth / GitHub owner | Runtime deps | Dependents¹ | raku | mutsu |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **`Log::Async`** | 0.0.17 | 2026-03-09 | Artistic-1.0-Perl | `zef:bduggan` ([bduggan](https://github.com/bduggan/raku-log-async), ★12) | 1 (`Terminal::ANSI`) | **17** (highest — `AI::Gator`, `Jupyter::Kernel`, `Curlie`, ...) | loads cleanly | **fails to load** (dependency parser gap) |
+| **`Log::Async`** | 0.0.17 | 2026-03-09 | Artistic-1.0-Perl | `zef:bduggan` ([bduggan](https://github.com/bduggan/raku-log-async), ★12) | 1 (`Terminal::ANSI`) | **17** (highest — `AI::Gator`, `Jupyter::Kernel`, `Curlie`, ...) | 17/17 files | **11/17 files** (bundled; was 2/17 before the `unit monitor` fix) |
 | `LogP6` | 1.6.4 | 2021-02-23 | Artistic-2.0 | `cpan:ATROXAPER` ([atroxaper](https://github.com/atroxaper/p6-LogP6), ★8) | 2 (`UUID`, `JSON::Fast` — both already bundled) | 3 | loads cleanly | **fails to load** (own-source parser gap) |
 | `Log::Timeline` | 0.5.2 | 2024-11-30 | Artistic-2.0 | `zef:raku-community-modules` ([repo](https://github.com/raku-community-modules/Log-Timeline), ★4) | 2 (`CBOR::Simple`, `JSON::Fast`) | 5 | — | already bundled, different slot (see above) |
 | `Log::Dispatch` | 0.0.8 | 2022-11-05 | Artistic-2.0 | `zef:vrurg` ([vrurg](https://github.com/vrurg/raku-Log-Dispatch), ★0) | 1 (`Terminal::ANSI`) | 0 | loads cleanly | **fails to load** (two separate bugs, see below) |
@@ -132,9 +167,9 @@ chain — both are recorded as general interpreter gaps found as a side effect
 of evaluating the runner-up candidates, not as blockers for the chosen
 module.
 
-## Why it currently fails on mutsu
+## The blocker that had to be fixed first (resolved 2026-08-26)
 
-`Log::Async` itself loads cleanly — the failure is entirely in its one
+`Log::Async` itself always loaded cleanly — the failure was entirely in its one
 runtime dependency, `Terminal::ANSI`. That distribution ships
 `Terminal::ANSI::Virtual.rakumod` declared as:
 
@@ -144,37 +179,65 @@ unit monitor Terminal::ANSI::Virtual;
 
 the **file-scope (`unit`) form** of the `monitor` declarator that
 `OO::Monitors` registers (mutsu already bundles `OO::Monitors`, see
-[oo-monitors.md](oo-monitors.md)). mutsu supports the **block** form
-(`monitor Foo { ... }`) but not this file-scope form, so the load fails with:
+[oo-monitors.md](oo-monitors.md)). mutsu supported the **block** form
+(`monitor Foo { ... }`) but not this file-scope form, so the load failed with
+`Unknown function: monitor`.
 
+This was a **general parser gap** — any `EXPORTHOW::DECLARE`-registered keyword
+used in `unit` form hit it, not just `monitor` — and per
+[BATTERIES.md §1](../../BATTERIES.md#1-adoption-policy--community-first-adopt-as-is)
+rung 2 the answer was to grow mutsu's parser, not patch the vendored module.
+Fixed in `news/2026-08/unit-form-exporthow-declare-keyword.md`; pinned by
+[`t/exporthow-declare-unit-form.t`](../../t/exporthow-declare-unit-form.t).
+
+## Provenance
+
+Per [BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution).
+
+| Module | Upstream | Pinned version | Commit | auth | License |
+| --- | --- | --- | --- | --- | --- |
+| `Log::Async` | <https://github.com/bduggan/raku-log-async> | v0.0.17 | `c238fc014bacf7a44a4e4a5b194695eab89e11e8` | `zef:bduggan` | Artistic-1.0-Perl |
+| `Terminal::ANSI` (dependency) | <https://git.sr.ht/~bduggan/raku-terminal-ansi> | v0.0.25 | `691d0959ff8ea0a7c491167b366746cdfc0fb0be` | `cpan:BDUGGAN` | MIT |
+
+`Terminal::ANSI` depends only on the already-bundled `OO::Monitors`, so this
+slot added no new dependency surface beyond its own two dists.
+
+Note the upstream hosts differ: `Log::Async` is on GitHub, `Terminal::ANSI` on
+SourceHut. Both `batteries.lock` rows fetch a bare sha with
+`git fetch --depth 1 origin <sha>`, which sr.ht supports the same way GitHub
+does (verified when this row was added).
+
+### Re-vendoring recipe
+
+From a clean checkout of each upstream at the tag above:
+
+```sh
+git clone --depth 1 --branch 0.0.17 https://github.com/bduggan/raku-log-async.git /tmp/log-async
+rsync -a --exclude '.precomp' /tmp/log-async/lib/ modules/Log-Async/lib/
+cp /tmp/log-async/META6.json /tmp/log-async/README.md /tmp/log-async/CHANGES modules/Log-Async/
+
+git clone --depth 1 --branch 0.0.25 https://git.sr.ht/~bduggan/raku-terminal-ansi /tmp/terminal-ansi
+rsync -a --exclude '.precomp' /tmp/terminal-ansi/lib/ modules/Terminal-ANSI/lib/
+cp /tmp/terminal-ansi/META6.json /tmp/terminal-ansi/README.md /tmp/terminal-ansi/LICENSE modules/Terminal-ANSI/
 ```
-Unknown function: monitor
-```
 
-This is a **general parser gap** (any `EXPORTHOW::DECLARE`-registered
-keyword used in `unit` form hits it, not specific to `Terminal::ANSI` or
-`Log::Async`), fully root-caused and scoped as a small, self-contained fix —
-see
-[todo/tickets/unit-monitor-declarator-not-supported.md](../../todo/tickets/unit-monitor-declarator-not-supported.md).
-Per [BATTERIES.md §1](../../BATTERIES.md#1-adoption-policy--community-first-adopt-as-is)
-rung 2, the answer is to grow mutsu's parser, not patch the vendored module.
+Excluded on purpose: upstream `t/`, `eg/`, `script/`, `Makefile`/`make`,
+`sparrow.yaml`, `.github/`, `.gitignore`, and any `.precomp` artifacts (a
+`raku` run inside the checkout leaves those behind — check before rsyncing).
 
-## Provenance (for when the blocker clears)
+Then bump the `commit` column of both `batteries.lock` rows to the new shas,
+re-run `scripts/battery-testsuite.sh --update`, **review the
+`batteries-whitelist.txt` diff** (a file that dropped out is a regression to
+fix, not a smaller baseline to accept), re-run
+`python3 scripts/gen-batteries-manifest.py`, and verify with
+`timeout 30 target/debug/mutsu t/log-async-battery.t`.
 
-Per [BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution). Not yet
-vendored — no `modules/` tree or `batteries.lock` entry exists for this slot
-yet, per the "Selected, not yet bundled" convention in
-[BATTERIES.md §7](../../BATTERIES.md#7-bundle-index).
-
-| Module | Upstream | Pinned version | auth |
-| --- | --- | --- | --- |
-| `Log::Async` | <https://github.com/bduggan/raku-log-async> | v0.0.17 | `zef:bduggan` |
-| `Terminal::ANSI` (dependency) | <https://github.com/bduggan/raku-terminal-ansi> | latest at bundle time | (MIT; depends only on the already-bundled `OO::Monitors`) |
-
-When vendoring: `lib/` + `META6.json` + `LICENSE` + `README.md` for both
-modules, excluding upstream `t/`/CI config, per the standard recipe. The
-bundling work itself (once the parser blocker clears) is tracked as
-[todo/tickets/bundle-log-async-battery.md](../../todo/tickets/bundle-log-async-battery.md).
+**`Log::Async` ships no `LICENSE` file** — its `META6.json` declares
+`Artistic-1.0-Perl` and that is the only license statement upstream carries, so
+the vendored `META6.json` *is* the preserved license text for that dist. This
+is not the [BATTERIES.md §4](../../BATTERIES.md#4-license-policy) "states no
+license" hard case (`Encode`): the license is stated, just not as a separate
+file. `Terminal::ANSI` ships a real MIT `LICENSE`, vendored alongside it.
 
 ## Security updates
 
@@ -191,15 +254,9 @@ provisional-exception caveat. `Terminal::ANSI` is MIT.
 
 ## Next steps
 
-1. Land
-   [todo/tickets/unit-monitor-declarator-not-supported.md](../../todo/tickets/unit-monitor-declarator-not-supported.md)
-   (the `unit monitor` parser gap).
-2. Re-verify `use Log::Async; trace 'x';` loads and runs under mutsu.
-3. Vendor `Log::Async` + `Terminal::ANSI` per
-   [BATTERIES.md §3](../../BATTERIES.md#3-vendoring-and-resolution) — tracked
-   in
-   [todo/tickets/bundle-log-async-battery.md](../../todo/tickets/bundle-log-async-battery.md).
-4. Add the `batteries.lock` entries, run
-   `scripts/battery-testsuite.sh --update`, and promote this record's status
-   line + the [bundle index](../../BATTERIES.md#7-bundle-index) row from
-   "Selected, not yet bundled" to "Working".
+Bundling is done. What is left is closing the nine un-gated files listed under
+[What still fails](#what-still-fails-not-gated) — bisect each to a general
+interpreter gap, file it under `todo/`, and re-run
+`scripts/battery-testsuite.sh --update` as they clear. The
+`logger.send-to($io-path)` / `Invalid IO::Handle` failure is the largest single
+lever: it alone accounts for two files and leaves the formatter API untested.

@@ -27,6 +27,15 @@ declaration names) is fixed —
 compile. It is still 0/19 at the file level; the work list below is what
 remains.
 
+**Re-measured 2026-08-26** (fresh REA fetch of both dists, each suite run from
+its own directory against a release build): **`Config::TOML` 0/19, `Crane`
+3/15**, against raku's 19/19 and 15/15 — unchanged. None of the fixes that
+landed in the intervening days touch what `Crane`'s array-path descent needs.
+`Crane`'s passing files are `at`, `flatten`, `test`; the dominant failure
+elsewhere is `✗ Crane error: associative key does not exist`, plus a hard parse
+error in `t/patch.rakutest` and a 90s timeout in
+`Config::TOML`'s `t/grammar/03-inline-tables.rakutest`.
+
 ```raku
 use Config::TOML;
 my %config = from-toml('example.toml'.IO.slurp);   # not yet runnable on mutsu
