@@ -72,4 +72,51 @@ impl Interpreter {
         let key = crate::value::types::mixin_composition_key(&base_type_name, mixins);
         Ok(self.mixin_composition_overrides(key, mixins))
     }
+
+    /// Build the composition-keyed punned-class type object for a role
+    /// (ADR-0060 naming) — the exact value `R.new.WHAT` produces for an
+    /// instance of `role_name`'s pun, computed WITHOUT constructing an
+    /// instance. `ensure_role_punned_to_class` registers the pun's
+    /// `ClassDef` under the role's own name, so a bare `Value::package`
+    /// would be ambiguous between "the role group" and "the punned class"
+    /// (`.HOW` cannot tell them apart, `todo/tickets/role-pun-metamethod-
+    /// returns-role-group.md`); wrapping it in the same `Mixin` shape the
+    /// role's own instances carry (`__mutsu_role__{name}` /
+    /// `__mutsu_role_id__{name}`, mirroring `mark_punned_role_instance`
+    /// in `methods_object_dispatch_new.rs`) disambiguates it the same way
+    /// ADR-0060 disambiguates any other role composition's `.WHAT`.
+    ///
+    /// Used by the `^pun` metamethod (`methods_classhow_dispatch.rs`) and by
+    /// MRO emission (`methods_classhow_mro.rs`) for a level that is itself a
+    /// punned role (`class C is SomeRole { }`), so `R.^pun === R.new.WHAT`
+    /// and an MRO entry for a punned role `eqv`s `R.^pun`
+    /// (`roast/6.c/S12-class/mro-6c.t`).
+    pub(super) fn punned_role_type_object(
+        &mut self,
+        role_name: &str,
+    ) -> Result<Value, RuntimeError> {
+        self.ensure_role_punned_to_class(role_name)?;
+        let mut mixins: crate::value::MixinOverrides = HashMap::new();
+        mixins.insert(format!("__mutsu_role__{role_name}"), Value::TRUE);
+        // Mirrors `mark_punned_role_instance`'s own role-id lookup so a
+        // punned instance's `.WHAT` and `^pun`'s return value key to the
+        // SAME cache entry (both omit the marker when a role carries no
+        // minted id, e.g. mutsu's natively-modelled core roles).
+        let role_id = self
+            .registry()
+            .roles
+            .get(role_name)
+            .map_or(0, |r| r.role_id);
+        if role_id != 0 {
+            mixins.insert(
+                format!("__mutsu_role_id__{role_name}"),
+                Value::int(role_id as i64),
+            );
+        }
+        let base_what = Value::package(Symbol::intern(role_name));
+        let base_type_name = base_what.to_string_value();
+        let key = crate::value::types::mixin_composition_key(&base_type_name, &mixins);
+        let overrides = self.mixin_composition_overrides(key, &mixins);
+        Ok(Value::mixin_parts(Arc::new(base_what), overrides))
+    }
 }

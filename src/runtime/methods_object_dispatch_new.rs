@@ -161,6 +161,26 @@ impl Interpreter {
         };
         let mut mixins = extra;
         mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+        // A parameterised pun's `extra` already carries the matched
+        // candidate's own role id (its `role_def.role_id`, which may differ
+        // from the bare `registry().roles` entry below when several
+        // candidates share a name) — only fill it in here for the bare,
+        // non-parametric pun path, so `R.new.WHAT` keys to the same
+        // composition-cache entry `R.^pun` does
+        // (`Interpreter::punned_role_type_object`,
+        // `methods_mixin_what_cache.rs`).
+        if let std::collections::hash_map::Entry::Vacant(e) =
+            mixins.entry(format!("__mutsu_role_id__{}", role_name))
+        {
+            let role_id = self
+                .registry()
+                .roles
+                .get(&role_name)
+                .map_or(0, |r| r.role_id);
+            if role_id != 0 {
+                e.insert(Value::int(role_id as i64));
+            }
+        }
         // See todo/tickets/mixin-role-order-not-tracked.md: stamp this
         // application's order so a later `does`/`but` chained onto the
         // resulting pun can resolve a method-name collision by later-wins,
@@ -1531,6 +1551,21 @@ impl Interpreter {
                             {
                                 let mut mixins = HashMap::new();
                                 mixins.insert(format!("__mutsu_role__{}", role_name), Value::TRUE);
+                                // Mirror `mark_punned_role_instance`'s role-id
+                                // marker so this instance's `.WHAT` keys to
+                                // the same composition-cache entry `^pun`
+                                // does (`punned_role_type_object`).
+                                let role_id = self
+                                    .registry()
+                                    .roles
+                                    .get(&role_name)
+                                    .map_or(0, |r| r.role_id);
+                                if role_id != 0 {
+                                    mixins.insert(
+                                        format!("__mutsu_role_id__{}", role_name),
+                                        Value::int(role_id as i64),
+                                    );
+                                }
                                 mixins.insert(
                                     format!("__mutsu_role_seq__{}", role_name),
                                     Value::int(crate::value::next_instance_id() as i64),

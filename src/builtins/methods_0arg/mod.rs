@@ -677,6 +677,20 @@ pub(crate) fn native_method_0arg(
         if let Some(mixin_val) = mixins.get(method) {
             return Some(Ok(mixin_val.clone()));
         }
+        // `.flat` must run on the WHOLE mixin, not the bare `inner` the
+        // fallback below delegates to: `flat_val` (see `flat.rs`'s `Mixin`
+        // arm) already knows to flatten through a container inner while
+        // preserving a non-container inner's composition, but only if it
+        // receives the mixin itself rather than already-unwrapped `inner`.
+        if method == "flat" {
+            let mut result = Vec::new();
+            crate::builtins::flat_val(
+                &crate::builtins::deitemize_flat_operand(target),
+                &mut result,
+                true,
+            );
+            return Some(Ok(Value::seq(result)));
+        }
         return native_method_0arg(inner, method_sym);
     }
     // Cool numeric coercion: when a Str calls a numeric method, coerce to numeric first.
